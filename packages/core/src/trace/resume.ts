@@ -300,11 +300,24 @@ function toolCallOutputId(msg: AmspRecord): string | null {
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
 }
 
+/** Options for `resumeTrace`. */
+export interface ResumeTraceOptions {
+  /**
+   * Absolute path of the file `messages` were read from. A context that file's last compaction
+   * closed opens with the summary rebuilt from it, and the summary's trailer names this file
+   * (see buildContextSummaryText) — the one the live engine would have named. Absent: the
+   * summary is rebuilt without a trailer.
+   */
+  tracePath?: string;
+  /** The shell the resumed Session runs commands in, wording the trailer's search (see ContextEngineDeps.shell). */
+  shell?: string;
+}
+
 /**
  * Replay a Trace file (the current context), reconstructing history and carry-over input.
  * Input is the message sequence parsed by `readTraceTolerant`.
  */
-export function resumeTrace(messages: AmspRecord[]): ResumeResult {
+export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {}): ResumeResult {
   const meta = (messages.find(isSessionMeta) as SessionMetaMessage | undefined) ?? null;
   const sessionTokens = lastSessionTokens(messages);
   const lastRequestTotal = lastRequestTotalOf(messages);
@@ -331,11 +344,21 @@ export function resumeTrace(messages: AmspRecord[]): ResumeResult {
       };
       if (p.mode !== "summarize") return result;
       // Reconstruct the summary from the compaction request's output (the assistant text of
-      // the last completed Request). Always rebuilt in the current [context_summary] form —
-      // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
-      const summaryText = extractSummary(lastCompletedRequestText(messages));
+      // the last completed Request of the closing span — the requests before it there, if
+      // any, are its tool rounds). Always rebuilt in the current [context_summary] form —
+      // extractSummary itself still accepts the old <summary> tags an old Trace may contain —
+      // with the trailer naming this file when the caller says which file it is.
+      const summaryText = extractSummary(lastCompletedRequestText(closingSpan(messages)));
       if (summaryText !== "") {
-        result.pendingSummary = userText(buildContextSummaryText(summaryText));
+        const { tracePath, shell } = opts;
+        result.pendingSummary = userText(
+          buildContextSummaryText(
+            summaryText,
+            tracePath !== undefined
+              ? { tracePath, ...(shell !== undefined ? { shell } : {}) }
+              : undefined,
+          ),
+        );
         return result;
       }
       // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
@@ -563,7 +586,23 @@ function lastRequestTotalOf(messages: AmspRecord[]): number {
   return 0;
 }
 
-/** Concatenated assistant text of the last completed Request (on compaction closure, this is the compaction request's output). */
+/**
+ * The records of the file's last compaction span: from its final `compaction_begin` on (the
+ * whole file when it holds none). A span is one compaction's requests — its tool rounds, then
+ * the request that wrote the summary — so the last completed request inside it is the summary's
+ * for any span, and a request from before the span can never stand in for it.
+ */
+function closingSpan(messages: AmspRecord[]): AmspRecord[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
+    if (isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_begin") {
+      return messages.slice(i);
+    }
+  }
+  return messages;
+}
+
+/** Concatenated assistant text of the last completed Request (on compaction closure, read over the closing span: the compaction request's output). */
 function lastCompletedRequestText(messages: AmspRecord[]): string {
   let text = "";
   let current = "";

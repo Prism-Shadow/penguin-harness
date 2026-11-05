@@ -67,7 +67,9 @@ import { Session } from "../src/session.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
 import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/mmsp";
+import { buildContextSummaryText } from "@prismshadow/amsp/markers";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
+import { compactionToolGate } from "../src/internal/compaction-tool-gate.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -265,7 +267,10 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(2);
     expect(llm2.calls).toHaveLength(1);
     const firstInput = llm2.calls[0]!.map(textOf);
-    expect(firstInput[0]).toBe("[context_summary]\nthe distilled summary\n[/context_summary]");
+    // With a Trace, the summary ends with the trailer naming the closed file.
+    expect(firstInput[0]).toBe(
+      buildContextSummaryText("the distilled summary", { tracePath: oldPath }),
+    );
     expect(firstInput[1]).toBe("task two");
 
     // Trace splits into files: the old file contains the compaction dialogue and paired events; the new file starts with session_meta.
@@ -1300,7 +1305,7 @@ describe("context compaction", () => {
     // The new context opens with the retry's summary.
     await collect(engine.run([userText("task two")], { approve: allowAll }));
     expect(llm2.calls[0]!.map(textOf)).toEqual([
-      "[context_summary]\nreal summary\n[/context_summary]",
+      buildContextSummaryText("real summary", { tracePath: oldPath }),
       "task two",
     ]);
   });
@@ -2581,5 +2586,414 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     await collect(engine.run([userText("hi")], { approve: allowAll }));
     await collect(engine.compact());
     expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool rounds: a compaction that hands files to the next context
+// ---------------------------------------------------------------------------
+
+/**
+ * Tool rounds (CompactionSettings.maxRounds, with the Agent's gate — read_file anywhere,
+ * write_file / edit_file inside the Session's scratchpad only):
+ *
+ * - Given rounds left, when the compaction response writes a hand-off file in the scratchpad,
+ *   the call is approved and run, its output alone is the next request, and the summary that
+ *   request writes is adopted; the old Trace and the stream carry the round in one order, and
+ *   the summary's trailer names the closed file and how to query it.
+ * - A call the gate refuses (a command, a write outside the scratchpad) is answered with a fatal
+ *   `[tool error]` naming what is allowed: never put to the approval callback, never run.
+ * - A call the approval callback denies gets the denied output and never runs.
+ * - Rounds draw nothing from the retry budget; once they are spent, a response with tool calls
+ *   is rejected as before and does.
+ * - With no rounds (max_rounds 0, or no gate) the compaction is the single text-only request it
+ *   was: the same requests and the same Trace, the stream adding only the request pair.
+ * - An interruption mid-round aborts the running tool, answers every open call, ends the
+ *   compaction `aborted`, and the next run sends the outputs first, so the old context pairs.
+ */
+describe("compaction tool rounds", () => {
+  let traces: string;
+  let scratch: string;
+
+  beforeEach(async () => {
+    traces = await mkdtemp(join(tmpdir(), "penguin-compaction-rounds-"));
+    scratch = join(traces, "scratchpad", "sess_rounds");
+  });
+
+  afterEach(async () => {
+    await rm(traces, { recursive: true, force: true });
+  });
+
+  /** An Environment that records what ran; a call named `slow` waits for the signal. */
+  const recordingEnvironment = (): { env: EnvironmentInterface; ran: string[] } => {
+    const ran: string[] = [];
+    const env: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool({ toolCall: tc, signal }) {
+        ran.push(tc.payload.name);
+        if (tc.payload.name === "edit_file" && tc.payload.arguments.includes("slow")) {
+          await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+          yield toolCallOutput({
+            output: "[interrupted]",
+            toolCallId: tc.payload.tool_call_id,
+            status: "aborted",
+          });
+          return;
+        }
+        yield toolCallOutput({
+          output: `${tc.payload.name} ran`,
+          toolCallId: tc.payload.tool_call_id,
+          status: "completed",
+        });
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    return { env, ran };
+  };
+
+  const writeCall = (id: string, file: string): AmspRecord =>
+    toolCall({
+      name: "write_file",
+      arguments: JSON.stringify({ file_path: file, content: "the plan" }),
+      toolCallId: id,
+    });
+
+  const span = (msgs: AmspRecord[]): AmspRecord[] => {
+    const types = payloadTypes(msgs);
+    return msgs.slice(types.indexOf("compaction_begin") + 1, types.lastIndexOf("compaction_end"));
+  };
+
+  it("a hand-off write in the scratchpad is a round: approved, run, sent alone, and the next request's summary is adopted with the trailer", async () => {
+    const plan = join(scratch, "handoff", "plan.md");
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [writeCall("h1", plan), usage(160, 310)] },
+        { messages: [assistantText("[summary]see the plan file[/summary]"), usage(170, 480)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 500)] }]);
+    const { env, ran } = recordingEnvironment();
+    const approved: string[] = [];
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_rounds" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxRounds: 3 }),
+      compactionToolGate: compactionToolGate(scratch),
+      shell: "bash",
+      openNextContext: () => ({ llm: llm2 }),
+    });
+    const oldPath = trace.currentPath();
+
+    const out = await collect(
+      engine.run([userText("task one")], {
+        approve: async (tc) => {
+          approved.push(tc.payload.tool_call_id);
+          return "allow";
+        },
+      }),
+    );
+
+    expect(approved).toEqual(["h1"]);
+    expect(ran).toEqual(["write_file"]);
+    // The round's request carries its outputs and nothing else: no Prompt again.
+    expect(llm1.calls).toHaveLength(3);
+    expect(payloadTypes(llm1.calls[2]!)).toEqual(["tool_call_output"]);
+    expect((llm1.calls[2]![0]!.payload as { output: string }).output).toBe("write_file ran");
+    const events = compactionEvents(out);
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "completed", attempt: 1 });
+    // The stream carries the round as the Trace does; the Prompt stays Trace-only.
+    expect(payloadTypes(span(out))).toEqual([
+      "request_begin",
+      "tool_call",
+      "token_usage",
+      "request_end",
+      "approval_decision",
+      "tool_call_output",
+      "request_begin",
+      "text",
+      "token_usage",
+      "request_end",
+    ]);
+    const recorded = payloadTypes(await readTrace(oldPath));
+    expect(recorded.slice(recorded.indexOf("compaction_begin"))).toEqual([
+      "compaction_begin",
+      "text",
+      "request_begin",
+      "tool_call",
+      "token_usage",
+      "request_end",
+      "approval_decision",
+      "tool_call_output",
+      "request_begin",
+      "text",
+      "token_usage",
+      "request_end",
+      "compaction_end",
+    ]);
+
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const opening = textOf(llm2.calls[0]![0]!);
+    expect(opening.startsWith("[context_summary]\nsee the plan file\n\n")).toBe(true);
+    expect(opening).toContain(
+      `Transcript of the compacted context, for when the summary is not enough: ${oldPath}.`,
+    );
+    expect(opening).toContain("`rg -n -o '<pattern>' <file>`");
+    expect(opening).not.toContain("Select-String");
+    expect(opening.endsWith("[/context_summary]")).toBe(true);
+  });
+
+  it("a call the gate refuses is answered with the gate's reason and never approved or run", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            toolCall({
+              name: "exec_command",
+              arguments: '{"cmd":"rm -rf build"}',
+              toolCallId: "x1",
+            }),
+            writeCall("x2", join(traces, "outside.md")),
+            usage(160, 310),
+          ],
+        },
+        { messages: [assistantText("[summary]nothing written[/summary]"), usage(170, 480)] },
+      ],
+      "llm1",
+    );
+    const { env, ran } = recordingEnvironment();
+    const approved: string[] = [];
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxRounds: 3 }),
+      compactionToolGate: compactionToolGate(scratch),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    await collect(
+      engine.run([userText("task one")], {
+        approve: async (tc) => {
+          approved.push(tc.payload.tool_call_id);
+          return "allow";
+        },
+      }),
+    );
+
+    expect(approved).toEqual([]);
+    expect(ran).toEqual([]);
+    const outputs = llm1.calls[2]!.map((m) => m.payload as { output: string; status: string });
+    expect(outputs.map((o) => o.status)).toEqual(["fatal", "fatal"]);
+    for (const o of outputs) {
+      expect(o.output).toBe(
+        "[tool error] only read_file, and write_file/edit_file inside this Session's scratchpad, are available while compacting",
+      );
+    }
+  });
+
+  it("a call the approval callback denies gets the denied output and never runs", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [writeCall("d1", join(scratch, "handoff", "plan.md")), usage(160, 310)] },
+        { messages: [assistantText("[summary]no file[/summary]"), usage(170, 480)] },
+      ],
+      "llm1",
+    );
+    const { env, ran } = recordingEnvironment();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxRounds: 3 }),
+      compactionToolGate: compactionToolGate(scratch),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: async () => "deny" }));
+
+    expect(ran).toEqual([]);
+    const decision = span(out).find((m) => payloadTypes([m])[0] === "approval_decision")!;
+    expect(decision.payload).toMatchObject({ decision: "deny", tool_call_id: "d1" });
+    expect(llm1.calls[2]![0]!.payload).toMatchObject({
+      output: "Tool call denied by user.",
+      status: "aborted",
+    });
+    expect(compactionEvents(out)[1]).toMatchObject({ status: "completed" });
+  });
+
+  it("rounds draw nothing from the retry budget; once they are spent a tool-calling response is rejected and does", async () => {
+    const file = join(scratch, "handoff", "notes.md");
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [writeCall("r1", file), usage(160, 310)] },
+        // The one round is spent: these calls are rejected, which costs the only retry.
+        { messages: [writeCall("r2", file), usage(170, 480)] },
+        { messages: [assistantText("[summary]done[/summary]"), usage(180, 660)] },
+      ],
+      "llm1",
+    );
+    const { env, ran } = recordingEnvironment();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxRounds: 1 }),
+      compactionToolGate: compactionToolGate(scratch),
+      compactionMaxReconnects: 1,
+      reconnectBackoffMs: 1,
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(ran).toEqual(["write_file"]);
+    // The rejected attempt is answered by a repair, then re-asked with the corrective note.
+    expect(payloadTypes(llm1.calls[3]!)).toEqual(["tool_call_output", "text", "text"]);
+    expect((llm1.calls[3]![0]!.payload as { output: string }).output).toBe(
+      "[tool error] the compaction request expects a summary, not tool calls",
+    );
+    // Two summary attempts (the rejected one and the adopted one); the round is no attempt.
+    expect(compactionEvents(out)[1]).toMatchObject({ status: "completed", attempt: 2 });
+    // The rejected attempt's call never reached the stream.
+    const spanCalls = span(out).filter((m) => payloadTypes([m])[0] === "tool_call");
+    expect(spanCalls.map((m) => (m.payload as { tool_call_id: string }).tool_call_id)).toEqual([
+      "r1",
+    ]);
+  });
+
+  it.each([
+    ["max_rounds 0", { maxRounds: 0 }, true],
+    ["no gate", { maxRounds: 3 }, false],
+  ] as const)(
+    "with %s the compaction is the single text-only request it was",
+    async (_label, over, withGate) => {
+      const script = (): ScriptedResponse[] => [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [writeCall("z1", join(scratch, "handoff", "plan.md")), usage(160, 310)],
+        },
+        { messages: [assistantText("[summary]plain[/summary]"), usage(170, 480)] },
+      ];
+      const drive = async (
+        compaction: CompactionSettings,
+        gate: boolean,
+      ): Promise<{
+        llm: ScriptedLLM;
+        out: AmspRecord[];
+        recorded: AmspRecord[];
+        ran: string[];
+      }> => {
+        const llm = new ScriptedLLM(script(), "llm1");
+        const { env, ran } = recordingEnvironment();
+        const trace = new Writer({ tracesDir: await mkdtemp(join(traces, "t-")), sessionId: "s" });
+        const path = trace.currentPath();
+        const engine = new ContextEngine({
+          llm,
+          environment: env,
+          trace,
+          sessionMeta: metaMessage,
+          compaction,
+          ...(gate ? { compactionToolGate: compactionToolGate(scratch) } : {}),
+          compactionMaxReconnects: 1,
+          reconnectBackoffMs: 1,
+          openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+        });
+        const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+        return { llm, out, recorded: await readTrace(path), ran };
+      };
+      const before = await drive(settings(), false);
+      const now = await drive(settings(over), withGate);
+
+      expect(now.ran).toEqual([]);
+      const strip = (msgs: AmspRecord[]) => msgs.map((m) => ({ ...m, timestamp: "" }));
+      expect(now.llm.calls.map(strip)).toEqual(before.llm.calls.map(strip));
+      expect(strip(now.recorded)).toEqual(strip(before.recorded));
+      expect(payloadTypes(span(now.out))).not.toContain("tool_call");
+      expect(payloadTypes(span(now.out))).not.toContain("tool_call_output");
+      expect(compactionEvents(now.out)[1]).toMatchObject({ status: "completed", attempt: 2 });
+    },
+  );
+
+  it("an interruption mid-round aborts the running tool, answers every open call, and the next run sends the outputs first", async () => {
+    const ac = new AbortController();
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            toolCall({
+              name: "edit_file",
+              arguments: JSON.stringify({
+                file_path: join(scratch, "slow.md"),
+                old_string: "slow",
+              }),
+              toolCallId: "a1",
+            }),
+            writeCall("a2", join(scratch, "handoff", "next.md")),
+            usage(160, 310),
+          ],
+        },
+        { messages: [assistantText("on the old context"), usage(50, 360)] },
+      ],
+      "llm1",
+    );
+    const { env, ran } = recordingEnvironment();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_rounds_abort" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxRounds: 3 }),
+      compactionToolGate: compactionToolGate(scratch),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+    const oldPath = trace.currentPath();
+
+    let approvals = 0;
+    const out = await collect(
+      engine.run([userText("task one")], {
+        signal: ac.signal,
+        approve: async () => {
+          approvals += 1;
+          // The slow edit is running; the user stops while the second call waits.
+          if (approvals === 2) ac.abort();
+          return "allow";
+        },
+      }),
+    );
+
+    expect(ran).toEqual(["edit_file"]);
+    expect(compactionEvents(out)[1]).toMatchObject({ status: "aborted" });
+    const outputs = span(out).filter((m) => payloadTypes([m])[0] === "tool_call_output");
+    expect(outputs.map((m) => m.payload)).toEqual([
+      expect.objectContaining({ tool_call_id: "a1", status: "aborted" }),
+      expect.objectContaining({
+        tool_call_id: "a2",
+        status: "aborted",
+        output: "[interrupted: tool aborted by user]",
+      }),
+    ]);
+    // Written too, so a resume pairs the calls exactly as the live context does.
+    const recorded = await readTrace(oldPath);
+    expect(
+      recorded.filter((m) => payloadTypes([m])[0] === "tool_call_output").map((m) => m.payload),
+    ).toEqual(outputs.map((m) => m.payload));
+    // The next run answers both calls first, on the old context.
+    await collect(engine.run([userText("go on")], { approve: allowAll }));
+    expect(payloadTypes(llm1.calls[2]!)).toEqual(["tool_call_output", "tool_call_output", "text"]);
+    expect(trace.currentPath()).toBe(oldPath);
   });
 });

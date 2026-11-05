@@ -637,6 +637,51 @@ describe("StreamRenderer", () => {
     expect(out).toContain("back to the task");
   });
 
+  it("a compaction's tool round and its requests stay off the terminal too: no call, output, decision or retry line", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(partialToolCall({ eventType: "start", name: "write_file", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "toolu_h1" }));
+    r.handle(
+      toolCall({
+        name: "write_file",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(requestEnd("retryable", { retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(approvalDecision("allow", "toolu_h1"));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: "Wrote plan.md",
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "toolu_h1" }));
+    r.handle(compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("compaction after the turn ends: the completion line shows its own cost, excluded from the turn stats delta; context not updated", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

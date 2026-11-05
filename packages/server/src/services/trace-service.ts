@@ -158,6 +158,12 @@ function rewriteForkText(
     if (value.startsWith(`${source}/`)) return `${target}${value.slice(source.length)}`;
     return null;
   };
+  // A compaction summary names files of the Session it was written in: the hand-off files in
+  // its scratchpad, and its trailer the compacted context's Trace file. The fork copied the
+  // whole scratchpad and has its own copy of every Trace file, so both are the fork's there.
+  if (text.startsWith("[context_summary]")) {
+    return rewriteSummaryPaths(text, sourceScratchpad, forkScratchpad, sessions);
+  }
   // An in-session model switch's Trace handoff names the Session itself and one of its Trace
   // files: in the fork it names the fork and the fork's copy of that file, or the fork would
   // read it as a /model block pointing at the Session it was cut from.
@@ -189,6 +195,33 @@ function rewriteForkText(
       return line;
     })
     .join("\n");
+}
+
+/**
+ * A `[context_summary]` text with the source Session's paths made the fork's: every mention of
+ * the source scratchpad directory (in either spelling — the native one, and the model-visible
+ * one the compaction Prompt hands the model) and every Trace file named after the source
+ * Session (`<source>_NNN.jsonl`, the trailer's line among them; the fork's copies keep the date
+ * folder and the index).
+ */
+function rewriteSummaryPaths(
+  text: string,
+  sourceScratchpad: string,
+  forkScratchpad: string,
+  sessions: { source: string; fork: string },
+): string {
+  let out = text;
+  const spellings = new Set([sourceScratchpad, modelVisiblePath(sourceScratchpad)]);
+  for (const source of spellings) {
+    const target = source === sourceScratchpad ? forkScratchpad : modelVisiblePath(forkScratchpad);
+    out = out.split(source).join(target);
+  }
+  const traceFile = new RegExp(`${escapeRegExp(sessions.source)}(_\\d{3}\\.jsonl)`, "g");
+  return out.replace(traceFile, `${sessions.fork}$1`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function positioned(

@@ -13,6 +13,9 @@
  *     (Web composer, server scheduler) and collapsed into a banner when rendered;
  *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message.
  *
+ * `trace-query.ts` is the guidance both the `[context_summary]` trailer and the
+ * `[model_switch_from]` block give on reading a Trace file precisely — one wording, two blocks.
+ *
  * `attachment-lines.ts` is the one exception to the block form: `[attached image: …]` /
  * `[attached file: …]` are single lines **appended after** a user message, naming a file the
  * model must open by path. They live here for the same reason the blocks do — core, the
@@ -43,6 +46,7 @@ export * from "./block.js";
 export * from "./tags.js";
 export * from "./attachment-lines.js";
 export * from "./engine-blocks.js";
+export * from "./trace-query.js";
 export * from "./origin-blocks.js";
 export * from "./steering.js";
 export * from "./strip.js";

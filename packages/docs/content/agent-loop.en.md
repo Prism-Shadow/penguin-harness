@@ -341,6 +341,7 @@ interface CompactionSettings {
   maxSessionTurns: number;    // cumulative Session turn threshold (counted across Tasks); <=0 = unlimited
   mode: "summarize" | "discard";
   prompt: string;             // the Prompt used by summarize compaction
+  maxRounds?: number;         // tool rounds a summarize compaction may take first; absent or <=0 = none
 }
 ```
 
@@ -358,7 +359,7 @@ Two modes exist:
 
 | Mode | Behavior |
 | --- | --- |
-| `summarize` (default) | Appends the compaction Prompt to the old context, extracts the `[summary]`, wraps it as a `[context_summary]` user text, and continues in a fresh model context |
+| `summarize` (default) | Appends the compaction Prompt to the old context, lets the model write hand-off files in a few tool rounds, extracts the `[summary]`, wraps it as a `[context_summary]` user text, and continues in a fresh model context |
 | `discard` | Drops the old context. Mid-Task it waits until the Task ends, since dropping the context would lose the Task |
 
 System markers are written as `[tag]…[/tag]`. The earlier angle-bracket form (`<summary>`, `<context_summary>`, …) is still recognized when reading old Traces and old persisted compaction prompts.
@@ -394,7 +395,7 @@ Runtime parameters fall into three tiers:
 | --- | --- | --- |
 | Strict | The system prompt, the toolset (MCP included), the model reference | Never change inside a running context. They shape the request prefix, and a context's prefix is fixed from open to close, so the provider's prompt cache stays valid across the whole Trace file. |
 | Soft | The thinking level | A purely per-request parameter, changeable mid-context and never recorded in the Trace, at the cost of the provider's cached messages. |
-| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_session_turns`, `mode`, `prompt`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
+| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_session_turns`, `mode`, `max_rounds`, `prompt`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
 
 - Every LLM request takes the Session's pinned thinking level: the Web App's in-chat picker, or the CLI's `--thinking` / `/thinking`. Unpinned, it takes the agent config default read when the context opened. The pickers advise compacting first because a mid-context change costs the provider's cached messages.
 - The approval mode is re-read from the database per decision, so an edit applies immediately.
@@ -428,6 +429,18 @@ Unusable summaries and `retryable` failures alike draw on the one reconnect budg
 
 The first **committed** attempt — adopted or rejected — also absorbs whatever turn input was folded into the compaction request into the old context's history, such as mid-Task tool results or the carry-over a manual `/compact` folds in. Retries resend only the repairs and the Prompt; nothing resends the absorbed input afterwards.
 
+### Hand-off files: tool rounds before the summary
+
+A summary of a paragraph or two cannot carry a plan, a decision log or a draft, so a `summarize` compaction may first take up to `compaction.max_rounds` tool rounds (default 3). The default Prompt asks the model to write such detail to files under its Session's scratchpad, `<scratchpad>/handoff/`, and then to reply with a summary in fixed sections — request, decisions and constraints, progress, errors and fixes, files (each hand-off file by absolute path), next steps. Consent does not carry over: anything that needs a go-ahead is asked again in the next context.
+
+- A response with tool calls inside the cap is a round, not a rejected summary. The composition layer's gate decides what a round may run: `read_file`, and `write_file` / `edit_file` on an absolute path inside the Session's scratchpad. Anything else is answered with a `fatal` `[tool error]` naming what is allowed, without being asked about or run.
+- A call the gate allows goes through the same approval callback as a turn's — under `always-ask` the user approves each hand-off write — and the Environment runs it; the sandbox still applies, so under `read-only` the write fails and the model summarizes directly.
+- The round's outputs are the next request's whole input, on the same LLM object: the request still only appends to the context it extends, and the prompt cache holds. Each round re-reads the cached prefix at the cache-read price, plus what it appends.
+- Rounds do not draw on the retry budget. Once they are spent, a response with tool calls is rejected as above. `max_rounds: 0` restores the single text-only request.
+- An interruption mid-round aborts the running tool and answers every open call, so the old context stays pairable; files already written stay in the scratchpad, which lives as long as the Session.
+
+The engine wraps the adopted summary with a trailer inside the `[context_summary]` block: the path of the Trace file the compaction closed, where its earlier files are, and how to query it precisely — list matching line numbers first (`rg -n -o` or `grep -n -o`, or `Select-String … .LineNumber` in PowerShell, worded for the Session's shell), then read only those lines with `read_file`'s `offset` / `limit`, never the whole file. A model switch's Trace handoff gives the same guidance. The trailer is part of the next context's opening, so it never changes a running context's prefix; resume rebuilds it from the replayed file's own path, and a fork rewrites it, with the hand-off file paths, to the fork's own copies.
+
 ### When a compaction gives up
 
 Once the budget is exhausted, the compaction ends `retryable` — abandoned this time. It keeps the original context and Trace file until the next trigger. A `fatal` failure ends the compaction at once as `fatal`; the next trigger would hit the same wall until the configuration or credential changes. A user interruption ends it as `aborted`.
@@ -449,12 +462,12 @@ The results then ride the compaction request itself, ahead of the compaction Pro
 
 ### Observing a compaction
 
-While the compaction request runs, each attempt's `token_usage`, and the thinking and summary it writes, ride the output stream. The thinking and summary appear as ordinary `partial_thinking` and `partial_text` — or the complete `thinking` / `text` for LLM implementations that stream nothing — positioned between the paired compaction events. There is no separate event type, and the compaction request's other raw messages stay Trace-only as before. The request carries the Session's pinned thinking level, exactly as every other LLM request does; with no pin, the level the model context was opened with applies.
+While the compaction runs, each of its requests' `request_begin` / `request_end` and `token_usage`, and the thinking and summary it writes, ride the output stream. The thinking and summary appear as ordinary `partial_thinking` and `partial_text` — or the complete `thinking` / `text` for LLM implementations that stream nothing — positioned between the paired compaction events. A tool round's calls, approval decisions and outputs stream as a turn's do. There is no separate event type; the compaction Prompt, the repairs of a rejected response and the corrective note stay Trace-only. The request carries the Session's pinned thinking level, exactly as every other LLM request does; with no pin, the level the model context was opened with applies.
 
 The Web App renders the compaction row like a running work group and expands exactly one of its two layers:
 
 - The header's title doubles as its status: **Compacting** (or **Clearing**) while it runs, **Compacted** (or **Cleared**) once done — the work-group header's own **Running**/**Done** idiom. The header also carries the wall time, ticking while it runs and settled once done.
-- While the compaction runs, the row is open and its sections are not: **Thinking** (present only when the request produced any) and **Result**, each a closed row carrying its own label and its own wall time. The reader can see that they are there and how long each is taking, without the request's raw workings landing in the transcript.
+- While the compaction runs, the row is open and its sections are not: **Thinking** (present only when the request produced any), **Work** (present only when it took tool rounds: one tool row per call, such as the hand-off file it wrote, with approval buttons when one waits — the section opens itself then) and **Result**, the last request's text. Each is a closed row carrying its own label. The reader can see that they are there and how long each is taking, without the request's raw workings landing in the transcript.
 
 Once the compaction settles, the row closes itself again, leaving the one-line summary. The chevron is there from the start of a summarize compaction, so the reader can open either section to watch the request work, or read the outcome afterwards.
 

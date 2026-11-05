@@ -112,7 +112,25 @@ export interface CompactionSettings {
   mode: CompactionMode;
   /** Prompt used for summarize compaction. */
   prompt: string;
+  /**
+   * Tool rounds a summarize compaction may take before its summary (see
+   * ContextEngineDeps.compactionToolGate): a response with tool calls inside the cap is a
+   * round — its calls answered and the outputs sent as the next request — instead of a
+   * rejected summary. Absent or <= 0: none, every tool call is rejected (a single text-only
+   * request, as before the rounds existed).
+   */
+  maxRounds?: number;
 }
+
+/**
+ * What the gate answers for one tool call of a compaction tool round: allowed — it goes on to
+ * the approval callback and the Environment like any call — or refused, with the reason the
+ * model reads in its `[tool error]` output.
+ */
+export type CompactionToolVerdict = { allow: true } | { allow: false; reason: string };
+
+/** Decides which tool calls a compaction tool round may run (see ContextEngineDeps.compactionToolGate). */
+export type CompactionToolGate = (toolCall: AmspRecord<ToolCallPayload>) => CompactionToolVerdict;
 
 /**
  * A model context opened by {@link ContextEngineDeps.openNextContext} after a completed compaction:
@@ -267,6 +285,23 @@ export interface ContextEngineDeps {
   openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
+  /**
+   * Which tool calls a summarize compaction's tool rounds may run (see
+   * CompactionSettings.maxRounds). The engine knows no tool by name: it asks this gate for each
+   * call of a round, and a call the gate allows goes on to the approval callback and the
+   * Environment exactly as a turn's would; a refused one is answered with a `fatal`
+   * `[tool error] <reason>` output. The composition layer decides what "allowed" means (the
+   * Agent allows `read_file`, and `write_file` / `edit_file` inside the Session's scratchpad).
+   * Absent: no round is taken and every tool call in a compaction response is rejected, as
+   * before the rounds existed.
+   */
+  compactionToolGate?: CompactionToolGate;
+  /**
+   * The shell the Session's commands run in (the system prompt's `Shell:` value), used only to
+   * word the Trace-query hint in the `[context_summary]` trailer for that shell. Absent: the
+   * hint names the POSIX and PowerShell forms side by side.
+   */
+  shell?: string;
   /**
    * Live compaction settings, re-read at every point the engine consults them for a decision:
    * the post-request checkpoint (threshold and turn count), and the start of a compaction
@@ -1013,6 +1048,7 @@ export class ContextEngine {
             compactionReason,
             midTask ? turn.toolOutputs : [],
             signal,
+            approve,
           );
           if (result.status === "completed") {
             // Boundary check against the **live** queues: steering or a background notice
@@ -1155,6 +1191,8 @@ export class ContextEngine {
     signal?: AbortSignal | undefined;
     /** Compacts in this mode whatever the settings say (a model switch always summarizes). */
     mode?: CompactionMode;
+    /** Approves the calls of the compaction's tool rounds, as `RunOptions.approve` does a turn's; absent denies them all. */
+    approve?: ApproveFn | undefined;
   }): AsyncGenerator<AmspRecord, StopReason | undefined> {
     // The manual entry into a compaction, and the second place the live settings decide
     // something: the `mode` below, and the prompt summarizeContext reads from them.
@@ -1184,7 +1222,7 @@ export class ContextEngine {
     //     pairing left by a final rejection, already in pendingCarryOver) remains pending.
     const folded = this.pendingCarryOver;
     this.pendingCarryOver = [];
-    const result = yield* this.summarizeContext("manual", folded, opts?.signal);
+    const result = yield* this.summarizeContext("manual", folded, opts?.signal, opts?.approve);
     if (result.status === "completed") {
       this.pendingSummary = result.summary!;
     } else if (!result.committed) {
@@ -1203,8 +1241,9 @@ export class ContextEngine {
    * - A context with completed turns is closed by `compact()`, always in **summarize** mode:
    *   the summary is what the next model continues from. It is an ordinary compaction request
    *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
-   *   user turn — so it extends the prefix the provider has cached. Short of `completed`, the
-   *   context stays as it was; given a `handoff`, any end but a stop hands it over instead.
+   *   user turn — so it extends the prefix the provider has cached, and it may take tool rounds
+   *   like any compaction (`approve` answers their calls). Short of `completed`, the context
+   *   stays as it was; given a `handoff`, any end but a stop hands it over instead.
    * - A context with none has nothing to summarize and is simply replaced: no request and no
    *   event pair. Its pending text rides on in memory. Nothing is written until the next
    *   context is open, so an opener that throws leaves the Trace as it was.
@@ -1217,11 +1256,12 @@ export class ContextEngine {
   async *switchContext(
     signal?: AbortSignal,
     handoff?: AmspRecord,
+    approve?: ApproveFn,
   ): AsyncGenerator<AmspRecord, StopReason> {
     // Read first: the summary request consumes the pending input once an attempt commits.
     const text = this.switchCarry();
     if (this.sessionTurns === 0) return yield* this.replaceContext(text);
-    const status = yield* this.compact({ signal, mode: "summarize" });
+    const status = yield* this.compact({ signal, mode: "summarize", approve });
     if (status === "completed") return yield* this.openSwitchedContext();
     if (handoff === undefined) return status ?? "fatal";
     if (status === "aborted" || signal?.aborted) return "aborted";
@@ -1772,15 +1812,30 @@ export class ContextEngine {
    * stay byte-identical to ordinary turns so the provider's prompt cache remains valid;
    * compaction runs exactly when the context is largest, where re-billing the whole
    * transcript uncached costs tens of times more (issue #84 — this is why tools are *not*
-   * omitted and no `tool_choice` override is used). The
-   * compaction request's raw messages are not pushed to the Human output stream, with two
-   * exceptions between the paired compaction events: every attempt's `token_usage` (so the
-   * frontend stats and the server's usage records count the compaction's true spend,
-   * rejected attempts included), and the thinking and summary text being generated, as
-   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290 —
-   * see runCompactionRequest); everything is written to the old Trace as before. Compaction
-   * succeeds only with a **valid summary** — non-empty extracted
-   * text and no tool calls in the response. Everything short of that is one kind of failure,
+   * omitted and no `tool_choice` override is used).
+   *
+   * **Tool rounds.** Before its summary the model may take up to `settings.maxRounds` tool
+   * rounds (hand-off files written to the Session's scratchpad, by the default Prompt): a
+   * committed response with tool calls inside that cap, with a `compactionToolGate` given, is a
+   * round rather than a rejected summary. Each call is put to the gate (refused: a `fatal`
+   * `[tool error] <reason>` output), then to `approve` like a turn's call (recorded as an
+   * `approval_decision`; a denial gets the turn loop's denied output), and an approved one runs
+   * through the Environment (see runCompactionToolRound). The round's outputs are the next
+   * request's whole input — no Prompt again, the model carries on — on the same LLM object, so
+   * the request still only appends to the history it extends. A round costs nothing of the
+   * retry budget below. Once the rounds are spent (or with no gate), a response with tool calls
+   * takes the rejection path as before.
+   *
+   * What reaches the Human output stream between the paired compaction events: each request's
+   * `request_begin` / `request_end`, every attempt's `token_usage` (so the frontend stats and the
+   * server's usage records count the compaction's true spend, rejected attempts included), the
+   * thinking and summary text being generated as ordinary `partial_thinking`/`thinking` and
+   * `partial_text`/`text` messages (issue #290 — see runCompactionRequest), and a round's tool
+   * calls, approval decisions and outputs, each as the Trace has it. The compaction Prompt, the
+   * repairs of a rejected response and the corrective note stay Trace-only.
+   *
+   * Compaction succeeds only with a **valid summary** — non-empty extracted text and no tool
+   * calls in the response. Everything short of that, outside a round, is one kind of failure,
    * handled exactly like an ordinary LLM request's (issue #170): an unusable committed
    * response (empty summary, or tool calls — answered with synthesized failed outputs and
    * retried behind a corrective note, see the loop body) and the retryable failures all
@@ -1791,27 +1846,34 @@ export class ContextEngine {
    * attempt absorbs `pendingToolOutputs` into the old context's history (issue #85): later
    * resends carry only the repairs and the Prompt, and the result's `committed` flag tells
    * the caller the folded input must not be resent even though the compaction did not complete.
+   *
+   * The summary is wrapped with the harness trailer naming the compacted context's Trace file
+   * (`deps.trace.currentPath`, read before the rotation) and how to query it, worded for
+   * `deps.shell`: text in the next context's opening, never in a running context's prefix.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async *summarizeContext(
     reason: CompactionReason,
     pendingToolOutputs: AmspRecord[],
     signal?: AbortSignal,
+    approve: ApproveFn = async () => "deny",
   ): AsyncGenerator<AmspRecord, CompactionResult> {
     // Already refreshed: both entries into a compaction — the post-request checkpoint and
     // `compact()` — re-read the live settings before choosing the mode that lands here, so the
     // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
+    // A round needs a gate to ask: without one every tool call is rejected, as before rounds.
+    const gate = this.deps.compactionToolGate;
+    const maxRounds = gate ? Math.max(0, settings.maxRounds ?? 0) : 0;
     yield* this.emitCompactionBegin(reason, "summarize");
 
     // Compaction request input: this turn's tool results (mid-Task) or leftover interruption
     // carry-over, appended to the old object together with the compaction Prompt as one user
     // turn — keeping tool_use/tool_result pairing intact, since an unanswered tool_use would
     // get the compaction request itself rejected (issue #33). The compaction exchange is
-    // written to the old Trace (traceable but not pushed to the user); tool results were
-    // already written when executed and aren't recorded again, while carry-over's
-    // not-yet-written synthetic content (flatten text, backfilled placeholders) and the
-    // compaction Prompt are written now.
+    // written to the old Trace; tool results were already written when executed and aren't
+    // recorded again, while carry-over's not-yet-written synthetic content (flatten text,
+    // backfilled placeholders) and the compaction Prompt are written now.
     const prompt = userText(settings.prompt);
     // The resend base: shrinks to the Prompt alone once an attempt commits — the folded turn
     // input then lives in the old LLM object's history, and resending it would make strict
@@ -1826,16 +1888,20 @@ export class ContextEngine {
     // those reach the stateful commit). Returned as
     // `committed`: the callers' two-case carry rule branches on it.
     let committed = false;
-    // Synthesized outputs answering the latest unusable attempt's tool calls, not yet carried
-    // by a committed request: prepended to the retry input, and stashed as carry-over should
-    // the compaction be abandoned first (see stashRepairs).
+    // Outputs answering the latest committed response's tool calls, not yet carried by a
+    // committed request: a round's results, or the synthesized repairs of a rejected response.
+    // They lead the next request's input, and are stashed as carry-over should the compaction
+    // be abandoned first (see stashRepairs).
     let pendingRepairs: AmspRecord[] = [];
     // One retry budget for every failure: an unusable committed response (empty summary /
     // tool calls) counts exactly like a retryable failure (issue #170) — same counter, same
-    // exponential ladder — and only `fatal` stops without retrying.
+    // exponential ladder — and only `fatal` stops without retrying. Tool rounds draw nothing.
     let reconnects = 0;
+    // Tool rounds taken so far, against maxRounds.
+    let rounds = 0;
     // The compaction_end event's share of the RetryDetail block (also what the server's
-    // error record carries): the final attempt ordinal, and the last failure's detail.
+    // error record carries): the final attempt ordinal, and the last failure's detail. A
+    // request that became a tool round is no attempt at the summary and is not counted.
     let attempts = 0;
     let lastError: string | undefined;
     let lastErrorCode: ErrorCode | undefined;
@@ -1850,25 +1916,34 @@ export class ContextEngine {
         );
         return { status: "aborted", committed };
       }
-      const attempt = yield* this.runCompactionRequest(input, signal, reconnects);
-      attempts += 1;
-      // Every attempt's token_usage is pushed to the Human output stream (already written to
-      // Trace in runCompactionRequest, so it's only yielded here, never rewritten): the frontend
-      // stats and the server's usage records then carry the compaction's true spend — failed
-      // attempts burn real tokens (issue #170), and surfacing only the adopted attempt's usage
-      // understated the cost center.
-      if (attempt.usage) yield attempt.usage;
+      // Whether a response with tool calls would be a round: decided before the request, so
+      // its calls stream as they arrive exactly when they are going to be run.
+      const roundOpen = rounds < maxRounds;
+      const attempt = yield* this.runCompactionRequest(input, signal, reconnects, roundOpen);
       // A committed-but-unusable response (empty summary or tool calls): its retry input must
       // be rebuilt below — repairs + corrective note + Prompt — instead of resent unchanged.
       let unusable = false;
       if (attempt.status === "completed") {
         // The attempt was committed by MMSP, so whatever its input carried — including
-        // repairs synthesized for a previous rejection — is now in history and must not be
-        // resent. The first commit absorbs the folded turn input: the base shrinks to the
-        // Prompt alone.
+        // repairs synthesized for a previous rejection, or a previous round's outputs — is now
+        // in history and must not be resent. The first commit absorbs the folded turn input:
+        // the base shrinks to the Prompt alone.
         committed = true;
         base = [prompt];
         pendingRepairs = [];
+        if (attempt.toolCalls.length > 0 && roundOpen) {
+          // A tool round: the calls are answered, and their outputs are the next request.
+          rounds += 1;
+          pendingRepairs = yield* this.runCompactionToolRound(
+            attempt.toolCalls,
+            gate!,
+            approve,
+            signal,
+          );
+          input = pendingRepairs;
+          continue;
+        }
+        attempts += 1;
         // A completed response counts as a compaction success only when it is a **usable
         // summary**: the extracted text is non-empty and the response called no tool. The
         // extraction itself stays lenient (output without a [summary] tag is used verbatim),
@@ -1878,7 +1953,20 @@ export class ContextEngine {
         // live possibility, not just a hallucination (issue #83).
         const summaryText = extractSummary(attempt.text);
         if (summaryText !== "" && attempt.toolCalls.length === 0) {
-          const summary = userText(buildContextSummaryText(summaryText));
+          // The trailer names the file being closed: the rotation is still deferred, so the
+          // Trace's current path is this context's own file.
+          const tracePath = this.deps.trace?.currentPath?.();
+          const summary = userText(
+            buildContextSummaryText(
+              summaryText,
+              tracePath !== undefined
+                ? {
+                    tracePath,
+                    ...(this.deps.shell !== undefined ? { shell: this.deps.shell } : {}),
+                  }
+                : undefined,
+            ),
+          );
           yield* this.emitCompactionEnd(reason, "summarize", "completed", { attempt: attempts });
           yield* this.startNewContext();
           this.openingSummary = summary;
@@ -1910,10 +1998,12 @@ export class ContextEngine {
         );
         for (const repair of pendingRepairs) await this.write(repair);
       } else if (attempt.status === "aborted") {
+        attempts += 1;
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempt: attempts });
         return { status: "aborted", committed };
       } else if (attempt.status === "fatal") {
+        attempts += 1;
         // `fatal` never retries: a definitive rejection or a dead credential doesn't heal
         // on a ladder. The compaction ends `fatal` too — the next trigger will hit the
         // same wall until a config or credential change; the original context is kept and
@@ -1931,6 +2021,7 @@ export class ContextEngine {
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         };
       } else {
+        attempts += 1;
         // Retryable failure, a response cut off at its cap included (taken back out of MMSP's
         // history, so nothing was committed): keep its cause and detail as the last error of
         // record.
@@ -1976,12 +2067,127 @@ export class ContextEngine {
         // bad output, and rewriting history to hide it would invalidate the provider's
         // prompt cache (issue #84) — correcting forward is the one cache-safe option
         // (issue #170). Retryable failures skip this: nothing was committed, so their input
-        // is resent unchanged (any pending repairs included).
+        // is resent unchanged (any pending repairs or round outputs included).
         const guidance = userText(SUMMARY_RETRY_GUIDANCE);
         await this.write(guidance);
         input = [...pendingRepairs, guidance, ...base];
       }
     }
+  }
+
+  /**
+   * One compaction tool round: answers every call of the committed compaction response, in
+   * call order. Each call goes to the gate first — refused, it gets a `fatal`
+   * `[tool error] <reason>` output at once — then to `approve`, recorded as an
+   * `approval_decision` exactly as a turn's call is (a callback that throws counts as a
+   * denial); a denied call gets the turn loop's denied output, an approved one runs through
+   * `executeOne` (the Environment, the signal, its partial outputs), concurrently with the
+   * approvals after it as in a turn. Every record is written to the old Trace and streamed.
+   *
+   * On an interruption the remaining calls are no longer asked about, a running tool is
+   * aborted by the signal (the Environment closes it with an `aborted` output), and every call
+   * still without an output gets an aborted placeholder — written and streamed, so the old
+   * context stays pairable and a resume reads the same pairing. Returns one output per call,
+   * in call order: the next request's input.
+   */
+  private async *runCompactionToolRound(
+    toolCalls: AmspRecord<ToolCallPayload>[],
+    gate: CompactionToolGate,
+    approve: ApproveFn,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AmspRecord, AmspRecord[]> {
+    // One output per tool_call_id (a provider reusing an id is answered once, as in runTurn).
+    const calls: AmspRecord<ToolCallPayload>[] = [];
+    const seen = new Set<string>();
+    for (const tc of toolCalls) {
+      if (seen.has(tc.payload.tool_call_id)) continue;
+      seen.add(tc.payload.tool_call_id);
+      calls.push(tc);
+    }
+    const queue = new MergeQueue();
+    const outputs: AmspRecord[] = [];
+    const answer = async (out: AmspRecord): Promise<void> => {
+      queue.push(out);
+      await this.write(out);
+      outputs.push(out);
+    };
+    queue.addProducer();
+    const drive = (async () => {
+      try {
+        for (const tc of calls) {
+          if (signal?.aborted) break;
+          const toolCallId = tc.payload.tool_call_id;
+          const verdict = gate(tc);
+          if (!verdict.allow) {
+            await answer(
+              toolCallOutput({
+                output: `[tool error] ${verdict.reason}`,
+                toolCallId,
+                status: "fatal",
+              }),
+            );
+            continue;
+          }
+          let decision: ApprovalDecision;
+          try {
+            decision = await approve(tc);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
+            decision = "deny";
+          }
+          if (signal?.aborted) break;
+          const decisionMsg = approvalDecision(decision, toolCallId);
+          queue.push(decisionMsg);
+          await this.write(decisionMsg);
+          if (decision !== "allow") {
+            await answer(
+              toolCallOutput({
+                output:
+                  decision === "forbidden"
+                    ? "Tool call denied by policy."
+                    : "Tool call denied by user.",
+                toolCallId,
+                status: "aborted",
+              }),
+            );
+            continue;
+          }
+          queue.addProducer();
+          void this.executeOne(tc, queue, outputs, signal, approve).finally(() => {
+            queue.removeProducer();
+          });
+        }
+      } finally {
+        queue.removeProducer();
+      }
+    })();
+    for (;;) {
+      const msg = await queue.next();
+      if (msg === null) break;
+      yield msg;
+    }
+    await drive;
+    const byId = new Map<string, AmspRecord>();
+    for (const out of outputs) {
+      const id = (out.payload as { tool_call_id?: string }).tool_call_id;
+      if (id !== undefined) byId.set(id, out);
+    }
+    const ordered: AmspRecord[] = [];
+    for (const tc of calls) {
+      let out = byId.get(tc.payload.tool_call_id);
+      if (!out) {
+        out = toolCallOutput({
+          output: "[interrupted: tool aborted by user]",
+          toolCallId: tc.payload.tool_call_id,
+          status: "aborted",
+        });
+        await this.write(out);
+        yield out;
+      }
+      ordered.push(out);
+    }
+    return ordered;
   }
 
   /**
@@ -2003,19 +2209,18 @@ export class ContextEngine {
    * same frozen config as every other turn (the toolset is deliberately identical: a changed
    * tool list would change the request prefix and invalidate the provider's prompt cache at
    * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
-   * output; raw model messages are **not pushed to the Human output stream** (`token_usage`
-   * is captured and handed back via the return value for summarizeContext to yield), with
-   * one exception: the thinking and the text being generated ride the stream as their own
-   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290)
-   * so the frontend can show the compaction request working while it runs — readers already
-   * treat model messages between the paired compaction events as compaction-internal, and
-   * history rebuild reads the identical content back from the span's complete assistant
-   * messages. Complete
-   * messages and events are written to the old Trace; complete text segments are collected as
-   * the compaction output, and `toolCalls` collects the response's real tool requests (never
-   * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
-   * call with a synthesized failed output).
-   * Token usage is counted into the Session
+   * output, writing every complete message and event to the old Trace. What also rides the
+   * Human output stream, each right after its write and in the Trace's order: the request's
+   * `request_begin` / `request_end` and its `token_usage`; the thinking and the text being
+   * generated, as their own ordinary `partial_thinking`/`thinking` and `partial_text`/`text`
+   * messages (issue #290) so the frontend can show the compaction request working while it
+   * runs; and, when `roundOpen` — a response with tool calls will be a tool round — its
+   * `partial_tool_call` / `tool_call` records, as a turn streams them. Readers treat model
+   * messages between the paired compaction events as compaction-internal, and history rebuild
+   * reads the identical content back from the span's records. Complete text segments are
+   * collected as the compaction output, and `toolCalls` collects the response's real tool
+   * requests — dispatched by summarizeContext as a tool round, or rejected as not-a-summary
+   * and answered with synthesized failed outputs. Token usage is counted into the Session
    * cumulative totals (accumulated and stamped onto every token_usage via observeTokenUsage).
    */
   private async *runCompactionRequest(
@@ -2023,21 +2228,22 @@ export class ContextEngine {
     signal?: AbortSignal,
     /** Transport retries already performed by the compaction loop (its request_end announces the next planned backoff too). */
     reconnectsSoFar = 0,
+    /** Whether a response with tool calls will be a tool round: its calls then stream as a turn's do. */
+    roundOpen = false,
   ): AsyncGenerator<
     AmspRecord,
     {
       status: StopReason;
       text: string;
       toolCalls: AmspRecord<ToolCallPayload>[];
-      usage: AmspRecord | null;
       /** Classified cause and error detail (LLMOutcome) on non-completed statuses — become compaction_end.error_code / error_message when this failure ends the compaction. */
       errorCode?: ErrorCode;
       errorMessage?: string;
     }
   > {
-    // The compaction request is itself an ordinary Request, emitting paired request events —
-    // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
-    // invisible to Human.
+    // The compaction request is itself an ordinary Request, emitting paired request events,
+    // written to the old Trace and streamed (a frontend resets the summary draft at each
+    // request_begin: only the last request's text is the summary).
     // The effective thinking level, resolved live and carried exactly as a turn carries it
     // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
     // one Session never has two levels in flight at once. Were this request left on the level
@@ -2047,7 +2253,9 @@ export class ContextEngine {
     // thought. The strict-tier prefix this request does hold identical to a turn's is its
     // system prompt and toolset; the level is a request parameter, not part of either.
     const level = this.effectiveThinkingLevel();
-    await this.write(requestBegin(level));
+    const startEvt = requestBegin(level);
+    await this.write(startEvt);
+    yield startEvt;
     const gen = this.llm.streamGenerate({
       newMessages: input,
       ...(signal ? { signal } : {}),
@@ -2055,7 +2263,6 @@ export class ContextEngine {
     });
     let text = "";
     const toolCalls: AmspRecord<ToolCallPayload>[] = [];
-    let usage: AmspRecord | null = null;
     // Whether this attempt streamed any partial_text / partial_thinking content: real LLM
     // objects stream the summary (and the thinking ahead of it) as partial fragments
     // (forwarded verbatim), and the complete message that follows must then stay off the
@@ -2068,55 +2275,53 @@ export class ContextEngine {
       const res = await gen.next();
       if (res.done) {
         // Same failure-detail + planned-backoff pass-through as the turn loop's
-        // request_end, under the compaction cap. Compaction request events are written to
-        // the old Trace only (never streamed), so retry_in_ms lands in the Trace record —
-        // no live countdown renders for compaction; the frontend only sees the
-        // compaction event pair. A rejected summary ends `completed`, for which
-        // plannedRetryDelayMs yields nothing — rejection resends are immediate (see
-        // summarizeContext), so no wait is ever announced for them.
+        // request_end, under the compaction cap. A rejected summary ends `completed`, for
+        // which plannedRetryDelayMs yields nothing — rejection resends are immediate (see
+        // summarizeContext), so no wait is ever announced for them; nor for a tool round,
+        // which retries nothing.
         const retryInMs = this.plannedRetryDelayMs(
           res.value,
           reconnectsSoFar,
           this.compactionMaxReconnects,
           RETRY_STATUSES,
         );
-        await this.write(
-          requestEnd(res.value.status, {
-            ...(res.value.errorMessage !== undefined
-              ? { errorMessage: res.value.errorMessage }
-              : {}),
-            // Same stamping rule as the turn loop; for compaction the ordinal counts every
-            // retry kind (transport and unusable-summary alike share one budget).
-            ...(res.value.status !== "completed" || reconnectsSoFar > 0
-              ? { attempt: reconnectsSoFar + 1 }
-              : {}),
-            ...(retryInMs !== undefined ? { retryInMs } : {}),
-          }),
-        );
+        const stopEvt = requestEnd(res.value.status, {
+          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
+          // Same stamping rule as the turn loop; for compaction the ordinal counts every
+          // retry kind (transport and unusable-summary alike share one budget).
+          ...(res.value.status !== "completed" || reconnectsSoFar > 0
+            ? { attempt: reconnectsSoFar + 1 }
+            : {}),
+          ...(retryInMs !== undefined ? { retryInMs } : {}),
+        });
+        await this.write(stopEvt);
+        yield stopEvt;
         return {
           status: res.value.status,
           text,
           toolCalls,
-          usage,
           ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
           ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
         };
       }
       const msg = res.value;
-      // Stamped with the Session series before the write, exactly like a turn's (runTurn).
-      if (this.observeTokenUsage(msg)) usage = msg;
+      // Stamped with the Session series before the write, exactly like a turn's (runTurn);
+      // every attempt's usage rides the stream (failed attempts burn real tokens, issue #170).
+      const isUsage = this.observeTokenUsage(msg);
       await this.write(msg);
+      if (isUsage) {
+        yield msg;
+        continue;
+      }
       // Streamed compaction progress (issue #290): the request's thinking and the summary's
       // own text ride the output stream between the paired compaction events —
       // partial_thinking / partial_text fragments verbatim (all three phases, so the server's
       // live tail opens and closes its fragment and a join mid-compaction is seeded with the
       // accumulated prefix), or the complete thinking / text when no partial of that kind
       // carried content (implementations that yield only complete messages) — never both,
-      // so consumers see each character once. The request's other raw messages (the
-      // compaction Prompt, request events) stay Trace-only as before. Rejected attempts
-      // stream too: the frontend shows whatever the compaction request is really producing,
-      // and history rebuild reads the same content back from the span's complete assistant
-      // messages.
+      // so consumers see each character once. Rejected attempts stream too: the frontend
+      // shows whatever the compaction request is really producing, and history rebuild reads
+      // the same content back from the span's complete assistant messages.
       {
         const p = msg.payload as { type?: string; text?: string; thinking?: string };
         if (p.type === "partial_text") {
@@ -2124,6 +2329,8 @@ export class ContextEngine {
           yield msg;
         } else if (p.type === "partial_thinking") {
           if (typeof p.thinking === "string" && p.thinking !== "") sawPartialThinking = true;
+          yield msg;
+        } else if (p.type === "partial_tool_call" && roundOpen) {
           yield msg;
         }
       }
@@ -2139,6 +2346,8 @@ export class ContextEngine {
           const body = (msg.payload as ThinkingPayload).thinking;
           if (!sawPartialThinking && body !== "") yield msg;
         } else if (msg.payload.type === "tool_call") {
+          // A round's calls stream whole, after their fragments, as a turn's do.
+          if (roundOpen) yield msg;
           // Same rule as the turn loop: a tool call closed early (its request ended before the
           // call did) is no real request and gets no paired output; every other one needs one.
           if (!isInterruptedToolCall(msg)) toolCalls.push(msg as AmspRecord<ToolCallPayload>);

@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-10-19";
+export const KERNEL_VERSION = "2026-11-04";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -220,14 +220,19 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  * - `2026-10-14` — the prompt avoids repeating code from generated files, separates
  *   framework reuse from the React preference, and drops the redundant library-availability
  *   clause. The prompt tab moved.
- * - `2026-10-19` (current) — `model.timeoutMs` rose to 600000: some relays consume a model's
+ * - `2026-10-19` — `model.timeoutMs` rose to 600000: some relays consume a model's
  *   thinking stream upstream and send nothing until the answer starts, so the whole thinking
  *   phase lands in the wait for the first event again, and 300000 cut long ones short. The
+ *   runtime tab moved.
+ * - `2026-11-04` (current) — compaction hands files to the next context: the new
+ *   `compaction.max_rounds` (3) lets a summarize compaction take tool rounds before its
+ *   summary, and the default compaction prompt asks for hand-off files under the Session's
+ *   scratchpad (`{{SCRATCHPAD_DIR}}`, `{{MAX_ROUNDS}}`) and a summary in fixed sections. The
  *   runtime tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "c1ce239d2ef23ef533b5f00d3ed453e98bd7eb66ac8af9916fd0a5281455effb",
-  runtime: "83cffc520d74ff6b307a1371b8e770a1986436ef0632e9f5146fec1a3dc67134",
+  runtime: "ca4bf78d4016a50481db5e25dbe6f0e15835bb92ba7cbeb70666d7fe4f7272d4",
   tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
@@ -260,6 +265,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
     "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20", // model.timeoutMs was 120000, before the rise to 300000
     "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346", // model.timeoutMs was 300000, before the rise to 600000
+    "83cffc520d74ff6b307a1371b8e770a1986436ef0632e9f5146fec1a3dc67134", // the compaction prompt before the hand-off format and `max_rounds`
   ],
   tools: [
     "238440586ad2e075bde04948cf8dc9876301da538aafeb8926cd9c6a5738081b", // before run_subagent's `thinking_level` (#306)

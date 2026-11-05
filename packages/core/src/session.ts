@@ -68,6 +68,7 @@ import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
   CompactionSettings,
+  CompactionToolGate,
   EngineInitialState,
   OpenContextOptions,
   OpenedContext,
@@ -147,6 +148,14 @@ export interface SessionConfig {
   compaction?: CompactionSettings;
   /** Live compaction settings, re-read at every compaction checkpoint (see ContextEngineDeps.readCompaction): what lets a threshold, mode or prompt edited on disk reach the conversation that is running. Session-lifetime, so a rotation does not replace it. */
   readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
+  /** Which tool calls a compaction's tool rounds may run (see ContextEngineDeps.compactionToolGate); absent, a compaction takes no round. */
+  compactionToolGate?: CompactionToolGate;
+  /**
+   * The shell the Session's commands run in (the system prompt's `Shell:` value): it words the
+   * Trace-query hint of the compaction summary's trailer and of a model switch's Trace handoff.
+   * Absent: the hint names the POSIX and PowerShell forms side by side.
+   */
+  shell?: string;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
@@ -250,11 +259,13 @@ export interface ModelSwitchSupport {
   reassembleInitialContext(ref: ModelRef): Promise<Omit<SessionOpenedContext, "llm">>;
 }
 
-/** `Session.switchModel` options: the target's paired reference, and the abort signal for the compaction request. */
+/** `Session.switchModel` options: the target's paired reference, the abort signal for the compaction request, and the approval callback for its tool rounds. */
 export interface ModelSwitchOptions {
   provider: string;
   modelId: string;
   signal?: AbortSignal;
+  /** Approves the calls of the switch's compaction tool rounds, wrapped by the command policy as `run` wraps its own; absent denies them all. */
+  approve?: ApproveFn;
 }
 
 /**
@@ -405,6 +416,8 @@ export class Session {
   private userPromptHooks: readonly UserPromptHook[] = [];
   private spawnSubagent: HookSubagentSpawner | undefined;
   private readonly commandPolicy?: CommandPolicySource;
+  /** See SessionConfig.shell. */
+  private readonly shell: string | undefined;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -450,6 +463,7 @@ export class Session {
     this.modelSwitch = config.modelSwitch;
     if (config.hooks) this.adoptHooks(config.hooks);
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
+    this.shell = config.shell;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
@@ -476,6 +490,8 @@ export class Session {
         : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
+      ...(config.compactionToolGate ? { compactionToolGate: config.compactionToolGate } : {}),
+      ...(config.shell !== undefined ? { shell: config.shell } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
       // it through the same converter `runTask` uses, failures included: a scratchpad that
@@ -910,6 +926,8 @@ export class Session {
               await baseTrace.write(msg);
             },
             ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
+            // The compaction trailer names the file being closed by this path.
+            ...(baseTrace.currentPath ? { currentPath: () => baseTrace.currentPath!() } : {}),
           }
         : baseTrace;
     this.engine = new ContextEngine({
@@ -1059,7 +1077,11 @@ export class Session {
     try {
       // Summary first, handing over on any end but a stop; an unreachable model, at once.
       const status = reachable
-        ? yield* this.engine!.switchContext(opts.signal, handoff)
+        ? yield* this.engine!.switchContext(
+            opts.signal,
+            handoff,
+            this.compactionApprove(opts.approve),
+          )
         : yield* this.engine!.handOverContext(handoff);
       // Input an aborted bootstrap left with the Session rides on like the engine's pending
       // input: its text alone, in memory (the original stays where the abort wrote it).
@@ -1083,14 +1105,27 @@ export class Session {
   private switchHandoff(from: ModelRef): AmspRecord {
     const tracePath = this.trace?.currentPath?.();
     return userText(
-      buildModelSwitchMessage({
-        sessionId: this.sessionId,
-        ...(tracePath !== undefined ? { tracePath } : {}),
-        workspace: this.workspaceDir,
-        prevProvider: from.provider,
-        prevModelId: from.model_id,
-      }),
+      buildModelSwitchMessage(
+        {
+          sessionId: this.sessionId,
+          ...(tracePath !== undefined ? { tracePath } : {}),
+          workspace: this.workspaceDir,
+          prevProvider: from.provider,
+          prevModelId: from.model_id,
+        },
+        this.shell !== undefined ? { shell: this.shell } : {},
+      ),
     );
+  }
+
+  /**
+   * The approval callback a compaction's tool rounds run with: the host's, wrapped by the
+   * command policy exactly as `run` wraps it (see `run`). The policy inspects command tools
+   * only, which no round can run, so it never fires there; the wrapping keeps one rule for
+   * every approval the Session forwards. No callback: the engine denies every call.
+   */
+  private compactionApprove(approve: ApproveFn | undefined): ApproveFn | undefined {
+    return approve ? withCommandPolicy(approve, this.commandPolicy) : undefined;
   }
 
   /**
@@ -1098,16 +1133,21 @@ export class Session {
    * compaction flow but skips the threshold check (reason=manual). Only callable at Task
    * boundaries (between runs); streams out paired `compaction` events. The summarize digest
    * becomes the prefix of the next `run`'s input (merged with the next user Prompt). A no-op
-   * if compaction isn't configured.
+   * if compaction isn't configured. `approve` answers the calls of the compaction's tool rounds
+   * (hand-off files written to the scratchpad), wrapped by the command policy as `run` wraps
+   * its own; without it every such call is denied and the model goes on to its summary.
    * Docs: /docs/agent-loop § "Compaction".
    */
-  async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<AmspRecord> {
+  async *compact(opts?: { signal?: AbortSignal; approve?: ApproveFn }): AsyncGenerator<AmspRecord> {
     // Nothing compactable and no engine: stay a strict no-op, without bootstrapping — a
     // session that never ran must not leave trace records (meta / tool_list_ready) behind,
     // or an untouched session would look resumable.
     if (!this.engine && this.compactability() !== "ok") return;
     if (!(yield* this.ensureEngine(opts?.signal))) return;
-    yield* this.engine!.compact(opts);
+    yield* this.engine!.compact({
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      approve: this.compactionApprove(opts?.approve),
+    });
   }
 
   /**

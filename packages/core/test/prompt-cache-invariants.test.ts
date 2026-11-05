@@ -282,6 +282,44 @@ describe("prompt-cache invariants of request assembly", () => {
     expect(configFingerprint(first.requests[1]!)).toBe(configFingerprint(first.requests[0]!));
   });
 
+  it("a compaction tool round extends the turn it follows, and the summary request extends the round", async () => {
+    const first = recordingModel(modelConfig(), [
+      // Over the compaction threshold at the task's wrap-up round.
+      { text: "First answer.", promptTokens: 150 },
+      // The compaction request answers with a tool round (a hand-off file read back)...
+      {
+        toolCalls: [
+          { id: "call_h1", name: "read_file", args: { path: "/scratch/handoff/plan.md" } },
+        ],
+        promptTokens: 160,
+      },
+      // ...and the request the round's outputs make writes the summary.
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 170 },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings({ maxRounds: 3 }),
+      compactionToolGate: () => ({ allow: true }),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(3);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([
+      { type: "none" },
+      { type: "none" },
+    ]);
+    // The round's request appends one user turn: the tool results alone, no prompt again.
+    const appended = wireMessage(first.requests[2]!, -1);
+    expect(appended.role).toBe("user");
+    expect(blockTypes(appended)).toEqual(["tool_result"]);
+    expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+  });
+
   it("a model switch's compaction request extends the turn it follows on the old model; the new model's first request is a new line carrying its id", async () => {
     const target = "claude-opus-4-7";
     const first = recordingModel(modelConfig(), [

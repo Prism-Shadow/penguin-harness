@@ -23,6 +23,9 @@ import {
   assembleSystemPrompt,
   buildToolConfig,
   selectBuiltinToolsForModel,
+  COMPACTION_MAX_ROUNDS_PLACEHOLDER,
+  COMPACTION_SCRATCHPAD_PLACEHOLDER,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
   formatModelRef,
   getModel,
@@ -82,6 +85,9 @@ import {
   mcpConnectOutcome,
   sessionEnvironment,
 } from "./internal/session-support.js";
+import { compactionToolGate } from "./internal/compaction-tool-gate.js";
+import { modelVisiblePath } from "./internal/model-visible-path.js";
+import { sessionShell } from "./environment/tools/command/shell.js";
 import {
   compactionEnd,
   isSessionMeta,
@@ -401,7 +407,14 @@ interface AssembledContext {
 function resolveCompaction(
   config: CompactionConfig | undefined,
   contextWindow: number | undefined,
+  scratchpadDir: string,
 ): CompactionSettings {
+  const maxRounds = config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS;
+  // The Prompt's placeholders are substituted here, where the settings are read: the Prompt
+  // is the compaction request's appended user turn, so what it says costs no cached prefix.
+  const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT)
+    .replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, modelVisiblePath(scratchpadDir))
+    .replaceAll(COMPACTION_MAX_ROUNDS_PLACEHOLDER, String(Math.max(0, maxRounds)));
   return {
     maxContextLength: effectiveMaxContextLength(
       config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
@@ -409,7 +422,8 @@ function resolveCompaction(
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
-    prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+    maxRounds,
+    prompt,
   };
 }
 
@@ -658,7 +672,11 @@ export class Agent {
     // Compaction config: this context's baseline. It is no longer the last word — the engine
     // re-reads the section at every compaction checkpoint through `compactionReader` — but a
     // context still opens on the configuration that was on disk when it opened.
-    const compaction = resolveCompaction(state.systemConfig.compaction, modelEntry.context_window);
+    const compaction = resolveCompaction(
+      state.systemConfig.compaction,
+      modelEntry.context_window,
+      sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+    );
 
     // session_meta: this context's runtime configuration — the assembled prompt goes both to
     // the LLM and in here, so the Trace can audit the actual effective value and a resume
@@ -845,7 +863,12 @@ export class Agent {
         `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
       );
     }
-    const resumed = resumeTrace(await readTraceTolerant(located.path));
+    // A context the file's last compaction closed opens with the summary rebuilt from the file,
+    // its trailer naming this very file, worded for the shell this process runs commands in.
+    const resumed = resumeTrace(await readTraceTolerant(located.path), {
+      tracePath: located.path,
+      shell: sessionShell().name,
+    });
     if (!resumed.meta) {
       throw new Error(`Trace is missing session_meta and cannot be resumed: ${located.path}`);
     }
@@ -1047,6 +1070,7 @@ export class Agent {
    */
   private compactionReader(
     contextWindow: () => number | undefined,
+    scratchpadDir: string,
   ): () => Promise<CompactionSettings> {
     const { root, projectId, agentId } = this.state;
     const configPath = systemConfigPath(root, projectId, agentId);
@@ -1061,7 +1085,7 @@ export class Agent {
       if (parsed === null || typeof parsed !== "object") {
         throw new Error(`Invalid Agent State config: ${configPath} is empty or corrupted.`);
       }
-      cached = resolveCompaction((parsed as SystemConfig).compaction, window);
+      cached = resolveCompaction((parsed as SystemConfig).compaction, window, scratchpadDir);
       cachedKey = key;
       return cached;
     };
@@ -1081,6 +1105,7 @@ export class Agent {
     extras: Partial<SessionConfig> = {},
   ): Session {
     const { root, projectId, agentId } = this.state;
+    const scratchpad = sessionScratchpadDir(root, projectId, agentId, spec.sessionId);
     return new Session({
       meta: context.meta,
       bootstrap: rt.bootstrap,
@@ -1095,9 +1120,13 @@ export class Agent {
       compaction: context.compaction,
       // Live tier: the baseline above is what this context opened on, and this is how every
       // checkpoint after it asks the disk again.
-      readCompaction: this.compactionReader(rt.contextWindow),
+      readCompaction: this.compactionReader(rt.contextWindow, scratchpad),
+      // A compaction's tool rounds read anything and write only the Session's scratchpad.
+      compactionToolGate: compactionToolGate(scratchpad),
+      // The shell the system prompt's `Shell:` line names, for the Trace-query hints.
+      shell: sessionShell().name,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
-      imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+      imagesDir: scratchpad,
       modelHasVision: context.modelEntry.vision !== false,
       modelSwitch: rt.modelSwitch,
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),

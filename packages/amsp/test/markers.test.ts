@@ -34,6 +34,7 @@ import {
   parseUserSteeringText,
   startsWithMarker,
   stripConversationMarkers,
+  traceQueryGuidance,
   stripMarkerBlocks,
   transcribeText,
   transcribeToolCall,
@@ -127,6 +128,68 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
       "[context_summary]\nthe gist\n[/context_summary]",
     );
   });
+
+  // The trailer a compacted context's Trace file earns: its path once, then how to query it
+  // precisely — line numbers first with a match-only search worded for the Session's shell,
+  // then read_file offset/limit on those lines; never the whole file.
+  it.each([
+    [
+      "bash",
+      ["`rg -n -o '<pattern>' <file>` (or `grep -n -o`)", `'"role":"user","text"'`],
+      ["Select-String"],
+    ],
+    ["zsh", ["`rg -n -o '<pattern>' <file>`"], ["Select-String"]],
+    [
+      "pwsh",
+      [
+        "`(Select-String -Path <file> -SimpleMatch -Pattern '<pattern>').LineNumber`",
+        `'"name":"exec_command","arguments"'`,
+      ],
+      ["rg -n"],
+    ],
+    ["powershell", ["(Select-String -Path <file> -SimpleMatch"], ["rg -n"]],
+    [
+      "cmd",
+      [
+        "`powershell -NoProfile -Command \"(Select-String -Path '<file>' -Pattern '<pattern>').LineNumber\"`",
+        "'role.:.user.,.text'",
+      ],
+      ["rg -n", '"role":"user"'],
+    ],
+    [
+      undefined,
+      [
+        "`rg -n -o '<pattern>' <file>`",
+        "in a POSIX shell",
+        "-SimpleMatch -Pattern '<pattern>').LineNumber` in PowerShell",
+      ],
+      [],
+    ],
+  ] as const)(
+    "a summary's trailer names its Trace file and words the search for the %s shell",
+    (shell, present, absent) => {
+      const tracePath = "/data/p/agents/a/traces/2026-11-04/session-x_002.jsonl";
+      const text = buildContextSummaryText("the gist", {
+        tracePath,
+        ...(shell !== undefined ? { shell } : {}),
+      });
+      const lines = text.split("\n");
+      expect(lines.slice(0, 3)).toEqual(["[context_summary]", "the gist", ""]);
+      expect(lines.at(-1)).toBe("[/context_summary]");
+      // About three lines of trailer, the path once.
+      const trailer = lines.slice(3, -1);
+      expect(trailer).toHaveLength(3);
+      expect(text.split(tracePath)).toHaveLength(2);
+      expect(trailer[0]).toContain(tracePath);
+      expect(trailer[1]).toContain("never read or cat a whole file");
+      expect(trailer[2]).toContain("read_file offset/limit");
+      expect(trailer[2]).toContain("read_file caps each line");
+      for (const fragment of present) expect(trailer[1]).toContain(fragment);
+      for (const fragment of absent) expect(text).not.toContain(fragment);
+      // Still a summary block to every reader that recognizes one by its prefix.
+      expect(startsWithMarker(text, MARKER_TAGS.contextSummary)).toBe(true);
+    },
+  );
 
   it("extractSummary accepts the current [summary] form, the legacy <summary> form, and tagless output", () => {
     // The legacy angle form must stay accepted indefinitely: compaction.prompt is persisted in
@@ -341,6 +404,15 @@ describe("origin blocks ([use_skills] / [handoff_from] / [scheduled_task] / [mod
     const text = buildModelSwitchMessage(origin);
     expect(text.startsWith("[model_switch_from]\n")).toBe(true);
     expect(parseModelSwitchMessage(text)).toEqual(origin);
+    // How to read the trace file is the summary trailer's wording, shell-worded when known, and
+    // the fields still parse around it.
+    const posix = buildModelSwitchMessage(origin, { shell: "bash" });
+    expect(posix).toContain(traceQueryGuidance("bash"));
+    expect(text).toContain(traceQueryGuidance());
+    expect(buildContextSummaryText("s", { tracePath: "/t.jsonl", shell: "bash" })).toContain(
+      traceQueryGuidance("bash"),
+    );
+    expect(parseModelSwitchMessage(posix)).toEqual(origin);
     const minimal = buildModelSwitchMessage({ sessionId: "session-01" });
     expect(minimal).not.toContain("trace:");
     expect(parseModelSwitchMessage(minimal)).toEqual({ sessionId: "session-01" });

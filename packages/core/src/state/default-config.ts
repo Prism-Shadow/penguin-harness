@@ -114,9 +114,27 @@ export interface CompactionConfig {
   max_session_turns?: number;
   /** Compaction mode; defaults to summarize. */
   mode?: CompactionMode;
-  /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
+  /**
+   * Tool rounds a summarize compaction may take before its summary, writing hand-off files to
+   * this Session's scratchpad (`read_file`, and `write_file` / `edit_file` inside the
+   * scratchpad); defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <= 0 restores the single
+   * text-only request.
+   */
+  max_rounds?: number;
+  /**
+   * Prompt template for summarize compaction; defaults to the built-in value (editable config,
+   * not hardcoded). {@link COMPACTION_SCRATCHPAD_PLACEHOLDER} and
+   * {@link COMPACTION_MAX_ROUNDS_PLACEHOLDER} are substituted when the settings are read.
+   */
   prompt?: string;
 }
+
+/** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
+export const DEFAULT_COMPACTION_MAX_ROUNDS = 3;
+/** Inside `compaction.prompt`: the absolute path of this Session's scratchpad directory. */
+export const COMPACTION_SCRATCHPAD_PLACEHOLDER = "{{SCRATCHPAD_DIR}}";
+/** Inside `compaction.prompt`: the tool rounds the compaction may take (`compaction.max_rounds`). */
+export const COMPACTION_MAX_ROUNDS_PLACEHOLDER = "{{MAX_ROUNDS}}";
 
 /**
  * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
@@ -591,20 +609,38 @@ export function insertSchedulesPlaceholder(template: string): string {
 }
 
 /**
- * Built-in default compaction Prompt (summarize mode): tells the model the summary will
- * replace the transcript as its only record (so it must include everything needed to
- * continue the task) and that no tools may be called. The format is shown as a concrete
- * example rather than described in prose — some models treat the tags as a "title" and
- * write the body after the closing tag (issue #170); extraction salvages that shape, but
- * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
- * existing agents keep their stored prompt.
+ * Built-in default compaction Prompt (summarize mode): tells the model the transcript will no
+ * longer be visible in the next context, to write detail worth more than a paragraph to
+ * hand-off files in this Session's scratchpad first (the only tools that work while compacting,
+ * within `{{MAX_ROUNDS}}` tool rounds), and then to reply with a summary in fixed sections —
+ * the hand-off files named by absolute path, and consent not carried across the boundary. The
+ * format is shown as a concrete example rather than described in prose — some models treat the
+ * tags as a "title" and write the body after the closing tag (issue #170); extraction salvages
+ * that shape, but generating it right beats repairing it. `{{SCRATCHPAD_DIR}}` and
+ * `{{MAX_ROUNDS}}` are substituted where the settings are read; the prompt is the appended user
+ * turn of the compaction request, outside the cached prefix. Persisted per-agent in
+ * system_config.yaml — existing agents keep their stored prompt until a kernel update.
  */
-export const DEFAULT_COMPACTION_PROMPT =
-  "Summarize the task transcript above. The summary will replace the transcript as its " +
-  "only record, so include everything needed to continue the task — the original request, " +
-  "current state, next steps, and any learnings. Do not call any tools; reply with text " +
-  "only, in exactly this format and nothing after it:\n\n" +
-  "[summary]put the summary text here...[/summary]";
+export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
+
+First, when there is detail worth more than a paragraph — a plan, findings, a decision log, data, drafts — write it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with the file tools (absolute paths; read a file before overwriting it). Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes. You have at most ${COMPACTION_MAX_ROUNDS_PLACEHOLDER} tool rounds; then reply.
+
+Then reply with text only, in exactly this format and nothing after it:
+
+[summary]
+## Request
+The user's request and intent, in their own words where the wording matters.
+## Decisions and constraints
+What the user decided, authorized or ruled out, with the why. Consent does not carry into the next context: anything that needs a go-ahead is asked again there.
+## Progress
+What is done and verified, with file paths; what is in progress and where it stands.
+## Errors and fixes
+Errors met, what fixed them, and what not to repeat.
+## Files
+Workspace files that matter (read or changed), and every hand-off file you wrote, each with its absolute path and one line on what it holds.
+## Next steps
+The remaining work in order, and the exact next action.
+[/summary]`;
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
@@ -934,6 +970,7 @@ export function defaultSystemConfig(): SystemConfig {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
+      max_rounds: DEFAULT_COMPACTION_MAX_ROUNDS,
       prompt: DEFAULT_COMPACTION_PROMPT,
     },
     memory: {

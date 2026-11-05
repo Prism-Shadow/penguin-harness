@@ -9,6 +9,9 @@
  * - A billed request with an abnormal finish counts once; its unbilled retry still counts separately.
  * - Interleaved main and child sessions cannot suppress each other's failed requests.
  * - Compaction usage without streamed request boundaries does not hide the next request's failure.
+ * - A compaction's own requests, streamed inside its span (tool rounds included), are billed by
+ *   their usage alone: a failed attempt is the compaction's failure, no failed request row, and
+ *   the request after the span is recorded as ever.
  *
  * Querying:
  * - A scheduled model is priced per record by the tier its request ran in, each seller by its
@@ -31,6 +34,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  compactionBegin,
+  compactionEnd,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -172,6 +177,32 @@ describe("usage-recorder", () => {
     await rec.record(CTX, requestEnd("fatal", { errorCode: "auth" }));
     expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
       { status: "completed", total: 115 },
+      { status: "fatal", total: 0 },
+    ]);
+  });
+
+  it("bills a compaction's requests by their usage alone, and records the request after its span as ever", async () => {
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
+    for (const msg of [
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+      // A tool round's request, then a summary attempt the transport dropped, then the summary.
+      requestBegin(),
+      tokenUsage(counts(100), counts(100)),
+      requestEnd("completed"),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", retryInMs: 2000 }),
+      requestBegin(),
+      tokenUsage(counts(220), counts(120)),
+      requestEnd("completed"),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "auth" }),
+    ]) {
+      await rec.record(CTX, msg);
+    }
+    expect(db.prepare("SELECT status, total FROM usage_records ORDER BY rowid").all()).toEqual([
+      { status: "completed", total: 100 },
+      { status: "completed", total: 120 },
       { status: "fatal", total: 0 },
     ]);
   });
