@@ -3,6 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `ui`, `docs`
+- **PR:** [#1490](https://github.com/Prism-Shadow/penguin-harness/pull/1490)
 
 [中文版](2026-11-04-agent-authorization.zh.md)
 
