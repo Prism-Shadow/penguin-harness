@@ -6,12 +6,19 @@
  * (409 `workbench_exists`) asks before overwriting, and an overwrite keeps the workbench's data.
  * Export downloads the source as a zip that imports back unchanged. Every action is
  * member-level, matching the workbench routes, and goes to the server the Agent lives on.
+ *
+ * A row of an Agent on this server also carries the App Center switch, which commits on click:
+ * it rewrites `penguin.appCenter.show` in the workbench's package.json, and the reload that
+ * follows records it as a version. While the write is in flight the switch shows where it is
+ * going; the row then reads back what the file says, with an "App Center" pill while it is on.
+ * The App Center lists this server's Agents only, so a machine's Agent has no switch.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   ConfirmModal,
   DownloadIcon,
@@ -27,6 +34,7 @@ import {
   Modal,
   NoticeStrip,
   SkeletonList,
+  Switch,
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -77,6 +85,8 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
   );
   // The import dialog; what it holds (the upload, its refusal) lives in it, while it is open.
   const [importOpen, setImportOpen] = useState(false);
+  /** An App Center switch on its way to the file: the row shows the value it is going to. */
+  const [flipping, setFlipping] = useState<{ workbenchId: string; show: boolean } | null>(null);
   const load = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -106,6 +116,13 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
     } finally {
       setBusy(false);
     }
+  };
+  const flipAppCenter = (workbenchId: string, show: boolean) => {
+    if (!projectId) return;
+    setFlipping({ workbenchId, show });
+    void act(() =>
+      api.setWorkbenchAppCenter(projectId, agentId, workbenchId, show, machineId),
+    ).finally(() => setFlipping(null));
   };
   /** The shared archive download (archive-download.ts); a failure surfaces as a toast. */
   const exportWorkbench = async (workbench: WorkbenchInfo) => {
@@ -167,6 +184,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
               const title = first
                 ? localizedText(locale, first.title, first.titleZh)
                 : workbench.name;
+              const inAppCenter = workbench.appCenter?.show === true;
               return (
                 <ListRow
                   key={workbench.id}
@@ -174,9 +192,27 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                   leading={<SkillTile name={workbench.id} fallback={ICONS.anvil} />}
                   title={title}
                   description={workbench.error ?? workbench.id}
-                  meta={workbench.version ? `v${workbench.version}` : undefined}
+                  meta={
+                    inAppCenter || workbench.version ? (
+                      <span className="flex items-center gap-2">
+                        {inAppCenter && <Badge size="sm">{S.workbenches.inAppCenter}</Badge>}
+                        {workbench.version && <span>v{workbench.version}</span>}
+                      </span>
+                    ) : undefined
+                  }
                   trailing={
                     <>
+                      {machineId === null && (
+                        <Switch
+                          checked={
+                            flipping?.workbenchId === workbench.id ? flipping.show : inAppCenter
+                          }
+                          disabled={busy}
+                          onChange={(show) => flipAppCenter(workbench.id, show)}
+                          aria-label={`${S.workbenches.showInAppCenter} ${title}`}
+                          title={S.workbenches.showInAppCenterHint}
+                        />
+                      )}
                       {first && (
                         <IconButton
                           label={`${S.workbenches.open} ${title}`}

@@ -3,13 +3,15 @@
 [English](PRFC-0020-agent-workbench.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0020-agent-workbench.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v1.1.0（应用中心，取自设计 PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `agent_workbench`
 - Start Date: 2026-10-14
 - PRFC PR: [Prism-Shadow/penguin-harness-design#331](https://github.com/Prism-Shadow/penguin-harness-design/pull/331)
 - Implementation PR: [Prism-Shadow/penguin-harness#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - Status: 实现 PR #1133 已于 2026-10-14 合并到 main。
+- Status 补记（2026-11-03）：应用目录移入 Agent State（`agent_state/workbenches/<id>/`），版本改为 Agent State 的 git 仓库中的提交，设置页可导入与导出 zip（[#1442](https://github.com/Prism-Shadow/penguin-harness/pull/1442)–[#1445](https://github.com/Prism-Shadow/penguin-harness/pull/1445)）。下文涉及这些部分的正文保留成文时的形状，完整正文见设计仓的副本。
+- Status 补记（2026-11-04）：应用可在清单中声明 `penguin.appCenter`，在 Project 的应用中心显示快捷入口，设置页的开关改写其中的 `show`；见下文「应用中心」。「名称与边界」表新增「应用中心」行，路由表新增 `PATCH /:id/app-center`，其余正文保留成文时的形状。
 
 ## Summary
 [summary]: #summary
@@ -46,6 +48,7 @@
 | 根模块 / 类型 | `Workbench`、`WorkbenchPackage`、`WorkbenchHost`、`WorkbenchMain` |
 | 平台机制 | `Workbenches`、`WorkbenchService`、`WorkbenchRoutes` |
 | 标签贡献 | `WebModule.sessionTabs`；由应用清单提供 `id`、`key`、`title`、可选 `titleZh` 与 renderer |
+| 应用中心 | 清单 `penguin.appCenter`；`WorkbenchInfo.appCenter`、`AppCenterShortcut`；Project 级 `GET /api/projects/:projectId/app-center`（见「应用中心」） |
 | 样式 | `/workbench-ui.css`、`--wb-*` 变量与 `wb-*` 类；共享样式遵守 HTML 的 `[hidden]` |
 | 更新 / 删除事件 | `workbench_updated { projectId, agentId, workbench }`、`workbench_removed { projectId, agentId, workbenchId }` |
 
@@ -59,6 +62,7 @@ HTTP 前缀为 `/api/projects/:projectId/agents/:agentId/workbenches`，按已�
 | `POST /:id/reload` | 重载 |
 | `GET /:id/history` | 读取版本列表 |
 | `POST /:id/rollback` | 按 `{ revision }` 恢复源码并重载 |
+| `PATCH /:id/app-center` | 按 `{ show }` 改写清单的 `penguin.appCenter.show` 并重载 |
 | `DELETE /:id` | 移除应用 |
 | `GET /:id/ui/*` | 提供界面静态文件 |
 | `ALL /:id/api/*` | 调用后端处理器 |
@@ -78,6 +82,50 @@ HTTP 前缀为 `/api/projects/:projectId/agents/:agentId/workbenches`，按已�
 安装前检查整次请求中的名称冲突：同名应用属于其他插件或由用户手写时以 `409 workbench_name_taken` 拒绝（仅有 `state.json` 的恢复目录允许接续安装），不在写入部分 Skill 或配置之后才报错。写入按文件原子替换，拒绝源路径越界或通过符号链接父目录写出应用目录，不承诺整批写入的事务回滚。首次写源码前先记空版本的归属记录，失败后同一插件可重试且仍显示待更新；全部完成后才写最终版本与文件清单。同一插件更新替换其源码、移除旧清单中不再存在的源文件，保留 `state.json` 与版本历史；清除其生成的 `.harness/`，由下一次加载按当前宿主生成类型。手写应用仍保留自己的接口依据。从 Agent 卸载时，只对安装记录仍归属该插件的应用调用删除接口；删除会移除整个应用目录（含 `state.json`）及其历史。保留状态与历史的保证适用于更新和代码回滚，不适用于删除应用。
 
 `GET /api/plugins` 的应用 metadata 只含名称与版本；`GET /api/plugins/:plugin/files` 提供清单与源码。Agent 级 `GET …/agents/:agentId/plugins` 与安装 `POST` 同返 `{ skills, hooks, mcpServers, workbenches? }`，应用项为 `{ name, plugin, version }`；读取 MCP 配置失败不阻止返回文件中的已装内容。已安装判据覆盖插件的全部部件及应用归属，更新判据按每个部件的日期版本比较，汇总版本取其中最新者。插件库页按内容分组、文件预览、更新确认和卸载均包含 Workbench；从服务端删除插件包不删除各 Agent 已装副本。
+
+### 应用中心
+
+应用在自己 `package.json` 的 `penguin` 块中声明是否在应用中心显示，与 `version`、`modules` 并列（camelCase，同标签贡献）：
+
+```json
+"penguin": {
+  "version": "2026.11.04.1",
+  "appCenter": { "show": true, "title": "Support", "titleZh": "客服工作台", "icon": "ui/icon.svg", "tab": "support" },
+  "modules": [ … ]
+}
+```
+
+| 字段 | 规则 |
+| --- | --- |
+| `show` | 对象存在时必填；`false` 或没有该对象即不显示 |
+| `title` / `titleZh` | 可选，至多 60 个字符；缺省取首个标签页的 `title` / `titleZh`，再缺省取 npm `name` |
+| `icon` | 可选，`ui/` 下的相对路径（不得含 `..`，`.svg` / `.png` / `.webp`，不超过 256 KB），经 `GET /:id/ui/*` 提供；缺省为按 id 着色的首字母块 |
+| `tab` | 可选，打开时选中的标签页 `key`；缺省首个标签页 |
+
+对象不合规（类型不对、`icon` 越界或超限、`tab` 不是已有标签页）记为加载提示（`hints`）而非错误：应用照常加载，只是不出现在应用中心。解析结果为 `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`，未声明时缺省。
+
+Agent 编写应用时写入该键（`penguin-plugin` Skill 的目录约定，以及 `web-design` Skill 问过「Workbench 还是独立应用」之后）。用户在设置页工作台行的开关经 `PATCH /:id/app-center { show }` 改写它：服务端只改 `penguin.appCenter.show`（没有该对象时新建 `{ show }`），以 2 空格缩进加末尾换行重写 `package.json`，其余键原样保留；监视器随之重载，加载照常提交一个版本，应答 `{ workbench }`；权限同重载与删除。`package.json` 不是 JSON 对象时应答 409 `workbench_manifest_invalid`，文件不动。开关与 Agent 同时改写这份文件时后写者胜，监视器加载落盘的那份。插件更新替换源码时连同该键一并覆盖。
+
+Project 级列表 `GET /api/projects/:projectId/app-center`（Project 成员）应答 `{ shortcuts: AppCenterShortcut[] }`：
+
+```ts
+interface AppCenterShortcut {
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  title: string;
+  titleZh?: string;
+  iconUrl?: string; // /api/projects/:p/agents/:a/workbenches/:id/ui/<icon>
+  path: string;     // /app/:p/:a/:id[/:tab]
+  broken?: true;    // .build/status.json 记录了错误
+}
+```
+
+它只读各应用的清单与 `.build/status.json`，不编译、不加载源码（与 `GET /` 不同），打开应用中心因此不触发任何应用的构建。顺序为 Agent 列表顺序、同一 Agent 内按标题，不支持手动排序。只列本服务端的 Agent：机器上 Agent 的全页地址尚不能带上机器，留待后续。页面在 `workbench_updated` / `workbench_removed` 与 Agent 列表变化时重新读取。
+
+`penguin-support` 的 Support 应用声明 `appCenter: { show: true, icon: "ui/icon.svg" }` 并递增 `penguin.version`，已装副本因此出现一次更新提示。
+
+PR [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595) 的设计不采纳：Project 级外部应用注册表（`<project>/apps/<id>.toml`）、健康探测、`[app_center]` 来源块与把重启 / 停止转给所属 Session 的路由、`penguin app` CLI 与 `app-center` Skill。应用中心只放 Workbench 的快捷入口：外部进程不在其列；快捷入口打开的页面由服务端自己提供，无需探活；重载已有 `POST /:id/reload`；清单键加上 Skill 的目录约定即可，不需要单独的 Skill。保留的只有导航位置（智能体之后）与名称。
 
 ### PenguinHarness Support
 
@@ -123,3 +171,9 @@ HTTP 前缀为 `/api/projects/:projectId/agents/:agentId/workbenches`，按已�
 ### v1.0.0
 
 - 新增：迁入主仓；正文取设计仓的同一版本，与英文版逐节对应。
+
+### v1.1.0
+
+- 新增：「应用中心」小节——清单的 `penguin.appCenter`、`WorkbenchAppCenter` 与 `AppCenterShortcut`、开关对清单的改写、Project 级列表、Support 的缺省显示，以及 #595 不予采纳的部分。
+- 新增：「名称与边界」的「应用中心」行，路由表的 `PATCH /:id/app-center`。
+- 新增：2026-11-03（应用移入 Agent State）与 2026-11-04（应用中心）的 Status 补记。

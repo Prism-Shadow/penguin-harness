@@ -30,6 +30,7 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterResponse,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
   BackgroundImageResponse,
@@ -238,6 +239,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchAppCenterRequest,
+  WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallRequest,
   WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
@@ -2795,6 +2798,21 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
+export const setWorkbenchAppCenter = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchAppCenterResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/app-center`,
+    { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
+  );
+/** The Project's App Center: the shown workbenches of its Agents on this server (local only). */
+export const getAppCenter = (projectId: string) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**

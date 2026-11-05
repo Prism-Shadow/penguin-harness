@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "penguin": {
-    "version": "2026.10.26.1",
+    "version": "2026.11.04.1",
+    "appCenter": {
+      "show": true,
+      "icon": "ui/icon.svg"
+    },
     "modules": [
       {
         "name": "Workbench",

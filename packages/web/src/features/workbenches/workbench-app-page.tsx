@@ -6,7 +6,8 @@
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
  * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
  * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
- * on the same Agent’s workbench tab. The route sits outside the app shell (no ProjectProvider), so the exit
+ * on the same Agent’s workbench tab — or back on the App Center, when the page was opened
+ * from one of its tiles. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
@@ -23,6 +24,7 @@ import {
   type WorkbenchTab,
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
+import { APP_CENTER_PATH } from "../app-center/app-center-page";
 import { AppPalette } from "../palette/app-palette";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
@@ -38,6 +40,7 @@ export function WorkbenchAppPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+  const toAppCenter = returnTo === APP_CENTER_PATH;
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
@@ -81,10 +84,14 @@ export function WorkbenchAppPage() {
     () => [
       {
         id: "exit-full-page",
-        label: S.workbenches.exitFullPage,
+        label: toAppCenter ? S.workbenches.exitToAppCenter : S.workbenches.exitFullPage,
         keywords: ["exit", "leave", "chat", "full page", "app"],
         run: () => {
           rememberSelection(projectId, agentId);
+          if (toAppCenter) {
+            void navigate(APP_CENTER_PATH);
+            return;
+          }
           const destination =
             typeof returnTo === "string" && /^\/chat(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(returnTo)
               ? returnTo
@@ -104,7 +111,17 @@ export function WorkbenchAppPage() {
         },
       },
     ],
-    [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
+    [
+      projectId,
+      agentId,
+      navigate,
+      returnTo,
+      toAppCenter,
+      tab?.tabId,
+      workbenchId,
+      tabKey,
+      machineId,
+    ],
   );
 
   return (

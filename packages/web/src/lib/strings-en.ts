@@ -15,6 +15,7 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
+    apps: "App Center",
     models: "Models",
     machines: "Machines",
     plugins: "Plugins",
@@ -1069,6 +1070,53 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's icon button: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
+    /** The row's switch: whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "Show in the App Center",
+    showInAppCenterHint:
+      "Show a shortcut to this workbench in the App Center. This rewrites its package.json and is recorded as a version.",
+    /** The row's pill while the switch is on. */
+    inAppCenter: "App Center",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "Exit full page (back to the App Center)",
+  },
+  appCenter: {
+    title: "App Center",
+    description: "Shortcuts to the workbenches of this Project's agents. Select one to open it.",
+    loading: "Loading…",
+    emptyTitle: "The App Center is empty",
+    empty:
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and turns on “Show in the App Center”, it appears here.",
+    /** A tile whose current files failed to load: it still opens, and the page says why. */
+    broken: "It failed to load. Open it to see why",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote:
+      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    aiCreateTitle: "Create an app with AI",
+    aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
+    aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "Build it as a workbench of your own, not as a separate project: settle the interface with the web-design Skill, then write it and check that it loads with the penguin-plugin Skill. In its package.json, set penguin.appCenter.show to true so it appears in the App Center. Tell me its name when you are done.",
+    aiCreateExamples: {
+      board: {
+        label: "Daily to-do board",
+        description: "Cards in columns by status, to add, drag and delete",
+        prompt:
+          "Make a daily to-do board: cards in three columns, To do, Doing and Done, which I can add, drag and delete, with the data kept in the workbench.",
+      },
+      digest: {
+        label: "Page digest",
+        description: "Paste a link and the agent reads it for you",
+        prompt:
+          "Make a page digest tool: I paste a link, the agent reads the page and gives a three-line summary and the key points, and past digests are listed newest first.",
+      },
+      expenses: {
+        label: "Expense log",
+        description: "A form, monthly totals and an export",
+        prompt:
+          "Make an expense log: enter the date, amount, category and a note, see totals by month, and export them as CSV.",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness history",

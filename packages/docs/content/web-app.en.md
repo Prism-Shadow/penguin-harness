@@ -92,6 +92,7 @@ From top to bottom, the sidebar holds:
 | --- | --- | --- |
 | **New chat** | Open a new conversation draft | [Chat](/chat) |
 | **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
+| **App Center** | Shortcuts to the workbenches of the Project's agents, a home screen for the apps they host | [The App Center](#the-app-center) |
 | **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
 | **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
@@ -106,7 +107,7 @@ From top to bottom, the sidebar holds:
 
 ### Favorite and collapsible entries
 
-**New chat** always shows. **Agents**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
+**New chat** always shows. **Agents**, **App Center**, **Models** and **Plugins** are favorites by default: they always show. The other entries sit in a collapsible area under them, and the chevron bar at the bottom of that area folds it away or opens it again. The area starts open, and the browser remembers whether you folded it.
 
 To change which entries are favorites:
 
@@ -141,6 +142,16 @@ On a narrow window, the sidebar hides behind a menu button in a top bar and open
 ### Language and theme
 
 The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved with your account, so every browser you sign in from uses them; a choice made on the login page is saved to the account that signs in next.
+
+## The App Center
+
+The **App Center** is the Project's home screen: a grid of tiles, one for each workbench of the Project's agents that is set to show there. A workbench is a page an agent hosts beside the chat; see [Workbench plugins](/skills#workbench-plugins). Each tile shows the workbench's icon, or a coloured letter when it has none, with the agent's avatar in its corner, then the workbench's name and the agent's name. Tiles follow the order of the agent list, and are sorted by name within one agent.
+
+Select a tile to open the workbench full page. Its **Exit full screen** button brings you back to the App Center. A tile whose current files failed to load is dimmed and marked with a warning icon; it still opens, and the full page says what went wrong.
+
+A workbench appears here when its own `package.json` asks for it, which an agent does when it builds one for you. To add or take one off, use the **Show in the App Center** switch on its row in the agent's [Workbenches tab](/agents#workbenches-tab). With nothing to show yet, the page explains what a workbench is and offers **Create with AI**, which asks an agent to build one and put it here.
+
+The App Center lists the agents of the server you are signed in to. Workbenches of agents on connected machines open from those agents' settings instead.
 
 ## Projects and members
 

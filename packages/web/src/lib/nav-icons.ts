@@ -9,6 +9,8 @@ import { ICONS } from "@prismshadow/penguin-ui";
 export const NAV_ICONS = {
   /** Agents: the robot head, the one glyph in the app that means "agent". */
   agents: ICONS.robot,
+  /** The App Center: the four tiles, the app's launcher mark (the dock's launcher wears it too). */
+  apps: ICONS.tiles,
   /** Plugin library (the puzzle piece). */
   plugins: ICONS.puzzle,
   /** Model library (a chip). */

@@ -4,6 +4,8 @@
  * - Opening a workbench selects its owning Agent and tab in a new conversation.
  * - Reload failures remain recoverable; history can restore a recorded version.
  * - Cancelling removal writes nothing; confirming removes only that workbench and refreshes the list.
+ * - The App Center switch commits on click and the row reads back the pill from the answer; a
+ *   refused write leaves the switch where the file says.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
@@ -20,7 +22,7 @@ import {
   buttonIn,
   topDialog,
 } from "./helpers/agent-app";
-import { button, click, pressScrim, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, pressScrim, switchNamed, unmountAll, waitFor } from "./helpers/dom";
 
 const info = (tabs: WorkbenchInfo["tabs"]): WorkbenchInfo => ({
   id: "support",
@@ -99,4 +101,26 @@ it("cancels without deleting, then removes only after confirmation", async () =>
       .map((request) => request.path),
   ).toEqual([`/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/support`]);
   expect(document.body.textContent).toContain(en.workbenches.empty);
+});
+it("puts a workbench in the App Center on click, and a refused write leaves the switch off", async () => {
+  const { server } = await open();
+  const name = `${en.workbenches.showInAppCenter} Support`;
+  const row = () => switchNamed(name).closest("li")!;
+  expect(switchNamed(name).getAttribute("aria-checked")).toBe("false");
+
+  server.refuseNext(409, "workbench_manifest_invalid", "package.json is not valid JSON");
+  await click(switchNamed(name));
+  await waitFor(() => !switchNamed(name).disabled);
+  expect(switchNamed(name).getAttribute("aria-checked")).toBe("false");
+  expect(row().textContent).not.toContain(en.workbenches.inAppCenter);
+
+  await click(switchNamed(name));
+  await waitFor(() => row().textContent?.includes(en.workbenches.inAppCenter) === true);
+  expect(switchNamed(name).getAttribute("aria-checked")).toBe("true");
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => request.body),
+  ).toEqual([{ show: true }, { show: true }]);
 });

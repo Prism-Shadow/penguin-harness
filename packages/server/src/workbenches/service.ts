@@ -41,11 +41,13 @@ import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
+  AppCenterShortcut,
   WorkbenchInfo,
   WorkbenchInput,
   WorkbenchRecord,
@@ -59,6 +61,13 @@ import type {
   Workbenches,
 } from "../mechanisms/workbenches.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import {
+  agentShortcuts,
+  AppCenterManifestInvalid,
+  readAppCenterManifest,
+  writeAppCenterShow,
+  type AppCenterManifest,
+} from "./app-center.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
@@ -109,6 +118,8 @@ interface Loaded {
    * the previous one's while `error` is set — or null when its pages are served as written.
    */
   uiBuild: string | null;
+  /** What the folder's package.json declares for the App Center, as read for this load. */
+  appCenter: AppCenterManifest;
 }
 
 function key(projectId: string, agentId: string, workbenchId: string): string {
@@ -270,6 +281,7 @@ export class WorkbenchService implements Workbenches {
   @Use() private readonly projects!: Projects;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly runner!: ScheduleTaskRunner;
@@ -498,6 +510,53 @@ export class WorkbenchService implements Workbenches {
     this.forget(projectId, agentId, workbenchId);
   }
 
+  async appCenter(projectId: string): Promise<AppCenterShortcut[]> {
+    const out: AppCenterShortcut[] = [];
+    // The index's order is the Agents list's (created, then id); a row whose folder is no longer
+    // an Agent is not one the list shows either.
+    for (const row of this.agents.list(projectId)) {
+      const { agentId } = row;
+      if (!(await this.agentConfig.exists(projectId, agentId))) continue;
+      // One Agent whose older layout cannot be moved is left out, not the whole App Center.
+      try {
+        await this.migrate(projectId, agentId);
+      } catch (err) {
+        this.log.line(`[workbenches] ${projectId}/${agentId}: ${messageOf(err)}`);
+        continue;
+      }
+      const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
+      out.push(
+        ...(await agentShortcuts(
+          projectId,
+          { agentId, agentName },
+          workbenchesDir(this.paths.root, projectId, agentId),
+        )),
+      );
+    }
+    return out;
+  }
+
+  async setAppCenter(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    try {
+      await writeAppCenterShow(folder.dir, show);
+    } catch (err) {
+      if (!(err instanceof AppCenterManifestInvalid)) throw err;
+      throw new HttpError(
+        409,
+        "workbench_manifest_invalid",
+        `The workbench's ${err.message}, so it cannot be changed from here.`,
+      );
+    }
+    // The watcher sees the same edit; a load of the revision just written is shared, not repeated.
+    return this.reload(projectId, agentId, workbenchId);
+  }
+
   async releaseAgent(projectId: string, agentId: string): Promise<void> {
     const agentKey = `${projectId}/${agentId}`;
     // On Windows a recursive watcher holds its folder open, and a folder held open cannot be
@@ -610,7 +669,8 @@ export class WorkbenchService implements Workbenches {
       tabs: l.tabs,
       loadedAt: l.loadedAt,
       error: l.error,
-      hints: loadHints(l.folder.uiRev, l.tabs, l.error),
+      hints: hintsOf(l),
+      ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
     };
   }
 
@@ -662,6 +722,8 @@ export class WorkbenchService implements Workbenches {
     let subscriptions: WorkbenchSubscriptions | null = null;
     /** Its compiled pages, emitted aside until the load has succeeded. */
     let pages: UiBuild | null = null;
+    // Read whether or not the load succeeds: what the files declare is not the serving instance's.
+    const appCenter = await readAppCenterManifest(folder.dir, folder.id);
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -741,6 +803,7 @@ export class WorkbenchService implements Workbenches {
         loadedAt,
         error: null,
         uiBuild: pages === null ? null : folder.revision,
+        appCenter,
       };
       // Recording the version is bookkeeping around a load that has already succeeded, so it
       // cannot be inside the try that decides whether the load failed: a repository that
@@ -793,6 +856,7 @@ export class WorkbenchService implements Workbenches {
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,
         uiBuild: previous?.uiBuild ?? null,
+        appCenter,
       };
     }
     if (this.disposed) {
@@ -804,7 +868,7 @@ export class WorkbenchService implements Workbenches {
       checkedAt: loadedAt,
       error: next.error,
       tabs: next.tabs.map((tab) => tab.key),
-      hints: loadHints(folder.uiRev, next.tabs, next.error),
+      hints: hintsOf(next),
     });
     this.loaded.set(k, next);
     this.notify(projectId, agentId, this.info(folder.id, next));
@@ -1002,6 +1066,12 @@ export class WorkbenchService implements Workbenches {
 }
 
 export class WorkbenchNotFound extends Error {}
+
+/** A load's hints: the ones about what it serves, then the App Center declaration's. */
+function hintsOf(l: Loaded): string[] {
+  const hints = loadHints(l.folder.uiRev, l.tabs, l.error);
+  return l.appCenter.hint === null ? hints : [...hints, l.appCenter.hint];
+}
 
 /** Where a workbench's `ui/` is served from (./routes.ts). */
 function uiBase(projectId: string, agentId: string, workbenchId: string): string {

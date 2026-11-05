@@ -7,6 +7,7 @@
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
+ *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
@@ -18,6 +19,11 @@
  *
  * Every route requires access to the Project; the UI and api routes are what the
  * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to.
+ *
+ * The App Center's list is Project-wide, mounted at /api/projects/:projectId/app-center:
+ *
+ *   GET    /                       every shown workbench of the Project's Agents on this server
+ *                                  (manifests and load status only: nothing is compiled)
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -25,7 +31,11 @@ import { zipSync } from "fflate";
 import { Hono } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { WorkbenchArchiveInstallResponse } from "../api/types.js";
+import type {
+  AppCenterResponse,
+  WorkbenchAppCenterResponse,
+  WorkbenchArchiveInstallResponse,
+} from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
@@ -364,6 +374,18 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     return c.json({ workbench });
   });
 
+  // The App Center switch: member-level, like reload and remove. The answer is the workbench as
+  // the reload left it, its `appCenter` read back from the file.
+  app.patch("/:id/app-center", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const body = await readJson(c);
+    if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
+    const workbench = await deps.workbenches
+      .setAppCenter(projectId, agentId, c.req.param("id"), body.show)
+      .catch(notFound);
+    return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
+  });
+
   app.delete("/:id", async (c) => {
     const { projectId, agentId } = scope(c);
     await deps.workbenches.remove(projectId, agentId, c.req.param("id")).catch(notFound);
@@ -461,12 +483,31 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/** The Project's App Center: the shortcut list (mounted at /api/projects/:projectId/app-center). */
+export function appCenterRoutes(deps: Pick<WorkbenchRouteDeps, "access" | "workbenches">) {
+  const app = new Hono<AppEnv>();
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    return c.json({
+      shortcuts: await deps.workbenches.appCenter(projectId),
+    } satisfies AppCenterResponse);
+  });
+  return app;
+}
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
         id: "WorkbenchesModule.routes",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
+        auth: "user",
+        order: 20,
+      },
+      {
+        id: "WorkbenchesModule.appCenterRoutes",
+        prefix: "/api/projects/:projectId/app-center",
         auth: "user",
         order: 20,
       },
@@ -479,12 +520,17 @@ export class WorkbenchRoutes {
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
+  @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
   setup() {
     this.routes = workbenchRoutes({
       access: this.access,
       workbenches: this.workbenches,
       root: this.paths.root,
       agentConfig: this.agentConfig,
+    });
+    this.appCenterRoutes = appCenterRoutes({
+      access: this.access,
+      workbenches: this.workbenches,
     });
   }
 }

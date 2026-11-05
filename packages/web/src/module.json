@@ -39,6 +39,17 @@
         }
       },
       {
+        "id": "web.apps",
+        "key": "apps",
+        "path": "/apps",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "AppCenterPage"
+        }
+      },
+      {
         "id": "web.models",
         "key": "models",
         "path": "/models",
