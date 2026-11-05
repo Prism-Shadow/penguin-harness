@@ -53,6 +53,7 @@ function DiscDot() {
     <span
       aria-hidden
       className="pointer-events-none absolute inset-0 m-auto size-1.5 rounded-full bg-accent-fg"
+      data-slot="dot"
     />
   );
 }

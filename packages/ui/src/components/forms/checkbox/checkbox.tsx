@@ -71,6 +71,7 @@ function BoxMark({ mixed }: { mixed: boolean }) {
       strokeLinejoin="round"
       aria-hidden
       className="pointer-events-none absolute inset-0 m-auto text-accent-fg"
+      data-slot="tick"
     >
       <path d={mixed ? "M3 6h6" : "M2.6 6.2l2.2 2.2 4.6-4.8"} />
     </svg>

@@ -56,15 +56,16 @@
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
- * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>` |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a checkbox's tick or dash is `data-slot="tick"` and a radio's dot `data-slot="dot"`, a child of the drawn box or a sibling after the native one; a switch is `role="switch"` and its knob `data-slot="knob"` |
  * |                    | a button with a fill or a line, a text field or a select |                                                       |
  * |                    | trigger, the person's own message bubble, a badge, a     |                                                       |
- * |                    | checkbox's box and a radio's disc; hosts: `Button`,      |                                                       |
- * |                    | `Input`, `Textarea`, `Select`, `OptionMenu`,             |                                                       |
- * |                    | `SearchInput`, `FormPickerTrigger`, `MessageBubble`,     |                                                       |
- * |                    | `Badge`, `Count`, `Checkbox`, `CheckboxBox`, `Radio`,    |                                                       |
- * |                    | `RadioDisc`, and the start page's pickers, `AgentSelect` |                                                       |
- * |                    | and `WorkspaceSelect`                                    |                                                       |
+ * |                    | checkbox's box, a radio's disc and a switch's track;     |                                                       |
+ * |                    | hosts: `Button`, `Input`, `Textarea`, `Select`,          |                                                       |
+ * |                    | `OptionMenu`, `SearchInput`, `FormPickerTrigger`,        |                                                       |
+ * |                    | `MessageBubble`, `Badge`, `Count`, `Checkbox`,           |                                                       |
+ * |                    | `CheckboxBox`, `Radio`, `RadioDisc`, `Switch`, and the   |                                                       |
+ * |                    | start page's pickers, `AgentSelect` and                  |                                                       |
+ * |                    | `WorkspaceSelect`                                        |                                                       |
  * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`; the open folder is `aria-expanded="true"` |
  * |                    | `StartDashboard`                                         |                                                       |
  * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "tags" \| "price" \| "state"`; a pinned group `data-pinned="true"` |
@@ -257,7 +258,9 @@
  * pill a person reads, and its numeric form, `Count`) and a checkbox's box and a radio's disc (a box
  * a person presses), in their native form and as the drawing a pressable option holds
  * (`CheckboxBox`, `RadioDisc`), so a theme that draws one draws every form of it; and the start
- * page's Agent and Workspace pickers, whose triggers are pills a person presses.
+ * page's Agent and Workspace pickers, whose triggers are pills a person presses. A switch's track
+ * is one too (a capsule a person flips), and the marks a recipe draws differently from the box
+ * round them name themselves: a checkbox's tick, a radio's dot and a switch's knob.
  *
  * The five section hooks (2026-11-05) — `ui-start`, `ui-library`, `ui-ledger`, `ui-empty` and
  * `ui-run` — let a theme dress a whole section its own way where tokens and the hooks above reach

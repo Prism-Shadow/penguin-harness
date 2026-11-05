@@ -1,0 +1,123 @@
+/**
+ * Doodle's overlays (`themes/cartoon.css` imports this partial after the line and the marks): the
+ * slips that float over the page, and the plugin tiles that are stuck on it.
+ *
+ * - A dialog is the base's floating slip (its glass image: fill, line and shadow in one); its head
+ *   and its foot are ruled off from the body in pencil (`--_rule-pencil-h`, marks.css) instead of
+ *   the host's hairline, the rule laid along the border the hairline was drawn on. The page a
+ *   dialog's rail has open (the settings dialog's, `[aria-current="page"]`) is marked as the
+ *   navigation column's selected row is: the highlighter band across it in place of the host's
+ *   wash, and a blue pencil bracket in its margin while the rail stands as a column.
+ * - A toast (`ui-notice`, in the toast stack) is a slip too: its glass image is the one in its
+ *   tone's wash (`--_glass-surface-<tone>`), lined in the ink, with the slip's shaped shadow, so
+ *   it needs no fill, shadow, frame line or clip of its own — a clip would cut the shadow — and
+ *   the stack's opaque backing, which would show past the drawn corners, goes clear. No mark is
+ *   added for the tone: the wash carries it and the words name it. No tape, no tilt.
+ * - A plugin or skill tile (`ui-glass[data-glass="tile"]`) is a sticker: its hue's wash, edged
+ *   with the pen line at the control's corners, a paper margin outside the line (an outline in the
+ *   slip's colour) and the sticker's cut line round the margin (a pencil hairline, a spread ring),
+ *   no shadow. Its fill is a padding-box corner that sits under the line, not a clip, so the
+ *   margin and the cut line outside it survive.
+ *
+ * In forced colours none of this applies: the host's hairlines, backing, borders and corners
+ * return in the system's colours.
+ */
+@layer ui-theme {
+  @media (forced-colors: none) {
+    /* A dialog's head and foot, ruled off in pencil. */
+    :root[data-theme="cartoon"]
+      .ui-glass[role="dialog"]
+      > :is([data-slot="head"], [data-slot="foot"]) {
+      border-color: transparent;
+      background-image: var(--_rule-pencil-h);
+      background-origin: border-box;
+      background-size: 40px 4px;
+      background-repeat: repeat-x;
+    }
+    :root[data-theme="cartoon"] .ui-glass[role="dialog"] > [data-slot="head"] {
+      background-position: 0 100%;
+    }
+    :root[data-theme="cartoon"] .ui-glass[role="dialog"] > [data-slot="foot"] {
+      background-position: 0 0;
+    }
+
+    /* The page a dialog's rail has open: the highlighter band across it, the bracket in its
+       margin where the rail stands as a column. */
+    :root[data-theme="cartoon"] .ui-glass[role="dialog"] nav [aria-current="page"]:not(li *) {
+      position: relative;
+      isolation: isolate;
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"]
+      .ui-glass[role="dialog"]
+      nav
+      [aria-current="page"]:not(li *)::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 0 12px;
+      border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+    }
+    @media (min-width: 40rem) {
+      :root[data-theme="cartoon"]
+        .ui-glass[role="dialog"]
+        nav
+        [aria-current="page"]:not(li *)::after {
+        content: "";
+        position: absolute;
+        inset-block: 3px;
+        inset-inline-start: -8px;
+        inline-size: 8px;
+        pointer-events: none;
+        border-style: solid;
+        border-width: 8px 0;
+        border-image: var(--_mark-bracket) 8 0 fill / 8px 0 / 0 stretch;
+      }
+    }
+
+    /* A toast: a slip in its tone's wash, over no backing. */
+    :root[data-theme="cartoon"] section[aria-live] > :has(> .ui-notice) {
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice {
+      border-color: transparent;
+      background-color: transparent;
+      box-shadow: none;
+      border-image: var(--_glass-surface-neutral) 26 fill / 26px / 12px stretch;
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice[data-tone="info"] {
+      border-image-source: var(--_glass-surface-info);
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice[data-tone="success"] {
+      border-image-source: var(--_glass-surface-success);
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice[data-tone="warning"] {
+      border-image-source: var(--_glass-surface-warning);
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice[data-tone="danger"] {
+      border-image-source: var(--_glass-surface-danger);
+    }
+    :root[data-theme="cartoon"] section[aria-live] .ui-notice::after {
+      content: none;
+    }
+    @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+      :root[data-theme="cartoon"] section[aria-live] .ui-notice {
+        border-radius: var(--_fill-radius-surface);
+        clip-path: none;
+      }
+    }
+
+    /* A plugin or skill tile: a sticker — the inked tile, its paper margin, the cut line. */
+    :root[data-theme="cartoon"] .ui-glass[data-glass="tile"] {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background-clip: padding-box;
+      border-image: var(--_stroke-control) 9 / 9px / 0 stretch;
+      outline: 2px solid var(--ui-surface);
+      box-shadow: 0 0 0 3px var(--ui-line);
+    }
+  }
+}
