@@ -97,15 +97,15 @@ GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化�
 
 ### 第四步：挂载工具包并发送启动指令
 
-单容器连续训练、冻结导出 SKILL.md 以及测试集上的 3 轮重复测试等规则均已内置在工具包与 Benchmark 说明中，因此启动指令无需重复描述实验流程。在输入框中挂载 skilladam-rsi-toolkit 后，直接说明工具包名称、目标 Benchmark、模型、思考强度与 Docker 并发上限即可。
+在聊天输入框中挂载 skilladam-rsi-toolkit，并在指令中说明工具包名称、目标 Benchmark、测试重复轮数、模型、思考强度与 Docker 并发上限。其中测试重复轮数默认为 3 轮，也可以按需在指令中指定为 5 轮或 6 轮。
 
 如果只评测单个子 Benchmark，例如 service-ticket-resolution，在聊天框输入：
 
-> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
 如果直接评测 GDPEVO Essential 系列的全部六个子 Benchmark，在聊天框输入：
 
-> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
+> 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
 评测其他自进化算法时，只需将挂载的工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
