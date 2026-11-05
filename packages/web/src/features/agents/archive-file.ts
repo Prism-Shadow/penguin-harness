@@ -31,3 +31,12 @@ export function agentIdFromArchiveName(fileName: string): string {
     .replace(/ \(\d+\)$/, "")
     .replace(/-(\d{8}|v\d+)$/, "");
 }
+
+/**
+ * Whether a picked file is an older `.tar.gz` Agent State package, which records no Agent id: the
+ * import needs one named for it. Compatibility, like the accept list's `.tar.gz` entries: it
+ * leaves with them at 1.0.
+ */
+export function isTarPackage(fileName: string): boolean {
+  return /\.(tar\.gz|tgz|gz)$/i.test(fileName);
+}

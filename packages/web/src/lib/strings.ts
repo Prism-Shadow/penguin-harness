@@ -2054,8 +2054,7 @@ export const zh = {
     exportSummary: (files: number, size: string, sessions: number | null): string =>
       `${files} 个文件，约 ${size}${sessions === null ? "" : `，${sessions} 个对话`}`,
     exportOverLimit: (limit: string): string => `未压缩已超过 ${limit}，导出的 zip 可能无法再导入`,
-    exportSkipped: (n: number, ids: string): string =>
-      `${n} 个对话含有过大的文件，不会导出：${ids}`,
+    exportSkipped: (n: number): string => `${n} 个对话含有超过导入上限的文件，不会导出`,
     exportAction: "导出",
     exporting: "导出中…",
     /** The import dialog (agent-import-dialog.tsx). Replace mode is the settings page's 「从文件替换…」. */
@@ -2077,7 +2076,17 @@ export const zh = {
     migratePath: "路径",
     /** The field's label for 「其他」, where it is required: there is no default directory to read. */
     migratePathOther: "路径或说明",
-    migratePathHint: (home: string): string => `留空则读取 ${home}`,
+    /**
+     * The default agent lacks the agent-porting Skill (porting-skill-gate.ts): the line, the
+     * install of the plugin that ships it (installing again is the update), and why an install
+     * that landed still left it missing.
+     */
+    migrateSkillMissing: (agent: string): string =>
+      `${agent} 还没有 agent-porting 技能，迁移要用到它`,
+    migrateSkillInstall: "安装 skill-porting 插件",
+    migrateSkillInstalling: "正在安装…",
+    migrateSkillNotInPlugin:
+      "装好的 skill-porting 插件里没有 agent-porting 技能：这台服务端的插件库早于它，请先升级 PenguinHarness。",
     /** Stands in the prompt preview for 「其他」's source until something is typed. */
     migratePathToken: "<路径或说明>",
     /**
@@ -2091,6 +2100,7 @@ export const zh = {
           ? `把这个来源迁移成 PenguinHarness 的一个新 Agent：${source}`
           : `把 ${framework} 的配置迁移成 PenguinHarness 的一个新 Agent，来源：${source}`,
         "用 agent-porting 技能完成迁移：",
+        "- 如果你没有 agent-porting 技能，就停下并告诉我，不要在没有它的情况下迁移。",
         "- 完整读取来源：指令文件、技能、MCP 服务器、钩子、子 Agent 与命令；只读，不改动来源里的任何文件。",
         "- 绝不复制密钥、令牌或密码的值，只记下需要填写的键名。",
         "- 在临时目录里按技能说明的 Agent zip 布局（manifest.json 与 agent_state/）写出新 Agent。",
@@ -2102,10 +2112,14 @@ export const zh = {
       "用导出的 zip 新建一个 Agent。zip 里的对话一并导入；这台服务端上已有的对话会被略过。",
     replaceFileInfo:
       "用导出的 zip 替换该 Agent 的 Agent State：文件没带的部分保留现有内容，对话、保险柜与 API 密钥保留，替换前先写一份备份快照。",
-    importFileHint: ".zip；1.0 之前也接受旧的 .tar.gz 快照包",
+    importFileHint: (limit: string): string =>
+      `.zip，最大 ${limit}；1.0 之前也接受旧的 .tar.gz 快照包`,
+    importTooLarge: (limit: string): string => `文件超过 ${limit}，无法导入`,
     importPick: "选择文件",
     importClearFile: "移除已选文件",
     importIdHint: "按文件名预填；留空则使用文件里记录的 id",
+    /** A `.tar.gz` package records no id: the field is required for one. */
+    importIdHintTar: "按文件名预填；旧的 .tar.gz 快照包不记录 id，必须填写",
     importAction: "导入",
     importing: "导入中…",
     /** A taken id (409 agent_exists), inline under the id: the two ways on — another id, or (owners) overwrite. */

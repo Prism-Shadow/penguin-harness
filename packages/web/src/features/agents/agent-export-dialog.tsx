@@ -6,8 +6,8 @@
  * on its new server — and which conversations, as none, the latest N, or those of a date range.
  *
  * Under the choices, one line says what that comes to, from the server's preview: files, size
- * and conversations, with a note when the selection is larger than an import takes and the
- * conversations left out for a file too large. It is asked again 300 ms after the last change,
+ * and conversations, with a note when the selection is larger than an import takes and how many
+ * conversations are left out for a file too large. It is asked again 300 ms after the last change,
  * and the previous answer stays (dimmed) until the new one arrives, so the line changes only
  * when its numbers do. Export saves `<agentId>-<yyyymmdd>.zip` through the fetch-then-save
  * helper (archive-download.ts), so a refused export is a toast rather than a saved error page.
@@ -288,9 +288,9 @@ function ExportForm({ projectId, agentId, agentName, machineId, onClose }: Agent
 }
 
 /**
- * The preview's line: what the zip would hold, the note past the import limit, and the
- * conversations left out. An answer for an earlier choice stays, dimmed, until the current one
- * arrives.
+ * The preview's line: what the zip would hold, the note past the import limit, and how many
+ * conversations are left out (the preview names them by id only, which tells a reader nothing).
+ * An answer for an earlier choice stays, dimmed, until the current one arrives.
  */
 function PreviewLine({
   preview,
@@ -328,12 +328,7 @@ function PreviewLine({
         </p>
       )}
       {skipped.length > 0 && (
-        <p className={toneInk.attention}>
-          {S.agent.exportSkipped(
-            skipped.length,
-            skipped.map((s) => s.sessionId).join(S.todo.listSeparator),
-          )}
-        </p>
+        <p className={toneInk.attention}>{S.agent.exportSkipped(skipped.length)}</p>
       )}
     </div>
   );
