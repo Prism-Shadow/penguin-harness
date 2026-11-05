@@ -1,8 +1,9 @@
 /**
  * Docs ↔ plugin-library sync: the Skills & Plugins doc pages must mention every plugin that
- * actually ships in packages/plugins (the library directory is the source of truth — the
- * same directories loadLibraryPlugins() reads). Derived, not hardcoded, so adding a plugin
- * without documenting it fails here instead of silently drifting.
+ * actually ships in the repository's plugins/ — every package there, library content and server
+ * modules alike (what a package carries is in its built ifaces.json, which this suite does not
+ * build, so it does not tell them apart). Derived, not hardcoded, so adding a plugin without
+ * documenting it fails here instead of silently drifting.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,15 +12,8 @@ import { describe, expect, it } from "vitest";
 const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 const contentDir = join(__dirname, "..", "content");
 
-/** A plugin directory: its package.json carries a `penguin` block, or it ships skills. */
-function isPluginDir(dir: string): boolean {
-  if (existsSync(join(dir, "skills"))) return true;
-  try {
-    return "penguin" in (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as object);
-  } catch {
-    return false;
-  }
-}
+/** A plugin directory: one npm package, its package.json at the top. */
+const isPluginDir = (dir: string): boolean => existsSync(join(dir, "package.json"));
 
 const libraryPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && isPluginDir(join(pluginsRoot, entry.name)))

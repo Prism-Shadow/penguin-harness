@@ -1,6 +1,6 @@
 /**
- * Preset content for builtin Agents; the plugin library lives in @prismshadow/penguin-plugins
- * (the library files are read live when building the preset).
+ * Preset content for builtin Agents; the plugin library (plugin/library-reader.ts) is read live
+ * when building the preset, from the host package the embedder names (useLibraryHost).
  *
  * - Every Project comes with `default_agent` (the General Agent, the
  *   default conversational Agent), which has the library's preinstalled plugin set installed at
@@ -12,7 +12,8 @@
  * - Skill metadata is auto-injected into the system Prompt via the `{{SKILL_METADATA}}`
  *   placeholder; it's not registered in AGENTS.md.
  */
-import { libraryPlugin, loadPreinstalledPlugins, type LibraryPlugin } from "../plugins/index.js";
+import { libraryPlugin, loadPreinstalledPlugins } from "../plugin/library-reader.js";
+import type { LibraryPlugin } from "../plugin/library-reader.js";
 import { DEFAULT_AGENT_ID, DEFAULT_PROJECT_ID } from "./paths.js";
 
 export const SUPPORT_AGENT_ID = "penguin_support";
