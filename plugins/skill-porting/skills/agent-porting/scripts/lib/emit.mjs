@@ -89,6 +89,13 @@ function plainRef(s) {
   return { scheme: p.scheme, key: p.kind ? vaultName(p.name) : p.name };
 }
 
+/**
+ * Variables every shell has, which name a place or a setting on this machine, never a secret:
+ * not Vault keys. PenguinHarness fills a server's `${…}` only from the Vault, so the summary asks
+ * for the value here.
+ */
+const MACHINE_VARIABLES = new Set(["HOME", "PATH", "USER", "PWD", "TMPDIR", "SHELL", "LANG"]);
+
 /** A value that looks like a credential however it is named. */
 const looksSecret = (v) => tokenish(v) || lineKind(v, false) !== null || PEM.test(v);
 
@@ -132,10 +139,7 @@ function mapServer(sourceName, spec, framework, used) {
   const notes = [];
   const keys = new Set();
   const secrets = [];
-  let name = sourceName
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^[^a-z0-9]+/, "");
+  let name = portedServerName(sourceName);
   if (name === "" || tokenish(name)) name = `server-${used.size + 1}`;
   const S = name;
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) {
@@ -174,10 +178,13 @@ function mapServer(sourceName, spec, framework, used) {
     }
     config.command = rewriteRefs(cmd, keys, framework);
     const args = [...extra, ...(Array.isArray(spec.args) ? spec.args : [])];
+    if (args.some((a) => a !== null && typeof a === "object")) {
+      return { skipped: "its arguments hold a nested value", name };
+    }
     if (args.length > 0) {
       let generic = 0;
       config.args = args.map((a, i) => {
-        if (typeof a !== "string") return a;
+        if (typeof a !== "string") return String(a);
         const ref = plainRef(a);
         if (ref) {
           keys.add(ref.key);
@@ -271,6 +278,12 @@ function mapServer(sourceName, spec, framework, used) {
   const env = {};
   let genericEnv = 0;
   for (const [k, v] of Object.entries(obj(spec.env))) {
+    if (v !== null && typeof v === "object") {
+      notes.push(
+        `${S}: env ${shownEnv(k)} holds a nested value, which an environment cannot; left out`,
+      );
+      continue;
+    }
     const value = String(v);
     const ref = plainRef(value);
     if (ref && ref.scheme === "") {
@@ -378,11 +391,18 @@ function mapServer(sourceName, spec, framework, used) {
 
   const dropped = Object.keys(spec).filter((k) => !READ_FIELDS.has(k));
   if (dropped.length > 0) notes.push(`${S}: fields left out: ${dropped.map(safeKey).join(", ")}`);
+  const machine = [...keys].filter((k) => MACHINE_VARIABLES.has(k));
+  if (machine.length > 0) {
+    machine.forEach((k) => keys.delete(k));
+    notes.push(
+      `${S}: needs a path on this machine: ${machine.map((k) => `\${${k}}`).join(", ")} (PenguinHarness fills \${…} from the Vault only: replace it with the value, or set that key in the Vault)`,
+    );
+  }
   return { entry: { name, config }, keys, secrets, notes, name };
 }
 
 /** The MCP servers a parsed source holds, as `[sourceName, spec]`, and what it could not reach. */
-function serversOf(data, framework, base, project, notes) {
+function serversOf(data, framework, base, project, notes, profile) {
   const out = [];
   const take = (map) => {
     if (Array.isArray(map)) {
@@ -450,22 +470,50 @@ function serversOf(data, framework, base, project, notes) {
     return out;
   }
   take(data.mcpServers ?? data.mcp_servers);
+  if (framework === "codex") {
+    const profiles = Object.entries(obj(data.profiles)).filter(
+      ([, p]) => Object.keys(obj(p?.mcp_servers)).length > 0,
+    );
+    if (profile !== null) {
+      const hit = profiles.find(([name]) => name === profile);
+      if (hit) take(hit[1].mcp_servers);
+      else notes.push("no profile of that name has MCP servers");
+    } else if (profiles.length > 0) {
+      notes.push(
+        `profile(s) ${profiles.map(([name]) => shownName(name)).join(", ")} have their own MCP servers, not ported: emit again with --profile <name>`,
+      );
+    }
+  }
   return out;
 }
 
 // ---- Hooks -----------------------------------------------------------------------------------
 
-/** The generated wrapper: runs the source's hook command and speaks PenguinHarness's protocol. */
-function wrapperSource(framework, event, point, matcher, command, timeoutS) {
-  return `// Ported by the agent-porting skill from a ${framework} ${event} hook: it runs the source's
-// command with that tool's input and turns its answer into PenguinHarness's.
+/** A hook's timeout when the source sets none: Claude Code, Codex, Qoder and Qwen Code use 600 s. */
+const DEFAULT_HOOK_TIMEOUT_S = 600;
+/** How many stops in a row a ported Stop hook may block before its block is no longer forwarded. */
+const MAX_STOP_BLOCKS = 3;
+
+/**
+ * The generated wrapper: runs the source's hook command in the Session's Workspace, with the
+ * source tool's input, and speaks PenguinHarness's protocol. `guard` names it in its answers.
+ */
+function wrapperSource({ framework, event, point, matcher, command, timeoutS, guard }) {
+  return `// Ported by the agent-porting skill from a ${framework} ${event} hook (${guard}). It runs the
+// source's command in the Session's Workspace with that tool's input, and turns its answer into
+// PenguinHarness's.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const COMMAND = ${JSON.stringify(command)};
 const MATCHER = ${JSON.stringify(matcher)};
 const EVENT = ${JSON.stringify(event)};
 const POINT = ${JSON.stringify(point)};
+const GUARD = ${JSON.stringify(guard)};
+const MAX_STOP_BLOCKS = ${MAX_STOP_BLOCKS};
 // PenguinHarness's tool names, by the names the source's matchers use.
 const SOURCE_TOOLS = {
   exec_command: "Bash",
@@ -475,11 +523,54 @@ const SOURCE_TOOLS = {
   run_subagent: "Task",
 };
 
-const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+const input = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
 const tool = SOURCE_TOOLS[input.tool_name] ?? input.tool_name ?? "";
 if (POINT === "pre_tool_use" && MATCHER !== "" && MATCHER !== "*") {
-  if (!new RegExp(\`^(?:\${MATCHER})$\`).test(tool)) process.exit(0);
+  if (!new RegExp(\`^(?:\${MATCHER})$\`, "i").test(tool)) process.exit(0);
 }
+
+/** The Session's Workspace, from the head of the Trace it is writing; null without one. */
+function workspace() {
+  if (typeof input.trace_path !== "string") return null;
+  try {
+    const fd = fs.openSync(input.trace_path, "r");
+    const buf = Buffer.alloc(262144);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const head = JSON.parse(buf.subarray(0, n).toString("utf8").split("\\n")[0]);
+    const dir = head?.type === "session_meta" ? head.payload?.workspace : null;
+    return typeof dir === "string" && fs.statSync(dir).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+const cwd = workspace() ?? process.cwd();
+
+// How many stops in a row this hook blocked in this Session: kept outside the Agent State.
+const stateFile = path.join(
+  os.tmpdir(),
+  "penguin-ported-hooks",
+  createHash("sha256").update(import.meta.filename).digest("hex").slice(0, 16),
+  \`\${String(input.session_id ?? "none").replace(/[^A-Za-z0-9_-]/g, "_")}.json\`,
+);
+const blocksSoFar = () => {
+  try {
+    return Number(JSON.parse(fs.readFileSync(stateFile, "utf8")).blocks) || 0;
+  } catch {
+    return 0;
+  }
+};
+const recordBlocks = (n) => {
+  try {
+    if (n === 0) fs.rmSync(stateFile, { force: true });
+    else {
+      fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ blocks: n }));
+    }
+  } catch {}
+};
+const previous = POINT === "stop" ? blocksSoFar() : 0;
+
 let toolInput = {};
 try {
   toolInput = JSON.parse(input.arguments ?? "{}");
@@ -490,18 +581,42 @@ if (input.tool_name === "exec_command" && typeof toolInput.cmd === "string") {
 const payload = {
   session_id: input.session_id,
   transcript_path: input.trace_path,
-  cwd: process.cwd(),
+  cwd,
   hook_event_name: EVENT,
   ...(POINT === "pre_tool_use" ? { tool_name: tool, tool_input: toolInput } : {}),
   ...(POINT === "user_prompt" ? { prompt: input.prompt ?? "" } : {}),
-  ...(POINT === "stop" ? { stop_hook_active: false } : {}),
+  ...(POINT === "stop" ? { stop_hook_active: previous > 0 } : {}),
 };
 const run = spawnSync(COMMAND, {
   shell: true,
+  cwd,
   input: JSON.stringify(payload),
   encoding: "utf8",
+  env: { ...process.env, CLAUDE_PROJECT_DIR: cwd },
   timeout: ${Math.max(1, timeoutS - 1) * 1000},
 });
+const reply = (value) => {
+  process.stdout.write(JSON.stringify(value));
+  process.exit(0);
+};
+
+// A command that could not start at all: a guard fails closed, anything else lets the event pass.
+const failed =
+  run.error && run.error.code !== "ETIMEDOUT"
+    ? String(run.error.code ?? "spawn error")
+    : run.status === 127
+      ? "exit 127, command not found"
+      : run.status === 126
+        ? "exit 126, not executable"
+        : null;
+if (failed !== null) {
+  if (POINT === "pre_tool_use") {
+    reply({ decision: "deny", reason: \`the ported guard \${GUARD} could not run: \${failed}\` });
+  }
+  process.stderr.write(\`the ported hook \${GUARD} could not run: \${failed}\\n\`);
+  process.exit(0);
+}
+
 const out = (run.stdout ?? "").trim();
 let answer = null;
 try {
@@ -510,20 +625,31 @@ try {
 const said =
   answer?.hookSpecificOutput?.permissionDecisionReason ?? answer?.reason ?? (run.stderr ?? "").trim();
 const reason = String(said).slice(0, 500) || "the ported hook said so";
-const reply = (value) => {
-  process.stdout.write(JSON.stringify(value));
-  process.exit(0);
-};
 if (POINT === "pre_tool_use") {
   const decision =
     answer?.hookSpecificOutput?.permissionDecision ??
     (answer?.decision === "block" ? "deny" : answer?.decision === "approve" ? "allow" : null);
   if (run.status === 2 || decision === "deny") reply({ decision: "deny", reason });
+  // PenguinHarness has no "ask" from a hook: the safe side is to refuse.
+  if (decision === "ask") {
+    reply({ decision: "deny", reason: \`the source hook asked for confirmation: \${reason}\` });
+  }
   if (decision === "allow") reply({ decision: "allow", reason: "allowed by the ported hook" });
 } else if (POINT === "stop") {
-  if (run.status === 2 || answer?.decision === "block") {
-    reply({ decision: "continue", input: reason, reason: "the ported Stop hook asked to go on" });
+  const blocked = run.status === 2 || answer?.decision === "block";
+  if (!blocked) {
+    recordBlocks(0);
+    process.exit(0);
   }
+  if (previous >= MAX_STOP_BLOCKS) {
+    recordBlocks(0);
+    process.stderr.write(
+      \`the ported Stop hook \${GUARD} blocked \${MAX_STOP_BLOCKS} stops in a row; this one goes through\\n\`,
+    );
+    process.exit(0);
+  }
+  recordBlocks(previous + 1);
+  reply({ decision: "continue", input: reason, reason: "the ported Stop hook asked to go on" });
 } else {
   const context =
     answer?.hookSpecificOutput?.additionalContext ?? (answer === null && run.status === 0 ? out : "");
@@ -543,7 +669,34 @@ function hooksOf(data) {
   return events.length > 0 ? Object.fromEntries(events.map((e) => [e, data[e]])) : null;
 }
 
-function emitHooks(hooks, framework, out, summary) {
+/** An MCP server's name as `--emit` writes it: lower case, `[a-z0-9_-]`, a letter or digit first. */
+export const portedServerName = (sourceName) =>
+  String(sourceName)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "");
+
+/**
+ * A matcher with the server part of each `mcp__<server>__` named as `--emit` names the server,
+ * and the server names it could not carry over.
+ */
+function portedMatcher(matcher, known) {
+  const unknown = [];
+  const text = matcher.replace(/mcp__([A-Za-z0-9 ._-]+?)__/g, (all, server) => {
+    const name = portedServerName(server);
+    if (name === "" || tokenish(name)) {
+      unknown.push(chars(server));
+      return all;
+    }
+    if (!known.has(name)) unknown.push(name);
+    return `mcp__${name}__`;
+  });
+  return { text, unknown };
+}
+
+const SIDE_FILE = ".ported-sources.json";
+
+function emitHooks(hooks, framework, out, summary, sourceKey, knownServers) {
   const dirName = `${framework}-hooks`;
   const dir = path.join(out, "agent_state", "hooks", dirName);
   let manifest;
@@ -560,13 +713,25 @@ function emitHooks(hooks, framework, out, summary) {
       user_prompt: [],
     };
   }
-  let written = 0;
+  // Emitting a source again replaces what it wrote before.
+  let sources = {};
+  try {
+    sources = JSON.parse(fs.readFileSync(path.join(dir, SIDE_FILE), "utf8"));
+  } catch {}
+  const previous = new Set(sources[sourceKey] ?? []);
+  for (const point of Object.values(HOOK_POINTS)) {
+    manifest[point] = (manifest[point] ?? []).filter((entry) => !previous.has(entry.command));
+  }
+  for (const file of previous) fs.rmSync(path.join(dir, file), { force: true });
+  const written = [];
+
   const shownMatcher = (m) =>
     m === ""
       ? "any"
       : m.length <= 100 && lineKind(m, false) === null && !tokenish(m)
         ? m
         : chars(m);
+  let asks = false;
   for (const [event, groups] of Object.entries(hooks)) {
     const point = HOOK_POINTS[event];
     const list =
@@ -601,38 +766,70 @@ function emitHooks(hooks, framework, out, summary) {
         );
         continue;
       }
-      if (/CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT/.test(command)) {
+      if (/CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT/.test(command)) {
         summary.unmapped.push(
-          `hook ${where}: its command needs another tool's directory variables`,
+          `hook ${where}: its command runs a file inside another tool's plugin`,
         );
         continue;
       }
-      const timeout = typeof h.timeout === "number" && h.timeout > 0 ? Math.ceil(h.timeout) : 60;
+      const ported = portedMatcher(matcher, knownServers);
+      if (ported.unknown.length > 0) {
+        summary.notes.push(
+          `hook ${where}: its matcher names MCP server(s) this port does not carry (yet): ${ported.unknown.join(", ")}`,
+        );
+      }
+      const timeout =
+        typeof h.timeout === "number" && h.timeout > 0
+          ? Math.ceil(h.timeout)
+          : DEFAULT_HOOK_TIMEOUT_S;
       const prefix = point.replace(/_/g, "-");
-      const existing = fs.existsSync(dir)
-        ? fs.readdirSync(dir).filter((f) => f.startsWith(`${prefix}-`)).length
-        : 0;
-      const file = `${prefix}-${existing + 1}.mjs`;
+      const taken = new Set(fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+      let n = 1;
+      while (taken.has(`${prefix}-${n}.mjs`)) n++;
+      const file = `${prefix}-${n}.mjs`;
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(
         path.join(dir, file),
-        wrapperSource(framework, event, point, matcher, command, timeout),
+        wrapperSource({
+          framework,
+          event,
+          point,
+          matcher: ported.text,
+          command,
+          timeoutS: timeout,
+          guard: `${dirName}/${file}`,
+        }),
       );
-      manifest[point] ??= [];
       manifest[point].push({
         command: file,
         timeout,
         ...(point === "user_prompt" ? { trigger: "prompt" } : {}),
       });
-      written++;
+      written.push(file);
+      if (point === "pre_tool_use") asks = true;
       summary.wrote.push(
-        `hook ${where} → hooks/${dirName}/${file}, running ${commandLine(command)}`,
+        `hook ${where} → hooks/${dirName}/${file}, running ${commandLine(command)} in the Workspace`,
       );
+      if (point === "user_prompt") {
+        summary.notes.push(
+          `hook ${where}: its added context carries over; a block (exit 2, "decision": "block") cannot be expressed and lets the prompt through`,
+        );
+      }
     }
   }
-  if (written > 0)
+  if (asks) {
+    summary.notes.push(
+      'a ported PreToolUse hook that answers "ask" denies instead ("the source hook asked for confirmation"): there is no asking from a hook here',
+    );
+  }
+  if (written.length > 0 || previous.size > 0) {
+    fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "hooks.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  return written;
+    if (written.length > 0) sources[sourceKey] = written;
+    else delete sources[sourceKey];
+    fs.writeFileSync(path.join(dir, SIDE_FILE), `${JSON.stringify(sources, null, 2)}\n`);
+  }
+  return written.length;
 }
 
 // ---- The port folder -------------------------------------------------------------------------
@@ -695,7 +892,11 @@ function appendInstructions(target, heading, text) {
   return text.trim().split("\n").length;
 }
 
-function effortOf(data, framework) {
+function effortOf(data, framework, profile) {
+  if (framework === "codex" && profile !== null) {
+    const own = obj(obj(data.profiles)[profile]).model_reasoning_effort;
+    if (typeof own === "string") data = { ...data, model_reasoning_effort: own };
+  }
   const raw =
     (framework === "codex"
       ? data.model_reasoning_effort
@@ -719,7 +920,7 @@ function modelOf(data) {
  * maps the source's MCP servers, hooks, effort setting and (for a subagent file) instructions into
  * the port folder, and prints a summary that holds no value of the source.
  */
-export function emit(file, { framework, out, project, confirmed }) {
+export function emit(file, { framework, out, project, profile = null, confirmed }) {
   if (!FRAMEWORKS.includes(framework)) {
     say(`# --framework must be one of ${FRAMEWORKS.join(", ")}`);
     return 2;
@@ -768,7 +969,7 @@ export function emit(file, { framework, out, project, confirmed }) {
   const vault = new Set(manifest.vaultKeys);
 
   // MCP servers.
-  const servers = serversOf(data, framework, path.basename(file), project, summary.notes);
+  const servers = serversOf(data, framework, path.basename(file), project, summary.notes, profile);
   const list = Array.isArray(manifest.definition.mcpServers) ? manifest.definition.mcpServers : [];
   const used = new Set(list.map((s) => s.name));
   for (const [sourceName, spec] of servers) {
@@ -811,11 +1012,16 @@ export function emit(file, { framework, out, project, confirmed }) {
 
   // Hooks.
   const hooks = format === "markdown" ? null : hooksOf(data);
-  if (hooks !== null && emitHooks(hooks, framework, out, summary) > 0) manifest.parts.hooks = true;
+  if (hooks !== null) {
+    const known = new Set(list.map((server) => server.name));
+    if (emitHooks(hooks, framework, out, summary, path.resolve(file), known) > 0) {
+      manifest.parts.hooks = true;
+    }
+  }
   if (format === "markdown" && data.hooks) summary.unmapped.push("hooks scoped to this subagent");
 
   // Model.
-  const effort = effortOf(data, framework);
+  const effort = effortOf(data, framework, profile);
   if (typeof effort === "string") {
     manifest.definition.model = { ...(manifest.definition.model ?? {}), thinkingLevel: effort };
     summary.wrote.push(`thinking level ${effort}`);

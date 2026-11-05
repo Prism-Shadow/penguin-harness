@@ -999,3 +999,287 @@ describe("--append copies instructions file to file", () => {
     expect(await fs.readFile(target, "utf8")).toMatch(R3);
   });
 });
+
+// ---- The ported hooks behave like their source (the fourth review) ------------------------
+
+describe("a ported hook behaves like its source", () => {
+  /** Emits `hooks` from a Claude Code settings.json; the hook package and the summary. */
+  async function ported(hooks: Record<string, unknown>, files: Record<string, string> = {}) {
+    const src = await folder({ "settings.json": JSON.stringify({ hooks }), ...files });
+    const port = await portFolder();
+    const emitted = run(
+      "--emit",
+      path.join(src, "settings.json"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+    );
+    expect(emitted.status, emitted.out).toBe(0);
+    const pkg = path.join(port, "agent_state", "hooks", "claude-code-hooks");
+    const manifest = JSON.parse(await fs.readFile(path.join(pkg, "hooks.json"), "utf8")) as Record<
+      string,
+      Array<{ command: string; timeout: number }>
+    >;
+    return { src, port, pkg, manifest, summary: emitted.out };
+  }
+  /** Runs a wrapper the way core runs a hook script: Node, in the package directory. */
+  async function call(pkg: string, file: string, input: Record<string, unknown>, tmp: string) {
+    const r = spawnSync(process.execPath, [path.join(pkg, file)], {
+      cwd: pkg,
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      env: { ...process.env, TMPDIR: tmp },
+    });
+    return {
+      stdout: r.stdout,
+      stderr: r.stderr,
+      answer: r.stdout === "" ? null : JSON.parse(r.stdout),
+    };
+  }
+  const tmpDir = () => fs.mkdtemp(path.join(dir, "tmp-"));
+
+  it("a Stop hook that guards against loops lets the stop through once it has blocked", async () => {
+    const src = await folder({
+      "guard.mjs": [
+        'import { readFileSync } from "node:fs";',
+        'const input = JSON.parse(readFileSync(0, "utf8"));',
+        "if (input.stop_hook_active) process.exit(0);",
+        'process.stderr.write("review once more");',
+        "process.exit(2);",
+        "",
+      ].join("\n"),
+    });
+    const { pkg, manifest } = await ported({
+      Stop: [{ hooks: [{ type: "command", command: `node ${path.join(src, "guard.mjs")}` }] }],
+    });
+    const file = manifest.stop![0]!.command;
+    const tmp = await tmpDir();
+    const stop = { hook: "stop", session_id: "s-loop" };
+    expect((await call(pkg, file, stop, tmp)).answer).toMatchObject({
+      decision: "continue",
+      input: "review once more",
+    });
+    expect((await call(pkg, file, stop, tmp)).answer).toBeNull();
+    // A later stop starts a new chain: the guard may block it again.
+    expect((await call(pkg, file, stop, tmp)).answer).toMatchObject({ decision: "continue" });
+  });
+
+  it("a Stop hook that always blocks is cut off after three blocks in a row", async () => {
+    const { pkg, manifest } = await ported({
+      Stop: [{ hooks: [{ type: "command", command: 'echo "keep going" >&2; exit 2' }] }],
+    });
+    const file = manifest.stop![0]!.command;
+    const tmp = await tmpDir();
+    const stop = { hook: "stop", session_id: "s-always" };
+    for (let i = 0; i < 3; i++) {
+      expect((await call(pkg, file, stop, tmp)).answer).toMatchObject({
+        decision: "continue",
+        input: "keep going",
+      });
+    }
+    const fourth = await call(pkg, file, stop, tmp);
+    expect(fourth.answer).toBeNull();
+    expect(fourth.stderr).toContain("blocked 3 stops in a row");
+    // Another Session keeps its own count.
+    expect(
+      (await call(pkg, file, { hook: "stop", session_id: "s-other" }, tmp)).answer,
+    ).toMatchObject({
+      decision: "continue",
+    });
+  });
+
+  it("a project-relative guard runs in the Session's Workspace, and a guard that cannot run denies", async () => {
+    const { pkg, manifest } = await ported({
+      PreToolUse: [
+        { matcher: "Bash", hooks: [{ type: "command", command: "./check.sh" }] },
+        { matcher: "Bash", hooks: [{ type: "command", command: "./missing-guard.sh" }] },
+      ],
+    });
+    const workspace = await folder({
+      "check.sh":
+        '#!/bin/sh\ncase "$(cat)" in *"rm -rf"*) echo "no rm -rf here" >&2; exit 2;; esac\nexit 0\n',
+    });
+    await fs.chmod(path.join(workspace, "check.sh"), 0o755);
+    const trace = path.join(await tmpDir(), "s1_001.jsonl");
+    await fs.writeFile(
+      trace,
+      `${JSON.stringify({ type: "session_meta", payload: { session_id: "s1", workspace } })}\n`,
+    );
+    const [guard, missing] = manifest.pre_tool_use!.map((entry) => entry.command);
+    const tmp = await tmpDir();
+    const tool = (cmd: string) => ({
+      hook: "pre_tool_use",
+      session_id: "s1",
+      trace_path: trace,
+      tool_name: "exec_command",
+      tool_call_id: "c1",
+      arguments: JSON.stringify({ cmd }),
+    });
+    expect((await call(pkg, guard!, tool("rm -rf build"), tmp)).answer).toEqual({
+      decision: "deny",
+      reason: "no rm -rf here",
+    });
+    expect((await call(pkg, guard!, tool("ls"), tmp)).answer).toBeNull();
+    const refused = (await call(pkg, missing!, tool("ls"), tmp)).answer;
+    expect(refused.decision).toBe("deny");
+    expect(refused.reason).toContain(`the ported guard claude-code-hooks/${missing} could not run`);
+  });
+
+  it("a matcher on an MCP server's tools follows the server's ported name", async () => {
+    const { pkg, manifest } = await ported({
+      PreToolUse: [
+        {
+          matcher: "mcp__GitHub__.*",
+          hooks: [{ type: "command", command: 'echo "no issues" >&2; exit 2' }],
+        },
+      ],
+    });
+    const file = manifest.pre_tool_use![0]!.command;
+    const tmp = await tmpDir();
+    const tool = (name: string) => ({
+      hook: "pre_tool_use",
+      session_id: "s1",
+      tool_name: name,
+      arguments: "{}",
+    });
+    expect((await call(pkg, file, tool("mcp__github__create_issue"), tmp)).answer).toEqual({
+      decision: "deny",
+      reason: "no issues",
+    });
+    expect((await call(pkg, file, tool("mcp__other__create_issue"), tmp)).answer).toBeNull();
+  });
+
+  it("an ask becomes a deny, a timeout defaults to the source's 600 s, and a prompt hook's lost block is said", async () => {
+    const ask = JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "ask",
+        permissionDecisionReason: "check with the owner",
+      },
+    });
+    const { pkg, manifest, summary } = await ported({
+      PreToolUse: [{ matcher: "", hooks: [{ type: "command", command: `echo '${ask}'` }] }],
+      UserPromptSubmit: [
+        { hooks: [{ type: "command", command: "echo remember the style guide" }] },
+      ],
+    });
+    expect(manifest.pre_tool_use![0]!.timeout).toBe(600);
+    expect(summary).toContain("asked for confirmation");
+    expect(summary).toContain("cannot be expressed");
+    const tmp = await tmpDir();
+    const answer = (
+      await call(
+        pkg,
+        manifest.pre_tool_use![0]!.command,
+        { hook: "pre_tool_use", tool_name: "read_file", arguments: "{}" },
+        tmp,
+      )
+    ).answer;
+    expect(answer).toEqual({
+      decision: "deny",
+      reason: "the source hook asked for confirmation: check with the owner",
+    });
+    const context = (
+      await call(pkg, manifest.user_prompt![0]!.command, { hook: "user_prompt", prompt: "hi" }, tmp)
+    ).answer;
+    expect(context).toEqual({ context: "remember the style guide" });
+  });
+
+  it("emitting the same source again replaces its hooks instead of adding them twice", async () => {
+    const src = await folder({
+      "settings.json": JSON.stringify({
+        hooks: {
+          PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "./check.sh" }] }],
+        },
+      }),
+    });
+    const port = await portFolder();
+    const pkg = path.join(port, "agent_state", "hooks", "claude-code-hooks");
+    run("--emit", path.join(src, "settings.json"), "--framework", "claude-code", "--out", port);
+    const once = await fs.readdir(pkg);
+    run("--emit", path.join(src, "settings.json"), "--framework", "claude-code", "--out", port);
+    expect((await fs.readdir(pkg)).sort()).toEqual(once.sort());
+    const hooks = JSON.parse(await fs.readFile(path.join(pkg, "hooks.json"), "utf8"));
+    expect(hooks.pre_tool_use).toHaveLength(1);
+  });
+});
+
+describe("--emit on the shapes a server mapping cannot take as they are", () => {
+  it("keeps this machine's variables out of the Vault keys, and leaves out nested values", async () => {
+    const src = await folder({
+      ".mcp.json": JSON.stringify({
+        mcpServers: {
+          files: {
+            command: "npx",
+            args: ["-y", "files-mcp", "${HOME}/notes"],
+            env: { CONFIG: { nested: true }, LEVEL: "debug" },
+          },
+          odd: { command: "srv", args: [["nested", "list"]] },
+        },
+      }),
+    });
+    const port = await portFolder();
+    const { out } = run(
+      "--emit",
+      path.join(src, ".mcp.json"),
+      "--framework",
+      "claude-code",
+      "--out",
+      port,
+    );
+    const m = await manifestOf(port);
+    expect(m.vaultKeys).not.toContain("HOME");
+    expect(out).toContain("needs a path on this machine: ${HOME}");
+    expect(server(m, "files")).toEqual({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "files-mcp", "${HOME}/notes"],
+      env: { LEVEL: "debug" },
+    });
+    expect(out).toContain("env CONFIG holds a nested value");
+    expect(server(m, "odd")).toBeUndefined();
+    expect(out).toContain("not ported: mcp server odd: its arguments hold a nested value");
+    expect(await fs.readFile(path.join(port, "manifest.json"), "utf8")).not.toContain(
+      "[object Object]",
+    );
+  });
+
+  it("names a Codex profile's servers, and ports them with --profile", async () => {
+    const src = await folder({
+      "config.toml": [
+        "[mcp_servers.github]",
+        'command = "npx"',
+        "[profiles.work]",
+        'model_reasoning_effort = "low"',
+        "[profiles.work.mcp_servers.jira]",
+        'command = "jira-mcp"',
+        "",
+      ].join("\n"),
+    });
+    const port = await portFolder();
+    const plain = run(
+      "--emit",
+      path.join(src, "config.toml"),
+      "--framework",
+      "codex",
+      "--out",
+      port,
+    );
+    expect(plain.out).toContain("profile(s) work have their own MCP servers");
+    expect(server(await manifestOf(port), "jira")).toBeUndefined();
+    run(
+      "--emit",
+      path.join(src, "config.toml"),
+      "--framework",
+      "codex",
+      "--out",
+      port,
+      "--profile",
+      "work",
+    );
+    const m = await manifestOf(port);
+    expect(server(m, "jira")).toEqual({ transport: "stdio", command: "jira-mcp" });
+    expect(m.definition.model?.thinkingLevel).toBe("low");
+  });
+});

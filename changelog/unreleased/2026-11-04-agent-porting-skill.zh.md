@@ -7,7 +7,7 @@
 
 [English](2026-11-04-agent-porting-skill.md)
 
-`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.4`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
+`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.5`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
 
 ## 来源
 
@@ -21,10 +21,10 @@ Skill 靠写入来移植，而不是靠读取。它的脚本 `scripts/inspect-co
 
 - **`--emit <config> --framework <tool> --out <port folder>`** 解析 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code、Pi 或其他工具的配置，或子 Agent 的文件，并写入能映射的部分：
   - MCP Server 写进 `manifest.json` 的 `definition.mcpServers`，命令、参数、地址和普通值与来源完全一致，每个凭据替换为 `${NAME}` Vault 引用并列入 `vaultKeys`。凭据指：凭据名称下的值、凭据开关后的词、凭据查询参数，以及任何形如令牌的值；
-  - `PreToolUse`、`Stop` 和 `UserPromptSubmit` 上的 `command` 钩子写成钩子包，每个包装脚本运行来源的命令并转换其应答；
+  - `PreToolUse`、`Stop` 和 `UserPromptSubmit` 上的 `command` 钩子写成钩子包。每个包装脚本在 Session 的 Workspace 中运行来源的命令，并转换其应答。Stop 钩子若拦下了本 Session 的上一次停止，就会收到 `stop_hook_active`，连续拦下 3 次后放行。无法启动的 PreToolUse 守卫会拒绝，`ask` 也按拒绝处理。`mcp__<server>__` 匹配器跟随 Server 移植后的名称。再次 emit 同一文件时替换它写过的钩子；
   - 思考等级，以及子 Agent 的指令。
 
-  它只打印摘要：写了什么、创建了哪些 Vault 键、哪些没能映射。
+  它只打印摘要：写了什么、创建了哪些 Vault 键、哪些没能映射。`${HOME}` 一类的变量不算 Vault 键，摘要会说明需要填入本机的值。Codex 的 `[profiles.<name>.mcp_servers]` 会在摘要中列出，用 `--profile` 移植。
 - **`--append <file> --to <file>`** 原样复制指令文件，不打印内容；frontmatter 不带过去，`paths` 作用范围改写成一句话。
 - **遮蔽视图**（`<file>`）按白名单显示配置的结构。变量名只在环境变量形式时打印。参数只在是开关、路径或包名形状时打印，URL 只到普通的第一段路径，shell 命令只显示程序名，文本字段只给出 `--show --key` 的指引。
 - **`--show` 和 `--scan` 对文本只能尽力而为。** 它们也会识别密码短语、十六进制密钥、`secret_` 与 `ntn_` 令牌、webhook 和疑似含密钥的 URL 路径，以及高熵词。Markdown 的 frontmatter 按位置检查（`--show` 经遮蔽视图显示）。`--scan` 只打印 `file:line: <kind>`，有发现时以 1 退出。

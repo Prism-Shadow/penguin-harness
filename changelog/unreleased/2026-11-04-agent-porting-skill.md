@@ -7,7 +7,7 @@
 
 [中文版](2026-11-04-agent-porting-skill.zh.md)
 
-The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.4`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
+The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.5`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
 
 ## Sources
 
@@ -21,10 +21,10 @@ The Skill ports by writing, not by reading. Its script `scripts/inspect-config.m
 
 - **`--emit <config> --framework <tool> --out <port folder>`** parses a Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code, Pi or other configuration, or a subagent's file, and writes what maps:
   - the MCP servers into `manifest.json`'s `definition.mcpServers`, with commands, arguments, addresses and plain values exactly as the source has them, and each credential replaced by a `${NAME}` Vault reference listed in `vaultKeys`. A credential is a value under a credential name, the word after a credential flag, a credential query parameter, or anything shaped like a token;
-  - hook packages for the `command` hooks on `PreToolUse`, `Stop` and `UserPromptSubmit`, each a wrapper that runs the source's command and translates its answer;
+  - hook packages for the `command` hooks on `PreToolUse`, `Stop` and `UserPromptSubmit`. Each is a wrapper that runs the source's command in the Session's Workspace and translates its answer. A Stop hook learns `stop_hook_active` from its own block of the Session's previous stop, and is let through after 3 blocks in a row. A PreToolUse guard that cannot start denies, and an `ask` denies too. A matcher on `mcp__<server>__` follows the server's ported name. Emitting a file again replaces its hooks;
   - the thinking level, and a subagent's instructions.
 
-  It prints only a summary: what it wrote, the Vault keys it created, and what it could not map.
+  It prints only a summary: what it wrote, the Vault keys it created, and what it could not map. `${HOME}`-style variables are not Vault keys and are reported as needing a value on this machine. Codex `[profiles.<name>.mcp_servers]` are named, and ported with `--profile`.
 - **`--append <file> --to <file>`** copies an instruction file in verbatim without printing it, leaving a frontmatter behind and turning a `paths` scope into one sentence.
 - **The masked view** (`<file>`) shows a configuration's structure by allowlist. Variable names print only in environment-variable form. Arguments print only when they are flags or path- or package-shaped, a URL only up to its plain first path segment, a shell line only as its program, and prose only as a pointer to `--show --key`.
 - **`--show` and `--scan` are best effort for text.** They also catch password phrases, hex keys, `secret_` and `ntn_` tokens, webhook and secret-looking URL paths, and high-entropy words. They read a Markdown frontmatter by position (`--show` through the masked view). `--scan` prints `file:line: <kind>` only, and exits 1 when it flags anything.
