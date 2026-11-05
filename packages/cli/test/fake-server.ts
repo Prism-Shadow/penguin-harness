@@ -370,7 +370,8 @@ export class FakeServer {
 
   /**
    * An agent's archive. `previewed` answers GET …/agents/:a/archive/preview for its query: by
-   * default an export that leaves nothing out and that the server would make. `exported` answers
+   * default an export that leaves nothing out and that the server would make; a Response a test
+   * returns (an error) goes out as it is. `exported` answers
    * GET …/agents/:a/archive for its query as sent: the zip's
    * body — bytes, or a stream a test can break off — and the attachment filename the response names
    * (none when absent). The default is a small zip of that agent named `<agentId>-20260902.zip`.
@@ -380,7 +381,7 @@ export class FakeServer {
    * created (listed from then on) or overwritten, with nothing imported.
    */
   agentArchive: {
-    previewed: (agentId: string, query: URLSearchParams) => Json;
+    previewed: (agentId: string, query: URLSearchParams) => Json | Response;
     exported: (
       agentId: string,
       query: URLSearchParams,
@@ -1947,9 +1948,11 @@ export class FakeServer {
       apiPath,
     );
     if (previewMatch && method === "GET") {
-      return this.json(
-        this.agentArchive.previewed(decodeURIComponent(previewMatch[1]!), url.searchParams),
+      const answer = this.agentArchive.previewed(
+        decodeURIComponent(previewMatch[1]!),
+        url.searchParams,
       );
+      return answer instanceof Response ? answer : this.json(answer);
     }
     const archiveMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive$/.exec(apiPath);
     if (archiveMatch && method === "GET") {

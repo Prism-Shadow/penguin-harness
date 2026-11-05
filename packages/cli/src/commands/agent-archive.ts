@@ -205,6 +205,16 @@ function exportWarnings(t: Messages, preview: AgentArchivePreview): string {
   return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }
 
+/**
+ * A failed export request (the preview or the download): the server's 422 `invalid_config`, an
+ * Agent config that does not parse, in the CLI's words; any other error as it came.
+ */
+function exportFailure(t: Messages, agentId: string, err: unknown): unknown {
+  return err instanceof ApiError && err.code === "invalid_config"
+    ? new Error(t.agent.exportInvalidConfig(agentId))
+    : err;
+}
+
 /** Why the server would refuse this export, in the CLI's words. */
 function refusalMessage(t: Messages, refusal: NonNullable<AgentArchivePreview["refusal"]>): string {
   const limit = formatSize(refusal.limit);
@@ -278,16 +288,18 @@ export function registerArchiveCommands(
       const projectId = resolveProjectId(opts.projectId);
       const archive = `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/archive`;
       const query = partsQuery(opts, traces);
-      const preview = await client.request<AgentArchivePreview>(
-        "GET",
-        `${archive}/preview?${query}`,
-      );
+      const failed = (err: unknown): never => {
+        throw exportFailure(t, agentId, err);
+      };
+      const preview = await client
+        .request<AgentArchivePreview>("GET", `${archive}/preview?${query}`)
+        .catch(failed);
       const warnings = exportWarnings(t, preview);
       if (warnings !== "") process.stderr.write(warnings);
       if (preview.refusal !== undefined) throw new Error(refusalMessage(t, preview.refusal));
-      const { file, bytes } = await client.download(`${archive}?${query}`, (name) =>
-        resolveOutPath(opts.out, name, `${agentId}.zip`),
-      );
+      const { file, bytes } = await client
+        .download(`${archive}?${query}`, (name) => resolveOutPath(opts.out, name, `${agentId}.zip`))
+        .catch(failed);
       if (opts.json === true) {
         const notes = preview.notes;
         process.stdout.write(`${JSON.stringify({ agentId, projectId, file, bytes, notes })}\n`);

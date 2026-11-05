@@ -16,6 +16,8 @@
  *   notes as the server gave them.
  * - A selection the server would refuse stops at the preview: exit 1, why on stderr, no download
  *   and nothing written.
+ * - An Agent whose own config does not parse (the server's 422 `invalid_config`) is refused in one
+ *   line in the CLI's words, before any download.
  * - `import <folder>` uploads the folder as a raw zip (`application/octet-stream`) with its
  *   manifest at the root and without `.git`; the Agent id comes from the manifest.
  * - A taken id fails with the server's `agent_exists` and says how to import anyway; `--agent-id`
@@ -35,6 +37,8 @@
  *   notes; `--json` prints the response as it is.
  * - A note whose code the CLI knows is worded in the CLI's language, so a zh CLI does not show the
  *   server's English sentence for it; a note with any other code prints the server's sentence.
+ * - An overwrite that could not refill credentials from the Agent's unparsable config says so in
+ *   the CLI's language.
  */
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -277,7 +281,7 @@ describe("penguin agent export", () => {
     const tooLarge = "session-2026-08-01-09-00-00-0000000c";
     const preview = server.agentArchive.previewed;
     server.agentArchive.previewed = (agentId, query) => ({
-      ...preview(agentId, query),
+      ...(preview(agentId, query) as Record<string, unknown>),
       notes,
       traces: {
         sessions: 1,
@@ -298,11 +302,34 @@ describe("penguin agent export", () => {
     expect(fs.readdirSync(dir)).toEqual(["writer-20260902.zip"]);
   });
 
+  it("refuses, in one line in its own words, an agent whose config does not parse", async () => {
+    server.agentArchive.previewed = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid_config",
+            message:
+              "The Agent's system_config.yaml does not parse; fix it before exporting the Agent.",
+          },
+        }),
+        { status: 422, headers: { "content-type": "application/json" } },
+      );
+    const dir = dirIn("exports");
+
+    expect(await cli(["agent", "export", "writer", "--out", dir])).toBe(1);
+
+    expect(err()).toBe(`${t.agent.exportInvalidConfig("writer")}\n`);
+    expect(server.requests.map((r) => r.path)).toEqual([
+      "/api/projects/default_project/agents/writer/archive/preview",
+    ]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
   it("stops at the preview when the server would refuse the selection, downloading nothing", async () => {
     const file = "traces/2026-08-01/session-2026-08-01-09-00-00-0000000c_001.jsonl";
     const preview = server.agentArchive.previewed;
     server.agentArchive.previewed = (agentId, query) => ({
-      ...preview(agentId, query),
+      ...(preview(agentId, query) as Record<string, unknown>),
       refusal: { reason: "entry", limit: 256 * 1024 * 1024, subject: file },
     });
     const dir = dirIn("exports");
@@ -538,6 +565,26 @@ describe("penguin agent import", () => {
       expect(text).toContain(knownNote!.subject!);
       expect(text).not.toContain(knownNote!.message);
       expect(text).toContain(unknownNote!.message);
+    });
+
+    it("says in the CLI's language that an overwrite could not refill credentials from an unparsable config", async () => {
+      const note = {
+        code: "current_config_invalid" as const,
+        message:
+          "The Agent's own system_config.yaml did not parse, so no blanked credential was filled from it.",
+      };
+      server.agentArchive.imported = () => ({ status: 201, body: { ...answer, notes: [note] } });
+      const saved = process.env.PENGUIN_LANG;
+      process.env.PENGUIN_LANG = "zh";
+      try {
+        expect(await cli(["agent", "import", portFolder(), "--overwrite"])).toBe(0);
+      } finally {
+        if (saved === undefined) delete process.env.PENGUIN_LANG;
+        else process.env.PENGUIN_LANG = saved;
+      }
+
+      expect(out()).toContain(getMessages("zh").agent.archiveNote(note));
+      expect(out()).not.toContain(note.message);
     });
 
     it("--json prints the server's response as it is", async () => {

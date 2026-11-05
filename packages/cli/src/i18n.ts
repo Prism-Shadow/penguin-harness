@@ -301,6 +301,8 @@ export interface Messages {
     archiveNote(note: AgentArchiveNote): string;
     /** An export's stderr: the Sessions the preview leaves out, a file of theirs past an import's cap. */
     exportSkippedTitle(): string;
+    /** The server's 422 `invalid_config` on an export: the Agent's own config does not parse. */
+    exportInvalidConfig(agentId: string): string;
     /** Why the server would refuse an export (its preview's `refusal`); nothing is downloaded. */
     exportRefused: {
       entries(limit: number): string;
@@ -1536,10 +1538,15 @@ const en: Messages = {
       if (note.code === "link_skipped" && note.subject !== undefined) {
         return `agent_state/${note.subject} is a link, so it is left out.`;
       }
+      if (note.code === "current_config_invalid") {
+        return "The agent's own system_config.yaml did not parse, so no blanked credential was filled in from it.";
+      }
       return note.message;
     },
     exportSkippedTitle: () =>
       "Sessions left out (a file of theirs is larger than an import accepts):",
+    exportInvalidConfig: (agentId) =>
+      `The system_config.yaml of agent ${agentId} does not parse, so it cannot be exported: fix the file and export again.`,
     exportRefused: {
       entries: (limit) =>
         `The selection holds more than ${limit.toLocaleString("en-US")} entries, more than an import accepts, so it is not exported: select fewer Traces.`,
@@ -2744,9 +2751,14 @@ const zh: Messages = {
       if (note.code === "link_skipped" && note.subject !== undefined) {
         return `agent_state/${note.subject} 是链接，不会导出。`;
       }
+      if (note.code === "current_config_invalid") {
+        return "该 Agent 原有的 system_config.yaml 无法解析，因此没有用它补回被清空的凭据。";
+      }
       return note.message;
     },
     exportSkippedTitle: () => "未带上的 Session（其中有文件超过导入上限）：",
+    exportInvalidConfig: (agentId) =>
+      `Agent ${agentId} 的 system_config.yaml 无法解析，因此无法导出：请修好该文件后再导出。`,
     exportRefused: {
       entries: (limit) =>
         `所选内容超过 ${limit.toLocaleString("zh-CN")} 个条目，导入不接受，因此不导出：请少选一些 Trace。`,
