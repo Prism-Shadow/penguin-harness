@@ -67,54 +67,7 @@ export function registerWorkspaceFileRoutes(
 
   app.get(at("/content"), async (c) => {
     const workspace = await resolve(c);
-    const rel = c.req.query("path") ?? "";
-    const download = c.req.query("download") === "1";
-    // Sandboxed top-level preview ("open in a new tab" for html): the document keeps its REAL
-    // content type but carries a CSP sandbox WITHOUT allow-same-origin — it renders and runs
-    // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
-    // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
-    const preview = !download && c.req.query("preview") === "1";
-    const { data, fileName, contentType, scriptable, version } = await deps.workspaceFiles.read(
-      workspace,
-      rel,
-    );
-    const disposition = download ? "attachment" : "inline";
-    // Same-origin XSS defense: an inline HTML preview is always returned as plain text
-    // (Workspace files may be Agent-generated and untrusted); downloads (attachment) keep
-    // the real content type, and sandboxed previews keep it under the CSP above. Paired
-    // with nosniff to prevent MIME sniffing from undoing this.
-    // An SVG is a document AND an image. Downgrading it to text/plain made every <img> in a
-    // Markdown preview (and every .svg preview) a broken image, so it keeps its real type —
-    // an image never runs the SVG's scripts. What the type does re-open is a DIRECT
-    // navigation to this URL, where the browser would render it as a same-origin document:
-    // the sandbox CSP closes that (no allow-scripts, no allow-same-origin — opaque origin,
-    // no script execution), and CSP sandbox is ignored for a subresource, so the <img> path
-    // is unaffected.
-    const inertSvg = !download && !preview && scriptable === "svg";
-    const effectiveType =
-      !download && scriptable === "html" && !preview ? "text/plain; charset=utf-8" : contentType;
-    return new Response(new Uint8Array(data), {
-      status: 200,
-      headers: {
-        "Content-Type": effectiveType,
-        "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        "X-Content-Type-Options": "nosniff",
-        // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
-        // cache it by URL is how a re-read after a settled turn paints the previous version.
-        "Cache-Control": "no-store",
-        // Not a cache validator — no-store above means nothing ever revalidates. It is the
-        // version of the bytes in this response, which the Files panel's editor hands back
-        // as `ifVersion` on save so the write can refuse to overwrite a newer file.
-        ETag: version,
-        ...(preview && scriptable
-          ? {
-              "Content-Security-Policy":
-                "sandbox allow-scripts allow-popups allow-modals allow-forms",
-            }
-          : {}),
-        ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
-      },
-    });
+    return await fileContentResponse(c, deps.workspaceFiles, workspace, c.req.query("path") ?? "");
   });
 
   /**
@@ -235,6 +188,66 @@ export function registerWorkspaceFileRoutes(
       );
     }
     return c.body(null, 204);
+  });
+}
+
+/**
+ * One Workspace file as the content route answers it — inline or `?download=1`, `?preview=1` for
+ * the sandboxed HTML preview — for every route that serves a file it has already confined to a
+ * Workspace, so the hardening below cannot differ between them.
+ */
+export async function fileContentResponse(
+  c: Context<AppEnv>,
+  workspaceFiles: WorkspaceFiles,
+  workspace: string,
+  rel: string,
+): Promise<Response> {
+  const download = c.req.query("download") === "1";
+  // Sandboxed top-level preview ("open in a new tab" for html): the document keeps its REAL
+  // content type but carries a CSP sandbox WITHOUT allow-same-origin — it renders and runs
+  // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
+  // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
+  const preview = !download && c.req.query("preview") === "1";
+  const { data, fileName, contentType, scriptable, version } = await workspaceFiles.read(
+    workspace,
+    rel,
+  );
+  const disposition = download ? "attachment" : "inline";
+  // Same-origin XSS defense: an inline HTML preview is always returned as plain text
+  // (Workspace files may be Agent-generated and untrusted); downloads (attachment) keep
+  // the real content type, and sandboxed previews keep it under the CSP above. Paired
+  // with nosniff to prevent MIME sniffing from undoing this.
+  // An SVG is a document AND an image. Downgrading it to text/plain made every <img> in a
+  // Markdown preview (and every .svg preview) a broken image, so it keeps its real type —
+  // an image never runs the SVG's scripts. What the type does re-open is a DIRECT
+  // navigation to this URL, where the browser would render it as a same-origin document:
+  // the sandbox CSP closes that (no allow-scripts, no allow-same-origin — opaque origin,
+  // no script execution), and CSP sandbox is ignored for a subresource, so the <img> path
+  // is unaffected.
+  const inertSvg = !download && !preview && scriptable === "svg";
+  const effectiveType =
+    !download && scriptable === "html" && !preview ? "text/plain; charset=utf-8" : contentType;
+  return new Response(new Uint8Array(data), {
+    status: 200,
+    headers: {
+      "Content-Type": effectiveType,
+      "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      "X-Content-Type-Options": "nosniff",
+      // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
+      // cache it by URL is how a re-read after a settled turn paints the previous version.
+      "Cache-Control": "no-store",
+      // Not a cache validator — no-store above means nothing ever revalidates. It is the
+      // version of the bytes in this response, which the Files panel's editor hands back
+      // as `ifVersion` on save so the write can refuse to overwrite a newer file.
+      ETag: version,
+      ...(preview && scriptable
+        ? {
+            "Content-Security-Policy":
+              "sandbox allow-scripts allow-popups allow-modals allow-forms",
+          }
+        : {}),
+      ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
+    },
   });
 }
 
