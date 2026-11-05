@@ -7,8 +7,6 @@
  *
  * Each Skill's metadata is spelled here (its SKILL.md's name, description and version): the
  * SKILL.md bodies are too large to bundle into every frame for one line each.
- * test/library-plugins.test.ts holds the toolkits, and every plugin's Skills, to the plugins
- * directory and core's category manifest.
  */
 import type { PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "../../../../../plugins/ace-rsi-toolkit/icon.svg?raw";
