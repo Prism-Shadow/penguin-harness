@@ -7,7 +7,7 @@
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
   background-image: var(--boot-wallpaper-image);
   background-size: var(--boot-wallpaper-size);
@@ -32,13 +32,13 @@
 .ui-shell[data-wallpaper] [data-wallpaper-layer] {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
 }
 .ui-shell[data-wallpaper] .ui-glass[data-glass="navigation"] {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: var(--layer-behind);
   pointer-events: none;
   background-color: color-mix(in srgb, var(--ui-surface-muted) 18%, transparent);
   -webkit-backdrop-filter: blur(16px);
@@ -132,7 +132,7 @@
         display: block;
         position: absolute;
         inset: 0;
-        z-index: -1;
+        z-index: var(--layer-behind);
         pointer-events: none;
         background-color: var(--ui-canvas);
       }

@@ -130,7 +130,7 @@
 .g-bar {
   position: sticky;
   top: var(--g-site-bar);
-  z-index: 30;
+  z-index: var(--layer-window-overlay);
   height: var(--g-bar);
   border-bottom: 1px solid var(--g-line);
   background: var(--g-page);
@@ -333,7 +333,7 @@
 }
 .g-listbox {
   position: fixed;
-  z-index: 60;
+  z-index: var(--layer-popover);
   max-height: 280px;
   overflow-y: auto;
   padding: 4px;
@@ -383,7 +383,7 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 31;
+  z-index: var(--layer-menu);
   display: grid;
   gap: 12px;
   width: 336px;
@@ -397,7 +397,7 @@
 /* The tooltip (chrome/tooltip.tsx): a small panel under whatever carries `data-tooltip`. */
 .g-tip {
   position: fixed;
-  z-index: 70;
+  z-index: var(--layer-tooltip);
   width: max-content;
   padding: 4px 8px;
   border: 1px solid var(--g-line);
@@ -978,7 +978,7 @@
   .g-drawer {
     display: block;
     position: fixed;
-    z-index: 35;
+    z-index: var(--layer-modal);
     inset: var(--g-site-bar) 0 0 0;
     overflow-y: auto;
     background: var(--g-page);

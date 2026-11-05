@@ -38,7 +38,7 @@ const dropTarget = (over: boolean): SidebarDropTarget => ({
 
 /** The ring a drop target draws while a drag it would take is over it. */
 const DROP_RING =
-  '<span aria-hidden="true" class="pointer-events-none absolute inset-0 z-10 rounded-md ring-1 ring-inset ring-accent"></span>';
+  '<span aria-hidden="true" class="pointer-events-none absolute inset-0 z-raised rounded-md ring-1 ring-inset ring-accent"></span>';
 
 const frame = (props: Partial<Parameters<typeof SidebarFrame>[0]> = {}) =>
   renderStatic(

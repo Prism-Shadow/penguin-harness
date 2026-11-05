@@ -219,6 +219,9 @@
    mark so a blank line still has its row, and its code starts past the column as before. */
 .code-surface.code-nowrap.code-lines {
   display: grid;
+  /* The gutter's layer orders it over the code layer only: a pinned row the block scrolls under
+     stays on top of the whole block. */
+  isolation: isolate;
 }
 .code-surface.code-nowrap.code-lines > * {
   grid-area: 1 / 1;
@@ -235,7 +238,7 @@
 .code-gutter {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--layer-sticky);
   justify-self: start;
   align-self: start;
   box-sizing: content-box;

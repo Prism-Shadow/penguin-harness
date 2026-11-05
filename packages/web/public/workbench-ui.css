@@ -21,6 +21,12 @@
  * they are Primer's values, `light-dark()` picking the one for the mode the root's class (or, with
  * no class, the viewer's system preference) sets.
  *
+ * In the app's frame the page is see-through: the app marks its root `data-workbench-frame` and
+ * gives it the app's `color-scheme`, and the body below paints nothing there, so the surface the
+ * chat sits on — the theme's canvas, the Frost sheet, a wallpaper — shows through the page. A page
+ * that wants a solid sheet paints `--wb-canvas` itself (`body { background: var(--wb-canvas); }`),
+ * and any background a page sets on its own wins. Opened on its own, the page paints `--wb-canvas`.
+ *
  * This is a floor, not a framework: it styles the plain HTML an agent writes (headings, lists,
  * forms, tables, code) and gets out of the way. It is injected FIRST in the head, so a page's own
  * rules always win.
@@ -30,6 +36,9 @@
   color-scheme: light;
 
   --wb-bg: var(--ui-canvas, light-dark(#ffffff, #121212));
+  /* The app's page surface, opaque: what a page paints for a solid sheet instead of letting the
+     app's surface show through it. */
+  --wb-canvas: var(--ui-canvas, light-dark(#ffffff, #121212));
   --wb-surface: var(--ui-surface-muted, light-dark(#f9fafb, #1a1a1a));
   --wb-fg: var(--ui-fg, light-dark(#111827, #f5f5f5));
   --wb-muted: var(--ui-fg-muted, light-dark(#6b7280, #a1a1a1));
@@ -144,11 +153,17 @@
 body {
   margin: 0;
   padding: 16px;
-  background: var(--wb-bg);
+  background: var(--wb-canvas);
   color: var(--wb-fg);
   font-family: var(--wb-font);
   font-size: var(--ui-text-body-size, 0.875rem);
   line-height: 1.6;
+}
+
+/* In the app's frame: see-through. `:where()` keeps the rule as weak as the one above, and this
+   stylesheet comes first in the head, so a page's own `body` background still wins. */
+:where(:root[data-workbench-frame]) body {
+  background: transparent;
 }
 
 h1,

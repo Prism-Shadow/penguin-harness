@@ -10,8 +10,10 @@
  * file keeps what is the app's own: the brand scale, layout invariants, animations and the
  * unlayered content rules.
  *
- * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
- * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
+ * Stacking: every z-index names a layer of the UI package's scale (`z-<layer>`, layers.css), whose
+ * header holds the order. Chrome (top bar, navigation) creates no stacking context; each window
+ * (the Chat window, a Workbench window, the full-page workbench) is one, and every overlay is
+ * portaled to `document.body` above them.
  */
 @import "tailwindcss";
 @import "@prismshadow/penguin-ui/theme.css";
@@ -60,7 +62,7 @@
     position: fixed;
     inset: 0 0 auto;
     height: env(titlebar-area-height, 0px);
-    z-index: -1;
+    z-index: var(--layer-behind);
     -webkit-app-region: drag;
     app-region: drag;
   }
@@ -78,7 +80,7 @@
      clipping box (the docked panels' clipping windows), where forcing a containing block is
      more likely to surprise than to help. Declared in `base`, so an explicit
      absolute/fixed/sticky utility on the same element still wins; `position: relative` at
-     `z-index: auto` creates no stacking context, so the convention in the file header holds. */
+     `z-index: auto` creates no stacking context, so the stacking in the file header holds. */
   .overflow-auto,
   .overflow-x-auto,
   .overflow-y-auto,

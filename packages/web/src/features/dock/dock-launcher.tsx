@@ -447,7 +447,7 @@ function FloatingLauncher({
       data-fan={fan?.phase ?? "closed"}
       onKeyDown={onRootKeyDown}
       onBlur={onRootBlur}
-      className="absolute top-0 z-30"
+      className="absolute top-0 z-window-overlay"
       style={{ right: EDGE_INSET, width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
     >
       {fan !== null && (

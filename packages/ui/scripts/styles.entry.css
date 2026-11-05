@@ -14,6 +14,16 @@
 @import "../src/themes/modern.css";
 @import "../src/themes/geek.css";
 
+/* A Workbench page compiled from TSX carries this sheet. In the app's frame (the root the app marks
+   `data-workbench-frame`) the page is see-through like a plain one: its body paints nothing, so the
+   surface the chat sits on shows through, and a page's own background — an unlayered rule or a
+   utility — still wins over this base-layer one. */
+@layer base {
+  :where(:root[data-workbench-frame]) body {
+    background-color: transparent;
+  }
+}
+
 @source "../src";
 @source not "../src/testing";
 @source not "../src/components/site";

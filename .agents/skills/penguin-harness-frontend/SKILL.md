@@ -550,8 +550,10 @@ Three behaviours there are load-bearing:
   registers earlier, so without stopping propagation one Esc would close the panel *and* the dialog.
 - **Scroll uses capture**, because scroll does not bubble; the panel closes the moment its position
   would go stale rather than floating out of place. Its own internal scroll is exempted.
-- **`z-[60]`**, above the modal overlay's `z-50`: a portaled node sits in the root stacking context
-  and may be opened from inside a dialog.
+- **`z-popover`**, above a dialog's `z-modal`: a portaled node sits in the root stacking context
+  and may be opened from inside a dialog. A dialog opened from inside a popover therefore lands
+  under it: close the popover first (the chat toolbar's details card does, before its stop
+  confirmation).
 
 Modals, drawers, sheets, the lightbox and `Dropdown` additionally register in the Esc-layer stack
 (the UI package's `esc-layers.ts`: `useEscLayer`, or `pushEscLayer` / `isTopEscLayer`), so Escape
@@ -564,6 +566,47 @@ density `md` for account and project menus, `sm` for a row's overflow and contex
 `MenuRadioItem`, `MenuSeparator` and `MenuLabel`. The panel around them stays a `Dropdown`. A row
 outside a `Menu` is a plain button, for a panel that mixes rows with a search box or a listbox.
 
+## Layers: name one, never a number
+
+Every z-index is a layer of one scale, `packages/ui/src/layers.css`, the only file where a z-index
+is a number. A class names it (`z-sticky`, `z-modal`), a stylesheet reads it
+(`z-index: var(--layer-dock)`), and an inline style or a frame loop writes `layer("dock")`
+(`layers.ts`). In paint order:
+
+| layer | for |
+| --- | --- |
+| `behind` | a decoration under its own box's content: a wallpaper copy, a connector line |
+| `sticky` | a row pinned to its scroller: a tool row, a timeline label, a code gutter |
+| `sticky-head` | a head pinned over the sticky rows it passes: an activity group's head, the Trace toolbar |
+| `raised` | a mark or control floating over a list or scroller: a drop line, jump-to-newest, a chart readout |
+| `handle` | a resize handle straddling the edge it resizes |
+| `window-overlay` | what floats over a window and belongs to it: the dock launcher, a drop veil, a site header |
+| `dock` | a dock surface lifted to fullscreen |
+| `dock-handle` | the handle on a lifted surface's leading edge |
+| `menu` | an in-place menu, and a floating panel a dialog must cover (the find bar) |
+| `modal` | dialogs, drawers, sheets, the lightbox, the command palette, with their scrim |
+| `popover` | a portaled menu, select, picker or popover |
+| `toast` | toasts and progress cards |
+| `tooltip` | the hover hint |
+| `drag-preview` | what follows the pointer through a drag |
+
+**Windows are stacking contexts.** The Chat window and a Workbench window share the area under the
+chat page's tab strip (`WindowStack`, `AppWindow`), and the full-page workbench is a window too:
+each is `isolation: isolate`, so `behind` through `menu` order things only inside their window, and
+nothing inside one rises over the other window, the navigation column or an overlay. A hidden
+window stays mounted, `invisible` and `inert`; what it holds reads `useWindowShown()` for whatever
+a hidden ancestor does not stop by itself. `modal` and up live in the one portal root,
+`document.body`, where they order against each other above every window.
+
+So: a popup that may cross its window's edge or sit over a dock portals (`popover`); something laid
+over a window from outside it by coordinates (the built-in browser's page) paints over the whole
+window and must be told when its slot is hidden or covered. Pick the layer by what the element is
+for, not by what it should beat: if two things on one layer collide, one of them is on the wrong
+layer. `test/layer-scale.test.ts` in the UI package fails on a raw `z-<n>`, `z-[…]`, `zIndex` or
+`z-index` in `packages/ui/src`, `packages/web/src` and `packages/ui-gallery/src`, and on a layer
+name the scale does not declare. A new layer is a line in `layers.css` and `layers.ts` with a
+sentence saying what it is for.
+
 ## The rest of the house style
 
 - **Local first, remote lazy** (owner principle, 2026-10-26): a page and the sidebar's local
@@ -573,8 +616,7 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
   own state and timeout. Never put a local read and a remote one in one `Promise.all` or behind
   one skeleton, and never make a route await a machine or the network before it answers with
   local data.
-- **Stacking contexts**: chrome creates none; dropdown/user menus `z-40`; modal and drawer overlays
-  `z-50`; portaled panels `z-[60]`. `styles.css`'s header states this.
+- **Stacking**: see "Layers" below; chrome creates no stacking context.
 - **Every scroll container is a containing block** (`styles.css`, `@layer base`). Do not undo it: an
   absolutely positioned descendant of a `static` scroller escapes to the initial containing block
   and gives the whole shell a second scrollbar. That bug shipped three times.

@@ -46,7 +46,7 @@ describe("Dropdown", () => {
         "ui-glass",
         ...menuPanelClass.split(" "),
         "absolute",
-        "z-40",
+        "z-menu",
         "max-h-[70vh]",
         // The default docking: downward, left-aligned, capped to the viewport.
         "top-full",
@@ -79,7 +79,7 @@ describe("Dropdown", () => {
     expect(source).toContain("querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)");
     expect(source).toMatch(/const layer = pushEscLayer\(\);[\s\S]*isTopEscLayer\(layer\)/);
     // Portaled panels clear a dialog's overlay; in-flow ones stay on the menu tier.
-    expect(source).toContain('${portal ? "z-[60]" : "z-40"}');
+    expect(source).toContain('${portal ? "z-popover" : "z-menu"}');
   });
 
   // A source pin (no DOM here): a hidden, unplaced portaled panel cannot take focus.

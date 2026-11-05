@@ -512,4 +512,6 @@ The components follow the user's theme, accent, font and light or dark mode by t
 
 Pages written in plain HTML and JavaScript keep working and take the app's look through `/workbench-ui.css`: its `--wb-*` variables and `wb-*` classes follow the user's theme, accent, font and light or dark mode, and `wb-badge` with a `data-tone` attribute colours a status. The `--wb-*` names are only ever added to; to restyle a page, redeclare them on `:root`. Once a workbench has a TSX page, all of its pages get the components' stylesheet instead, so convert its pages together.
 
+A workbench page is see-through: a page that sets no background of its own shows the app's surface under it, the theme's page colour or your wallpaper, as the conversation does. For a solid page, set `body { background: var(--wb-canvas); }` (in a TSX page's stylesheet, `var(--ui-canvas)`).
+
 The built-in `penguin-support` plugin provides the default Project's support Agent with the `penguin-support` Skill and a customer support workbench: a centered question list, a new-question dialog and conversation details with follow-ups. While a question runs, its dialog shows the answer as it is written and what the agent is doing, with a **Stop** button. A new version arrives as a plugin update; an installed copy is only replaced when you update it. It can also be installed on other Agents.

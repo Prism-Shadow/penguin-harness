@@ -12,6 +12,7 @@ export * from "./hooks";
 export * from "./tokens";
 export * from "./strings";
 export * from "./icon-scale";
+export * from "./layers";
 
 // W1 — icons: the glyph registry and its renderer, the chevron, the fixed-grid marks, the
 // spinner, logos and avatars.
@@ -298,6 +299,7 @@ export * from "./components/shell/launcher/launcher";
 // pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
 // with the hover actions it shares.
 export * from "./components/shell/app-shell/app-shell";
+export * from "./components/shell/app-window/app-window";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
