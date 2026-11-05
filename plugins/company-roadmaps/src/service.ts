@@ -509,9 +509,9 @@ export class RoadmapService {
    * owner is not told until a person and the moderator have both approved that brief
    * ({@link approve}); the moderator's desk is asked for its approvals. An item already
    * established (a reopened roadmap established again) starts again only when its owner or its
-   * brief changed — or when what is there is not a brief at all, a residual delegation of
-   * another kind that the re-establishment rewrites; a roadmap item that already derived its
-   * roadmap is left to it.
+   * brief changed — or when what is there is not the same work in the same shape: a residual
+   * delegation of another kind, a derived roadmap's leftover, is rewritten; a roadmap item that
+   * already derived its roadmap is left to it.
    */
   async establish(
     projectId: string,
@@ -572,15 +572,16 @@ export class RoadmapService {
             by: caller.principal,
           });
         } else if (item.kind === "proposal") {
-          // A prior delegation matches only while it is a brief of the same shape: a residual
-          // delegation left by an establishment of another kind — a derived roadmap the room
-          // reopened into a proposal item — is rewritten here, or the two approvals would read
-          // a delegated row and refuse the brief.
+          // The prior delegation matches only while it is the same work in the same shape: a
+          // brief, or a delegation that already carries the proposal the item rides. Anything
+          // else is rewritten — a residual delegation of another kind (a derived roadmap the
+          // room reopened into a proposal item) carries no proposal, and left standing it would
+          // have the two approvals read a delegated row and refuse the brief.
           if (
             prior !== undefined &&
-            prior.stage === "brief" &&
             prior.owner === item.owner &&
-            prior.brief === item.brief
+            prior.brief === item.brief &&
+            (prior.stage === "brief" || prior.proposal !== undefined)
           )
             continue;
           // A brief, waiting for its two approvals: nothing is created, nobody is told to create.
