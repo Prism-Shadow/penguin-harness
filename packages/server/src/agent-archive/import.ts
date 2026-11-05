@@ -37,7 +37,11 @@ import {
   ensureUserMemoryDir,
   loadAgentVault,
 } from "@prismshadow/penguin-core";
-import type { AgentArchiveImportResponse, AgentArchiveManifest } from "../api/types.js";
+import type {
+  AgentArchiveImportResponse,
+  AgentArchiveManifest,
+  AgentArchiveNote,
+} from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
@@ -226,7 +230,7 @@ async function applyDefinition(
   projectId: string,
   agentId: string,
   manifest: AgentArchiveManifest,
-  notes: string[],
+  notes: AgentArchiveNote[],
 ): Promise<void> {
   const definition = manifest.definition ?? {};
   let toolsBuiltin;
@@ -236,13 +240,20 @@ async function applyDefinition(
     toolsBuiltin = definition.tools.builtin.flatMap((name) => {
       const tool = known.get(name);
       if (tool === undefined) {
-        notes.push(`Built-in tool "${name}" does not exist in this install; it was not enabled.`);
+        notes.push({
+          code: "unknown_tool",
+          subject: name,
+          message: `Built-in tool "${name}" does not exist in this install; it was not enabled.`,
+        });
         return [];
       }
       return [tool];
     });
     if (toolsBuiltin.length === 0) {
-      notes.push("None of the named built-in tools exist in this install; the toolset was kept.");
+      notes.push({
+        code: "no_known_tools",
+        message: "None of the named built-in tools exist in this install; the toolset was kept.",
+      });
       toolsBuiltin = undefined;
     }
   }
@@ -292,7 +303,7 @@ async function apply(
     previousVersion = await deps.snapshots.currentVersion(projectId, agentId);
     backup = await deps.snapshots.backupBeforeImport(projectId, agentId);
   }
-  const notes: string[] = [];
+  const notes: AgentArchiveNote[] = [];
   try {
     await fs.mkdir(incoming, { recursive: true });
     const configFile = path.join(incoming, "system_config.yaml");
@@ -341,7 +352,7 @@ async function report(
   mode: "created" | "overwritten",
   done: {
     imported: AgentArchiveImportResponse["imported"];
-    notes: string[];
+    notes: AgentArchiveNote[];
     traces: Awaited<ReturnType<Traces["importTraceFiles"]>>;
     previousVersion?: number;
     backup?: string;

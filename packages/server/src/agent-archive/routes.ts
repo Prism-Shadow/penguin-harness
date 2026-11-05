@@ -49,9 +49,17 @@ export interface AgentArchiveRouteDeps {
   summary: AgentSummaryDeps;
 }
 
-/** What a zip without zip64 holds at most: 65535 entries, offsets below 4GiB. */
-const ZIP_MAX_ENTRIES = 0xffff;
-const ZIP_MAX_BYTES = 0xffffffff - 64 * 1024 * 1024;
+/** Why an export past what an import accepts is refused, in the preview's terms. */
+function refusalMessage(refusal: NonNullable<AgentArchivePreview["refusal"]>): string {
+  switch (refusal.reason) {
+    case "entries":
+      return `The selection holds more than the ${refusal.limit} entries an import accepts; select fewer Traces.`;
+    case "inflated":
+      return `The selection is larger than the ${refusal.limit / (1024 * 1024)}MiB an import accepts; select fewer Traces or parts.`;
+    case "entry":
+      return `${refusal.subject} is larger than the ${refusal.limit / (1024 * 1024)}MiB an import accepts for one file; leave its part out.`;
+  }
+}
 
 export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -73,10 +81,11 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const parts = partsFromQuery((name) => c.req.query(name));
     const plan = await planArchive(deps, projectId, agentId, parts);
-    if (plan.entries.length > ZIP_MAX_ENTRIES || plan.preview.totalBytes > ZIP_MAX_BYTES) {
-      throw archiveTooLarge("The selection is larger than a zip holds; select fewer Traces.");
+    // Every export imports: a selection past what an import accepts is refused here.
+    if (plan.preview.refusal !== undefined) {
+      throw archiveTooLarge(refusalMessage(plan.preview.refusal));
     }
-    return new Response(zipStream(plan.entries, deps.log), {
+    return new Response(zipStream(plan, deps.log), {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${plan.fileName}"`,

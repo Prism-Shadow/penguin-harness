@@ -15,7 +15,8 @@ import { parse as parseYaml } from "yaml";
 import { agentStateVersion } from "@prismshadow/penguin-core";
 import { badRequest } from "../http/errors.js";
 import { isGitName } from "../workbenches/repo.js";
-import { isTempName } from "../workbenches/store.js";
+import { TMP_SUFFIX } from "../workbenches/store.js";
+import { folded } from "./zip-entries.js";
 
 /** The vault's file name inside `agent_state/`. */
 export const VAULT_BASENAME = ".vault.toml";
@@ -35,11 +36,15 @@ export function segmentsOf(entryPath: string): string[] {
 /**
  * What a snapshot leaves out and an import never takes from a package: any vault, the server's
  * staging leftovers (`*.penguin-tmp*`), and each workbench's emitted code and installed packages.
- * `entryPath` is rooted at the Agent directory (`agent_state/…`).
+ * `entryPath` is rooted at the Agent directory (`agent_state/…`). Names are compared the way a
+ * disk that ignores letter case and Unicode form compares them: on macOS and Windows
+ * `.VAULT.toml` is the vault.
  */
 export function isLeftOut(entryPath: string): boolean {
-  const segments = segmentsOf(entryPath);
-  if (segments.at(-1) === VAULT_BASENAME || segments.some(isTempName)) return true;
+  const segments = segmentsOf(entryPath).map(folded);
+  if (segments.at(-1) === VAULT_BASENAME || segments.some((s) => s.includes(TMP_SUFFIX))) {
+    return true;
+  }
   const [top, child, ...rest] = segments;
   // Anywhere inside `agent_state/workbenches/<id>/`.
   return (

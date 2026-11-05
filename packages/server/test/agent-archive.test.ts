@@ -598,7 +598,9 @@ describe("Agent archive", () => {
       mode: "created",
       agent: { agentId: "ported_agent", name: "Ported" },
     });
-    expect(body.notes.join("\n")).toContain("no_such_tool");
+    expect(body.notes).toEqual([
+      expect.objectContaining({ code: "unknown_tool", subject: "no_such_tool" }),
+    ]);
     expect(body.toFill).toEqual(["FS_TOKEN"]);
     expect(body.imported.skills).toBe(1);
     const config = (await (
