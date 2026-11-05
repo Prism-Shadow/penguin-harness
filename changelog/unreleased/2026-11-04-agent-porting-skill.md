@@ -7,7 +7,7 @@
 
 [中文版](2026-11-04-agent-porting-skill.zh.md)
 
-The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.3`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
+The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.4`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
 
 ## Sources
 
@@ -17,26 +17,26 @@ The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.1
 
 ## Secrets stay out of the conversation
 
-- The agent reads every source file through the Skill's own reader, `scripts/inspect-config.mjs`, and through no other command.
-- A JSON, TOML or YAML configuration file prints as JSON by allowlist:
-  - key names, numbers and booleans print;
-  - a string prints only when it is a `${VAR}` reference, a variable's name under a key that holds one (`bearer_token_env_var`, `env_key`, `env_vars`, `env_http_headers`), the value of a structural key (`name`, `type`, `transport`, `command`, `cwd`, `matcher`, `model`, effort and approval settings), an `args` flag, package or path, or a URL's scheme, host and path;
-  - a shell line under `command` prints only its program and a word count;
-  - a reference prints its variable's name when that is a plain name, under a credential key too, and anything else inside `${…}` as `${<redacted:N chars>}`;
-  - every other string prints as `<redacted:N chars>`;
-  - `~/.claude.json` shows only its MCP servers.
-- A file that does not parse names its line and prints only its key names, never its content.
-- `--scan` names each line of a file or folder that looks like it holds a credential as `file:line: <kind>`, and never prints the line. The agent runs it before reading any source directory and before the import.
-- `--show` prints a text file (instructions, skills, commands, scripts) with each flagged line replaced whole, and a private key block to its end.
-- Credential stores (`.env`, `*.env`, `.envrc`, `auth.json`, `.credentials.*`, OAuth token caches, `*.pem`, `*.key`, `id_rsa*`, `.netrc`, `.npmrc`, `.pypirc`) are refused unread.
-- A hook whose command is a script file ports through that script; an inline shell line, which the reader never shows, is reported.
+The Skill ports by writing, not by reading. Its script `scripts/inspect-config.mjs` carries the source's values into the port folder itself, so they go file to file and never through the conversation (and so never into the Session's Trace, which an export may carry).
+
+- **`--emit <config> --framework <tool> --out <port folder>`** parses a Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code, Pi or other configuration, or a subagent's file, and writes what maps:
+  - the MCP servers into `manifest.json`'s `definition.mcpServers`, with commands, arguments, addresses and plain values exactly as the source has them, and each credential replaced by a `${NAME}` Vault reference listed in `vaultKeys`. A credential is a value under a credential name, the word after a credential flag, a credential query parameter, or anything shaped like a token;
+  - hook packages for the `command` hooks on `PreToolUse`, `Stop` and `UserPromptSubmit`, each a wrapper that runs the source's command and translates its answer;
+  - the thinking level, and a subagent's instructions.
+
+  It prints only a summary: what it wrote, the Vault keys it created, and what it could not map.
+- **`--append <file> --to <file>`** copies an instruction file in verbatim without printing it, leaving a frontmatter behind and turning a `paths` scope into one sentence.
+- **The masked view** (`<file>`) shows a configuration's structure by allowlist. Variable names print only in environment-variable form. Arguments print only when they are flags or path- or package-shaped, a URL only up to its plain first path segment, a shell line only as its program, and prose only as a pointer to `--show --key`.
+- **`--show` and `--scan` are best effort for text.** They also catch password phrases, hex keys, `secret_` and `ntn_` tokens, webhook and secret-looking URL paths, and high-entropy words. They read a Markdown frontmatter by position (`--show` through the masked view). `--scan` prints `file:line: <kind>` only, and exits 1 when it flags anything.
+- **A flagged instruction, skill or memory file waits for the user.** `--append` and `--emit` hold it back until `--confirmed`, and the report says the check is best effort.
+- **Parse errors** name the line only. **Credential stores** (`.env`, `*.env`, `.envrc`, `auth.json`, `.credentials.*`, OAuth token caches, `*.pem`, `*.key`, `id_rsa*`, `.netrc`, `.npmrc`, `.pypirc`) are refused unread.
 
 ## What moves
 
-- **Instructions:** the instruction files and rules are merged into `agent_state/AGENTS.md` in reading order, user level first.
+- **Instructions:** the instruction files and rules are appended to `agent_state/AGENTS.md` in reading order, user level first.
 - **Skills, commands and prompts:** Skills are copied, and each command or prompt becomes a Skill of its own. Their frontmatter is normalized with the `plugin-porting` Skill's `normalize-skills.mjs`.
-- **MCP servers:** they go into the manifest's `definition.mcpServers`. Every credential becomes a `${KEY}` Vault reference listed in `vaultKeys`, so no value travels.
-- **Hooks:** a `command` hook on `PreToolUse`, `Stop` or `UserPromptSubmit` becomes a hook package. A Node wrapper translates PenguinHarness's hook input and answer to the source tool's shape. Other hooks are reported.
+- **MCP servers:** `--emit` writes them into the manifest's `definition.mcpServers`; every credential becomes a `${KEY}` Vault reference listed in `vaultKeys`.
+- **Hooks:** `--emit` turns a `command` hook on `PreToolUse`, `Stop` or `UserPromptSubmit` into a hook package whose Node wrapper translates PenguinHarness's hook input and answer to the source tool's shape. Other hooks are reported.
 - **Memory:** auto-memory files go to the user scope of `agent_state/memory/`.
 - **Model settings:** the reasoning effort maps to the agent's thinking level.
 - **Not moved:** the model itself, permissions, sandbox settings and extensions are named in the report, with the closest approval mode.
