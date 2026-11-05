@@ -5,7 +5,9 @@
  * Trace — can hold a value (`env`, `echo $KEY`). On export each such value is replaced by
  * `[vault:<KEY>]` wherever it occurs inside a JSON string of a Trace record; numbers, keys and
  * the JSON around them are never touched, so every line stays the record it was. A line that does
- * not parse is left as it is and counted.
+ * not parse (a running Session's unfinished last line, a damaged one) cannot be broken further,
+ * so there the value is replaced as plain text, as written and as JSON escapes it; such lines are
+ * counted.
  *
  * Only secrets are looked for: the value of a vault key whose name is a credential's
  * (credential-names.ts), at least `MIN_VALUE_LENGTH` characters long, or a value shaped like a
@@ -134,7 +136,8 @@ export function scrubLine(
   try {
     record = JSON.parse(line);
   } catch {
-    return { line, replaced: 0, unparsed: true };
+    const [out, replaced] = replaceIn(line, asWrittenAndEscaped(patterns));
+    return { line: out, replaced, unparsed: true };
   }
   const meta =
     record !== null &&
@@ -159,6 +162,16 @@ export function scrubLine(
 /** The pattern as a JSON string carries it (quotes and backslashes escaped). */
 function escaped(pattern: Pattern): string {
   return JSON.stringify(pattern.value).slice(1, -1);
+}
+
+/** Each pattern as written and, where that differs, as a JSON string escapes it; longest first. */
+function asWrittenAndEscaped(patterns: readonly Pattern[]): Pattern[] {
+  const out = [...patterns];
+  for (const pattern of patterns) {
+    const value = escaped(pattern);
+    if (value !== pattern.value) out.push({ value, replacement: pattern.replacement });
+  }
+  return out.sort((a, b) => b.value.length - a.value.length);
 }
 
 /** One file's pass through the scrub: `push` each chunk, then `end`; counts what it did. */

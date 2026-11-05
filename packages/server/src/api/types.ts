@@ -4777,8 +4777,11 @@ export interface AgentArchiveManifest {
   /**
    * What the export took out: each blanked MCP credential by place (`mcp:<server>:env:<NAME>`,
    * `…:headers:<NAME>`, `…:oauth:<path>`, `…:url:password`, `…:url:query:<name>`,
-   * `…:args:--<flag>`, `…:args:<scheme>://<host>:password`, `…:args:<scheme>://<host>:query:<name>`),
-   * and, for the Trace files, `traces:vault-values:<n>` and `traces:unscrubbed-lines:<n>`.
+   * `…:args:--<flag>`, `…:args:<scheme>://<host>:password`, `…:args:<scheme>://<host>:query:<name>`;
+   * a URL or a connection string in any other value by that value's place: `…:env:<NAME>:password`,
+   * `…:env:<NAME>:query:<name>`, `…:env:<NAME>:conn:<key>`), and, for the Trace files,
+   * `traces:vault-values:<n>` and `traces:unparsed-lines:<n>` (lines that did not parse, their
+   * values replaced as plain text).
    */
   redacted: string[];
   /** Only when `agent_state/system_config.yaml` is absent: a hand-written Agent (the `agent-porting` Skill writes one). */

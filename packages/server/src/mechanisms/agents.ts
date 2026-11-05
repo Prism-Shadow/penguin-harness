@@ -91,6 +91,17 @@ export abstract class Snapshots {
   abstract recoverStrandedSwaps(scope?: { projectId: string; agentId: string }): Promise<void>;
 }
 
+/**
+ * AgentHolds: one import or delete at a time per Agent, keyed `<projectId>/<agentId>`; the
+ * mechanism AgentHoldQueue implements (agent-archive/agent-hold.ts). The archive routes and the
+ * Agent routes share it.
+ */
+@Interface()
+export abstract class AgentHolds {
+  /** Runs `work` once every earlier holder of `key` is done. */
+  abstract hold<T>(key: string, work: () => Promise<T>): Promise<T>;
+}
+
 /** Memory: the mechanism MemoryService implements. */
 @Interface()
 export abstract class Memory {

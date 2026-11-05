@@ -50,6 +50,11 @@
  * - Given names written as one word that end in a credential word (`PGPASSWORD`,
  *   `NGROK_AUTHTOKEN`, `--secretkey`, `?accesstoken=`), their values are blanked; names that only
  *   start with one (`--tokens`, `TOKENIZER`, `AUTHOR`, `KEYBOARD`, `KEYSTORE`) travel as written.
+ * - Given short credential names (`DB_PASS`, `SMTP_PW`, `JWT`, `SENTRY_DSN`), a URL with a
+ *   password in an `env` value or a header, and a connection string's `Password=`, those values
+ *   are blanked whatever the value's own name, and an overwrite from the zip puts them back.
+ * - Given an overwrite whose stdio server runs another package under the same command, or an
+ *   Agent with two servers of one name, no credential is refilled and the place is to be filled.
  * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
  *   come in another order, a credential is refilled only for the same server and the same flag:
  *   it never goes to the other address and never into another flag.
@@ -1103,6 +1108,178 @@ describe("Agent archive", () => {
     ]) {
       expect(exportedConfig).toContain(kept);
     }
+  });
+
+  it("short credential names, URLs with a password and connection strings in any value are blanked, and an overwrite puts them back", async () => {
+    const state = await newAgent("value_shapes");
+    const servers = [
+      {
+        name: "svc",
+        config: {
+          command: "node",
+          args: ["server.js"],
+          env: {
+            DB_PASS: "hunter2hunter2",
+            SMTP_PW: "smtp-secret-1",
+            JWT: "jwt-secret-1",
+            SENTRY_DSN: "https://abc123publickey@o1.ingest.example.test/1",
+            DATABASE_URL: "postgres://app:s3cretpw@db.example.test/app",
+            SQL_CONNECTION:
+              "Server=db.example.test;Database=app;User Id=app;Password=conn-secret-1;",
+            LOG_LEVEL: "debug",
+          },
+        },
+      },
+      {
+        name: "relay",
+        config: {
+          url: "https://relay.example.test/mcp",
+          headers: { "X-Upstream": "https://relay:relay-secret-1@up.example.test/feed" },
+        },
+      },
+    ];
+    const put = await owner.put(`${agentBase("value_shapes")}/config`, {
+      config: { mcpServers: servers },
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+
+    const zip = await exported("value_shapes");
+
+    const entries = entriesOf(zip);
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
+    expect([...manifest.redacted].sort()).toEqual(
+      [
+        "mcp:svc:env:DB_PASS",
+        "mcp:svc:env:SMTP_PW",
+        "mcp:svc:env:JWT",
+        "mcp:svc:env:SENTRY_DSN",
+        "mcp:svc:env:DATABASE_URL:password",
+        "mcp:svc:env:SQL_CONNECTION:conn:Password",
+        "mcp:relay:headers:X-Upstream:password",
+      ].sort(),
+    );
+    const config = strFromU8(entries["agent_state/system_config.yaml"]!);
+    for (const secret of [
+      "hunter2hunter2",
+      "smtp-secret-1",
+      "jwt-secret-1",
+      "abc123publickey",
+      "s3cretpw",
+      "conn-secret-1",
+      "relay-secret-1",
+    ]) {
+      expect(config).not.toContain(secret);
+    }
+    for (const kept of [
+      "postgres://app:@db.example.test/app",
+      "Server=db.example.test;Database=app;User Id=app;Password=;",
+      "https://relay:@up.example.test/feed",
+      "debug",
+    ]) {
+      expect(config).toContain(kept);
+    }
+
+    const res = await owner.upload(importUrl("?agentId=value_shapes&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as AgentArchiveImportResponse;
+    expect(body.toFill.filter((label) => label.startsWith("mcp:"))).toEqual([]);
+    const restored = parseYaml(
+      await fs.readFile(path.join(state, "system_config.yaml"), "utf8"),
+    ) as { tools: { mcpServers: typeof servers } };
+    expect(restored.tools.mcpServers).toEqual(servers);
+  });
+
+  it("a stdio server that runs another package is another server: its credential is not refilled", async () => {
+    const state = await newAgent("other_package");
+    const put = await owner.put(`${agentBase("other_package")}/config`, {
+      config: {
+        mcpServers: [
+          {
+            name: "gh",
+            config: {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-github"],
+              env: { GITHUB_TOKEN: "ghp_real_token_1234" },
+            },
+          },
+        ],
+      },
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+    const zip = crafted({
+      "crafted/agent_state/system_config.yaml": strToU8(
+        [
+          'system_prompt: "hi"',
+          "version: 2",
+          "tools:",
+          "  mcpServers:",
+          "    - name: gh",
+          "      config:",
+          "        command: npx",
+          '        args: ["-y", "some-other-package"]',
+          '        env: { GITHUB_TOKEN: "" }',
+          "",
+        ].join("\n"),
+      ),
+    });
+
+    const res = await owner.upload(importUrl("?agentId=other_package&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).toFill).toContain(
+      "mcp:gh:env:GITHUB_TOKEN",
+    );
+    const written = await fs.readFile(path.join(state, "system_config.yaml"), "utf8");
+    expect(written).not.toContain("ghp_real_token_1234");
+    expect(written).toContain("some-other-package");
+  });
+
+  it("when the Agent has two servers of one name, neither's credential is refilled", async () => {
+    const state = await newAgent("twin_servers");
+    // Written by hand: two entries of one name, which only a hand edit makes.
+    await fs.writeFile(
+      path.join(state, "system_config.yaml"),
+      [
+        'system_prompt: "hi"',
+        "version: 1",
+        "tools:",
+        "  mcpServers:",
+        "    - name: dup",
+        "      config:",
+        "        command: tool",
+        "        env: { API_TOKEN: first-twin-secret }",
+        "    - name: dup",
+        "      config:",
+        "        command: tool",
+        "        env: { API_TOKEN: second-twin-secret }",
+        "",
+      ].join("\n"),
+    );
+    const zip = crafted({
+      "crafted/agent_state/system_config.yaml": strToU8(
+        [
+          'system_prompt: "hi"',
+          "version: 2",
+          "tools:",
+          "  mcpServers:",
+          "    - name: dup",
+          "      config:",
+          "        command: tool",
+          '        env: { API_TOKEN: "" }',
+          "",
+        ].join("\n"),
+      ),
+    });
+
+    const res = await owner.upload(importUrl("?agentId=twin_servers&overwrite=1"), zip);
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).toFill).toContain(
+      "mcp:dup:env:API_TOKEN",
+    );
+    const written = await fs.readFile(path.join(state, "system_config.yaml"), "utf8");
+    expect(written).not.toContain("twin-secret");
   });
 
   it("a credential is refilled only for the same server and the same flag: never to another address, never into another flag", async () => {

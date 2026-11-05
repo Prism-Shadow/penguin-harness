@@ -37,7 +37,7 @@ import {
 import { ACTIVITY_DAYS, summarizeAgents } from "./agent-summary.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionService } from "../../services/session-service.js";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { AgentConfig, AgentHolds, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { TraceIndex } from "../../mechanisms/traces.js";
 import type { ErrorLog } from "../../mechanisms/observability.js";
 import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
@@ -63,6 +63,8 @@ export interface AgentsRouteDeps {
   workbenches: Pick<Workbenches, "releaseAgent">;
   /** Users' unsent drafts, which go with the Agent's Sessions. */
   drafts: Pick<UserDraftsStore, "deleteByAgent">;
+  /** One import or delete at a time per Agent: a delete waits for an import into the Agent. */
+  holds: AgentHolds;
 }
 
 /** The refusal of a delete while organizations employ the Agent: each one by name, id and title. */
@@ -145,48 +147,62 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     // Deletion is a Project-level management operation: owner only.
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
-    // Refused before any run is touched.
-    refuseBuiltinDeletion(agentId);
-    // An employee is refused before anything is touched: deleting its Agent would leave the
-    // organization's chart naming an Agent that is gone, and its desk naming a Session that is.
-    // Leaving the organization is the way out, and it keeps the Agent.
-    const employers = await deps.orgService.employersOf(projectId, agentId);
-    if (employers.length > 0) throw employedError(agentId, employers);
-    // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
-    // this window gets 409, preventing the race where a new task recreates the directory
-    // and revives the Agent between abort and the move. Abort cleanup writes the Trace
-    // asynchronously; wait for it to finish before moving the directory, and clear the
-    // deleting flag once the move is done (success or failure).
-    const runnings = deps.manager.beginAgentDeletion(projectId, agentId);
-    let deletion: AgentDeletionInfo;
-    try {
-      await settleWithin(runnings, 5000);
-      // What the server itself holds open in the folder lets go before it is moved.
-      await deps.workbenches.releaseAgent(projectId, agentId);
-      // One rename takes the folder out of every list and route; its contents are removed in
-      // the background, which the answer reports and GET /agent-deletions/:id follows.
-      deletion = await deps.agentService.deleteAgent(projectId, agentId);
-      // Found through the Session index, so before its rows go.
-      deps.drafts.deleteByAgent(projectId, agentId);
-      deps.sessionsRepo.deleteByAgent(projectId, agentId);
-      // Trace-index rows describe files that just left: drop them with the Agent.
-      deps.traceIndex.removeAgent(projectId, agentId);
-      // Per-Agent runtime state keyed on the now-removed sessions/agent: drop it so nothing is
-      // orphaned (session ids are never reused, so a leftover row is dead weight). Usage records
-      // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
-      deps.schedulesRepo.deleteByAgent(projectId, agentId);
-      deps.errorsRepo.deleteByAgent(projectId, agentId);
-      // The Agent's API exposure goes with it: a later Agent created under the same id starts
-      // off, and no key minted for this one opens it.
-      deps.agentApi.deleteByAgent(projectId, agentId);
-    } finally {
-      deps.manager.endAgentDeletion(projectId, agentId);
-    }
+    // An import into the Agent finishes first, and one that comes after waits: nothing an
+    // import writes (a Trace, the memory folder, a Session's row) can outlive the Agent.
+    const deletion = await deps.holds.hold(`${projectId}/${agentId}`, () =>
+      deleteHeld(deps, projectId, agentId),
+    );
     return c.json({ deletion } satisfies AgentDeleteResponse, 202);
   });
 
   return app;
+}
+
+/** The delete itself, under the Agent's hold. */
+async function deleteHeld(
+  deps: AgentsRouteDeps,
+  projectId: string,
+  agentId: string,
+): Promise<AgentDeletionInfo> {
+  await deps.agentConfigService.requireExists(projectId, agentId);
+  // Refused before any run is touched.
+  refuseBuiltinDeletion(agentId);
+  // An employee is refused before anything is touched: deleting its Agent would leave the
+  // organization's chart naming an Agent that is gone, and its desk naming a Session that is.
+  // Leaving the organization is the way out, and it keeps the Agent.
+  const employers = await deps.orgService.employersOf(projectId, agentId);
+  if (employers.length > 0) throw employedError(agentId, employers);
+  // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
+  // this window gets 409, preventing the race where a new task recreates the directory
+  // and revives the Agent between abort and the move. Abort cleanup writes the Trace
+  // asynchronously; wait for it to finish before moving the directory, and clear the
+  // deleting flag once the move is done (success or failure).
+  const runnings = deps.manager.beginAgentDeletion(projectId, agentId);
+  let deletion: AgentDeletionInfo;
+  try {
+    await settleWithin(runnings, 5000);
+    // What the server itself holds open in the folder lets go before it is moved.
+    await deps.workbenches.releaseAgent(projectId, agentId);
+    // One rename takes the folder out of every list and route; its contents are removed in
+    // the background, which the answer reports and GET /agent-deletions/:id follows.
+    deletion = await deps.agentService.deleteAgent(projectId, agentId);
+    // Found through the Session index, so before its rows go.
+    deps.drafts.deleteByAgent(projectId, agentId);
+    deps.sessionsRepo.deleteByAgent(projectId, agentId);
+    // Trace-index rows describe files that just left: drop them with the Agent.
+    deps.traceIndex.removeAgent(projectId, agentId);
+    // Per-Agent runtime state keyed on the now-removed sessions/agent: drop it so nothing is
+    // orphaned (session ids are never reused, so a leftover row is dead weight). Usage records
+    // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
+    deps.schedulesRepo.deleteByAgent(projectId, agentId);
+    deps.errorsRepo.deleteByAgent(projectId, agentId);
+    // The Agent's API exposure goes with it: a later Agent created under the same id starts
+    // off, and no key minted for this one opens it.
+    deps.agentApi.deleteByAgent(projectId, agentId);
+  } finally {
+    deps.manager.endAgentDeletion(projectId, agentId);
+  }
+  return deletion;
 }
 
 /** GET /api/projects/:projectId/agent-deletions/:deletionId: where a delete's removal stands. */

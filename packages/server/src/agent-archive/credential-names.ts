@@ -5,14 +5,15 @@
  * A name is split into its words (on `-`, `_`, `.`, spaces and lower-to-upper case changes, so
  * `GITHUB_TOKEN`, `apiKey`, `x-api-key` and `clientSecret` all split) and is a credential's when
  * one word, in any letter case, is one of `CREDENTIAL_WORDS` or ends with one of
- * `CREDENTIAL_ENDINGS`. The endings catch names written as one word: `PGPASSWORD`, the
- * `authtoken` of `NGROK_AUTHTOKEN`, `secretkey`, `accesstoken`, `privatekey`.
+ * `CREDENTIAL_ENDINGS`. The words catch the short forms (`DB_PASS`, `SMTP_PW`, `JWT`,
+ * `SENTRY_DSN`); the endings catch names written as one word: `PGPASSWORD`, the `authtoken` of
+ * `NGROK_AUTHTOKEN`, `secretkey`, `accesstoken`, `privatekey`, `dbpass`.
  *
  * A word that only starts with or contains one is not enough: `max-tokens`, `tokens`, `keyword`,
  * `tokenizer`, `author`, `keyboard` and `keystore` are ordinary settings (a keystore's name is a
  * path; its password goes by `KEYSTORE_PASSWORD`, which counts). The rule errs on the side of
- * blanking: a value blanked by mistake (a `hotkey`, say) costs one entry to fill in after the
- * import, a credential missed travels with the zip.
+ * blanking: a value blanked by mistake (a `hotkey` or a `bypass`, say) costs one entry to fill in
+ * after the import, a credential missed travels with the zip.
  */
 
 const CREDENTIAL_WORDS = new Set([
@@ -29,6 +30,10 @@ const CREDENTIAL_WORDS = new Set([
   "cookie",
   "bearer",
   "pat",
+  "pass",
+  "pw",
+  "jwt",
+  "dsn",
 ]);
 
 /** A word ending in one of these is a credential's too. */
@@ -36,6 +41,7 @@ const CREDENTIAL_ENDINGS = [
   "password",
   "passwd",
   "pwd",
+  "pass",
   "token",
   "secret",
   "key",

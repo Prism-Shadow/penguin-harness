@@ -254,9 +254,14 @@ export async function planArchive(
   let scrubbedInHand = 0;
   const selected = await selectSessions(deps, projectId, agentId, parts.traces);
   if (parts.traces.kind !== "none") {
-    // A title is the first prompt's, so a pasted value travels there too.
-    let rows: unknown = selected.sessions.map((s) => s.facts);
-    if (patterns !== null) [rows, scrubbedInHand] = scrubJson(rows, patterns);
+    // A title is the first prompt's, so a pasted value travels there too; the rest of a row
+    // (the Session's id, its model, its Workspace) is how the import knows it, kept as it is.
+    const rows = selected.sessions.map((s) => {
+      if (patterns === null || typeof s.facts.title !== "string") return s.facts;
+      const [title, count] = scrubJson(s.facts.title, patterns);
+      scrubbedInHand += count;
+      return { ...s.facts, title: title as string };
+    });
     const facts = encoder.encode(`${JSON.stringify(rows, null, 2)}\n`);
     entries.push({
       name: `${prefix}traces/${SESSIONS_FILE}`,
@@ -382,7 +387,7 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
   };
   const patterns = vaultPatterns(plan.vault);
   let scrubbed = plan.scrubbedInHand;
-  let unscrubbed = 0;
+  let unparsed = 0;
   for (const entry of plan.entries) {
     if ("bytes" in entry.source) {
       const file = deflated(entry);
@@ -417,7 +422,7 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
         }
         file.push(scrub === null ? new Uint8Array(0) : scrub.end(), true);
         scrubbed += scrub?.replaced ?? 0;
-        unscrubbed += scrub?.unparsed ?? 0;
+        unparsed += scrub?.unparsed ?? 0;
       } finally {
         await handle.close();
       }
@@ -430,8 +435,8 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
     redacted: [
       ...plan.manifest.redacted,
       ...(scrubbed > 0 ? [`traces:vault-values:${scrubbed}`] : []),
-      // Lines that may hold a value but do not parse travel as they are: said, not hidden.
-      ...(unscrubbed > 0 ? [`traces:unscrubbed-lines:${unscrubbed}`] : []),
+      // Lines that hold a value but do not parse were scrubbed as plain text: said, not hidden.
+      ...(unparsed > 0 ? [`traces:unparsed-lines:${unparsed}`] : []),
     ],
   };
   const last = deflated({

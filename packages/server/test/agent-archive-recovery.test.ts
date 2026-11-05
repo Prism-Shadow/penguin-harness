@@ -15,6 +15,8 @@
  * - Given two overwrites of one Agent at once, the second waits for the first: it comes to the
  *   Agent only once the first has swapped, both answer 201, the second replaces the first's
  *   result, and nothing is rolled back.
+ * - Given a delete of the Agent while an import into it is swapping, the delete waits for the
+ *   import: afterwards no folder, Session row or listing of the Agent is left, and its id is free.
  * - Given a committed swap's leftover folder beside an interrupted swap's, recovery puts back the
  *   interrupted swap's State and parts and removes the committed leftovers without installing them.
  * - Given a part whose place is taken again by the time recovery runs, the folder's copy is left
@@ -43,7 +45,7 @@ import {
   agentsDir,
   snapshotsDir,
 } from "@prismshadow/penguin-core";
-import { AgentHolds } from "../src/agent-archive/agent-hold.js";
+import { AgentHoldQueue } from "../src/agent-archive/agent-hold.js";
 import type { AgentArchiveImportResponse, AgentsResponse } from "../src/api/types.js";
 import { SWAP_MARK } from "../src/services/state-swap.js";
 import { apiClient, createTestApp, loginAdmin, restartTestApp } from "./helpers.js";
@@ -81,6 +83,49 @@ function candidate(extra: Record<string, Uint8Array> = {}, manifest: object = {}
   });
 }
 const CANDIDATE = candidate();
+
+/** The candidate zip carrying one Session, `sid`, dated 2026-10-01. */
+function withSession(sid: string): Uint8Array {
+  const meta = {
+    timestamp: "2026-10-01T09:00:00.000Z",
+    type: "session_meta",
+    payload: {
+      session_id: sid,
+      model_id: "m",
+      provider: "custom",
+      model_context_window: 1000,
+      system_prompt: "",
+      agent_state: "/tmp/a",
+      workspace: "/tmp/w",
+      source: "user",
+    },
+  };
+  return candidate(
+    {
+      "candidate/traces/sessions.json": strToU8(
+        JSON.stringify([
+          {
+            sessionId: sid,
+            files: 1,
+            createdAt: "2026-10-01T09:00:00.000Z",
+            lastActiveAt: "2026-10-01T09:00:00.000Z",
+            title: "t",
+            archivedAt: null,
+            keptAt: null,
+            approvalMode: "allow-all",
+            thinkingLevel: null,
+            client: "web",
+            workspace: "/tmp/w",
+            provider: "custom",
+            modelId: "m",
+          },
+        ]),
+      ),
+      [`candidate/traces/2026-10-01/${sid}_001.jsonl`]: strToU8(`${JSON.stringify(meta)}\n`),
+    },
+    { parts: { ...PARTS, traces: { kind: "last", count: 1 } } },
+  );
+}
 
 function fsError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`${code}: injected`), { code });
@@ -263,10 +308,10 @@ describe("Agent archive overwrite recovery", () => {
     const order: string[] = [];
     let arrive!: () => void;
     const secondArrived = new Promise<void>((resolve) => (arrive = resolve));
-    const realHold = AgentHolds.prototype.hold;
+    const realHold = AgentHoldQueue.prototype.hold;
     let holds = 0;
-    vi.spyOn(AgentHolds.prototype, "hold").mockImplementation(function (
-      this: AgentHolds,
+    vi.spyOn(AgentHoldQueue.prototype, "hold").mockImplementation(function (
+      this: AgentHoldQueue,
       key: string,
       work: () => Promise<unknown>,
     ) {
@@ -315,6 +360,52 @@ describe("Agent archive overwrite recovery", () => {
       "my memory\n",
     );
     expect(await stagingOf(agent.id)).toEqual([]);
+  });
+
+  it("a delete of the Agent during an import waits for it: nothing of the Agent is left, and its id is free", async () => {
+    const agent = await agentWithVault();
+    const sid = "session-2026-10-01-09-00-00-0000eeee";
+    // The import stops inside its swap until the delete has come: to the Agent's hold, or, were
+    // there none, all the way through.
+    let arrive!: () => void;
+    const deleteArrived = new Promise<void>((resolve) => (arrive = resolve));
+    const realHold = AgentHoldQueue.prototype.hold;
+    let holds = 0;
+    vi.spyOn(AgentHoldQueue.prototype, "hold").mockImplementation(function (
+      this: AgentHoldQueue,
+      key: string,
+      work: () => Promise<unknown>,
+    ) {
+      holds += 1;
+      if (holds === 2) arrive();
+      return realHold.call(this, key, work);
+    } as typeof realHold);
+    const realSwap = t.deps.snapshots.swapAgentState.bind(t.deps.snapshots);
+    let swapping!: () => void;
+    const importSwapping = new Promise<void>((resolve) => (swapping = resolve));
+    vi.spyOn(t.deps.snapshots, "swapAgentState").mockImplementation(async (...args) => {
+      swapping();
+      await deleteArrived;
+      return realSwap(...args);
+    });
+
+    const importing = overwrite(agent.id, withSession(sid));
+    await importSwapping;
+    const deleting = Promise.resolve(admin.delete(agent.base));
+    void deleting.then(() => arrive());
+    const [imported, deleted] = await Promise.all([importing, deleting]);
+
+    expect(imported.status, await imported.clone().text()).toBe(201);
+    expect(deleted.status, await deleted.clone().text()).toBe(202);
+    await expect(fs.access(agentDir(t.root, projectId, agent.id))).rejects.toThrow();
+    expect(t.deps.sessionsRepo.findById(sid)).toBeNull();
+    const list = (await (
+      await admin.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    expect(list.agents.map((a) => a.agentId)).not.toContain(agent.id);
+    expect(
+      (await admin.post(`/api/projects/${projectId}/agents`, { agentId: agent.id })).status,
+    ).toBe(201);
   });
 
   /** A swap folder under the Agent as the swap leaves it, written by hand. */
@@ -450,45 +541,7 @@ describe("Agent archive overwrite recovery", () => {
   it("a Session that cannot be moved in after the swap is skipped as invalid, and the import still answers with its report", async () => {
     const agent = await agentWithVault();
     const sid = "session-2026-10-01-09-00-00-0000dddd";
-    const meta = {
-      timestamp: "2026-10-01T09:00:00.000Z",
-      type: "session_meta",
-      payload: {
-        session_id: sid,
-        model_id: "m",
-        provider: "custom",
-        model_context_window: 1000,
-        system_prompt: "",
-        agent_state: "/tmp/a",
-        workspace: "/tmp/w",
-        source: "user",
-      },
-    };
-    const zip = candidate(
-      {
-        "candidate/traces/sessions.json": strToU8(
-          JSON.stringify([
-            {
-              sessionId: sid,
-              files: 1,
-              createdAt: "2026-10-01T09:00:00.000Z",
-              lastActiveAt: "2026-10-01T09:00:00.000Z",
-              title: "t",
-              archivedAt: null,
-              keptAt: null,
-              approvalMode: "allow-all",
-              thinkingLevel: null,
-              client: "web",
-              workspace: "/tmp/w",
-              provider: "custom",
-              modelId: "m",
-            },
-          ]),
-        ),
-        [`candidate/traces/2026-10-01/${sid}_001.jsonl`]: strToU8(`${JSON.stringify(meta)}\n`),
-      },
-      { parts: { ...PARTS, traces: { kind: "last", count: 1 } } },
-    );
+    const zip = withSession(sid);
     const traces = path.join(agentDir(t.root, projectId, agent.id), "traces");
     failRename("ENOSPC", (_from, to) => to.startsWith(traces));
 

@@ -46,13 +46,12 @@ import type {
   AgentArchiveNote,
 } from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentHolds, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndex, Traces } from "../mechanisms/traces.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { updatedConfigText } from "../services/agent-config-service.js";
-import type { AgentHolds } from "./agent-hold.js";
 import { packageStateVersion, VAULT_BASENAME } from "../services/agent-state-layout.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "../services/ids.js";
 import { countMemoryTopics } from "../services/memory-service.js";
@@ -424,11 +423,15 @@ async function report(
   };
 }
 
-/** Imports one uploaded archive into `req.projectId` (access is the route's to check). */
-export async function importAgentArchive(
+/**
+ * Imports one uploaded archive into `req.projectId` (access is the route's to check); `answer`
+ * turns the outcome into the response while the Agent's hold is still kept.
+ */
+export async function importAgentArchive<T>(
   deps: ImportDeps,
   req: ImportRequest,
-): Promise<ImportOutcome> {
+  answer: (outcome: ImportOutcome) => Promise<T>,
+): Promise<T> {
   const { projectId } = req;
   if (req.agentId !== undefined) requireAgentId(req.agentId);
   const taken = async (agentId: string): Promise<boolean> =>
@@ -476,7 +479,17 @@ export async function importAgentArchive(
       const isAgent = await deps.agentConfigService.exists(projectId, agentId);
       if (!isAgent && (await taken(agentId))) throw agentExists(agentId);
       if (isAgent && !req.overwrite) throw agentExists(agentId);
-      return apply(deps, projectId, agentId, staged, isAgent ? "overwritten" : "created", imported);
+      const outcome = await apply(
+        deps,
+        projectId,
+        agentId,
+        staged,
+        isAgent ? "overwritten" : "created",
+        imported,
+      );
+      // The answer is put together while the hold is kept: a delete waiting for this import
+      // cannot take the Agent away from under it.
+      return answer(outcome);
     });
   } finally {
     await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);

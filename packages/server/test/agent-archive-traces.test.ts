@@ -58,6 +58,11 @@ const QUOTED_SECRET = 'pa"ss\\word-123';
 const BUILD_TOKEN = "aB3dE5fG7hJ9kL1mN3pQ";
 const LONG_TITLED = "session-2026-09-20-09-00-00-0000aaa9";
 const LONG_TITLE = `${"T".repeat(196)} #12`;
+/** A Session whose model's name holds a vault secret, titled with another one. */
+const IDENTIFIED = "session-2026-09-22-09-00-00-0000aaab";
+const MODEL_SECRET = "model-key-0451";
+/** A Session still running: its last line is not finished yet. */
+const RUNNING = "session-2026-09-25-09-00-00-0000aaac";
 
 const rec = (type: AmspRecord["type"], payload: unknown): AmspRecord =>
   ({ timestamp: "2026-10-01T09:00:00.000Z", type, payload }) as AmspRecord;
@@ -143,6 +148,7 @@ describe("Agent archive Traces", () => {
         }),
         // Alone on its line: the line holds the value only in its JSON-escaped form.
         rec("model_msg", { type: "text", role: "assistant", text: `pass ${QUOTED_SECRET}` }),
+        rec("model_msg", { type: "text", role: "assistant", text: "db hunter2hunter2" }),
         rec("event_msg", { type: "usage_note", total: 9123456789012 }),
       ]),
     );
@@ -171,6 +177,8 @@ describe("Agent archive Traces", () => {
             { key: "ACCOUNT_ID", value: "123456789012" },
             { key: "PIN_KEY", value: "31415926" },
             { key: "DB_HOST", value: "localhost.example" },
+            { key: "DB_PASS", value: "hunter2hunter2" },
+            { key: "MODEL_KEY", value: MODEL_SECRET },
           ],
         })
       ).status,
@@ -200,6 +208,33 @@ describe("Agent archive Traces", () => {
     row(BIG, "Big", "2026-10-12T09:00:00.000Z", "2026-10-12T10:00:00.000Z");
     await write("2026-09-20", LONG_TITLED, 1, trace(LONG_TITLED, "user", "ticket work"));
     row(LONG_TITLED, LONG_TITLE, "2026-09-20T09:00:00.000Z", "2026-09-20T10:00:00.000Z");
+    const identified = trace(IDENTIFIED, "user", `ran on ${MODEL_SECRET}`);
+    (identified[0]!.payload as { model_id: string }).model_id = MODEL_SECRET;
+    await write("2026-09-22", IDENTIFIED, 1, identified);
+    a.t.deps.sessionsRepo.insert({
+      sessionId: IDENTIFIED,
+      projectId: a.projectId,
+      agentId: AGENT,
+      provider: "custom",
+      modelId: MODEL_SECRET,
+      workspace: "/tmp/w",
+      approvalMode: "read-only",
+      title: `Use ${VAULT_VALUE} today`,
+      client: "web",
+      hasTrace: true,
+      createdAt: "2026-09-22T09:00:00.000Z",
+      lastActiveAt: "2026-09-22T10:00:00.000Z",
+    });
+    const running = await write("2026-09-25", RUNNING, 1, trace(RUNNING, "user", "still going"));
+    const unfinished = JSON.stringify(
+      rec("model_msg", {
+        type: "text",
+        role: "assistant",
+        text: `printing ${VAULT_VALUE} and ${QUOTED_SECRET} and more`,
+      }),
+    ).slice(0, -6);
+    await fs.appendFile(running, unfinished);
+    row(RUNNING, "Running", "2026-09-25T09:00:00.000Z", "2026-09-25T10:00:00.000Z");
     a.t.deps.sessionsRepo.setListing([S2], "archived", "2026-10-21T00:00:00.000Z");
     a.t.deps.sessionsRepo.setListing([S3], "kept", "2026-10-16T00:00:00.000Z");
     a.t.deps.sessionsRepo.updateThinkingLevel(S3, "high");
@@ -400,13 +435,61 @@ describe("Agent archive Traces", () => {
     expect(all).not.toContain(QUOTED_SECRET);
     expect(all).toContain("[vault:SECRET_QUOTE]");
     expect(all).toContain("[vault:BUILD_REF]");
+    // A short credential name's value goes as well.
+    expect(all).not.toContain("hunter2hunter2");
+    expect(all).toContain("db [vault:DB_PASS]");
     // A short value, an ordinary setting and digits stay as they were.
     expect(all).toContain("and short");
     expect(all).toContain("localhost.example");
     expect(all).toContain("code 31415926");
     expect(records.find((r) => r.payload.type === "usage_note")?.payload.total).toBe(9123456789012);
     const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as { redacted: string[] };
-    expect(manifest.redacted).toContain("traces:vault-values:4");
+    expect(manifest.redacted).toContain("traces:vault-values:5");
+  });
+
+  it("a Session's title travels scrubbed, while the session_meta and row that name it travel as they were, and the import takes it", async () => {
+    const zip = await exported("?traces=2026-09-22..2026-09-22");
+
+    const entries = entriesOf(zip);
+    const [facts] = factsIn(entries);
+    expect(facts).toMatchObject({
+      sessionId: IDENTIFIED,
+      title: "Use [vault:API_TOKEN] today",
+      modelId: MODEL_SECRET,
+    });
+    const [head, prompt] = strFromU8(entries[`traces/2026-09-22/${IDENTIFIED}_001.jsonl`]!)
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { payload: Record<string, unknown> });
+    expect(head!.payload).toMatchObject({ session_id: IDENTIFIED, model_id: MODEL_SECRET });
+    expect(prompt!.payload.text).toBe("ran on [vault:MODEL_KEY]");
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=identified_import`,
+      zip,
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).skippedTraces).toEqual([]);
+    expect(b.t.deps.sessionsRepo.findById(IDENTIFIED)).toMatchObject({
+      modelId: MODEL_SECRET,
+      title: "Use [vault:API_TOKEN] today",
+    });
+  });
+
+  it("a running Session's unfinished last line travels with its secrets replaced as plain text, and is counted", async () => {
+    const entries = entriesOf(await exported("?traces=2026-09-25..2026-09-25"));
+
+    const text = strFromU8(entries[`traces/2026-09-25/${RUNNING}_001.jsonl`]!);
+    const last = text.slice(text.lastIndexOf("\n") + 1);
+    expect(last).not.toBe("");
+    expect(text).not.toContain(VAULT_VALUE);
+    expect(text).not.toContain(JSON.stringify(QUOTED_SECRET).slice(1, -1));
+    expect(last).toContain("printing [vault:API_TOKEN] and [vault:SECRET_QUOTE] and m");
+    const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as { redacted: string[] };
+    expect(manifest.redacted).toEqual(
+      expect.arrayContaining(["traces:vault-values:2", "traces:unparsed-lines:1"]),
+    );
   });
 
   it("a Session whose title is as long as a ticket's makes the round trip", async () => {

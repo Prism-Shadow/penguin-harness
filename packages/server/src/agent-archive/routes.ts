@@ -16,7 +16,7 @@ import { HttpError } from "../http/errors.js";
 import { summarizeAgents } from "../http/routes/agent-summary.js";
 import { requireValidId } from "../http/validate.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentHolds, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
@@ -27,7 +27,6 @@ import type { SessionManager } from "../runtime/session-manager.js";
 import type { SessionService } from "../services/session-service.js";
 import type { AgentSummaryDeps } from "../http/routes/agent-summary.js";
 import { planArchive, zipStream } from "./export.js";
-import { AgentHolds } from "./agent-hold.js";
 import { importAgentArchive } from "./import.js";
 import { archiveTooLarge } from "./limits.js";
 import { partsFromQuery } from "./manifest.js";
@@ -48,7 +47,7 @@ export interface AgentArchiveRouteDeps {
   sessionsRepo: SessionIndex;
   /** The cached runtimes an overwrite invalidates. */
   runtimes: Pick<SessionManager, "invalidateAgentRuntimes">;
-  /** One import at a time per Agent. */
+  /** One import or delete at a time per Agent. */
   holds: AgentHolds;
   /** How an imported Agent is answered: the same card the Agents list shows. */
   summary: AgentSummaryDeps;
@@ -107,19 +106,26 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     if (overwrite) deps.access.requireProjectOwner(c.var.user.userId, projectId);
     else deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const agentIdQuery = c.req.query("agentId");
-    const outcome = await importAgentArchive(deps, {
-      projectId,
-      ...(agentIdQuery !== undefined && agentIdQuery !== "" ? { agentId: agentIdQuery } : {}),
-      overwrite,
-      body: c.req.raw.body,
-    });
-    const { agentId, ...result } = outcome;
-    const item = (await deps.agentService.listAgents(projectId)).find((a) => a.agentId === agentId);
-    if (item === undefined) {
-      throw new HttpError(500, "internal", "The imported Agent is missing from the list.");
-    }
-    const [agent] = await summarizeAgents(deps.summary, projectId, [item]);
-    return c.json({ agent: agent!, ...result } satisfies AgentArchiveImportResponse, 201);
+    const answer = await importAgentArchive(
+      deps,
+      {
+        projectId,
+        ...(agentIdQuery !== undefined && agentIdQuery !== "" ? { agentId: agentIdQuery } : {}),
+        overwrite,
+        body: c.req.raw.body,
+      },
+      // Under the Agent's hold, with the import done.
+      async ({ agentId, ...result }): Promise<AgentArchiveImportResponse> => {
+        const listed = await deps.agentService.listAgents(projectId);
+        const item = listed.find((a) => a.agentId === agentId);
+        if (item === undefined) {
+          throw new HttpError(500, "internal", "The imported Agent is missing from the list.");
+        }
+        const [agent] = await summarizeAgents(deps.summary, projectId, [item]);
+        return { agent: agent!, ...result };
+      },
+    );
+    return c.json(answer, 201);
   });
 
   return app;
@@ -154,6 +160,7 @@ export class AgentArchiveRoutes {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly agentApi!: AgentApi;
   @Use() private readonly orgService!: OrgService;
+  @Use() private readonly holds!: AgentHolds;
   @Bind("agent-archive") routes!: Hono<AppEnv>;
 
   setup() {
@@ -172,7 +179,7 @@ export class AgentArchiveRoutes {
       traces: this.traces,
       sessionsRepo: this.sessionsRepo,
       runtimes: this.manager as SessionManager,
-      holds: new AgentHolds(),
+      holds: this.holds,
       summary: {
         agentApi: this.agentApi,
         manager: this.manager as SessionManager,
