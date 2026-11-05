@@ -1,16 +1,17 @@
 /**
- * Progressive, grid-aligned orchestration diagram for Section 4 of the GDPEVO blog post.
+ * Progressive 4-Stage Spotlight Diagram for Section 4 of the GDPEVO blog post.
  *
- * Geometry is locked to a strict 4-column horizontal pipeline (all centered on CY = 170,
- * outer columns spanning y = 92..248, h = 156):
- *   Col 1 (x = 8..242):   `1 Shared Docker` — Base Agent + 3+2 closed-circuit training loop
- *   Col 2 (x = 262..356): `Evolved Agent (+ SKILL.md)` — frozen skill handoff
- *   Col 3 (x = 390..542): `Isolated Dockers` — 5 stacked Test 1..5 containers (x3 runs)
- *   Col 4 (x = 576..712): `Offline Verifier` — dedicated full-height Scoreboard column showing
- *                         per-task verified score bars and the final 68.95 ± 0.74 summary.
- *
- * Above Col 1 and Col 3 (on TY = 26), `General Agent` sits at the exact midpoint (x = 295)
- * and dispatches symmetrically through two `Harbor` nodes.
+ * Matches Section 2's visual & motion language 1-to-1:
+ * All 4 columns stay in place on the 4-column horizontal grid (CY = 170), transitioning smoothly
+ * from dimmed ghost (opacity 0.24) -> bright active spotlight -> calm completed state:
+ *   Stage 1 (Col 1, x = 8..242):   `1. 多轮训练循环` / `1. Multi-Round Train`
+ *                                  `1 Shared Docker` — 3+2 `T1..T5` (left) <-> `Target Agent` (right, w=86)
+ *   Stage 2 (Col 2, x = 262..356): `2. 产出进化 Agent` / `2. Evolved Agent`
+ *                                  Exports frozen `Evolved Agent (+ SKILL.md)`
+ *   Stage 3 (Col 3, x = 390..542): `3. 多轮隔离测试` / `3. Isolated Testing`
+ *                                  `Isolated Test Dockers` — 5 stacked `Test 1..5` (x3 runs)
+ *   Stage 4 (Col 4, x = 576..712): `4. 离线判分出分` / `4. Scoreboard`
+ *                                  `Offline Verifier` — per-task scores (`T1..T5`) + `68.95 ± 0.74`
  */
 import { useEffect, useState } from "react";
 import { SitePlaybackButton } from "@prismshadow/penguin-ui/site";
@@ -36,7 +37,7 @@ const STAGE_TABS: readonly StageTab[] = [
 ];
 
 /**
- * 3+2 training task cards inside `1 Shared Docker` (x=8..244, y=92..248):
+ * 3+2 training task cards inside `1 Shared Docker` (x=8..242, y=92..248):
  * Placed on the LEFT side (x=18..126) so tasks feed into `Target Agent` on the RIGHT (x=148..234, w=86),
  * which then exports directly out the right wall of `1 Shared Docker` into `Evolved Agent (+ SKILL.md)`.
  */
@@ -48,25 +49,25 @@ const TRAIN_CARDS = [
   { label: "T5", x: 73, y: 182, w: 30, h: 32 },
 ] as const;
 
-/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Dockers (centered on CY=170). */
+/** Vertical center Y coordinates for the 5 stacked horizontal Isolated Test Dockers (centered on CY=170). */
 const TEST_ROWS_Y = [106, 138, 170, 202, 234] as const;
 
 /** Per-task verified scores displayed inside the rightmost Offline Verifier Scoreboard column. */
 const VERIFIER_SCORES = [
-  { label: "E1", score: 74.3, width: 44 },
-  { label: "E2", score: 65.8, width: 39 },
-  { label: "E3", score: 80.7, width: 48 },
-  { label: "E4", score: 63.9, width: 38 },
-  { label: "E5", score: 73.7, width: 44 },
+  { label: "T1", score: 74.3, width: 44 },
+  { label: "T2", score: 65.8, width: 39 },
+  { label: "T3", score: 80.7, width: 48 },
+  { label: "T4", score: 63.9, width: 38 },
+  { label: "T5", score: 73.7, width: 44 },
 ] as const;
 
 function tickDelayMs(tick: number): number {
   if (tick === 5 || tick === 11) return 1100;
-  if (tick < 12) return 560;
-  if (tick === 13) return 1100;
-  if (tick >= 14 && tick <= 17) return 800;
-  if (tick === 21) return 3600;
-  return 850;
+  if (tick < 12) return 520;
+  if (tick === 13) return 1200;
+  if (tick >= 14 && tick <= 17) return 780;
+  if (tick === 21) return 3200;
+  return 800;
 }
 
 export function GdpevoOrchestrationWidget() {
@@ -110,15 +111,21 @@ export function GdpevoOrchestrationWidget() {
   };
 
   // Derive visual state from `tick` (0..21)
+  const isS0 = activeStageIdx === 0;
+  const isS1 = activeStageIdx === 1;
+  const isS2 = activeStageIdx === 2;
+  const isS3 = activeStageIdx === 3;
+
+  const reachedS1 = tick >= 12;
+  const reachedS2 = tick >= 14;
+  const reachedS3 = tick >= 18;
+
   const trainRound = tick < 6 ? 1 : 2;
   const activeTaskIdx = tick < 5 ? tick : tick >= 6 && tick < 11 ? tick - 6 : -1;
   const isSkillUpdating = tick === 5 || tick === 11;
   const skillBadge = tick < 5 ? "No Skill" : tick < 11 ? "Skill v1" : "Skill v2";
 
-  const showStage2 = tick >= 12;
-  const showStage3 = tick >= 14;
   const completedTestRuns = tick < 15 ? 0 : tick === 15 ? 1 : tick === 16 ? 2 : 3;
-  const showStage4 = tick >= 18;
   const revealedScores = tick < 18 ? 0 : tick === 18 ? 2 : tick === 19 ? 4 : 5;
   const showFinalMean = tick >= 20;
 
@@ -177,7 +184,7 @@ export function GdpevoOrchestrationWidget() {
         />
       </div>
 
-      {/* Strictly Left-to-Right 4-Column Grid SVG */}
+      {/* Strictly Left-to-Right 4-Column Spotlight SVG (All Columns Stay in Place, Gray -> Bright) */}
       <svg
         viewBox="0 0 720 256"
         className="block w-full select-none overflow-visible"
@@ -220,7 +227,7 @@ export function GdpevoOrchestrationWidget() {
           </marker>
         </defs>
 
-        {/* ==================== TOP ORCHESTRATOR: GENERAL AGENT (Centered at x=295, y=26) ==================== */}
+        {/* ==================== TOP ORCHESTRATOR: CONTROLLER AGENT (Centered at x=295, y=26) ==================== */}
         <g>
           <rect
             x="222"
@@ -243,14 +250,17 @@ export function GdpevoOrchestrationWidget() {
 
         {/* ==================== COL 1: HARBOR -> 1 SHARED DOCKER (x=8..242, y=92..248, CY=170) ==================== */}
         <g>
-          {/* Left Symmetric Arm: General Agent (222, 26) -> (125, 26) -> Harbor -> 1 Shared Docker (125, 90) */}
           <path
             d="M222,26 L125,26 L125,90"
             fill="none"
-            strokeWidth="1.5"
+            strokeWidth={isS0 ? "1.75" : "1.5"}
             strokeLinejoin="round"
-            className="stroke-brand-500 dark:stroke-brand-400"
-            markerEnd="url(#pg-arrow-brand)"
+            className={
+              isS0
+                ? "stroke-brand-500 dark:stroke-brand-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+            markerEnd={isS0 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
           />
           <rect
             x="96"
@@ -259,36 +269,48 @@ export function GdpevoOrchestrationWidget() {
             height="20"
             rx="5"
             strokeWidth="1.25"
-            className="fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-600"
+            className={
+              isS0
+                ? "fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
           />
           <text
             x="125"
             y="58"
             textAnchor="middle"
-            className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+            className={
+              isS0
+                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 font-mono text-xs font-semibold dark:fill-gray-400"
+            }
           >
             Harbor
           </text>
 
-          {/* 1 Shared Docker Boundary (x=8..242, y=92..248, h=156, center CY=170) */}
+          {/* 1 Shared Docker Boundary (x=8..242, y=92..248, h=156) */}
           <rect
             x="8"
             y="92"
             width="234"
             height="156"
             rx="10"
-            strokeWidth="1.5"
+            strokeWidth={isS0 ? "2" : "1.5"}
             strokeDasharray="6 4"
             className={
-              tick < 12
-                ? "fill-brand-50/25 stroke-brand-500 dark:fill-brand-950/20 dark:stroke-brand-400"
+              isS0
+                ? "fill-brand-50/35 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
                 : "fill-gray-50/50 stroke-gray-300 dark:fill-gray-900/40 dark:stroke-gray-700"
             }
           />
           <text
             x="20"
             y="113"
-            className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+            className={
+              isS0
+                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 font-mono text-xs font-semibold dark:fill-gray-400"
+            }
           >
             1 Shared Docker
           </text>
@@ -300,9 +322,9 @@ export function GdpevoOrchestrationWidget() {
             height="18"
             rx="4"
             className={
-              tick < 12
+              isS0
                 ? "fill-brand-100 dark:fill-brand-900/70"
-                : "fill-emerald-100 dark:fill-emerald-900/60"
+                : "fill-gray-200/80 dark:fill-gray-800"
             }
           />
           <text
@@ -310,17 +332,15 @@ export function GdpevoOrchestrationWidget() {
             y="113"
             textAnchor="middle"
             className={
-              tick < 12
+              isS0
                 ? "fill-brand-800 font-mono text-xs font-semibold tabular-nums dark:fill-brand-200"
-                : "fill-emerald-800 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-200"
+                : "fill-gray-600 font-mono text-xs font-medium tabular-nums dark:fill-gray-400"
             }
           >
-            {tick < 12 ? `Round ${trainRound}/2` : "2/2 Done"}
+            {isS0 ? `Round ${trainRound}/2` : "2/2 Done"}
           </text>
 
-          {/* Clean Bidirectional Loop between 3+2 Task Pool on LEFT (x=16..126) and Target Agent on RIGHT (x=148..234):
-              Top Arrow (y=166): Task Pool -> Target Agent
-              Bottom Arrow (y=192): Target Agent -> Task Pool */}
+          {/* Clean Bidirectional Loop between 3+2 Task Pool on LEFT (x=16..126) and Target Agent on RIGHT (x=148..234) */}
           <rect
             x="16"
             y="134"
@@ -328,7 +348,7 @@ export function GdpevoOrchestrationWidget() {
             height="88"
             rx="8"
             strokeWidth="1"
-            className="fill-gray-50/80 stroke-gray-200 dark:fill-gray-800/40 dark:stroke-gray-700"
+            className="fill-white/80 stroke-gray-200 dark:fill-gray-800/40 dark:stroke-gray-700"
           />
           <path
             d="M126,166 L146,166"
@@ -337,14 +357,14 @@ export function GdpevoOrchestrationWidget() {
             className={
               isSkillUpdating
                 ? "stroke-emerald-600 dark:stroke-emerald-400"
-                : activeTaskIdx >= 0
+                : isS0
                   ? "stroke-brand-500 dark:stroke-brand-400"
-                  : "stroke-gray-400 dark:stroke-gray-500"
+                  : "stroke-gray-300 dark:stroke-gray-600"
             }
             markerEnd={
               isSkillUpdating
                 ? "url(#pg-arrow-emerald)"
-                : activeTaskIdx >= 0
+                : isS0
                   ? "url(#pg-arrow-brand)"
                   : "url(#pg-arrow-gray)"
             }
@@ -354,32 +374,32 @@ export function GdpevoOrchestrationWidget() {
             fill="none"
             strokeWidth="1.5"
             className={
-              activeTaskIdx >= 0
+              isS0
                 ? "stroke-brand-500 dark:stroke-brand-400"
-                : "stroke-gray-400 dark:stroke-gray-500"
+                : "stroke-gray-300 dark:stroke-gray-600"
             }
-            markerEnd={activeTaskIdx >= 0 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
+            markerEnd={isS0 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
           />
 
           {/* 3+2 Training Task Cards on LEFT (T1..T5 in natural left-to-right reading order) */}
           {TRAIN_CARDS.map((card, i) => {
-            const isCurrentTask = i === activeTaskIdx;
+            const isCurrentTask = isS0 && i === activeTaskIdx;
             const doneRound2 = tick > 6 + i;
             const doneRound1 = tick > i && tick < 6;
             const cardStyle = isCurrentTask
               ? "fill-brand-600 stroke-brand-700 dark:fill-brand-500 dark:stroke-brand-300"
-              : doneRound2
+              : isS0 && doneRound2
                 ? "fill-emerald-50 stroke-emerald-500 dark:fill-emerald-950/60 dark:stroke-emerald-400"
-                : doneRound1
+                : isS0 && doneRound1
                   ? "fill-brand-50 stroke-brand-400 dark:fill-brand-950/60 dark:stroke-brand-500"
                   : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700";
             const textStyle = isCurrentTask
               ? "fill-white font-mono text-xs font-semibold tabular-nums dark:fill-gray-950"
-              : doneRound2
+              : isS0 && doneRound2
                 ? "fill-emerald-800 font-mono text-xs font-semibold tabular-nums dark:fill-emerald-200"
-                : doneRound1
+                : isS0 && doneRound1
                   ? "fill-brand-800 font-mono text-xs font-semibold tabular-nums dark:fill-brand-200"
-                  : "fill-gray-700 font-mono text-xs font-medium tabular-nums dark:fill-gray-300";
+                  : "fill-gray-600 font-mono text-xs font-medium tabular-nums dark:fill-gray-400";
             return (
               <g key={card.label}>
                 <rect
@@ -409,7 +429,9 @@ export function GdpevoOrchestrationWidget() {
             className={
               isSkillUpdating
                 ? "fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950 dark:stroke-emerald-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+                : isS0
+                  ? "fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
+                  : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
           />
           <text
@@ -427,11 +449,13 @@ export function GdpevoOrchestrationWidget() {
             height="22"
             rx="4"
             className={
-              tick < 5
+              !isS0
                 ? "fill-gray-100 dark:fill-gray-800"
-                : tick < 11
-                  ? "fill-brand-100 dark:fill-brand-900"
-                  : "fill-emerald-100 dark:fill-emerald-900"
+                : tick < 5
+                  ? "fill-gray-100 dark:fill-gray-800"
+                  : tick < 11
+                    ? "fill-brand-100 dark:fill-brand-900"
+                    : "fill-emerald-100 dark:fill-emerald-900"
             }
           />
           <text
@@ -439,11 +463,13 @@ export function GdpevoOrchestrationWidget() {
             y="195"
             textAnchor="middle"
             className={
-              tick < 5
-                ? "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
-                : tick < 11
-                  ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-                  : "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
+              !isS0
+                ? "fill-gray-600 font-mono text-xs font-medium dark:fill-gray-400"
+                : tick < 5
+                  ? "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+                  : tick < 11
+                    ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                    : "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
             }
           >
             {skillBadge}
@@ -451,284 +477,341 @@ export function GdpevoOrchestrationWidget() {
         </g>
 
         {/* ==================== COL 2: EVOLVED AGENT (+ SKILL.MD) (x=262..356, CY=170) ==================== */}
-        {showStage2 && (
-          <g className="anim-block">
+        <g style={{ opacity: reachedS1 ? 1 : 0.24 }} className="transition-opacity duration-200">
+          <path
+            d="M242,170 L260,170"
+            fill="none"
+            strokeWidth={isS1 ? "2" : "1.5"}
+            className={
+              isS1
+                ? "stroke-emerald-600 dark:stroke-emerald-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+            markerEnd={isS1 ? "url(#pg-arrow-emerald)" : "url(#pg-arrow-gray)"}
+          />
+          <rect
+            x="262"
+            y="134"
+            width="94"
+            height="72"
+            rx="8"
+            strokeWidth={isS1 ? "2" : "1.5"}
+            className={
+              isS1
+                ? "fill-emerald-50/60 stroke-emerald-600 dark:fill-emerald-950/60 dark:stroke-emerald-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
+          />
+          <text
+            x="309"
+            y="164"
+            textAnchor="middle"
+            className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+          >
+            {copy.evolvedAgent}
+          </text>
+          <text
+            x="309"
+            y="186"
+            textAnchor="middle"
+            className={
+              isS1
+                ? "fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
+                : "fill-gray-500 font-mono text-xs font-medium dark:fill-gray-400"
+            }
+          >
+            + SKILL.md
+          </text>
+        </g>
+
+        {/* ==================== COL 3: HARBOR -> ISOLATED TEST DOCKERS (x=390..542, CY=170) ==================== */}
+        <g style={{ opacity: reachedS2 ? 1 : 0.24 }} className="transition-opacity duration-200">
+          <path
+            d="M368,26 L466,26 L466,74"
+            fill="none"
+            strokeWidth={isS2 ? "1.75" : "1.5"}
+            strokeLinejoin="round"
+            className={
+              isS2
+                ? "stroke-brand-500 dark:stroke-brand-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+            markerEnd={isS2 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
+          />
+          <rect
+            x="437"
+            y="44"
+            width="58"
+            height="20"
+            rx="5"
+            strokeWidth="1.25"
+            className={
+              isS2
+                ? "fill-white stroke-brand-500 dark:fill-gray-900 dark:stroke-brand-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
+          />
+          <text
+            x="466"
+            y="58"
+            textAnchor="middle"
+            className={
+              isS2
+                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 font-mono text-xs font-semibold dark:fill-gray-400"
+            }
+          >
+            Harbor
+          </text>
+
+          <text
+            x="466"
+            y="88"
+            textAnchor="middle"
+            className={
+              isS2
+                ? "fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 font-mono text-xs font-semibold dark:fill-gray-400"
+            }
+          >
+            Isolated Test Dockers
+          </text>
+
+          {/* 1-to-5 Orthogonal Fork Tree (x=356..390, y=106..234, center CY=170) */}
+          <path
+            d="M356,170 L373,170 M373,106 L373,234"
+            fill="none"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            className={
+              isS2
+                ? "stroke-brand-500 dark:stroke-brand-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+          />
+          {TEST_ROWS_Y.map((ry, idx) => (
             <path
-              d="M242,170 L260,170"
-              fill="none"
-              strokeWidth="1.75"
-              className="stroke-emerald-600 dark:stroke-emerald-400"
-              markerEnd="url(#pg-arrow-emerald)"
-            />
-            <rect
-              x="262"
-              y="134"
-              width="94"
-              height="72"
-              rx="8"
-              strokeWidth="1.5"
-              className="fill-emerald-50 stroke-emerald-600 dark:fill-emerald-950/70 dark:stroke-emerald-400"
-            />
-            <text
-              x="309"
-              y="164"
-              textAnchor="middle"
-              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-            >
-              {copy.evolvedAgent}
-            </text>
-            <text
-              x="309"
-              y="186"
-              textAnchor="middle"
-              className="fill-emerald-700 font-mono text-xs font-semibold dark:fill-emerald-300"
-            >
-              + SKILL.md
-            </text>
-          </g>
-        )}
-
-        {/* ==================== COL 3: HARBOR -> ISOLATED DOCKERS (x=390..542, CY=170) ==================== */}
-        {showStage3 && (
-          <g className="anim-block">
-            {/* Right Symmetric Arm: General Agent (368, 26) -> (466, 26) -> Harbor -> Isolated Dockers (466, 74) */}
-            <path
-              d="M368,26 L466,26 L466,74"
+              key={`fork-${idx}`}
+              d={`M373,${ry} L388,${ry}`}
               fill="none"
               strokeWidth="1.5"
-              strokeLinejoin="round"
-              className="stroke-brand-500 dark:stroke-brand-400"
-              markerEnd="url(#pg-arrow-brand)"
+              className={
+                isS2
+                  ? "stroke-brand-500 dark:stroke-brand-400"
+                  : "stroke-gray-300 dark:stroke-gray-600"
+              }
+              markerEnd={isS2 ? "url(#pg-arrow-brand)" : "url(#pg-arrow-gray)"}
             />
-            <rect
-              x="437"
-              y="44"
-              width="58"
-              height="20"
-              rx="5"
-              strokeWidth="1.25"
-              className="fill-white stroke-brand-400 dark:fill-gray-900 dark:stroke-brand-600"
-            />
-            <text
-              x="466"
-              y="58"
-              textAnchor="middle"
-              className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-            >
-              Harbor
-            </text>
+          ))}
 
-            <text
-              x="466"
-              y="88"
-              textAnchor="middle"
-              className="fill-brand-700 font-mono text-xs font-semibold dark:fill-brand-300"
-            >
-              Isolated Test Dockers
-            </text>
-
-            {/* 1-to-5 Orthogonal Fork Tree (x=356..390, y=106..234, center CY=170) */}
-            <path
-              d="M356,170 L373,170 M373,106 L373,234"
-              fill="none"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              className="stroke-brand-500 dark:stroke-brand-400"
-            />
-            {TEST_ROWS_Y.map((ry, idx) => (
-              <path
-                key={`fork-${idx}`}
-                d={`M373,${ry} L388,${ry}`}
-                fill="none"
-                strokeWidth="1.5"
-                className="stroke-brand-500 dark:stroke-brand-400"
-                markerEnd="url(#pg-arrow-brand)"
-              />
-            ))}
-
-            {/* 5 Vertically Stacked Horizontal Isolated Dockers (x=390..542, h=26, y=93..247) */}
-            {TEST_ROWS_Y.map((ry, idx) => {
-              const topY = ry - 13;
-              return (
-                <g key={`test-row-${idx}`}>
-                  <rect
-                    x="390"
-                    y={topY}
-                    width="152"
-                    height="26"
-                    rx="6"
-                    strokeWidth="1.25"
-                    className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-                  />
-                  <text
-                    x="402"
-                    y={ry + 4}
-                    className="fill-gray-800 font-mono text-xs font-semibold tabular-nums dark:fill-gray-200"
-                  >
-                    {`Test ${idx + 1}`}
-                  </text>
-                  <line
-                    x1="454"
-                    y1={topY + 5}
-                    x2="454"
-                    y2={topY + 21}
-                    strokeWidth="1"
-                    className="stroke-gray-200 dark:stroke-gray-700"
-                  />
-                  <text
-                    x="466"
-                    y={ry + 4}
-                    className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
-                  >
-                    ×3
-                  </text>
-                  {[1, 2, 3].map((rNum) => {
-                    const done = completedTestRuns >= rNum;
-                    return (
-                      <rect
-                        key={rNum}
-                        x={490 + (rNum - 1) * 15}
-                        y={ry - 6}
-                        width="11"
-                        height="12"
-                        rx="2.5"
-                        className={
-                          done
-                            ? "fill-brand-500 dark:fill-brand-400"
-                            : "fill-gray-100 dark:fill-gray-800"
-                        }
-                      />
-                    );
-                  })}
-                </g>
-              );
-            })}
-          </g>
-        )}
+          {/* 5 Vertically Stacked Horizontal Isolated Test Dockers (x=390..542, h=26, y=93..247) */}
+          {TEST_ROWS_Y.map((ry, idx) => {
+            const topY = ry - 13;
+            return (
+              <g key={`test-row-${idx}`}>
+                <rect
+                  x="390"
+                  y={topY}
+                  width="152"
+                  height="26"
+                  rx="6"
+                  strokeWidth={isS2 ? "1.5" : "1.25"}
+                  className={
+                    isS2
+                      ? "fill-brand-50/30 stroke-brand-500 dark:fill-brand-950/25 dark:stroke-brand-400"
+                      : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+                  }
+                />
+                <text
+                  x="402"
+                  y={ry + 4}
+                  className={
+                    isS2
+                      ? "fill-brand-800 font-mono text-xs font-semibold tabular-nums dark:fill-brand-200"
+                      : "fill-gray-700 font-mono text-xs font-medium tabular-nums dark:fill-gray-300"
+                  }
+                >
+                  {`Test ${idx + 1}`}
+                </text>
+                <line
+                  x1="454"
+                  y1={topY + 5}
+                  x2="454"
+                  y2={topY + 21}
+                  strokeWidth="1"
+                  className="stroke-gray-200 dark:stroke-gray-700"
+                />
+                <text
+                  x="466"
+                  y={ry + 4}
+                  className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
+                >
+                  ×3
+                </text>
+                {[1, 2, 3].map((rNum) => {
+                  const done = completedTestRuns >= rNum;
+                  return (
+                    <rect
+                      key={rNum}
+                      x={490 + (rNum - 1) * 15}
+                      y={ry - 6}
+                      width="11"
+                      height="12"
+                      rx="2.5"
+                      className={
+                        done
+                          ? isS2
+                            ? "fill-brand-600 dark:fill-brand-400"
+                            : "fill-gray-400 dark:fill-gray-500"
+                          : "fill-gray-100 dark:fill-gray-800"
+                      }
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+        </g>
 
         {/* ==================== COL 4: OFFLINE VERIFIER SCOREBOARD COLUMN (x=576..712, y=92..248, CY=170) ==================== */}
-        {showStage4 && (
-          <g className="anim-block">
-            {/* Symmetric 5-to-1 Collector Tree (x=542..576, y=106..234 -> CY=170) */}
-            {TEST_ROWS_Y.map((ry, idx) => (
-              <path
-                key={`join-${idx}`}
-                d={`M542,${ry} L559,${ry}`}
-                fill="none"
-                strokeWidth="1.5"
-                className="stroke-emerald-600 dark:stroke-emerald-400"
-              />
-            ))}
+        <g style={{ opacity: reachedS3 ? 1 : 0.24 }} className="transition-opacity duration-200">
+          {TEST_ROWS_Y.map((ry, idx) => (
             <path
-              d="M559,106 L559,234 M559,170 L574,170"
+              key={`join-${idx}`}
+              d={`M542,${ry} L559,${ry}`}
               fill="none"
               strokeWidth="1.5"
-              strokeLinejoin="round"
-              className="stroke-emerald-600 dark:stroke-emerald-400"
-              markerEnd="url(#pg-arrow-emerald)"
+              className={
+                isS3
+                  ? "stroke-emerald-600 dark:stroke-emerald-400"
+                  : "stroke-gray-300 dark:stroke-gray-600"
+              }
             />
+          ))}
+          <path
+            d="M559,106 L559,234 M559,170 L574,170"
+            fill="none"
+            strokeWidth={isS3 ? "1.75" : "1.5"}
+            strokeLinejoin="round"
+            className={
+              isS3
+                ? "stroke-emerald-600 dark:stroke-emerald-400"
+                : "stroke-gray-300 dark:stroke-gray-600"
+            }
+            markerEnd={isS3 ? "url(#pg-arrow-emerald)" : "url(#pg-arrow-gray)"}
+          />
 
-            {/* Full-Height Scoreboard Column (x=576..712, y=92..248, h=156 — matches Col 1 height) */}
-            <rect
-              x="576"
-              y="92"
-              width="136"
-              height="156"
-              rx="10"
-              strokeWidth="1.5"
-              className="fill-white stroke-emerald-600 dark:fill-gray-900 dark:stroke-emerald-400"
-            />
-            <text
-              x="644"
-              y="112"
-              textAnchor="middle"
-              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
-            >
-              {copy.verifier}
-            </text>
+          <rect
+            x="576"
+            y="92"
+            width="136"
+            height="156"
+            rx="10"
+            strokeWidth={isS3 ? "2" : "1.5"}
+            className={
+              isS3
+                ? "fill-emerald-50/35 stroke-emerald-600 dark:fill-emerald-950/25 dark:stroke-emerald-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
+          />
+          <text
+            x="644"
+            y="112"
+            textAnchor="middle"
+            className={
+              isS3
+                ? "fill-emerald-800 text-xs font-semibold dark:fill-emerald-200"
+                : "fill-gray-700 text-xs font-semibold dark:fill-gray-300"
+            }
+          >
+            {copy.verifier}
+          </text>
 
-            {/* 5 Per-Task Verified Score Bars inside the Scoreboard Column */}
-            {VERIFIER_SCORES.map((item, idx) => {
-              const sy = 128 + idx * 15;
-              const shown = idx < revealedScores;
-              return (
-                <g key={item.label}>
-                  <text
-                    x="588"
-                    y={sy + 4}
-                    className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
-                  >
-                    {`T${idx + 1}`}
-                  </text>
+          {/* 5 Per-Task Verified Score Bars inside the Scoreboard Column */}
+          {VERIFIER_SCORES.map((item, idx) => {
+            const sy = 128 + idx * 15;
+            const shown = idx < revealedScores;
+            return (
+              <g key={item.label}>
+                <text
+                  x="588"
+                  y={sy + 4}
+                  className="fill-gray-500 font-mono text-xs tabular-nums dark:fill-gray-400"
+                >
+                  {item.label}
+                </text>
+                <rect
+                  x="610"
+                  y={sy - 3}
+                  width="54"
+                  height="7"
+                  rx="3.5"
+                  className="fill-gray-100 dark:fill-gray-800"
+                />
+                {shown && (
                   <rect
                     x="610"
                     y={sy - 3}
-                    width="54"
+                    width={item.width}
                     height="7"
                     rx="3.5"
-                    className="fill-gray-100 dark:fill-gray-800"
+                    className={
+                      isS3
+                        ? "fill-emerald-500 dark:fill-emerald-400"
+                        : "fill-gray-400 dark:fill-gray-500"
+                    }
                   />
-                  {shown && (
-                    <rect
-                      x="610"
-                      y={sy - 3}
-                      width={item.width}
-                      height="7"
-                      rx="3.5"
-                      className="fill-emerald-500 dark:fill-emerald-400"
-                    />
-                  )}
-                  <text
-                    x="700"
-                    y={sy + 4}
-                    textAnchor="end"
-                    className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
-                  >
-                    {shown ? item.score.toFixed(1) : "--"}
-                  </text>
-                </g>
-              );
-            })}
+                )}
+                <text
+                  x="700"
+                  y={sy + 4}
+                  textAnchor="end"
+                  className="fill-gray-800 font-mono text-xs font-medium tabular-nums dark:fill-gray-200"
+                >
+                  {shown ? item.score.toFixed(1) : "--"}
+                </text>
+              </g>
+            );
+          })}
 
-            {/* Final Aggregated Mean Badge at Bottom of Scoreboard Column (x=586..702, y=206..240) */}
-            <rect
-              x="586"
-              y="206"
-              width="116"
-              height="34"
-              rx="6"
-              className={
-                showFinalMean
-                  ? "fill-emerald-600 dark:fill-emerald-500"
-                  : "fill-gray-100 dark:fill-gray-800"
-              }
-            />
-            <text
-              x="644"
-              y="220"
-              textAnchor="middle"
-              className={
-                showFinalMean
-                  ? "fill-emerald-100 font-mono text-xs font-medium dark:fill-gray-900"
-                  : "fill-gray-400 font-mono text-xs dark:fill-gray-500"
-              }
-            >
-              {copy.finalScore}
-            </text>
-            <text
-              x="644"
-              y="234"
-              textAnchor="middle"
-              className={
-                showFinalMean
-                  ? "fill-white font-mono text-xs font-semibold tabular-nums dark:fill-gray-950"
-                  : "fill-gray-400 font-mono text-xs tabular-nums dark:fill-gray-500"
-              }
-            >
-              {showFinalMean ? "68.95 ± 0.74" : "..."}
-            </text>
-          </g>
-        )}
+          {/* Final Aggregated Mean Badge at Bottom of Scoreboard Column */}
+          <rect
+            x="586"
+            y="206"
+            width="116"
+            height="34"
+            rx="6"
+            className={
+              showFinalMean
+                ? "fill-emerald-600 dark:fill-emerald-500"
+                : "fill-gray-100 dark:fill-gray-800"
+            }
+          />
+          <text
+            x="644"
+            y="220"
+            textAnchor="middle"
+            className={
+              showFinalMean
+                ? "fill-emerald-100 font-mono text-xs font-medium dark:fill-gray-900"
+                : "fill-gray-400 font-mono text-xs dark:fill-gray-500"
+            }
+          >
+            {copy.finalScore}
+          </text>
+          <text
+            x="644"
+            y="234"
+            textAnchor="middle"
+            className={
+              showFinalMean
+                ? "fill-white font-mono text-xs font-semibold tabular-nums dark:fill-gray-950"
+                : "fill-gray-400 font-mono text-xs tabular-nums dark:fill-gray-500"
+            }
+          >
+            {showFinalMean ? "68.95 ± 0.74" : "--"}
+          </text>
+        </g>
       </svg>
     </div>
   );
