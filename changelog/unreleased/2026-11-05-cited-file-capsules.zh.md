@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#1482](https://github.com/Prism-Shadow/penguin-harness/pull/1482)
 - **Issue:** [#1440](https://github.com/Prism-Shadow/penguin-harness/issues/1440)
 
 [English](2026-11-05-cited-file-capsules.md)
