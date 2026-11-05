@@ -2,6 +2,7 @@
 title: "用 Penguin Harness 在 GDPEVO 上开展自进化实验"
 date: 2026-11-04
 category: practice
+author: Leijun Zhou
 excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 六大企业场景（30 道训练题与 30 道测试题），对比评测 SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种 Agent 自进化方法。"
 ---
 

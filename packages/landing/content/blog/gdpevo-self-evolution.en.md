@@ -2,6 +2,7 @@
 title: "Conducting Self-Evolution Experiments on GDPEVO with Penguin Harness"
 date: 2026-11-04
 category: practice
+author: Leijun Zhou
 excerpt: "Run and benchmark four agent self-evolution methods—SkillAdam, SkillOpt, TRACE, and OpenSkill—across the six enterprise scenarios (30 train tasks and 30 held-out test tasks) of GDPEVO Essential in PenguinHarness 0.2.19."
 ---
 
