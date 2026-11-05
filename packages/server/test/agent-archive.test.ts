@@ -55,7 +55,8 @@
  *   it), and a connection string's `Password=`, those values are blanked whatever the value's own
  *   name, and an overwrite from the zip puts them back.
  * - Given a value shaped like a token under a name that is no credential's (an `env` entry, an
- *   argument of its own), it is blanked and named by its place, and an overwrite puts it back.
+ *   argument of its own, a path holding a random segment), it is blanked and named by its place,
+ *   and an overwrite puts it back; a path with digits and a package, versioned or not, travel.
  * - Given an overwrite whose stdio server runs another package under the same command, or an
  *   Agent with two servers of one name, no credential is refilled and the place is to be filled.
  * - Given an overwrite whose zip points a server at another address, or whose blanked arguments
@@ -110,6 +111,8 @@ const MCP_SERVERS = [
     },
   },
 ];
+/** Forty random characters: a token, even as a segment of a path. */
+const RANDOM_40 = "Zq8Xw7Vu6Ts5Rr4Qp3On2Mm1Ll0Kk9Jj8Ii7Hh6G";
 const SKILL_MD = "---\nname: notes\ndescription: Keeps notes\n---\n\n# Notes\n";
 const HOOKS_JSON = JSON.stringify({ name: "guard", stop: [{ command: "stop.mjs", timeout: 5 }] });
 const PARTS_ALL = {
@@ -1077,7 +1080,7 @@ describe("Agent archive", () => {
         "          TOKENIZER: bpe-small",
         "          AUTHOR: ann-example",
         "          KEYBOARD: us-intl",
-        "          KEYSTORE: /etc/penguin/store.jks",
+        "          KEYSTORE: /etc/penguin/store.p12",
         "    - name: feed",
         "      config:",
         '        url: "https://feed.example.test/mcp?accesstoken=at-query-1&keyboard=dvorak"',
@@ -1106,7 +1109,7 @@ describe("Agent archive", () => {
       "bpe-small",
       "ann-example",
       "us-intl",
-      "/etc/penguin/store.jks",
+      "/etc/penguin/store.p12",
       "keyboard=dvorak",
     ]) {
       expect(exportedConfig).toContain(kept);
@@ -1204,8 +1207,22 @@ describe("Agent archive", () => {
         name: "llm",
         config: {
           command: "npx",
-          args: ["-y", "some-mcp-server", "sk-live-Zx9Yw8Vu7Ts6Rq5P", "--model", "gpt-mini"],
-          env: { OPENAI: "sk-proj-Ab12Cd34Ef56Gh78Ij90", MODE: "fast" },
+          args: [
+            "-y",
+            "some-mcp-server",
+            "sk-live-Zx9Yw8Vu7Ts6Rq5P",
+            "--model",
+            "gpt-mini",
+            "--root",
+            "/srv/data2024/run7",
+            "mcp-server-github2",
+            "@acme/mcp-tools@2.4.1",
+          ],
+          env: {
+            OPENAI: "sk-proj-Ab12Cd34Ef56Gh78Ij90",
+            MODE: "fast",
+            CONFIG_PATH: `/run/secrets/${RANDOM_40}`,
+          },
         },
       },
     ];
@@ -1218,12 +1235,25 @@ describe("Agent archive", () => {
 
     const entries = entriesOf(zip);
     const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as AgentArchiveManifest;
-    expect([...manifest.redacted].sort()).toEqual(["mcp:llm:args:token", "mcp:llm:env:OPENAI"]);
+    expect([...manifest.redacted].sort()).toEqual([
+      "mcp:llm:args:token",
+      "mcp:llm:env:CONFIG_PATH",
+      "mcp:llm:env:OPENAI",
+    ]);
     const config = strFromU8(entries["agent_state/system_config.yaml"]!);
-    for (const secret of ["sk-live-Zx9Yw8Vu7Ts6Rq5P", "sk-proj-Ab12Cd34Ef56Gh78Ij90"]) {
+    for (const secret of ["sk-live-Zx9Yw8Vu7Ts6Rq5P", "sk-proj-Ab12Cd34Ef56Gh78Ij90", RANDOM_40]) {
       expect(config).not.toContain(secret);
     }
-    for (const kept of ["some-mcp-server", "--model", "gpt-mini", "fast"]) {
+    // A path with digits, a package with digits and a versioned package are names, not tokens.
+    for (const kept of [
+      "some-mcp-server",
+      "--model",
+      "gpt-mini",
+      "fast",
+      "/srv/data2024/run7",
+      "mcp-server-github2",
+      "@acme/mcp-tools@2.4.1",
+    ]) {
       expect(config).toContain(kept);
     }
 
@@ -1240,7 +1270,11 @@ describe("Agent archive", () => {
     const copy = await owner.upload(importUrl("?agentId=token_shapes_copy"), zip);
     expect(copy.status, await copy.clone().text()).toBe(201);
     expect(((await copy.json()) as AgentArchiveImportResponse).toFill).toEqual(
-      expect.arrayContaining(["mcp:llm:args:token", "mcp:llm:env:OPENAI"]),
+      expect.arrayContaining([
+        "mcp:llm:args:token",
+        "mcp:llm:env:OPENAI",
+        "mcp:llm:env:CONFIG_PATH",
+      ]),
     );
   });
 
