@@ -342,3 +342,24 @@ SOFTWARE.
 ```
 
 Source: <https://github.com/lsdefine/genericagent>
+
+## Coopanion's desktop-pet kit and the DeepSeek whale figure — `plugins/pet/ui/figure/`
+
+Adapted into this repository's source, shipped inside the `@penguinharness/pet` plugin (npm:
+the plugin's package carries `ui/` whole; archives: wherever the pet plugin is bundled).
+
+The pet widget's body is Coopanion's (`packages/cortico-world-desktop-pet`): the figure pack
+under `plugins/pet/ui/figure/whale/` (the DeepSeek whale, 大肥鱼 — manifest, model, rig
+driver and every texture) and the kit under `plugins/pet/ui/figure/kit/` (the body
+simulation and the Live2D-style WebGL renderer), vendored unmodified; the plugin's widget
+document hosts them over the pack's own factory contract. The pack's textures were
+generated for Coopanion — the character design is 溟月 (上善无形), the DeepSeek maid
+secondary creation is ZipZipPipe's, and the schemes' apron logos carry the respective
+vendors' trademark graphics (DeepSeek, OpenAI, Anthropic, Google, Alibaba Cloud, Moonshot,
+MiniMax); the apron logos are those vendors' marks and remain theirs.
+
+**License: AGPL-3.0-or-later** — the kit's and the pack's, which the whole pet plugin
+adopts (`plugins/pet/package.json`); the harness itself stays Apache-2.0. The license text
+ships in the plugin's source; a copy is at <https://www.gnu.org/licenses/agpl-3.0.txt>, and
+the vendored source is Coopanion's repository at the commit recorded in
+`dev/pet/ref/coopanion`.

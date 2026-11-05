@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "The pet plugin: a small companion the web app docks as a widget, with `penguin pet` commands and its state in the server's shared store.",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=24"
   },

@@ -2,9 +2,11 @@
 <!--
   The pet widget's document: the iframe the web app docks for the `WebModule.widgets`
   contribution. Same-origin with the server, so it reads and writes the pet's state through
-  the plugin state routes with the user's own cookie — GET to look, PATCH to move it. All
-  animation is transform-only steps (the Coopanion stage's pattern): the browser composites,
-  nothing repaints.
+  the plugin state routes with the user's own cookie — GET to look, PATCH to move it.
+  The pet herself is the DeepSeek whale (大肥鱼) figure pack drawn by the Coopanion kit
+  (./figure/): a WebGL sprite rig the kit's body simulation walks, sits, sleeps, is picked
+  up and answered by touch. The document holds only the stage element and the speech
+  bubble; everything else the kit and the figure draw.
 -->
 <html lang="en">
 <head>
@@ -12,63 +14,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pet</title>
 <style>
-  :root {
-    --bg: transparent;
-    --ink: #3a3330;
-    --body: #f0c98f;
-    --body-dark: #d9a95f;
-    --accent: #7a5a3a;
-  }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
   body {
-    background: var(--bg);
+    background: transparent;
     font: 13px/1.4 system-ui, sans-serif;
-    color: var(--ink);
+    color: #3a3330;
     overflow: hidden;
     user-select: none;
   }
-  .stage { position: relative; height: 100%; display: grid; }
-  .pet {
+  #root { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+  #root:active { cursor: grabbing; }
+  #bubble {
     position: absolute;
-    left: 50%;
-    bottom: 24px;
-    width: 56px;
-    height: 44px;
-    margin-left: -28px;
-    will-change: transform;
-  }
-  .pet .body {
-    position: absolute;
-    inset: 6px 4px 0;
-    background: var(--body);
-    border: 1.5px solid var(--accent);
-    border-radius: 46% 46% 42% 42%;
-    will-change: transform;
-  }
-  .pet .ear { position: absolute; top: 0; width: 12px; height: 14px; background: var(--body); border: 1.5px solid var(--accent); border-radius: 60% 60% 20% 20%; }
-  .pet .ear.l { left: 9px; transform: rotate(-8deg); }
-  .pet .ear.r { right: 9px; transform: rotate(8deg); }
-  .pet .eye { position: absolute; top: 18px; width: 5px; height: 5px; background: var(--ink); border-radius: 50%; }
-  .pet .eye.l { left: 17px; } .pet .eye.r { right: 17px; }
-  .pet .mouth { position: absolute; top: 26px; left: 50%; width: 10px; height: 5px; margin-left: -5px; border: 1.5px solid var(--ink); border-top: none; border-radius: 0 0 8px 8px; }
-  .pet.sleep .eye { height: 2px; border-radius: 2px; top: 20px; }
-  .pet .leg { position: absolute; bottom: -2px; width: 9px; height: 8px; background: var(--body-dark); border: 1.5px solid var(--accent); border-radius: 0 0 6px 6px; }
-  .pet .leg.fl { left: 8px; } .pet .leg.fr { right: 8px; } .pet .leg.bl { left: 24px; } .pet .leg.br { right: 24px; }
-  .bubble {
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -100%);
     max-width: 230px;
     padding: 6px 10px;
     background: #fff;
-    border: 1.5px solid var(--accent);
+    border: 1.5px solid #b9c7d8;
     border-radius: 10px;
     font-size: 12px;
     box-shadow: 0 2px 6px rgb(0 0 0 / 12%);
+    pointer-events: none;
+    white-space: pre-wrap;
+    display: none;
   }
-  .bubble::after {
+  #bubble::after {
     content: "";
     position: absolute;
     bottom: -6px;
@@ -77,40 +50,16 @@
     height: 8px;
     margin-left: -4px;
     background: #fff;
-    border-right: 1.5px solid var(--accent);
-    border-bottom: 1.5px solid var(--accent);
+    border-right: 1.5px solid #b9c7d8;
+    border-bottom: 1.5px solid #b9c7d8;
     transform: rotate(45deg);
-  }
-  .bar {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: 6px;
-    height: 4px;
-    background: rgb(0 0 0 / 10%);
-    border-radius: 2px;
-  }
-  .bar i {
-    display: block;
-    height: 100%;
-    background: var(--body-dark);
-    border-radius: 2px;
-    transition: width .4s;
   }
   .err { position: absolute; inset: 0; display: grid; place-items: center; color: #a55; font-size: 12px; padding: 12px; text-align: center; }
 </style>
 </head>
 <body>
-  <div class="stage">
-    <div class="pet" id="pet">
-      <div class="ear l"></div><div class="ear r"></div>
-      <div class="body"></div>
-      <div class="eye l"></div><div class="eye r"></div>
-      <div class="mouth"></div>
-      <div class="leg fl"></div><div class="leg fr"></div><div class="leg bl"></div><div class="leg br"></div>
-    </div>
-    <div class="bar"><i id="fullness" style="width:0%"></i></div>
-  </div>
+  <div id="root"></div>
+  <div id="bubble"></div>
   <script type="module" src="./widget.js"></script>
 </body>
 </html>

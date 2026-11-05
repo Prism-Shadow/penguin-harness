@@ -1,89 +1,96 @@
 /**
- * The pet widget's behaviour: poll the state routes, draw the pet, move it with transforms.
+ * The pet widget's behaviour: the DeepSeek whale (大肥鱼) run by the Coopanion kit.
  *
- * The pet's document lives at GET/PATCH /api/plugins/<package>/state, same-origin, the
- * user's cookie going along (`credentials: "same-origin"`). The widget is a reader that
- * occasionally writes: an idle tick lowers the fullness a little and PATCHes it back, so the
- * pet grows hungry however you look at it. Everything drawn answers one `doing` value —
- * `idle`, `walk`, `sit`, `sleep`, `eat` — as a transform stepped by requestAnimationFrame
- * (the Coopanion stage's pattern): translate3d only, so the browser composites and nothing
- * repaints.
+ * The body is the figure pack at ./figure/whale (figure.json → createWhaleBody): the kit
+ * (./figure/kit/body.js) simulates her — walking, roaming, sitting, sleeping, being picked
+ * up, thrown, touched — and the pack's figure.js draws each frame with its WebGL rig. This
+ * document is the host: it hands the kit a stage (bounds, pointer events), relays what the
+ * body reports into the speech bubble, and keeps the pet's server state fresh — the same
+ * reader-and-occasional-writer contract as before, at GET/PATCH
+ * /api/plugins/<package>/state with the user's cookie (`credentials: "same-origin"`): an
+ * idle tick lowers the fullness a little and PATCHes it back, so the pet grows hungry
+ * however you look at it. Feeding is a double-click: +fullness, PATCHed.
  */
+
+import * as kit from "./figure/kit/body.js";
+import { createWhaleBody } from "./figure/whale/figure.js";
 
 const STATE_URL = "/api/plugins/@penguinharness/pet/state";
 const TICK_MS = 30_000;
-/** Fullness lost per idle tick. */
+/** Fullness lost per idle tick, and gained per feed. */
 const HUNGER = 2;
-const WALK_SPAN = 64;
-const EASE = 0.08;
+const FEED = 20;
+/** How long a bubble line stays up. */
+const BUBBLE_MS = 3400;
 
-const pet = document.getElementById("pet");
-const bar = document.getElementById("fullness");
-let bubble = null;
-let doing = "idle";
+const root = document.getElementById("root");
+const bubbleEl = document.getElementById("bubble");
+
+let body = null;
 let fullness = 0;
-let name = "";
+let doing = "idle";
+let bubbleUntil = 0;
 
-/** The bubble element, made when a line first needs one, dropped when the line goes away. */
-function setBubble(text) {
-  if (!text && bubble) { bubble.remove(); bubble = null; return; }
-  if (!text) return;
-  if (!bubble) {
-    bubble = document.createElement("div");
-    bubble.className = "bubble";
-    pet.parentElement.appendChild(bubble);
-  }
-  bubble.textContent = name ? `${name}: ${text}` : text;
+/** The stage the body stands on: one logo unit = S pixels, the whale inside a 256-unit square. */
+function bounds() {
+  const r = root.getBoundingClientRect();
+  return { W: r.width, H: r.height, floorY: r.height - 8, S: (r.height - 16) / 256 };
 }
 
-function draw() {
-  pet.classList.toggle("sleep", doing === "sleep");
-  pet.classList.toggle("sit", doing === "sit");
-  pet.classList.toggle("eat", doing === "eat");
-  bar.style.width = `${fullness}%`;
+function stagePoint(e) {
+  const r = root.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
-/** One easing loop toward x, the stage pattern: stop scheduling once close enough. */
-function glide(from, to, apply) {
-  let x = from;
-  let frame = 0;
-  const step = () => {
-    x += (to - x) * EASE;
-    if (Math.abs(to - x) < 0.5) { apply(to); return; }
-    apply(x);
-    frame = requestAnimationFrame(step);
-  };
-  frame = requestAnimationFrame(step);
-  return () => cancelAnimationFrame(frame);
+/* ---------- what the body reports → the bubble ---------- */
+
+const TOUCH_LINES = {
+  pet: ["嘿嘿，好痒～", "再摸一下嘛", "呜……最喜欢你了", "鳍都要摇起来了"],
+  poke: ["戳我干嘛！", "欸？", "……有病吧（小声）"],
+  grab: ["哇啊——飞起来了！", "放开我啦（并没有挣扎）", "拎鱼小达人"],
+  throw: ["呀啊啊啊啊——", "旋！转！突！击！", "落点请预判一下"],
+  drop: ["安全着陆～", "屁股……没事", "下次轻一点放"],
+  crash: ["呜哇，撞到了", "好痛……鱼要碎了", "这个场地有毒"],
+};
+
+const HUNGRY_LINES = ["肚子……空了……", "饿扁了，投喂一下？", "闻到饭味了吗（没有）"];
+const FEED_LINES = ["好吃！谢谢你！", "嗷呜——饱了饱了", "这口是山珍海味"];
+
+const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
+
+function say(text, ms = BUBBLE_MS) {
+  bubbleEl.textContent = text;
+  bubbleEl.style.display = "";
+  bubbleUntil = performance.now() + ms;
+  body?.talk?.();
 }
 
-let stopWalk = null;
-/** A walk: glide to one side, then back, then report done. */
-function walk() {
-  const base = pet.getBoundingClientRect();
-  const cx = 0;
-  const dir = Math.random() < 0.5 ? -1 : 1;
-  const home = base.left + base.width / 2;
-  const away = Math.min(Math.max(home + dir * WALK_SPAN, 40), window.innerWidth - 40) - home;
-  const setX = (x) => { pet.style.transform = `translate3d(${x}px, 0, 0)`; };
-  setX(cx);
-  const half = glide(cx, away, setX);
-  setTimeout(() => { half(); glide(away, cx, setX); }, 900);
+/** The kit's events, minus the ones nothing here answers. */
+function onEvent(kind, detail) {
+  if (kind === "touch" && detail && TOUCH_LINES[detail.kind]) say(pick(TOUCH_LINES[detail.kind]));
 }
 
-let stopIdle = null;
-/** The idle loop: every few seconds pick what the pet does next. */
-function idleLoop() {
-  if (stopIdle) clearInterval(stopIdle);
-  stopIdle = setInterval(() => {
-    if (fullness < 20 && doing !== "sleep") { doing = "sleep"; draw(); return; }
-    const pick = ["idle", "walk", "sit", "idle"][Math.floor(Math.random() * 4)];
-    if (pick === doing) return;
-    doing = pick;
-    draw();
-    if (pick === "walk") walk();
-  }, 5000);
-}
+/* ---------- pointer: the stage relays to the body ---------- */
+
+root.addEventListener("pointerdown", (e) => {
+  root.setPointerCapture?.(e.pointerId);
+  body?.pointer("down", stagePoint(e));
+});
+root.addEventListener("pointermove", (e) => body?.pointer("move", stagePoint(e)));
+root.addEventListener("pointerup", (e) => body?.pointer("up", stagePoint(e)));
+root.addEventListener("pointercancel", (e) => body?.pointer("cancel", stagePoint(e)));
+root.addEventListener("pointerleave", () => body?.pointer("leave", null));
+
+/** Feeding: a double-click fills the whale up, and the server keeps the number. */
+root.addEventListener("dblclick", async () => {
+  if (!body) return;
+  body.do("excited");
+  say(pick(FEED_LINES));
+  fullness = Math.min(100, fullness + FEED);
+  try { await patch({ pet: { fullness } }); } catch { /* the next tick reads the truth back */ }
+});
+
+/* ---------- server state: read, patch, apply ---------- */
 
 async function read() {
   const res = await fetch(STATE_URL, { credentials: "same-origin" });
@@ -102,40 +109,75 @@ async function patch(update) {
   return res.json();
 }
 
-/** One idle tick: the pet grows a little hungry, and the server keeps the document. */
-async function tick() {
-  if (fullness <= 0) return;
-  try {
-    const answer = await patch({ pet: { fullness: Math.max(0, fullness - HUNGER) } });
-    apply(answer.state);
-  } catch { /* the next tick tries again; a widget stays quiet about its failures */ }
+/** A wish from the state document the body acts on once: external orders beat roaming for a while. */
+function wish(next) {
+  if (!body || next === doing) return;
+  doing = next;
+  if (next === "walk") body.walk(bounds().W * (0.2 + Math.random() * 0.6));
+  else if (next === "sit") body.do("sit");
+  else if (next === "sleep") body.do("sleep");
+  else if (next === "eat") { body.do("excited"); say("好好吃！"); }
+  else body.do("stand");
 }
 
 function apply(state) {
   const doc = state ?? {};
-  name = doc.pet?.name ?? "";
   if (typeof doc.pet?.fullness === "number") fullness = doc.pet.fullness;
-  if (doc.mood?.doing) doing = doc.mood.doing;
-  setBubble(doc.mood?.bubble ?? null);
-  draw();
+  if (doc.mood?.doing) wish(doc.mood.doing);
+  const line = doc.mood?.bubble;
+  if (line) say(line);
+}
+
+/** One idle tick: the pet grows a little hungry, and the server keeps the document. */
+async function tick() {
+  if (fullness <= 0) { if (body && Math.random() < 0.5) say(pick(HUNGRY_LINES)); return; }
+  try {
+    const answer = await patch({ pet: { fullness: Math.max(0, fullness - HUNGER) } });
+    apply(answer.state);
+    if (fullness < 15 && Math.random() < 0.5) { body?.do("sad"); say(pick(HUNGRY_LINES)); }
+  } catch { /* the next tick tries again; a widget stays quiet about its failures */ }
+}
+
+/* ---------- the frame loop ---------- */
+
+let last = 0;
+function frame(now) {
+  const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
+  last = now;
+  body.step(dt);
+  const bubble = bubbleEl.textContent && now < bubbleUntil;
+  if (bubble) {
+    const at = body.layout().bubble;
+    bubbleEl.style.left = `${at.x}px`;
+    bubbleEl.style.top = `${Math.max(18, at.y)}px`;
+  } else if (bubbleEl.style.display !== "none") {
+    bubbleEl.style.display = "none";
+    bubbleEl.textContent = "";
+  }
+  requestAnimationFrame(frame);
+}
+
+function fail(message) {
+  if (!document.querySelector(".err")) {
+    const err = document.createElement("div");
+    err.className = "err";
+    err.textContent = message;
+    document.body.appendChild(err);
+  }
 }
 
 async function start() {
   try {
     const answer = await read();
-    apply(answer.state);
     document.querySelector(".err")?.remove();
-  } catch {
-    if (!document.querySelector(".err")) {
-      const err = document.createElement("div");
-      err.className = "err";
-      err.textContent = "The pet is not around right now.";
-      document.body.appendChild(err);
-    }
-    return;
+    body = await createWhaleBody(new URL("./figure/whale/", import.meta.url), { kit, host: { root, bounds, emit: onEvent, sound: () => {}, start: {} } });
+    apply(answer.state);
+    addEventListener("resize", () => body.resize());
+    requestAnimationFrame(frame);
+    setInterval(tick, TICK_MS);
+  } catch (err) {
+    fail(`The pet is not around right now. ${err?.message ?? ""}`);
   }
-  idleLoop();
-  setInterval(tick, TICK_MS);
 }
 
 start();
