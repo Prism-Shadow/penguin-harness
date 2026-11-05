@@ -23,7 +23,8 @@
  *   overwrite goes to it.
  * - A file larger than an import takes is refused in place, and nothing is sent.
  * - An older `.tar.gz` records no id: one whose name gives none leaves Import off until one is
- *   typed, and goes under that id.
+ *   typed, and goes under that id. Replacing from such a file needs none: it goes under this
+ *   Agent's.
  * - Closing with a picked file asks first, and keeping on keeps the file. While an upload is in
  *   flight, Esc does nothing; once it was refused, the file is still there and Esc asks again.
  * - Choosing a framework and a path opens a new chat with the Project's default agent, its prompt
@@ -31,6 +32,8 @@
  * - A default agent without the agent-porting Skill holds the chat and says so; installing the
  *   plugin that ships it from the dialog brings the Skill and lets the chat open. A refused
  *   install says why, and the chat stays held.
+ * - When that agent already has Skills of the plugin, the install asks first with the update
+ *   confirmation, naming them; Cancel sends nothing, Confirm installs.
  * - Opening the chat with a picked file asks first, since the file does not go with it; keeping
  *   on keeps the file, and discarding goes to the chat.
  * - Replacing the Agent State from the settings page asks once — Cancel sends nothing — and sends
@@ -88,7 +91,11 @@ const SKILL_PORTING = {
   description: "Port things in",
   version: "2026.11.05.1",
   title: "Skill porting",
-  skills: [{ name: "agent-porting", description: "", version: "2026.11.05.1" }],
+  skills: ["agent-porting", "skill-porting", "plugin-porting"].map((name) => ({
+    name,
+    description: "",
+    version: "2026.11.05.1",
+  })),
   hooks: [],
   mcpServers: [],
 } as unknown as PluginItem;
@@ -467,6 +474,29 @@ describe("exporting and importing an Agent", () => {
     expect(buttonIn(topDialog(), en.skills.importOpenChat).disabled).toBe(true);
   });
 
+  it("asks before the install rewrites the Skills the agent has of the plugin: Cancel sends nothing, Confirm installs", async () => {
+    const server = agentServer(undefined, {
+      library: [SKILL_PORTING],
+      skills: ["skill-porting", "plugin-porting"],
+    });
+    await openImport();
+    await waitFor(() => hasButton(en.agent.migrateSkillInstall));
+    await click(buttonIn(topDialog(), en.agent.migrateSkillInstall));
+    await waitFor(() => dialogs().length === 2);
+    expect(topDialog().textContent).toContain(en.plugins.updateConfirmWarning("skill-porting"));
+    expect(topDialog().textContent).toContain("plugin-porting");
+    await click(buttonIn(topDialog(), en.common.cancel));
+    await waitFor(() => dialogs().length === 1);
+    expect(server.writes("/plugins")).toEqual([]);
+
+    await click(buttonIn(topDialog(), en.agent.migrateSkillInstall));
+    await waitFor(() => dialogs().length === 2);
+    await click(buttonIn(topDialog(), en.skills.updateAction));
+    await waitFor(() => !buttonIn(topDialog(), en.skills.importOpenChat).disabled);
+    expect(server.writes("/plugins").map((r) => r.body)).toEqual([{ names: ["skill-porting"] }]);
+    expect(server.skillsOn(null, AGENT_ID)).toContain("agent-porting");
+  });
+
   it("asks before the chat drops a picked file: keeping on keeps it, discarding goes to the chat", async () => {
     agentServer(undefined, PORTING);
     const router = await openImport();
@@ -555,6 +585,21 @@ describe("exporting and importing an Agent", () => {
     await click(buttonIn(topDialog(), en.agent.importAction));
     await waitFor(() => dialogs().length === 0);
     expect(imports(server)).toEqual([{ agentId: "my_agent", overwrite: null, body: file }]);
+  });
+
+  it("replaces from a .tar.gz whose name gives no id, under this Agent's", async () => {
+    const server = agentServer();
+    await mountAgentApp(h(AgentSettingsPage), { at: `/agents/${AGENT_ID}` });
+    await waitFor(() => document.body.textContent?.includes(en.agent.replaceOpen) === true);
+    await click(button(en.agent.replaceOpen));
+    await waitFor(() => dialogs().length === 1);
+    const file = await pickArchive("My Backup.tar.gz");
+    expect(buttonIn(topDialog(), en.agent.replaceAction).disabled).toBe(false);
+    await click(buttonIn(topDialog(), en.agent.replaceAction));
+    await waitFor(() => dialogs().length === 2);
+    await click(buttonIn(topDialog(), en.agent.replaceAction));
+    await waitFor(() => dialogs().length === 0);
+    expect(imports(server)).toEqual([{ agentId: AGENT_ID, overwrite: "1", body: file }]);
   });
 
   it("replaces the Agent State from the settings page after one confirmation, then reads the config again", async () => {
