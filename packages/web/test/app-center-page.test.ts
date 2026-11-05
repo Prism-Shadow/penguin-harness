@@ -19,13 +19,17 @@ import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
-import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog, whereIs } from "./helpers/agent-app";
+import {
+  AGENT_ID,
+  PROJECT_ID,
+  agentServer,
+  mountAgentApp,
+  topDialog,
+  whereIs,
+} from "./helpers/agent-app";
 import { button, click, run, settle, unmountAll, waitFor } from "./helpers/dom";
 
-const workbench = (
-  id: string,
-  over: Partial<WorkbenchInfo> = {},
-): WorkbenchInfo => ({
+const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo => ({
   id,
   name: id,
   version: "1.0.0",
@@ -63,8 +67,9 @@ async function open(workbenches: WorkbenchInfo[]) {
   return { server, router };
 }
 
-const tiles = () =>
-  [...document.querySelectorAll<HTMLAnchorElement>(`ul[aria-label="${en.appCenter.title}"] a`)];
+const tiles = () => [
+  ...document.querySelectorAll<HTMLAnchorElement>(`ul[aria-label="${en.appCenter.title}"] a`),
+];
 
 /** What a screen reader reads of an element: its text outside `aria-hidden` subtrees. */
 function spoken(node: Node): string {

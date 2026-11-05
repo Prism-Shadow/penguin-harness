@@ -18,12 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
 import { BUILD_DIR, STATUS_FILE } from "./compile.js";
-import {
-  isSafeRelPath,
-  isWorkbenchId,
-  TMP_SUFFIX,
-  UI_DIR,
-} from "./store.js";
+import { isSafeRelPath, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
 
 const TITLE_MAX = 60;
 const ICON_MAX_BYTES = 256 * 1024;
@@ -129,7 +124,8 @@ export async function readAppCenterManifest(dir: string, id: string): Promise<Ap
   } catch {
     // Nothing to read: no declaration, and the load names what is wrong with the file.
   }
-  const name = isRecord(pkg) && typeof pkg["name"] === "string" && pkg["name"] !== "" ? pkg["name"] : id;
+  const name =
+    isRecord(pkg) && typeof pkg["name"] === "string" && pkg["name"] !== "" ? pkg["name"] : id;
   const penguin = isRecord(pkg) && isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
   if (penguin === null) return { name, tabs: [], hint: null };
   const tabs = manifestTabs(penguin);
@@ -219,7 +215,9 @@ export async function agentShortcuts(
       ),
     );
   }
-  return out.sort((a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId));
+  return out.sort(
+    (a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId),
+  );
 }
 
 /**

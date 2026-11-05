@@ -100,7 +100,9 @@ function ShortcutTile({ shortcut, locale }: { shortcut: AppCenterShortcut; local
             className="absolute -right-1.5 -bottom-1.5 rounded ring-2 ring-canvas"
           />
           {shortcut.broken && (
-            <span className={`absolute -top-1.5 -left-1.5 rounded-full bg-canvas ${toneInk.attention}`}>
+            <span
+              className={`absolute -top-1.5 -left-1.5 rounded-full bg-canvas ${toneInk.attention}`}
+            >
               <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
             </span>
           )}
@@ -113,13 +115,17 @@ function ShortcutTile({ shortcut, locale }: { shortcut: AppCenterShortcut; local
   );
 }
 
-const GRID = "grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-4";
+/** Three tiles a row on a phone, as a home screen has; as many as fit from `sm` up. */
+const GRID = "grid grid-cols-3 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(8rem,1fr))]";
 
 export function AppCenterPage() {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const { locale } = useLocale();
-  const machines = useMachines().state?.machines ?? [];
+  /** Machines the Project's Agents can live on: this server is listed too, and is not one. */
+  const machines = (useMachines().state?.machines ?? []).filter(
+    (machine) => !machine.local && machine.installed !== null && machine.machineId !== null,
+  );
   /** The newest answer, with the Project it is about: another Project's tiles are never shown. */
   const [loaded, setLoaded] = useState<{
     projectId: string;
@@ -188,7 +194,11 @@ export function AppCenterPage() {
           </ul>
         )
       ) : shortcuts.length === 0 ? (
-        <EmptyState title={S.appCenter.emptyTitle} description={S.appCenter.empty} action={create} />
+        <EmptyState
+          title={S.appCenter.emptyTitle}
+          description={S.appCenter.empty}
+          action={create}
+        />
       ) : (
         <ul className={GRID} aria-label={S.appCenter.title}>
           {shortcuts.map((shortcut) => (
@@ -200,7 +210,9 @@ export function AppCenterPage() {
           ))}
         </ul>
       )}
-      {machines.length > 0 && <p className="mt-6 text-xs text-fg-muted">{S.appCenter.machinesNote}</p>}
+      {machines.length > 0 && (
+        <p className="mt-6 text-xs text-fg-muted">{S.appCenter.machinesNote}</p>
+      )}
       <AiCreateModal
         open={aiOpen}
         onClose={() => setAiOpen(false)}

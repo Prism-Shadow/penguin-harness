@@ -115,7 +115,8 @@ async function writeWorkbench(
 /** What a failed load leaves in `.build/status.json`. */
 const FAILED_STATUS = JSON.stringify({ ok: false, error: "index.ts:1:1 TS1005 ';' expected." });
 
-const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#2563eb"/></svg>';
+const ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#2563eb"/></svg>';
 
 /** Declarations that do not hold up, each in a folder of its own on the default Agent. */
 const MALFORMED: Array<[string, unknown, Record<string, string | Buffer>?]> = [
@@ -298,10 +299,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
     const history = (await (await owner.get(`${base}/tool/history`)).json()) as {
       versions: WorkbenchVersion[];
     };
-    expect(history.versions.map((v) => v.revision)).toEqual([
-      workbench.revision,
-      before!.revision,
-    ]);
+    expect(history.versions.map((v) => v.revision)).toEqual([workbench.revision, before!.revision]);
     expect(await ids()).toContain(`${SWITCHER}/tool`);
   });
 

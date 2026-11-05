@@ -1204,7 +1204,8 @@ export const zh = {
     exportWorkbench: "打包导出",
     /** The row's switch: whether the workbench has a shortcut in the App Center. */
     showInAppCenter: "显示在应用中心",
-    showInAppCenterHint: "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
+    showInAppCenterHint:
+      "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
     /** The row's pill while the switch is on. */
     inAppCenter: "应用中心",
     /** The full page's way out when it was opened from the App Center. */
