@@ -3,7 +3,7 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ui-gallery`
-- **PR:** [#1473](https://github.com/Prism-Shadow/penguin-harness/pull/1473)
+- **PR:** [#1473](https://github.com/Prism-Shadow/penguin-harness/pull/1473), [#1495](https://github.com/Prism-Shadow/penguin-harness/pull/1495)
 
 [English](2026-11-04-theme-cartoon.md)
 
