@@ -111,6 +111,11 @@ function WidgetDock() {
  * frame's own pixels; the document answers `{ penguin: "widget-over", over }` when the position
  * is on something it drew, and only then does the frame take pointer events. The document
  * reports the pointer leaving by itself, which hands the page the pointer back.
+ *
+ * The frame also has to be see-through, and a browser only composites one that way while the
+ * frame's colour scheme agrees with its element's: a document that leaves it `normal` counts as
+ * light, so over a dark page the mismatch paints the whole frame an opaque white. The element
+ * says `only light` whatever the app's theme is, and the document declares the same scheme.
  */
 function BareWidget({ src, title }: { src: string; title: string }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -150,7 +155,7 @@ function BareWidget({ src, title }: { src: string; title: string }) {
       src={src}
       title={title}
       className="fixed inset-0 h-full w-full border-0 bg-transparent"
-      style={{ pointerEvents: over ? "auto" : "none" }}
+      style={{ pointerEvents: over ? "auto" : "none", colorScheme: "only light" }}
     />
   );
 }

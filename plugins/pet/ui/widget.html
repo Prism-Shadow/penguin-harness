@@ -18,6 +18,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pet</title>
 <style>
+  /* The dock declares the same scheme on the frame's element. When the two disagree the browser
+     paints the frame as an opaque canvas instead of letting the page show through it — white over
+     a dark page, which is what a "transparent" widget looks like without this line. */
+  :root { color-scheme: only light; }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
   body {
