@@ -10,7 +10,7 @@ This guide explains how to use PenguinHarness 0.2.19 to run agent self-evolution
 
 ## 1. Structure and Rules of the GDPEVO Essential Benchmark Series
 
-Derived from the [GDPevo paper](https://arxiv.org/abs/2608.03764), GDPEVO Essential is a benchmark series designed for evaluating agent self-evolution on real enterprise tasks and consists of six independent sub-benchmarks. Each sub-benchmark is a self-contained evaluation unit comprising 5 training tasks, 5 held-out test tasks, and a dedicated interactive training and evaluation environment, totaling 30 training tasks and 30 held-out test tasks across the series:
+Derived from the [GDPevo Benchmark](https://arxiv.org/abs/2608.03764), GDPEVO Essential is a benchmark series designed for evaluating agent self-evolution on real enterprise tasks and consists of six independent sub-benchmarks. Each sub-benchmark is a self-contained evaluation unit comprising 5 training tasks, 5 held-out test tasks, and a dedicated interactive training and evaluation environment, totaling 30 training tasks and 30 held-out test tasks across the series:
 
 | Benchmark | Benchmark ID | Sub-Benchmark Structure | Task Overview |
 | :--- | :--- | :--- | :--- |

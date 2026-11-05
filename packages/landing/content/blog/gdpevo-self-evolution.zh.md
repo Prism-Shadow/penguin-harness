@@ -10,7 +10,7 @@ excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 B
 
 ## 1. GDPEVO Essential 系列 Benchmark 的构成与评测规则
 
-GDPEVO Essential 源自 [GDPevo 论文](https://arxiv.org/abs/2608.03764)，是一套面向真实企业任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成。每一个子 Benchmark 都是一个完整的评测单元，内部包含 5 道训练题、5 道保留测试题以及一个配套的交互式训练评测环境，全系列合计包含 30 道训练题与 30 道测试题：
+GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，是一套面向真实企业任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成。每一个子 Benchmark 都是一个完整的评测单元，内部包含 5 道训练题、5 道保留测试题以及一个配套的交互式训练评测环境，全系列合计包含 30 道训练题与 30 道测试题：
 
 | Benchmark 名称 | Benchmark 标识 | 单个子 Benchmark 构成 | 任务概述 |
 | :--- | :--- | :--- | :--- |
