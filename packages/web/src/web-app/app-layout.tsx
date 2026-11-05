@@ -8,7 +8,7 @@ import { backgroundStyle, useBackground } from "../state/background";
  * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
  * transform would trap the menus it opens); the package's components say how.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet } from "react-router";
 import {
   AppShell,
@@ -47,8 +47,10 @@ function pinnedSidebarOnScreen(): boolean {
  * The plugin widget dock: the widgets the server contributed (`WebModule.widgets`), one tile
  * each, docked at the layout's bottom-right corner. A tile shows the widget's initial (its
  * title's first grapheme) until clicked, then opens its iframe over the dock — a small
- * always-visible surface a page would be too heavy for. Only an iframe widget draws today;
- * builtin names are contributed but wait for a registry entry.
+ * always-visible surface a page would be too heavy for. A widget that declares `chrome: "bare"`
+ * opens as its own document, which then draws everything including how it is closed
+ * (BareWidget); any other opens in a titled card with a close button. Only an iframe widget
+ * draws today; builtin names are contributed but wait for a registry entry.
  */
 function WidgetDock() {
   const widgets = useContributedWidgets();
@@ -61,32 +63,88 @@ function WidgetDock() {
   const open = widgets.find((w) => w.key === openKey) ?? null;
   return (
     <div className="fixed right-3 bottom-10 z-40 flex flex-col items-end gap-2 print:hidden">
-      {open !== null && "iframe" in open.renderer && (
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
-          <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
-            <span>{open.titleZh ?? open.title ?? open.key}</span>
-            <button
-              type="button"
-              className="ml-3 cursor-pointer text-content-faint hover:text-content"
-              aria-label="Close widget"
-              onClick={() => setOpenKey(null)}
-            >
-              ✕
-            </button>
-          </div>
-          <iframe
+      {open !== null &&
+        "iframe" in open.renderer &&
+        (open.chrome === "bare" ? (
+          <BareWidget
             src={open.renderer.iframe.src}
             title={open.titleZh ?? open.title ?? open.key}
-            className="h-64 w-72 border-0 bg-transparent"
           />
-        </div>
-      )}
+        ) : (
+          <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
+            <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
+              <span>{open.titleZh ?? open.title ?? open.key}</span>
+              <button
+                type="button"
+                className="ml-3 cursor-pointer text-content-faint hover:text-content"
+                aria-label="Close widget"
+                onClick={() => setOpenKey(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <iframe
+              src={open.renderer.iframe.src}
+              title={open.titleZh ?? open.title ?? open.key}
+              className="h-64 w-72 border-0 bg-transparent"
+            />
+          </div>
+        ))}
       <div className="flex gap-2">
         {widgets.map((w) => (
           <WidgetTile key={w.id} widget={w} open={w.key === openKey} onToggle={() => setOpenKey(w.key === openKey ? null : w.key)} />
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * A widget that draws itself (`chrome: "bare"`): the iframe alone — no border, no background,
+ * no title bar, no close button; the dock's tile above opens and closes it.
+ *
+ * Left alone, a frame that size would swallow every click over its rectangle, so it is
+ * `pointer-events: none` and the page beneath keeps working. While the pointer is over the
+ * frame, the host relays its position to the document as `{ penguin: "widget-probe", x, y }` in
+ * the frame's own pixels; the document answers `{ penguin: "widget-over", over }` when the
+ * position is on something it drew, and only then does the frame take pointer events. The
+ * document reports the pointer leaving by itself, which hands the page the pointer back.
+ */
+function BareWidget({ src, title }: { src: string; title: string }) {
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    const onAnswer = (e: MessageEvent) => {
+      const data = e.data as { penguin?: unknown; over?: unknown } | null;
+      if (data?.penguin !== "widget-over" || typeof data.over !== "boolean") return;
+      if (e.source !== frameRef.current?.contentWindow) return;
+      setOver(data.over);
+    };
+    addEventListener("message", onAnswer);
+    return () => removeEventListener("message", onAnswer);
+  }, []);
+  useEffect(() => {
+    if (over) return; // the frame holds the pointer now; it says when the pointer has left it
+    const onMove = (e: PointerEvent) => {
+      const frame = frameRef.current;
+      if (frame === null || frame.contentWindow === null) return;
+      const box = frame.getBoundingClientRect();
+      const x = e.clientX - box.left;
+      const y = e.clientY - box.top;
+      if (x < 0 || y < 0 || x > box.width || y > box.height) return;
+      frame.contentWindow.postMessage({ penguin: "widget-probe", x, y }, location.origin);
+    };
+    addEventListener("pointermove", onMove);
+    return () => removeEventListener("pointermove", onMove);
+  }, [over]);
+  return (
+    <iframe
+      ref={frameRef}
+      src={src}
+      title={title}
+      className="h-64 w-72 border-0 bg-transparent"
+      style={{ pointerEvents: over ? "auto" : "none" }}
+    />
   );
 }
 

@@ -21,10 +21,15 @@ const iframeWidget = {
   renderer: { iframe: { src: "/api/plugins/@acme/pet/ui/widget.html", namespace: "pet" } },
 };
 
+/** What the dock draws for an entry: the contribution without its attribution, defaults filled in. */
+function drawn(entry: typeof iframeWidget) {
+  const { from: _attribution, ...rest } = entry;
+  return { ...rest, chrome: "frame" as const };
+}
+
 describe("widgetsOf", () => {
   it("keeps a well-formed iframe widget", () => {
-    const { from: _attribution, ...drawn } = iframeWidget;
-    expect(widgetsOf({ widgets: [iframeWidget] })).toEqual([drawn]);
+    expect(widgetsOf({ widgets: [iframeWidget] })).toEqual([drawn(iframeWidget)]);
   });
 
   it("reads empty for a shapeless answer", () => {
@@ -55,7 +60,9 @@ describe("widgetsOf", () => {
     ];
     expect(widgetsOf({ widgets: entries })).toHaveLength(2);
     const registry = new Map<string, ComponentType>([["clock", () => null]]);
-    expect(widgetsOf({ widgets: entries }, registry)).toEqual([{ ...entries[0], size: "small" }]);
+    expect(widgetsOf({ widgets: entries }, registry)).toEqual([
+      { ...entries[0], size: "small", chrome: "frame" },
+    ]);
   });
 
   it("keeps the first entry of a duplicated key", () => {
@@ -75,6 +82,14 @@ describe("widgetsOf", () => {
       "wide",
     ]);
   });
+
+  it("reads a missing chrome as frame and keeps bare as written", () => {
+    const bare = { ...iframeWidget, id: "b", key: "b", chrome: "bare" as const };
+    expect(widgetsOf({ widgets: [iframeWidget, bare] }).map((w) => w.chrome)).toEqual([
+      "frame",
+      "bare",
+    ]);
+  });
 });
 
 describe("widgetStore", () => {
@@ -84,8 +99,7 @@ describe("widgetStore", () => {
       .mockResolvedValueOnce({ widgets: [], pages: [], fileRenderers: [], pageRemovals: [], agentTabs: [], sessionTabs: [] });
     const store = widgetStore();
     await store.refresh();
-    const { from: _attribution, ...drawn } = iframeWidget;
-    expect(store.current()).toEqual([drawn]);
+    expect(store.current()).toEqual([drawn(iframeWidget)]);
     const seen: Array<unknown> = [];
     const stop = store.subscribe(() => seen.push(store.current()));
     await store.refresh();

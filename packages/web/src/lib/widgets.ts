@@ -24,6 +24,8 @@ export interface ContributedWidget {
   title?: string;
   titleZh?: string;
   size: "small" | "wide";
+  /** `frame` puts the document in a titled card; `bare` draws it alone (see WebWidgetData). */
+  chrome: "frame" | "bare";
   /** `iframe` with the document to frame; `builtin` resolved to a component by the caller. */
   renderer: { iframe: { src: string; namespace: string } } | { builtin: string };
 }
@@ -56,6 +58,7 @@ export function widgetsOf(
       ...(typeof entry.title === "string" ? { title: entry.title } : {}),
       ...(typeof entry.titleZh === "string" ? { titleZh: entry.titleZh } : {}),
       size: entry.size === "wide" ? "wide" : "small",
+      chrome: entry.chrome === "bare" ? "bare" : "frame",
       renderer,
     });
   }

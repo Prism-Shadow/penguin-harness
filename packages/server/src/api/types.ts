@@ -6445,6 +6445,17 @@ export type WebWidgetData = {
   titleZh?: string;
   /** `small` sits one dock cell wide; `wide` takes the dock's full row. */
   size?: "small" | "wide";
+  /**
+   * How the dock draws the widget's surroundings. `frame` (the default) puts the iframe in a
+   * titled card with a close button; `bare` draws the document alone — no border, background,
+   * title or close button — for a companion that draws itself, the dock's tile above being its
+   * only control. A bare widget may otherwise sit on top of the page it floats over: the dock
+   * relays the pointer's position over the frame to the document (`{ penguin: "widget-probe",
+   * x, y }`, the frame's own pixels) and the document answers `{ penguin: "widget-over", over }`
+   * after checking it against its own shapes, which is what lets the frame take pointer events
+   * only while the pointer is on something it drew.
+   */
+  chrome?: "frame" | "bare";
   renderer: RendererRef;
 };
 

@@ -10,6 +10,10 @@
  * /api/plugins/<package>/state with the user's cookie (`credentials: "same-origin"`): an
  * idle tick lowers the fullness a little and PATCHes it back, so the pet grows hungry
  * however you look at it. Feeding is a double-click: +fullness, PATCHed.
+ *
+ * The dock mounts this document bare (no card, no title bar, no close button — the dock's
+ * tile opens and closes it), so the document also answers where the pointer is over her: the
+ * handshake below is what keeps the page beneath this frame clickable.
  */
 
 import * as kit from "./figure/kit/body.js";
@@ -70,16 +74,71 @@ function onEvent(kind, detail) {
   if (kind === "touch" && detail && TOUCH_LINES[detail.kind]) say(pick(TOUCH_LINES[detail.kind]));
 }
 
+/* ---------- the dock's click-through handshake ----------
+ *
+ * The dock mounts this document bare (chrome: "bare"): no border, no title bar, no close
+ * button, just the whale on top of the page. So the frame must not eat the page's clicks. The
+ * dock relays every pointer position it sees over the frame as
+ * `{ penguin: "widget-probe", x, y }` in this document's pixels, and gives the frame pointer
+ * events only while we answer `{ penguin: "widget-over", over: true }` — the body's own hit
+ * circles (layout().hit) are what we check against. The pointer leaving the frame, or walking
+ * off her while she is drawn elsewhere, answers false and the page gets its clicks back.
+ */
+
+let over = false;
+let pressed = false;
+let lastAt = null;
+
+function onPet(at) {
+  if (!body || at === null) return false;
+  return body.layout().hit.some((c) => Math.hypot(at.x - c.x, at.y - c.y) < c.r);
+}
+
+function answered(next) {
+  if (next === over) return;
+  over = next;
+  // The dock is the only parent this document has; posting to itself (opened on its own) is
+  // harmless — nothing here acts on the message it sends.
+  parent.postMessage({ penguin: "widget-over", over: next }, location.origin);
+}
+
+addEventListener("message", (e) => {
+  if (e.origin !== location.origin) return;
+  const data = e.data;
+  if (data === null || typeof data !== "object" || data.penguin !== "widget-probe") return;
+  if (typeof data.x !== "number" || typeof data.y !== "number") return;
+  lastAt = { x: data.x, y: data.y };
+  answered(onPet(lastAt));
+});
+
 /* ---------- pointer: the stage relays to the body ---------- */
 
 root.addEventListener("pointerdown", (e) => {
   root.setPointerCapture?.(e.pointerId);
+  pressed = true;
   body?.pointer("down", stagePoint(e));
 });
-root.addEventListener("pointermove", (e) => body?.pointer("move", stagePoint(e)));
-root.addEventListener("pointerup", (e) => body?.pointer("up", stagePoint(e)));
-root.addEventListener("pointercancel", (e) => body?.pointer("cancel", stagePoint(e)));
-root.addEventListener("pointerleave", () => body?.pointer("leave", null));
+root.addEventListener("pointermove", (e) => {
+  const at = stagePoint(e);
+  lastAt = at;
+  body?.pointer("move", at);
+  if (!pressed) answered(onPet(at));
+});
+root.addEventListener("pointerup", (e) => {
+  const at = stagePoint(e);
+  pressed = false;
+  body?.pointer("up", at);
+  answered(onPet(at));
+});
+root.addEventListener("pointercancel", (e) => {
+  pressed = false;
+  body?.pointer("cancel", stagePoint(e));
+});
+root.addEventListener("pointerleave", () => {
+  body?.pointer("leave", null);
+  lastAt = null;
+  answered(false);
+});
 
 /** Feeding: a double-click fills the whale up, and the server keeps the number. */
 root.addEventListener("dblclick", async () => {
@@ -145,6 +204,8 @@ function frame(now) {
   const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
   last = now;
   body.step(dt);
+  // She walks: a pointer that was on her a moment ago may be over the page again now.
+  if (over && !pressed) answered(onPet(lastAt));
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
     const at = body.layout().bubble;

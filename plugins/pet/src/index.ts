@@ -33,6 +33,10 @@ import { registerPetCommands } from "./cli-commands.js";
         title: "Pet",
         titleZh: "宠物",
         size: "small",
+        // She draws herself and floats over the page: no card, no title bar, no close button —
+        // the dock's tile is her only control, and the document answers where the pointer is
+        // over her so the page underneath keeps its clicks (api/types.ts, WebWidgetData.chrome).
+        chrome: "bare",
         // Where the server serves this package's `ui/`: the package name, as package.json
         // spells it. Written out in full — a manifest is data, read without running this file.
         renderer: {

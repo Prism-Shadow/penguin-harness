@@ -1,7 +1,10 @@
 <!doctype html>
 <!--
   The pet widget's document: the iframe the web app docks for the `WebModule.widgets`
-  contribution. Same-origin with the server, so it reads and writes the pet's state through
+  contribution. The dock draws it bare — no card, no title bar, no background — so the whale
+  floats on the page herself and the document answers where the pointer is over her; the
+  dock's tile is the only control.
+  Same-origin with the server, so it reads and writes the pet's state through
   the plugin state routes with the user's own cookie — GET to look, PATCH to move it.
   The pet herself is the DeepSeek whale (大肥鱼) figure pack drawn by the Coopanion kit
   (./figure/): a WebGL sprite rig the kit's body simulation walks, sits, sleeps, is picked
