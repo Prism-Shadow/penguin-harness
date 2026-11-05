@@ -13,7 +13,10 @@
  * does. From that one list of points each shape gives three things:
  *
  * - `--_stroke-<shape>[-<ink>]`: the pen line alone, laid on a box as a `border-image` 9-slice —
- *   the corners keep their drawn shape and the runs between them stretch along the box.
+ *   the corners keep their drawn shape and the runs between them stretch along the box. It is a
+ *   bitmap, a 1x and a 2x PNG in an `image-set` rendered from the points by `raster-strokes.mjs`:
+ *   a 9-slice of an SVG is re-rasterised for every slice of every box on every repaint, a bitmap's
+ *   is copied, and a transcript holds hundreds of boxes.
  * - `--_clip-<shape>`: the same outline as a `clip-path: shape()`, pushed outward by half the pen
  *   plus a quarter pixel so the line's outer half is never cut. Every point is placed where the
  *   9-slice stretch puts it — a corner's points in fixed px from their edge, a run's in a percentage
@@ -34,6 +37,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { encodePng, pngPixels, rasterize } from "./raster-strokes.mjs";
 
 const THEMES = fileURLToPath(new URL("../src/themes/cartoon/", import.meta.url));
 const MODES = ["light", "dark"];
@@ -159,14 +163,26 @@ const polyline = (pts) => `M${pts.map(([x, y]) => `${d1(x)} ${d1(y)}`).join("L")
  */
 function tail(points) {
   const [x0, y0] = points[points.top];
-  return `M${d1(x0 - 3)} ${d1(y0 + 1.8)}L${d1(x0 + 2.5)} ${d1(y0 - 0.1)}`;
+  return [
+    [x0 - 3, y0 + 1.8],
+    [x0 + 2.5, y0 - 0.1],
+  ];
 }
 
 /** The line as one path: the closed loop (open for a tab) and, where drawn, the start overlap. */
 function linePath(shape) {
   const points = outline(shape);
   const loop = polyline(points) + (shape.open ? "" : "Z");
-  return { loop, tail: shape.tail ? tail(points) : "" };
+  return { loop, tail: shape.tail ? polyline(tail(points)) : "" };
+}
+
+/** The same line as polylines, for the rasteriser: the loop, and the start overlap. */
+function lineLines(shape) {
+  const points = outline(shape);
+  return [
+    { points, closed: !shape.open },
+    ...(shape.tail ? [{ points: tail(points), closed: false }] : []),
+  ];
 }
 
 /**
@@ -213,21 +229,24 @@ function dashedPath(shape) {
       [lo + wobble(), start],
     ]);
   }
-  return [...ticks, ...dashes].map(polyline).join("");
+  return [...ticks, ...dashes].map((points) => ({ points, closed: false }));
 }
 
 const svg = (size, inner) =>
   `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>${inner}</svg>`;
 
+/**
+ * The pen line alone, as the bitmap a 9-slice copies rather than redraws: one PNG for 1x screens
+ * and one for 2x, chosen by `image-set`.
+ */
 function stroke(shape, ink, { dashed = false } = {}) {
   const width = dashed ? 1.2 : shape.stroke;
-  const { loop, tail: t } = linePath(shape);
-  const d = dashed ? dashedPath(shape) : loop + t;
-  return svg(
-    shape.size,
-    `<path d='${d}' fill='none' stroke='${ink}' stroke-width='${width}' ` +
-      `stroke-linecap='round' stroke-linejoin='round'/>`,
-  );
+  const lines = dashed ? dashedPath(shape) : lineLines(shape);
+  const png = (scale) => {
+    const data = encodePng(rasterize({ size: shape.size, scale, width, lines }), ink);
+    return `url("data:image/png;base64,${data.toString("base64")}")`;
+  };
+  return `image-set(${png(1)} 1x, ${png(2)} 2x)`;
 }
 
 /** The outline filled and lined, over a soft shadow drawn as widening strokes at a low alpha. */
@@ -283,7 +302,7 @@ const encode = (text) =>
   text.replace(/[<>#%"{}|\\^`\n]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
 const url = (text) => `url("data:image/svg+xml,${encode(text)}")`;
 
-/** The line's custom properties for one mode: strokes and glass; the clips (light only, shared). */
+/** The line's custom properties for one mode: strokes (bitmaps) and glass (SVG); the clips (light only, shared). */
 function lineProperties(mode) {
   const ink = (name) => INK[name][mode];
   const { control, surface, pill, box, tab, ball } = SHAPES;
@@ -299,14 +318,14 @@ function lineProperties(mode) {
     ["--_stroke-box", stroke(box, ink("ink"))],
     ["--_stroke-tab", stroke(tab, ink("ink"))],
     ["--_stroke-ball", stroke(ball, ink("ink"))],
-    ["--_glass-control", glass(control, FILL.overlay[mode], ink("ink"), mode)],
-    ["--_glass-surface", glass(surface, FILL.overlay[mode], ink("ink"), mode)],
-    ["--_glass-surface-focus", glass(surface, FILL.overlay[mode], ink("blue"), mode)],
+    ["--_glass-control", url(glass(control, FILL.overlay[mode], ink("ink"), mode))],
+    ["--_glass-surface", url(glass(surface, FILL.overlay[mode], ink("ink"), mode))],
+    ["--_glass-surface-focus", url(glass(surface, FILL.overlay[mode], ink("blue"), mode))],
     ...["info", "success", "warning", "danger", "neutral"].map((tone) => [
       `--_glass-surface-${tone}`,
-      glass(surface, FILL[tone][mode], ink("ink"), mode),
+      url(glass(surface, FILL[tone][mode], ink("ink"), mode)),
     ]),
-  ].map(([name, image]) => [name, url(image)]);
+  ];
   if (mode === "light") {
     for (const [name, shape] of Object.entries(SHAPES))
       props.push([`--_clip-${name}`, clip(shape)]);
@@ -373,8 +392,17 @@ function block(properties) {
   ].join("\n");
 }
 
-/** Whitespace-insensitive, so a block the formatter re-wrapped still reads as current. */
-const squash = (text) => text.replace(/\s+/g, "");
+/**
+ * Whitespace-insensitive, so a block the formatter re-wrapped still reads as current, and a PNG
+ * compared by what it shows, so a zlib that deflates the same pixels differently does too.
+ */
+const squash = (text) =>
+  text
+    .replace(/\s+/g, "")
+    .replace(
+      /data:image\/png;base64,([A-Za-z0-9+/=]+)/g,
+      (_, data) => `png:${pngPixels(Buffer.from(data, "base64"))}`,
+    );
 
 function sync(file, properties, check) {
   const path = `${THEMES}${file}`;
