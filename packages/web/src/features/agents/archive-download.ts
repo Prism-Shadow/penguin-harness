@@ -1,5 +1,5 @@
 /**
- * "Export as zip" for the Skills and Hooks tabs: fetch the archive, then save it through a
+ * "Export as zip" for Skill, hook package and workbench rows: fetch the archive, then save it through a
  * temporary object-URL anchor. The codebase's other downloads are bare `<a href download>`
  * anchors (snapshot export, trace download), but a bare anchor would save the error JSON as a
  * file when the request fails — fetching first lets a failure surface as a toast instead. The

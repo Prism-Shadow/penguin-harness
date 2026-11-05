@@ -24,6 +24,7 @@ import {
 } from "../../lib/workbench-theme";
 import {
   FILL_APP_MESSAGE,
+  runningWorkbenches,
   settleActiveTab,
   WORKBENCH_UPDATED_EVENT,
   workbenchAppPath,
@@ -75,10 +76,12 @@ export function useWorkbenchTabs(
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
       if (asked.current !== mine) return;
+      // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
+      const running = runningWorkbenches(res);
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(res.workbenches, machineId),
-        notices: workbenchNoticesOf(res.workbenches),
+        tabs: workbenchTabsOf(running, machineId),
+        notices: workbenchNoticesOf(running),
       });
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.

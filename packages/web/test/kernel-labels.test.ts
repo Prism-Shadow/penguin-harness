@@ -1,7 +1,8 @@
 /**
  * kernelTabLabel unit tests: the kernel merge report's tab-key → display-name mapping — every
- * managed tab renders as that tab's own label in both locales, and an unknown key (a tab a
- * newer server manages) falls back to the raw key.
+ * managed tab renders as that tab's own label in both locales (the skills section, edited on the
+ * Plugins tab, under its prompt's title), and an unknown key (a tab a newer server manages) falls
+ * back to the raw key.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { kernelTabLabel } from "../src/features/agents/kernel-labels";
@@ -24,7 +25,7 @@ describe("kernelTabLabel", () => {
         prompt: dict.agent.tabPrompt,
         runtime: dict.agent.tabRuntime,
         tools: dict.agent.tabTools,
-        skills: dict.agent.tabSkills,
+        skills: dict.skills.injection.promptSection,
         memory: dict.agent.tabMemory,
         vault: dict.agent.tabVault,
         schedules: dict.agent.tabSchedules,

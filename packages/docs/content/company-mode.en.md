@@ -51,7 +51,7 @@ penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>]
 
 Ask an agent that has the `agent-company` plugin to set up a company. Its `company-setup` Skill takes over: it asks one question at a time (id, name, mission, shared workspace, model, CEO budget), shows a summary for you to confirm, and runs the same `penguin org create` command. It stops there. Hiring, scheduling and tickets are the CEO's job, after the board answers.
 
-The plugin is not preinstalled, so an agent that has never been part of a company needs it first. Install it in the **Plugins** field of the create-agent dialog, or on the **Skills** tab of an agent already in the Project. A CEO and its employees carry it from the day they are hired.
+The plugin is not preinstalled, so an agent that has never been part of a company needs it first. Install it in the **Plugins** field of the create-agent dialog, or from the **Plugins** page for an agent already in the Project. A CEO and its employees carry it from the day they are hired.
 
 ### Ids
 

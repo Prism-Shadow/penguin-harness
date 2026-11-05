@@ -11,8 +11,8 @@
  *
  * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
  *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
- *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
- *   Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover, for
+ *   the Project owner, whose alone an uninstall is) / Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
  *   after the Agent's name, every action on such a row going to that machine. A machine out of
  *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
  *   installs have not been answered yet keeps its row too, its Install held until they are.
@@ -44,6 +44,7 @@ import {
   ICONS,
   ICON_SIZE,
   Modal,
+  Pill,
   Skeleton,
   StatusIcon,
   UpdateDot,
@@ -737,8 +738,9 @@ export interface RowHold {
 
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
- * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
- * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
+ * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
+ * same button carries the uninstall, which the server takes from the owner alone) and a plain
+ * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values. A
@@ -834,7 +836,9 @@ export function InstallRow({
           {S.skills.updateAction}
         </Button>
       )}
-      {installed ? (
+      {installed && !isOwner ? (
+        <Pill tone="success">{S.skills.installed}</Pill>
+      ) : installed ? (
         // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button
         // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button

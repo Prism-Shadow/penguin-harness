@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 /**
- * The Workbenches tab's zip import and per-row export (features/agents/workbenches-tab.tsx).
+ * A workbench's zip import and per-row export on the Agent settings page's Plugins tab
+ * (features/agents/agent-workbenches.tsx), the import reached through the tab's Import menu.
  *
  * - Picking a zip in the import dialog posts it as it was read, to the server the Agent lives on,
  *   closes the dialog, says it was imported and lists the workbench it installed.
@@ -27,7 +28,7 @@ import {
   topDialog,
 } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
-import { button, click, dialogs, pickFile, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, dialogs, menuItem, pickFile, unmountAll, waitFor } from "./helpers/dom";
 
 const info = (id: string, name: string): WorkbenchInfo => ({
   id,
@@ -74,7 +75,7 @@ async function openTab({
     ...(archiveRefusal !== undefined ? { archiveRefusal } : {}),
   });
   const query = machine !== undefined ? `&machine=${machine.machineId}` : "";
-  await mountAgentApp(h(AgentSettingsPage), { at: `/agents/${AGENT_ID}?tab=workbenches${query}` });
+  await mountAgentApp(h(AgentSettingsPage), { at: `/agents/${AGENT_ID}?tab=plugins${query}` });
   await waitFor(() => document.body.textContent?.includes("Support") === true);
   return server;
 }
@@ -82,7 +83,8 @@ async function openTab({
 /** Opens the import dialog and picks the zip in it. */
 async function importZip(): Promise<void> {
   if (dialogs().length === 0) {
-    await click(button(en.workbenches.importAction));
+    await click(button(en.agentPlugins.importAction));
+    await click(menuItem(en.agentPlugins.importWorkbench));
     await waitFor(() => dialogs().length === 1);
   }
   await pickFile(
@@ -91,7 +93,7 @@ async function importZip(): Promise<void> {
   );
 }
 
-describe("the Workbenches tab's archives", () => {
+describe("a workbench's archives on the Plugins tab", () => {
   beforeEach(() => {
     setActiveStrings(en);
     toastStore.setState({ items: [] });

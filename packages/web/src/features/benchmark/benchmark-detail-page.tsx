@@ -228,7 +228,7 @@ export function BenchmarkDetailPage() {
 
   /**
    * Export: the package of the copy this page describes — this server's when it holds one, else
-   * the first machine's — through the Skills tab's download, so a refusal is a toast rather than
+   * the first machine's — through a Skill row's download, so a refusal is a toast rather than
    * a saved error file.
    */
   const exportBenchmark = async () => {
