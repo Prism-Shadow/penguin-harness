@@ -4,13 +4,15 @@
  * state's provider, mounted for the signed-in session; the handler that fans the scheduler's
  * events out to it; the sidebar's company work mode with its four sections
  * (sidebar-mode.tsx); and the unread count on the contributed proposals page's row
- * (proposals-badge.tsx).
+ * (proposals-badge.tsx); and the dock tab an organization's conversation previews a cited file
+ * in (cited-file-dock.tsx).
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { OrgRoutes } from "./org-routes";
 import { HomeRedirect } from "./home-redirect";
 import { CompanyProvider, companyUserEvents } from "./company-state";
 import { companyChannels, companyDesks, companyMode, companySwitcher } from "./sidebar-mode";
+import { citedFilePanelDefinition } from "./cited-file-dock";
 
 @Module({
   contributes: {
@@ -53,6 +55,16 @@ import { companyChannels, companyDesks, companyMode, companySwitcher } from "./s
       { id: "company.channels", mode: "company", place: "body", order: 20 },
       { id: "company.desks", mode: "company", place: "body", order: 30 },
     ],
+    "DockModule.panels": [
+      {
+        id: "company.cited-file-panel",
+        kind: "cited-file",
+        title: "File preview",
+        titleZh: "文件预览",
+        icon: "file",
+        order: 25,
+      },
+    ],
   },
 })
 export class CompanyModule {
@@ -64,4 +76,7 @@ export class CompanyModule {
   @Bind("company.switcher") switcher = companySwitcher;
   @Bind("company.channels") channels = companyChannels;
   @Bind("company.desks") desks = companyDesks;
+  @Bind("company.cited-file-panel") citedFilePanel = {
+    mainDefinitions: [citedFilePanelDefinition],
+  };
 }

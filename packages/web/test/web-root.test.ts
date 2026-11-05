@@ -5,6 +5,7 @@ import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-do
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
 import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { citedFilePanelDefinition as mainCitedFile } from "../src/features/company/cited-file-dock";
 import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
@@ -38,9 +39,9 @@ const OrgProposalsPage = () => null;
  *   (anchored by the renderer's name);
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
- * - The dock receives the eight panels in their menu order — agents and memory from chat, the
- *   files from workspace, the trace, messaging, schedules, the built-in browser and the terminal from
- *   theirs — with the names the dictionary held and a glyph in the icon registry, which the dock
+ * - The dock receives the nine panels in their menu order — agents and memory from chat, the
+ *   files from workspace, the cited-file preview from company, the trace, messaging, schedules, the
+ *   built-in browser and the terminal from theirs — with the names the dictionary held and a glyph in the icon registry, which the dock
  *   module registers in its panel registry at boot.
  * - The chat page receives the workflow tab strip beside the conversation.
  */
@@ -384,7 +385,7 @@ describe("the booted sidebar slots", () => {
 });
 
 describe("the booted dock slot", () => {
-  it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
+  it("registers the nine main panel definitions from their owners without a retired ports panel", () => {
     const definitions = dockPanels
       .flatMap(
         (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,
@@ -394,6 +395,7 @@ describe("the booted dock slot", () => {
       mainAgents,
       mainTerminal,
       mainWorkspace,
+      mainCitedFile,
       mainMemory,
       mainTrace,
       mainMessaging,
@@ -405,6 +407,7 @@ describe("the booted dock slot", () => {
       "agents",
       "terminal",
       "workspace",
+      "cited-file",
       "memory",
       "trace",
       "messaging",
@@ -421,6 +424,7 @@ describe("the booted dock slot", () => {
       agents: "ChatModule",
       memory: "ChatModule",
       workspace: "WorkspaceModule",
+      "cited-file": "CompanyModule",
       trace: "TracesModule",
       messaging: "MessagingModule",
       schedules: "SchedulesModule",

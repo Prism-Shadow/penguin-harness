@@ -12,7 +12,7 @@ import { MachineRestartNotice } from "../machine-restart-notice";
 import { DockPanel, DockLauncher, measureComposer } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
-import { PathCapsulesProvider } from "../../company";
+import { ConversationCitedFiles, PathCapsulesProvider } from "../../company";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
@@ -158,46 +158,52 @@ export function renderMainChatBody(scope: MainChatView) {
                               </div>
                             ) : (
                               // An organization's conversation cites the organization's files
-                              // by path; they read as capsules, as they do in its channels.
+                              // by path; they read as capsules, as they do in its channels, and a
+                              // file capsule opens the file in the dock's preview tab.
                               <PathCapsulesProvider
                                 projectId={selected?.orgId !== undefined ? projectId : null}
                               >
-                                <MessageStream
-                                  items={allItems}
-                                  version={stream.version}
-                                  ctx={ctx}
-                                  scrollElRef={streamScrollRef}
-                                  // The selection menu's "Add to conversation": the excerpt is staged
-                                  // in this composer as a chip, the same way the Files panel stages a
-                                  // quoted range.
-                                  onAddExcerpt={addComposerReference}
-                                  // Scroll-up backfill of older history windows (tail-first
-                                  // loading): near-top scrolling prepends the previous window,
-                                  // scroll position anchored (see MessageStream).
-                                  older={{
-                                    hasMore: stream.older.hasMore,
-                                    loading: stream.older.loading,
-                                    error: stream.older.error,
-                                    errorCause: stream.older.errorCause,
-                                    prependedCount: stream.prefixItems.length,
-                                    onLoad: stream.loadOlder,
-                                    transfer: stream.transfer,
-                                    beyondTail: stream.older.beyondTail,
-                                  }}
-                                  // Tick-rail minimap over the stream's left gutter (zero layout
-                                  // width; hides itself when the gutter is too narrow or the
-                                  // pointer can't hover).
-                                  outline={
-                                    <ConversationOutline
-                                      entries={outline}
-                                      turnOffset={stream.outlineOffset}
-                                      version={stream.version}
-                                      scrollRef={streamScrollRef}
-                                      running={stream.taskState !== "idle"}
-                                      fit={railFit}
-                                    />
-                                  }
-                                />
+                                <ConversationCitedFiles
+                                  projectId={projectId}
+                                  orgId={selected?.orgId}
+                                >
+                                  <MessageStream
+                                    items={allItems}
+                                    version={stream.version}
+                                    ctx={ctx}
+                                    scrollElRef={streamScrollRef}
+                                    // The selection menu's "Add to conversation": the excerpt is staged
+                                    // in this composer as a chip, the same way the Files panel stages a
+                                    // quoted range.
+                                    onAddExcerpt={addComposerReference}
+                                    // Scroll-up backfill of older history windows (tail-first
+                                    // loading): near-top scrolling prepends the previous window,
+                                    // scroll position anchored (see MessageStream).
+                                    older={{
+                                      hasMore: stream.older.hasMore,
+                                      loading: stream.older.loading,
+                                      error: stream.older.error,
+                                      errorCause: stream.older.errorCause,
+                                      prependedCount: stream.prefixItems.length,
+                                      onLoad: stream.loadOlder,
+                                      transfer: stream.transfer,
+                                      beyondTail: stream.older.beyondTail,
+                                    }}
+                                    // Tick-rail minimap over the stream's left gutter (zero layout
+                                    // width; hides itself when the gutter is too narrow or the
+                                    // pointer can't hover).
+                                    outline={
+                                      <ConversationOutline
+                                        entries={outline}
+                                        turnOffset={stream.outlineOffset}
+                                        version={stream.version}
+                                        scrollRef={streamScrollRef}
+                                        running={stream.taskState !== "idle"}
+                                        fit={railFit}
+                                      />
+                                    }
+                                  />
+                                </ConversationCitedFiles>
                               </PathCapsulesProvider>
                             )}
                             {/* The right dock's floating launcher: rides this body's right edge
