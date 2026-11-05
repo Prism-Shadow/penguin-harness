@@ -1,0 +1,300 @@
+/**
+ * Doodle's start page (`ui-start`, the new-conversation page) as a page of a notebook. Every part
+ * is the host's own — its strings, links, counts and handlers, its DOM and its layout; this file
+ * only dresses them, on the page and nowhere else:
+ *
+ * - The paper: faint blue rules 21px apart (the body line at the default text size) across the
+ *   whole column, and a red margin line just left of the content. Both are painted past the
+ *   page's box as a `border-image` outset, which the column's scroller clips and never scrolls
+ *   to, so the page takes no room of its own and nothing moves.
+ * - The brand: the product's name swiped with the highlighter, line by line; the slogan in the
+ *   ballpoint blue.
+ * - The counts stop being a card: each figure stands in a stamp ring in the red crayon, tilted a
+ *   little and differently for each, its label under it in pencil.
+ * - The examples: their title underlined in a wavy pencil line; the folders are a binder's index
+ *   tabs — beside the open folder's rows, each a tab whose open side meets the page's pencil
+ *   rule, the open one drawn in full ink on a strip of paper over the rule with the highlighter
+ *   across it; on a phone, where the rows hang under their folder, each a tab with an open foot,
+ *   the closed ones on a pencil baseline. Each example is a checklist item: an empty pencil box
+ *   before it and a pen arrow, in place of the chevron, after it.
+ *
+ * The props are this file's own drawings (the stamp ring, the checklist box, the pen arrow, the
+ * ruling and the margin line, `--_paper-*`, an image in each mode's ink); the tabs, the
+ * highlighter band and the pencil rules are the line's and the marks' (`line.css`, `marks.css`).
+ * None moves and none is a gradient. Text is never drawn on: the highlighter and the stamps paint
+ * under it. In forced colours none of this applies.
+ */
+@layer ui-theme {
+  /* The paper props, one image per mode, each in that mode's ink. */
+  :root[data-theme="cartoon"] {
+    --_paper-rules: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='21'%3E%3Cpath d='M0 20.5H32' stroke='%235f87c8' stroke-opacity='0.35'/%3E%3C/svg%3E");
+    --_paper-margin: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='32' viewBox='0 0 2 32' preserveAspectRatio='none'%3E%3Cpath d='M1 0V32' stroke='%23c8513f' stroke-opacity='0.45' stroke-width='1.2'/%3E%3C/svg%3E");
+    --_paper-stamp: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg fill='none' stroke='%23b3261e' stroke-opacity='0.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.1 4.5L21.9 4.3L24.7 4.2L27.4 4.5L30.2 5L32.8 6L35.3 7.3L37.5 9L39.4 11L41.2 13.3L42.5 15.7L43.6 18.4L44.6 21.1L45 24L44.9 26.9L44.3 29.8L43.2 32.6L41.6 35L39.7 37.2L37.7 39.2L35.3 40.8L32.9 42.2L30.3 43.3L27.5 43.8L24.7 44.1L21.9 43.8L19.2 43.1L16.7 42.1L14.2 41.1L11.9 39.5L9.7 37.8L7.7 35.8L6 33.6L4.7 31L4 28.2L3.7 25.4L3.6 22.6L4.3 19.8L5.1 17.1L6.3 14.6L7.6 12.1L9.5 10L11.8 8.3L14.1 6.9L16.8 6.1L19.4 5.6' stroke-width='1.9'/%3E%3Cpath d='M41.3 27.7L40.3 30.6L38.7 33.2L36.7 35.4L34.5 37.5L31.9 38.9L29.3 40.2L26.4 40.7L23.4 40.9L20.5 40.4L17.8 39.4L15.2 38L12.7 36.5L10.5 34.5L8.7 32.2M6.8 25.2L6.7 22.2L7.3 19.2L8.4 16.4L10 13.8L12 11.5L14.3 9.7L17 8.3L19.9 7.6L22.8 7.4L25.7 7.5L28.7 7.8L31.4 8.9L34.1 10.2L36.2 12.2L38 14.5' stroke-width='1'/%3E%3C/g%3E%3C/svg%3E");
+    --_paper-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M3.6 2.4L8.2 2.2L13.1 2.3L13.8 3.1L14 8.1L13.7 13.1L12.9 13.8L8.1 13.9L2.9 13.7L2.2 12.9L2.2 8L2.3 3.1L3.1 2.3L5.6 2' fill='none' stroke='%238f8576' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --_paper-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='12'%3E%3Cpath d='M1.6 6.7Q8.2 5.2 15.7 6.1M11.5 2.5L15.9 6.1L11.9 9.8' fill='none' stroke='%232b2521' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="cartoon"].dark {
+    --_paper-rules: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='21'%3E%3Cpath d='M0 20.5H32' stroke='%2393b6ee' stroke-opacity='0.13'/%3E%3C/svg%3E");
+    --_paper-margin: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='32' viewBox='0 0 2 32' preserveAspectRatio='none'%3E%3Cpath d='M1 0V32' stroke='%23ff8a7a' stroke-opacity='0.3' stroke-width='1.2'/%3E%3C/svg%3E");
+    --_paper-stamp: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg fill='none' stroke='%23ff8a7a' stroke-opacity='0.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.1 4.5L21.9 4.3L24.7 4.2L27.4 4.5L30.2 5L32.8 6L35.3 7.3L37.5 9L39.4 11L41.2 13.3L42.5 15.7L43.6 18.4L44.6 21.1L45 24L44.9 26.9L44.3 29.8L43.2 32.6L41.6 35L39.7 37.2L37.7 39.2L35.3 40.8L32.9 42.2L30.3 43.3L27.5 43.8L24.7 44.1L21.9 43.8L19.2 43.1L16.7 42.1L14.2 41.1L11.9 39.5L9.7 37.8L7.7 35.8L6 33.6L4.7 31L4 28.2L3.7 25.4L3.6 22.6L4.3 19.8L5.1 17.1L6.3 14.6L7.6 12.1L9.5 10L11.8 8.3L14.1 6.9L16.8 6.1L19.4 5.6' stroke-width='1.9'/%3E%3Cpath d='M41.3 27.7L40.3 30.6L38.7 33.2L36.7 35.4L34.5 37.5L31.9 38.9L29.3 40.2L26.4 40.7L23.4 40.9L20.5 40.4L17.8 39.4L15.2 38L12.7 36.5L10.5 34.5L8.7 32.2M6.8 25.2L6.7 22.2L7.3 19.2L8.4 16.4L10 13.8L12 11.5L14.3 9.7L17 8.3L19.9 7.6L22.8 7.4L25.7 7.5L28.7 7.8L31.4 8.9L34.1 10.2L36.2 12.2L38 14.5' stroke-width='1'/%3E%3C/g%3E%3C/svg%3E");
+    --_paper-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M3.6 2.4L8.2 2.2L13.1 2.3L13.8 3.1L14 8.1L13.7 13.1L12.9 13.8L8.1 13.9L2.9 13.7L2.2 12.9L2.2 8L2.3 3.1L3.1 2.3L5.6 2' fill='none' stroke='%238a8174' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --_paper-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='12'%3E%3Cpath d='M1.6 6.7Q8.2 5.2 15.7 6.1M11.5 2.5L15.9 6.1L11.9 9.8' fill='none' stroke='%23eae3d6' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  @media (forced-colors: none) {
+    /*
+     * The paper. The ruling is the page's own `border-image`, one rule per tile repeated at its
+     * own size, laid outset far past the page on every side: the draft column's scroller clips it
+     * at its edges and an outset is never scrolled to, so the rules fill the column without the
+     * page taking any room. The margin line is the page's `::before`, a hair-wide strip just
+     * left of the content (inside the column's own gutter) outset the same way down the page.
+     * The page becomes its own stacking context, so its drawings stay above the column's paper
+     * and under the content.
+     */
+    :root[data-theme="cartoon"] .ui-start {
+      position: relative;
+      isolation: isolate;
+      border-style: solid;
+      border-width: 0;
+      border-image: var(--_paper-rules) 0 fill / 0 / 100vh 100vw repeat;
+    }
+    :root[data-theme="cartoon"] .ui-start::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      top: 0;
+      bottom: 0;
+      left: -0.75rem;
+      width: 2px;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 0;
+      border-image: var(--_paper-margin) 0 fill / 0 / 100vh 0 stretch;
+    }
+
+    /*
+     * The brand. The name is set inline so the highlighter can swipe each of its lines on its
+     * own (`box-decoration-break: clone`): a 3-slice band laid over the lower part of the line,
+     * its ragged ends outset past the first and last letter. The slogan is in the ballpoint.
+     */
+    :root[data-theme="cartoon"] .ui-start [data-slot="title"] {
+      display: inline;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+      border-style: solid;
+      border-width: 0;
+      border-image: var(--_mark-highlight) 0 12 fill / 0.42em 0.45em 0 / 0 0.3em stretch;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="tagline"] {
+      color: var(--ui-fg-link);
+    }
+
+    /*
+     * The counts are stamped, not boxed: the card goes (its fill, its line, its dividers and the
+     * clip that would cut a ring), each count's figure stands over its label, centred, and the
+     * figure (the count link's last part) wears the stamp ring under it, each turned its own
+     * way. Hover inks the stamp and the label instead of filling the cell.
+     */
+    :root[data-theme="cartoon"] .ui-start [data-slot="counts"] {
+      overflow: visible;
+      border-color: transparent;
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="counts"]::after {
+      content: none;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] {
+      border-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a {
+      flex-direction: column-reverse;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a > :last-child {
+      position: relative;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a > :last-child::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      top: 50%;
+      left: 50%;
+      width: 3rem;
+      height: 3rem;
+      translate: -50% -50%;
+      rotate: -3deg;
+      pointer-events: none;
+      opacity: 0.85;
+      background: var(--_paper-stamp) center / 100% 100% no-repeat;
+    }
+    :root[data-theme="cartoon"]
+      .ui-start
+      [data-slot="count"]:nth-child(2)
+      > a
+      > :last-child::before {
+      rotate: 2deg;
+    }
+    :root[data-theme="cartoon"]
+      .ui-start
+      [data-slot="count"]:nth-child(3)
+      > a
+      > :last-child::before {
+      rotate: -1deg;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a:hover > :last-child::before {
+      opacity: 1;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="count"] > a:hover > :first-child {
+      color: var(--ui-fg);
+    }
+
+    /* The examples' title, underlined in a wavy pencil line. */
+    :root[data-theme="cartoon"] .ui-start [data-slot="examples"] .ui-eyebrow {
+      text-decoration-line: underline;
+      text-decoration-style: wavy;
+      text-decoration-color: var(--ui-line-emphasis);
+      text-decoration-thickness: 1px;
+      text-decoration-skip-ink: none;
+      text-underline-offset: 0.3em;
+    }
+
+    /*
+     * The folders, a binder's index tabs, each a strip of paper: its paper on `::after` and its
+     * outline on `::before` over it, both under the row's text. The row is its own stacking
+     * context, positioned, so its tab can reach the page's rule beside it and the open one's
+     * paper lie over that rule. A row's own fills (hover, open) move onto its paper, whose
+     * corners follow the outline's. The closed tabs are drawn in pencil, the open one in full
+     * ink with the highlighter across it, its count lifted to read on the band.
+     */
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"] {
+      position: relative;
+      z-index: 0;
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before,
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-style: solid;
+      border-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before {
+      z-index: -1;
+      opacity: 0.45;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::after {
+      z-index: -2;
+      background-clip: padding-box;
+      background-color: var(--ui-canvas);
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]:hover::before {
+      opacity: 0.75;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"]:hover::after {
+      background-color: color-mix(in srgb, var(--ui-fg) 5%, var(--ui-canvas));
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::before {
+      opacity: 1;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::after {
+      background-color: var(--ui-canvas);
+      border-image: var(--_mark-highlight) 0 12 fill / 0.375rem 12px 0.25rem / 0 stretch;
+    }
+    :root[data-theme="cartoon"]
+      .ui-start
+      [data-slot="folder"][aria-expanded="true"]
+      > :nth-child(3) {
+      color: var(--ui-fg-muted);
+    }
+    :root[data-theme="cartoon"].dark
+      .ui-start
+      [data-slot="folder"][aria-expanded="true"]
+      > :nth-child(3) {
+      color: var(--ui-fg);
+    }
+    /* A phone: the rows hang under the open folder, so each tab is open at its foot; a closed
+       one sits on a pencil baseline, and the open one stands 2px proud of it. */
+    @container (width < 28rem) {
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before,
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::after {
+        border-width: 1px 1px 0;
+        border-radius: 6px 6px 0 0;
+      }
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before {
+        border-image: var(--_stroke-tab) 9 9 0 / 9px 9px 0 / 0 stretch;
+      }
+      :root[data-theme="cartoon"]
+        .ui-start
+        [data-slot="folder"]:not([aria-expanded="true"])::before {
+        background-image: var(--_rule-pencil-h);
+        background-repeat: repeat-x;
+        background-size: 40px 4px;
+        background-position: 0 calc(100% + 2px);
+      }
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::before,
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::after {
+        top: -2px;
+      }
+    }
+    /* Beside the open folder's rows: each tab is open on the side facing them and reaches the
+       page's pencil rule; the open one's paper lies over the rule, so the rule breaks there,
+       and stands 2px proud of the others on its far side. */
+    @container (width >= 28rem) {
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before,
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::after {
+        right: -1rem;
+        border-width: 1px 0 1px 1px;
+        border-radius: 6px 0 0 6px;
+      }
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"]::before {
+        border-image: var(--_stroke-control) 9 / 9px 0 9px 9px / 0 stretch;
+      }
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::before,
+      :root[data-theme="cartoon"] .ui-start [data-slot="folder"][aria-expanded="true"]::after {
+        right: calc(-1rem - 1.5px);
+        left: -2px;
+      }
+      :root[data-theme="cartoon"] .ui-start [data-slot="rows"] {
+        border-left-color: transparent;
+        background-image: var(--_rule-pencil-v);
+        background-repeat: repeat-y;
+        background-size: 4px 40px;
+        background-origin: border-box;
+        background-position: -1.5px 0;
+      }
+    }
+
+    /*
+     * Each example, a checklist item: an empty pencil box before its glyph, and a pen arrow
+     * after its title in place of the row's chevron (a row that carries one: an example or a
+     * saved shortcut, not the new-shortcut row). The arrow inks up as the chevron did.
+     */
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> :last-child > svg)::before {
+      content: "";
+      flex: none;
+      width: 0.875rem;
+      height: 0.875rem;
+      background: var(--_paper-box) center / contain no-repeat;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"] > :last-child:has(> svg) {
+      display: none;
+    }
+    :root[data-theme="cartoon"] .ui-start [data-slot="row"]:has(> :last-child > svg)::after {
+      content: "";
+      flex: none;
+      width: 1.125rem;
+      height: 0.75rem;
+      opacity: 0.6;
+      background: var(--_paper-arrow) center / contain no-repeat;
+    }
+    :root[data-theme="cartoon"]
+      .ui-start
+      [data-slot="row"]:is(:hover, :focus-visible):not(:disabled)::after {
+      opacity: 1;
+    }
+  }
+}
