@@ -2721,6 +2721,16 @@ export const zh = {
     importDone: (added: number, overwritten: number, removed: number): string =>
       `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
     importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
+    scriptsGroup: "脚本",
+    scriptsGroupHint:
+      "Agent 存放在这一组 scripts/ 目录里、供反复使用的程序，每个都在 MEMORY.md 中列一行并写明运行方式。该 Agent 此后的每个会话都可能经 shell 运行它们，受该会话的沙盒与审批约束；Project 的每位成员都能读到它们。依赖某个脚本之前，先看看它的内容。",
+    scriptCount: (n: number): string => `${n} 个脚本`,
+    deleteScriptTitle: "删除这个脚本？",
+    deleteScriptConfirm: (path: string): string =>
+      `将删除 ${path} 并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    /** Toast after an export that had to leave scripts out; the paths follow. */
+    exportOmitted: (paths: string[]): string =>
+      `有 ${paths.length} 个脚本未写入导出文件（超过 512 KB 或不是文本）：${paths.join("、")}`,
   },
 
   vault: {

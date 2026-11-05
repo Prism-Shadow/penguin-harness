@@ -14,13 +14,13 @@
 /** How a memory file was changed: `write` = full-content write (write_file, which also creates), `edit` = in-place edit (edit_file). */
 export type MemoryChangeOp = "write" | "edit";
 
-/** One merged row: a memory topic file that was changed. */
+/** One merged row: a memory file (a topic, or a script under `scripts/`) that was changed. */
 export interface MemoryChangeRow {
   /** Memory scope the file belongs to: the Agent-wide User scope or one Workspace scope. */
   scope: "user" | "workspace";
   /** The Workspace scope's directory key (`memory/<key>/`); absent for the User scope. */
   scopeKey?: string;
-  /** Path relative to the scope directory (usually `<topic>.md`). */
+  /** Path relative to the scope directory: `<topic>.md`, or `scripts/<name>` for a script. */
   file: string;
   /** Merged summary op: `write` when any call wrote the whole file, else `edit`. */
   op: MemoryChangeOp;
@@ -44,6 +44,14 @@ export interface MemoryLocateTarget {
 /** The locate key of a row or target: one file within one scope. */
 export function memoryRowKey(row: MemoryLocateTarget): string {
   return `${row.scope} ${row.scopeKey ?? ""} ${row.file}`;
+}
+
+/** Where a scope keeps its scripts (core's `MEMORY_SCRIPTS_DIR`), as the start of a scope-relative path. */
+const SCRIPTS_PREFIX = "scripts/";
+
+/** What a scope-relative memory path names: a script under `scripts/`, otherwise a topic. */
+export function memoryFileKind(file: string): "topic" | "script" {
+  return file.startsWith(SCRIPTS_PREFIX) ? "script" : "topic";
 }
 
 /** Splits an absolute path into non-empty segments, tolerating either separator (server paths may be Windows-style). */

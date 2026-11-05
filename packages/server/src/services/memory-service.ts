@@ -3,32 +3,39 @@
  * remembers between Sessions.
  *
  * The layout is core's (see core's state/memory.ts): one directory per scope holding Markdown
- * topic files and that scope's own `MEMORY.md` index — `memory/user/` for the User scope and
- * `memory/<workspace_key>/` for each Workspace. The User scope is addressed through the same
- * `scopeKey` parameter as any Workspace (`USER_SCOPE_KEY`), so it needs no routes of its own;
- * the one difference is that it may be created on demand, since it belongs to the Agent rather
- * than to a Session that has run.
+ * topic files, an optional `scripts/` directory of programs the Agent reuses, and that scope's
+ * own `MEMORY.md` index — `memory/user/` for the User scope and `memory/<workspace_key>/` for
+ * each Workspace. The User scope is addressed through the same `scopeKey` parameter as any
+ * Workspace (`USER_SCOPE_KEY`), so it needs no routes of its own; the one difference is that it
+ * may be created on demand, since it belongs to the Agent rather than to a Session that has run.
+ *
+ * A file is addressed by its path inside the scope: a topic by its name (`prefers-pnpm.md`), a
+ * script by `scripts/<name>` — the same text its index line links to, so the index edits below
+ * work on both alike. A script is any regular file directly under `scripts/`; its contents are
+ * read only up to the transfer document's per-file bound, and only as UTF-8 text.
  *
  * Per-file content changes go through a chat Session where the model edits the same files,
  * keeping frontmatter and index in step; this service's own writes are the mechanical ones a
- * model cannot be asked for. Deleting a topic file drops its `](<file>)` index lines, so the
- * index never lists a file that is gone. Whole-scope import writes the files a transfer
- * document carries and adds their index lines, the same invariant read the other way: the
- * index never omits a file that arrived. Only the indexes enter the model's context (core's
- * state/memory.ts), so an unindexed topic file would be a file the Agent never reads.
+ * model cannot be asked for. Deleting a file drops its `](<path>)` index lines, so the index
+ * never lists a file that is gone. Whole-scope import writes the files a transfer document
+ * carries and adds their index lines, the same invariant read the other way: the index never
+ * omits a file that arrived. Only the indexes enter the model's context (core's state/memory.ts),
+ * so an unindexed memory would be a file the Agent never reads.
  *
  * This service never invents paths from client input — a request names an `agentId`, a
- * `scopeKey` and a file name inside that scope, each validated against a character rule and
+ * `scopeKey` and a file path inside that scope, each validated against a character rule and
  * then re-checked for containment after resolution, so neither `..` nor a symlink can reach
  * outside the Agent's Memory directory.
  *
  * Files are the source of truth and are read fresh on every request (they are small, requests
  * are rare, and the model edits the same files from its side).
  */
+import { isUtf8 } from "node:buffer";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
   MEMORY_INDEX_FILENAME,
+  MEMORY_SCRIPTS_DIR,
   USER_SCOPE_KEY,
   atomicWriteFile,
   hasMemoryPlaceholder,
@@ -40,10 +47,12 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   MemoryFileInfo,
+  MemoryFileKind,
   MemoryFilesResponse,
   MemoryFileResponse,
   MemoryImportMode,
   MemoryImportResponse,
+  MemoryOmittedFile,
   MemoryOverviewResponse,
   MemoryScopeExport,
   MemoryScopeInfo,
@@ -54,49 +63,31 @@ import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, Memory } from "../mechanisms/agents.js";
+import {
+  MEMORY_FILE_MAX_BYTES,
+  SCOPE_FORMAT,
+  SCOPE_FORMAT_VERSION,
+  SCRIPT_PATH_PREFIX,
+  parseTransferDocument,
+} from "./memory-transfer-document.js";
 
 /** Scope directory names: what core's key generator produces (a safe base may start with `_`), plus the leeway of a hand-made directory. Excludes `.`/`..` and any separator, so the name can never climb out of `memory/`. */
 const SCOPE_KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
-/** The transfer document's format marker, checked before anything in it is believed. Typed against the DTO so the two literals cannot drift apart. */
-const SCOPE_FORMAT: MemoryScopeExport["format"] = "penguin-memory-scope";
-
-/** The document version this reader accepts. A later format bumps it and states its own compatibility. */
-const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 1;
-
-/**
- * What one import may carry.
- *
- * These are Memory's own numbers, not the attachment budget's: an attachment is an opaque blob
- * handed to the model's file tools, while a memory is Markdown the model wrote for itself to
- * re-read, and 100MB of it would be a scope no index could describe. The request as a whole is
- * already bounded by the API body cap before any of this runs — what follows bounds what one
- * scope directory can be made to hold.
- */
-/** Topic files one document may carry. A scope the model keeps by hand runs to tens of files, so this is far past ordinary use and still a directory that lists. */
-const MAX_IMPORT_FILES = 500;
-
-/** Bytes of one file's text (UTF-8), the index included. A memory that does not fit in 512KB of Markdown is not a memory. */
-const MAX_IMPORT_FILE_BYTES = 512 * 1024;
-
-/** Bytes across the whole document: one scope directory's total. */
-const MAX_IMPORT_TOTAL_BYTES = 8 * 1024 * 1024;
-
-/**
- * Bytes of one file name. The name rule says nothing about length, and a name longer than the
- * filesystem's own limit for a path component fails at the write with ENAMETOOLONG — a 500 for
- * what is plainly a bad request. 255 is that limit on ext4, APFS and NTFS alike.
- */
-const MAX_IMPORT_NAME_BYTES = 255;
-
 /**
  * Matches an index line's Markdown link to one file — `](file)`, `](./file)`, `](<file>)`,
- * `](file "title")`. A prose mention of the name is not a link and never matches, which is what
- * keeps both index edits (prune on delete, extend on import) mechanical rather than clever.
+ * `](file "title")`, and the same for `scripts/<name>`. A prose mention of the name is not a
+ * link and never matches, which is what keeps both index edits (prune on delete, extend on
+ * import) mechanical rather than clever.
  */
-function indexLinkPattern(fileName: string): RegExp {
-  const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function indexLinkPattern(filePath: string): RegExp {
+  const escaped = filePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`\\]\\(\\s*<?(?:\\./)?${escaped}>?\\s*(?:"[^"]*"\\s*)?\\)`);
+}
+
+/** Whether a name could be a file directly inside a directory: not empty, not a dotfile (the Harness's own and every temporary write are), and no path separator. */
+function isPlainFileName(name: string): boolean {
+  return name.length > 0 && !name.startsWith(".") && !/[/\\]/.test(name);
 }
 
 /**
@@ -104,109 +95,143 @@ function indexLinkPattern(fileName: string): RegExp {
  * Harness's), carries no path separator, and is not the index under any casing — macOS and
  * Windows resolve `memory.md` to `MEMORY.md`. The model writes these files with the ordinary
  * file tools, so non-ASCII names are as legitimate as kebab-case ones; the same rule guards
- * client-supplied names, with containment re-checked after resolution. Exported so the Agent
- * list's memory count (agent-service) shares this one definition of "a memory".
+ * client-supplied names, with containment re-checked after resolution.
  */
 export function isTopicFileName(name: string): boolean {
   return (
-    name.length > 0 &&
-    !name.startsWith(".") &&
-    !/[/\\]/.test(name) &&
+    isPlainFileName(name) &&
     name.toLowerCase().endsWith(".md") &&
     name.toLowerCase() !== MEMORY_INDEX_FILENAME.toLowerCase()
   );
 }
 
 /**
- * Orders topic file names identically on every host. `localeCompare` is deliberately not used
- * here: with no locale argument it follows the server's own locale, so the same scope listed its
- * files one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is what an
- * export document carries. Case-folded first, so `Alpha.md` still sorts between `a.md` and
- * `beta.md` rather than jumping ahead of both as raw code units would; ties then fall back to
- * code units so the order is total. `toLowerCase`, never `toLocaleLowerCase` — the locale-aware
- * one would put the dependency straight back.
+ * Whether a name is a script inside a scope's `scripts/` directory: a file name under the topic
+ * rule's character constraints — no leading dot, no separator — with any extension or none,
+ * since a script may be in any language. Only the file's own name: `scripts/` holds no deeper
+ * directories.
  */
-function compareTopicFileNames(a: string, b: string): number {
+export function isScriptFileName(name: string): boolean {
+  return isPlainFileName(name);
+}
+
+/** One memory file, resolved from a client- or document-supplied path. */
+interface MemoryEntry {
+  kind: MemoryFileKind;
+  /** The file's own name. */
+  name: string;
+  /** Its path inside the scope: the name, or `scripts/<name>`. */
+  path: string;
+}
+
+/** Reads a scope-relative path as a memory file, or null when it is neither a topic nor a script. */
+function parseEntryPath(filePath: string): MemoryEntry | null {
+  if (filePath.startsWith(SCRIPT_PATH_PREFIX)) {
+    const name = filePath.slice(SCRIPT_PATH_PREFIX.length);
+    return isScriptFileName(name) ? { kind: "script", name, path: filePath } : null;
+  }
+  return isTopicFileName(filePath) ? { kind: "topic", name: filePath, path: filePath } : null;
+}
+
+/**
+ * Orders file names identically on every host. `localeCompare` is deliberately not used here:
+ * with no locale argument it follows the server's own locale, so the same scope listed its files
+ * one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is what an export
+ * document carries. Case-folded first, so `Alpha.md` still sorts between `a.md` and `beta.md`
+ * rather than jumping ahead of both as raw code units would; ties then fall back to code units so
+ * the order is total. `toLowerCase`, never `toLocaleLowerCase` — the locale-aware one would put
+ * the dependency straight back.
+ */
+function compareFileNames(a: string, b: string): number {
   const foldedA = a.toLowerCase();
   const foldedB = b.toLowerCase();
   if (foldedA !== foldedB) return foldedA < foldedB ? -1 : 1;
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** The regular files directly inside a directory whose names pass `accept`, in the host-independent order; none when it cannot be read. */
+async function fileNamesIn(dir: string, accept: (name: string) => boolean): Promise<string[]> {
+  try {
+    return (await fs.readdir(dir, { withFileTypes: true }))
+      .filter((e) => e.isFile() && accept(e.name))
+      .map((e) => e.name)
+      .sort(compareFileNames);
+  } catch {
+    return [];
+  }
+}
+
+/** Topic files of one scope: regular Markdown files only — the index, the `.workspace` marker, stray directories and symlinks (dirents that are not regular files) all stay out. */
+function topicFileNames(dir: string): Promise<string[]> {
+  return fileNamesIn(dir, isTopicFileName);
+}
+
 /**
- * Validates a transfer document on its way to the server's disk.
- *
- * Everything here is untrusted: the document may have been hand-written, produced by another
- * tool, or crafted. So the shape is checked field by field before any of it is believed, and the
- * result carries only what was verified — the entry names are handed to the same `resolveFile`
- * check that guards every other write, which is what keeps one definition of "a legal memory
- * file name" in the service.
- *
- * Refuses, with the reason: a foreign or future format, entries that are not text, a name that
- * carries a NUL or is longer than a path component may be (both of which the filesystem layer
- * would throw on rather than reject), the same name twice, and any of the size bounds.
+ * A scope's `scripts/` directory when it is a real directory. lstat, not stat: a `scripts`
+ * symlink (the model can plant one with its file tools) would carry every listing, read, delete
+ * and import write outside the Memory directory, so a scope whose `scripts` is a link — or a file
+ * — has no scripts here at all.
  */
-function parseTransferDocument(payload: unknown): {
-  index: string | null;
-  files: MemoryTransferFile[];
-} {
-  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
-    throw badRequest("payload must be a Memory scope export object.");
+async function scriptsDirOf(scopeDir: string): Promise<string | null> {
+  const dir = path.join(scopeDir, MEMORY_SCRIPTS_DIR);
+  try {
+    return (await fs.lstat(dir)).isDirectory() ? dir : null;
+  } catch {
+    return null;
   }
-  const doc = payload as Record<string, unknown>;
-  if (doc.format !== SCOPE_FORMAT) {
-    throw badRequest(`payload.format must be "${SCOPE_FORMAT}".`);
-  }
-  if (doc.version !== SCOPE_FORMAT_VERSION) {
-    throw badRequest(`payload.version must be ${SCOPE_FORMAT_VERSION}.`);
-  }
-  if (!Array.isArray(doc.files)) throw badRequest("payload.files must be an array.");
-  if (doc.files.length > MAX_IMPORT_FILES) {
-    throw badRequest(`payload.files must hold at most ${MAX_IMPORT_FILES} entries.`);
-  }
-  let total = 0;
-  const measure = (text: string, label: string): void => {
-    if (text.includes("\u0000")) throw badRequest(`${label} must be text.`);
-    const bytes = Buffer.byteLength(text, "utf8");
-    if (bytes > MAX_IMPORT_FILE_BYTES) {
-      throw badRequest(`${label} exceeds the ${MAX_IMPORT_FILE_BYTES / 1024}KB limit.`);
-    }
-    total += bytes;
-    if (total > MAX_IMPORT_TOTAL_BYTES) {
-      throw badRequest(
-        `payload exceeds the ${MAX_IMPORT_TOTAL_BYTES / (1024 * 1024)}MB total limit.`,
-      );
-    }
-  };
+}
 
-  let index: string | null = null;
-  if (doc.index !== null && doc.index !== undefined) {
-    if (typeof doc.index !== "string") throw badRequest("payload.index must be a string or null.");
-    measure(doc.index, "payload.index");
-    index = doc.index;
-  }
+/** Script names of one scope: the regular files directly under its real `scripts/` directory. */
+async function scriptFileNames(scopeDir: string): Promise<string[]> {
+  const dir = await scriptsDirOf(scopeDir);
+  return dir === null ? [] : fileNamesIn(dir, isScriptFileName);
+}
 
-  const files: MemoryTransferFile[] = [];
-  const seen = new Set<string>();
-  for (const entry of doc.files) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw badRequest("Each payload.files entry must be an object.");
+/** Every memory file of one scope, by path: its topics, then its scripts. */
+async function entryPaths(scopeDir: string): Promise<string[]> {
+  const [topics, scripts] = await Promise.all([
+    topicFileNames(scopeDir),
+    scriptFileNames(scopeDir),
+  ]);
+  return [...topics, ...scripts.map((name) => `${SCRIPT_PATH_PREFIX}${name}`)];
+}
+
+/**
+ * How many memories one scope directory holds — topic files plus scripts, the index excluded.
+ * Exported so the Agent list's memory count (agent-service) shares this one definition of "a
+ * memory".
+ */
+export async function memoryFileCount(scopeDir: string): Promise<number> {
+  return (await entryPaths(scopeDir)).length;
+}
+
+/** A script's text as the routes may hand it out, or why it may not be. */
+type ScriptText =
+  | { ok: true; content: string; size: number; mtime: Date }
+  | { ok: false; reason: MemoryOmittedFile["reason"]; size: number; mtime: Date };
+
+/**
+ * Reads a script for a reader that needs its text: null when it is absent or not a regular file
+ * (lstat, so a symlink is never followed), otherwise its text — or the reason it is withheld: over
+ * the per-file bound (decided from the size, before reading), or not UTF-8 text. A NUL byte counts
+ * as not text, since an import refuses one and the export would otherwise hand out a document
+ * that cannot come back.
+ */
+async function readScriptText(target: string): Promise<ScriptText | null> {
+  try {
+    const stat = await fs.lstat(target);
+    if (!stat.isFile()) return null;
+    if (stat.size > MEMORY_FILE_MAX_BYTES) {
+      return { ok: false, reason: "too_large", size: stat.size, mtime: stat.mtime };
     }
-    const { name, content } = entry as Record<string, unknown>;
-    if (typeof name !== "string") throw badRequest("Each payload.files entry needs a name.");
-    if (typeof content !== "string") {
-      throw badRequest(`Content of ${name} must be a string.`);
+    const bytes = await fs.readFile(target);
+    if (!isUtf8(bytes) || bytes.includes(0)) {
+      return { ok: false, reason: "not_text", size: stat.size, mtime: stat.mtime };
     }
-    if (name.includes("\u0000")) throw badRequest("A file name must be text.");
-    if (Buffer.byteLength(name, "utf8") > MAX_IMPORT_NAME_BYTES) {
-      throw badRequest(`A file name must be at most ${MAX_IMPORT_NAME_BYTES} bytes.`);
-    }
-    if (seen.has(name)) throw badRequest(`payload.files names ${name} twice.`);
-    seen.add(name);
-    measure(content, `Content of ${name}`);
-    files.push({ name, content });
+    return { ok: true, content: bytes.toString("utf8"), size: stat.size, mtime: stat.mtime };
+  } catch {
+    return null;
   }
-  return { index, files };
 }
 
 @Component()
@@ -251,7 +276,7 @@ export class MemoryService implements Memory {
   /**
    * The scope directories under `memory/`: the User scope first — always listed, even before it
    * exists on disk, so a memory can be filed there without waiting for a Session to create it —
-   * then the Workspaces, newest activity first (one with no topic file yet sorts last, by key).
+   * then the Workspaces, newest activity first (one with no memory yet sorts last, by key).
    */
   async listScopes(projectId: string, agentId: string): Promise<MemoryScopeInfo[]> {
     const base = memoryDir(this.root, projectId, agentId);
@@ -281,11 +306,11 @@ export class MemoryService implements Memory {
     key: string,
     kind: MemoryScopeInfo["kind"],
   ): Promise<MemoryScopeInfo> {
-    const files = await this.topicFileNames(dir);
+    const files = await entryPaths(dir);
     let latest = 0;
-    for (const name of files) {
+    for (const filePath of files) {
       try {
-        const stat = await fs.stat(path.join(dir, name));
+        const stat = await fs.stat(path.join(dir, filePath));
         latest = Math.max(latest, stat.mtimeMs);
       } catch {
         // Raced with a delete: leave it out of the timestamp.
@@ -315,69 +340,90 @@ export class MemoryService implements Memory {
     }
   }
 
-  /** Topic files of one scope: regular Markdown files only — the index, the `.workspace` marker, stray directories and symlinks (dirents that are not regular files) all stay out. */
-  private async topicFileNames(dir: string): Promise<string[]> {
-    try {
-      return (await fs.readdir(dir, { withFileTypes: true }))
-        .filter((e) => e.isFile() && isTopicFileName(e.name))
-        .map((e) => e.name)
-        .sort(compareTopicFileNames);
-    } catch {
-      return [];
-    }
-  }
-
+  /** One scope's memories: its topic files with their frontmatter, then its scripts. */
   async listFiles(
     projectId: string,
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const names = await this.topicFileNames(dir);
     const files: MemoryFileInfo[] = [];
-    for (const name of names) {
-      const info = await this.fileInfo(dir, name);
+    for (const name of await topicFileNames(dir)) {
+      const info = await this.topicInfo(dir, name);
+      if (info) files.push(info);
+    }
+    for (const name of await scriptFileNames(dir)) {
+      const info = await this.scriptInfo(dir, name);
       if (info) files.push(info);
     }
     return { scopeKey, files };
   }
 
+  /**
+   * One memory's content, by its path in the scope. A script is handed out only as text and only
+   * up to the per-file bound: past it the answer is 413, and a file that is not UTF-8 text is 415,
+   * each saying why — the listing still shows the script, so its owner can see it is there.
+   */
   async readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<MemoryFileResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const target = this.resolveFile(dir, fileName);
+    const entry = this.resolveEntry(dir, filePath);
+    const notFound = () =>
+      new HttpError(404, "memory_file_not_found", `Memory file not found: ${filePath}`);
+    if (entry.kind === "script") {
+      if ((await scriptsDirOf(dir)) === null) throw notFound();
+      const read = await readScriptText(entry.target);
+      if (read === null) throw notFound();
+      if (!read.ok) {
+        throw read.reason === "too_large"
+          ? new HttpError(
+              413,
+              "memory_script_too_large",
+              `${filePath} is ${Math.ceil(read.size / 1024)} KB; a script is shown up to ${MEMORY_FILE_MAX_BYTES / 1024} KB.`,
+            )
+          : new HttpError(415, "memory_script_not_text", `${filePath} is not UTF-8 text.`);
+      }
+      return {
+        scopeKey,
+        file: this.describeScript(entry.name, read.size, read.mtime),
+        content: read.content,
+      };
+    }
     try {
       // lstat, not stat: a symlink planted among the topic files (the model can create one with
       // its file tools) must not lead the read outside the Memory directory. A non-regular file
       // — or one deleted between the calls — is a 404, never a 500.
-      const stat = await fs.lstat(target);
+      const stat = await fs.lstat(entry.target);
       if (!stat.isFile()) throw new Error("not a regular file");
-      const content = await fs.readFile(target, "utf8");
+      const content = await fs.readFile(entry.target, "utf8");
       return {
         scopeKey,
-        file: this.describe(fileName, content, stat.size, stat.mtime),
+        file: this.describeTopic(entry.name, content, stat.size, stat.mtime),
         content,
       };
     } catch {
-      throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${fileName}`);
+      throw notFound();
     }
   }
 
   /**
-   * The whole scope as one transfer document: every topic file plus the scope's own `MEMORY.md`.
+   * The whole scope as one transfer document: every topic file, every script, and the scope's
+   * own `MEMORY.md`.
    *
-   * JSON rather than an archive, because the payload is entirely UTF-8 Markdown and the import
-   * side of it is an untrusted write into the Agent's Memory directory: a JSON document carries
-   * no paths, no permissions and no compression, so its entries can go through the same per-file
-   * name check every other write here uses, with nothing to unpack first.
+   * JSON rather than an archive, because the payload is entirely UTF-8 text and the import side
+   * of it is an untrusted write into the Agent's Memory directory: a JSON document carries no
+   * permissions and no compression, and its entries are scope-relative paths that go through the
+   * same per-file check every other write here uses, with nothing to unpack first.
    *
    * Unreadable entries are left out rather than failing the export, as elsewhere in this service.
-   * The size bounds below apply to import only — an export reports what the directory actually
-   * holds, and a scope grown past them is exactly the thing its owner needs to see.
+   * A script over the per-file bound or not UTF-8 text is left out too, and named in `omitted`
+   * so the reader can say what did not travel. The import bounds otherwise apply to import only —
+   * an export reports what the directory actually holds, and a scope grown past them is exactly
+   * the thing its owner needs to see.
    */
   async exportScope(
     projectId: string,
@@ -386,9 +432,20 @@ export class MemoryService implements Memory {
   ): Promise<MemoryScopeExport> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
     const files: MemoryTransferFile[] = [];
-    for (const name of await this.topicFileNames(dir)) {
+    const omitted: MemoryOmittedFile[] = [];
+    for (const name of await topicFileNames(dir)) {
       const content = await this.readTextFile(path.join(dir, name));
-      if (content !== null) files.push({ name, content });
+      if (content !== null) files.push({ path: name, content });
+    }
+    const scriptsDir = await scriptsDirOf(dir);
+    if (scriptsDir !== null) {
+      for (const name of await fileNamesIn(scriptsDir, isScriptFileName)) {
+        const read = await readScriptText(path.join(scriptsDir, name));
+        if (read === null) continue;
+        const filePath = `${SCRIPT_PATH_PREFIX}${name}`;
+        if (read.ok) files.push({ path: filePath, content: read.content });
+        else omitted.push({ path: filePath, size: read.size, reason: read.reason });
+      }
     }
     const kind = scopeKey === USER_SCOPE_KEY ? "user" : "workspace";
     const workspacePath = kind === "workspace" ? await readWorkspaceMarker(dir) : undefined;
@@ -403,22 +460,28 @@ export class MemoryService implements Memory {
         ? await this.readTextFile(path.join(dir, MEMORY_INDEX_FILENAME))
         : null,
       files,
+      omitted,
     };
   }
 
   /**
    * Writes a transfer document into one scope.
    *
-   * The default mode keeps every file already on disk and writes only names the scope does not
+   * The default mode keeps every file already on disk and writes only paths the scope does not
    * have, so an import can never cost the user a memory they did not agree to lose. `overwrite`
-   * replaces a same-named file's content and `replace` additionally deletes what the document
-   * does not carry; both are refused with 409 unless `confirm` is set — but only when they would
-   * actually destroy something, since a confirmation that names nothing is just a click.
+   * replaces a same-pathed file's content and `replace` additionally deletes what the document
+   * does not carry, scripts included; both are refused with 409 unless `confirm` is set — but
+   * only when they would actually destroy something, since a confirmation that names nothing is
+   * just a click.
    *
    * The index follows the files. A scope with no index takes the document's; `replace` takes it
    * too (the whole scope is being replaced); a merge keeps the index that is there and appends
    * the document's lines for the files this import added, because only the indexes enter the
    * model's context and an unindexed memory is one the Agent never reads.
+   *
+   * Scripts land in the scope's `scripts/` directory, created when the document brings the first
+   * one. A `scripts` that exists as anything but a real directory — a planted symlink, a file —
+   * refuses the import with 409 before anything is written, rather than writing through it.
    */
   async importScope(
     projectId: string,
@@ -428,15 +491,24 @@ export class MemoryService implements Memory {
   ): Promise<MemoryImportResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
     const { index, files } = parseTransferDocument(request.payload);
-    // Names are resolved before anything is written, so a document with one bad entry writes
+    // Paths are resolved before anything is written, so a document with one bad entry writes
     // nothing at all rather than half of itself.
-    const planned = files.map((f) => ({ ...f, target: this.resolveFile(dir, f.name) }));
+    const planned = files.map((f) => ({ ...f, entry: this.resolveEntry(dir, f.path) }));
+    const bringsScripts = planned.some((f) => f.entry.kind === "script");
+    const scriptsDir = path.join(dir, MEMORY_SCRIPTS_DIR);
+    const scriptsDirState = bringsScripts ? await this.scriptsDirState(scriptsDir) : "absent";
+    if (scriptsDirState === "invalid") {
+      throw new HttpError(
+        409,
+        "memory_scripts_not_a_directory",
+        `${MEMORY_SCRIPTS_DIR} in ${scopeKey} is not a directory, so its scripts cannot be imported.`,
+      );
+    }
 
-    const present = new Set(await this.topicFileNames(dir));
-    const carried = new Set(files.map((f) => f.name));
-    const collides = files.filter((f) => present.has(f.name)).map((f) => f.name);
-    const removed =
-      request.mode === "replace" ? [...present].filter((name) => !carried.has(name)) : [];
+    const present = new Set(await entryPaths(dir));
+    const carried = new Set(files.map((f) => f.path));
+    const collides = files.filter((f) => present.has(f.path)).map((f) => f.path);
+    const removed = request.mode === "replace" ? [...present].filter((p) => !carried.has(p)) : [];
     const overwritten = request.mode === "skip" ? [] : collides;
     const skipped = request.mode === "skip" ? collides : [];
     // `replace` takes the document's index over the scope's own, which is the user's text too.
@@ -451,14 +523,15 @@ export class MemoryService implements Memory {
       );
     }
 
+    if (bringsScripts && scriptsDirState === "absent") await fs.mkdir(scriptsDir);
     const added: string[] = [];
     for (const file of planned) {
-      if (request.mode === "skip" && present.has(file.name)) continue;
-      await this.writeScopeFile(file.target, file.content);
-      if (!present.has(file.name)) added.push(file.name);
+      if (request.mode === "skip" && present.has(file.path)) continue;
+      await this.writeScopeFile(file.entry.target, file.content);
+      if (!present.has(file.path)) added.push(file.path);
     }
-    for (const name of removed) {
-      await fs.unlink(path.join(dir, name)).catch(() => {
+    for (const filePath of removed) {
+      await fs.unlink(path.join(dir, filePath)).catch(() => {
         // Raced with a delete from a Session: the file is gone either way.
       });
     }
@@ -474,9 +547,18 @@ export class MemoryService implements Memory {
       }
     }
     // Whatever the index now says, it must not list a file this import deleted.
-    for (const name of removed) await this.pruneIndexLines(dir, name);
+    for (const filePath of removed) await this.pruneIndexLines(dir, filePath);
 
     return { scopeKey, mode: request.mode, added, overwritten, skipped, removed, indexWritten };
+  }
+
+  /** Whether a scope's `scripts` can take imported scripts: a real directory, nothing there yet, or something else that must not be written through. */
+  private async scriptsDirState(scriptsDir: string): Promise<"directory" | "absent" | "invalid"> {
+    try {
+      return (await fs.lstat(scriptsDir)).isDirectory() ? "directory" : "invalid";
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "invalid";
+    }
   }
 
   /**
@@ -491,8 +573,8 @@ export class MemoryService implements Memory {
     if (current === null) return false;
     const docLines = docIndex.split("\n");
     const additions: string[] = [];
-    for (const name of written) {
-      const link = indexLinkPattern(name);
+    for (const filePath of written) {
+      const link = indexLinkPattern(filePath);
       if (link.test(current)) continue;
       const line = docLines.find((l) => link.test(l));
       if (line !== undefined && !additions.includes(line)) additions.push(line);
@@ -505,14 +587,14 @@ export class MemoryService implements Memory {
 
   /**
    * The write path for every change this service makes to Memory content, shared by the imported
-   * topic files and the index.
+   * topic files, scripts and the index.
    *
-   * The target has already been through `resolveFile` (or is the reserved index name, which is
-   * never client-supplied), so it names a file directly inside this scope. The write goes to a
-   * temporary dotfile — invisible to every topic listing — and is renamed over the target, so a
-   * reader never sees a half-written memory. Symlinks are deliberately not followed: the Memory
-   * directory is model-writable, and a link planted at a topic's name would otherwise carry the
-   * write out of it. Replacing the link keeps the write inside the scope.
+   * The target has already been through `resolveEntry` (or is the reserved index name, which is
+   * never client-supplied), so it names a file directly inside this scope or its real `scripts/`.
+   * The write goes to a temporary dotfile — invisible to every listing — and is renamed over the
+   * target, so a reader never sees a half-written memory. Symlinks are deliberately not followed:
+   * the Memory directory is model-writable, and a link planted at a memory's name would otherwise
+   * carry the write out of it. Replacing the link keeps the write inside the scope.
    */
   private async writeScopeFile(target: string, content: string): Promise<void> {
     await atomicWriteFile(target, content);
@@ -529,29 +611,33 @@ export class MemoryService implements Memory {
   }
 
   /**
-   * Deletes a topic file and mechanically drops its lines from the scope's `MEMORY.md`: any
-   * line whose Markdown link target is exactly this file (`](<file>)`) goes; a mention of the
-   * name in ordinary prose, or a link to a different file, survives. This is the only write the
-   * API performs on Memory content — everything else is the model's, through a chat Session.
+   * Deletes a topic file or a script and mechanically drops its lines from the scope's
+   * `MEMORY.md`: any line whose Markdown link target is exactly this file (`](<path>)`) goes; a
+   * mention of the name in ordinary prose, or a link to a different file, survives. This is the
+   * only write the API performs on Memory content outside an import — everything else is the
+   * model's, through a chat Session.
    */
   async deleteFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
+    filePath: string,
   ): Promise<void> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
-    const target = this.resolveFile(dir, fileName);
+    const entry = this.resolveEntry(dir, filePath);
     try {
-      await fs.unlink(target);
+      if (entry.kind === "script" && (await scriptsDirOf(dir)) === null) {
+        throw new Error("no scripts directory");
+      }
+      await fs.unlink(entry.target);
     } catch {
-      throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${fileName}`);
+      throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${filePath}`);
     }
-    await this.pruneIndexLines(dir, fileName);
+    await this.pruneIndexLines(dir, entry.path);
   }
 
   /** Removes index lines linking to a deleted file. Best-effort: a missing or unreadable index is left alone. */
-  private async pruneIndexLines(dir: string, fileName: string): Promise<void> {
+  private async pruneIndexLines(dir: string, filePath: string): Promise<void> {
     const indexPath = path.join(dir, MEMORY_INDEX_FILENAME);
     let content: string;
     try {
@@ -559,34 +645,59 @@ export class MemoryService implements Memory {
     } catch {
       return;
     }
-    const link = indexLinkPattern(fileName);
+    const link = indexLinkPattern(filePath);
     const lines = content.split("\n");
     const kept = lines.filter((line) => !link.test(line));
     if (kept.length === lines.length) return;
     await this.writeScopeFile(indexPath, kept.join("\n"));
   }
 
-  private async fileInfo(dir: string, name: string): Promise<MemoryFileInfo | null> {
+  private async topicInfo(dir: string, name: string): Promise<MemoryFileInfo | null> {
     try {
       const [content, stat] = await Promise.all([
         fs.readFile(path.join(dir, name), "utf8"),
         fs.stat(path.join(dir, name)),
       ]);
-      return this.describe(name, content, stat.size, stat.mtime);
+      return this.describeTopic(name, content, stat.size, stat.mtime);
     } catch {
       // Raced with a delete, or not readable: leave it out of the listing rather than failing the request.
       return null;
     }
   }
 
-  /** One listing entry: frontmatter (falling back to the file name for an unparsed file) plus file stats. */
-  private describe(name: string, content: string, size: number, mtime: Date): MemoryFileInfo {
+  /** A script's listing entry, from its stats alone: a script has no frontmatter, and its body may be too large or not text. */
+  private async scriptInfo(dir: string, name: string): Promise<MemoryFileInfo | null> {
+    try {
+      const stat = await fs.lstat(path.join(dir, MEMORY_SCRIPTS_DIR, name));
+      return stat.isFile() ? this.describeScript(name, stat.size, stat.mtime) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** One topic's listing entry: frontmatter (falling back to the file name for an unparsed file) plus file stats. */
+  private describeTopic(name: string, content: string, size: number, mtime: Date): MemoryFileInfo {
     const meta = parseMemoryFrontmatter(content, name);
     return {
       name,
+      path: name,
+      kind: "topic",
       title: meta?.name ?? name,
       description: meta?.description ?? "",
       ...(meta?.updatedAt !== undefined ? { updatedAt: meta.updatedAt } : {}),
+      size,
+      modifiedAt: mtime.toISOString(),
+    };
+  }
+
+  /** One script's listing entry: its file name stands for the title. */
+  private describeScript(name: string, size: number, mtime: Date): MemoryFileInfo {
+    return {
+      name,
+      path: `${SCRIPT_PATH_PREFIX}${name}`,
+      kind: "script",
+      title: name,
+      description: "",
       size,
       modifiedAt: mtime.toISOString(),
     };
@@ -655,21 +766,24 @@ export class MemoryService implements Memory {
   }
 
   /**
-   * The absolute path of a topic file inside a scope directory. The name must pass the
-   * character rule, must not be the reserved index name, and the joined path is checked
-   * for containment — belt and braces, since the rule already excludes separators.
+   * A memory file's place inside a scope directory, from a client- or document-supplied path.
+   * The path must be a topic name (the character rule, not the reserved index name) or
+   * `scripts/<name>` with a script name, and the joined path is checked for containment — belt
+   * and braces, since the rules already exclude every other separator.
    */
-  private resolveFile(dir: string, fileName: string): string {
-    if (!isTopicFileName(fileName)) {
+  private resolveEntry(dir: string, filePath: string): MemoryEntry & { target: string } {
+    const entry = parseEntryPath(filePath);
+    if (entry === null) {
       throw badRequest(
-        `File name must be a Markdown topic file — no path, no leading dot, and not the ${MEMORY_INDEX_FILENAME} index.`,
+        `File must be a Markdown topic file or ${SCRIPT_PATH_PREFIX}<name> — no other path, no leading dot, and not the ${MEMORY_INDEX_FILENAME} index.`,
       );
     }
-    const target = path.join(dir, fileName);
-    const rel = path.relative(dir, target);
-    if (rel !== fileName || rel.includes(path.sep)) {
+    const base = entry.kind === "script" ? path.join(dir, MEMORY_SCRIPTS_DIR) : dir;
+    const target = path.join(base, entry.name);
+    const rel = path.relative(base, target);
+    if (rel !== entry.name || rel.includes(path.sep)) {
       throw badRequest("File name must not contain a path.");
     }
-    return target;
+    return { ...entry, target };
   }
 }

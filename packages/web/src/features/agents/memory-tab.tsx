@@ -11,6 +11,11 @@
  * with the very index it is about to change. Deleting confirms first and also drops the file's
  * MEMORY.md index lines (server-side).
  *
+ * Below a scope's topics, a "Scripts" group lists the programs the Agent keeps in that scope's
+ * `scripts/` directory. A script is code, not a note: it opens read-only in the same panel with
+ * line numbers, and can be deleted, but it has no edit bridge — the Agent changes its own
+ * scripts in a chat like any other file. A scope with no scripts shows no such group.
+ *
  * A whole group moves in one piece, though: each header carries export and import, following
  * the Agent State snapshot's split — any member may download a group, only the owner may write
  * one back. Import defaults to the mode that loses nothing, and the two that do not are held
@@ -31,12 +36,13 @@ import type { ChangeEvent, RefObject } from "react";
 import type {
   MemoryFileInfo,
   MemoryImportMode,
-  MemoryScopeExport,
+  MemoryScopeDocument,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
   Card,
+  CodeSurface,
   CollapsibleSection,
   ConfirmModal,
   CopiedStatus,
@@ -61,6 +67,8 @@ import {
   UploadIcon,
   bodyWithoutFrontmatter,
   buttonClass,
+  languageForFileName,
+  toastAttention,
   toastError,
   toastSuccess,
   useCopied,
@@ -70,7 +78,7 @@ import type { SheetSnap } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { formatRelativeDate } from "../../lib/format";
+import { formatBytes, formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -197,7 +205,7 @@ export function MemoryTab({
   const [importing, setImporting] = useState<{
     scope: MemoryScopeInfo;
     fileName: string;
-    doc: MemoryScopeExport;
+    doc: MemoryScopeDocument;
   } | null>(null);
   const [importMode, setImportMode] = useState<MemoryImportMode>("skip");
   const [importPlan, setImportPlan] = useState<MemoryImportPlan | null>(null);
@@ -370,7 +378,7 @@ export function MemoryTab({
   const openView = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
     if (!projectId) return;
     try {
-      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name, machineId);
+      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.path, machineId);
       setSheetSnap("half"); // Every mobile open starts at the browsing height, like the chat panels.
       setViewing({ scope, file: res.file, content: res.content });
       setViewOpen(true);
@@ -380,7 +388,7 @@ export function MemoryTab({
   };
 
   const memoryFilePath = (scope: MemoryScopeInfo, file: MemoryFileInfo) =>
-    `${memoryDir}/${scope.scopeKey}/${file.name}`;
+    `${memoryDir}/${scope.scopeKey}/${file.path}`;
 
   /** Opens the edit modal (closing the view panel if it is up): requirement field + prompt preview, then the chat jump. */
   const openEditor = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
@@ -444,6 +452,9 @@ export function MemoryTab({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
+      // The file is saved either way; what it could not carry is said, not left to be found.
+      if (doc.omitted.length > 0)
+        toastAttention(S.memory.exportOmitted(doc.omitted.map((o) => o.path)));
     } catch (e) {
       toastApiError(e);
     }
@@ -499,7 +510,7 @@ export function MemoryTab({
     const group = groups?.find((g) => g.scope.scopeKey === importing.scope.scopeKey);
     const plan = planMemoryImport(
       importing.doc,
-      { names: group?.files.map((f) => f.name) ?? [], hasIndex: importing.scope.hasIndex },
+      { paths: group?.files.map((f) => f.path) ?? [], hasIndex: importing.scope.hasIndex },
       importMode,
     );
     if (plan.destroys) setImportPlan(plan);
@@ -515,11 +526,11 @@ export function MemoryTab({
         projectId,
         agentId,
         target.scope.scopeKey,
-        target.file.name,
+        target.file.path,
         machineId,
       );
       toastSuccess(S.memory.deleteDone);
-      if (viewing && viewing.file.name === target.file.name) setViewOpen(false);
+      if (viewing && viewing.file.path === target.file.path) setViewOpen(false);
       await load();
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
@@ -537,6 +548,7 @@ export function MemoryTab({
 
   // Icon-only row actions (the skills tab's affordance: neutral bordered icons, danger
   // variant with red text/hover for delete); the tooltip + aria-label carry the wording.
+  // A script has no edit bridge: it is the Agent's code, changed by the Agent in a chat.
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
       <IconButton
@@ -546,13 +558,15 @@ export function MemoryTab({
       >
         <GlyphIcon d={ICONS.eye} size={14} className="text-gray-600 dark:text-gray-300" />
       </IconButton>
-      <IconButton
-        label={`${S.memory.edit} ${file.title}`}
-        title={S.memory.edit}
-        onClick={() => openEditor(scope, file)}
-      >
-        <GlyphIcon d={ICONS.penLine} size={14} className="text-gray-600 dark:text-gray-300" />
-      </IconButton>
+      {file.kind === "topic" && (
+        <IconButton
+          label={`${S.memory.edit} ${file.title}`}
+          title={S.memory.edit}
+          onClick={() => openEditor(scope, file)}
+        >
+          <GlyphIcon d={ICONS.penLine} size={14} className="text-gray-600 dark:text-gray-300" />
+        </IconButton>
+      )}
       <IconButton
         variant="danger"
         label={`${S.memory.delete} ${file.title}`}
@@ -564,15 +578,17 @@ export function MemoryTab({
     </div>
   );
 
-  // A memory's title is its file's identifier, so it keeps the data face on the code rung.
+  // A memory's title is its file's identifier, so it keeps the data face on the code rung. A
+  // script's row reads its size beside the date: it has no description to say what it holds.
   const fileRow = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <ListRow
-      key={file.name}
+      key={file.path}
       as="li"
       title={<span className="font-mono text-[length:var(--ui-text-code-size)]">{file.title}</span>}
       description={file.description ? file.description : undefined}
       meta={
         <span className="tabular-nums">
+          {file.kind === "script" && `${formatBytes(file.size)} · `}
           {file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale)}
         </span>
       }
@@ -580,26 +596,70 @@ export function MemoryTab({
     />
   );
 
-  /** Metadata + rendered body of the memory in view, shared by the Drawer and the Sheet. */
+  /**
+   * A scope's scripts, under a sub-heading that names them and says what they are and who can run
+   * them — ruled off from the topics above when there are any; nothing at all for a scope without
+   * scripts.
+   */
+  const scriptsSection = (scope: MemoryScopeInfo, scripts: MemoryFileInfo[], ruled: boolean) =>
+    scripts.length === 0 ? null : (
+      <section className={ruled ? "border-t border-line-muted" : ""}>
+        <h4 className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-xs font-medium text-fg-muted">
+          {S.memory.scriptsGroup}
+          <InfoPopover label={S.memory.scriptsGroup}>{S.memory.scriptsGroupHint}</InfoPopover>
+          <span className="ml-auto tabular-nums text-fg-subtle">
+            {S.memory.scriptCount(scripts.length)}
+          </span>
+        </h4>
+        <ul>{scripts.map((file) => fileRow(scope, file))}</ul>
+      </section>
+    );
+
+  /**
+   * Metadata + body of the memory in view, shared by the Drawer and the Sheet: a topic's
+   * Markdown with its frontmatter stripped, or a script's code with line numbers under the
+   * absolute path its index line runs it by.
+   */
   const viewMeta = viewing && (
     <>
       <span className="text-xs text-gray-400 dark:text-gray-500">
+        {viewing.file.kind === "script" && `${formatBytes(viewing.file.size)} · `}
         {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
       </span>
       {viewing.file.description && (
         <p className="text-xs text-gray-500 dark:text-gray-400">{viewing.file.description}</p>
       )}
-      <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
-        <Md text={bodyWithoutFrontmatter(viewing.content)} />
-      </div>
+      {viewing.file.kind === "script" ? (
+        <>
+          <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
+            {memoryFilePath(viewing.scope, viewing.file)}
+          </p>
+          <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+            <CodeSurface
+              language={languageForFileName(viewing.file.name)}
+              code={viewing.content}
+              highlight
+              lineNumbers
+              wrap
+              className="text-xs leading-relaxed"
+            />
+          </div>
+        </>
+      ) : (
+        <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
+          <Md text={bodyWithoutFrontmatter(viewing.content)} />
+        </div>
+      )}
     </>
   );
 
   const viewActions = viewing && (
     <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-      <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
-        {S.memory.edit}
-      </Button>
+      {viewing.file.kind === "topic" && (
+        <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
+          {S.memory.edit}
+        </Button>
+      )}
       <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
         {S.memory.delete}
       </Button>
@@ -635,6 +695,8 @@ export function MemoryTab({
         <div className={enabled ? "space-y-4" : "space-y-4 opacity-60"}>
           {groups.map(({ scope, files }) => {
             const open = !collapsed.has(scope.scopeKey);
+            const topics = files.filter((f) => f.kind === "topic");
+            const scripts = files.filter((f) => f.kind === "script");
             return (
               /* One collapsible section per scope: the head strip folds the group; the group's
                  own actions sit after the toggle, outside it, since a button cannot hold
@@ -714,7 +776,10 @@ export function MemoryTab({
                     {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
                   </p>
                 ) : (
-                  <ul>{files.map((file) => fileRow(scope, file))}</ul>
+                  <>
+                    {topics.length > 0 && <ul>{topics.map((file) => fileRow(scope, file))}</ul>}
+                    {scriptsSection(scope, scripts, topics.length > 0)}
+                  </>
                 )}
               </CollapsibleSection>
             );
@@ -1004,14 +1069,18 @@ export function MemoryTab({
       <ConfirmModal
         open={removing !== null}
         tone="danger"
-        title={S.memory.deleteTitle}
+        title={removing?.file.kind === "script" ? S.memory.deleteScriptTitle : S.memory.deleteTitle}
         confirmLabel={S.memory.delete}
         cancelLabel={S.common.cancel}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
       >
         <p className="text-sm text-gray-700 dark:text-gray-300">
-          {removing ? S.memory.deleteConfirm(removing.file.title) : ""}
+          {removing === null
+            ? ""
+            : removing.file.kind === "script"
+              ? S.memory.deleteScriptConfirm(removing.file.path)
+              : S.memory.deleteConfirm(removing.file.title)}
         </p>
       </ConfirmModal>
     </div>

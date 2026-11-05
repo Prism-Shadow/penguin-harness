@@ -658,12 +658,20 @@ export const insertSchedulesPlaceholder = (
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
 
-/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
+/** Base path of an Agent's Memory API; the scope key is a single path segment (never a path). */
 const memoryBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
 
 const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}/files`;
+
+/**
+ * One memory file's URL. `filePath` is its place in the scope as the listing gives it
+ * (`MemoryFileInfo.path`): a topic's name, or `scripts/<name>`, whose separator stays a separator
+ * — the server routes scripts on it — while each segment is encoded on its own.
+ */
+const memoryFileUrl = (projectId: string, agentId: string, scopeKey: string, filePath: string) =>
+  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
 
 export const getMemoryOverview = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId), { server: machineId });
@@ -694,22 +702,21 @@ export const getMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
+  filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFileResponse>(
-    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
-    { server: machineId },
-  );
+  apiFetch<MemoryFileResponse>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
+    server: machineId,
+  });
 
 export const deleteMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
+  filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
+  apiFetch<void>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
     method: "DELETE",
     server: machineId,
   });

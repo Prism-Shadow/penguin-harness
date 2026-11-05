@@ -1,11 +1,13 @@
 /**
  * The Memory tab's content (the dock provides the shell — features/dock): two levels, modeled
- * by memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
- * agent-settings memory tab reads — with a marker on topics this conversation changed; a
- * topic's detail is the memory's content rendered like the file viewer (Markdown,
- * frontmatter stripped — the header already shows those fields). A file deleted after being
- * changed simply leaves the list (buildMemoryList); the unavailable note below only covers
- * the race where the file disappears between the listing load and the click.
+ * by memory-nav.ts. The list shows both scopes' memories — the same server routes the
+ * agent-settings memory tab reads — with a marker on those this conversation changed; a
+ * memory's detail is its content rendered like the file viewer (a topic as Markdown,
+ * frontmatter stripped — the header already shows those fields; a script as read-only code
+ * with line numbers). A file deleted after being changed simply leaves the list
+ * (buildMemoryList); the unavailable note below covers the race where the file disappears
+ * between the listing load and the click, and a script the server will not show (over 512 KB,
+ * or not text).
  *
  * Entry routes by origin: a memory-changes card row lands directly on that memory's detail;
  * entering through the panel toggle lands on the list. Management (add / edit / delete)
@@ -15,18 +17,20 @@
 import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  CodeSurface,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   Md,
   SkeletonList,
   bodyWithoutFrontmatter,
+  languageForFileName,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeDate } from "../../lib/format";
 import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/amsp/memory-changes";
-import { memoryRowKey } from "../../lib/amsp/memory-changes";
+import { memoryFileKind, memoryRowKey } from "../../lib/amsp/memory-changes";
 import { useLocale } from "../../state/locale";
 import { buildMemoryList, memoryNavBack, memoryNavForRequest } from "./memory-nav";
 import type { MemoryNavMode, ScopeFiles } from "./memory-nav";
@@ -173,6 +177,15 @@ export function ChatMemoryView({
             <p className="text-xs text-gray-400 dark:text-gray-500">
               {S.chat.memoryContentUnavailable}
             </p>
+          ) : memoryFileKind(target.file) === "script" ? (
+            <CodeSurface
+              language={languageForFileName(target.file)}
+              code={detail.content ?? ""}
+              highlight
+              lineNumbers
+              wrap
+              className="text-xs leading-relaxed"
+            />
           ) : (
             <div className="md-body text-sm">
               <Md text={bodyWithoutFrontmatter(detail.content ?? "")} />

@@ -2526,6 +2526,16 @@ export const en: Strings = {
     importDone: (added: number, overwritten: number, removed: number): string =>
       `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
     importNothingNew: "Nothing to import — this group already has every memory in the file",
+    scriptsGroup: "Scripts",
+    scriptsGroupHint:
+      "Programs the agent keeps in this group's scripts/ folder to reuse, each listed in MEMORY.md with how to run it. Every later session of this agent may run them through the shell, under that session's sandbox and approvals, and every Project member can read them. Look at a script before you rely on it.",
+    scriptCount: (n: number): string => (n === 1 ? "1 script" : `${n} scripts`),
+    deleteScriptTitle: "Delete this script?",
+    deleteScriptConfirm: (path: string): string =>
+      `This deletes ${path} and removes its index line from MEMORY.md. This cannot be undone.`,
+    /** Toast after an export that had to leave scripts out; the paths follow. */
+    exportOmitted: (paths: string[]): string =>
+      `${paths.length === 1 ? "1 script was" : `${paths.length} scripts were`} left out of the file (over 512 KB, or not text): ${paths.join(", ")}`,
   },
 
   vault: {

@@ -2,19 +2,23 @@
  * Navigation model and list view-model for the Memory side panel (pure; the component in
  * memory-view.tsx just renders these).
  *
- * Two levels: the list (both scopes' topic lists, changed topics marked) and one memory's
- * detail (its content, rendered like the file viewer). Entry routes by where the user came
- * from: a memory-changes card row carries a locate target and lands directly on that
- * memory's detail; entering through the panel toggle (or any entry without a target) lands
- * on the list. Back always returns to the list.
+ * Two levels: the list (both scopes' memories — topics, then scripts — changed ones marked) and
+ * one memory's detail (its content, rendered like the file viewer: Markdown for a topic, code
+ * for a script). Entry routes by where the user came from: a memory-changes card row carries a
+ * locate target and lands directly on that memory's detail; entering through the panel toggle
+ * (or any entry without a target) lands on the list. Back always returns to the list.
  */
-import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MemoryFileInfo,
+  MemoryFileKind,
+  MemoryScopeInfo,
+} from "@prismshadow/penguin-server/api";
 import type {
   MemoryChangeOp,
   MemoryChangeRow,
   MemoryLocateTarget,
 } from "../../lib/amsp/memory-changes";
-import { memoryRowKey } from "../../lib/amsp/memory-changes";
+import { memoryFileKind, memoryRowKey } from "../../lib/amsp/memory-changes";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 
@@ -36,10 +40,11 @@ export interface ScopeFiles {
   files: MemoryFileInfo[];
 }
 
-/** One list-view row: a topic file. */
+/** One list-view row: a topic file or a script. */
 export interface MemoryListRow {
   target: MemoryLocateTarget;
-  /** Listing title (frontmatter `name`), or the file path while the listing hasn't loaded. */
+  kind: MemoryFileKind;
+  /** A topic's listing title (frontmatter `name`); a script's path (`scripts/<name>`); the file path while the listing hasn't loaded. */
   title: string;
   description?: string;
   /** Frontmatter `updated_at` verbatim / file mtime (ISO); both absent on change-derived rows. */
@@ -88,6 +93,7 @@ export function buildMemoryList(
       }
       group.rows.push({
         target: targetOf(group, change.file),
+        kind: memoryFileKind(change.file),
         title: change.file,
         changed: change.op,
       });
@@ -104,11 +110,13 @@ export function buildMemoryList(
       rows: [],
     };
     for (const f of files) {
-      const target = targetOf(group, f.name);
+      const target = targetOf(group, f.path);
       const changed = changedByKey.get(memoryRowKey(target));
       group.rows.push({
         target,
-        title: f.title,
+        kind: f.kind,
+        // A script has no frontmatter title; its path says what it is beside the topics.
+        title: f.kind === "script" ? f.path : f.title,
         ...(f.description !== "" ? { description: f.description } : {}),
         ...(f.updatedAt !== undefined ? { updatedAt: f.updatedAt } : {}),
         modifiedAt: f.modifiedAt,
@@ -133,7 +141,7 @@ export function deletedChangeKeys(
   const listed = new Set<string>();
   for (const { info, files } of scopes) {
     const group = { scope: info.kind, scopeKey: info.scopeKey };
-    for (const f of files) listed.add(memoryRowKey(targetOf(group, f.name)));
+    for (const f of files) listed.add(memoryRowKey(targetOf(group, f.path)));
   }
   const deleted = new Set<string>();
   for (const change of changes) {
