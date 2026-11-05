@@ -2,11 +2,11 @@
 title: "用 Penguin Harness 在 GDPEVO 上开展自进化实验"
 date: 2026-11-04
 category: practice
-author: Leijun Zhou
+author: Leijun Zhou (Prism Shadow AI)
 excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 Benchmark（包含六个子 Benchmark，共 30 道训练题与 30 道测试题），对比评测 SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种 Agent 自进化方法。"
 ---
 
-本文介绍如何使用 PenguinHarness 0.2.19 在 [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) 系列 Benchmark 上开展 Agent 自进化实验。实验中基座模型固定为 `DeepSeek-V4.1-Flash-1017`，思考强度设为 `max`，系统对比了 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 和 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种自进化方法。下文将依次说明 GDPEVO Essential 系列 Benchmark 的构成与评测规则、自进化方法的核心机制、Web 界面的实验启动方式、系统内部的执行流程以及最终的实测结果。
+本文介绍如何使用 PenguinHarness 0.2.19 在 GDPEVO Essential 系列 Benchmark 上开展 Agent 自进化实验。实验中基座模型固定为 DeepSeek-V4.1-Flash-1017，思考强度设为 max，系统对比了 SkillAdam、SkillOpt、TRACE 和 OpenSkill 四种自进化方法。下文将依次说明 GDPEVO Essential 系列 Benchmark 的构成与评测规则、自进化方法的核心机制、Web 界面的实验启动方式、系统内部的执行流程以及最终的实测结果。
 
 ## 1. Benchmark 构成与评测规则
 
@@ -21,28 +21,28 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 | 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练题 + 5 测试题 + 评测环境 | 核对立案卷宗材料，整理案件排期与归档信息 |
 | 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练题 + 5 测试题 + 评测环境 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
 
-每个子 Benchmark 的评测环境中都隐藏着未在题面直接写明的企业业务规则，例如优先级策略、风控阈值与异常处理口径。Agent 需要在训练环境中与业务系统交互，根据评分反馈学会这些企业规则并总结到 `SKILL.md` 中，才能在测试题上取得高分。
+每个子 Benchmark 的评测环境中都隐藏着未在题面直接写明的企业业务规则，例如优先级策略、风控阈值与异常处理口径。Agent 需要在训练环境中与业务系统交互，根据评分反馈学会这些企业规则并总结到 SKILL.md 中，才能在测试题上取得高分。
 
 在本次实验中，每个子 Benchmark 的实验均遵循以下三项设定：
 
-- **按 Benchmark 独立训练与测试**：六个子 Benchmark 彼此独立，每个 Benchmark 单独开展训练并产出一份专属的 `SKILL.md` 技能文档，不同 Benchmark 之间不混合训练数据，也不共享习得的技能。
-- **训练阶段**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，限时 6 小时，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
-- **测试阶段**：训练产出的 `SKILL.md` 一经导出即被冻结，随后在该 Benchmark 的 5 道保留测试题上完整重复评测 3 轮，单题限时 4 小时。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
+- **按 Benchmark 独立训练与测试**：六个子 Benchmark 彼此独立，每个 Benchmark 单独开展训练并产出一份专属的 SKILL.md 技能文档，不同 Benchmark 之间不混合训练数据，也不共享习得的技能。
+- **训练阶段**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，限时 6 小时，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 POST /api/judge 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
+- **测试阶段**：训练产出的 SKILL.md 一经导出即被冻结，随后在该 Benchmark 的 5 道保留测试题上完整重复评测 3 轮，单题限时 4 小时。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
 
 ## 2. 自进化方法：以 SkillAdam 为例
 
-在本次实验中，我们将 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 与 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种近期学术界的自进化工作复现并适配为 PenguinHarness 的内置方法插件，以便在统一的业务容器与评分标准下横向评测它们的效果。
+在本次实验中，我们将 SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种近期学术界的自进化工作复现并适配为 PenguinHarness 的内置方法插件，以便在统一的业务容器与评分标准下横向评测它们的效果。
 
-这里以我们适配的 [SkillAdam](https://arxiv.org/abs/2609.08944v1) 为例说明容器内的演进过程。在连续训练环境中，目标 Agent 需要根据 5 道训练题的反馈不断修订 `SKILL.md`。如果直接让模型在每轮之后自由改写整份文档，实践中很容易遇到两类问题：一是缺乏对历史失败修改的记录，模型容易在已被证伪的方向上反复尝试，二是单次改动的步幅难以控制，为了修好某一道题的局部问题，常常把原本在其他题目上生效的规则改坏。
+这里以我们适配的 SkillAdam 为例说明容器内的演进过程。在连续训练环境中，目标 Agent 需要根据 5 道训练题的反馈不断修订 SKILL.md。如果直接让模型在每轮之后自由改写整份文档，实践中很容易遇到两类问题：一是缺乏对历史失败修改的记录，模型容易在已被证伪的方向上反复尝试，二是单次改动的步幅难以控制，为了修好某一道题的局部问题，常常把原本在其他题目上生效的规则改坏。
 
-针对这两个痛点，SkillAdam 原论文借鉴了深度学习中 Adam 优化器“一阶动量 + 二阶方差自适应步长”的设计思路。在我们的插件适配中，训练容器内的目标 Agent 按以下四步闭环迭代演进 `SKILL.md`：
+针对这两个痛点，SkillAdam 原论文借鉴了深度学习中 Adam 优化器“一阶动量 + 二阶方差自适应步长”的设计思路。在我们的插件适配中，训练容器内的目标 Agent 按以下四步闭环迭代演进 SKILL.md：
 
 <figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>五题试跑测分差：目标 Agent 完成 T1–T5 试跑并统计各题分差</li><li>严格均分门控：对比本轮均分与当前最佳，严格提升时采纳晋级</li><li>Adam 状态更新：同步更新一阶 EIT 问题账本与二阶方差编辑预算 Bt</li><li>局部微调 SKILL.md：仅在额度允许的范围内局部修改并输出新版 SKILL.md</li></ol><figcaption>SkillAdam 的四阶段演进闭环。</figcaption></figure>
 
-- **无技能初测与初版提炼**：训练启动后，Agent 首先在不挂载任何业务技能的状态下完成 5 道训练题的初次尝试，根据执行轨迹与评分反馈提炼出初版 `SKILL.md`。在随后的每一轮迭代中，Agent 均使用当前或候选技能文档在训练题上实测作答，收集各题得分、新旧分差与具体失误原因。
+- **无技能初测与初版提炼**：训练启动后，Agent 首先在不挂载任何业务技能的状态下完成 5 道训练题的初次尝试，根据执行轨迹与评分反馈提炼出初版 SKILL.md。在随后的每一轮迭代中，Agent 均使用当前或候选技能文档在训练题上实测作答，收集各题得分、新旧分差与具体失误原因。
 - **演进问题追踪器（EIT）**：算法在迭代全程维护一份问题账本，持续追踪训练题中暴露的错误模式、历次尝试过的修复方案及其实际效果。即便某一轮提出的候选修改最终因为没有提分而被拒绝，这次失败尝试的记录也会更新回 EIT 中，避免后续轮次重复无效修改。
 - **方差自适应编辑预算**：每当候选版本在 5 道训练题上完成实测后，算法会评估该次修改在不同题目上引起的得分波动。如果一次修改让部分题目得分上升，却让另一些题目得分大幅回落，说明当前改动方向存在较大分歧，系统便会自动收紧下一轮允许修改的文档块数，迫使模型转向局部微调。
-- **严格均分门控**：只有当候选 `SKILL.md` 在 5 道训练题上的平均得分相比当前版本严格上升时，才会被正式采纳并替换当前版本，否则拒绝该次修改并保留原版本。全部迭代完成后，最后一次被采纳的 `SKILL.md` 即作为最终训练产物导出。
+- **严格均分门控**：只有当候选 SKILL.md 在 5 道训练题上的平均得分相比当前版本严格上升时，才会被正式采纳并替换当前版本，否则拒绝该次修改并保留原版本。全部迭代完成后，最后一次被采纳的 SKILL.md 即作为最终训练产物导出。
 
 具体而言，在第 <i>t</i> 轮迭代中，设第 <i>i</i> 道训练题在修改前与修改后的归一化得分分别为 <i>s<sub>i</sub></i><sup>curr</sup> 与 <i>s<sub>i</sub></i><sup>cand</sup>，则该题的得分变化量为 Δ<sub><i>i</i></sub> = <i>s<sub>i</sub></i><sup>cand</sup> − <i>s<sub>i</sub></i><sup>curr</sup>。记 <i>n</i> = 5 道训练题得分变化量的算术平均值为 Δ̄，本轮修改在各题间引起的分差样本方差为：
 
@@ -64,16 +64,16 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 | 医保审核 | 83.07 | 93.87 | 93.93 (采纳) | 94.40 (采纳) | 94.40 |
 | 法院书记员业务 | 69.54 | 79.67 | 79.74 (采纳) | 85.42 (采纳) | 85.42 |
 
-可以看到，在工程项目组合分析、医保审核与法院书记员业务三个 Benchmark 中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，提炼出初版 `SKILL.md` 后得分明显提升，再经过两轮迭代修改，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
+可以看到，在工程项目组合分析、医保审核与法院书记员业务三个 Benchmark 中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，提炼出初版 SKILL.md 后得分明显提升，再经过两轮迭代修改，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
 
 除 SkillAdam 外，本次实验还同步评测了另外三种代表性自进化方法，四者的原论文与核心机制对比如下：
 
 | 方法名称 | 原论文 | 插件标识 | 容器内学习与选版方式 |
 | :--- | :--- | :--- | :--- |
-| SkillAdam | [arXiv:2609.08944](https://arxiv.org/abs/2609.08944v1) | `skilladam-rsi-toolkit` | 结合演进问题追踪器与分差方差自适应预算迭代修改，导出严格提升训练均分的最后一个采纳版本 |
-| SkillOpt | [arXiv:2605.23904](https://arxiv.org/abs/2605.23904v1) | `skillopt-rsi-toolkit` | 分批反思成功与失败轨迹，合并局部修改提案并按余弦退火预算更新，导出训练集得分最高的采纳版本 |
-| TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | `trace-rsi-toolkit` | 策展者与执行者双角色协同：执行者解题，策展者从轨迹中提炼模块化技能库，按完整训练批次最高均分选版 |
-| OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | `openskill-rsi-toolkit` | 不使用在线训练评分接口，通过检索领域知识并构造独立虚拟测试来迭代修复技能，导出最后一个有效版本 |
+| SkillAdam | [arXiv:2609.08944](https://arxiv.org/abs/2609.08944v1) | skilladam-rsi-toolkit | 结合演进问题追踪器与分差方差自适应预算迭代修改，导出严格提升训练均分的最后一个采纳版本 |
+| SkillOpt | [arXiv:2605.23904](https://arxiv.org/abs/2605.23904v1) | skillopt-rsi-toolkit | 分批反思成功与失败轨迹，合并局部修改提案并按余弦退火预算更新，导出训练集得分最高的采纳版本 |
+| TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | trace-rsi-toolkit | 策展者与执行者双角色协同：执行者解题，策展者从轨迹中提炼模块化技能库，按完整训练批次最高均分选版 |
+| OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | openskill-rsi-toolkit | 不使用在线训练评分接口，通过检索领域知识并构造独立虚拟测试来迭代修复技能，导出最后一个有效版本 |
 
 ## 3. 在 Web 界面启动实验
 
@@ -103,7 +103,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ### 第四步：挂载工具包并启动
 
-在聊天输入框中输入 `/` 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
+在聊天输入框中输入 / 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-slash-skill.webp" width="1636" height="1035" alt="在聊天输入框中输入斜杠呼出命令菜单并选择 skilladam-rsi-toolkit" />
 
@@ -133,7 +133,7 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ### 2. 产出进化 Agent
 
-当共享容器内的多轮训练循环结束后，主控 Agent 收集最后一次被采纳的 `SKILL.md` 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的进化 Agent。
+当共享容器内的多轮训练循环结束后，主控 Agent 收集最后一次被采纳的 SKILL.md 并锁定其写入权限，将其作为只读技能挂载到干净的初始状态上，生成冻结的进化 Agent。
 
 ### 3. 多轮隔离测试
 
@@ -178,17 +178,23 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 ### 1. 主控 Agent 的模型能力门槛
 
-在结构化 RSI 工具包的支持下，`DeepSeek-V4.1-Flash-1017` 这一级别的模型已经能够独立编排完整的自进化实验。一场全量 GDPEVO Essential 实验涉及六个子 Benchmark 的连续训练、状态快照打包、只读技能交接、180 次隔离容器并发测试以及两级统计指标聚合。过去这类实验需要工程师编写大量定制化调度脚本并全程值守；而在本次实验中，我们将实验协议封装为声明式的 RSI 工具包技能后，采用 `DeepSeek-V4.1-Flash-1017` 并开启 `max` 思考强度作为主控 Agent，它便能稳定理解实验规范并自主走完从环境准备到产出最终报告的全流程。这表明在清晰的 Harness 工具包支持下，达到 `DeepSeek-V4.1-Flash-1017` 同等或更高能力水平的模型，均已具备独立组织和完成复杂 RSI 实验的能力。
+一场全量 GDPEVO Essential 实验包含六个子 Benchmark 的连续训练、技能冻结交接、180 次隔离容器测试以及两级指标汇总，流程跨度很长。
+
+在本次实验中，我们将实验规则封装进 RSI 工具包后，采用开启 max 思考强度的 DeepSeek-V4.1-Flash-1017 作为主控 Agent，它就能稳定理解实验要求，自主走完从环境准备到产出最终报告的全部步骤。这说明在我们的 RSI 工具包支持下，达到 DeepSeek-V4.1-Flash-1017 同等或更高水平的模型，都已经具备独立组织完整 RSI 实验的能力。
 
 ### 2. Benchmark 渐进式加载
 
-通过“元数据内置、任务数据按需拉取”的渐进式加载机制，PenguinHarness 在承载重型 Benchmark 时依然保持了轻量化。企业级自进化 Benchmark 往往包含完整的业务后端服务、数据库文件、Docker 构建上下文与评分器脚本，仅任务仓库打包体积就超过百兆；如果将这些任务数据直接塞进 PenguinHarness 本体，会让整个系统变得十分笨重。为此，我们在架构上采用了类似 Skill 渐进式披露的设计：随 Project 内置的 `benchmarks/` 目录只存放极轻量的说明文件，包括 `benchmark_config.toml` 以及各题目的 `statement/README.md` 和 `rubric/README.md`，里面记录了外部 Benchmark 仓库的固定 Git commit、目录入口与运行规则。当实验真正发起时，主控 Agent 先读取本地轻量说明，再自己去外部仓库拉取对应版本的任务数据并拉起容器。这种将“实验规则契约”与“重型任务数据”分离的设计，既让 PenguinHarness 本体保持轻巧，又丝毫不影响全自动实验的完整性。
+企业级 Benchmark 包含完整的业务后端、数据库、Docker 环境与评分脚本，如果直接打包进 PenguinHarness，会让整个系统变得非常笨重。
+
+因此我们采用了类似渐进式加载的机制，将重型任务数据保留在独立的外部仓库中，而在 PenguinHarness 本地只内置轻量的说明文件，用来记录实验规则与数据位置。实验启动时，主控 Agent 先读取本地说明，再自行去外部仓库拉取对应数据并组织实验，这样既让 PenguinHarness 保持轻巧，又不影响实验功能的完整性。
 
 ### 3. 实验细节偏差与 Critic Agent
 
-复盘 `DeepSeek-V4.1-Flash-1017` 的实验记录时我们注意到，当遇到容器启动超时、镜像拉取冲突或文件目录权限受限这类有明确报错提示的问题时，主控 Agent 通常能自己定位原因并完成重试恢复。但对于那些程序没有报错、表面上顺利跑通的流程细节，主控 Agent 有时会出现自己意识不到的微小偏差：
+复盘 DeepSeek-V4.1-Flash-1017 的实验记录时我们注意到，遇到容器启动超时、镜像拉取冲突或目录权限受限这类有明确报错的问题时，主控 Agent 通常能自己定位原因并重跑恢复。但对于没有报错、表面上顺利跑通的流程细节，主控 Agent 有时会出现自己意识不到的偏差：
 
-- **直接复用前期试跑的结果**：在正式启动大批量测试前，主控 Agent 先抽了一道测试题试跑，用来确认环境和流程能否跑通。由于这次试跑顺利产出了有效分数，它在最后汇总成绩时直接把这次试跑结果当成第一轮正式测试的第 1 题成绩填进了统计表，没有严格区分“前期试跑”与“正式测试”。
-- **打包环境时遗留了多余的说明文件**：在为容器准备运行环境包时，默认目录里带有内置 Benchmark 的题目说明文档。主控 Agent 在部分轮次中没有先把这些无关说明文件清理掉就直接打进了容器，虽然容器内的 Agent 未必会去翻看，但从实验规范来看，运行环境应当只保留当前任务所需的文件。
+- **直接复用前期试跑的结果**：在正式启动大批量测试前，主控 Agent 先抽了一道测试题试跑以确认环境连通。由于试跑拿到了有效分数，它在最后汇总成绩时直接把这次试跑分数当成第一轮正式测试的第 1 题结果填进了表格，没有严格区分前期试跑与正式测试。
+- **打包环境时遗留了多余的说明文件**：在为容器准备运行环境包时，默认目录里带有内置 Benchmark 的题目说明文档。主控 Agent 在部分轮次中没有先把这些无关说明文件清理掉就直接打进了容器，而按实验规范，运行环境应当只保留当前任务所需的文件。
 
-这类细节偏差之所以不容易靠主控 Agent 自己完全规避，是因为它同时承担了“推进实验”和“检查结果”两件事——只要任务顺利跑完并拿到了分数，它就很容易认为这一步已经完全合格。这也启发了我们在构建优秀 RSI 基础设施时的下一步改进方向：**在主控 Agent 与目标 Agent 之外，引入一个独立的 Critic Agent 来监督整个实验**。Critic Agent 不参与具体的任务调度，专门负责在打包环境、交接 `SKILL.md` 和汇总成绩等关键节点对照实验要求做独立检查，及时提醒主控 Agent 修正这类细节偏差，从而显著提高整个自进化实验的置信度。
+这类偏差之所以难靠主控 Agent 自己完全规避，是因为它同时承担了推进实验和检查结果两件事——只要任务跑完并拿到了分数，它就很容易默认流程已经合规。
+
+这也引出了构建优秀 RSI 基础设施的一项关键改进：**在主控 Agent 与目标 Agent 之外，引入一个独立的 Critic Agent 来监督整个实验**。Critic Agent 不参与任务调度，专门在打包环境、交接 SKILL.md 和汇总成绩等节点做独立检查，及时提醒主控 Agent 纠正细节偏差，从而显著提高整个实验的置信度。

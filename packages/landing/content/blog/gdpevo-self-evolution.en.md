@@ -2,11 +2,11 @@
 title: "Conducting Self-Evolution Experiments on GDPEVO with Penguin Harness"
 date: 2026-11-04
 category: practice
-author: Leijun Zhou
+author: Leijun Zhou (Prism Shadow AI)
 excerpt: "Run and evaluate four agent self-evolution methods—SkillAdam, SkillOpt, TRACE, and OpenSkill—across the GDPEVO Essential benchmark series (six sub-benchmarks totaling 30 train tasks and 30 held-out test tasks) in PenguinHarness 0.2.19."
 ---
 
-This guide explains how to use PenguinHarness 0.2.19 to run agent self-evolution experiments on the [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) benchmark series. With the base model fixed to `DeepSeek-V4.1-Flash-1017` and thinking effort set to `max`, we systematically evaluate four self-evolution methods: [SkillAdam](https://arxiv.org/abs/2609.08944v1), [SkillOpt](https://arxiv.org/abs/2605.23904v1), [TRACE](https://arxiv.org/abs/2608.22793v2), and [OpenSkill](https://arxiv.org/abs/2606.06741v1). The sections below cover the structure and evaluation rules of the GDPEVO Essential benchmark series, the core self-evolution mechanism, the launch flow in the Web UI, the internal execution pipeline, and the empirical results.
+This guide explains how to use PenguinHarness 0.2.19 to run agent self-evolution experiments on the GDPEVO Essential benchmark series. With the base model fixed to DeepSeek-V4.1-Flash-1017 and thinking effort set to max, we systematically evaluate four self-evolution methods: SkillAdam, SkillOpt, TRACE, and OpenSkill. The sections below cover the structure and evaluation rules of the GDPEVO Essential benchmark series, the core self-evolution mechanism, the launch flow in the Web UI, the internal execution pipeline, and the empirical results.
 
 ## 1. Benchmark Structure and Rules
 
@@ -21,28 +21,28 @@ Derived from the [GDPevo Benchmark](https://arxiv.org/abs/2608.03764), GDPEVO Es
 | Court Clerk Operations | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 Train + 5 Test + Eval Environment | Verify case filings and organize court scheduling and archiving records |
 | Engineering Portfolio Analytics | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 Train + 5 Test + Eval Environment | Aggregate multi-project progress and resource metrics into portfolio analytics |
 
-Each sub-benchmark's environment embeds enterprise rules that are not stated directly in the task prompts, such as priority policies, risk thresholds, and exception-handling rules. During training, the Agent needs to interact with the business system, learn these rules from grading feedback, and consolidate them into `SKILL.md` to perform well on the test tasks.
+Each sub-benchmark's environment embeds enterprise rules that are not stated directly in the task prompts, such as priority policies, risk thresholds, and exception-handling rules. During training, the Agent needs to interact with the business system, learn these rules from grading feedback, and consolidate them into SKILL.md to perform well on the test tasks.
 
 In our experiments, every sub-benchmark follows three settings:
 
-- **Independent Training and Testing per Benchmark**: The six sub-benchmarks are strictly independent. Each Benchmark runs its own training session and exports a dedicated `SKILL.md` document without mixing training data or sharing learned skills across Benchmarks.
-- **Training Phase**: All 5 training tasks of a Benchmark run sequentially inside a single business container and one persistent Agent session under a 6-hour budget without resetting the workspace. The container serves a read-only business API on loopback and exposes an online judge endpoint `POST /api/judge` for diagnostic feedback. Whether to query this endpoint is determined by each self-evolution method: supervised methods use it to guide revisions, whereas unsupervised methods rely solely on self-constructed virtual tests.
-- **Testing Phase**: Once exported, the learned `SKILL.md` is immediately frozen and evaluated across 3 full repetitions of the 5 held-out test tasks in that Benchmark, with a 4-hour budget per task. Every single test question in every repetition launches in a brand-new isolated container and clean session with the online training judge disabled, and is scored after completion by the offline verifier.
+- **Independent Training and Testing per Benchmark**: The six sub-benchmarks are strictly independent. Each Benchmark runs its own training session and exports a dedicated SKILL.md document without mixing training data or sharing learned skills across Benchmarks.
+- **Training Phase**: All 5 training tasks of a Benchmark run sequentially inside a single business container and one persistent Agent session under a 6-hour budget without resetting the workspace. The container serves a read-only business API on loopback and exposes an online judge endpoint POST /api/judge for diagnostic feedback. Whether to query this endpoint is determined by each self-evolution method: supervised methods use it to guide revisions, whereas unsupervised methods rely solely on self-constructed virtual tests.
+- **Testing Phase**: Once exported, the learned SKILL.md is immediately frozen and evaluated across 3 full repetitions of the 5 held-out test tasks in that Benchmark, with a 4-hour budget per task. Every single test question in every repetition launches in a brand-new isolated container and clean session with the online training judge disabled, and is scored after completion by the offline verifier.
 
 ## 2. Self-Evolution Method: SkillAdam as an Example
 
-In this study, we reproduced and adapted four recent academic self-evolution methods—[SkillAdam](https://arxiv.org/abs/2609.08944v1), [SkillOpt](https://arxiv.org/abs/2605.23904v1), [TRACE](https://arxiv.org/abs/2608.22793v2), and [OpenSkill](https://arxiv.org/abs/2606.06741v1)—into built-in PenguinHarness plugins so they can be evaluated side by side under identical container isolation and grading rules.
+In this study, we reproduced and adapted four recent academic self-evolution methods—SkillAdam, SkillOpt, TRACE, and OpenSkill—into built-in PenguinHarness plugins so they can be evaluated side by side under identical container isolation and grading rules.
 
-We use our adaptation of [SkillAdam](https://arxiv.org/abs/2609.08944v1) to illustrate how in-container evolution works. During continuous training, the target Agent iteratively refines `SKILL.md` across the 5 training tasks. Allowing an LLM to freely rewrite the entire skill document after every round leads to two recurring failure modes in practice: without a persistent record of failed edits, the model repeatedly retries directions that were already disproven, and without step-size control, an aggressive edit that fixes one question often overwrites rules that were working on the other questions.
+We use our adaptation of SkillAdam to illustrate how in-container evolution works. During continuous training, the target Agent iteratively refines SKILL.md across the 5 training tasks. Allowing an LLM to freely rewrite the entire skill document after every round leads to two recurring failure modes in practice: without a persistent record of failed edits, the model repeatedly retries directions that were already disproven, and without step-size control, an aggressive edit that fixes one question often overwrites rules that were working on the other questions.
 
 To address both issues, SkillAdam adapts the Adam optimizer's "first-order momentum + second-order variance step-size scaling" into a four-step natural-language evolution loop inside the training container:
 
 <figure class="post-figure" data-widget="skilladam-loop"><ol class="fig-steps"><li>5-Task Rollout: Target Agent runs T1–T5 to measure scores and per-task deltas</li><li>Strict Mean Gate: compares candidate mean against prior best to accept or reject the revision</li><li>Adam Controller: updates the first-moment EIT Issue Ledger and second-moment edit quota</li><li>Bounded Skill Edit: modifies only the unlocked lines of SKILL.md to produce the updated version</li></ol><figcaption>SkillAdam's four-stage evolution loop.</figcaption></figure>
 
-- **Zero-Shot Attempt and Initial Distillation**: Training begins with a zero-shot pass over all 5 training tasks without any domain skill attached, distilling an initial `SKILL.md` from the execution trajectories and diagnostic feedback. In each subsequent round, the Agent evaluates the current or candidate skill across the training tasks to collect per-question scores, score deltas, and failure causes.
+- **Zero-Shot Attempt and Initial Distillation**: Training begins with a zero-shot pass over all 5 training tasks without any domain skill attached, distilling an initial SKILL.md from the execution trajectories and diagnostic feedback. In each subsequent round, the Agent evaluates the current or candidate skill across the training tasks to collect per-question scores, score deltas, and failure causes.
 - **Evolving Issue Tracker (EIT)**: Throughout training, the algorithm maintains a persistent ledger tracking observed error patterns, attempted fixes, and their measured outcomes. Even when a candidate edit is rejected for failing to improve the mean score, that failed attempt is recorded in the EIT so later iterations do not repeat the same ineffective modification.
 - **Variance-Adaptive Edit Budget**: After evaluating a candidate version on all 5 training tasks, the algorithm measures how much the score changes vary across questions. When an edit boosts some tasks while causing regressions on others, the high cross-task variance automatically shrinks the number of document blocks allowed to change in the next round, forcing the model toward localized adjustments.
-- **Strict Mean Gate**: A candidate `SKILL.md` is accepted to replace the active version only if its mean score across all 5 training tasks is strictly higher than the current version, otherwise it is rejected and rolled back. When iterations finish, the last accepted `SKILL.md` is exported as the final artifact.
+- **Strict Mean Gate**: A candidate SKILL.md is accepted to replace the active version only if its mean score across all 5 training tasks is strictly higher than the current version, otherwise it is rejected and rolled back. When iterations finish, the last accepted SKILL.md is exported as the final artifact.
 
 Specifically, in iteration <i>t</i>, let <i>s<sub>i</sub></i><sup>curr</sup> and <i>s<sub>i</sub></i><sup>cand</sup> denote the normalized scores on training task <i>i</i> before and after the candidate edit, with per-task score change Δ<sub><i>i</i></sub> = <i>s<sub>i</sub></i><sup>cand</sup> − <i>s<sub>i</sub></i><sup>curr</sup>. With mean change Δ̄ across the <i>n</i> = 5 training tasks, the sample variance of the score changes is:
 
@@ -64,16 +64,16 @@ The chart and table below show the actual in-container training score progressio
 | Coverage Review | 83.07 | 93.87 | 93.93 (Accepted) | 94.40 (Accepted) | 94.40 |
 | Court Clerk Operations | 69.54 | 79.67 | 79.74 (Accepted) | 85.42 (Accepted) | 85.42 |
 
-Across the Engineering Portfolio Analytics, Coverage Review, and Court Clerk Operations Benchmarks, the Agent starts from zero-shot scores of 49.24, 83.07, and 69.54, achieves a clear jump after distilling the initial `SKILL.md`, and further improves over two iterations to reach final training means of 100.00, 94.40, and 85.42.
+Across the Engineering Portfolio Analytics, Coverage Review, and Court Clerk Operations Benchmarks, the Agent starts from zero-shot scores of 49.24, 83.07, and 69.54, achieves a clear jump after distilling the initial SKILL.md, and further improves over two iterations to reach final training means of 100.00, 94.40, and 85.42.
 
 Alongside SkillAdam, we evaluated three additional representative self-evolution methods under the same protocol:
 
 | Method | Paper | Plugin ID | In-Container Learning and Selection Mechanism |
 | :--- | :--- | :--- | :--- |
-| SkillAdam | [arXiv:2609.08944](https://arxiv.org/abs/2609.08944v1) | `skilladam-rsi-toolkit` | Refines skills with an Evolving Issue Tracker and variance-adaptive edit budgets, exporting the last accepted version that strictly improves the 5-task training mean |
-| SkillOpt | [arXiv:2605.23904](https://arxiv.org/abs/2605.23904v1) | `skillopt-rsi-toolkit` | Reflects on trajectories in minibatches, merges localized edit proposals under a cosine-annealed budget, and exports the highest-scoring accepted version |
-| TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | `trace-rsi-toolkit` | Coordinates Actor and Curator roles to distill a modular skill bank from execution traces, selecting the checkpoint with the highest full-batch training mean |
-| OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | `openskill-rsi-toolkit` | Operates without the online training judge by researching domain rules and constructing independent virtual tests to iteratively repair the skill |
+| SkillAdam | [arXiv:2609.08944](https://arxiv.org/abs/2609.08944v1) | skilladam-rsi-toolkit | Refines skills with an Evolving Issue Tracker and variance-adaptive edit budgets, exporting the last accepted version that strictly improves the 5-task training mean |
+| SkillOpt | [arXiv:2605.23904](https://arxiv.org/abs/2605.23904v1) | skillopt-rsi-toolkit | Reflects on trajectories in minibatches, merges localized edit proposals under a cosine-annealed budget, and exports the highest-scoring accepted version |
+| TRACE | [arXiv:2608.22793](https://arxiv.org/abs/2608.22793v2) | trace-rsi-toolkit | Coordinates Actor and Curator roles to distill a modular skill bank from execution traces, selecting the checkpoint with the highest full-batch training mean |
+| OpenSkill | [arXiv:2606.06741](https://arxiv.org/abs/2606.06741v1) | openskill-rsi-toolkit | Operates without the online training judge by researching domain rules and constructing independent virtual tests to iteratively repair the skill |
 
 ## 3. Launching the Experiment
 
@@ -103,7 +103,7 @@ In the conversation view, select DeepSeek V4.1 Flash in the model picker below t
 
 ### Step 4: Attach Toolkit and Launch
 
-Type `/` in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
+Type / in the chat input to open the command menu and select skilladam-rsi-toolkit to attach it to the conversation, then specify the RSI toolkit name, target Benchmark, number of training iterations, number of test repetitions, model, thinking level, and Docker concurrency limit. Both the training iteration count and test repetition count can be customized in the prompt—for example, 2 training iterations and 3 test repetitions by default, or 5 to 6 test repetitions as needed.
 
 <img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-slash-skill.webp" width="1636" height="1035" alt="Typing a slash in the chat input to open the command menu and select skilladam-rsi-toolkit" />
 
@@ -133,7 +133,7 @@ After preparing the task checkout, the Controller Agent preserves a clean initia
 
 ### 2. Producing the Evolved Agent
 
-Once the multi-round training loop finishes, the Controller Agent exports the last accepted `SKILL.md`, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen Evolved Agent.
+Once the multi-round training loop finishes, the Controller Agent exports the last accepted SKILL.md, locks its write permissions, and mounts it read-only onto the clean base state to form the frozen Evolved Agent.
 
 ### 3. Multi-Run Isolated Testing
 
@@ -178,17 +178,23 @@ While building PenguinHarness as an RSI infrastructure and running these experim
 
 ### 1. Controller Model Threshold
 
-With structured RSI toolkits, models at the capability level of `DeepSeek-V4.1-Flash-1017` can already orchestrate full self-evolution experiments end to end. A complete GDPEVO Essential campaign spans continuous training across six sub-benchmarks, state archiving, read-only skill handoff, 180 isolated test container runs, and two-level statistical aggregation. Previously, running such a campaign required engineers to write custom orchestration scripts and monitor long-running jobs. Once we packaged the experimental protocol into declarative RSI toolkit skills, `DeepSeek-V4.1-Flash-1017` with `max` thinking effort was able to serve as the Controller Agent and autonomously carry out the entire workflow from environment preparation to final reporting. This shows that with well-structured Harness toolkits, models at or above the level of `DeepSeek-V4.1-Flash-1017` can reliably organize and complete complex RSI experiments.
+A full GDPEVO Essential campaign spans continuous training across six sub-benchmarks, skill freezing and handoff, 180 isolated test container runs, and two-level metric aggregation.
+
+Once we packaged the experimental rules into an RSI toolkit, DeepSeek-V4.1-Flash-1017 with max thinking effort was able to serve as the Controller Agent and autonomously complete the entire workflow from environment preparation to final reporting. This shows that with our RSI toolkit support, models at or above the level of DeepSeek-V4.1-Flash-1017 can reliably organize and complete end-to-end RSI experiments.
 
 ### 2. Progressive Benchmark Loading
 
-By keeping benchmark metadata built in and fetching task payloads on demand, PenguinHarness stays lightweight even when hosting heavy enterprise benchmarks. Enterprise self-evolution benchmarks carry substantial data—backend services, databases, Docker build contexts, and grading scripts totaling over 100 MB in the task repository alone. Bundling all of that raw payload directly inside PenguinHarness would make the framework bloated. Instead, PenguinHarness adopts a **progressive loading mechanism** analogous to how Skills are loaded on demand: the built-in `benchmarks/` directory inside a Project stores only lightweight metadata files (`benchmark_config.toml` and each case's `statement/README.md` and `rubric/README.md`) that point to the pinned Git commit, task paths, and launch rules in the external Benchmark repository. When an experiment starts, the Controller Agent reads the local manifest first and fetches the task data and container environments on demand, keeping PenguinHarness lightweight without sacrificing full automation.
+Enterprise benchmarks contain backend services, databases, Docker environments, and grading scripts; bundling all of that data directly inside PenguinHarness would make the system heavy and bloated.
+
+To solve this, we adopted a progressive loading mechanism: the heavy benchmark data stays in a separate repository, while PenguinHarness ships only lightweight package files that record the experimental rules and data locations. When an experiment starts, the Controller Agent reads those local files, fetches the required data on its own, and organizes the run—keeping PenguinHarness lightweight without sacrificing functionality.
 
 ### 3. Execution Drift and Critic Agent
 
-Reviewing the execution logs of `DeepSeek-V4.1-Flash-1017` shows that when a problem produces a clear error message—such as a container startup timeout, an image pull conflict, or restricted directory permissions—the Controller Agent can usually diagnose the issue and recover on its own. However, for procedural details that do not trigger an error and appear to succeed on the surface, the Controller Agent occasionally introduces subtle deviations without realizing it:
+Reviewing the execution logs of DeepSeek-V4.1-Flash-1017 shows that when a problem produces a clear error—such as a container startup timeout, an image pull conflict, or restricted directory permissions—the Controller Agent can usually find the cause and recover on its own. However, for procedural details that do not trigger an error, the Controller Agent occasionally introduces subtle deviations without realizing it:
 
-- **Reusing a pre-flight trial result in the formal table**: Before launching a full batch of test runs, the Controller Agent ran a single test question to check that the environment and pipeline were working. Because that trial run produced a valid score, the Controller Agent later filled that score directly into the first slot of Repetition 1 when compiling the final table, rather than keeping the pre-flight check separate from the formal test repetitions.
-- **Leaving extra documentation files in the runtime package**: When packaging the runtime environment for task containers, the default directory included documentation files for the built-in Benchmarks. In some runs, the Controller Agent packaged the directory as-is without removing those extra files first; even if the in-container Agent does not read them, a clean test environment should retain only the files needed for the current task.
+- **Reusing a pre-flight trial result in the formal table**: Before launching a full batch of test runs, the Controller Agent ran a single test question to verify connectivity. Because that trial run produced a valid score, the Controller Agent later filled that score directly into the first slot of Repetition 1 in the final table, without strictly separating the pre-flight check from the formal test repetitions.
+- **Leaving extra documentation files in the runtime package**: When preparing the runtime package for task containers, the default directory included documentation files for the built-in Benchmarks. In some runs, the Controller Agent packaged the directory without removing those extra files first, whereas a clean test environment should retain only the files needed for the current task.
 
-Such subtle deviations are hard for a single Controller Agent to avoid completely because it is acting as both the **executor** and the **reviewer**—as long as a command succeeds and returns a score, it naturally assumes the step is complete. This points to an important next step for building a reliable RSI platform and infrastructure: **introducing an independent Critic Agent to supervise the experiment**. Rather than scheduling tasks, the Critic Agent independently checks key milestones—such as environment packaging, `SKILL.md` handoff, and score aggregation—against the experimental protocol and prompts the Controller Agent to correct any subtle drift, substantially improving the confidence of automated self-evolution experiments.
+Such deviations are hard for the Controller Agent to avoid on its own because it acts as both executor and reviewer—as long as a task finishes and returns a score, it assumes the step is compliant.
+
+This points to a key improvement for building a reliable RSI platform and infrastructure: **introducing an independent Critic Agent alongside the Controller Agent and Target Agent**. Rather than scheduling tasks, the Critic Agent independently checks key steps—such as environment packaging, SKILL.md handoff, and score aggregation—and reminds the Controller Agent to fix subtle drift, substantially improving the confidence of the entire experiment.
