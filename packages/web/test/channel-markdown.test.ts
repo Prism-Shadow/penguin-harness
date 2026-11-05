@@ -3,7 +3,8 @@
  * renders — headings, lists, tables, fenced code — while the `@mentions` around it stay chips
  * that resolve an employee's name and mark the ones addressing the reader; a mention inside
  * code stays literal; and a single typed newline stays a line break rather than folding into a
- * space, which is what the composer's Shift+Enter promises.
+ * space, which is what the composer's Shift+Enter promises. A file the message cites reads as
+ * a capsule with its name or label, the mentions beside it still chips.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -25,7 +26,7 @@ const render = (text: string) =>
   renderToStaticMarkup(
     createElement(ChannelReaderProvider, {
       reader,
-      children: createElement(ChannelMessageBody, { text }),
+      children: createElement(ChannelMessageBody, { text, projectId: "default_project" }),
     }),
   );
 
@@ -97,5 +98,22 @@ describe("typed line breaks", () => {
   it("still separates paragraphs on a blank line", () => {
     const html = render("one\n\ntwo");
     expect(html).toBe("<p>one</p>\n<p>two</p>");
+  });
+});
+
+describe("cited files", () => {
+  const DIR = "<app_data_dir>/organizations/co_open_source_team/workspace/growth";
+
+  it("reads a cited file by its label, with the mention beside it still a chip", () => {
+    const html = render(`@ceo [Weekly submissions](${DIR}/weekly-submissions.md) is ready`);
+    expect(html).toContain(">Weekly submissions</span></button>");
+    expect(html).toContain("Ada CEO");
+    expect(html).not.toContain("](");
+  });
+
+  it("reads a bare path by its file name, across a typed line break", () => {
+    const html = render(`Details:\n${DIR}/weekly-submissions.md`);
+    expect(html).toContain("<br/>");
+    expect(html).toContain(">weekly-submissions.md</span></button>");
   });
 });

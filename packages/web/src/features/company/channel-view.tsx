@@ -71,6 +71,9 @@ import { ChannelHeader } from "./channel-header";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
 import { noticeText } from "./channel-notices";
 import { JoinChannelConfirm } from "./channel-dialogs";
+import { CitedFilePreview } from "./cited-file-preview";
+import type { CitedFile } from "./cited-file-preview";
+import { CitedFileOpenerProvider } from "./path-capsule";
 import { DEFAULT_CHANNEL_ID, channelLabel } from "./channel-list";
 import {
   channelMentionCandidates,
@@ -123,6 +126,14 @@ export function ChannelView() {
     ReadonlyArray<{ agentId: string; name: string; title: string }>
   >([]);
   const [members, setMembers] = useState<string[]>([]);
+  /** The cited file previewed beside the stream, for the channel it was opened in. */
+  const [cited, setCited] = useState<{ channel: string; file: CitedFile } | null>(null);
+  const citedFile =
+    cited !== null && cited.channel === orgKey(projectId, orgId) + channelId ? cited.file : null;
+  const openCited = useCallback(
+    (file: CitedFile) => setCited({ channel: orgKey(projectId, orgId) + channelId, file }),
+    [projectId, orgId, channelId],
+  );
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [joining, setJoining] = useState(false);
   const [confirmJoin, setConfirmJoin] = useState(false);
@@ -593,7 +604,7 @@ export function ChannelView() {
               timeLabel={S.company.channels.sentAt(at)}
               footer={renderRefs(m)}
             >
-              <ChannelMessageBody text={m.text} />
+              <ChannelMessageBody text={m.text} projectId={projectId} />
             </ChannelBubble>
           );
         })}
@@ -605,139 +616,159 @@ export function ChannelView() {
 
   return (
     <ChannelReaderProvider reader={reader}>
-      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
-        <ChannelHeader
-          projectId={projectId}
-          orgId={orgId}
-          me={myPrincipal}
-          detail={detail}
-          employees={employees}
-          projectMembers={members}
-          onChanged={() => {
-            void loadDetail();
-            void company.reloadChannels();
-          }}
-        />
-        {detailError !== null && detail === null && (
-          <NoticeStrip
-            banner
-            tone="danger"
-            as="p"
-            role="alert"
-            className="border-b px-4 py-1.5 text-xs"
-          >
-            {S.company.channels.channelLoadFailed} · {detailError}
-          </NoticeStrip>
-        )}
-        <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
-          <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
-            <div
-              ref={listRef}
-              role="log"
-              aria-label={S.company.channels.streamLabel(label)}
-              onScroll={onScroll}
-              onWheel={(e) => follow.wheel(e.deltaY)}
-              onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
-              onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
-              onTouchEnd={() => follow.touchEnd()}
-              className="min-h-0 flex-1 overflow-y-auto pr-1"
+      <CitedFileOpenerProvider open={openCited}>
+        <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+          <ChannelHeader
+            projectId={projectId}
+            orgId={orgId}
+            me={myPrincipal}
+            detail={detail}
+            employees={employees}
+            projectMembers={members}
+            onChanged={() => {
+              void loadDetail();
+              void company.reloadChannels();
+            }}
+          />
+          {detailError !== null && detail === null && (
+            <NoticeStrip
+              banner
+              tone="danger"
+              as="p"
+              role="alert"
+              className="border-b px-4 py-1.5 text-xs"
             >
-              <div>
-                {days === null && error !== null ? (
-                  <EmptyState
-                    title={error}
-                    action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
-                  />
-                ) : days === null ? (
-                  <StreamSkeleton />
-                ) : (
-                  <>
-                    {earlier !== null ? (
-                      <div className="flex justify-center py-2">
-                        <Button
-                          size="sm"
-                          disabled={loadingEarlier}
-                          onClick={() => void loadEarlier()}
-                        >
-                          {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
-                        </Button>
-                      </div>
-                    ) : (
-                      messageCount(days) > 0 && (
-                        <p className="py-2 text-center text-xs text-fg-subtle">
-                          {S.company.channels.noEarlier}
-                        </p>
-                      )
-                    )}
-                    {messageCount(days) === 0 ? (
+              {S.company.channels.channelLoadFailed} · {detailError}
+            </NoticeStrip>
+          )}
+          <div className="relative flex min-h-0 flex-1">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
+              <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+                <div
+                  ref={listRef}
+                  role="log"
+                  aria-label={S.company.channels.streamLabel(label)}
+                  onScroll={onScroll}
+                  onWheel={(e) => follow.wheel(e.deltaY)}
+                  onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
+                  onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
+                  onTouchEnd={() => follow.touchEnd()}
+                  className="min-h-0 flex-1 overflow-y-auto pr-1"
+                >
+                  <div>
+                    {days === null && error !== null ? (
                       <EmptyState
-                        title={S.company.channels.empty}
-                        description={S.company.channels.emptyHint}
+                        title={error}
+                        action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
                       />
+                    ) : days === null ? (
+                      <StreamSkeleton />
                     ) : (
-                      stream.map(renderItem)
+                      <>
+                        {earlier !== null ? (
+                          <div className="flex justify-center py-2">
+                            <Button
+                              size="sm"
+                              disabled={loadingEarlier}
+                              onClick={() => void loadEarlier()}
+                            >
+                              {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
+                            </Button>
+                          </div>
+                        ) : (
+                          messageCount(days) > 0 && (
+                            <p className="py-2 text-center text-xs text-fg-subtle">
+                              {S.company.channels.noEarlier}
+                            </p>
+                          )
+                        )}
+                        {messageCount(days) === 0 ? (
+                          <EmptyState
+                            title={S.company.channels.empty}
+                            description={S.company.channels.emptyHint}
+                          />
+                        ) : (
+                          stream.map(renderItem)
+                        )}
+                      </>
                     )}
-                  </>
+                  </div>
+                </div>
+                {showJump && (
+                  <button
+                    type="button"
+                    aria-label={S.chat.jumpToLatest}
+                    onClick={jumpToLatest}
+                    className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                  >
+                    {pendingNew > 0
+                      ? S.company.channels.newMessages(pendingNew)
+                      : S.chat.jumpToLatest}
+                    <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
+                  </button>
                 )}
               </div>
+              <div className="mx-auto w-full max-w-5xl">
+                {canPost ? (
+                  <ChannelComposer
+                    // Remounted per draft: the box starts from the text this channel was left with.
+                    key={draft.key ?? channelId}
+                    candidates={candidates}
+                    names={names}
+                    initialText={draft.initial}
+                    onTextChange={draft.onTextChange}
+                    onSend={send}
+                  />
+                ) : detail !== null && detail.archived ? (
+                  <NoticeStrip
+                    tone="neutral"
+                    as="p"
+                    className="mt-3 rounded-md border px-3 py-2 text-xs"
+                    role="status"
+                  >
+                    {S.company.channels.archivedNotice}
+                  </NoticeStrip>
+                ) : detail !== null ? (
+                  <NoticeStrip
+                    tone="attention"
+                    className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs"
+                  >
+                    <span>{S.company.channels.notMemberNotice}</span>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={joining}
+                      onClick={() => setConfirmJoin(true)}
+                    >
+                      {joining ? S.company.channels.joining : S.company.channels.join}
+                    </Button>
+                  </NoticeStrip>
+                ) : null}
+              </div>
             </div>
-            {showJump && (
-              <button
-                type="button"
-                aria-label={S.chat.jumpToLatest}
-                onClick={jumpToLatest}
-                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+            {citedFile !== null && (
+              // Beside the stream from md up; over it on a phone, where there is no room beside.
+              <aside
+                aria-label={S.company.citedFile.panel}
+                className="absolute inset-0 z-20 bg-white dark:bg-gray-950 md:static md:w-[min(36rem,45%)] md:shrink-0 md:border-l md:border-line"
               >
-                {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
-                <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
-              </button>
+                <CitedFilePreview
+                  projectId={projectId}
+                  orgId={orgId}
+                  file={citedFile}
+                  onClose={() => setCited(null)}
+                />
+              </aside>
             )}
           </div>
-          <div className="mx-auto w-full max-w-5xl">
-            {canPost ? (
-              <ChannelComposer
-                // Remounted per draft: the box starts from the text this channel was left with.
-                key={draft.key ?? channelId}
-                candidates={candidates}
-                names={names}
-                initialText={draft.initial}
-                onTextChange={draft.onTextChange}
-                onSend={send}
-              />
-            ) : detail !== null && detail.archived ? (
-              <NoticeStrip
-                tone="neutral"
-                as="p"
-                className="mt-3 rounded-md border px-3 py-2 text-xs"
-                role="status"
-              >
-                {S.company.channels.archivedNotice}
-              </NoticeStrip>
-            ) : detail !== null ? (
-              <NoticeStrip
-                tone="attention"
-                className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs"
-              >
-                <span>{S.company.channels.notMemberNotice}</span>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={joining}
-                  onClick={() => setConfirmJoin(true)}
-                >
-                  {joining ? S.company.channels.joining : S.company.channels.join}
-                </Button>
-              </NoticeStrip>
-            ) : null}
-          </div>
+          <JoinChannelConfirm
+            open={confirmJoin}
+            busy={joining}
+            onClose={() => setConfirmJoin(false)}
+            onConfirm={() => void join()}
+          />
         </div>
-        <JoinChannelConfirm
-          open={confirmJoin}
-          busy={joining}
-          onClose={() => setConfirmJoin(false)}
-          onConfirm={() => void join()}
-        />
-      </div>
+      </CitedFileOpenerProvider>
     </ChannelReaderProvider>
   );
 }

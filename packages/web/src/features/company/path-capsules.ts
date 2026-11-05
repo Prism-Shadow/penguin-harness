@@ -33,6 +33,11 @@
  * - **In code.** An inline code span that holds one path and nothing else is one path, taken
  *   verbatim — the backticks already say where it ends, so any non-space character may appear
  *   in it. A code span holding a command, and every fenced block, stays code.
+ * - **With a label.** An employee may cite a file as `[Weekly submissions](<app_data_dir>/…/x.md)`.
+ *   CommonMark reads no link there (a destination that opens with `<` ends at the first `>`), so
+ *   the whole citation reaches the text as written; it is one path whose capsule reads the label.
+ *   The destination follows the code rule below, up to the closing parenthesis. A link the parser
+ *   did read (`[label](/…/<projectId>/organizations/…)`) is the Markdown pass's to label.
  * - **Folder or file.** A trailing `/` is a folder; a last segment with an extension
  *   (`report.md`, `run.v2.json`) is a file; anything else is a folder, since employees name
  *   directories bare far more often than files.
@@ -43,7 +48,10 @@ export interface PathScope {
   projectId: string;
 }
 
-export type PathPiece = { kind: "text"; text: string } | { kind: "path"; path: string };
+export type PathPiece =
+  | { kind: "text"; text: string }
+  /** `label`, when the text named the path: what its capsule reads instead of the last segment. */
+  | { kind: "path"; path: string; label?: string };
 
 const PLACEHOLDER_ROOT = "<app_data_dir>";
 
@@ -61,6 +69,9 @@ const PROSE_PATH = new RegExp(
   String.raw`(?:(?<![A-Za-z0-9_])<app_data_dir>|(?<![A-Za-z0-9._~+=@%/\\:-])(?:~|[A-Za-z]:)?)(?:[/\\]${PROSE_SEGMENT})+[/\\]?`,
   "g",
 );
+
+/** `[label](<app_data_dir>/…)`, which the Markdown parser leaves as text. */
+const CITATION = /\[([^[\]\n]+)\]\((<app_data_dir>[/\\][^()\s]*)\)/g;
 
 /** The whole of an inline code span, as one path: the same roots, any non-space segment. */
 const CODE_PATH = /^(?:<app_data_dir>|~|[A-Za-z]:)?(?:[/\\][^\s/\\]+)+[/\\]?$/;
@@ -94,23 +105,35 @@ function hasSegment(path: string): boolean {
 /** Splits prose into text and path pieces, in order. Adjacent text is merged; empty text is never emitted. */
 export function splitPaths(text: string, scope: PathScope): PathPiece[] {
   const out: PathPiece[] = [];
-  let last = 0;
   const pushText = (value: string) => {
     if (value === "") return;
     const prev = out[out.length - 1];
     if (prev?.kind === "text") prev.text += value;
     else out.push({ kind: "text", text: value });
   };
-  for (const m of text.matchAll(PROSE_PATH)) {
-    const path = trimTrailing(m[0]);
-    if (!rooted(path, scope) || !hasSegment(path)) continue;
-    if (RUNS_ON.test(text.slice(m.index + m[0].length))) continue;
-    if (/^[/\\]/.test(path) && RUNS_IN.test(text.slice(0, m.index))) continue;
-    pushText(text.slice(last, m.index));
-    out.push({ kind: "path", path });
-    last = m.index + path.length;
+  const pushProse = (prose: string) => {
+    let last = 0;
+    for (const m of prose.matchAll(PROSE_PATH)) {
+      const path = trimTrailing(m[0]);
+      if (!rooted(path, scope) || !hasSegment(path)) continue;
+      if (RUNS_ON.test(prose.slice(m.index + m[0].length))) continue;
+      if (/^[/\\]/.test(path) && RUNS_IN.test(prose.slice(0, m.index))) continue;
+      pushText(prose.slice(last, m.index));
+      out.push({ kind: "path", path });
+      last = m.index + path.length;
+    }
+    pushText(prose.slice(last));
+  };
+  let last = 0;
+  for (const m of text.matchAll(CITATION)) {
+    const path = codePath(m[2]!, scope);
+    if (path === null) continue;
+    pushProse(text.slice(last, m.index));
+    const label = m[1]!.trim();
+    out.push(label === "" ? { kind: "path", path } : { kind: "path", path, label });
+    last = m.index + m[0].length;
   }
-  pushText(text.slice(last));
+  pushProse(text.slice(last));
   return out;
 }
 
@@ -162,6 +185,6 @@ export function spellAsWritten(pieces: PathPiece[], source: string): PathPiece[]
     const m = spelling.exec(source);
     if (m === null) return piece;
     from = m.index + m[0].length;
-    return { kind: "path", path: m[0] };
+    return { ...piece, path: m[0] };
   });
 }

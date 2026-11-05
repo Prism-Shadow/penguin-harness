@@ -167,6 +167,31 @@ function MdLink({
 }
 
 /**
+ * What a surface adds to every `Md` below it: remark passes appended after the shared stage (and
+ * before an `Md`'s own `extraPlugins`), and element overrides merged under its own `components`.
+ * It is how a surface whose Markdown is drawn deep inside a package component (a conversation's
+ * replies, through `AssistantText` and `StreamText`) reaches that Markdown without a prop
+ * threaded through every layer. Pass one value that keeps its identity, as with the link resolver.
+ */
+export interface MdExtensions {
+  plugins: NonNullable<Options["remarkPlugins"]>;
+  components: Components;
+}
+
+const MdExtensionsContext = createContext<MdExtensions | null>(null);
+
+/** Hands every `Md` below `extensions`; `null` restores the shared pipeline alone. */
+export function MdExtensionsProvider({
+  extensions,
+  children,
+}: {
+  extensions: MdExtensions | null;
+  children?: ReactNode;
+}): ReactElement {
+  return <MdExtensionsContext.Provider value={extensions}>{children}</MdExtensionsContext.Provider>;
+}
+
+/**
  * The two `components` maps, built once at module scope instead of inline per render.
  * react-markdown uses `components.pre` as the element **type**, so a fresh arrow each render is
  * a new type on every commit: React unmounts and remounts every code block, dropping the user's
@@ -237,14 +262,18 @@ export const Md = memo(function Md({
   components,
   arrivals,
 }: MdProps) {
+  const extensions = useContext(MdExtensionsContext);
   const base = streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS;
+  const plugins = [...(extensions?.plugins ?? []), ...(extraPlugins ?? [])];
   return (
     <ReactMarkdown
-      remarkPlugins={
-        extraPlugins === undefined ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...extraPlugins]
-      }
+      remarkPlugins={plugins.length === 0 ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...plugins]}
       rehypePlugins={withArrivals(streaming ? STREAMING_REHYPE_PLUGINS : REHYPE_PLUGINS, arrivals)}
-      components={components === undefined ? base : { ...base, ...components }}
+      components={
+        extensions === null && components === undefined
+          ? base
+          : { ...base, ...extensions?.components, ...components }
+      }
     >
       {text}
     </ReactMarkdown>

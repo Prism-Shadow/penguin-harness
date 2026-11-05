@@ -5879,6 +5879,20 @@ Benchmark：
     pathCapsule: {
       hint: (path: string): string => `${path}\n点击复制完整路径`,
       copy: (path: string): string => `复制路径 ${path}`,
+      openHint: (path: string): string => `${path}\n点击预览`,
+      open: (path: string): string => `预览 ${path}`,
+    },
+    /** The preview a cited file opens in, beside a channel or in a conversation's dock. */
+    citedFile: {
+      panel: "文件预览",
+      empty: "点击消息里引用的文件，在这里预览。",
+      copyPath: "复制完整路径",
+      download: "下载",
+      close: "关闭预览",
+      refused: "这个文件不在组织的手册或工作区里，不能在这里打开。",
+      notFound: "文件不存在，可能已被移动或删除。",
+      unsupported: "这种文件不能预览，可以下载查看。",
+      failed: (detail: string): string => `文件没有打开：${detail}`,
     },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
