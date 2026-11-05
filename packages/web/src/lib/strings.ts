@@ -1130,6 +1130,11 @@ export const zh = {
     hint: (toggle: string | null): string =>
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+    /** The desktop shell's native actions, offered here because its menu bar stays hidden. */
+    installCli: "安装 penguin 命令…",
+    checkUpdates: "检查桌面版更新…",
+    checkingUpdates: "正在检查更新…",
+    projectOnGitHub: "在 GitHub 上查看项目",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */
@@ -1166,7 +1171,7 @@ export const zh = {
     current: "当前",
     restore: "恢复",
     restoreTitle: "恢复版本",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
@@ -1182,11 +1187,25 @@ export const zh = {
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
-    removeConfirm: "删除这个工作台及其全部已记录版本？",
+    removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    fileCount: (n: number) => `${n} 个文件`,
+    importAction: "导入 zip",
+    importTitle: "导入工作台",
+    importUploadDesc:
+      "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "工作台已导入",
+    importOverwriteTitle: "覆盖已有工作台",
+    importOverwriteBody: (name: string): string =>
+      `工作台「${name}」已存在，覆盖将替换其源码；数据（state.json）保留。加载成功过的版本仍可从历史恢复，从未加载成功的本地改动会丢失。确认继续？`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
+    importOverwriteAction: "覆盖导入",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "打包导出",
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -3126,7 +3145,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
+      `PenguinHarness 插件是一个 npm 包：package.json（npm 字段：name、version、description），\`src/index.ts\`（其装饰器声明插件携带的一切：卡片、\`skills/<name>/SKILL.md\`、MCP 服务器），以及构建时据此写出的 \`ifaces.json\`——服务端读取的正是它。无论来源是什么，安装前先读完它的 package.json、src/index.ts 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中（先构建：\`npm install && npm run build\`）——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成模块的 \`mcpServers\` 条目带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
     importUploadDesc: "package.json 位于 zip 根目录或唯一顶层目录，不含 node_modules。",
     importUploadAction: "选择 zip 文件",
     importExamples: [
@@ -6546,6 +6565,7 @@ Benchmark：
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
+      workbench_too_large: "该工作台的源码过大，超出了导出限制。",
       benchmark_busy:
         "这个 Benchmark 正在评估：它的 .jobs/ 里还有没跑完的运行，现在覆盖，进行中的评估会接着写进新导入的副本。请等评估结束后再覆盖。",
       file_not_found: "该文件已不存在。",
