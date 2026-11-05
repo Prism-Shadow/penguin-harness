@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `plugins`, `server`
+- **PR:** [#1486](https://github.com/Prism-Shadow/penguin-harness/pull/1486)
 - **Issue:** [#1440](https://github.com/Prism-Shadow/penguin-harness/issues/1440)
 
 [English](2026-11-05-cited-file-labels.md)
