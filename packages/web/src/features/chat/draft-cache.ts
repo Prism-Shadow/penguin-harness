@@ -207,8 +207,10 @@ export function clearDraftModelRef(
  * full seeded set: typed text and staged skills are user content; modelRef is the
  * "switch-becomes-default" carry-over released only by clearDraftModelRef when the
  * default MODEL itself changes (the model is not part of the `[default_chat]` block);
- * the handoff/switch chips are explicit user staging, never default-derived. A draft
- * with none of the three fields is a no-op, never an errant write.
+ * the handoff/switch chips are explicit user staging, never default-derived. The Workspace's
+ * machine goes with its path: the default Workspace is a path on this server, and a machine
+ * left behind would create the next Session over there. A draft with none of these fields is a
+ * no-op, never an errant write.
  */
 export function clearDraftChatDefaults(
   userId: string,
@@ -220,11 +222,18 @@ export function clearDraftChatDefaults(
   if (
     draft.agentId !== undefined ||
     draft.workspace !== undefined ||
+    draft.machineId !== undefined ||
     draft.approvalMode !== undefined
   ) {
     saveDraft(
       key,
-      { ...draft, agentId: undefined, workspace: undefined, approvalMode: undefined },
+      {
+        ...draft,
+        agentId: undefined,
+        workspace: undefined,
+        machineId: undefined,
+        approvalMode: undefined,
+      },
       storage,
     );
   }

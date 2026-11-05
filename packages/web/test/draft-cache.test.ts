@@ -260,6 +260,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
         text: "typed but unsent",
         agentId: "old_default_agent",
         workspace: "/srv/old-default",
+        machineId: "M7kQ2vT9cRb2LmN0",
         approvalMode: "read-only",
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
         handoffAgentId: "agent_helper",
@@ -278,7 +279,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     });
   });
 
-  it('clearDraftChatDefaults strips any subset of the three fields (a cached "" workspace counts) and is otherwise a no-op', () => {
+  it('clearDraftChatDefaults strips any subset of the seeded fields (a cached "" workspace counts) and is otherwise a no-op', () => {
     const s = memoryStorage();
     // A single seeded field is enough to rewrite; "" workspace is an explicit "auto temp"
     // pin and must be stripped like any other value (undefined-check, not truthiness).
@@ -289,6 +290,11 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     clearDraftChatDefaults("user-a1", "project-a", s);
     clearDraftChatDefaults("user-b2", "project-a", s);
     expect(s.map.has(draftKey("user-b2", "project-a"))).toBe(false);
+    // A machine is the other half of the Workspace: it goes with the path, and on its own (a
+    // draft an earlier version stripped of its path alone) it is stripped too.
+    saveDraft(draftKey("user-a1", "project-a"), { text: "t", machineId: "M7kQ2vT9cRb2LmN0" }, s);
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({ text: "t" });
     // Scoped by user × Project: another user's pins survive.
     saveDraft(draftKey("user-b2", "project-a"), { agentId: "default_agent" }, s);
     clearDraftChatDefaults("user-a1", "project-a", s);
