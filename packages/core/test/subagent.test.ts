@@ -1,6 +1,8 @@
 /**
  * Behavior tests for run_subagent / input_subagent: foreground delegation, backgrounding,
  * polling, resuming with an appended Prompt, the approval queue, and lifecycle finalization.
+ * Disposing waits for cancellation cleanup, including a child still in its foreground window;
+ * repeated disposal waits for the same cleanup and does not release the child twice.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { Environment } from "../src/environment/index.js";
@@ -606,6 +608,55 @@ describe("run_subagent backgrounding + input_subagent", () => {
     await until(() => sawAbort);
     expect(decision).toBe("deny");
   });
+
+  it.each([false, true])(
+    "disposal waits for cancellation cleanup (registered=%s), including repeated disposal",
+    async (registered) => {
+      let finishCleanup!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        finishCleanup = resolve;
+      });
+      let onInterrupt!: () => void;
+      const interrupted = new Promise<void>((resolve) => {
+        onInterrupt = resolve;
+      });
+      let released = 0;
+      const session = new ManagedSubagentSession({
+        sessionId: HOP,
+        async *run({ signal }) {
+          yield withOrigin(partialText("delta", "working"), HOP);
+          await aborted(signal);
+          onInterrupt();
+          await cleanup;
+          return null;
+        },
+        dispose() {
+          released += 1;
+        },
+      });
+      const { manager } = makeServices();
+      manager.track(session);
+      session.startRun([userText("work")]);
+      if (registered) manager.register(session);
+      let settled = false;
+      const disposal = Promise.resolve(manager.dispose()).then(() => {
+        settled = true;
+      });
+      const repeated = manager.dispose();
+      try {
+        expect(session.disposed).toBe(true);
+        await interrupted;
+        expect(settled).toBe(false);
+        expect(released).toBe(0);
+      } finally {
+        session.kill();
+        finishCleanup();
+        await Promise.all([disposal, repeated]);
+      }
+      expect(released).toBe(1);
+      expect(session.running).toBe(false);
+    },
+  );
 
   it("delivers output arriving while the consumer is suspended without waiting out the window", async () => {
     // Wake-race regression: when output arrives while suspended at `yield`, its wakeup happens
