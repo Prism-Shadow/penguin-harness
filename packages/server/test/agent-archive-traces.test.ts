@@ -54,6 +54,10 @@ const CHILD = "session-2026-10-10-09-05-00-0000ccc1";
 const BIG = "session-2026-10-12-09-00-00-0000bbb1";
 const ELSEWHERE = "session-2026-10-10-09-06-00-0000ccc2";
 const VAULT_VALUE = "vault-value-0123456789";
+const QUOTED_SECRET = 'pa"ss\\word-123';
+const BUILD_TOKEN = "aB3dE5fG7hJ9kL1mN3pQ";
+const LONG_TITLED = "session-2026-09-20-09-00-00-0000aaa9";
+const LONG_TITLE = `${"T".repeat(196)} #12`;
 
 const rec = (type: AmspRecord["type"], payload: unknown): AmspRecord =>
   ({ timestamp: "2026-10-01T09:00:00.000Z", type, payload }) as AmspRecord;
@@ -132,6 +136,14 @@ describe("Agent archive Traces", () => {
           text: `printed ${VAULT_VALUE} and short`,
         }),
         rec("model_msg", { type: "text", role: "assistant", text: `again ${VAULT_VALUE}` }),
+        rec("model_msg", {
+          type: "text",
+          role: "assistant",
+          text: `on localhost.example, build ${BUILD_TOKEN}, code 31415926`,
+        }),
+        // Alone on its line: the line holds the value only in its JSON-escaped form.
+        rec("model_msg", { type: "text", role: "assistant", text: `pass ${QUOTED_SECRET}` }),
+        rec("event_msg", { type: "usage_note", total: 9123456789012 }),
       ]),
     );
     await write("2026-10-10", CHILD, 1, trace(CHILD, "subagent", "child work"));
@@ -154,6 +166,11 @@ describe("Agent archive Traces", () => {
           entries: [
             { key: "API_TOKEN", value: VAULT_VALUE },
             { key: "PIN", value: "short" },
+            { key: "SECRET_QUOTE", value: QUOTED_SECRET },
+            { key: "BUILD_REF", value: BUILD_TOKEN },
+            { key: "ACCOUNT_ID", value: "123456789012" },
+            { key: "PIN_KEY", value: "31415926" },
+            { key: "DB_HOST", value: "localhost.example" },
           ],
         })
       ).status,
@@ -181,6 +198,8 @@ describe("Agent archive Traces", () => {
     row(S3, "Third", "2026-10-10T09:00:00.000Z", "2026-10-15T10:00:00.000Z");
     row(CHILD, "Child", "2026-10-10T09:05:00.000Z", "2026-10-10T09:05:00.000Z");
     row(BIG, "Big", "2026-10-12T09:00:00.000Z", "2026-10-12T10:00:00.000Z");
+    await write("2026-09-20", LONG_TITLED, 1, trace(LONG_TITLED, "user", "ticket work"));
+    row(LONG_TITLED, LONG_TITLE, "2026-09-20T09:00:00.000Z", "2026-09-20T10:00:00.000Z");
     a.t.deps.sessionsRepo.setListing([S2], "archived", "2026-10-21T00:00:00.000Z");
     a.t.deps.sessionsRepo.setListing([S3], "kept", "2026-10-16T00:00:00.000Z");
     a.t.deps.sessionsRepo.updateThinkingLevel(S3, "high");
@@ -367,15 +386,40 @@ describe("Agent archive Traces", () => {
     expect(names.some((n) => n.includes(ELSEWHERE))).toBe(false);
   });
 
-  it("the Agent's vault values in a Trace travel replaced and counted; a short value stays", async () => {
+  it("the Agent's secret vault values in a Trace travel replaced and counted, inside strings only, and ordinary values stay", async () => {
     const entries = entriesOf(await exported("?traces=last:2"));
 
-    const text = strFromU8(entries[`traces/2026-10-10/${S3}_001.jsonl`]!);
-    expect(text).not.toContain(VAULT_VALUE);
-    expect(text.match(/\[vault:API_TOKEN\]/g)).toHaveLength(2);
-    expect(text).toContain("and short");
+    const lines = strFromU8(entries[`traces/2026-10-10/${S3}_001.jsonl`]!).trimEnd().split("\n");
+    // Every line is still the record it was.
+    const records = lines.map((line) => JSON.parse(line) as { payload: Record<string, unknown> });
+    const texts = records.map((r) => r.payload.text).filter((t) => typeof t === "string");
+    const all = texts.join("\n");
+    expect(all).not.toContain(VAULT_VALUE);
+    expect(all.match(/\[vault:API_TOKEN\]/g)).toHaveLength(2);
+    // A credential-named value with a quote and a backslash, and a token-shaped one, go too.
+    expect(all).not.toContain(QUOTED_SECRET);
+    expect(all).toContain("[vault:SECRET_QUOTE]");
+    expect(all).toContain("[vault:BUILD_REF]");
+    // A short value, an ordinary setting and digits stay as they were.
+    expect(all).toContain("and short");
+    expect(all).toContain("localhost.example");
+    expect(all).toContain("code 31415926");
+    expect(records.find((r) => r.payload.type === "usage_note")?.payload.total).toBe(9123456789012);
     const manifest = JSON.parse(strFromU8(entries["manifest.json"]!)) as { redacted: string[] };
-    expect(manifest.redacted).toContain("traces:vault-values:2");
+    expect(manifest.redacted).toContain("traces:vault-values:4");
+  });
+
+  it("a Session whose title is as long as a ticket's makes the round trip", async () => {
+    const zip = await exported("?traces=2026-09-20..2026-09-20");
+
+    const res = await b.owner.upload(
+      `/api/projects/${b.projectId}/agents/import?agentId=long_titles`,
+      zip,
+    );
+
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(((await res.json()) as AgentArchiveImportResponse).skippedTraces).toEqual([]);
+    expect(b.t.deps.sessionsRepo.findById(LONG_TITLED)?.title).toBe(LONG_TITLE);
   });
 
   /** A zip of one Agent carrying only these Sessions, each `[facts, first file text]`. */
@@ -426,6 +470,7 @@ describe("Agent archive Traces", () => {
       "session-2026-10-20-09-00-00-0000f003",
       "session-2026-10-20-09-00-00-0000f004",
       "session-2026-10-20-09-00-00-0000f005",
+      "session-2026-10-20-09-00-00-0000f006",
     ];
     const zip = sessionsZip([
       [facts(ids[0]!, { thinkingLevel: "ultra-mega" }), lines(trace(ids[0]!, "user", "a"))],
@@ -448,6 +493,7 @@ describe("Agent archive Traces", () => {
         ]),
       ],
       [facts(ids[4]!), lines(trace(ids[4]!, "user", "e"))],
+      [facts(ids[5]!, { title: "t".repeat(1001) }), lines(trace(ids[5]!, "user", "f"))],
     ]);
 
     const res = await b.owner.upload(
@@ -462,6 +508,7 @@ describe("Agent archive Traces", () => {
       { sessionId: ids[1], reason: "invalid", detail: expect.stringContaining("createdAt") },
       { sessionId: ids[2], reason: "invalid", detail: expect.stringContaining("client") },
       { sessionId: ids[3], reason: "invalid", detail: expect.stringContaining("session_meta") },
+      { sessionId: ids[5], reason: "invalid", detail: expect.stringContaining("title") },
     ]);
     expect(body.imported.traces).toEqual({ sessions: 1, files: 1 });
     expect(b.t.deps.sessionsRepo.findById(ids[0]!)).toBeNull();

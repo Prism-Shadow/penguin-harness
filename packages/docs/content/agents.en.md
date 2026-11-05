@@ -114,7 +114,7 @@ Select the export button on the agent's card, or **Export…** in the **Agent St
 
 The line under the choices says how many files the zip holds, about how large it is, and how many conversations it carries. It adds a note when the selection is over 100 MB uncompressed, which may be too large to import again, says how many conversations are left out because one of their files is too large, and names a part left out because its folder is a link. A selection past what an import accepts at all (too many files, too large uncompressed, or one file too large) cannot be exported: the line says why, and **Export** stays off until you choose less.
 
-A zip never carries the vault's values, only its key names. In MCP server settings, credentials are left blank — environment variables and headers that look like them, OAuth secrets, and passwords and keys in a URL or on the command line — unless they are written as `${KEY}` vault references. In the conversations it carries, the agent's vault values are replaced by `[vault:<KEY>]`. The choices are not remembered: the dialog opens with the defaults every time.
+A zip never carries the vault's values, only its key names. In MCP server settings, credentials are left blank — environment variables and headers that look like them, OAuth secrets, and passwords and keys in a URL or on the command line — unless they are written as `${KEY}` vault references. In the conversations it carries, the agent's secret vault values — those under a credential's name, and token-shaped ones — are replaced by `[vault:<KEY>]`; ordinary settings such as a host name stay. The choices are not remembered: the dialog opens with the defaults every time.
 
 ## Delete an agent
 

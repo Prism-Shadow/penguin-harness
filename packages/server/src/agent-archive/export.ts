@@ -11,9 +11,9 @@
  * `.plugin.json`, `node_modules/`) and their data unless it is selected. Only regular files
  * travel: a link is left out — a part's own directory too, when it is one (the preview notes
  * it) — so nothing outside the Agent State can leak through one. A name this server's own
- * import would refuse (one Windows cannot hold) is left out too. In the Trace files, the
- * Agent's vault values are replaced (vault-scrub.ts) and counted in `manifest.redacted`, which is
- * why `manifest.json` is the zip's last entry.
+ * import would refuse (one Windows cannot hold) is left out too. In the Trace files and the
+ * Sessions' titles, the Agent's secret vault values are replaced (vault-scrub.ts) and counted in
+ * `manifest.redacted`, which is why `manifest.json` is the zip's last entry.
  *
  * An export is bounded by what an import accepts: a selection past the import's entry cap, past
  * what it inflates, or holding a file past its per-entry cap is refused (413), and the preview
@@ -41,7 +41,7 @@ import { ARCHIVE_FORMAT, DIR_PARTS, MANIFEST_FILE, PART_DIRS, SESSIONS_FILE } fr
 import type { DirPart } from "./manifest.js";
 import { MAX_ENTRIES, MAX_ENTRY_BYTES, MAX_INFLATED_BYTES } from "./limits.js";
 import { redactSystemConfig } from "./mcp-credentials.js";
-import { VaultScrub, vaultPatterns } from "./vault-scrub.js";
+import { VaultScrub, scrubJson, vaultPatterns } from "./vault-scrub.js";
 import { selectSessions } from "./traces.js";
 import type { SelectedSession, TraceSelectionDeps } from "./traces.js";
 
@@ -66,12 +66,17 @@ export interface PlannedArchive {
   entries: ArchiveEntry[];
   /** The values `zipStream` takes out of the Trace files. */
   vault: Readonly<Record<string, string>>;
+  /** Vault values already taken out of what is in hand (the Sessions' titles). */
+  scrubbedInHand: number;
   preview: AgentArchivePreview;
   /** `<agentId>-<yyyymmdd>.zip`, the local date of the export. */
   fileName: string;
 }
 
-export type ExportDeps = TraceSelectionDeps;
+export interface ExportDeps extends TraceSelectionDeps {
+  /** The import's caps the export is bounded by; the limits' own unless a caller says otherwise. */
+  caps?: { entries?: number; inflated?: number; entry?: number };
+}
 
 interface FoundFile {
   /** Relative to `agent_state/`, `/`-separated. */
@@ -244,15 +249,15 @@ export async function planArchive(
     entries.push(...found.map(fileEntry));
   }
 
+  const vault = await loadAgentVault(deps.root, projectId, agentId);
+  const patterns = vaultPatterns(vault);
+  let scrubbedInHand = 0;
   const selected = await selectSessions(deps, projectId, agentId, parts.traces);
   if (parts.traces.kind !== "none") {
-    const facts = encoder.encode(
-      `${JSON.stringify(
-        selected.sessions.map((s) => s.facts),
-        null,
-        2,
-      )}\n`,
-    );
+    // A title is the first prompt's, so a pasted value travels there too.
+    let rows: unknown = selected.sessions.map((s) => s.facts);
+    if (patterns !== null) [rows, scrubbedInHand] = scrubJson(rows, patterns);
+    const facts = encoder.encode(`${JSON.stringify(rows, null, 2)}\n`);
     entries.push({
       name: `${prefix}traces/${SESSIONS_FILE}`,
       source: { bytes: facts },
@@ -282,7 +287,6 @@ export async function planArchive(
     preview.traces.newest = topLevel.length > 0 ? sessionRef(topLevel.at(-1)!) : null;
   }
 
-  const vault = await loadAgentVault(deps.root, projectId, agentId);
   const vaultKeys = Object.keys(vault).sort();
   preview.vaultKeys = vaultKeys;
   const manifest: AgentArchiveManifest = {
@@ -300,15 +304,20 @@ export async function planArchive(
   const manifestBytes = manifestOf(manifest).byteLength;
   preview.entries = entries.length + 1;
   preview.totalBytes = entries.reduce((sum, entry) => sum + entry.size, manifestBytes);
-  const oversized = entries.find((entry) => entry.size > MAX_ENTRY_BYTES);
-  if (preview.entries > MAX_ENTRIES) {
-    preview.refusal = { reason: "entries", limit: MAX_ENTRIES };
-  } else if (preview.totalBytes > MAX_INFLATED_BYTES) {
-    preview.refusal = { reason: "inflated", limit: MAX_INFLATED_BYTES };
+  const caps = {
+    entries: deps.caps?.entries ?? MAX_ENTRIES,
+    inflated: deps.caps?.inflated ?? MAX_INFLATED_BYTES,
+    entry: deps.caps?.entry ?? MAX_ENTRY_BYTES,
+  };
+  const oversized = entries.find((entry) => entry.size > caps.entry);
+  if (preview.entries > caps.entries) {
+    preview.refusal = { reason: "entries", limit: caps.entries };
+  } else if (preview.totalBytes > caps.inflated) {
+    preview.refusal = { reason: "inflated", limit: caps.inflated };
   } else if (oversized !== undefined) {
     preview.refusal = {
       reason: "entry",
-      limit: MAX_ENTRY_BYTES,
+      limit: caps.entry,
       subject: oversized.name.slice(prefix.length),
     };
   }
@@ -316,6 +325,7 @@ export async function planArchive(
     manifest,
     entries,
     vault,
+    scrubbedInHand,
     preview,
     fileName: `${agentId}-${formatLocalDate(now).replaceAll("-", "")}.zip`,
   };
@@ -371,7 +381,8 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
     return out;
   };
   const patterns = vaultPatterns(plan.vault);
-  let scrubbed = 0;
+  let scrubbed = plan.scrubbedInHand;
+  let unscrubbed = 0;
   for (const entry of plan.entries) {
     if ("bytes" in entry.source) {
       const file = deflated(entry);
@@ -405,7 +416,8 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
           if (out !== null) yield out;
         }
         file.push(scrub === null ? new Uint8Array(0) : scrub.end(), true);
-        scrubbed += scrub?.count ?? 0;
+        scrubbed += scrub?.replaced ?? 0;
+        unscrubbed += scrub?.unparsed ?? 0;
       } finally {
         await handle.close();
       }
@@ -413,13 +425,15 @@ async function* zipChunks(plan: PlannedArchive): AsyncGenerator<Uint8Array> {
     const out = produced();
     if (out !== null) yield out;
   }
-  const manifest: AgentArchiveManifest =
-    scrubbed > 0
-      ? {
-          ...plan.manifest,
-          redacted: [...plan.manifest.redacted, `traces:vault-values:${scrubbed}`],
-        }
-      : plan.manifest;
+  const manifest: AgentArchiveManifest = {
+    ...plan.manifest,
+    redacted: [
+      ...plan.manifest.redacted,
+      ...(scrubbed > 0 ? [`traces:vault-values:${scrubbed}`] : []),
+      // Lines that may hold a value but do not parse travel as they are: said, not hidden.
+      ...(unscrubbed > 0 ? [`traces:unscrubbed-lines:${unscrubbed}`] : []),
+    ],
+  };
   const last = deflated({
     name: `${plan.manifest.agentId}/${MANIFEST_FILE}`,
     source: { bytes: new Uint8Array(0) },

@@ -5,21 +5,25 @@
  * Everything the swap moves lives in one folder under the Agent, `<agentDir>/.import-<12 hex>/`,
  * on the same filesystem, so every step is a rename:
  *
- * 1. the folder is made and marked (`.penguin-swap.json`: the backup's path and the entries the
- *    new State keeps from the old one);
+ * 1. the folder is made and marked (`.penguin-swap.json`: the backup's path, the entries the
+ *    new State keeps from the old one, and the phase, `staged`);
  * 2. the new State moves in as `incoming/`, and the current vault is written into it;
- * 3. the current State moves aside as `replaced-agent_state/`;
+ * 3. the mark turns `aside`, and the current State moves aside as `replaced-agent_state/`;
  * 4. each kept entry moves from `replaced-agent_state/` into `incoming/`;
- * 5. `incoming/` becomes `agent_state/`. From here the swap is committed, and the folder, which
- *    now holds only the superseded State (also in the backup), is removed.
+ * 5. `incoming/` becomes `agent_state/`, and the mark turns `committed`. The folder, which now
+ *    holds only the superseded State (also in the backup), is removed.
  *
- * When a step from 3 on fails, the kept entries move back and the previous State is restored.
+ * When a step from 3 on fails, the previous State is restored and the kept entries move back.
  * A move back that fails too leaves the folder and its mark in place: nothing the Agent had is
  * removed, the error names the folder and the backup, and the next import of that Agent or the
- * next server start (`recoverStrandedSwaps`) moves each entry back to its place when the place
- * is empty, and logs the ones it cannot. A crash anywhere between 3 and 5 leaves the same
- * marked folder, recovered the same way. Only an unmarked folder, or a marked one with nothing
- * of the Agent's left in it, is ever removed.
+ * next server start (`recoverStrandedSwaps`) puts back what the folder holds. A crash between
+ * 3 and 5 leaves the same marked folder, recovered the same way.
+ *
+ * Recovery goes by the phase, never by what happens to be missing: only a swap that did not
+ * commit has its originals restored, and only into places that are empty; a committed swap's
+ * folder is superseded by the State it produced, so its leftovers are removed (the backup holds
+ * them) and never installed. The caller holds the Agent for the whole import, so recovery never
+ * meets a swap still running.
  */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
@@ -42,10 +46,20 @@ export const SWAP_MARK = ".penguin-swap.json";
 const INCOMING = "incoming";
 const REPLACED = "replaced-agent_state";
 
+type SwapPhase = "staged" | "aside" | "committed";
+
 interface SwapMark {
+  phase: SwapPhase;
   backup: string | null;
   carry: string[];
   startedAt: string;
+}
+
+/** Writes the folder's mark whole: to a temporary name, then renamed over the old one. */
+async function writeMark(folder: string, mark: SwapMark): Promise<void> {
+  const file = path.join(folder, SWAP_MARK);
+  await fs.writeFile(`${file}.tmp`, `${JSON.stringify(mark, null, 2)}\n`);
+  await fs.rename(`${file}.tmp`, file);
 }
 
 const exists = (file: string): Promise<boolean> =>
@@ -84,15 +98,19 @@ export async function swapAgentState(
   carry: readonly string[],
   backup: string | null,
 ): Promise<void> {
-  await recoverAgent(root, log, projectId, agentId);
   const base = agentDir(root, projectId, agentId);
   const stateDir = agentStateDir(root, projectId, agentId);
   const folder = path.join(base, `${SWAP_PREFIX}${randomBytes(6).toString("hex")}`);
   const moved = path.join(folder, INCOMING);
   const replaced = path.join(folder, REPLACED);
   await fs.mkdir(folder);
-  const mark: SwapMark = { backup, carry: [...carry], startedAt: new Date().toISOString() };
-  await fs.writeFile(path.join(folder, SWAP_MARK), `${JSON.stringify(mark, null, 2)}\n`);
+  const mark: SwapMark = {
+    phase: "staged",
+    backup,
+    carry: [...carry],
+    startedAt: new Date().toISOString(),
+  };
+  await writeMark(folder, mark);
   let keep = false;
   try {
     await fs.rename(incoming, moved);
@@ -107,6 +125,7 @@ export async function swapAgentState(
     if (vault !== null) {
       await fs.writeFile(path.join(moved, VAULT_BASENAME), vault, { mode: 0o600 });
     }
+    await writeMark(folder, { ...mark, phase: "aside" });
     await fs.rename(stateDir, replaced);
     const carried: string[] = [];
     try {
@@ -117,6 +136,10 @@ export async function swapAgentState(
         carried.push(rel);
       }
       await fs.rename(moved, stateDir);
+      // Committed: should the folder outlive this (a failed removal, a crash), recovery knows its
+      // leftovers are superseded. A mark that cannot be written is no loss: recovery reads a
+      // vanished `incoming/` the same way.
+      await writeMark(folder, { ...mark, phase: "committed" }).catch(() => undefined);
     } catch (err) {
       // Rollback: the previous State is restored, then the kept entries move back into it,
       // each to the place it left, empty since. Anything that does not move stays in the
@@ -175,7 +198,10 @@ async function moveBack(
   return all;
 }
 
-/** Puts back what one marked folder holds of the Agent; removes the folder once nothing is left. */
+/**
+ * Puts back what one marked folder holds of the Agent, by its phase; removes the folder once
+ * nothing of the Agent's is left in it.
+ */
 async function recoverFolder(
   log: (line: string) => void,
   stateDir: string,
@@ -190,31 +216,40 @@ async function recoverFolder(
   const moved = path.join(folder, INCOMING);
   const replaced = path.join(folder, REPLACED);
   const carry = Array.isArray(mark.carry) ? mark.carry.filter((r) => typeof r === "string") : [];
-  if (!(await exists(moved))) {
-    // `incoming` became the State: the swap committed; the folder holds the superseded State
-    // only (the backup has it too). Without a State, the superseded one is the Agent's.
-    if (!(await exists(stateDir)) && (await exists(replaced))) {
-      await fs.rename(replaced, stateDir).catch(() => undefined);
-    }
-  } else {
-    if (!(await exists(stateDir)) && (await exists(replaced))) {
-      try {
-        await fs.rename(replaced, stateDir);
-      } catch (err) {
-        log(`[snapshots] ${replaced} could not be moved back to ${stateDir}: ${String(err)}`);
-        return;
-      }
-    }
-    if (await exists(replaced)) {
-      log(`[snapshots] ${folder} holds a previous State while ${stateDir} exists; left in place`);
+  // A mark from before phases were recorded reads as `aside`: what is missing then decides.
+  const phase: SwapPhase = mark.phase ?? "aside";
+  const remove = async (why: string): Promise<void> => {
+    await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
+    log(`[snapshots] ${why}: ${folder}`);
+  };
+  // Committed: the Agent's State is the one this swap produced. `incoming/` gone with a State in
+  // place means the same, for a mark the swap had no time to update.
+  if (
+    phase === "committed" ||
+    (phase === "aside" && !(await exists(moved)) && (await exists(stateDir)))
+  ) {
+    await remove("removed the leftovers of a committed import (its backup holds them)");
+    return;
+  }
+  if (phase !== "aside") {
+    // `staged`: the Agent's State never moved; the folder holds the import's files only.
+    await remove("removed an import that stopped before the State moved");
+    return;
+  }
+  if (!(await exists(stateDir)) && (await exists(replaced))) {
+    try {
+      await fs.rename(replaced, stateDir);
+    } catch (err) {
+      log(`[snapshots] ${replaced} could not be moved back to ${stateDir}: ${String(err)}`);
       return;
     }
-    if (!(await exists(stateDir)) || !(await moveBack(log, folder, stateDir, carry))) return;
   }
-  if (await exists(stateDir)) {
-    await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
-    log(`[snapshots] recovered an interrupted import: ${folder}`);
+  if (await exists(replaced)) {
+    log(`[snapshots] ${folder} holds a previous State while ${stateDir} exists; left in place`);
+    return;
   }
+  if (!(await exists(stateDir)) || !(await moveBack(log, folder, stateDir, carry))) return;
+  await remove("recovered an interrupted import");
 }
 
 async function recoverAgent(
