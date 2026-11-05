@@ -1,0 +1,139 @@
+/**
+ * Doodle's running state (`themes/cartoon.css` imports this partial after the line and the
+ * marks): how the theme shows the work happening now, and where the reader is.
+ *
+ * - A word that says something runs — the run indicator's label (`ui-run`) and a running step's
+ *   label (`ui-activity[data-state="running"]`: a work group's title, a tool call's name, a
+ *   thinking row, a note in flight) — is set in the body ink over the highlighter band
+ *   (`--_mark-highlight`, marks.css), drawn under its words on the label's own `::before`. The
+ *   mark beside it (the hourglass, the spinner) keeps its motion and the word stays, so the band
+ *   is never the only carrier; it does not move, and it leaves with the state. A label that
+ *   truncates clips the band's overhang to its own box.
+ * - A step in flight draws its progress slot (shown only then) as a pencil scribble stepping
+ *   along: a zig-zag tile repeated across a 36 × 8 px box, moved one zig at a time, the first part
+ *   of the row to give way when the row is narrow. It holds one position under reduced motion
+ *   (theme.css stops every animation inside `.ui-activity`).
+ * - The spinner shows its pencil spiral (`data-set="scribble"`) in place of the arc, turned by the
+ *   svg's own spin and stopped with it by the `.ui-live` reduced-motion rules.
+ * - The streaming caret is a short slanted pen stroke in the caret's pencil ink, a box 0.55em
+ *   wide by 1em tall with the host's glyph painted out; it keeps the host's pulse.
+ * - The selected row on the navigation column (`[aria-current="page"]`: a page entry or the open
+ *   conversation) gives up the host's ink wash for the highlighter band across the row, and a
+ *   blue pencil bracket (`--_mark-bracket`) stands in the margin at its start, on `::after`.
+ *   (The column's open-conversation row holds its wash on the row around the button that
+ *   carries `aria-current`, so that row clears it too.)
+ *
+ * The two marks this partial draws itself, by hand rather than by the script — the caret's stroke
+ * (`--_mark-caret`, 11 × 20) and the scribble's tile (`--_mark-scribble`, 24 × 8, its ends at one
+ * height so it repeats unbroken) — are in the mode's ink like the script's marks (an image cannot
+ * read a custom property), and declared in both modes, as the Doodle suite holds every mark. In
+ * forced colours none of this applies: the host's own caret glyph, arc, fill and colours return in
+ * the system's colours.
+ */
+@layer ui-theme {
+  :root[data-theme="cartoon"] {
+    --_mark-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='20'%3E%3Cpath d='M2.77 17.47Q2.47 9.33 7.17 2.67Q7.6 2.4 8.03 2.93Q6.41 10.51 3.63 17.73Q3.2 18 2.77 17.47Z' fill='%23776d60'/%3E%3C/svg%3E");
+    --_mark-scribble: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8'%3E%3Cpath d='M0 4L1.4 1.9L4.4 6.2L7.6 1.7L10.3 6L13.5 2L16.4 6.3L19.6 1.8L22.5 6L24 4' fill='none' stroke='%23776d60' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="cartoon"].dark {
+    --_mark-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='20'%3E%3Cpath d='M2.77 17.47Q2.47 9.33 7.17 2.67Q7.6 2.4 8.03 2.93Q6.41 10.51 3.63 17.73Q3.2 18 2.77 17.47Z' fill='%23a09686'/%3E%3C/svg%3E");
+    --_mark-scribble: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8'%3E%3Cpath d='M0 4L1.4 1.9L4.4 6.2L7.6 1.7L10.3 6L13.5 2L16.4 6.3L19.6 1.8L22.5 6L24 4' fill='none' stroke='%23a09686' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  @media (forced-colors: none) {
+    /* The running word over the highlighter band. The label is its own stacking context, so the
+       band (z-index -1) paints above whatever fills the row and under the label's words. */
+    :root[data-theme="cartoon"]
+      :is(.ui-run[data-state="running"], .ui-activity[data-state="running"])
+      [data-slot="label"] {
+      position: relative;
+      isolation: isolate;
+      color: var(--ui-fg);
+    }
+    :root[data-theme="cartoon"]
+      :is(.ui-run[data-state="running"], .ui-activity[data-state="running"])
+      [data-slot="label"]::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0.12em -0.2em -0.06em;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 0 12px;
+      border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+    }
+
+    /* A step in flight: the pencil scribble in its progress slot. On a row too narrow for all its
+       words it gives way first, down to nothing, so a call's argument preview keeps its room. */
+    :root[data-theme="cartoon"] .ui-activity [data-slot="progress"] {
+      display: block;
+      flex-shrink: 1000;
+      min-inline-size: 0;
+      inline-size: 36px;
+      block-size: 8px;
+      background-image: var(--_mark-scribble);
+      background-size: 24px 8px;
+      background-repeat: repeat-x;
+      background-position: 0 0;
+      animation: ui-doodle-scribble 1s steps(4, end) infinite;
+    }
+    @keyframes ui-doodle-scribble {
+      to {
+        background-position: 24px 0;
+      }
+    }
+
+    /* The spinner: the pencil spiral in place of the arc. */
+    :root[data-theme="cartoon"] .ui-live[data-live="spinner"] > [data-set="arc"] {
+      display: none;
+    }
+    :root[data-theme="cartoon"] .ui-live[data-live="spinner"] > [data-set="scribble"] {
+      display: inline;
+    }
+
+    /* The streaming caret: a pen stroke where the host's bar glyph was. */
+    :root[data-theme="cartoon"] .ui-live[data-live="caret"] {
+      display: inline-block;
+      inline-size: 0.55em;
+      block-size: 1em;
+      vertical-align: -0.12em;
+      overflow: hidden;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      background-image: var(--_mark-caret);
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+    }
+
+    /* The selected navigation row: the highlighter band across it, the bracket in its margin. */
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"],
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] li > :has(> [aria-current="page"]) {
+      background-color: transparent;
+    }
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"] {
+      position: relative;
+      isolation: isolate;
+    }
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"]::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 0 12px;
+      border-image: var(--_mark-highlight) 0 12 fill / 0 12px / 0 stretch;
+    }
+    :root[data-theme="cartoon"] .ui-shell > [data-slot="nav"] [aria-current="page"]::after {
+      content: "";
+      position: absolute;
+      inset-block: 3px;
+      inset-inline-start: -8px;
+      inline-size: 8px;
+      pointer-events: none;
+      border-style: solid;
+      border-width: 8px 0;
+      border-image: var(--_mark-bracket) 8 0 fill / 8px 0 / 0 stretch;
+    }
+  }
+}

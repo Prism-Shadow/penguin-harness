@@ -58,6 +58,7 @@
  */
 @import "./cartoon/line.css";
 @import "./cartoon/marks.css";
+@import "./cartoon/run.css";
 
 @layer ui-theme {
   :root[data-theme="cartoon"] {
