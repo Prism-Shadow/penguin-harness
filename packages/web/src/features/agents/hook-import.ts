@@ -1,5 +1,5 @@
 /**
- * The prompt behind the Hooks tab's chat import (pure logic, unit tested): the lead sentence
+ * The prompt behind the Import hook dialog's chat import (pure logic, unit tested): the lead sentence
  * derived from the pasted source, and the fixed instruction tail joined after it. The tail
  * carries what the agent cannot guess — the review step, the hook package format, the script
  * contract and where to install — and names the destination by Project and Agent id. Reads S

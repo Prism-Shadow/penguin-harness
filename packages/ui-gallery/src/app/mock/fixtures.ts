@@ -171,7 +171,11 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  installed: Record<
+    string,
+    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+  >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;

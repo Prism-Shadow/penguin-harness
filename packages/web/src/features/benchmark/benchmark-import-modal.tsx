@@ -1,5 +1,5 @@
 /**
- * The Evaluation Center's import dialog — the Skills and Hooks tabs' import, in a Benchmark's
+ * The Evaluation Center's import dialog — the Import skill and Import hook dialogs, in a Benchmark's
  * words. Two paths, recommended first:
  *
  * - The source field takes a folder link in a repository such as
@@ -81,7 +81,7 @@ interface PendingOverwrite {
   benchmarkId: string;
 }
 
-/** The upload's `<label>`, in the Button look of the Skills tab's. */
+/** The upload's `<label>`, in the Button look of the Import skill dialog's. */
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 export function ImportBenchmarkModal({
@@ -166,7 +166,7 @@ export function ImportBenchmarkModal({
 
   return (
     <>
-      {/* Recommended chat import on top, zip upload below (the Skills tab's shape). */}
+      {/* Recommended chat import on top, zip upload below (the Import skill dialog's shape). */}
       <Modal
         open
         title={S.benchmark.importBenchmark}

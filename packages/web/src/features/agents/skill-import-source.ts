@@ -1,5 +1,5 @@
 /**
- * Import-source classification for the Skills tab's import dialog (pure logic, unit
+ * Import-source classification for the Import skill dialog (pure logic, unit
  * tested): the source field accepts more than a webpage URL — a GitHub repo or directory
  * URL, a local filesystem path, an install command from another ecosystem (whose plugins
  * are essentially skill files; PenguinHarness has no plugin mechanism of its own), or a
