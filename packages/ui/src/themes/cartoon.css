@@ -62,6 +62,7 @@
 @import "./cartoon/shell.css";
 @import "./cartoon/chat.css";
 @import "./cartoon/empty.css";
+@import "./cartoon/library.css";
 
 @layer ui-theme {
   :root[data-theme="cartoon"] {
