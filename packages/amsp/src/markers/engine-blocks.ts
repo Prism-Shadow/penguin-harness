@@ -6,10 +6,31 @@
  */
 import { dualFormPatterns, markerBlock, matchDualForm, stripMarkerBlocks } from "./block.js";
 import { MARKER_TAGS, TRANSCRIPT_TAGS } from "./tags.js";
+import { traceQueryGuidance } from "./trace-query.js";
 
-/** Wraps a compaction summary as the new context's first input: `[context_summary]…[/context_summary]`. */
-export function buildContextSummaryText(summary: string): string {
-  return markerBlock(MARKER_TAGS.contextSummary, summary);
+/** Where the compacted context's transcript is, for the `[context_summary]` trailer. */
+export interface CompactedTranscript {
+  /** Absolute path of the Trace file of the context the summary replaces. */
+  tracePath: string;
+  /** The shell the Session's commands run in (the system prompt's `Shell:` value), when known: the trailer's search is worded for it. */
+  shell?: string;
+}
+
+/**
+ * Wraps a compaction summary as the new context's first input: `[context_summary]…[/context_summary]`.
+ *
+ * Given the compacted context's Trace file, the block ends with the harness trailer after the
+ * model's summary: the file's path, where its earlier files are, and how to query it precisely
+ * (see trace-query.ts). The trailer is text inside the block, no marker or field of its own, so
+ * a reader that recognizes the block by its prefix reads an old summary without it the same way.
+ */
+export function buildContextSummaryText(summary: string, transcript?: CompactedTranscript): string {
+  if (transcript === undefined) return markerBlock(MARKER_TAGS.contextSummary, summary);
+  const trailer = [
+    `Transcript of the compacted context, for when the summary is not enough: ${transcript.tracePath}. Earlier files of this conversation share the name with a lower number, in the same or an earlier date folder.`,
+    traceQueryGuidance(transcript.shell),
+  ].join("\n");
+  return markerBlock(MARKER_TAGS.contextSummary, `${summary}\n\n${trailer}`);
 }
 
 const SUMMARY_PATTERNS = dualFormPatterns(MARKER_TAGS.summary, "([\\s\\S]*?)", "g");

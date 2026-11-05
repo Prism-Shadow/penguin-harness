@@ -63,7 +63,11 @@ import type {
   SessionOpenContextOptions,
 } from "../src/session.js";
 import type { ModelRef } from "../src/state/project-config.js";
-import { buildModelSwitchMessage, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
+import {
+  buildContextSummaryText,
+  buildModelSwitchMessage,
+  parseModelSwitchMessage,
+} from "@prismshadow/amsp/markers";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
 // ---------------------------------------------------------------------------
@@ -141,7 +145,12 @@ const metaFor = (model: ModelRef): SessionMetaPayload => ({
 });
 
 const SUMMARY_REPLY = "[summary]the distilled summary[/summary]";
-const SUMMARY_TEXT = "[context_summary]\nthe distilled summary\n[/context_summary]";
+/**
+ * The summary the first context's compaction opens the next context with: the model's text, then
+ * the trailer naming the Session's first Trace file (the one that compaction closes), set per test
+ * once the traces directory exists.
+ */
+let SUMMARY_TEXT = "";
 
 async function collect<R>(gen: AsyncGenerator<AmspRecord, R>): Promise<AmspRecord[]> {
   const all: AmspRecord[] = [];
@@ -342,6 +351,9 @@ describe("in-session model switch", () => {
 
   beforeEach(async () => {
     traces = await mkdtemp(join(tmpdir(), "penguin-model-switch-"));
+    SUMMARY_TEXT = buildContextSummaryText("the distilled summary", {
+      tracePath: new Writer({ tracesDir: traces, sessionId: SESSION_ID }).currentPath(),
+    });
   });
 
   afterEach(async () => {
@@ -760,7 +772,11 @@ describe("in-session model switch", () => {
     expectEndsWithMetaOn(all, MODEL_C);
     expect(h.written).toEqual([]);
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
-    expect(llmC.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT, "task two"]);
+    // With no Trace there is no file to name: the summary carries no trailer.
+    expect(llmC.calls[0]!.map(textOf)).toEqual([
+      buildContextSummaryText("the distilled summary"),
+      "task two",
+    ]);
   });
 
   it("a failed first request on the new model, then another switch: the summary the failed context opened with heads the next file, while the model gets the [turn_aborted] flatten", async () => {

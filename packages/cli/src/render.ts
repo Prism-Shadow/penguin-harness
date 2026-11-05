@@ -796,6 +796,22 @@ export class StreamRenderer {
 
     if (isEventMessage(msg)) {
       const payload = msg.payload;
+      // A compaction's own requests and its tool rounds' decisions stream between the paired
+      // events: none of them prints (no retry line, no decision line). A decision an approval
+      // prompt already printed is forgotten the same way the line below would forget it.
+      if (
+        this.compactionActive &&
+        (payload.type === "request_begin" ||
+          payload.type === "request_end" ||
+          payload.type === "approval_decision")
+      ) {
+        if (payload.type === "approval_decision") {
+          this.renderedDecisions.delete(
+            this.callLineKey((payload as ApprovalDecisionPayload).tool_call_id),
+          );
+        }
+        return;
+      }
       if (payload.type === "token_usage") {
         // Accumulate this task's usage, printed together when the task ends (endTask),
         // not shown after every tool call/round.
@@ -1100,6 +1116,10 @@ export class StreamRenderer {
   }
 
   private handlePartialToolCall(p: PartialToolCallPayload): void {
+    // A compaction's tool round streams its calls between the paired events: the CLI keeps
+    // its one-line compaction progress and prints none of it (an approval prompt still
+    // renders the call it asks about, through beginUserPrompt).
+    if (this.compactionActive) return;
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
       if (p.event_type === "stop") this.partialToolCalls.delete(p.tool_call_id);
@@ -1155,6 +1175,8 @@ export class StreamRenderer {
   }
 
   private handlePartialToolOutput(p: PartialToolCallOutputPayload): void {
+    // A compaction tool round's output stays off the screen, like its call (see above).
+    if (this.compactionActive) return;
     const label = this.outputLabel(p.tool_call_id);
     const name = this.toolNames.get(p.tool_call_id);
     const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);

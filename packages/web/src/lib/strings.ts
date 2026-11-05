@@ -4378,7 +4378,9 @@ Benchmark：
     /** The row's title doubles as its status, the work-group header's idiom (`workRunning` / `workDone`): 压缩中 / 清空中 while the step runs, 压缩完毕 / 清空完毕 once it settles. With mode and state both in the title nothing is left for a detail line on either side — a `summarize` shows its summary in its own expandable body — so only `compactionFailed` keeps the detail slot, carrying the one thing a title cannot. */
     compactionRunning: (mode: string): string => (mode === "discard" ? "清空中" : "压缩中"),
     compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
-    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    /** The summarize row's middle body section, present when the compaction took tool rounds: the hand-off files it read and wrote, one tool row each. */
+    compactionWork: "工作",
+    /** The summarize row's last body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,

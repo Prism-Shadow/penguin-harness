@@ -4160,6 +4160,7 @@ Scenarios:
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionWork: "Work",
     compactionResult: "Result",
     modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
     modelChangedByTrace: (from: string, to: string): string =>

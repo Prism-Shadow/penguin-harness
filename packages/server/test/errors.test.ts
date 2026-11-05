@@ -28,7 +28,8 @@
  *   is expected under the tool's name, and a denial is none.
  * - Parallel and nested (child Session) calls never swap names or reasons, and a child's
  *   failures are attributed to the child Agent and Session.
- * - An abandoned compaction is one unexpected row carrying its attempts and error.
+ * - An abandoned compaction is one unexpected row carrying its attempts and error; its own
+ *   failed requests, streamed inside its span, add no LLM row of their own.
  *
  * Through HTTP (onError):
  * - A business error is expected, an internal one unexpected with a 500, each attributed to
@@ -47,6 +48,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
   assistantText,
+  compactionBegin,
   compactionEnd,
   partialToolCallOutput,
   requestBegin,
@@ -963,6 +965,24 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       agent_id: "a1",
       session_id: "s1",
     });
+  });
+
+  it("a compaction's own failed requests are the compaction's: one compaction row, no LLM row", () => {
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 2 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", errorMessage: "idle", retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", errorMessage: "idle", attempt: 2 }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "retryable",
+        attempt: 2,
+        errorMessage: "idle",
+      }),
+    ]);
+    expect(got.map((r) => r.source)).toEqual(["compaction"]);
   });
 
   it("compaction completed / aborted are not errors; fatal and an old-core failed still record", () => {

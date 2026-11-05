@@ -21,6 +21,8 @@
  *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
+ * A compaction's own requests, which stream between its paired events, are not read here:
+ * its `compaction_end` speaks for them (source = `compaction`, below).
  *
  * The message uses the real reason: `request_end` carries the error detail on
  * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
@@ -167,6 +169,12 @@ export class StreamErrorWatcher {
   private readonly toolNames = new Map<string, string>();
   /** Subagent identity: origin → that subagent's `{agentId, sessionId}` (see the file header's attribution section). */
   private readonly originCtx = new Map<string, { agentId: string; sessionId: string }>();
+  /**
+   * Sessions (by origin key) inside a compaction span: its own requests stream there, tool
+   * rounds included, and a failed one is the compaction's — its `compaction_end` is recorded
+   * once as `compaction_failed`, never as an LLM failure besides.
+   */
+  private readonly compacting = new Set<string>();
 
   constructor(
     private readonly errors: ErrorSink,
@@ -192,6 +200,7 @@ export class StreamErrorWatcher {
     this.pending.clear();
     this.toolNames.clear();
     this.originCtx.clear();
+    this.compacting.clear();
   }
 
   // —— Attribution (see file header) ——
@@ -243,8 +252,16 @@ export class StreamErrorWatcher {
       retry_in_ms?: number;
     };
     const key = originKey(msg);
+    if (p.type === "compaction_begin") {
+      this.compacting.add(key);
+      return;
+    }
     if (p.type === "compaction_end") {
+      this.compacting.delete(key);
       this.observeCompactionEnd(msg, key);
+      return;
+    }
+    if ((p.type === "request_end" || p.type === "request_begin") && this.compacting.has(key)) {
       return;
     }
     if (p.type === "request_end") {

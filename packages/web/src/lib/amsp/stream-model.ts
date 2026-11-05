@@ -32,12 +32,14 @@
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
  *   - Compaction-internal messages: model_msg within a
- *     compaction_begin↔end range (the compaction prompt, thinking and summary output)
- *     are never rendered as transcript items and never counted toward Task
+ *     compaction_begin↔end range (the compaction prompt, thinking, tool rounds and summary
+ *     output) are never rendered as transcript items and never counted toward Task
  *     segmentation; the request's thinking and the summary's own text (live
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
- *     banner instead (issue #290);
+ *     banner instead (issue #290), the summary draft starting over at each of the span's
+ *     request_begin events (only the last request's text is the summary), and the tool
+ *     rounds' calls become the banner's work cards (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -382,8 +384,28 @@ export interface CompactionItem {
    * replay from the span's complete assistant text — the banner shows the summary being
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   * It is the text of the span's latest request alone: each request_begin starts it over,
+   * since a request that took a tool round, or was retried, wrote no summary.
    */
   summaryText?: string;
+  /**
+   * The tool rounds the compaction took before its summary (hand-off files read and written):
+   * one card per call, in call order, built like the transcript's tool cards — streamed
+   * arguments, the approval decision, the output — and registered in the model's `toolCards`,
+   * so an approval request finds its card here. Never transcript items and never counted in
+   * the Task's tool time (the server's window scanner skips the span too). Absent when the
+   * compaction took no round; dropped with the drafts when it did not complete.
+   */
+  work?: ToolCallItem[];
+  /**
+   * How many work cards the span held when its latest request began. The engine streams a
+   * request's calls only when they are going to be a round; a response it rejects instead (tool
+   * calls once the rounds are spent) keeps its calls in the Trace, followed there by the
+   * corrective note it re-asks with. History rebuild reads those calls too, and drops them when
+   * that note — a user text in the span — arrives, so a reload shows the rounds the live viewer
+   * saw and no more.
+   */
+  requestWorkStart?: number;
   /**
    * Raw text of the thinking the compaction request produced ahead of its summary:
    * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
@@ -409,11 +431,12 @@ export interface CompactionItem {
    * the complete message's own time settles it — the ThinkingItem convention (see
    * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
    *
-   * A retried compaction concatenates every attempt into one draft (`thinkingText` and
-   * `summaryText` both), so a start is recorded once and a later stop only extends the settled
-   * value: the wall time covers the whole span that produced the prose on screen, the failed
-   * attempts and the gaps between them included. Timing the last attempt alone would print a
-   * short number against text it did not write.
+   * A compaction of several requests (tool rounds, retried attempts) concatenates every
+   * request's thinking into one draft, so a thinking start is recorded once and a later stop
+   * only extends the settled value: the wall time covers the whole span that produced the prose
+   * on screen, the gaps between requests included. The result section starts over with each
+   * request, as its text does (see `summaryText`), and is timed from the last request's first
+   * summary text.
    */
   thinkingStartedAtMs?: number;
   /** Settled thinking wall time (boundaries: see thinkingStartedAtMs). */
@@ -824,8 +847,18 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
         if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text, tsMs);
         else if (p.type === "partial_thinking") {
           appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop", tsMs, tsMs);
+        } else if (p.type === "partial_tool_call" || p.type === "partial_tool_call_output") {
+          handleCompactionPartialTool(model, msg.payload as PartialModelPayload, tsMs);
         }
         // Partials never advance lastTs (same rule as the normal path below).
+        return;
+      }
+      if (
+        (msg.payload as { type?: string }).type === "tool_call" ||
+        (msg.payload as { type?: string }).type === "tool_call_output"
+      ) {
+        handleCompactionTool(model, msg.payload as CompleteModelPayload, tsMs, elidedOf(msg));
+        advanceLastTs(model, msg.timestamp);
         return;
       }
       const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
@@ -835,6 +868,8 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
       if (p.type === "text" && p.role === "assistant" && p.text) {
         appendCompactionSummaryText(model, p.text, startMs);
+      } else if (p.type === "text" && p.role === "user") {
+        dropRejectedWork(model);
       } else if (p.type === "thinking" && p.thinking) {
         appendCompactionThinking(model, p.thinking, false, startMs, tsMs);
       }
@@ -1772,6 +1807,8 @@ function noteApprovalWait(model: StreamModel, card: ToolCallItem): void {
 function createToolCard(
   model: StreamModel,
   init: { toolCallId: string; name: string; argumentsText: string; callStreaming: boolean },
+  /** Where the card goes: the transcript by default, a compaction's work list for a tool round. */
+  place: (card: ToolCallItem) => void = (card) => model.items.push(card),
 ): ToolCallItem {
   const item: ToolCallItem = {
     kind: "tool_call",
@@ -1798,7 +1835,7 @@ function createToolCard(
     }
   }
   model.toolCards.set(init.toolCallId, item);
-  model.items.push(item);
+  place(item);
   return item;
 }
 
@@ -1945,7 +1982,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         // closed as `failed` when the session next loads). Discard it, and the thinking that
         // led to it, rather than leave a truncated summary on screen implying the context
         // was replaced by it.
+        // A tool round's card that never got its output will not get one now.
+        for (const card of item.work ?? []) if (!card.outputComplete) settleUnfinishedCard(card);
         if (p.status !== "completed") {
+          delete item.work;
           delete item.summaryText;
           delete item.thinkingText;
           delete item.thinkingStreaming;
@@ -1975,6 +2015,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "request_begin": {
+      // A compaction's request (a tool round's next one, or a retried attempt): the summary
+      // draft starts over — only the last request's text is the summary — and nothing else
+      // here is about it (compaction requests aren't timed, and no reconnect hint is theirs).
+      if (model.stats.compactionActive) {
+        restartCompactionSummary(model);
+        return;
+      }
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -1993,9 +2040,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // produced, rendering a retry hint (with the attempt number); the terminal
       // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
-      // within a compaction range (only visible during history rebuild)
-      // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
-      if (model.stats.compactionActive) return;
+      // within a compaction range are neither rendered nor counted (the banner times the
+      // compaction as a whole); a tool round's call the request cut short will never run,
+      // as in a turn.
+      if (model.stats.compactionActive) {
+        settleCutShortWork(model, p.status === "completed");
+        return;
+      }
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool
@@ -2142,6 +2193,152 @@ function appendCompactionSummaryText(
   if (startMs !== undefined && item.summaryStartedAtMs === undefined) {
     item.summaryStartedAtMs = startMs;
   }
+}
+
+/** Starts the running compaction's summary draft over, for the request that begins now. */
+function restartCompactionSummary(model: StreamModel): void {
+  const item = findLastRunningCompaction(model);
+  if (!item) return;
+  delete item.summaryText;
+  delete item.summaryStartedAtMs;
+  item.requestWorkStart = item.work?.length ?? 0;
+}
+
+/**
+ * A user text inside the span is the compaction asking again (the corrective note after a
+ * rejected response, then the Prompt): the calls of the request before it were rejected, never
+ * a round — drop their cards (see CompactionItem.requestWorkStart).
+ */
+function dropRejectedWork(model: StreamModel): void {
+  const item = findLastRunningCompaction(model);
+  if (!item?.work) return;
+  const rejected = item.work.splice(item.requestWorkStart ?? 0);
+  for (const card of rejected) {
+    if (model.toolCards.get(card.toolCallId) === card) model.toolCards.delete(card.toolCallId);
+  }
+  if (item.work.length === 0) delete item.work;
+}
+
+/**
+ * A compaction request ended: like the transcript's settleCutShortCalls, a work card whose call
+ * never completed, or that got no decision from a request that did not complete, will never run.
+ */
+function settleCutShortWork(model: StreamModel, completed: boolean): void {
+  const item = findLastRunningCompaction(model);
+  for (const card of item?.work ?? []) {
+    if (card.outputComplete) continue;
+    if (!card.callComplete || (!completed && card.decision === undefined)) {
+      settleUnfinishedCard(card);
+    }
+  }
+}
+
+/** The running compaction's work card for a call, created on its first record (no-op without a running banner). */
+function compactionWorkCard(
+  model: StreamModel,
+  init: { toolCallId: string; name: string; argumentsText: string; callStreaming: boolean },
+): ToolCallItem | null {
+  const item = findLastRunningCompaction(model);
+  if (!item) return null;
+  return createToolCard(model, init, (card) => (item.work ??= []).push(card));
+}
+
+/**
+ * A tool round's streamed call or output inside a running compaction: the transcript card's
+ * fragment rules (see handlePartial), on the banner's work card, and with no share in the
+ * Task's tool time.
+ */
+function handleCompactionPartialTool(
+  model: StreamModel,
+  p: PartialModelPayload,
+  tsMs: number | undefined,
+): void {
+  if (p.type === "partial_tool_call") {
+    const card = model.toolCards.get(p.tool_call_id);
+    if (card?.callComplete) return;
+    if (p.event_type === "start") {
+      if (card) {
+        card.argumentsText = p.arguments ?? "";
+        card.callStreaming = true;
+        return;
+      }
+      const created = compactionWorkCard(model, {
+        toolCallId: p.tool_call_id,
+        name: p.name,
+        argumentsText: p.arguments ?? "",
+        callStreaming: true,
+      });
+      if (created && tsMs !== undefined) created.argStartedAtMs = tsMs;
+      return;
+    }
+    if (!card) return;
+    if (p.name && !card.name) card.name = p.name;
+    if (p.arguments) card.argumentsText += p.arguments;
+    if (p.event_type === "stop") {
+      card.callStreaming = false;
+      if (tsMs !== undefined) card.callStartedAtMs = tsMs;
+    }
+    return;
+  }
+  if (p.type !== "partial_tool_call_output") return;
+  const card = model.toolCards.get(p.tool_call_id);
+  if (!card || card.outputComplete) return;
+  if (p.event_type === "start") card.outputStreaming = true;
+  else if (!card.outputStreaming) return;
+  if (p.output) card.output += p.output;
+  if (p.event_type === "stop") {
+    card.outputStreaming = false;
+    settleToolDuration(card, tsMs);
+  }
+}
+
+/** A tool round's complete call or output inside a running compaction (see handleCompactionPartialTool). */
+function handleCompactionTool(
+  model: StreamModel,
+  p: CompleteModelPayload,
+  tsMs: number | undefined,
+  elided: ElidedRecord | undefined,
+): void {
+  if (p.type === "tool_call") {
+    const existing = model.toolCards.get(p.tool_call_id);
+    const card =
+      existing && !existing.callComplete
+        ? existing
+        : compactionWorkCard(model, {
+            toolCallId: p.tool_call_id,
+            name: p.name,
+            argumentsText: p.arguments,
+            callStreaming: false,
+          });
+    if (!card) return;
+    // History has no fragments: the previous message's time stands in for the arguments' start.
+    if (card !== existing && model.lastTsMs > 0) card.argStartedAtMs = model.lastTsMs;
+    card.name = p.name;
+    card.argumentsText = p.arguments;
+    if (elided !== undefined) card.elidedCall = elided;
+    else delete card.elidedCall;
+    card.callStreaming = false;
+    card.callComplete = true;
+    if (tsMs !== undefined) card.callStartedAtMs = tsMs;
+    return;
+  }
+  if (p.type !== "tool_call_output") return;
+  const card =
+    model.toolCards.get(p.tool_call_id) ??
+    compactionWorkCard(model, {
+      toolCallId: p.tool_call_id,
+      name: "",
+      argumentsText: "",
+      callStreaming: false,
+    });
+  if (!card) return;
+  card.output = p.output;
+  if (elided !== undefined) card.elidedOutput = elided;
+  else delete card.elidedOutput;
+  card.outputStreaming = false;
+  card.outputComplete = true;
+  card.outputStatus = p.status ?? "completed";
+  settleToolDuration(card, tsMs);
 }
 
 /**
@@ -2602,5 +2799,15 @@ export function discardFragmentFor(model: StreamModel, msg: AmspRecord): void {
 
 function removeItem(model: StreamModel, item: ChatItem): void {
   const idx = model.items.indexOf(item);
-  if (idx >= 0) model.items.splice(idx, 1);
+  if (idx >= 0) {
+    model.items.splice(idx, 1);
+    return;
+  }
+  // A compaction's work card lives in its banner, not the transcript.
+  if (item.kind !== "tool_call") return;
+  for (const it of model.items) {
+    if (it.kind !== "compaction" || !it.work) continue;
+    const at = it.work.indexOf(item);
+    if (at >= 0) it.work.splice(at, 1);
+  }
 }

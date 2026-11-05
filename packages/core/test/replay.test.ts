@@ -9,6 +9,9 @@
  *   pending input; failed compaction rounds are dropped by the generic rule; a "completed"
  *   summarize closure whose output extracts to an empty summary (a pre-#83 trace shape) is
  *   voided and the original context replays.
+ * - A compaction that took tool rounds: the summary is the closing span's last committed
+ *   request (a round's text is not), and the trailer names the replayed file, worded for the
+ *   shell; a round the process died in leaves its outputs as carry-over, pairing its calls.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -377,6 +380,77 @@ describe("resumeTrace", () => {
     expect(answered.openingSummary).toBeUndefined();
     // A first input that is no summary is not one the context opened with.
     expect(resumeTrace([meta(), userText("hello")]).openingSummary).toBeUndefined();
+  });
+
+  it("closed context with tool rounds: the summary is the span's last committed request, its trailer naming the replayed file", () => {
+    const file = "/data/agents/a/traces/2026-11-04/session-x_001.jsonl";
+    const result = resumeTrace(
+      [
+        meta(),
+        userText("hello"),
+        requestBegin(),
+        assistantText("hi"),
+        requestEnd("completed"),
+        tokenUsage(usage(10), usage(10)),
+        compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+        userText("please summarize"),
+        requestBegin(),
+        assistantText("Writing the plan first."),
+        toolCall({ name: "write_file", arguments: '{"file_path":"/s/plan.md"}', toolCallId: "h1" }),
+        requestEnd("completed"),
+        toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+        requestBegin(),
+        assistantText("[summary]see /s/plan.md[/summary]"),
+        requestEnd("completed"),
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      ],
+      { tracePath: file, shell: "pwsh" },
+    );
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    const summary = (result.pendingSummary!.payload as { text: string }).text;
+    expect(summary.startsWith("[context_summary]\nsee /s/plan.md\n\n")).toBe(true);
+    expect(summary).not.toContain("Writing the plan first.");
+    expect(summary).toContain(file);
+    expect(summary).toContain("Select-String");
+  });
+
+  it("a round the process died in leaves its outputs as carry-over, pairing the committed calls", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+      userText("please summarize"),
+      requestBegin(),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/a.md"}', toolCallId: "h1" }),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/s/b.md"}', toolCallId: "h2" }),
+      requestEnd("completed"),
+      toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+      // The next request was under way when the process died; h2 never got its output.
+      requestBegin(),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.danglingCompaction).toMatchObject({ mode: "summarize" });
+    // The round's committed request is history; its output, and a placeholder for the call
+    // that got none, are what the next request sends first.
+    expect(textsOf(result.history)).toEqual([
+      "hello",
+      "hi",
+      "please summarize",
+      "write_file",
+      "read_file",
+    ]);
+    expect(
+      result.carryOver.map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["h1", "h2"]);
+    expect(textsOf(result.carryOver)).toEqual([
+      "written",
+      "[interrupted: process exited before the tool finished]",
+    ]);
   });
 
   it("drops failed compaction rounds via the generic rule (prompt not in history)", () => {

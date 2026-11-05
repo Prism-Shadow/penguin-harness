@@ -318,6 +318,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
+| `compaction.max_rounds` | `3` | Tool rounds a summarize compaction may take before its summary |
 | `compaction.prompt` | Built-in template | Prompt used for summarize compaction |
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | Built-in template | The always-injected half of the `{{MEMORY}}` block; carries `{{USER_MEMORY_INDEX}}` |
@@ -341,6 +342,8 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
+- `compaction.max_rounds`: in a round the model may read files and write hand-off files into its Session's scratchpad, nothing else; `0` restores the single text-only compaction request. Each round re-reads the cached context at the cache-read price, about 0.75 M cached tokens per compaction at three rounds of a 250k context. See [Compaction](/agent-loop#hand-off-files-tool-rounds-before-the-summary).
+- `compaction.prompt`: `{{SCRATCHPAD_DIR}}` (the Session's scratchpad, absolute) and `{{MAX_ROUNDS}}` are substituted when the section is read.
 - `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
@@ -349,7 +352,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `tools.builtin`: each entry has `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`. `call_description` is the per-tool switch for the `description` call argument, which is required while on; missing means kept.
 - `tools.mcpServers`: the transport is `stdio`, `http` or `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`. `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that server instead of trusting its `readOnlyHint`. A string value in `config` may hold a `${KEY}` reference to a Vault key, filled in when the server connects; see [Vault references](/tools#vault-references). `plugin` names the plugin whose install wrote the entry: reinstalling or uninstalling that plugin touches exactly the entries carrying its name, and an entry without the field is your own. Removing the field makes the entry yours, after which the plugin reads as not installed and installing it again is refused while the name is taken. See [MCP Servers](/tools#mcp-servers).
 
-The four `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
+The five `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
 
 For tool permissions and approval semantics, see [Tools & Approval](/tools).
 
@@ -376,6 +379,7 @@ compaction:
   max_context_length: 256000
   max_session_turns: -1
   mode: summarize
+  max_rounds: 3
 
 # Omitting the whole tools section = the full default toolset. Writing tools.builtin
 # REPLACES the default list wholesale: carry the complete definition (including the

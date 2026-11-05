@@ -341,6 +341,7 @@ interface CompactionSettings {
   maxSessionTurns: number;    // cumulative Session turn threshold (counted across Tasks); <=0 = unlimited
   mode: "summarize" | "discard";
   prompt: string;             // the Prompt used by summarize compaction
+  maxRounds?: number;         // tool rounds a summarize compaction may take first; absent or <=0 = none
 }
 ```
 
@@ -358,7 +359,7 @@ interface CompactionSettings {
 
 | 模式 | 行为 |
 | --- | --- |
-| `summarize`（默认） | 向旧上下文追加压缩 Prompt，提取 `[summary]` 后包装为 `[context_summary]` 用户文本，在全新的模型上下文中继续 |
+| `summarize`（默认） | 向旧上下文追加压缩 Prompt，允许模型先用几个工具轮写下交接文件，再提取 `[summary]` 包装为 `[context_summary]` 用户文本，在全新的模型上下文中继续 |
 | `discard` | 直接丢弃旧上下文。Task 进行中会等到 Task 结束再丢弃，否则这个 Task 就无法继续 |
 
 系统标记统一写作 `[tag]…[/tag]`；读取旧 Trace 与旧的持久化压缩 Prompt 时，仍识别早期的尖括号形式（`<summary>`、`<context_summary>` 等）。
@@ -394,7 +395,7 @@ interface CompactionSettings {
 | --- | --- | --- |
 | 严格层 | 系统提示词、工具集（含 MCP）、模型引用 | 在运行中的上下文内绝不改变。它们构成请求前缀，上下文的前缀自开启固定到关闭，因此整个 Trace 文件内供应商的提示词缓存始终有效。 |
 | 软限制层 | 思考等级 | 纯粹的逐请求参数，允许在上下文中途更换，不记入 Trace，代价是供应商的消息缓存失效。 |
-| 不限制层 | 审批模式；`compaction` 一节（`max_context_length`、`max_session_turns`、`mode`、`prompt`） | 逐次决策或在每个压缩检查点重读，修改立即生效，且不触及请求。 |
+| 不限制层 | 审批模式；`compaction` 一节（`max_context_length`、`max_session_turns`、`mode`、`max_rounds`、`prompt`） | 逐次决策或在每个压缩检查点重读，修改立即生效，且不触及请求。 |
 
 - 每次 LLM 请求取 Session 钉住的思考等级（Web App 对话内的选择器，或 CLI 的 `--thinking` / `/thinking`），未钉住时取上下文开启时读到的 Agent 配置缺省值。选择器会提醒先压缩，因为中途更换会让供应商的消息缓存失效。
 - 审批模式逐次决策时从数据库重读，因此修改即刻生效。
@@ -428,6 +429,18 @@ Agent State 无法装配（例如配置文件已无法解析）时，本次运�
 
 首个**已提交**的尝试（无论被采纳还是被判无效）还会把折进压缩请求的本轮输入（Task 中途的工具结果，或手动 `/compact` 折入的补发内容）吸收进旧上下文的历史：重试只重发修复输出与压缩 Prompt，此后也不再重发已吸收的输入。
 
+### 交接文件：摘要之前的工具轮
+
+一两段摘要装不下计划、决定记录或草稿，因此 `summarize` 压缩可以先走至多 `compaction.max_rounds` 个工具轮（默认 3）。默认压缩 Prompt 要求模型把这类细节写成本 Session scratchpad 下 `<scratchpad>/handoff/` 里的文件，再按固定小节给出摘要：请求、决定与约束、进展、错误与修正、文件（每个交接文件写绝对路径）、下一步。同意不带入下一个上下文：需要授权的事在那里重新询问。
+
+- 上限之内、含工具调用的响应是一个工具轮，而不是被判无效的摘要。工具轮能做什么由组合层的工具门决定：`read_file`，以及绝对路径位于本 Session scratchpad 内的 `write_file` / `edit_file`；其余调用以 `fatal` 的 `[tool error]` 应答并说明允许什么，既不询问也不执行。
+- 工具门放行的调用与普通轮次一样经审批回调（`always-ask` 下用户逐个批准交接文件的写入），再由 Environment 执行；沙盒照常适用，`read-only` 下写入失败，模型随之直接给出摘要。
+- 一轮的输出就是下一请求的全部输入，仍发在同一个 LLM 对象上：请求只向它延续的上下文追加，提示词缓存不受影响。每轮按缓存读价重读已缓存的前缀，外加它追加的内容。
+- 工具轮不占用重试预算；用尽之后，含工具调用的响应按上文判为无效。`max_rounds: 0` 恢复单次纯文本请求。
+- 工具轮中被中断时，正在运行的工具随之中止，每个未应答的调用都得到应答，旧上下文保持可配对；已写下的文件留在 scratchpad 中，随 Session 存续。
+
+引擎在采纳的摘要后、`[context_summary]` 块内追加一段尾注：被压缩上下文的 Trace 文件路径、更早的文件在哪里，以及如何精确查询它——先列出匹配行的行号（`rg -n -o` 或 `grep -n -o`，PowerShell 下为 `Select-String … .LineNumber`，按 Session 的 shell 措辞），再用 `read_file` 的 `offset` / `limit` 只读这些行，绝不读整个文件。模型切换的 Trace 交接说明给出同样的指引。尾注属于下一个上下文的开头，从不改变运行中上下文的前缀；恢复时按被重放文件自身的路径重新生成，分叉时连同交接文件路径一起改写为分叉自己的副本。
+
 ### 压缩何时放弃
 
 预算耗尽后，压缩以 `retryable` 结束（即本次放弃），保留原上下文与 Trace 文件，等待下次触发。`fatal` 失败让压缩立即以 `fatal` 结束：配置或凭据改变之前，下次触发也会撞上同一堵墙。用户中断则以 `aborted` 结束。
@@ -449,12 +462,12 @@ Agent State 无法装配（例如配置文件已无法解析）时，本次运�
 
 ### 观察压缩过程
 
-压缩请求运行期间，每次尝试的 `token_usage`，以及它写出的思考与摘要，都会上行到输出流，位于成对的压缩事件之间：思考与摘要以普通的 `partial_thinking` 与 `partial_text` 出现（不产出流式消息的 LLM 实现则为完整的 `thinking` / `text`）。不新增事件类型，压缩请求的其他原始消息一如既往只写 Trace。压缩请求与其他每次 LLM 请求一样携带 Session 钉住的思考等级；未钉住时取该模型上下文开启时的等级。
+压缩运行期间，每个请求的 `request_begin` / `request_end` 与 `token_usage`，以及它写出的思考与摘要，都会上行到输出流，位于成对的压缩事件之间：思考与摘要以普通的 `partial_thinking` 与 `partial_text` 出现（不产出流式消息的 LLM 实现则为完整的 `thinking` / `text`）；工具轮的工具调用、审批决定与输出与普通轮次一样上行。不新增事件类型；压缩 Prompt、被判无效响应的配对修复与纠正说明只写 Trace。压缩请求与其他每次 LLM 请求一样携带 Session 钉住的思考等级；未钉住时取该模型上下文开启时的等级。
 
 Web App 把压缩行呈现为一个运行中的工作分组，两层里只展开一层：
 
 - 组头的标题兼作状态：进行中为**压缩中**（或**清空中**），结束后为**压缩完毕**（或**清空完毕**），与工作分组组头的**运行中**/**运行完毕**同一写法；标题还带 wall time，进行中实时计时，结束后定格。
-- 压缩运行期间，该行展开，其中两节不展开：**思考**（请求产出了思考时才有）与**压缩结果**各是一条折叠的行，各自带标签与自己的 wall time。读者能看到它们存在、各花了多久，而压缩请求的原始过程不会落进正文。
+- 压缩运行期间，该行展开，其中各节不展开：**思考**（请求产出了思考时才有）、**工作**（走了工具轮时才有：每个调用一行工具行，例如写下的交接文件；有调用等待审批时附「允许 / 拒绝」并自行展开）与**压缩结果**（最后一个请求的文本），各是一条折叠的行，各自带标签。读者能看到它们存在、各花了多久，而压缩请求的原始过程不会落进正文。
 
 压缩结束后，该行自行收起，只留下一行摘要。summarize 压缩一开始就带上折叠箭头，读者展开任一节即可实时观看请求的过程，或事后阅读结果。
 

@@ -11,7 +11,9 @@
  * - Approval decisions annotate their card (manual when registered here, even across a resync
  *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
  *   and aborts render their own items.
- * - A compaction renders one banner: its summary and thinking stream onto it, each body
+ * - A compaction renders one banner: its summary and thinking stream onto it, its tool rounds
+ *   become work cards on it (an approval finds them; a rejected response's calls never do), the
+ *   summary draft starts over at each of its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
  * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
@@ -781,7 +783,7 @@ describe("approvals and events", () => {
     });
   });
 
-  it("a retried compaction times the whole span its concatenated draft covers", () => {
+  it("a retried compaction concatenates its thinking over the whole span, and its result starts over with the request that wrote the summary", () => {
     const m = createStreamModel();
     const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
     pushMessage(
@@ -790,29 +792,174 @@ describe("approvals and events", () => {
     );
     const banner = items(m)[0] as CompactionItem;
     // Attempt 1: thinks, starts writing, then the request dies and the engine resends.
+    pushMessage(m, at(requestBegin(), t(0)));
     pushMessage(m, at(partialThinking("start"), t(1)));
     pushMessage(m, at(partialThinking("delta", "first pass"), t(2)));
     pushMessage(m, at(partialThinking("stop"), t(3)));
     pushMessage(m, at(partialText("delta", "[summary]half"), t(4)));
-    // Attempt 2 continues the same span, so both drafts concatenate.
+    pushMessage(m, at(requestEnd("retryable", { retryInMs: 1 }), t(4)));
+    // Attempt 2 is a request of its own: the half-written draft was no summary.
+    pushMessage(m, at(requestBegin(), t(5)));
     pushMessage(m, at(partialThinking("start"), t(5)));
     pushMessage(m, at(partialThinking("delta", " second pass"), t(6)));
     pushMessage(m, at(partialThinking("stop"), t(9)));
-    pushMessage(m, at(partialText("delta", " the plan[/summary]"), t(10)));
+    pushMessage(m, at(partialText("delta", "[summary]the plan[/summary]"), t(10)));
+    pushMessage(m, at(requestEnd("completed"), t(11)));
     pushMessage(
       m,
       at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(12)),
     );
-    // Each start is recorded once and each later stop only extends it: the wall time covers
-    // the span that produced the prose on screen, the failed attempt included. Timing the
-    // last attempt alone would print 3s against text that took nine.
+    // The thinking start is recorded once and each later stop only extends it: the wall time
+    // covers the span that produced the prose on screen, the failed attempt included. The
+    // result is the last request's text, timed from its first summary token.
     expect(banner).toMatchObject({
       thinkingText: "first pass second pass",
       thinkingStartedAtMs: Date.parse(t(2)),
       thinkingDurationMs: 7000,
-      summaryStartedAtMs: Date.parse(t(4)),
-      summaryDurationMs: 8000,
+      summaryText: "[summary]the plan[/summary]",
+      summaryStartedAtMs: Date.parse(t(10)),
+      summaryDurationMs: 2000,
     });
+  });
+
+  /**
+   * A compaction that took a tool round, as the stream and the Trace carry it: the round's
+   * request (text, a write_file call), its decision and output, then the summary's request.
+   */
+  const roundLive = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "Writing the plan first."),
+    partialText("stop"),
+    partialToolCall({ eventType: "start", name: "write_file", toolCallId: "h1" }),
+    partialToolCall({
+      eventType: "delta",
+      name: "",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    partialToolCall({ eventType: "stop", name: "", toolCallId: "h1" }),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "[summary]see plan.md[/summary]"),
+    partialText("stop"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const roundHistory = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    userText("COMPACT NOW"),
+    requestBegin(),
+    assistantText("Writing the plan first."),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    assistantText("[summary]see plan.md[/summary]"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const workOf = (banner: CompactionItem) =>
+    (banner.work ?? []).map((c) => ({
+      name: c.name,
+      argumentsText: c.argumentsText,
+      output: c.output,
+      outputStatus: c.outputStatus,
+      decision: c.decision,
+      callComplete: c.callComplete,
+      outputComplete: c.outputComplete,
+    }));
+
+  it("a compaction's tool round is a work card on its banner, the same live and from history, and never a transcript item", () => {
+    const live = createStreamModel();
+    for (const msg of roundLive()) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    for (const msg of roundHistory()) pushMessage(rebuilt, msg);
+
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual(["compaction"]);
+      const banner = items(m)[0] as CompactionItem;
+      expect(workOf(banner)).toEqual([
+        {
+          name: "write_file",
+          argumentsText: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+          output: "Wrote /s/handoff/plan.md",
+          outputStatus: "completed",
+          decision: "allow",
+          callComplete: true,
+          outputComplete: true,
+        },
+      ]);
+      // The result is the last request's text: the round's own words are no summary.
+      expect(banner.summaryText).toBe("[summary]see plan.md[/summary]");
+      // Housekeeping, not the Task's tool work.
+      expect(m.stats.taskToolIntervals).toEqual([]);
+    }
+  });
+
+  it("an approval request for a round's call finds its work card, so the banner can show the buttons", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 11)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    expect(findToolCard(m, [], "h1")).toBe(banner.work![0]);
+    expect(banner.work![0]!.outputComplete).toBe(false);
+  });
+
+  it("a rejected response's calls are no work: history drops them when the corrective note follows, as live never showed them", () => {
+    const m = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "r1" }),
+      requestEnd("completed"),
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "r1",
+        status: "fatal",
+      }),
+      userText("Your previous reply was not a usable summary."),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]plain[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]) {
+      pushMessage(m, msg);
+    }
+    const banner = items(m)[0] as CompactionItem;
+    expect(banner.work).toBeUndefined();
+    expect(findToolCard(m, [], "r1")).toBeNull();
+    expect(banner.summaryText).toBe("[summary]plain[/summary]");
+  });
+
+  it("a compaction that does not complete drops its work with its drafts, and a call it cut short settles", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 10)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    const card = banner.work![0]!;
+    pushMessage(m, requestEnd("aborted"));
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(banner.work).toBeUndefined();
+    expect(card).toMatchObject({ outputComplete: true, outputStatus: "aborted" });
   });
 
   it("history replay rebuilds the same section timings from the span's complete messages", () => {
