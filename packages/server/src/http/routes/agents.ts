@@ -34,7 +34,7 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import { readArchiveBase64 } from "./agent-transfer.js";
+import { ACTIVITY_DAYS, summarizeAgents } from "./agent-summary.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionService } from "../../services/session-service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
@@ -65,9 +65,6 @@ export interface AgentsRouteDeps {
   drafts: Pick<UserDraftsStore, "deleteByAgent">;
 }
 
-/** Window size in days for the card's activity sparkline (last 30 days, including today). */
-const ACTIVITY_DAYS = 30;
-
 /** The refusal of a delete while organizations employ the Agent: each one by name, id and title. */
 function employedError(agentId: string, employers: readonly Employment[]): HttpError {
   const where = employers
@@ -89,30 +86,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);
-    // One query for the whole list: which Agents have their API switch on (this server's web.db).
-    const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
-    // And one read of the Project's organizations for every Agent's employments.
-    const employments = await deps.orgService.employments(projectId);
-    const agents: AgentSummary[] = await Promise.all(
-      items.map(async (item) => {
-        const stats = await deps.sessionService.sessionStats(
-          projectId,
-          item.agentId,
-          ACTIVITY_DAYS,
-        );
-        const employed = Object.hasOwn(employments, item.agentId)
-          ? employments[item.agentId]
-          : undefined;
-        return {
-          ...item,
-          activeSessionCount: deps.manager.activeCountForAgent(projectId, item.agentId),
-          sessionCount: stats.sessionCount,
-          sessionActivity: stats.activity,
-          apiEnabled: apiEnabled.has(item.agentId),
-          ...(employed !== undefined ? { employments: employed } : {}),
-        };
-      }),
-    );
+    const agents = await summarizeAgents(deps, projectId, items);
     return c.json({ agents } satisfies AgentsResponse);
   });
 
@@ -147,9 +121,6 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // process's cwd instead of being rejected.
       directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
-    // Optional snapshot seed: the new Agent starts from an exported package instead of the
-    // default template (the service rejects combining it with seeding).
-    const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,
@@ -157,7 +128,6 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       description,
       plugins,
       directory,
-      archive,
     );
     const agent: AgentSummary = {
       ...item,

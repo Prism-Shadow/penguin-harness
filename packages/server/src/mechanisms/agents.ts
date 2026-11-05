@@ -73,20 +73,10 @@ export abstract class AgentConfig {
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract ensureSnapshot(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string }>;
-  abstract exportArchive(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string; fileName: string }>;
-  abstract importArchive(
-    projectId: string,
-    agentId: string,
-    archive: Buffer<ArrayBufferLike>,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }>;
+  /** Packs the current State into a new `snapshots/import-backup-v<N>-…tar.gz`; answers `snapshots/<name>`. */
+  abstract backupBeforeImport(projectId: string, agentId: string): Promise<string>;
+  /** Replaces `agent_state/` with `incoming` in one rename swap, the current vault kept, rolled back on failure. */
+  abstract swapAgentState(projectId: string, agentId: string, incoming: string): Promise<void>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -189,7 +179,6 @@ export abstract class AgentLifecycle {
     description?: string,
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
-    archive?: Buffer<ArrayBufferLike>,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,
