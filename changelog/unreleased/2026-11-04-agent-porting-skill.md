@@ -7,7 +7,7 @@
 
 [中文版](2026-11-04-agent-porting-skill.zh.md)
 
-The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.1`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
+The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.11.05.3`). It is the process an agent follows when the Agents page's import dialog opens a migration chat, and when a user asks for a migration in any chat. The agent reads the source tool's files, writes them as an Agent zip folder and creates a new agent with `penguin agent import <folder>`. It then reports what did not move.
 
 ## Sources
 
@@ -17,10 +17,19 @@ The `skill-porting` plugin gains a third Skill, `agent-porting` (version `2026.1
 
 ## Secrets stay out of the conversation
 
-- The agent reads every JSON, TOML and YAML configuration file through the Skill's own reader, `scripts/inspect-config.mjs`. The reader prints the file as JSON, with every credential replaced by `<redacted:NAME>`: values under credential-looking keys, `env` and header values, credential flags and assignments in arguments and commands, and URL user info and query parameters. Key names, commands and `${VAR}` references stay readable. `~/.claude.json` shows only its MCP servers.
-- Credential stores (`.env`, `auth.json`, `.credentials.*`, OAuth token caches) are refused unread.
-- `--scan <dir>` names each line of a folder that holds a credential-looking value, with the value masked. The agent runs it on a source skill or hook directory before reading it, and on the folder before importing it. `--show <file>` prints a flagged file masked.
-- Instruction, skill and command Markdown is read directly.
+- The agent reads every source file through the Skill's own reader, `scripts/inspect-config.mjs`, and through no other command.
+- A JSON, TOML or YAML configuration file prints as JSON by allowlist:
+  - key names, numbers and booleans print;
+  - a string prints only when it is a `${VAR}` reference, a variable's name under a key that holds one (`bearer_token_env_var`, `env_key`, `env_vars`, `env_http_headers`), the value of a structural key (`name`, `type`, `transport`, `command`, `cwd`, `matcher`, `model`, effort and approval settings), an `args` flag, package or path, or a URL's scheme, host and path;
+  - a shell line under `command` prints only its program and a word count;
+  - a reference prints its variable's name when that is a plain name, under a credential key too, and anything else inside `${…}` as `${<redacted:N chars>}`;
+  - every other string prints as `<redacted:N chars>`;
+  - `~/.claude.json` shows only its MCP servers.
+- A file that does not parse names its line and prints only its key names, never its content.
+- `--scan` names each line of a file or folder that looks like it holds a credential as `file:line: <kind>`, and never prints the line. The agent runs it before reading any source directory and before the import.
+- `--show` prints a text file (instructions, skills, commands, scripts) with each flagged line replaced whole, and a private key block to its end.
+- Credential stores (`.env`, `*.env`, `.envrc`, `auth.json`, `.credentials.*`, OAuth token caches, `*.pem`, `*.key`, `id_rsa*`, `.netrc`, `.npmrc`, `.pypirc`) are refused unread.
+- A hook whose command is a script file ports through that script; an inline shell line, which the reader never shows, is reported.
 
 ## What moves
 
