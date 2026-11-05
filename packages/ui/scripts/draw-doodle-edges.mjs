@@ -5,18 +5,24 @@
  *
  *   node packages/ui/scripts/draw-doodle-edges.mjs          rewrite both blocks
  *   node packages/ui/scripts/draw-doodle-edges.mjs --check  exit 1 if either block is stale
+ *   node packages/ui/scripts/draw-doodle-edges.mjs --geometry  the surface line and fill corner, JSON
  *
  * The line. Each shape is one rounded rectangle traced by a pen from a fixed seed: the straight
  * runs wander a fraction of a pixel off true, every corner is a slightly uneven arc, and the pen
  * starts a hair inside the box on the top-left and runs out onto the line, the start overlap of a
  * drawn loop. A redraw prints the same bytes, so the theme file changes only when a parameter here
- * does. From that one list of points each shape gives three things:
+ * does. From that one list of points come:
  *
  * - `--_stroke-<shape>[-<ink>]`: the pen line alone, laid on a box as a `border-image` 9-slice —
- *   the corners keep their drawn shape and the runs between them stretch along the box. It is a
- *   bitmap, a 1x and a 2x PNG in an `image-set` rendered from the points by `raster-strokes.mjs`:
- *   a 9-slice of an SVG is re-rasterised for every slice of every box on every repaint, a bitmap's
- *   is copied, and a transcript holds hundreds of boxes.
+ *   the corners keep their drawn shape and the runs between them stretch along the box. A shape
+ *   a page shows by the dozen (a control, a surface, a pill) is a bitmap — a PNG at twice its size
+ *   in an `image-set`, rendered from the points by `raster-strokes.mjs` — because a 9-slice of an
+ *   SVG is re-rasterised for every slice of every box on every repaint and a bitmap's is copied;
+ *   the rarer shapes and the dashed lines stay SVG, which is smaller.
+ * - `--_fill-radius-surface`: the CSS corner a frame's padding-box fill takes instead of a clip —
+ *   the radius whose corner stays nearest the drawn line at its worst, within the pen's half-width
+ *   at every corner, so a frame's fill ends under the line without the clip a tall box with a lot
+ *   inside it pays for on every repaint.
  * - `--_clip-<shape>`: the same outline as a `clip-path: shape()`, pushed outward by half the pen
  *   plus a quarter pixel so the line's outer half is never cut. Every point is placed where the
  *   9-slice stretch puts it — a corner's points in fixed px from their edge, a run's in a percentage
@@ -71,15 +77,17 @@ const MARGIN = 12;
 
 /**
  * `size` is the square image, `slice` the corner region the theme cuts it at, `radius` the
- * corner's arc. `arcSteps` is how many chords draw a quarter arc. `tail` draws the pen's start
+ * corner's arc. `bitmap` marks the shapes a page shows by the dozen (a box of every kind, a badge),
+ * whose stroke ships as a PNG; the rest stay SVG, which is smaller and costs nothing at the few a
+ * page shows. `arcSteps` is how many chords draw a quarter arc. `tail` draws the pen's start
  * overlap (only where it stays inside the corner region, which never stretches). `open` leaves
  * the bottom edge undrawn (a folder or notebook tab). `scale: "half"` maps the image onto a
  * square host at 50 % per corner (`border-image-width: 50%`), so the shape is a circle at any size.
  */
 const SHAPES = {
-  control: { size: 28, slice: 9, radius: 5, stroke: 1.45, seed: 5, tail: true },
-  surface: { size: 48, slice: 14, radius: 7, stroke: 1.55, seed: 11, tail: true },
-  pill: { size: 20, slice: 9, radius: 8, stroke: 1.45, seed: 17, arcSteps: 6 },
+  control: { size: 28, slice: 9, radius: 5, stroke: 1.45, seed: 5, tail: true, bitmap: true },
+  surface: { size: 48, slice: 14, radius: 7, stroke: 1.55, seed: 11, tail: true, bitmap: true },
+  pill: { size: 20, slice: 9, radius: 8, stroke: 1.45, seed: 17, arcSteps: 6, bitmap: true },
   box: { size: 18, slice: 6, radius: 3, stroke: 1.45, seed: 23 },
   tab: { size: 28, slice: 9, radius: 5, stroke: 1.45, seed: 29, tail: true, open: true },
   ball: { size: 48, slice: 24, radius: 23, stroke: 1.55, seed: 31, arcSteps: 6, scale: "half" },
@@ -236,17 +244,84 @@ const svg = (size, inner) =>
   `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}'>${inner}</svg>`;
 
 /**
- * The pen line alone, as the bitmap a 9-slice copies rather than redraws: one PNG for 1x screens
- * and one for 2x, chosen by `image-set`.
+ * The pen line alone. A shape shown by the dozen is a bitmap a 9-slice copies rather than redraws:
+ * one PNG at twice its size, which `image-set` lays at its own size (a 1x screen scales it down).
+ * A dashed line and a rarely shown shape stay SVG.
  */
 function stroke(shape, ink, { dashed = false } = {}) {
   const width = dashed ? 1.2 : shape.stroke;
   const lines = dashed ? dashedPath(shape) : lineLines(shape);
-  const png = (scale) => {
-    const data = encodePng(rasterize({ size: shape.size, scale, width, lines }), ink);
-    return `url("data:image/png;base64,${data.toString("base64")}")`;
-  };
-  return `image-set(${png(1)} 1x, ${png(2)} 2x)`;
+  if (shape.bitmap && !dashed) {
+    const data = encodePng(rasterize({ size: shape.size, scale: 2, width, lines }), ink);
+    return `image-set(url("data:image/png;base64,${data.toString("base64")}") 2x)`;
+  }
+  const d = lines.map(({ points, closed }) => polyline(points) + (closed ? "Z" : "")).join("");
+  return url(
+    svg(
+      shape.size,
+      `<path d='${d}' fill='none' stroke='${ink}' stroke-width='${width}' ` +
+        `stroke-linecap='round' stroke-linejoin='round'/>`,
+    ),
+  );
+}
+
+/** Distance from a point to the nearest segment of a polyline. */
+function distanceTo([px, py], points, closed) {
+  let best = Infinity;
+  const count = closed ? points.length : points.length - 1;
+  for (let i = 0; i < count; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[(i + 1) % points.length];
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const t = Math.max(
+      0,
+      Math.min(1, ((px - x0) * dx + (py - y0) * dy) / (dx * dx + dy * dy || 1)),
+    );
+    best = Math.min(best, Math.hypot(px - x0 - t * dx, py - y0 - t * dy));
+  }
+  return best;
+}
+
+/**
+ * The edge of a padding-box fill with a CSS corner `radius` under a 1px border, in a shape's image
+ * coordinates: at each of the four corners its arc and its straight runs out to the slice, where
+ * the 9-slice begins to stretch (a corner region keeps its size in every box, so this is the edge
+ * in every box).
+ */
+function fillEdge({ size, slice }, radius) {
+  const inner = Math.max(0, radius - 1);
+  const quarter = [];
+  for (let deg = 180; deg <= 270; deg += 2) {
+    const a = (deg * Math.PI) / 180;
+    quarter.push([radius + inner * Math.cos(a), radius + inner * Math.sin(a)]);
+  }
+  for (let v = radius; v <= slice; v += 0.5) quarter.push([1, v], [v, 1]);
+  return [
+    ...quarter,
+    ...quarter.map(([x, y]) => [size - x, y]),
+    ...quarter.map(([x, y]) => [size - x, size - y]),
+    ...quarter.map(([x, y]) => [x, size - y]),
+  ];
+}
+
+/**
+ * The CSS corner a frame's fill takes in place of a clip: of the radii up to the slice, the one
+ * whose fill edge strays least from the drawn line at its worst, so the fill ends under the pen
+ * at every corner whatever way the line wobbles there. The line's own half-width is the limit; a
+ * radius that cannot meet it stops the script.
+ */
+function fillRadius(shape) {
+  const line = outline(shape);
+  let best = { radius: 0, reach: Infinity };
+  for (let radius = 1.5; radius <= shape.slice; radius += 0.05) {
+    const reach = Math.max(...fillEdge(shape, radius).map((p) => distanceTo(p, line, true)));
+    if (reach < best.reach) best = { radius: f(radius), reach };
+  }
+  if (best.reach > shape.stroke / 2) {
+    throw new Error(`no fill corner stays under the ${shape.size}px line (best ${best.reach})`);
+  }
+  return best.radius;
 }
 
 /** The outline filled and lined, over a soft shadow drawn as widening strokes at a low alpha. */
@@ -329,6 +404,8 @@ function lineProperties(mode) {
   if (mode === "light") {
     for (const [name, shape] of Object.entries(SHAPES))
       props.push([`--_clip-${name}`, clip(shape)]);
+    // A frame's fill, which follows the line by its corner rather than a clip.
+    props.push(["--_fill-radius-surface", `${fillRadius(surface)}px`]);
     // A pill's drawing on a small square host (a radio's disc): its corners at 50 % each.
     props.push(["--_clip-disc", clip({ ...pill, scale: "half" })]);
   }
@@ -417,6 +494,22 @@ function sync(file, properties, check) {
   if (check) return false;
   writeFileSync(path, text.slice(0, start) + wanted + text.slice(end + END.length));
   return true;
+}
+
+// `--geometry`: the surface's line and its frame's fill corner as JSON, for a test to measure.
+if (process.argv.includes("--geometry")) {
+  const { surface } = SHAPES;
+  const { size, slice, stroke: width } = surface;
+  console.log(
+    JSON.stringify({
+      size,
+      slice,
+      stroke: width,
+      line: outline(surface),
+      radius: fillRadius(surface),
+    }),
+  );
+  process.exit(0);
 }
 
 const check = process.argv.includes("--check");

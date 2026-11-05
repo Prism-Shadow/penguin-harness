@@ -9,9 +9,10 @@
  * bubble (`ui-edge`), a card, a code block or a tool call (`ui-frame`), a notice (`ui-notice`), a
  * reply's widget (`ui-widget`) and whatever floats (`ui-glass`) — is edged by one outline traced
  * by a pen from a fixed seed (`scripts/draw-doodle-edges.mjs`), and its fill ends exactly under
- * that line: a boxed thing's own background is clipped to the outline by a `clip-path: shape()`
- * whose points stretch as the line's 9-slice stretches, and a floating slip is painted by one
- * image holding its fill, its line and a soft shadow. Text is never drawn on and nothing is
+ * that line: a control's, a bubble's or a notice's own background is clipped to the outline by a
+ * `clip-path: shape()` whose points stretch as the line's 9-slice stretches, a card's or a code
+ * block's takes the CSS corner the script finds stays under the pen, and a floating slip is
+ * painted by one image holding its fill, its line and a soft shadow. Text is never drawn on and nothing is
  * computed per element, so a box shows the same line on every hover, render, scroll and resize.
  * Measured on the test box against the other ways to get there (a 500-message transcript scrolled
  * end to end, raster time): a plain hairline 638 ms, round 1's line over a CSS rounded fill
