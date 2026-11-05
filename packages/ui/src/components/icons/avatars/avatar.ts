@@ -1,7 +1,8 @@
 /**
- * Letter-avatar helpers shared by `AgentAvatar`, `UserAvatar` and `ProviderLogo`'s letter tile: a
- * deterministic tile colour family hashed from a stable key (FNV-1a → hue), and the first
- * user-perceived character of a display name.
+ * Letter-avatar helpers shared by `UserAvatar` and `ProviderLogo`'s letter tile: a deterministic
+ * tile colour family hashed from a stable key (FNV-1a → hue), and the first user-perceived
+ * character of a display name. `AgentAvatar` draws no letter; its palette slot is this same hue,
+ * rounded (agent-palette.ts).
  *
  * The colour keys off an id rather than a name so it survives renames. The tile is a light
  * 14%-alpha tint with the initial as coloured ink rather than white on a solid fill: hsl(h 55%

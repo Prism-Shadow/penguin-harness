@@ -36,11 +36,11 @@ import "./channel-bubble.css";
 
 /** Who speaks a run. */
 export interface ChannelSender {
-  /** An employee (the agent's tinted tile) or a person (the initial on the foreground ink). */
+  /** An employee (the Agent mascot in its colour) or a person (the initial on the foreground ink). */
   kind: "agent" | "user";
-  /** The stable id: an agent's tile colour hashes it; the initial falls back to it on no name. */
+  /** The stable id: an agent's colour hashes it; a person's initial falls back to it on no name. */
   id: string;
-  /** The display name: the run's header, and the avatar's initial. */
+  /** The display name: the run's header, and a person's initial. */
   name: string;
 }
 
@@ -54,12 +54,7 @@ export const CHANNEL_RUN_AVATAR_PX = 36;
 function SenderAvatar({ sender }: { sender: ChannelSender }) {
   if (sender.kind === "agent") {
     return (
-      <AgentAvatar
-        id={sender.id}
-        name={sender.name}
-        size={CHANNEL_RUN_AVATAR_PX}
-        className="shrink-0 rounded-lg"
-      />
+      <AgentAvatar id={sender.id} size={CHANNEL_RUN_AVATAR_PX} className="shrink-0 rounded-lg" />
     );
   }
   return (
