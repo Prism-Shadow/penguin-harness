@@ -15,8 +15,10 @@
  * - A manifest whose new keys are out of shape is refused with a code naming the rule: an `id`
  *   other than the directory's is `benchmark_id_mismatch`; an `id` outside the id characters, a
  *   version outside the supported formats, an origin that is not a table of a known kind, an origin
- *   link that is not http(s) and an origin ref that is not a commit are `benchmark_manifest_invalid`,
- *   and so is a file that is not TOML.
+ *   link or a reference that is not http(s) and an origin ref that is not a commit are
+ *   `benchmark_manifest_invalid`, and so is a file that is not TOML.
+ * - A package's metadata (Chinese title, update time, author, references) survives a read and a
+ *   save.
  * - An origin's `imported_at` written as a TOML date-time reads as its ISO 8601 text.
  * - A manifest beyond the limits a written one keeps (a blank or over-long title, an over-long
  *   description, a run count outside 1..1000, a status nobody defined, a bad version or origin) is
@@ -108,6 +110,7 @@ describe("benchmark_config.toml", () => {
       titleZh: "报告写作",
       lastUpdate: "2026-10-30T12:00:00Z",
       author: { name: "Prism-Shadow", homepage: "https://github.com/Prism-Shadow" },
+      references: ["https://arxiv.org/abs/2608.03764", "https://github.com/Prism-Shadow/GDPevo"],
     });
     await writeBenchmarkManifest(dir, written);
     expect(await readBenchmarkManifest(dir)).toEqual(written);
@@ -199,6 +202,11 @@ describe("benchmark_config.toml", () => {
       "benchmark_manifest_invalid",
     ],
     ["an invalid update timestamp", 'last_update = "yesterday"\n', "benchmark_manifest_invalid"],
+    [
+      "a reference that is not an http(s) link",
+      'references = ["javascript:alert(1)"]\n',
+      "benchmark_manifest_invalid",
+    ],
     ["a version that is not text", "version = 2026\n", "benchmark_manifest_invalid"],
     ["an origin that is not a table", 'origin = "git"\n', "benchmark_manifest_invalid"],
     ["an origin kind nobody defined", '[origin]\nkind = "ftp"\n', "benchmark_manifest_invalid"],

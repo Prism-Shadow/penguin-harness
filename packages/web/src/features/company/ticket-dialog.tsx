@@ -60,7 +60,6 @@ import {
   Text,
   Textarea,
   guardLeave,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -99,6 +98,7 @@ import { dayKey } from "./calendar-geom";
 import { orgKey } from "./company-nav";
 import { deskRows } from "./org-sessions";
 import { chatPath, openTempSession } from "./temp-session";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -315,7 +315,7 @@ function TicketDialog({
       await load();
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

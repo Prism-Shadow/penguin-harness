@@ -10,7 +10,9 @@
  *
  * A toast is a notice: each one renders through `NoticeStrip` as a button, so it carries the
  * `ui-notice` hook and the strip's tone colours, and a theme that restyles notices restyles toasts
- * with them. The stack is portaled to the body above dialogs and drawers (`z-[100]` over their
+ * with them. An error toast may carry a problem report (`toastError(text, { report })`, for an
+ * error that is a defect rather than the person's to fix): it then holds two presses, its words
+ * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached. The stack is portaled to the body above dialogs and drawers (`z-[100]` over their
  * `z-50`), so a toast raised inside a dialog is still seen; the stack lets the pointer through and
  * only the toasts take it.
  *
@@ -30,6 +32,8 @@ import { createStore } from "zustand/vanilla";
 import { useUiStrings } from "../../../strings";
 import { NoticeStrip } from "../../feedback/notice/notice-strip";
 import type { NoticeStripTone } from "../../feedback/notice/notice-strip";
+import { ReportIssueAction } from "../../report/report-action";
+import type { ErrorReport } from "../../report/error-report";
 
 /** `attention` is the advisory kind: the write went through, and something in it needs a look. */
 export type ToastKind = "success" | "error" | "info" | "attention";
@@ -38,6 +42,8 @@ export interface ToastItem {
   id: number;
   kind: ToastKind;
   text: string;
+  /** An error's problem report, opened from 「[报告问题]」 on the toast. */
+  report?: ErrorReport | (() => ErrorReport);
   /** Leaving: plays the exit animation first, and is removed from the list once it has run. */
   leaving?: boolean;
 }
@@ -52,6 +58,9 @@ const DURATION: Readonly<Record<ToastKind, number>> = {
   attention: 6000,
   error: 6000,
 };
+
+/** How long an error toast that carries a report stays, ms: long enough to reach its second press. */
+const REPORT_DURATION = 10_000;
 
 /** The exit animation's length, ms (the web app's `anim-toast-out`). */
 const LEAVE_MS = 160;
@@ -80,15 +89,22 @@ function dismiss(id: number): void {
   }, LEAVE_MS);
 }
 
-function push(kind: ToastKind, text: string): void {
+function push(kind: ToastKind, text: string, report?: ErrorReport | (() => ErrorReport)): void {
   if (!text) return;
   const id = nextId++;
-  toastStore.setState((s) => ({ items: [...s.items, { id, kind, text }] }));
-  setTimeout(() => dismiss(id), DURATION[kind]);
+  const item: ToastItem = report === undefined ? { id, kind, text } : { id, kind, text, report };
+  toastStore.setState((s) => ({ items: [...s.items, item] }));
+  setTimeout(() => dismiss(id), report === undefined ? DURATION[kind] : REPORT_DURATION);
+}
+
+export interface ErrorToastOptions {
+  /** A serious error's problem report: the toast offers 「[报告问题]」. */
+  report?: ErrorReport | (() => ErrorReport);
 }
 
 export const toastSuccess = (text: string): void => push("success", text);
-export const toastError = (text: string): void => push("error", text);
+export const toastError = (text: string, options?: ErrorToastOptions): void =>
+  push("error", text, options?.report);
 export const toastInfo = (text: string): void => push("info", text);
 export const toastAttention = (text: string): void => push("attention", text);
 
@@ -118,15 +134,34 @@ export function ToastStack({
           key={t.id}
           className={`max-w-lg rounded-lg bg-overlay ${t.leaving ? "anim-toast-out" : "anim-toast-in"}`}
         >
-          <NoticeStrip
-            as="button"
-            tone={KIND_TONE[t.kind]}
-            aria-describedby={hint}
-            onClick={() => onDismiss(t.id)}
-            className="pointer-events-auto block w-full break-words rounded-md border px-3 py-2 text-left text-sm shadow-lg"
-          >
-            <span data-slot="body">{t.text}</span>
-          </NoticeStrip>
+          {t.report === undefined ? (
+            <NoticeStrip
+              as="button"
+              tone={KIND_TONE[t.kind]}
+              aria-describedby={hint}
+              onClick={() => onDismiss(t.id)}
+              className="pointer-events-auto block w-full break-words rounded-md border px-3 py-2 text-left text-sm shadow-lg"
+            >
+              <span data-slot="body">{t.text}</span>
+            </NoticeStrip>
+          ) : (
+            // Two presses cannot nest in one button: the words dismiss, the action reports.
+            <NoticeStrip
+              as="div"
+              tone={KIND_TONE[t.kind]}
+              className="pointer-events-auto flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-sm shadow-lg"
+            >
+              <button
+                type="button"
+                aria-describedby={hint}
+                onClick={() => onDismiss(t.id)}
+                className="min-w-0 flex-1 cursor-pointer break-words text-left"
+              >
+                <span data-slot="body">{t.text}</span>
+              </button>
+              <ReportIssueAction report={t.report} onOpen={() => onDismiss(t.id)} />
+            </NoticeStrip>
+          )}
         </div>
       ))}
     </section>

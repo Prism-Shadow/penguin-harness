@@ -157,8 +157,8 @@ export interface StreamControllerDeps {
   /** Live subagent children carried on task_state events (absent = none): the panel's structural running marks — no tool-output text parsing for live sessions. */
   onSubagents?: (items: SubagentRuntimeInfo[]) => void;
   onLoading: (loading: boolean) => void;
-  /** History load failure message (null = clear). */
-  onError: (message: string | null) => void;
+  /** History load failure message (null = clear), and what was thrown, for judging how serious it is. */
+  onError: (message: string | null, cause?: unknown) => void;
   /** View model content changed (triggers a re-render). */
   onModelChange: () => void;
   /** Pending-approvals table changed. */
@@ -179,6 +179,8 @@ export interface OlderHistoryState {
   loading: boolean;
   /** The last backfill failed (the affordance offers a retry); null = fine. */
   error: string | null;
+  /** What the failed backfill threw, for judging whether it is a defect worth a report; null = fine. */
+  errorCause: unknown;
   /**
    * A window was read because the reader scrolled up for it, past the TAIL_UNITS Tasks a
    * conversation opens on: only then does reaching the beginning say so (a conversation that
@@ -279,6 +281,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     hasMore: false,
     loading: false,
     error: null,
+    errorCause: null,
     beyondTail: false,
   };
   /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
@@ -356,7 +359,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         if (fillRead === self.read) fillRead = null;
         setTransfer("fill", null);
       },
-      onError: (message) => {
+      onError: (_message, cause) => {
         end();
         if (waitingRead === self.read) waitingRead = null;
         if (delivered) {
@@ -367,7 +370,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           return;
         }
         if (track === "window" || (track === "older" && owned())) setTransfer(track, null);
-        reject(new Error(message));
+        // What failed, its words for the page and its kind for whether it is a defect.
+        reject(cause);
       },
     });
     self.read = read;
@@ -394,6 +398,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     older.hasMore = false;
     older.loading = false;
     older.error = null;
+    older.errorCause = null;
     older.beyondTail = false;
     outlineOffset = 0;
   };
@@ -911,7 +916,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       if (disposed || currentEpoch !== epoch) return;
       failed = true;
       deps.onLoading(false);
-      deps.onError(e instanceof Error ? e.message : String(e));
+      deps.onError(e instanceof Error ? e.message : String(e), e);
     }
   };
 
@@ -943,6 +948,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     const currentEpoch = epoch;
     older.loading = true;
     older.error = null;
+    older.errorCause = null;
     deps.onModelChange();
     const { done, read } = readWindow(
       { kind: "before", cursor: nextBefore, limit },
@@ -973,6 +979,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return false;
       older.error = e instanceof Error ? e.message : String(e);
+      older.errorCause = e;
       return false;
     } finally {
       if (olderRead === read) olderRead = null;

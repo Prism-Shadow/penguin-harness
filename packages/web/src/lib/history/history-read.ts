@@ -30,8 +30,23 @@ export type OpenBody = (ref: string, handlers: HistoryStreamHandlers) => StreamC
 const FRESH_READS = 2;
 
 /** The server's error event, in the page's words. */
-function errorText(error: HistoryStreamError): string {
-  return apiErrorText(new ApiError(0, error.code, error.message, undefined, error.details));
+/**
+ * The server's error event as the page's API error: its code kept (so whether it is a defect is
+ * judged as any answer is — `isSeriousError`), its words the app's own for that code.
+ */
+function streamFailure(error: HistoryStreamError): ApiError {
+  const answer = new ApiError(0, error.code, error.message, undefined, error.details);
+  return new ApiError(0, error.code, apiErrorText(answer), undefined, error.details);
+}
+
+/**
+ * A stream that broke its own rules on every read (a gap, a record that is not JSON): a defect
+ * rather than a dropped connection, said in the reader's words.
+ */
+function brokenFailure(): Error {
+  const failure = new Error(S.chat.historyTransfer.broken);
+  failure.name = "HistoryStreamBroken";
+  return failure;
 }
 
 export interface HistoryReadSink {
@@ -40,7 +55,8 @@ export interface HistoryReadSink {
   onWindow?: (window: HistoryWindow) => void;
   /** The read is complete: a window read's fill has finished, or a `fill` read made its file whole. */
   onFilled?: () => void;
-  onError: (message: string) => void;
+  /** The read failed: the words to show, and what failed, for judging whether it is a defect. */
+  onError: (message: string, cause: Error) => void;
 }
 
 export interface HistoryRead {
@@ -73,16 +89,16 @@ export function readHistory(
     conn?.close();
     conn = null;
   };
-  const fail = (message: string): void => {
+  const fail = (cause: Error): void => {
     if (over) return;
     finish();
-    sink.onError(message);
+    sink.onError(cause.message, cause);
   };
   const broken = (): void => {
     conn?.close();
     conn = null;
     if (fresh >= FRESH_READS) {
-      fail(S.chat.historyTransfer.broken);
+      fail(brokenFailure());
       return;
     }
     fresh += 1;
@@ -142,7 +158,7 @@ export function readHistory(
         sink.onFilled?.();
       },
       onError: (error) => {
-        if (live()) fail(errorText(error));
+        if (live()) fail(streamFailure(error));
       },
     });
   }
@@ -164,7 +180,8 @@ export interface BodyReadSink {
   /** Bytes of the value that have reached this page's server so far, as it reports them. */
   onProgress?: (doneBytes: number) => void;
   onValue: (value: string) => void;
-  onError: (message: string) => void;
+  /** The read failed: the words to show, and what failed. */
+  onError: (message: string, cause: Error) => void;
 }
 
 /**
@@ -183,10 +200,10 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
     conn?.close();
     conn = null;
   };
-  const fail = (message: string): void => {
+  const fail = (cause: Error): void => {
     if (over) return;
     finish();
-    sink.onError(message);
+    sink.onError(cause.message, cause);
   };
 
   function start(): void {
@@ -204,7 +221,7 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
           conn?.close();
           conn = null;
           if (fresh >= FRESH_READS) {
-            fail(S.chat.historyTransfer.broken);
+            fail(brokenFailure());
             return;
           }
           fresh += 1;
@@ -221,7 +238,7 @@ export function readBody(open: OpenBody, ref: string, sink: BodyReadSink): { clo
         sink.onValue(whole);
       },
       onError: (error) => {
-        if (live()) fail(errorText(error));
+        if (live()) fail(streamFailure(error));
       },
     });
   }

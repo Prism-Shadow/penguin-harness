@@ -216,81 +216,6 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.3.1
         version: 2.3.1
-      '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company':
-        specifier: workspace:*
-        version: link:../../plugins/agent-company
-      '@penguinharness/agent-development':
-        specifier: workspace:*
-        version: link:../../plugins/agent-development
-      '@penguinharness/agent-evaluation':
-        specifier: workspace:*
-        version: link:../../plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation':
-        specifier: workspace:*
-        version: link:../../plugins/browser-automation
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/data-analysis':
-        specifier: workspace:*
-        version: link:../../plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/default-rsi-toolkit
-      '@penguinharness/goal':
-        specifier: workspace:*
-        version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
-      '@penguinharness/model-development':
-        specifier: workspace:*
-        version: link:../../plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support':
-        specifier: workspace:*
-        version: link:../../plugins/penguin-support
-      '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development':
-        specifier: workspace:*
-        version: link:../../plugins/software-development
-      '@penguinharness/trace-rsi-toolkit':
-        specifier: workspace:*
-        version: link:../../plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides':
-        specifier: workspace:*
-        version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
-      '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -530,6 +455,93 @@ importers:
         specifier: ^4.0.0
         version: 4.0.1(supports-color@10.2.2)
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: workspace:*
+        version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
+      '@penguinharness/sandbox-bwrap':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-bwrap
+      '@penguinharness/sandbox-dsh':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-dsh
+      '@penguinharness/sandbox-seatbelt':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-seatbelt
+      '@penguinharness/sandbox-wsl':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-wsl
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -548,6 +560,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.5.0
         version: 4.7.0(supports-color@10.2.2)(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
       tailwindcss:
         specifier: ^4.1.0
         version: 4.3.2
@@ -560,6 +575,9 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
 
   packages/server:
     dependencies:
@@ -569,6 +587,81 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui':
+        specifier: workspace:*
+        version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -590,6 +683,9 @@ importers:
       hono:
         specifier: ^4.13.11
         version: 4.13.13
+      isomorphic-git:
+        specifier: ^1.44.0
+        version: 1.44.10
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -896,12 +992,23 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/a2ui: {}
+  plugins/a2ui:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/ace-rsi-toolkit: {}
+  plugins/ace-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/agent-company:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -911,6 +1018,9 @@ importers:
 
   plugins/agent-development:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -918,14 +1028,29 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/agent-evaluation: {}
+  plugins/agent-evaluation:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/ape-rsi-toolkit: {}
+  plugins/ape-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/awm-rsi-toolkit: {}
+  plugins/awm-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/browser-automation:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -933,10 +1058,17 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/continual-learning: {}
+  plugins/continual-learning:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/data-analysis:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -944,12 +1076,23 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/default-rsi-toolkit: {}
+  plugins/default-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/goal: {}
+  plugins/goal:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/humanizer:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -959,6 +1102,9 @@ importers:
 
   plugins/model-development:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -966,11 +1112,23 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/openskill-rsi-toolkit: {}
+  plugins/openskill-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/opro-rsi-toolkit: {}
+  plugins/opro-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/penguin-support: {}
+  plugins/penguin-support:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/sandbox-bwrap:
     devDependencies:
@@ -1038,6 +1196,9 @@ importers:
 
   plugins/skill-porting:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -1045,12 +1206,23 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/skilladam-rsi-toolkit: {}
+  plugins/skilladam-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
-  plugins/skillopt-rsi-toolkit: {}
+  plugins/skillopt-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/software-development:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -1058,10 +1230,17 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/trace-rsi-toolkit: {}
+  plugins/trace-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/use-bento-slides:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -1071,6 +1250,9 @@ importers:
 
   plugins/use-claude-code:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -1080,6 +1262,9 @@ importers:
 
   plugins/use-firecrawl:
     devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
@@ -2117,6 +2302,7 @@ packages:
   '@prismshadow/penguin-core@file:packages/core':
     resolution: {directory: packages/core, type: directory}
     engines: {node: '>=24'}
+    hasBin: true
 
   '@prismshadow/penguin-hmr@file:packages/hmr':
     resolution: {directory: packages/hmr, type: directory}
@@ -2854,6 +3040,10 @@ packages:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
     engines: {node: ^20.17.0 || >=22.9.0}
 
+  abort-controller@3.0.0:
+    resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
+    engines: {node: '>=6.5'}
+
   accepts@1.3.8:
     resolution: {integrity: sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw+NACSaeXEQ+NHcVF7rONl6qcaxV3Uuemwawk+7+SJLw==}
     engines: {node: '>= 0.6'}
@@ -2930,6 +3120,9 @@ packages:
     resolution: {integrity: sha512-NW2cX8m1Q7KPA7a5M2ULQeZ2wR5qI5PAbw5L0UOMxdioVk9PMZ0h1TmyZEkPYrCvYjDlFICusOu1dlEKAAeXBw==}
     engines: {node: '>=0.12.0'}
 
+  async-lock@1.4.1:
+    resolution: {integrity: sha512-Az2ZTpuytrtqENulXwO3GGv1Bztugx6TT37NIo7imr/Qo0gsYiGtSdBa2B6fsXhTpVZDNfu1Qn3pk531e3q+nQ==}
+
   async@3.2.6:
     resolution: {integrity: sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA==}
 
@@ -2939,6 +3132,10 @@ packages:
   at-least-node@1.0.0:
     resolution: {integrity: sha512-+q/t7Ekv1EDY2l6Gda6LLiX14rU9TV20Wa3ofeQmwPFZbOMo9DXrLbOjFaaclkXKWidIaopwAObQDqwWtGUjqg==}
     engines: {node: '>= 4.0.0'}
+
+  available-typed-arrays@1.0.7:
+    resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
+    engines: {node: '>= 0.4'}
 
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
@@ -3005,6 +3202,9 @@ packages:
   buffer-from@1.1.2:
     resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
 
+  buffer@6.0.3:
+    resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
+
   builder-util-runtime@9.7.0:
     resolution: {integrity: sha512-g/kR520giAFYkSXTzcmF3kqQq7wi8F6N6SzeDgZrqTBN+VHdmgWOyTdD1yD7AATDId/yXLvuP34CxW46/BwCdw==}
     engines: {node: '>=12.0.0'}
@@ -3041,6 +3241,10 @@ packages:
 
   call-bind-apply-helpers@1.0.2:
     resolution: {integrity: sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==}
+    engines: {node: '>= 0.4'}
+
+  call-bind@1.0.9:
+    resolution: {integrity: sha512-a/hy+pNsFUTR+Iz8TCJvXudKVLAnz/DyeSUo10I5yvFDQJBFU2s9uqQpoSrJlroHUKoKqzg+epxyP9lqFdzfBQ==}
     engines: {node: '>= 0.4'}
 
   call-bound@1.0.4:
@@ -3095,6 +3299,9 @@ packages:
   ci-info@4.4.0:
     resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
     engines: {node: '>=8'}
+
+  clean-git-ref@2.0.1:
+    resolution: {integrity: sha512-bLSptAy2P0s6hU4PzuIMKmMJJSE6gLXGH1cntDu7bWJUksvuM+7ReOK61mozULErYvP6a15rnYl0zFDef+pyPw==}
 
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
@@ -3196,6 +3403,11 @@ packages:
 
   cose-base@2.2.0:
     resolution: {integrity: sha512-AzlgcsCbUMymkADOJtQm3wO9S3ltPfYOFD5033keQn9NJzIbtnZj+UdBJe7DYml/8TdbtHJW3j58SOnKhWY/5g==}
+
+  crc-32@1.2.2:
+    resolution: {integrity: sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ==}
+    engines: {node: '>=0.8'}
+    hasBin: true
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
@@ -3446,6 +3658,9 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
+  diff3@0.0.3:
+    resolution: {integrity: sha512-iSq8ngPOt0K53A6eVr4d5Kn6GNrM2nQZtC740pzIriHtn4pOQ2lyzEXQMBeVcWERN0ye7fhBsk9PbLLQOnUx/g==}
+
   dir-compare@4.2.0:
     resolution: {integrity: sha512-2xMCmOoMrdQIPHdsTawECdNPwlVFB9zGcz3kuhmBO6U3oU+UQjsue0i8ayLKpgBcm+hcXPMVSGUN9d+pvJ6+VQ==}
 
@@ -3602,6 +3817,14 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
+  event-target-shim@5.0.1:
+    resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
+    engines: {node: '>=6'}
+
+  events@3.3.0:
+    resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
+    engines: {node: '>=0.8.x'}
+
   eventsource-parser@3.1.0:
     resolution: {integrity: sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==}
     engines: {node: '>=18.0.0'}
@@ -3674,6 +3897,10 @@ packages:
     peerDependenciesMeta:
       debug:
         optional: true
+
+  for-each@0.3.5:
+    resolution: {integrity: sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg==}
+    engines: {node: '>= 0.4'}
 
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
@@ -3907,6 +4134,13 @@ packages:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
 
+  ieee754@1.2.1:
+    resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
+
+  ignore@5.3.2:
+    resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
+    engines: {node: '>= 4'}
+
   import-meta-resolve@4.2.0:
     resolution: {integrity: sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg==}
 
@@ -3937,6 +4171,10 @@ packages:
   is-alphanumerical@2.0.1:
     resolution: {integrity: sha512-hmbYhX/9MUMF5uh7tOXyK/n0ZvWpad5caBA17GsC6vyuCqaWliRG5K1qS9inmUhEMaOBIW7/whAnSwveW/LtZw==}
 
+  is-callable@1.2.7:
+    resolution: {integrity: sha512-1BC0BVFhS/p0qtw6enp8e+8OD0UrK0oFLztSjNzhcKA3WDuJxxAPXzPuPtKkjEY9UUoEWlX/8fgKeu2S8i9JTA==}
+    engines: {node: '>= 0.4'}
+
   is-decimal@2.0.1:
     resolution: {integrity: sha512-AAB9hiomQs5DXWcRB1rqsxGUstbRroFOPPVAomNk/3XHR5JyEZChOyTWe2oayKnsSsr/kcGqF+z6yuH6HHpN0A==}
 
@@ -3954,8 +4192,15 @@ packages:
   is-potential-custom-element-name@1.0.1:
     resolution: {integrity: sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==}
 
+  is-typed-array@1.1.15:
+    resolution: {integrity: sha512-p3EcsicXjit7SaskXHs1hA91QxgTw46Fv6EFKKGS5DRFLD8yKnohjF3hxoju94b/OcMZoQukzpPpBE9uLVKzgQ==}
+    engines: {node: '>= 0.4'}
+
   isarray@1.0.0:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
+
+  isarray@2.0.5:
+    resolution: {integrity: sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw==}
 
   isbinaryfile@4.0.10:
     resolution: {integrity: sha512-iHrqe5shvBUcFbmZq9zOQHBoeOhZJu6RQGrDpBgenUm/Am+F3JM2MgQj+rK3Z601fzrL5gLZWtAPH2OBaSVcyw==}
@@ -3975,6 +4220,11 @@ packages:
   isexe@4.0.0:
     resolution: {integrity: sha512-FFUtZMpoZ8RqHS3XeXEmHWLA4thH+ZxCv2lOiPIn1Xc7CxrqhWzNSDzD+/chS/zbYezmiwWLdQC09JdQKmthOw==}
     engines: {node: '>=20'}
+
+  isomorphic-git@1.44.10:
+    resolution: {integrity: sha512-OMlkGP84A84E01mEuXXTzaVJtBqDpK8n8KevA229oVscY4SqgkQ20ByGudME5V6Y2wPpHbH7gYjY5dMK1PXFkQ==}
+    engines: {node: '>=14.17'}
+    hasBin: true
 
   istanbul-lib-coverage@3.2.2:
     resolution: {integrity: sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg==}
@@ -4436,6 +4686,9 @@ packages:
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
 
+  minimisted@2.0.1:
+    resolution: {integrity: sha512-1oPjfuLQa2caorJUM8HV8lGgWCc0qqAO1MNv/k05G4qslmsndV/5WdNZrqCiyqiz3wohia2Ij2B7w2Dr7/IyrA==}
+
   minipass@7.1.3:
     resolution: {integrity: sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==}
     engines: {node: '>=16 || 14 >=14.17'}
@@ -4580,6 +4833,9 @@ packages:
   package-manager-detector@1.8.0:
     resolution: {integrity: sha512-yQA4H19AmPEoMUeavPMDIe1higySl/gH/yaQrkT/s07Qp+7pp2hYz30N3z2l5BkjVkF9Ow6o0wjJamm2y7Sn0A==}
 
+  pako@1.0.11:
+    resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
+
   parse-entities@4.0.2:
     resolution: {integrity: sha512-GG2AQYWoLgL877gQIKeRPGO1xF9+eG1ujIb5soS5gPvLQ1y2o8FL90w2QWNdf9I361Mpp7726c+lj3U0qK1uGw==}
 
@@ -4625,6 +4881,10 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
+  pify@4.0.1:
+    resolution: {integrity: sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g==}
+    engines: {node: '>=6'}
+
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
@@ -4659,6 +4919,10 @@ packages:
 
   points-on-path@0.2.1:
     resolution: {integrity: sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==}
+
+  possible-typed-array-names@1.1.0:
+    resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
+    engines: {node: '>= 0.4'}
 
   postcss-load-config@6.0.1:
     resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
@@ -4698,6 +4962,10 @@ packages:
 
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
+
+  process@0.11.10:
+    resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
+    engines: {node: '>= 0.6.0'}
 
   progress@2.0.3:
     resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
@@ -4790,6 +5058,10 @@ packages:
 
   readable-stream@2.3.8:
     resolution: {integrity: sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==}
+
+  readable-stream@4.8.0:
+    resolution: {integrity: sha512-2jhTTU3Eilp/2DMT71gbcoqC35eQHasMJH0RHkYxwlxIv3+FR6Y5xAFZIwEGLxKkjZYEFlsiMNIdwUqjK2lLHQ==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
@@ -4948,8 +5220,17 @@ packages:
     resolution: {integrity: sha512-x0RTqQel6g5SY7Lg6ZreMmsOzncHFU7nhnRWkKgWuMTu5NN0DR5oruckMqRvacAN9d5w6ARnRBXl9xhDCgfMeA==}
     engines: {node: '>= 0.8.0'}
 
+  set-function-length@1.2.2:
+    resolution: {integrity: sha512-pgRc4hJ4/sNjWCSS9AmnS40x3bNMDTknHgL5UaMBTMyJnU90EgWh1Rz+MC9eFu4BuN/UwZjKQuY/1v3rM7HMfg==}
+    engines: {node: '>= 0.4'}
+
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
+
+  sha.js@2.4.12:
+    resolution: {integrity: sha512-8LzC5+bvI45BjpfXU8V5fdU2mfeKiQe1D1gIMn7XUlF3OTUrpdJpPPH4EMAnF0DsHHdSZqCdSss5qCmJKuiO3w==}
+    engines: {node: '>= 0.10'}
+    hasBin: true
 
   shebang-command@2.0.0:
     resolution: {integrity: sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==}
@@ -4988,6 +5269,12 @@ packages:
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
+
+  simple-concat@1.0.1:
+    resolution: {integrity: sha512-cSFtAPtRhljv69IK0hTVZQ+OfE9nePi/rtJmw5UjHeVyVroEqJXP1sFztKUy1qU+xvz3u/sfYJLa947b7nAN2Q==}
+
+  simple-get@4.0.1:
+    resolution: {integrity: sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -5045,6 +5332,9 @@ packages:
 
   string_decoder@1.1.1:
     resolution: {integrity: sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg==}
+
+  string_decoder@1.3.0:
+    resolution: {integrity: sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==}
 
   stringify-entities@4.0.4:
     resolution: {integrity: sha512-IwfBptatlO+QCJUo19AqvrPNqlVMpW9YEL2LIVY+Rpv2qsjCGxaDLNRgeGsQWJhfItebuJhsGSLjaBbNSQ+ieg==}
@@ -5149,6 +5439,10 @@ packages:
     resolution: {integrity: sha512-e0votIpp4Uo2AJYSzVHV6xCcawuiez3DzqDAbrTc3YxBkplN6e+dM13ZeIcZnDg/QpSuU2zfZ3rzwY8ukEnaXw==}
     engines: {node: '>=14.14'}
 
+  to-buffer@1.2.2:
+    resolution: {integrity: sha512-db0E3UJjcFhpDhAF4tLo03oli3pwl3dbnzXOUIlRKrp+ldk/VUxzpWYZENsw2SZiuBjHAk7DfB0VU7NKdpb6sw==}
+    engines: {node: '>= 0.4'}
+
   toidentifier@1.0.1:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
@@ -5221,6 +5515,10 @@ packages:
   type-is@1.6.18:
     resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
     engines: {node: '>= 0.6'}
+
+  typed-array-buffer@1.0.3:
+    resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
+    engines: {node: '>= 0.4'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -5426,6 +5724,10 @@ packages:
   whatwg-url@17.2.0:
     resolution: {integrity: sha512-IhLIHNcBrzIixC5XXsbr4DxdjajyA5vQ5RwGZMtrUp+GbtE5Nrsge9QKau7jXrC0aTXLYGV0xiW7Tb4YS2aomw==}
     engines: {node: ^22.14.0 || >=24.0.0}
+
+  which-typed-array@1.1.24:
+    resolution: {integrity: sha512-wk4Mf4pR5mRP7eYuuTBCIQ9d0ud2Fv2jRLQpfgnRjbOxAFHmjKFValgTpitVKzJJS8ajnYQV2Du1SZ8j6b/EUQ==}
+    engines: {node: '>= 0.4'}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -6771,31 +7073,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
@@ -6812,31 +7089,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
@@ -6853,31 +7105,6 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
-      '@penguinharness/agent-company': file:plugins/agent-company
-      '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
-      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
-      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
-      '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/data-analysis': file:plugins/data-analysis
-      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
-      '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
-      '@penguinharness/model-development': file:plugins/model-development
-      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
-      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
-      '@penguinharness/penguin-support': file:plugins/penguin-support
-      '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
-      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
-      '@penguinharness/software-development': file:plugins/software-development
-      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
-      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       arktype: 2.2.3
@@ -6906,6 +7133,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -6913,6 +7165,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -6935,6 +7188,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -6942,6 +7220,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -6964,6 +7243,31 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation': file:plugins/browser-automation
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -6971,6 +7275,7 @@ snapshots:
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
+      isomorphic-git: 1.44.10
       node-pty: 1.1.0
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -7756,6 +8061,10 @@ snapshots:
 
   abbrev@4.0.0: {}
 
+  abort-controller@3.0.0:
+    dependencies:
+      event-target-shim: 5.0.1
+
   accepts@1.3.8:
     dependencies:
       mime-types: 2.1.35
@@ -7870,11 +8179,17 @@ snapshots:
 
   async-exit-hook@2.0.1: {}
 
+  async-lock@1.4.1: {}
+
   async@3.2.6: {}
 
   asynckit@0.4.0: {}
 
   at-least-node@1.0.0: {}
+
+  available-typed-arrays@1.0.7:
+    dependencies:
+      possible-typed-array-names: 1.1.0
 
   aws4@1.13.2: {}
 
@@ -7963,6 +8278,11 @@ snapshots:
 
   buffer-from@1.1.2: {}
 
+  buffer@6.0.3:
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
+
   builder-util-runtime@9.7.0(supports-color@10.2.2):
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
@@ -8017,6 +8337,13 @@ snapshots:
       es-errors: 1.3.0
       function-bind: 1.1.2
 
+  call-bind@1.0.9:
+    dependencies:
+      call-bind-apply-helpers: 1.0.2
+      es-define-property: 1.0.1
+      get-intrinsic: 1.3.0
+      set-function-length: 1.2.2
+
   call-bound@1.0.4:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -8054,6 +8381,8 @@ snapshots:
   ci-info@4.3.1: {}
 
   ci-info@4.4.0: {}
+
+  clean-git-ref@2.0.1: {}
 
   cliui@8.0.1:
     dependencies:
@@ -8138,6 +8467,8 @@ snapshots:
   cose-base@2.2.0:
     dependencies:
       layout-base: 2.0.1
+
+  crc-32@1.2.2: {}
 
   cross-dirname@0.1.0:
     optional: true
@@ -8379,7 +8710,6 @@ snapshots:
       es-define-property: 1.0.1
       es-errors: 1.3.0
       gopd: 1.2.0
-    optional: true
 
   define-properties@1.2.1:
     dependencies:
@@ -8408,6 +8738,8 @@ snapshots:
   devlop@1.1.0:
     dependencies:
       dequal: 2.0.3
+
+  diff3@0.0.3: {}
 
   dir-compare@4.2.0:
     dependencies:
@@ -8623,6 +8955,10 @@ snapshots:
 
   etag@1.8.1: {}
 
+  event-target-shim@5.0.1: {}
+
+  events@3.3.0: {}
+
   eventsource-parser@3.1.0: {}
 
   eventsource@3.0.7:
@@ -8727,6 +9063,10 @@ snapshots:
   follow-redirects@1.16.1(debug@4.4.3(supports-color@10.2.2)):
     optionalDependencies:
       debug: 4.4.3(supports-color@10.2.2)
+
+  for-each@0.3.5:
+    dependencies:
+      is-callable: 1.2.7
 
   form-data@4.0.6:
     dependencies:
@@ -8898,7 +9238,6 @@ snapshots:
   has-property-descriptors@1.0.2:
     dependencies:
       es-define-property: 1.0.1
-    optional: true
 
   has-symbols@1.1.0: {}
 
@@ -9092,6 +9431,10 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
+  ieee754@1.2.1: {}
+
+  ignore@5.3.2: {}
+
   import-meta-resolve@4.2.0: {}
 
   inflight@1.0.6:
@@ -9116,6 +9459,8 @@ snapshots:
       is-alphabetical: 2.0.1
       is-decimal: 2.0.1
 
+  is-callable@1.2.7: {}
+
   is-decimal@2.0.1: {}
 
   is-fullwidth-code-point@3.0.0: {}
@@ -9126,7 +9471,13 @@ snapshots:
 
   is-potential-custom-element-name@1.0.1: {}
 
+  is-typed-array@1.1.15:
+    dependencies:
+      which-typed-array: 1.1.24
+
   isarray@1.0.0: {}
+
+  isarray@2.0.5: {}
 
   isbinaryfile@4.0.10: {}
 
@@ -9137,6 +9488,20 @@ snapshots:
   isexe@3.1.5: {}
 
   isexe@4.0.0: {}
+
+  isomorphic-git@1.44.10:
+    dependencies:
+      async-lock: 1.4.1
+      clean-git-ref: 2.0.1
+      crc-32: 1.2.2
+      diff3: 0.0.3
+      ignore: 5.3.2
+      minimisted: 2.0.1
+      pako: 1.0.11
+      pify: 4.0.1
+      readable-stream: 4.8.0
+      sha.js: 2.4.12
+      simple-get: 4.0.1
 
   istanbul-lib-coverage@3.2.2: {}
 
@@ -9814,6 +10179,10 @@ snapshots:
 
   minimist@1.2.8: {}
 
+  minimisted@2.0.1:
+    dependencies:
+      minimist: 1.2.8
+
   minipass@7.1.3: {}
 
   minizlib@3.1.0:
@@ -9955,6 +10324,8 @@ snapshots:
 
   package-manager-detector@1.8.0: {}
 
+  pako@1.0.11: {}
+
   parse-entities@4.0.2:
     dependencies:
       '@types/unist': 2.0.11
@@ -9992,6 +10363,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.4: {}
+
+  pify@4.0.1: {}
 
   pirates@4.0.7: {}
 
@@ -10033,6 +10406,8 @@ snapshots:
       path-data-parser: 0.1.0
       points-on-curve: 0.2.0
 
+  possible-typed-array-names@1.1.0: {}
+
   postcss-load-config@6.0.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.22.4)(yaml@2.9.0):
     dependencies:
       lilconfig: 3.1.3
@@ -10058,6 +10433,8 @@ snapshots:
   proc-log@6.1.0: {}
 
   process-nextick-args@2.0.1: {}
+
+  process@0.11.10: {}
 
   progress@2.0.3: {}
 
@@ -10173,6 +10550,14 @@ snapshots:
       safe-buffer: 5.1.2
       string_decoder: 1.1.1
       util-deprecate: 1.0.2
+
+  readable-stream@4.8.0:
+    dependencies:
+      abort-controller: 3.0.0
+      buffer: 6.0.3
+      events: 3.3.0
+      process: 0.11.10
+      string_decoder: 1.3.0
 
   readdirp@4.1.2: {}
 
@@ -10397,7 +10782,22 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  set-function-length@1.2.2:
+    dependencies:
+      define-data-property: 1.1.4
+      es-errors: 1.3.0
+      function-bind: 1.1.2
+      get-intrinsic: 1.3.0
+      gopd: 1.2.0
+      has-property-descriptors: 1.0.2
+
   setprototypeof@1.2.0: {}
+
+  sha.js@2.4.12:
+    dependencies:
+      inherits: 2.0.4
+      safe-buffer: 5.2.1
+      to-buffer: 1.2.2
 
   shebang-command@2.0.0:
     dependencies:
@@ -10450,6 +10850,14 @@ snapshots:
 
   signal-exit@3.0.7: {}
 
+  simple-concat@1.0.1: {}
+
+  simple-get@4.0.1:
+    dependencies:
+      decompress-response: 6.0.0
+      once: 1.4.0
+      simple-concat: 1.0.1
+
   simple-update-notifier@2.0.0:
     dependencies:
       semver: 7.8.5
@@ -10497,6 +10905,10 @@ snapshots:
   string_decoder@1.1.1:
     dependencies:
       safe-buffer: 5.1.2
+
+  string_decoder@1.3.0:
+    dependencies:
+      safe-buffer: 5.2.1
 
   stringify-entities@4.0.4:
     dependencies:
@@ -10608,6 +11020,12 @@ snapshots:
 
   tmp@0.2.7: {}
 
+  to-buffer@1.2.2:
+    dependencies:
+      isarray: 2.0.5
+      safe-buffer: 5.2.1
+      typed-array-buffer: 1.0.3
+
   toidentifier@1.0.1: {}
 
   tough-cookie@6.0.2:
@@ -10679,6 +11097,12 @@ snapshots:
     dependencies:
       media-typer: 0.3.0
       mime-types: 2.1.35
+
+  typed-array-buffer@1.0.3:
+    dependencies:
+      call-bound: 1.0.4
+      es-errors: 1.3.0
+      is-typed-array: 1.1.15
 
   typescript@5.9.3: {}
 
@@ -10854,6 +11278,16 @@ snapshots:
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
       - '@noble/hashes'
+
+  which-typed-array@1.1.24:
+    dependencies:
+      available-typed-arrays: 1.0.7
+      call-bind: 1.0.9
+      call-bound: 1.0.4
+      for-each: 0.3.5
+      get-proto: 1.0.1
+      gopd: 1.2.0
+      has-tostringtag: 1.0.2
 
   which@2.0.2:
     dependencies:

@@ -31,8 +31,16 @@
  *   `have` stays within the machine's ceiling, and a file left out is simply sent again.
  * - Given the copy over its cap, when a stream completes, then an open job's Session is kept
  *   though it was read longest ago, and a Session no job holds goes.
+ * - Given copies an earlier run kept, one last read 8 days before and one that day, when the hub
+ *   starts over them, then the first goes before anything is read, and the second stays.
+ * - Given a Session not read for a week, when a stream completes, then its copy goes, while an
+ *   open job's Session read as long ago stays; given one, when the daily sweep comes, then it
+ *   goes, while one read again 6 days before stays.
+ * - Given a read the copy answers alone (the Trace panel's events), then it counts as a read
+ *   across a restart: the copy stays a week from it, and one read only before goes.
  */
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -42,16 +50,17 @@ import zlib from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import type { HistoryLinesWindow, HistoryProgress } from "../src/api/types.js";
+import type { HistoryLinesWindow, HistoryProgress, TraceEventsResponse } from "../src/api/types.js";
 import { machineHistory } from "../src/machines/history-routes.js";
 import { MachineSockets, OWN_SILENCE_MAX_PERIODS } from "../src/machines/machine-sockets.js";
 import type { MachineSocket } from "../src/machines/machine-sockets.js";
 import { LinkActivity } from "../src/machines/link-activity.js";
 import { machinesProxy } from "../src/machines/proxy.js";
 import type { ProxyTarget } from "../src/machines/proxy.js";
-import { TraceCache } from "../src/machines/trace-cache.js";
+import { TraceCache, dirNameOf } from "../src/machines/trace-cache.js";
 import { decodeHistoryHave } from "../src/services/history-wire.js";
 import {
+  CACHE_SWEEP_MS,
   HistorySync,
   MACHINE_STREAM_STALL_MS,
   MACHINE_STREAM_WATCHDOG_MS,
@@ -64,6 +73,7 @@ const MACHINE = "QS7J4YVgSovi-Z2c";
 const SID = "session-2026-10-29-09-00-00-00000001";
 const K = `default_agent/${SID}/1`;
 const FILE = traceLine(0, "hello", "user") + traceLine(1, "hi there");
+const DAY = 24 * 60 * 60 * 1000;
 
 type ClientFrame = { id: number; call?: { path: string }; cancel?: true; ack?: number };
 
@@ -298,6 +308,15 @@ function hub(
     (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`, { headers })))!;
   return { get, sync, cache };
 }
+
+/** Reads one Session's window through the hub, to the stream's end. */
+async function readWindow(get: (remote: string) => Promise<Response>, sid: string): Promise<void> {
+  await eventReader(await get(`/api/sessions/${sid}/history?tailLimit=20`)).finished;
+}
+
+/** The key of a one-file Session's file, and where the copy keeps that Session under `copy`. */
+const keyOf = (sid: string) => `default_agent/${sid}/1`;
+const copyDir = (copy: string, sid: string) => path.join(copy, dirNameOf(MACHINE), dirNameOf(sid));
 
 const progressOf = (events: { event: string; data: string }[]): HistoryProgress[] =>
   events.filter((e) => e.event === "progress").map((e) => JSON.parse(e.data) as HistoryProgress);
@@ -1495,6 +1514,98 @@ describe("a machine Session's history when the machine's leg misbehaves", () => 
     }
     expect(await cache.bytes(MACHINE, "default_agent/s-open/1", 0, 1)).not.toBeNull();
   });
+  it("deletes at its start a copy read 8 days before, by the read time it kept, and keeps one read that day", async () => {
+    const copy = path.join(root, "copy");
+    let now = 0;
+    // What an earlier run kept: one Session read on day 0, one on day 8.
+    const earlier = new TraceCache(copy, { now: () => now });
+    const kept = async (sid: string) => {
+      await earlier.reconcile(MACHINE, sid, windowOf(FILE, keyOf(sid)).files);
+      await earlier.commit(MACHINE, { k: keyOf(sid), off: 0, ord: 0, text: FILE });
+    };
+    await kept("s-old");
+    now = 8 * DAY;
+    await kept("s-today");
+
+    // The hub starts again on day 8 over the same directory; nothing is read (no machine).
+    const cache = new TraceCache(copy, { now: () => now });
+    hub(0, { cache });
+    await waitFor(() => !existsSync(copyDir(copy, "s-old")));
+    expect(await cache.bytes(MACHINE, keyOf("s-today"), 0, 1)).not.toBeNull();
+  });
+
+  it("deletes a copy not read for a week once a stream completes, but not an open job's read as long ago", async () => {
+    const copy = path.join(root, "copy");
+    let now = 0;
+    const machine = await scriptedMachine((ws, id, callPath) => {
+      const sid = sessionOf(callPath);
+      if (sid !== "s-open") return answerWindow(ws, id, callPath);
+      start(ws, id);
+      event(ws, id, "window", {
+        ...windowOf(FILE, keyOf(sid)),
+        totals: { ...windowOf(FILE, keyOf(sid)).totals, fill: { bytes: 10, lines: 1 } },
+      });
+      event(ws, id, "lines", { k: keyOf(sid), off: 0, ord: 0, text: FILE });
+      event(ws, id, "ready", {});
+    });
+    close.push(machine.close);
+    const cache = new TraceCache(copy, { now: () => now });
+    const { get } = hub(machine.port, { cache });
+
+    // Both read on day 0; the first's job stays open, its reader waiting for the fill.
+    const open = eventReader(await get(`/api/sessions/s-open/history?tailLimit=20&fill=1`));
+    close.push(open.stop);
+    await waitFor(() => open.has("done"));
+    await readWindow(get, "s-stale");
+    now = 8 * DAY;
+    await readWindow(get, "s-new");
+
+    await waitFor(() => !existsSync(copyDir(copy, "s-stale")));
+    expect(await cache.bytes(MACHINE, keyOf("s-open"), 0, 1)).not.toBeNull();
+    expect(await cache.bytes(MACHINE, keyOf("s-new"), 0, 1)).not.toBeNull();
+  });
+
+  it("deletes at the daily sweep a copy not read for a week, and keeps one read again 6 days before", async () => {
+    const copy = path.join(root, "copy");
+    let now = 0;
+    const machine = await scriptedMachine((ws, id, callPath) => answerWindow(ws, id, callPath));
+    close.push(machine.close);
+    const cache = new TraceCache(copy, { now: () => now });
+    const { get } = hub(machine.port, { cache });
+    await readWindow(get, "s-again");
+    await readWindow(get, "s-old");
+    now = 2 * DAY;
+    await readWindow(get, "s-again");
+
+    // Day 8, nothing streamed since: the sweep alone finds them.
+    now = 8 * DAY;
+    clock.advance(CACHE_SWEEP_MS);
+    await waitFor(() => !existsSync(copyDir(copy, "s-old")));
+    expect(await cache.bytes(MACHINE, keyOf("s-again"), 0, 1)).not.toBeNull();
+  });
+
+  it("counts a read the copy answers alone toward the retention, across a restart", async () => {
+    const copy = path.join(root, "copy");
+    let now = 0;
+    const machine = await scriptedMachine((ws, id, callPath) => answerWindow(ws, id, callPath));
+    close.push(machine.close);
+    const { get } = hub(machine.port, { cache: new TraceCache(copy, { now: () => now }) });
+    await readWindow(get, "s-panel");
+    await readWindow(get, "s-unread");
+
+    // Day 6: the Trace panel reads one Session's events, and the copy answers them alone.
+    now = 6 * DAY;
+    const events = await get(`/api/sessions/s-panel/traces/1?offset=0&limit=5`);
+    expect(((await events.json()) as TraceEventsResponse).events).toHaveLength(2);
+    expect(machine.calls("/history-lines")).toHaveLength(2);
+
+    // Restarted on day 10: read 4 days before, it stays; the other, read 10 days before, goes.
+    now = 10 * DAY;
+    const restarted = new TraceCache(copy, { now: () => now });
+    expect(await restarted.bytes(MACHINE, keyOf("s-panel"), 0, 1)).not.toBeNull();
+    expect(await restarted.bytes(MACHINE, keyOf("s-unread"), 0, 1)).toBeNull();
+  });
+
   it("loads a Session with many subagents on every open, its `have` within what the machine takes", async () => {
     // The machine's ceiling, scaled down with the copy's budget: 150 files of held runs pass it.
     const ceiling = 20_000;

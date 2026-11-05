@@ -33,13 +33,11 @@ import {
   Modal,
   PlusIcon,
   Textarea,
-  toastError,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import {
   ExampleFolderRow,
   ExampleRowGlyph,
@@ -59,6 +57,7 @@ import {
   upsertShortcut,
 } from "./user-shortcuts";
 import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Folder id for the user's shortcuts. Not a member of EXAMPLE_FOLDERS: that registry is the
@@ -144,7 +143,7 @@ export function ShortcutsFolder({
     setShortcuts(next);
     api.putPrefs({ draftShortcuts: next }).catch((e: unknown) => {
       setShortcuts(rollback);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     });
   }, []);
 
@@ -161,7 +160,7 @@ export function ShortcutsFolder({
     try {
       await api.putPrefs({ draftShortcuts: list });
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
     setShortcuts(list);

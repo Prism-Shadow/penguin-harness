@@ -9,13 +9,24 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentProps, ReactNode, RefObject } from "react";
-import { A2uiActionsProvider, EmptyState, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import {
+  A2uiActionsProvider,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  MessageBubble,
+  ReportIssueAction,
+  TextAction,
+  exceptionReport,
+  isSeriousError,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { TaskStats } from "../../lib/amsp/task-stats";
 import type { ElidedBodies, HistoryTransfer, PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import type { RequestFailure } from "./request-failure-report";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
@@ -80,6 +91,12 @@ export interface StreamRenderContext {
    * the route does not target. The button does not render if this isn't wired up.
    */
   onRetry?: () => Promise<void>;
+  /**
+   * Opens a failed or retrying model request's details — 「[详情]」 on its line: a report to copy
+   * or to file as a GitHub issue. On every level (a subagent's request fails the same way). The
+   * action does not render if this isn't wired up.
+   */
+  onShowFailure?: (failure: RequestFailure) => void;
   /**
    * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
    * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
@@ -291,6 +308,8 @@ export interface OlderHistoryControls {
   loading: boolean;
   /** The last backfill failed (retry row); null = fine. */
   error: string | null;
+  /** What the failed backfill threw: a defect (not the reader's to fix) offers 「[报告问题]」. */
+  errorCause?: unknown;
   /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
   prependedCount: number;
   onLoad: () => void;
@@ -640,15 +659,15 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
-          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
-              row after a failure, and — once at least one window was backfilled — a quiet
+          {/* Top-of-history affordance: spinner while the previous window loads, a notice with
+              Retry after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
               nothing — scrolling near the top triggers the fetch by itself — but the row keeps
               its height the moment there IS history above: a spinner that took space only
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
-            <div className="flex h-7 items-center justify-center">
+            <div className="flex min-h-7 items-center justify-center">
               {reading ? (
                 <HistoryTransferLine
                   loading={older.loading}
@@ -656,13 +675,28 @@ export function MessageStream({
                   fill={older.transfer?.fill ?? null}
                 />
               ) : older.error !== null ? (
-                <button
-                  type="button"
-                  onClick={older.onLoad}
-                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                // A notice line like the transcript's others, the error in it and Retry after it
+                // — not a red sentence that is itself the button. A press that starts no load
+                // (the stream is rebuilding after a reconnect) leaves Retry pressable.
+                <MessageBubble
+                  variant="notice"
+                  actions={
+                    <>
+                      <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
+                      {isSeriousError(older.errorCause) && (
+                        <ReportIssueAction
+                          report={() =>
+                            exceptionReport(older.errorCause, {
+                              what: "earlier messages of the conversation could not be loaded",
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  }
                 >
-                  {S.chat.loadEarlierRetry}
-                </button>
+                  {S.chat.loadEarlierFailed(older.error)}
+                </MessageBubble>
               ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}

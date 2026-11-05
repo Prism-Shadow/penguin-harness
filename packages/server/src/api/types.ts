@@ -5008,14 +5008,14 @@ export interface HookItem {
 }
 
 /**
- * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
- * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * One library plugin as the listing describes it: its package.json's npm fields and its card
+ * contribution, plus what it ships (skill bodies and scripts are never sent).
  * Every field but the identity, the version and the contents is optional: a field the package
  * does not carry is missing here, and the page says so rather than inventing one.
  */
 export interface PluginItem {
   name: string;
-  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  /** Display name (the card's `title`, `titleZh`); absent → the page shows `name`. */
   title?: string;
   titleZh?: string;
   /** English one-liner (package.json `description`); "" when the package carries none. */
@@ -5039,20 +5039,13 @@ export interface PluginItem {
   workbenches?: Array<{ name: string; version: string }>;
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or the card's `icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
-  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
+  /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
-  /**
-   * How an RSI toolkit uses Benchmarks (`penguin.rsi_protocol`): `benchmark`, one frozen Benchmark
-   * it optimizes against and records its candidates on; `train-test`, a Train package it learns on
-   * in one continuous environment and the paired Test package its frozen baseline and final States
-   * are tested on. Absent when the package declares none, which the Optimize tab reads as `benchmark`.
-   */
-  rsiProtocol?: "benchmark" | "train-test";
-  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
+  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }
 
@@ -5193,6 +5186,26 @@ export interface SkillArchiveInstallRequest {
   overwrite?: boolean;
 }
 
+/**
+ * POST /api/projects/:p/agents/:a/workbenches/archive: import one workbench's source from an
+ * uploaded zip. Layout: package.json at the zip root (its `name` is then the id), or under exactly
+ * one top-level directory (the directory name is then the id); source only — `state.json`, dot
+ * entries and `node_modules/` are refused. An id whose folder has a package.json is 409
+ * `workbench_exists` (`details.workbenchId` names it) unless `overwrite`. GET
+ * …/workbenches/:id/archive is the matching export, which round-trips through this POST.
+ */
+export interface WorkbenchArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace the source of a workbench with that id (its state.json stays) instead of answering 409. */
+  overwrite?: boolean;
+}
+
+/** 201 of the workbench archive import: the workbench as its load left it (`error` set when the files do not load). */
+export interface WorkbenchArchiveInstallResponse {
+  workbench: WorkbenchInfo;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------
@@ -5220,8 +5233,8 @@ export interface PluginIndexEntry {
   shortDescriptionZh?: string;
   /**
    * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own package.json (its `penguin`
-   * block) and icon when the package is on this server, over whatever the index row says.
+   * listing fills these display fields from the package's own card contribution (in its
+   * ifaces.json) and icon when the package is on this server, over whatever the index row says.
    */
   icon?: string;
   authors: string[];

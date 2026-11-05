@@ -278,7 +278,6 @@ export const en: Strings = {
       cancelled: "Stopped retrying",
       stoppedSsh: "Reconnect failed; fix ssh first",
       stoppedPassword: "Sign-in refused; not retrying",
-      lastFailure: "Last failure",
       retryNow: "Retry now",
       stop: "Stop retrying",
       retry: "Retry",
@@ -1031,7 +1030,7 @@ export const en: Strings = {
     current: "current",
     restore: "Restore",
     restoreTitle: "Restore version",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
@@ -1049,11 +1048,27 @@ export const en: Strings = {
         ? "Open the command palette to get back to the workbench."
         : `Press ${palette} for the command palette to get back to the workbench.`,
     noSuchPage: "This workbench does not exist or has no page.",
-    removeConfirm: "Delete this workbench and all its recorded versions?",
+    removeConfirm:
+      "Delete this workbench and its data? Its past versions will no longer be listed.",
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    fileCount: (n: number) => `${n} files`,
+    importAction: "Import zip",
+    importTitle: "Import workbench",
+    importUploadDesc:
+      "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Workbench imported",
+    importOverwriteTitle: "Overwrite existing workbench",
+    importOverwriteBody: (name: string): string =>
+      `The workbench "${name}" already exists. Overwriting replaces its source; its data (state.json) stays. Versions that loaded can still be restored from History; local edits that never loaded are lost. Continue?`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string =>
+      `The workbench was imported, but it failed to load: ${error}`,
+    importOverwriteAction: "Overwrite",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "Export",
   },
   harnessHistory: {
     title: "Harness history",
@@ -2053,8 +2068,8 @@ export const en: Strings = {
     deleteGroup: "Delete group",
     deleteGroupTitle: "Delete group",
     deleteGroupConfirm: (label: string, n: number): string =>
-      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
-    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
+      `Delete the group “${label}”? ${n === 1 ? "Its 1 model and its" : `Its ${n} models and their`} API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n === 1 ? "1 model" : `${n} models`})`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncNewPresets: "Add new models",
@@ -2126,7 +2141,7 @@ export const en: Strings = {
     speedTestStop: "Stop speed test",
     speedTestTitle: "Speed test",
     speedTestConfirm: (n: number): string =>
-      `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
+      `This sends one real request to ${n === 1 ? "the model in this group" : `each of the ${n} models in this group, one at a time,`} to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
@@ -2489,7 +2504,8 @@ export const en: Strings = {
     importTitle: "Import memories",
     importWhy:
       "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importFile: (name: string, count: number): string =>
+      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
@@ -2502,9 +2518,9 @@ export const en: Strings = {
     importEmptyFile: "This file carries no memories.",
     importConfirmTitle: "Confirm the import",
     importWillOverwrite: (names: string[]): string =>
-      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be overwritten: ${names.join(", ")}`,
     importWillRemove: (names: string[]): string =>
-      `${names.length} memories will be deleted: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be deleted: ${names.join(", ")}`,
     importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
     importIrreversible: "This cannot be undone.",
     importDone: (added: number, overwritten: number, removed: number): string =>
@@ -2952,7 +2968,7 @@ export const en: Strings = {
         `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
+      `A PenguinHarness plugin is an npm package: its package.json (npm's fields: name, version, description), its \`src/index.ts\`, whose decorator declares what the plugin carries — its card, its \`skills/<name>/SKILL.md\`, its MCP servers — and the \`ifaces.json\` its build writes from that, which is what the server reads. Whatever the source, before installing anything, read its package.json, its src/index.ts and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder (built first: \`npm install && npm run build\`) — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as the module's \`mcpServers\` entries, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
     importUploadDesc:
       "package.json at the zip root or in one top-level folder; exclude node_modules.",
     importUploadAction: "Choose a zip file",
@@ -3690,8 +3706,9 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "Loading earlier messages…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "Failed to load earlier messages — click to retry",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) =>
+      `[Load failed]: could not load earlier messages (${error})`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3782,37 +3799,57 @@ Scenarios:
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
     requestRetry: {
-      waiting: (seconds: number, n: number, m: number) =>
-        `Retrying in ${seconds} s (attempt ${n}/${m})`,
-      sending: (n: number, m: number) => `Retrying (attempt ${n}/${m})`,
-      sent: (n: number, m: number) => `Retried (attempt ${n}/${m})`,
-      gaveUp: (attempts: number) =>
-        attempts > 1 ? `Request failed after ${attempts} attempts` : "Request failed",
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
-          ? "Connection timed out"
+      waiting: (seconds: number, n: number, m: number) => `attempt ${n}/${m} in ${seconds} s`,
+      sending: (n: number, m: number) => `sending attempt ${n}/${m}`,
+      sent: (n: number, m: number) => `attempt ${n}/${m} sent`,
+      retrying: (sentence: string, why: string) => `[Retrying]: ${sentence} (${why})`,
+      retried: (sentence: string, why: string) => `[Retried]: ${sentence} (${why})`,
+      failed: (attempts: number, why: string) =>
+        attempts > 2
+          ? `[Failed]: all ${attempts} requests failed (${why})`
+          : attempts === 2
+            ? `[Failed]: both requests failed (${why})`
+            : `[Failed]: ${why}`,
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}, HTTP ${status}`,
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
+          ? "connection timed out"
           : kind === "malformed"
-            ? "Response incomplete or unparseable"
+            ? "response incomplete or unparseable"
             : kind === "network"
-              ? "Network or service temporarily unavailable"
-              : kind === "image_rejected"
-                ? "The model provider rejected an image in this turn's input (replaced with a note)"
-                : kind === "output_truncated"
-                  ? "The model's output was cut off at the output limit"
-                  : kind === "failed"
-                    ? "The model provider returned an error"
-                    : "The request failed";
-      },
+              ? "network or service temporarily unavailable"
+              : kind === "rate_limited"
+                ? "rate limited, or the quota is used up"
+                : kind === "auth"
+                  ? "credentials rejected"
+                  : kind === "rejected"
+                    ? "the provider rejected the request"
+                    : kind === "image_rejected"
+                      ? "the provider rejected an image in this turn's input; it was replaced with a note"
+                      : kind === "output_truncated"
+                        ? "the model's output was cut off at the output limit"
+                        : kind === "unsupported"
+                          ? "the model does not support this request"
+                          : kind === "invalid_input"
+                            ? "the input could not be built into a request"
+                            : kind === "failed"
+                              ? "the provider returned an error"
+                              : null,
+      unknownCause: "cause unknown",
       retryNow: "Retry now",
       stop: "Stop retrying",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
+    /** Run-ending LLM failure line (request_end status fatal): why in short when it is known; the provider's own words are in the failure details. */
+    llmError: (why: string | null) =>
+      `[Error]: the model request failed${why === null ? "" : ` (${why})`}`,
+    failureReport: {
+      open: "Details",
+      title: "Request failure details",
+      lead: "Most of these failures come from the model provider or the network. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
+      check:
+        "Key-shaped strings are taken out of the report; still check it for anything private before you send it.",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "Retry",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
@@ -3912,7 +3949,7 @@ Scenarios:
     sessionNotFoundHint:
       "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
-    historyLoadFailed: "Failed to load history",
+    historyLoadFailed: "Could not load the message history",
     machineAway: {
       reconnecting: (alias: string) => `${alias} is reconnecting`,
       reconnectStopped: (alias: string) => `${alias} is out of reach and stopped reconnecting`,
@@ -3946,8 +3983,8 @@ Scenarios:
       heavy: "Syncing full outputs",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "Loading the full text",
-      /** The fetch failed: what failed, then the failure itself, on one line. */
-      bodyFailed: (reason: string) => `Could not load the full text: ${reason}`,
+      /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
+      bodyFailed: (reason: string) => `[Load failed]: could not load the full text (${reason})`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "Fetching the Trace" : `Fetching the Trace from ${alias}`,
@@ -6226,6 +6263,20 @@ Scenarios:
       loadFailed: "Could not load the handbook",
     },
   },
+  report: {
+    action: "Report",
+    title: "Report a problem",
+    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    check:
+      "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
+    label: "Report",
+    copy: "Copy",
+    copied: "Report copied",
+    copyFailed: "Could not copy; select the report and copy it by hand",
+    fileIssue: "File an issue on GitHub",
+    crashed: "[Error]: this part of the page could not be shown",
+    reload: "Reload",
+  },
   errors: {
     networkError: "Network error, please check your connection",
     notTheServer: {
@@ -6291,6 +6342,7 @@ Scenarios:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
+      workbench_too_large: "This workbench's source exceeds the export limits.",
       benchmark_busy:
         "This Benchmark is being evaluated: a run under its .jobs/ has not finished, and overwriting it now would let that evaluation go on writing into the new copy. Overwrite it once the evaluation ends.",
       file_not_found: "This file no longer exists.",

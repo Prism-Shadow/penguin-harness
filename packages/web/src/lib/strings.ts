@@ -346,12 +346,10 @@ export const zh = {
       gaveUp: (m: number) => `${m} 次重连均失败`,
       /** A person stopped retrying. */
       cancelled: "已放弃重试",
-      /** ssh refused in a way no retry mends; the "?" says the fix. */
+      /** ssh refused in a way no retry mends; the reason after it says the fix. */
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
-      /** The title over the last attempt's failure behind the "?". */
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -1168,7 +1166,7 @@ export const zh = {
     current: "当前",
     restore: "恢复",
     restoreTitle: "恢复版本",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
@@ -1184,11 +1182,25 @@ export const zh = {
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
-    removeConfirm: "删除这个工作台及其全部已记录版本？",
+    removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    fileCount: (n: number) => `${n} 个文件`,
+    importAction: "导入 zip",
+    importTitle: "导入工作台",
+    importUploadDesc:
+      "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "工作台已导入",
+    importOverwriteTitle: "覆盖已有工作台",
+    importOverwriteBody: (name: string): string =>
+      `工作台「${name}」已存在，覆盖将替换其源码；数据（state.json）保留。加载成功过的版本仍可从历史恢复，从未加载成功的本地改动会丢失。确认继续？`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
+    importOverwriteAction: "覆盖导入",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "打包导出",
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -3128,7 +3140,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
+      `PenguinHarness 插件是一个 npm 包：package.json（npm 字段：name、version、description），\`src/index.ts\`（其装饰器声明插件携带的一切：卡片、\`skills/<name>/SKILL.md\`、MCP 服务器），以及构建时据此写出的 \`ifaces.json\`——服务端读取的正是它。无论来源是什么，安装前先读完它的 package.json、src/index.ts 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中（先构建：\`npm install && npm run build\`）——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成模块的 \`mcpServers\` 条目带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
     importUploadDesc: "package.json 位于 zip 根目录或唯一顶层目录，不含 node_modules。",
     importUploadAction: "选择 zip 文件",
     importExamples: [
@@ -3883,8 +3895,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) => `[加载失败]：未能加载更早的对话（${error}）`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3970,49 +3982,83 @@ Benchmark：
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
-     * The model request's retry row, one per ladder: `n` is the attempt it is about — the next
-     * one while it waits, the one sent after — of the turn's `m` at most (the engine counts the
-     * first request as attempt 1).
+     * A model request's retry ladder, one line per ladder, in the shape of the stop marker
+     * 「[已中断]：…」: a bracketed label, where it stands, and why in parentheses. `n` is the attempt
+     * the line is about — the next one while it waits, the one sent after — of the turn's `m` at
+     * most (the engine counts the first request as attempt 1).
      */
     requestRetry: {
       waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后发起第 ${n}/${m} 次请求`,
       /** The wait is over (or there was none) and the request is going out. */
       sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
-      /** The request went out; the row now only records it. */
+      /** The request went out; the line now only records it. */
       sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      gaveUp: (attempts: number) => (attempts > 1 ? `${attempts} 次请求均失败` : "请求失败"),
+      /** The line while it waits, or while the attempt goes out. */
+      retrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      /** The line once the attempt went out: it stays as the record of a ladder that recovered. */
+      retried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
       /**
-       * Why it retried, in words: the title over the provider's own message behind the row's
-       * "?". The live protocol carries the classified cause on `error_code`; the legacy status
-       * spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+       * The ladder ended the run — it gave up, or a stop came during a wait — said as the line a
+       * run ended on is, beside 「[已中断]」 and 「[错误]」: how many attempts failed, and why.
        */
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
+      failed: (attempts: number, why: string) =>
+        attempts > 1 ? `[请求失败]：${attempts} 次请求均失败（${why}）` : `[请求失败]：${why}`,
+      /**
+       * Why, in short: the cause in words, and the HTTP status when the provider's message names
+       * one. The provider's own words are the failure details' (「[详情]」), never the line's.
+       */
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}，HTTP ${status}`,
+      /**
+       * The cause in words, from `error_code` (the legacy status spellings failed/timeout/malformed
+       * say the same thing for pre-convergence Traces); null for a code it has no words for.
+       */
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
           ? "连接超时或网络中断"
           : kind === "malformed"
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "image_rejected"
-                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "output_truncated"
-                  ? "模型输出达到输出上限，被截断"
-                  : kind === "failed"
-                    ? "模型服务返回错误"
-                    : "请求失败";
-      },
+              : kind === "rate_limited"
+                ? "触发限流或额度已用尽"
+                : kind === "auth"
+                  ? "凭据被拒绝"
+                  : kind === "rejected"
+                    ? "模型服务拒绝了请求"
+                    : kind === "image_rejected"
+                      ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
+                      : kind === "output_truncated"
+                        ? "模型输出达到输出上限，被截断"
+                        : kind === "unsupported"
+                          ? "当前模型不支持该请求"
+                          : kind === "invalid_input"
+                            ? "输入无法组成请求"
+                            : kind === "failed"
+                              ? "模型服务返回错误"
+                              : null,
+      /** A retry whose cause has no words (an unknown code). */
+      unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
       retryNow: "立即重试",
       /** The ordinary session abort. */
       stop: "放弃重试",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+    /**
+     * Run-ending LLM failure line (request_end status fatal): why in short when it is known; the
+     * provider's own words are in the failure details.
+     */
+    llmError: (why: string | null) => `[错误]：模型请求错误${why === null ? "" : `（${why}）`}`,
+    /**
+     * The details of a failed or retrying model request: 「[详情]」 on its line opens a dialog
+     * with a report to copy or to file as a GitHub issue.
+     */
+    failureReport: {
+      open: "详情",
+      title: "请求失败详情",
+      lead: "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      check: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
@@ -4147,8 +4193,8 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
-      /** The fetch failed: what failed, then the failure itself, on one line. */
-      bodyFailed: (reason: string) => `完整内容没能加载：${reason}`,
+      /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
+      bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
       trace: (alias: string | null) =>
         alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
@@ -6473,6 +6519,23 @@ Benchmark：
       loadFailed: "手册加载失败",
     },
   },
+  /**
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * report dialog it opens, and the notice a crashed part of the page shows.
+   */
+  report: {
+    action: "报告问题",
+    title: "报告问题",
+    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
+    label: "报告",
+    copy: "复制",
+    copied: "已复制报告",
+    copyFailed: "没能复制，请选中报告手动复制",
+    fileIssue: "到 GitHub 提交 issue",
+    crashed: "[出错了]：这部分页面没能显示",
+    reload: "重新加载",
+  },
   errors: {
     networkError: "网络错误，请检查连接",
     /**
@@ -6540,6 +6603,7 @@ Benchmark：
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
+      workbench_too_large: "该工作台的源码过大，超出了导出限制。",
       benchmark_busy:
         "这个 Benchmark 正在评估：它的 .jobs/ 里还有没跑完的运行，现在覆盖，进行中的评估会接着写进新导入的副本。请等评估结束后再覆盖。",
       file_not_found: "该文件已不存在。",

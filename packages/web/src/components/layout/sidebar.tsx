@@ -82,7 +82,6 @@ import {
   SkeletonList,
   UpdateDot,
   UserAvatar,
-  toastError,
   toastInfo,
   toastSuccess,
   useArrived,
@@ -223,6 +222,7 @@ import {
   parseOrgKey,
 } from "../../features/company/company-nav";
 import type { WorkMode } from "../../features/company/company-nav";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** New-chat pen over a baseline (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = ICONS.penLine;
@@ -1143,7 +1143,7 @@ export function Sidebar({
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setDeletingBusy(false);
     }

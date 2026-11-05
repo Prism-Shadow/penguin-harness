@@ -52,6 +52,9 @@ export const zh = {
       home: "主页",
       blog: "博客",
       download: "下载",
+      plugins: "插件",
+      benchmarks: "评估集",
+      leaderboards: "榜单",
       amsp: "AMSP",
       docs: "文档",
       gallery: "画廊",
@@ -534,7 +537,12 @@ export const zh = {
       retry: {
         title: "重试",
         description:
-          "所有重连共用的一行状态：正在尝试、等待下一次（倒计时、立即重试与放弃重试）、已失败、已放弃与不值得重试（重试），失败的说明收在带圈问号里，及其在机器卡片、详情弹窗与对话中的样子。",
+          "机器重连的一行状态：正在尝试、等待下一次（倒计时、立即重试与放弃重试）、已失败、已放弃与不值得重试（重试），失败的说明接在句后；对话里模型请求的重试与失败行、失败详情对话框，以及加载失败的提示。",
+      },
+      report: {
+        title: "报告问题",
+        description:
+          "严重错误的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、带入口的加载失败提示，以及报告对话框。",
       },
       attachments: {
         title: "附件",
@@ -1104,7 +1112,7 @@ export const zh = {
         { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
-      copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+      copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",
       code: "代码与复制",
       codeHint:
         "命令卡片带复制按钮；写入剪贴板后图标换成对勾，按钮文字不变，读屏软件播报「已复制」。",
@@ -1837,15 +1845,30 @@ export const zh = {
     retry: {
       phases: "五个阶段",
       phasesHint:
-        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明收在句末的带圈问号里，只有标记带色。",
+        "卡片中段的一行：正在尝试（转圈与「放弃重试」）、等待下一次（沙漏，句中逐秒倒计时，「立即重试」与「放弃重试」）、已失败（危险色的叉与「重试」）、已放弃（暂停与「重试」）、不值得重试（危险色的叉与「重试」或不提供）。失败的说明接在句子后面，用淡色写出，过长时折成两行并可展开；只有标记带色；句子不加粗，尝试与等待时为正文色，停下后转为淡色。",
       blocks: "正文字号",
-      blocksHint: "详情弹窗的分节与对话里：同样一行，正文字号，操作是同一行里的链接样式文字。",
+      blocksHint:
+        "详情弹窗的分节与加载失败的提示里：同样一行，正文字号，操作是同一行里的中括号文字。",
       inCard: "在机器卡片中",
       inCardHint:
         "没有任务时占卡片中段；栏窄时两个操作一起换到句子下面；按下即置灰，下一次尝试开始才恢复。",
       inChat: "在对话中",
       inChatHint:
-        "模型请求重试时用同一行：引擎上限内的第几次请求，原因与服务方原话收在问号里，等待时带「立即重试」「放弃重试」。",
+        "模型请求重试时是对话里的一行文字，与「[已中断]」同一样式：中括号标签、第几次请求与倒计时、括号里的简短原因与 HTTP 状态码，再是同一行里的中括号文字操作。等待时有「立即重试」「放弃重试」，每个状态都有「详情」。重试用尽或在等待中被中断时为「[请求失败]」，作为最后一行带「重试」；无法重试的错误为「[错误]」。服务方原话不写在行里，在详情里。更早的对话加载失败时，对话顶部也是这样一行。",
+      report: "失败详情",
+      reportHint:
+        "「详情」打开的对话框：报告按发送时的样子显示（英文、等宽、只读），已去掉密钥一类的内容；「复制」复制成 Markdown，「到 GitHub 提交 issue」打开预填好的 bug 表单。",
+      loadFailed: "加载失败",
+      loadFailedHint:
+        "内容加载不出来时占据它的位置：标记、一句标题、其下淡色一行原因或接下来会怎样，自动重试时加上重试行，再是一个文字操作，原始报错收在「技术细节」里。不写红字，标记说明失败。",
+      historyFailed: "历史消息加载失败",
+      networkError: "网络错误，请检查连接",
+      awayHeadline: (alias: string) => `${alias} 当前连不上，正在重连`,
+      awayHint: "对话保存在那台机器上，连接恢复后会自动加载。",
+      openMachines: "去机器管理",
+      details: "技术细节",
+      transportError:
+        "The connection to QS7J4YVgSovi-Z2c did not answer: the session's SOCKS port did not answer: connect ECONNREFUSED 127.0.0.1:37747",
       narrow: "窄屏",
       narrowHint: "手机宽度下状态行在名称下方换行，操作不截断。",
       trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连`,
@@ -1855,7 +1878,6 @@ export const zh = {
       cancelled: "已放弃重试",
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       stoppedPassword: "登录被拒，已停止重连",
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -1873,9 +1895,43 @@ export const zh = {
       chatWaiting: (s: number, n: number, m: number) => `${s} 秒后发起第 ${n}/${m} 次请求`,
       chatSending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
       chatSent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      chatGaveUp: (n: number) => `${n} 次请求均失败`,
-      chatCause: "连接超时或网络中断",
-      chatError: "upstream request timeout after 60s (request id 7f3c…)",
+      chatRetrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      chatRetried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
+      chatFailed: (n: number, why: string) => `[请求失败]：${n} 次请求均失败（${why}）`,
+      chatFailedOnce: (why: string) => `[请求失败]：${why}`,
+      chatError: (why: string) => `[错误]：模型请求错误（${why}）`,
+      chatAborted: "[已中断]：重试等待中被中断",
+      chatWhy: "网络或服务暂时不可用，HTTP 503",
+      chatFatalWhy: "凭据被拒绝，HTTP 401",
+      chatEarlierFailed: "[加载失败]：未能加载更早的对话（网络错误，请检查连接）",
+      openDetails: "详情",
+      reportTitle: "请求失败详情",
+      reportLead:
+        "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      reportCheck: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+      reportLabel: "失败报告",
+      copy: "复制",
+      fileIssue: "到 GitHub 提交 issue",
+    },
+    report: {
+      crash: "崩溃提示",
+      crashHint:
+        "某部分页面在显示时崩溃，原处不留空白，而是一行与「[已中断]」同一样式的提示，带「重新加载」与「报告问题」；报告里有错误、调用栈与组件栈，个人路径已去掉。",
+      toast: "错误提示条",
+      toastHint:
+        "只有严重错误（服务端未命名的 500、意料之外的异常）的提示条带「报告问题」，停留更久；可预期的错误（校验、权限、离线等）与原来一样。",
+      fireSerious: "严重错误",
+      fireExpected: "可预期的错误",
+      seriousText: "服务端内部错误",
+      expectedText: "没有权限访问该 Project",
+      loadFailed: "加载失败",
+      loadFailedHint: "加载失败的提示在失败是严重错误时，在「重试」旁边多一个「报告问题」。",
+      loadTitle: "历史消息加载失败",
+      retry: "重试",
+      dialog: "报告对话框",
+      dialogHint:
+        "报告按发送时的样子显示（英文、等宽、只读）：发生了什么、页面、错误与时间、版本、安装方式与操作系统，最后是调用栈；「复制」复制成 Markdown，「到 GitHub 提交 issue」打开预填好的 bug 表单。",
+      open: "打开报告",
     },
     attachments: {
       composer: "输入框",

@@ -9,30 +9,21 @@
  * - Given any other toolkit, then it runs the Skill named like its plugin, else the first Skill
  *   its quick start preselects that it ships, else its only Skill; and a toolkit none of these
  *   settles — several Skills and nothing to choose between them, or none — is not offered.
- * - Given a toolkit's protocol, then a toolkit declaring `train-test` runs on a Train/Test pair,
- *   and the default and every toolkit declaring nothing run on one Benchmark.
  * - Given a toolkit's manifest, then its label is its display name in the reader's language,
  *   else its name, and its hint the short description before the full one, Chinese first in zh.
  * - Given the options, when the dialog keeps a pick, then the picked toolkit is used while it is
  *   offered, the first option once it is gone, and nothing when there is no option.
- * - Given the toolkits this repository ships, then every one is offered, the default first, each
- *   running a Skill its own plugin ships, on the protocol its manifest declares, and the evaluator
- *   the default loop measures through ships in the library too.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
   DEFAULT_TOOLKIT_PLUGIN,
-  EVALUATION_SKILL,
   OPTIMIZATION_SKILL,
   RSI_CATEGORY,
   pickRsiMethod,
   rsiMethods,
   rsiToolkits,
 } from "../src/features/benchmark/rsi-methods";
-import { REPO_ROOT } from "./helpers/roots";
 
 /** A library plugin with the fields the mapping reads; everything else empty. */
 function toolkit(name: string, over: Partial<PluginItem> = {}, skills: string[] = []): PluginItem {
@@ -100,25 +91,6 @@ describe("Method options from the plugin library", () => {
       ["same-name", "paper", "same-name"],
       ["quick-start", "paper", "runner"],
       ["single", "paper", "only-one"],
-    ]);
-  });
-
-  it("runs a toolkit declaring train-test on a Train/Test pair, and the rest on one Benchmark", () => {
-    const methods = rsiMethods(
-      [
-        toolkit(DEFAULT_TOOLKIT_PLUGIN, {}, [OPTIMIZATION_SKILL]),
-        toolkit("skillopt-rsi-toolkit", { rsiProtocol: "train-test" }, ["skillopt-rsi-toolkit"]),
-        toolkit("opro-rsi-toolkit", {}, ["opro-rsi-toolkit"]),
-        toolkit("explicit-rsi-toolkit", { rsiProtocol: "benchmark" }, ["explicit-rsi-toolkit"]),
-      ],
-      "en",
-    );
-
-    expect(methods.map((m) => [m.plugin, m.protocol])).toEqual([
-      [DEFAULT_TOOLKIT_PLUGIN, "benchmark"],
-      ["skillopt-rsi-toolkit", "train-test"],
-      ["opro-rsi-toolkit", "benchmark"],
-      ["explicit-rsi-toolkit", "benchmark"],
     ]);
   });
 
@@ -190,81 +162,5 @@ describe("Method options from the plugin library", () => {
     expect(pickRsiMethod(methods, "awm-rsi-toolkit")?.plugin).toBe("awm-rsi-toolkit");
     expect(pickRsiMethod(methods, "uninstalled-rsi-toolkit")?.plugin).toBe(DEFAULT_TOOLKIT_PLUGIN);
     expect(pickRsiMethod([], DEFAULT_TOOLKIT_PLUGIN)).toBeNull();
-  });
-});
-
-describe("the toolkits this repository ships", () => {
-  const PLUGINS = join(REPO_ROOT, "plugins");
-
-  /** A shipped plugin as the library would list it: its manifest's fields and its Skills. */
-  function shipped(name: string): { category?: string; item: PluginItem } {
-    const pkg = JSON.parse(readFileSync(join(PLUGINS, name, "package.json"), "utf8")) as {
-      description?: string;
-      penguin?: {
-        category?: string;
-        rsi_protocol?: "benchmark" | "train-test";
-        title?: string;
-        title_zh?: string;
-        short_description?: string;
-        quick_start?: { prompt?: string; skills?: string[] };
-      };
-    };
-    const skillsDir = join(PLUGINS, name, "skills");
-    const skills = existsSync(skillsDir)
-      ? readdirSync(skillsDir).filter((s) => existsSync(join(skillsDir, s, "SKILL.md")))
-      : [];
-    const m = pkg.penguin ?? {};
-    return {
-      ...(m.category !== undefined ? { category: m.category } : {}),
-      item: toolkit(
-        name,
-        {
-          description: pkg.description ?? "",
-          ...(m.rsi_protocol !== undefined ? { rsiProtocol: m.rsi_protocol } : {}),
-          ...(m.title !== undefined ? { title: m.title } : {}),
-          ...(m.title_zh !== undefined ? { titleZh: m.title_zh } : {}),
-          ...(m.short_description !== undefined ? { shortDescription: m.short_description } : {}),
-          ...(m.quick_start !== undefined
-            ? {
-                quickStart: {
-                  prompt: m.quick_start.prompt ?? "",
-                  ...(m.quick_start.skills !== undefined ? { skills: m.quick_start.skills } : {}),
-                },
-              }
-            : {}),
-        },
-        skills,
-      ),
-    };
-  }
-
-  const all = readdirSync(PLUGINS, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(PLUGINS, e.name, "package.json")))
-    .map((e) => shipped(e.name));
-
-  it("offers every one, the default first, each running a Skill its own plugin ships on its declared protocol", () => {
-    const toolkits = all.filter((p) => p.category === RSI_CATEGORY).map((p) => p.item);
-    expect(toolkits.length).toBeGreaterThan(0);
-
-    const methods = rsiMethods(toolkits, "en");
-
-    expect(methods.map((m) => m.plugin).sort()).toEqual(toolkits.map((t) => t.name).sort());
-    expect(methods[0]?.plugin).toBe(DEFAULT_TOOLKIT_PLUGIN);
-    for (const method of methods) {
-      const plugin = toolkits.find((t) => t.name === method.plugin)!;
-      expect(
-        plugin.skills.map((s) => s.name),
-        method.plugin,
-      ).toContain(method.skill);
-      expect(method.protocol, method.plugin).toBe(plugin.rsiProtocol ?? "benchmark");
-    }
-    // Both protocols are in use: a Train/Test toolkit and a one-Benchmark toolkit ship.
-    expect(methods.some((m) => m.protocol === "train-test")).toBe(true);
-    expect(methods.some((m) => m.kind === "paper" && m.protocol === "benchmark")).toBe(true);
-  });
-
-  it("ships the evaluator the default loop measures through", () => {
-    const owners = all.filter((p) => p.item.skills.some((s) => s.name === EVALUATION_SKILL));
-    expect(owners.length).toBeGreaterThan(0);
   });
 });

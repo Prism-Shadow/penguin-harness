@@ -300,13 +300,25 @@ export interface AbortItem {
  * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
  * produces no abort event — the request_end is its terminal record).
  */
-export interface LlmErrorItem {
+export interface LlmErrorItem extends RequestFailureFacts {
   kind: "llm_error";
   id: number;
   /** Machine-readable cause (request_end.error_code). */
   errorCode?: string;
-  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  /** The provider's own error text (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
+  /** The request's ordinal within its retry run (request_end.attempt); absent on a first try and in old Traces. */
+  attempt?: number;
+}
+
+/**
+ * What a failed request's details report beyond its record, read from the records around it:
+ * the model its context was opened on (`StreamModel.contextModel` when the request ended; absent
+ * when no `session_meta` had said which yet) and when it ended (the request_end's timestamp).
+ */
+export interface RequestFailureFacts {
+  model?: { provider: string; modelId: string };
+  atMs?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -319,7 +331,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem {
+export interface ReconnectItem extends RequestFailureFacts {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -332,7 +344,7 @@ export interface ReconnectItem {
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
-  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  /** The latest failure's detail (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
@@ -2016,11 +2028,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
-        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        const item: LlmErrorItem = {
+          kind: "llm_error",
+          id: nextId(model),
+          ...failureFacts(model, tsMs),
+        };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
+        if (typeof p.attempt === "number") item.attempt = p.attempt;
         model.items.push(item);
         return;
       }
@@ -2035,6 +2052,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // Traces written before the field existed lack it (rendered as attempt 1).
           attempt: p.attempt ?? 1,
           retrying: false,
+          ...failureFacts(model, tsMs),
         };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
@@ -2071,6 +2089,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+/** The model the running context was opened on and the record's time, for a failed request's details. */
+function failureFacts(model: StreamModel, tsMs: number | undefined): RequestFailureFacts {
+  const held = model.contextModel;
+  return {
+    ...(held !== null ? { model: { provider: held.provider, modelId: held.modelId } } : {}),
+    ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+  };
 }
 
 function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {

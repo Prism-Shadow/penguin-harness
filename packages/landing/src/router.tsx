@@ -1,13 +1,15 @@
 /**
- * Router: home, blog list, blog post, download and the AMSP page inside a shared Nav/Footer
- * layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
+ * Router: home, blog list, blog post, download, the hub's Plugins, Benchmarks and Leaderboards
+ * (each a list and a detail page) and the AMSP page inside a shared Nav/Footer layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
  * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
  *
- * Two routes load on demand: the post page carries the Markdown renderer, and the AMSP page its
- * player, scripted runs and code samples, none of which the other pages use.
+ * Routes that load on demand: the post page carries the Markdown renderer, the AMSP page its
+ * player, scripted runs and code samples, and the hub pages the build's plugin, benchmark and
+ * leaderboard records, none of which the other pages use.
  */
 import { lazy, Suspense, useEffect } from "react";
+import type { ComponentType } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -32,6 +34,16 @@ import { DownloadPage } from "./pages/download";
 const AmspPage = lazy(() =>
   import("./pages/amsp").then((module) => ({ default: module.AmspPage })),
 );
+
+/** The hub pages: each list page and each detail page is a chunk of its own. */
+const hubPage = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().then((module) => ({ default: module[name] })));
+const PluginsPage = hubPage(() => import("./pages/hub/plugins"), "PluginsPage");
+const PluginPage = hubPage(() => import("./pages/hub/plugin"), "PluginPage");
+const BenchmarksPage = hubPage(() => import("./pages/hub/benchmarks"), "BenchmarksPage");
+const BenchmarkPage = hubPage(() => import("./pages/hub/benchmark"), "BenchmarkPage");
+const LeaderboardsPage = hubPage(() => import("./pages/hub/leaderboards"), "LeaderboardsPage");
+const LeaderboardPage = hubPage(() => import("./pages/hub/leaderboard"), "LeaderboardPage");
 
 const BlogPostPage = lazy(() =>
   import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
@@ -99,6 +111,26 @@ export function AppRouter() {
           <Route path="/blog" element={<BlogListPage />} />
           <Route path="/blog/:slug" element={<BlogPostRoute />} />
           <Route path="/download" element={<DownloadPage />} />
+          {(
+            [
+              ["/plugins", PluginsPage],
+              ["/plugins/:id", PluginPage],
+              ["/benchmarks", BenchmarksPage],
+              ["/benchmarks/:id", BenchmarkPage],
+              ["/leaderboards", LeaderboardsPage],
+              ["/leaderboards/:id", LeaderboardPage],
+            ] as const
+          ).map(([path, Page]) => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <Suspense fallback={<PostPending />}>
+                  <Page />
+                </Suspense>
+              }
+            />
+          ))}
           <Route
             path="/amsp"
             element={

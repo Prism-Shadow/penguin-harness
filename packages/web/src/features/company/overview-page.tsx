@@ -42,7 +42,6 @@ import {
   RuledSection,
   Segmented,
   Text,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -97,6 +96,7 @@ import type {
   InboxTarget,
   TimelineMark,
 } from "./overview-summary";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;
@@ -396,7 +396,7 @@ export function OverviewPage() {
       const desk = await api.getOrgDesk(projectId, orgId, chart.ceoAgentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpeningDesk(false);
     }

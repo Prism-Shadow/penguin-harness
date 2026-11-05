@@ -45,7 +45,6 @@ import {
   Switch,
   Textarea,
   toastAttention,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -79,6 +78,7 @@ import {
 } from "./calendar-geom";
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -333,7 +333,7 @@ export function CalendarPage() {
       void load();
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -349,7 +349,7 @@ export function CalendarPage() {
       setOpened(null);
       void load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -361,7 +361,7 @@ export function CalendarPage() {
       const desk = await api.getOrgDesk(projectId, orgId, agentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

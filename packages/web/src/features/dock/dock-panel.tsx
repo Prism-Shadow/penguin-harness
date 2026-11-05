@@ -59,6 +59,7 @@ import {
   DockPicker,
   DockTabs,
   Dropdown,
+  CrashBoundary,
   EmptyState,
   GlyphIcon,
   ICONS,
@@ -197,7 +198,11 @@ function PanelBody({
   return (
     <DockPanelProvider handle={handle}>
       {Body !== undefined ? (
-        <Body active={active} />
+        // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
+        // conversation beside it.
+        <CrashBoundary resetKey={id}>
+          <Body active={active} />
+        </CrashBoundary>
       ) : (
         <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
           <EmptyState title={S.dock.panelUnavailable} />

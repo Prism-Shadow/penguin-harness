@@ -37,11 +37,13 @@ export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
+export * from "./components/feedback/load-failed/load-failed";
 
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
 export * from "./components/actions/link/link";
+export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
 export * from "./components/actions/kbd/kbd";
 export * from "./components/actions/hidden-file-input/hidden-file-input";
@@ -91,6 +93,17 @@ export * from "./components/overlays/tooltip/tooltip";
 export * from "./components/overlays/esc-layers/esc-layers";
 export * from "./components/overlays/modal/modal";
 export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/report-dialog/report-dialog";
+// The problem report kit: a report, its redaction and its GitHub link, the one rule for which
+// errors offer one, where reports open from, and the crash notice.
+export * from "./components/report/redact";
+export * from "./components/report/error-report";
+export * from "./components/report/seriousness";
+export * from "./components/report/report-store";
+export * from "./components/report/report-host";
+export * from "./components/report/report-action";
+export * from "./components/report/exception-report";
+export * from "./components/report/crash-boundary";
 export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
@@ -120,6 +133,7 @@ export * from "./components/content/prose/markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
+export * from "./components/content/clamped-text/clamped-text";
 export * from "./components/content/diff-viewer/diff-viewer";
 
 // A2UI — the components a model writes into a reply: the ```a2ui block that parses and dispatches
@@ -160,6 +174,7 @@ export * from "./components/feedback/duration-slot/duration-slot";
 // gave up, blocked), its one-press buttons, and the second-ticking countdown under them.
 export * from "./components/feedback/retry-status/countdown";
 export * from "./components/feedback/retry-status/use-countdown";
+export * from "./components/feedback/retry-status/countdown-text";
 export * from "./components/feedback/retry-status/retry-status";
 // A transfer under way: what comes over, the amount against the whole, and a thin bar.
 export * from "./components/feedback/transfer-progress/transfer-progress";

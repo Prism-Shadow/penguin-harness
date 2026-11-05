@@ -45,7 +45,6 @@ import {
   SkeletonList,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useCopied,
   useFormDraft,
@@ -66,6 +65,7 @@ import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { UPLOAD_LABEL_CLASS } from "./skills-tab";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
 interface PendingOverwrite {
@@ -137,7 +137,7 @@ export function HooksTab({
     try {
       await downloadArchive(api.agentHookArchiveUrl(projectId, agentId, name, machineId), name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -152,7 +152,7 @@ export function HooksTab({
       // The agent card's hook count (and its plugin-update marks) changed; refresh the list provider too.
       if (machineId === null) void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setRemoving(null);

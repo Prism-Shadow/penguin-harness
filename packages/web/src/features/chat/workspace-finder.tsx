@@ -119,6 +119,7 @@ import type {
   NewFolderProblem,
   Place,
 } from "./workspace-finder-model";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The registry has one storage drawing, the drive, so a fixed disk, a volume and a Linux root
@@ -643,12 +644,12 @@ export function WorkspaceFinder({
           (err.code === "shell_unreachable" || err.code === "desktop_shell_only")
         )
           setShellUnreachable(true);
-        else toastError(apiErrorText(err));
+        else toastApiError(err);
       });
   };
 
   const openSystemSettings = (pane: DesktopPrivacyPane) => {
-    void api.openPrivacySettings(pane).catch((err: unknown) => toastError(apiErrorText(err)));
+    void api.openPrivacySettings(pane).catch((err: unknown) => toastApiError(err));
   };
 
   /** The address bar becomes a path field holding the folder on screen, ready to be typed over. */

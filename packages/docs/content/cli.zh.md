@@ -325,7 +325,7 @@ penguin project ls
 在服务端安装和移除插件，这是管理员的操作：CLI 用服务端的本地 API token 发起调用，这个 token 代表管理员，因此 Agent 可以在对话中审阅插件后自行安装。每个命令都支持 `--project-id`（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`）、`--json` 和 `--server`。
 
 - `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如不是插件包目录的路径、`http:` 链接或指向仓库中某个文件夹的链接，服务端会拒绝。只含 Skill、钩子或 MCP Server 的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
-- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。CLI 先用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `penguin.mcp_servers` 中声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。包须已构建：服务端读取的是它的 `ifaces.json`，所以先运行包的构建（`npm install`，然后 `npm run build`，即运行 `penguin-gen-ifaces`）；没有 `ifaces.json` 的目录在发送任何内容之前即被拒绝。CLI 随后用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `src/index.ts` 中以 `mcpServers` 贡献声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
 - `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
 - `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子 / MCP Server 插件。
 
@@ -713,7 +713,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
 - 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址，以及 `vllm` 的 `openai-chat-vllm-adapter` 与本地 base URL `http://127.0.0.1:8000/v1`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
 - 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
-- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
+- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud`、`runcrate` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - `penguin-go` 的协议固定为 `mmsp`，与模型库页面及其 API 一致：传入其他 `--client-type` 会被拒绝，除非它就是该条目或分组已存的值；对分组使用 `--clear-client-type` 同样被拒绝。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 - 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。

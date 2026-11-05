@@ -12,7 +12,7 @@
  * - the middle: the job's stepper while a job for the machine is queued or running, else the retry
  *   row while the server brings the machine back or stopped trying (the attempt of how many and
  *   the countdown to it with Retry now and Stop retrying, or where it stopped with Retry; the last
- *   failure behind its "?"), else why Use waits (a hint would never open on the button, which
+ *   failure after its sentence), else why Use waits (a hint would never open on the button, which
  *   shows its word);
  * - the buttons: Use starts a new conversation in the machine's temporary workspace, Settings
  *   opens the Machine dialog, Delete takes the machine off this Project after a confirmation, and
@@ -177,8 +177,8 @@ export function jobProgress(job: MachineJob): MachineStepperProps {
 /**
  * The shared retry row for a machine's retry reading: its sentence and countdown in the reader's
  * words, and the presses on offer — "Retry now" and "Stop retrying" while the streak runs, "Retry"
- * after it stopped. `reason` replaces the reading's own, title and all (the dialog says the last
- * failure in full under the row, so its row has no "?").
+ * after it stopped. `reason` replaces the reading's own (the dialog says the last failure in full
+ * under the row, so its row says none).
  */
 export function retryStatus(
   view: RetryReading,
@@ -206,7 +206,6 @@ export function retryStatus(
     label: view.label,
     ...(view.countdown === null ? {} : { countdown: view.countdown }),
     reason,
-    reasonTitle: reason === null ? null : view.reasonTitle,
     nextAt: view.nextAtMs,
     retry:
       offers.retryNow || offers.retry

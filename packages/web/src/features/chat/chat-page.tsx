@@ -91,6 +91,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
+import { RequestFailureDialog } from "./request-failure-dialog";
+import type { RequestFailure } from "./request-failure-report";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
@@ -177,6 +179,7 @@ import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 import { ArchivedSessionStub } from "./archived-session-stub";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -300,6 +303,8 @@ export function ChatPage() {
   const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** A failed model request whose details are on show (「[详情]」 on its line); null for none. */
+  const [failureShown, setFailureShown] = useState<RequestFailure | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
   /** This server's model configuration for the Project (the page's own while it acts here). */
   const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
@@ -871,7 +876,7 @@ export function ChatPage() {
           selectedAgentMachine,
         );
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         throw e;
       }
       setCompactionLimit(configuredCompactionLimit(maxContextLength));
@@ -1189,7 +1194,7 @@ export function ChatPage() {
           processIds.map((processId) => request(sessionId, processId)),
         );
         const failure = reportableProcessFailure(results, staleStatuses);
-        if (failure !== null) toastError(apiErrorText(failure.error));
+        if (failure !== null) toastApiError(failure.error);
       } finally {
         setProcBusy(null);
         api
@@ -1320,7 +1325,7 @@ export function ChatPage() {
         return true;
       } catch (e) {
         // Returning false -> the input area keeps the draft, letting the user fix it and resend (the error copy includes the session model's upstream id).
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -1386,7 +1391,7 @@ export function ChatPage() {
           // The model may be written and the desk renewed by now; the lists say which.
           void company.reloadOrgChart();
           void company.reloadOrgSessions();
-          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          toastApiError(e, { modelId: ref.modelId });
           return false;
         }
       }
@@ -1423,7 +1428,7 @@ export function ChatPage() {
             deleteSession: api.deleteSession,
           });
         }
-        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        toastApiError(e, { modelId: ref.modelId });
         return false;
       }
     },
@@ -1534,7 +1539,7 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -1554,7 +1559,7 @@ export function ChatPage() {
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -1617,7 +1622,7 @@ export function ChatPage() {
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return "failed";
       }
     },
@@ -1693,7 +1698,7 @@ export function ChatPage() {
         })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
     [selected, replace],
@@ -1710,7 +1715,7 @@ export function ChatPage() {
       try {
         return await api.recallSteer(selected.sessionId, steerId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1726,7 +1731,7 @@ export function ChatPage() {
         // is pinned to.
         return await api.recallFollowUp(selected.sessionId, followUpId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -1760,7 +1765,7 @@ export function ChatPage() {
         await api.postToolCallBackground(selected.sessionId, toolCallId);
       } catch (e) {
         if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     },
     [selected],
@@ -1782,7 +1787,7 @@ export function ChatPage() {
           ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
         .then((res) => replace(res.session))
-        .catch((e: unknown) => toastError(apiErrorText(e)))
+        .catch((e: unknown) => toastApiError(e))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],
@@ -1816,7 +1821,7 @@ export function ChatPage() {
       await syncHealedSessionId(selected.sessionId, res.sessionId);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
       return false;
     }
   }, [selected, syncHealedSessionId]);
@@ -1967,7 +1972,7 @@ export function ChatPage() {
     } catch (e) {
       // The codes that take a model name are about the model the Session is on (its loader's
       // missing credential); a refusal of the target names it in its own message.
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
     } finally {
       setModelSwitchPosting(false);
       setModelSwitchAsk(null);
@@ -2040,7 +2045,7 @@ export function ChatPage() {
         addSession(created.session);
         navigate(`/chat/${created.session.sessionId}`);
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
       }
     },
     [selected, addSession, navigate],
@@ -2078,6 +2083,7 @@ export function ChatPage() {
     // Retry after a failed or stopped run: offered only while the composer could send — a
     // Session on screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
+    onShowFailure: setFailureShown,
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
@@ -2725,6 +2731,7 @@ export function ChatPage() {
                         projectId={projectId}
                         sessionId={selected.sessionId}
                         error={stream.error}
+                        cause={stream.errorCause}
                         onRetry={stream.retry}
                       />
                     ) : stream.loading ? (
@@ -2769,6 +2776,7 @@ export function ChatPage() {
                                 hasMore: stream.older.hasMore,
                                 loading: stream.older.loading,
                                 error: stream.older.error,
+                                errorCause: stream.older.errorCause,
                                 prependedCount: stream.prefixItems.length,
                                 onLoad: stream.loadOlder,
                                 transfer: stream.transfer,
@@ -2792,6 +2800,13 @@ export function ChatPage() {
                           {/* The right dock's floating launcher: rides this body's right edge
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
+                          <RequestFailureDialog
+                            failure={failureShown}
+                            sessionId={selected?.sessionId ?? null}
+                            sessionModel={activeModelRef}
+                            workspace={selected?.workspace ?? null}
+                            onClose={() => setFailureShown(null)}
+                          />
                         </div>
                         {/* Measured: the bottom dock's docked height stops where this box would
                             be covered, and gives way as it grows. */}
