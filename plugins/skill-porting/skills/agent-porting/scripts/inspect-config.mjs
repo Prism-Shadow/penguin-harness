@@ -12,8 +12,11 @@
 // numbers, booleans and null print, except a number under a credential key. A string prints only
 // when it is
 // - a reference, `${VAR}` or `${credential:name}`, with an optional `Bearer ` / `Basic ` in front
-//   (a `${VAR:-default}` without its default). Under a credential key the reference keeps its
-//   structure only: `Bearer ${<redacted:N chars>}`;
+//   (a `${VAR:-default}` without its default). The variable's name prints when it is a plain name
+//   (VAR_NAME, nothing token-shaped), under a credential key too: a name is no secret, and the
+//   Vault key is named after it. Anything else inside `${…}` prints as `${<redacted:N chars>}`;
+// - the value of a key that holds a variable's name (`bearer_token_env_var`, `env_key`, `envKey`,
+//   `env_vars`, the values of `env_http_headers`), when it is such a plain name;
 // - the value of a structural key (STRUCTURAL below) that no detector flags. `command` prints
 //   its program only, `<program> <redacted:N more words>`. A URL (`url`, `httpUrl`, …) prints its
 //   scheme, host and path, its user info and whole query replaced. Prose keys (`description`,
@@ -22,9 +25,8 @@
 // - an `args` element that is a bare flag (`--verbose`, no `=`), a flag's name before its `=`, or
 //   a package or path token (`^[@\w./:~-]+$`, at most 100 characters, no token-shaped or
 //   high-entropy part), unless it follows a credential flag (`--api-key`, `--pass`, `-u`, …);
-// - an item of `env_vars`, when it is a variable name.
 // Every other string prints as `<redacted:N chars>`. A key matching CREDENTIAL redacts whatever
-// it holds, and every key inside it. `~/.claude.json` prints only its MCP servers, top level and
+// it holds, and every key inside it, but for the references and names above. `~/.claude.json` prints only its MCP servers, top level and
 // per project. `--only` keeps the named top-level keys (dotted for a nested one). A file that
 // does not parse prints "could not parse <file> (line N)" and its key names, never its content;
 // `--keys` asks for that view outright.
@@ -90,7 +92,8 @@ const STRUCTURAL = new Set([
 ]);
 const URL_KEYS = new Set(["url", "httpUrl", "baseUrl", "base_url", "endpoint"]);
 const PROSE_KEYS = new Set(["description", "prompt", "developer_instructions", "instructions"]);
-const NAME_LIST_KEYS = new Set(["env_vars"]);
+/** Keys whose values are the names of variables, never their values. */
+const NAME_HOLDER = /(^|_)env_?(var|key)s?$/i;
 const TOKEN_SHAPES =
   /(sk-ant-[\w-]{16,}|sk-[\w-]{16,}|(sk|rk|pk)_(live|test)_[\w]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abposr]-[\w-]{10,}|glpat-[\w-]{16,}|hf_[A-Za-z0-9]{16,}|npm_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|AIza[\w-]{30,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})/;
 const PEM = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
@@ -112,8 +115,31 @@ const isRefused = (file) => REFUSED.some((re) => re.test(path.basename(file)));
 
 const chars = (s) => `<redacted:${s.length} chars>`;
 const isCredentialKey = (k) => CREDENTIAL.test(k) && !NOT_CREDENTIAL.test(k);
-const REFERENCE =
-  /^((?:Bearer|Basic|Token) )?\$\{(credential:)?([A-Za-z_][A-Za-z0-9_.-]*)(:-[^}]*)?\}$/i;
+/** A `${…}` reference, with an optional auth scheme in front. */
+const REFERENCE = /^((?:Bearer|Basic|Token) )?\$\{([^{}]*)\}$/i;
+/** A variable's name: no secret, and what a Vault key is named after. */
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_.:-]{0,63}$/;
+const isVarName = (s) => VAR_NAME.test(s) && !tokenish(s);
+/** A reference's parts: `credential:` or nothing, the name, and whether it has a default. */
+function referenceParts(s) {
+  const m = REFERENCE.exec(s);
+  if (m === null) return null;
+  const inner = m[2];
+  const kind = /^credential:/i.test(inner) ? inner.slice(0, 11) : "";
+  const rest = inner.slice(kind.length);
+  const cut = rest.indexOf(":-");
+  return {
+    scheme: m[1] ?? "",
+    kind,
+    name: cut === -1 ? rest : rest.slice(0, cut),
+    fallback: cut !== -1,
+  };
+}
+/** A reference to a plain variable name, which says nothing about the value behind it. */
+const plainReference = (s) => {
+  const parts = referenceParts(s);
+  return parts !== null && isVarName(parts.name);
+};
 
 /** A part that reads as random: letters and digits mixed over 12 characters, or 40 of anything. */
 const highEntropy = (part) =>
@@ -133,7 +159,7 @@ const pathToken = (s) => {
 
 const valueLooksSet = (v) =>
   v !== "" &&
-  !REFERENCE.test(v) &&
+  !plainReference(v) &&
   !/^\$[A-Za-z_]\w*$/.test(v) &&
   !/^(true|false|null|none|~|\d+(\.\d+)?)$/i.test(v) &&
   !/^(bearer|basic|token)$/i.test(v) &&
@@ -195,13 +221,11 @@ function maskLines(text, code) {
 
 // ---- Structured values -----------------------------------------------------------------------
 
-/** A reference, whole outside a credential key, its structure only inside one. */
-function reference(s, credential) {
-  const m = REFERENCE.exec(s);
-  const scheme = m[1] ?? "";
-  const kind = m[2] ?? "";
-  if (credential) return `${scheme}\${${kind}${chars(m[3])}}`;
-  return `${scheme}\${${kind}${m[3]}${m[4] ? ":-<redacted:default>" : ""}}`;
+/** A reference: its variable's name when that is a plain name, else its structure only. */
+function reference(s) {
+  const { scheme, kind, name, fallback } = referenceParts(s);
+  const shown = isVarName(name) ? name : chars(name);
+  return `${scheme}\${${kind}${shown}${fallback ? ":-<redacted:default>" : ""}}`;
 }
 
 function url(s) {
@@ -233,36 +257,39 @@ const CREDENTIAL_FLAG = (w) =>
     (/^--?[A-Za-z][\w.-]*$/.test(w) && isCredentialKey(w.replace(/^-+/, ""))));
 
 function arg(item, prev) {
-  if (CREDENTIAL_FLAG(prev)) return REFERENCE.test(item) ? reference(item, true) : chars(item);
-  if (REFERENCE.test(item)) return reference(item, false);
+  if (REFERENCE.test(item)) return reference(item);
+  if (CREDENTIAL_FLAG(prev)) return chars(item);
   if (/^--?[A-Za-z][\w.-]*$/.test(item)) return item;
   const flag = /^(--?[A-Za-z][\w.-]*)=(.*)$/s.exec(item);
-  if (flag)
-    return `${flag[1]}=${REFERENCE.test(flag[2]) ? reference(flag[2], isCredentialKey(flag[1])) : chars(flag[2])}`;
+  if (flag) return `${flag[1]}=${REFERENCE.test(flag[2]) ? reference(flag[2]) : chars(flag[2])}`;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(item)) return url(item);
   return pathToken(item) && lineKind(item, false) === null ? item : chars(item);
 }
 
-function stringAt(s, key, credential) {
-  if (credential) return REFERENCE.test(s) ? reference(s, true) : chars(s);
-  if (REFERENCE.test(s)) return reference(s, false);
+function stringAt(s, key, credential, names) {
+  if (names) return isVarName(s) ? s : chars(s);
+  if (REFERENCE.test(s)) return reference(s);
+  if (credential) return chars(s);
   if (URL_KEYS.has(key)) return /^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? url(s) : chars(s);
   if (key === "command") return s.includes(" ") ? commandLine(s) : pathToken(s) ? s : chars(s);
   if (PROSE_KEYS.has(key)) return maskLines(s, false);
   if (STRUCTURAL.has(key))
     return s.length <= 200 && lineKind(s, false) === null && !TOKEN_SHAPES.test(s) ? s : chars(s);
-  if (NAME_LIST_KEYS.has(key) && /^[A-Z_][A-Z0-9_]*$/.test(s)) return s;
   return chars(s);
 }
 
 const safeKey = (k) => (tokenish(k) && !k.startsWith("/") ? `<redacted key:${k.length} chars>` : k);
 
-function mask(value, key, credential, args) {
+/**
+ * `value` at `key`: `credential` under a credential key, `args` in an argument list, `names` where
+ * the values are names of variables.
+ */
+function mask(value, key, credential, args, names) {
   if (Array.isArray(value)) {
     return value.map((item, i) =>
       typeof item === "string" && args && !credential
         ? arg(item, value[i - 1])
-        : mask(item, key, credential, false),
+        : mask(item, key, credential, false, names),
     );
   }
   if (value !== null && typeof value === "object") {
@@ -273,11 +300,12 @@ function mask(value, key, credential, args) {
         k,
         credential || isCredentialKey(k),
         k === "args" || (k === "command" && Array.isArray(v)),
+        NAME_HOLDER.test(k) || key === "env_http_headers",
       );
     }
     return out;
   }
-  if (typeof value === "string") return stringAt(value, key, credential);
+  if (typeof value === "string") return stringAt(value, key, credential, names);
   if (typeof value === "number" && credential) return `<redacted:number>`;
   return value;
 }
@@ -1026,6 +1054,8 @@ for (const file of files) {
   }
   if (base === ".claude.json") data = claudeJsonView(data ?? {});
   if (only !== null) data = pick(data ?? {}, only);
-  console.log(`# ${file} (${format})\n${JSON.stringify(mask(data, "", false, false), null, 2)}`);
+  console.log(
+    `# ${file} (${format})\n${JSON.stringify(mask(data, "", false, false, false), null, 2)}`,
+  );
 }
 process.exit(status);

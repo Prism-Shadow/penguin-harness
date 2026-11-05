@@ -7,7 +7,7 @@
 
 [English](2026-11-04-agent-porting-skill.md)
 
-`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.2`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
+`skill-porting` 插件新增第三个 Skill：`agent-porting`（版本 `2026.11.05.3`）。Agents 页面的导入对话框打开迁移对话时，Agent 按它的流程操作；用户在任意对话里要求迁移时也一样。Agent 读取来源工具的文件，写成 Agent zip 文件夹，再用 `penguin agent import <folder>` 新建 Agent，最后报告没能迁移的部分。
 
 ## 来源
 
@@ -20,9 +20,10 @@
 - Agent 读取任何来源文件都只经过 Skill 自带的读取脚本 `scripts/inspect-config.mjs`，不用其他命令。
 - JSON、TOML 和 YAML 配置文件按白名单打印成 JSON：
   - 键名、数字和布尔值照常打印；
-  - 字符串只在以下情况打印：`${VAR}` 引用、结构性键（`name`、`type`、`transport`、`command`、`cwd`、`matcher`、`model`、推理强度与审批设置）的值、`args` 中的开关、包名或路径，以及 URL 的协议、主机和路径；
+  - 字符串只在以下情况打印：`${VAR}` 引用、存放变量名的键（`bearer_token_env_var`、`env_key`、`env_vars`、`env_http_headers`）中的变量名、结构性键（`name`、`type`、`transport`、`command`、`cwd`、`matcher`、`model`、推理强度与审批设置）的值、`args` 中的开关、包名或路径，以及 URL 的协议、主机和路径；
   - `command` 中的整行 shell 命令只打印程序名和词数；
-  - 其余字符串一律打印为 `<redacted:N chars>`，凭据键下的引用也只保留结构；
+  - 引用中的变量名是普通名称时照常打印，凭据键下也一样；`${…}` 中的其他内容打印为 `${<redacted:N chars>}`；
+  - 其余字符串一律打印为 `<redacted:N chars>`；
   - `~/.claude.json` 只显示其中的 MCP Server。
 - 无法解析的文件只报出错的行号，并且只打印键名，从不打印内容。
 - `--scan` 把文件或文件夹中疑似含有凭据的每一行列为 `file:line: <kind>`，从不打印该行内容。Agent 在读取任何来源目录之前、以及导入之前运行它。

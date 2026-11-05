@@ -5,13 +5,16 @@
  *
  * Structured configuration prints by allowlist:
  * - A Claude Code `~/.claude.json` prints its MCP servers and none of the account state around
- *   them. The program, a bare flag, a package name, a project path, a non-credential `${VAR}`
- *   reference and a URL's host and path print; a credential reference keeps only its structure;
- *   a flag's value, an `env` value, a header value and a URL's query do not.
- * - A Codex `config.toml` prints its model settings and `env_vars` names, never a token or a
- *   client secret.
- * - A DeepSeek Harness `cordis.patch.yml` shows that a value is a `${credential:…}` reference,
- *   and masks a literal beside it.
+ *   them. The program, a bare flag, a package name, a project path, a `${VAR}` reference (under
+ *   a credential header too) and a URL's host and path print; a flag's value, an `env` value, a
+ *   header value and a URL's query do not.
+ * - A Codex `config.toml` prints its model settings and the variable names its name-holding keys
+ *   carry (`env_key`, `bearer_token_env_var`, `env_vars`, `env_http_headers`), never a token or
+ *   a client secret.
+ * - A DeepSeek Harness `cordis.patch.yml` shows a `${credential:…}` reference's name, and masks a
+ *   literal beside it.
+ * - A reference under a credential key prints its variable's name; one whose inside is shaped
+ *   like a token, and a name-holding key whose value is, print as their length only.
  * - A Qwen Code `settings.json` with comments still parses; a hook's shell line prints only its
  *   program.
  * - A value under a key the reader does not know prints as its length only, however plain it
@@ -114,7 +117,6 @@ describe("a Claude Code ~/.claude.json", () => {
       "someone@example.com",
       "account-identity-hash",
       "/home/u/empty",
-      "DOCS_TOKEN",
       "region=eu",
     ]) {
       expect(out).not.toContain(gone);
@@ -127,7 +129,7 @@ describe("a Claude Code ~/.claude.json", () => {
       "GITHUB_PERSONAL_ACCESS_TOKEN",
       '"${LOG_LEVEL}"',
       "https://mcp.example.com/mcp?<redacted:query>",
-      "Bearer ${<redacted:",
+      '"Bearer ${DOCS_TOKEN}"',
       "X-Team",
       "/home/u/repo",
       '"db-mcp"',
@@ -155,7 +157,9 @@ describe("a Codex config.toml", () => {
     "",
     "[mcp_servers.remote]",
     'url = "https://mcp.example.com/mcp"',
+    'bearer_token_env_var = "REMOTE_TOKEN"',
     `http_headers = { "X-Api-Key" = "${secret(10)}" }`,
+    'env_http_headers = { "X-Org" = "ORG_ID" }',
     "",
     "[mcp_servers.remote.oauth]",
     `client_secret = "${secret(11)}"`,
@@ -169,6 +173,9 @@ describe("a Codex config.toml", () => {
     for (const kept of [
       '"gpt-6.1-sol"',
       '"high"',
+      '"ACME_API_KEY"',
+      '"REMOTE_TOKEN"',
+      '"ORG_ID"',
       '"GH_HOST"',
       "GITHUB_TOKEN",
       "X-Api-Key",
@@ -196,14 +203,14 @@ describe("a DeepSeek Harness cordis.patch.yml", () => {
     "",
   ].join("\n");
 
-  it("shows the credential reference's structure and masks the literal beside it", async () => {
+  it("shows the credential reference's name and masks the literal beside it", async () => {
     const { out, status } = await inspect("cordis.patch.yml", file);
     expect(status).toBe(0);
     expect(out).not.toContain(secret(12));
     for (const kept of [
       '"stdio"',
       '"@deepseek-ai/dsh-mcp-client"',
-      "${credential:<redacted:",
+      '"${credential:github}"',
       "OTHER_TOKEN",
       '"example-github-mcp"',
     ]) {
@@ -272,6 +279,34 @@ describe("a key the reader does not know", () => {
     ]) {
       expect(out).toContain(kept);
     }
+  });
+});
+
+describe("references and variable names under a credential key", () => {
+  /** An API key's shape, assembled at run time so that no token-shaped literal is in the source. */
+  const tokenShaped = shaped("sk", "-", "PROBESECRET29", "Q7x".repeat(8));
+
+  it("prints a plain variable name and keeps a token-shaped inside back", async () => {
+    const { out, status } = await inspect(
+      "settings.json",
+      JSON.stringify({
+        mcpServers: {
+          a: {
+            command: "srv",
+            env: { OPENAI_API_KEY: "${OPENAI_API_KEY}", SHAPED_KEY: `\${${tokenShaped}}` },
+            headers: { Authorization: `Bearer \${${tokenShaped}}` },
+          },
+        },
+        model_providers: { b: { env_key: "OPENAI_API_KEY", bearer_token_env_var: tokenShaped } },
+      }),
+    );
+    expect(status).toBe(0);
+    expect(out).not.toMatch(PROBE);
+    expect(out).toContain('"OPENAI_API_KEY": "${OPENAI_API_KEY}"');
+    expect(out).toContain('"env_key": "OPENAI_API_KEY"');
+    expect(out).toContain(`"SHAPED_KEY": "\${<redacted:${tokenShaped.length} chars>}"`);
+    expect(out).toContain(`"Authorization": "Bearer \${<redacted:${tokenShaped.length} chars>}"`);
+    expect(out).toContain(`"bearer_token_env_var": "<redacted:${tokenShaped.length} chars>"`);
   });
 });
 
