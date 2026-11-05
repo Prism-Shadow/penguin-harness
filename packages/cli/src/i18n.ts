@@ -1,5 +1,6 @@
 import type {
   AgentArchiveImportResponse,
+  AgentArchiveNote,
   OrgChannelNoticeKind,
 } from "@prismshadow/penguin-server/api";
 
@@ -295,6 +296,8 @@ export interface Messages {
     ): string;
     importToFillTitle(): string;
     importNotesTitle(): string;
+    /** One of the server's notes, worded here for a code this CLI knows; the server's English sentence otherwise. */
+    importNote(note: AgentArchiveNote): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1513,6 +1516,18 @@ const en: Messages = {
       reason === "exists" ? "already in this install" : "its files are missing or do not match",
     importToFillTitle: () => "To fill in (vault keys and blanked MCP values; no value travels):",
     importNotesTitle: () => "Notes:",
+    importNote: (note) => {
+      if (note.code === "unknown_tool" && note.subject !== undefined) {
+        return `The built-in tool "${note.subject}" is not in this install, so it was not enabled.`;
+      }
+      if (note.code === "no_known_tools") {
+        return "None of the built-in tools named are in this install, so the default toolset was kept.";
+      }
+      if (note.code === "link_skipped" && note.subject !== undefined) {
+        return `agent_state/${note.subject} is a link, so it was left out.`;
+      }
+      return note.message;
+    },
   },
   project: {
     desc: "Manage projects",
@@ -2697,6 +2712,18 @@ const zh: Messages = {
     importSkippedReason: (reason) => (reason === "exists" ? "本安装中已有" : "文件缺失或不匹配"),
     importToFillTitle: () => "待填写（vault 密钥与被清空的 MCP 值；任何值都不会随文件迁移）：",
     importNotesTitle: () => "说明：",
+    importNote: (note) => {
+      if (note.code === "unknown_tool" && note.subject !== undefined) {
+        return `本安装中没有内置工具「${note.subject}」，未启用它。`;
+      }
+      if (note.code === "no_known_tools") {
+        return "所列的内置工具在本安装中都不存在，保留了默认工具集。";
+      }
+      if (note.code === "link_skipped" && note.subject !== undefined) {
+        return `agent_state/${note.subject} 是链接，已略过。`;
+      }
+      return note.message;
+    },
   },
   project: {
     desc: "管理 Project",

@@ -196,10 +196,16 @@ function importReport(t: Messages, projectId: string, res: AgentArchiveImportRes
   };
   list(
     t.agent.importSkippedTitle(),
-    res.skippedTraces.map((s) => `${s.sessionId} (${t.agent.importSkippedReason(s.reason)})`),
+    res.skippedTraces.map((s) => {
+      const reason = t.agent.importSkippedReason(s.reason);
+      return `${s.sessionId} (${s.detail !== undefined ? `${reason}: ${s.detail}` : reason})`;
+    }),
   );
   list(t.agent.importToFillTitle(), res.toFill);
-  list(t.agent.importNotesTitle(), res.notes);
+  list(
+    t.agent.importNotesTitle(),
+    res.notes.map((note) => t.agent.importNote(note)),
+  );
   return `${lines.join("\n")}\n`;
 }
 

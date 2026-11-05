@@ -24,7 +24,10 @@
  * - An upload the server refuses for a token it has replaced is sent again with the new token, its
  *   whole body included.
  * - The text report names the mode and version, the backup, what came along, the Sessions left
- *   out, what is left to fill in and the server's notes; `--json` prints the response as it is.
+ *   out (with the server's detail when it gives one), what is left to fill in and the server's
+ *   notes; `--json` prints the response as it is.
+ * - A note whose code the CLI knows is worded in the CLI's language, so a zh CLI does not show the
+ *   server's English sentence for it; a note with any other code prints the server's sentence.
  */
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -34,7 +37,10 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { Command } from "commander";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
+import type {
+  AgentArchiveImportResponse,
+  AgentArchiveNoteCode,
+} from "@prismshadow/penguin-server/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerArchiveCommands } from "../src/commands/agent-archive.js";
 import { cli } from "../src/index.js";
@@ -410,11 +416,25 @@ describe("penguin agent import", () => {
       },
       skippedTraces: [
         { sessionId: "session-2026-08-01-09-00-00-0000000a", reason: "exists" },
-        { sessionId: "session-2026-08-02-09-00-00-0000000b", reason: "invalid" },
+        {
+          sessionId: "session-2026-08-02-09-00-00-0000000b",
+          reason: "invalid",
+          detail: "session-2026-08-02-09-00-00-0000000b_002.jsonl is missing",
+        },
       ],
       toFill: ["DOCS_TOKEN", "mcp:docs:headers:Authorization"],
-      notes: ["The definition names the built-in tool web_fetch, which this install lacks."],
+      notes: [
+        {
+          code: "unknown_tool",
+          subject: "web_fetch",
+          message: 'Built-in tool "web_fetch" does not exist in this install; it was not enabled.',
+        },
+        // A code from a newer server, which this CLI does not know.
+        { code: "future_note" as AgentArchiveNoteCode, message: "Something a newer server says." },
+      ],
     };
+    const [exists, invalid] = answer.skippedTraces;
+    const [knownNote, unknownNote] = answer.notes;
 
     beforeEach(() => {
       server.agentArchive.imported = () => ({ status: 201, body: answer });
@@ -427,10 +447,28 @@ describe("penguin agent import", () => {
       expect(text).toContain(t.agent.importOverwritten("writer", "default_project", 8, 7));
       expect(text).toContain(answer.backup!);
       expect(text).toContain(t.agent.importCounts(answer.imported));
-      for (const { sessionId, reason } of answer.skippedTraces) {
-        expect(text).toContain(`${sessionId} (${t.agent.importSkippedReason(reason)})`);
+      expect(text).toContain(`${exists!.sessionId} (${t.agent.importSkippedReason("exists")})`);
+      expect(text).toContain(invalid!.sessionId);
+      expect(text).toContain(invalid!.detail!);
+      for (const line of answer.toFill) expect(text).toContain(line);
+      expect(text).toContain(knownNote!.subject!);
+      expect(text).toContain(unknownNote!.message);
+    });
+
+    it("words a note it knows in the CLI's language, and prints any other as the server's sentence", async () => {
+      const saved = process.env.PENGUIN_LANG;
+      process.env.PENGUIN_LANG = "zh";
+      try {
+        expect(await cli(["agent", "import", portFolder(), "--overwrite"])).toBe(0);
+      } finally {
+        if (saved === undefined) delete process.env.PENGUIN_LANG;
+        else process.env.PENGUIN_LANG = saved;
       }
-      for (const line of [...answer.toFill, ...answer.notes]) expect(text).toContain(line);
+
+      const text = out();
+      expect(text).toContain(knownNote!.subject!);
+      expect(text).not.toContain(knownNote!.message);
+      expect(text).toContain(unknownNote!.message);
     });
 
     it("--json prints the server's response as it is", async () => {
