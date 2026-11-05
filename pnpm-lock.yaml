@@ -455,6 +455,93 @@ importers:
         specifier: ^4.0.0
         version: 4.0.1(supports-color@10.2.2)
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: workspace:*
+        version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/openskill-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/openskill-rsi-toolkit
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
+      '@penguinharness/sandbox-bwrap':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-bwrap
+      '@penguinharness/sandbox-dsh':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-dsh
+      '@penguinharness/sandbox-seatbelt':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-seatbelt
+      '@penguinharness/sandbox-wsl':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-wsl
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/skilladam-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skilladam-rsi-toolkit
+      '@penguinharness/skillopt-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/skillopt-rsi-toolkit
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/trace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/trace-rsi-toolkit
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -2215,6 +2302,7 @@ packages:
   '@prismshadow/penguin-core@file:packages/core':
     resolution: {directory: packages/core, type: directory}
     engines: {node: '>=24'}
+    hasBin: true
 
   '@prismshadow/penguin-hmr@file:packages/hmr':
     resolution: {directory: packages/hmr, type: directory}
