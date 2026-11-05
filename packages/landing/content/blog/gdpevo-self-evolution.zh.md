@@ -3,16 +3,16 @@ title: "用 Penguin Harness 在 GDPEVO 上开展自进化实验"
 date: 2026-11-04
 category: practice
 author: Leijun Zhou
-excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 六大企业场景（30 道训练题与 30 道测试题），对比评测 SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种 Agent 自进化方法。"
+excerpt: "在 PenguinHarness 0.2.19 中使用内置的 GDPEVO Essential 系列 Benchmark（包含六个子 Benchmark，共 30 道训练题与 30 道测试题），对比评测 SkillAdam、SkillOpt、TRACE 与 OpenSkill 四种 Agent 自进化方法。"
 ---
 
-本文介绍如何使用 PenguinHarness 0.2.19 在 [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) 评测集上开展 Agent 自进化实验。实验中基座模型固定为 `DeepSeek-V4.1-Flash-1017`，思考强度设为 `max`，系统对比了 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 和 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种自进化方法。下文将依次说明评测集的数据规模与任务设定、自进化方法的核心机制、Web 界面的实验启动方式、系统内部的执行流程以及最终的实测结果。
+本文介绍如何使用 PenguinHarness 0.2.19 在 [GDPEVO Essential](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/leaderboards/gdpevo-essential) 系列 Benchmark 上开展 Agent 自进化实验。实验中基座模型固定为 `DeepSeek-V4.1-Flash-1017`，思考强度设为 `max`，系统对比了 [SkillAdam](https://arxiv.org/abs/2609.08944v1)、[SkillOpt](https://arxiv.org/abs/2605.23904v1)、[TRACE](https://arxiv.org/abs/2608.22793v2) 和 [OpenSkill](https://arxiv.org/abs/2606.06741v1) 四种自进化方法。下文将依次说明 GDPEVO Essential 系列 Benchmark 的构成与评测规则、自进化方法的核心机制、Web 界面的实验启动方式、系统内部的执行流程以及最终的实测结果。
 
-## 1. GDPEVO Essential 的数据与任务设定
+## 1. GDPEVO Essential 系列 Benchmark 的构成与评测规则
 
-GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 道测试题（合计 60 道题）。每个场景在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库中均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道同领域的保留测试题：
+GDPEVO Essential 是一套面向企业级真实业务任务与 Agent 自进化能力评测的系列 Benchmark，由六个独立的子 Benchmark 组成，合计包含 30 道训练题与 30 道测试题（共 60 道题）。在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data) 仓库与 PenguinHarness 内置评测库中，每个子 Benchmark 均由配对的训练集与测试集组成，各自包含 5 道训练题与 5 道保留测试题：
 
-| 业务场景 | 场景标识 | 题目数量 | 任务概述 |
+| Benchmark 名称 | Benchmark 标识 | 题目数量 | 任务概述 |
 | :--- | :--- | :--- | :--- |
 | 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练 / 5 测试 | 查询客服后台记录，核实并处理待办工单 |
 | 财务管控 | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练 / 5 测试 | 根据财务系统数据完成账目核对与结账核算 |
@@ -21,11 +21,11 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 | 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练 / 5 测试 | 核对立案卷宗材料，整理案件排期与归档信息 |
 | 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练 / 5 测试 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
 
-在 GDPEVO Essential 的 Benchmark 设定下，每个场景的实验遵循以下三项规则：
+在 GDPEVO Essential 系列 Benchmark 的评测规则下，每个子 Benchmark 的实验遵循以下三项设定：
 
-- **分场景独立训练**：六个业务场景彼此独立，每个场景单独开展训练并产出一份专属的 `SKILL.md` 技能文档，不同场景之间不混合训练数据，也不共享习得的业务规则。
-- **训练阶段（5 道题共享单容器连续会话，限时 6 小时）**：同一场景的 5 道训练题在同一个业务容器与同一个连续会话中完成，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
-- **测试阶段（5 道题 × 3 轮独立容器评测，每题限时 4 小时）**：训练产出的 `SKILL.md` 一经导出即被冻结，随后在同场景的 5 道保留测试题上完整重复评测 3 轮（单个场景共 15 次测试运行，全量 6 个场景共 90 次测试运行）。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
+- **按 Benchmark 独立训练与测试**：六个子 Benchmark 彼此独立，每个 Benchmark 单独开展训练并产出一份专属的 `SKILL.md` 技能文档，不同 Benchmark 之间不混合训练数据，也不共享习得的技能。
+- **训练阶段（5 道题共享单容器连续会话，限时 6 小时）**：同一个 Benchmark 的 5 道训练题在同一个业务容器与同一个连续会话中完成，中途不重置环境或工作区。训练容器在本地回环端口提供只读业务后端服务，并内置在线评分接口 `POST /api/judge` 供 Agent 在演进过程中获取得分与诊断反馈。具体是否调用该接口由自进化方法本身决定，例如有监督方法会借此引导技能修订，而无监督方法则完全依靠自建的虚拟测试进行演进。
+- **测试阶段（5 道题 × 3 轮独立容器评测，每题限时 4 小时）**：训练产出的 `SKILL.md` 一经导出即被冻结，随后在该 Benchmark 的 5 道保留测试题上完整重复评测 3 轮（单个 Benchmark 共 15 次测试运行，全系列 6 个 Benchmark 共 90 次测试运行）。每一道测试题的每一次作答均在全新的隔离容器与空白会话中独立运行，且关闭一切在线训练反馈接口，待作答结束后由离线评分器统一判分。
 
 ## 2. 自进化方法：以 SkillAdam 为例
 
@@ -52,17 +52,17 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 其中基础预算 <i>B</i><sub>base</sub> = 4，最小预算 <i>B</i><sub>min</sub> = 1，方差上限 <i>V</i><sub>cap</sub> = 0.1。当累计波动率 <i>V<sub>t</sub></i> 增大时，下一轮允许修改的块数从默认的 4 块收缩至 1～2 块，当各题提分效果平稳一致时，修改预算随之恢复。
 
-下图与表格展示了实验中“工程项目组合分析”、“医保审核”和“法院书记员业务”三个场景在连续训练容器内的真实得分演进过程（百分制）：
+下图与表格展示了实验中“工程项目组合分析”、“医保审核”和“法院书记员业务”三个子 Benchmark 在连续训练容器内的真实得分演进过程（百分制）：
 
-<figure class="post-figure" data-figure="skilladam-progression"> <svg class="fig-svg" viewBox="0 0 560 220" role="img" aria-labelledby="gdpevo-self-evolution-skilladam-progression-zh-title"> <title id="gdpevo-self-evolution-skilladam-progression-zh-title">三个代表性场景在连续训练容器内的五题平均得分演进曲线</title> <path d="M56 28H532M56 68H532M56 108H532M56 148H532" class="fig-link"/> <path d="M56 28V168H532" class="fig-axis"/> <text x="46" y="32" text-anchor="end" class="fig-tick">100</text> <text x="46" y="72" text-anchor="end" class="fig-tick">80</text> <text x="46" y="112" text-anchor="end" class="fig-tick">60</text> <text x="46" y="152" text-anchor="end" class="fig-tick">40</text> <text x="96" y="188" text-anchor="middle" class="fig-label">无技能初测</text> <text x="224" y="188" text-anchor="middle" class="fig-label">初版 Skill</text> <text x="352" y="188" text-anchor="middle" class="fig-label">第 1 轮迭代</text> <text x="480" y="188" text-anchor="middle" class="fig-label">第 2 轮迭代</text> <path d="M96 129.5L224 78.3L352 33.3L480 28.0" class="fig-edge"/> <circle cx="96" cy="129.5" r="4" class="fig-s1"/> <circle cx="224" cy="78.3" r="4" class="fig-s1"/> <circle cx="352" cy="33.3" r="4" class="fig-s1"/> <circle cx="480" cy="28.0" r="4" class="fig-s1"/> <text x="96" y="145" text-anchor="middle" class="fig-num">49.24</text> <text x="224" y="94" text-anchor="middle" class="fig-num">74.86</text> <text x="352" y="23" text-anchor="middle" class="fig-num">97.33</text> <text x="480" y="19" text-anchor="middle" class="fig-num">100.00</text> <path d="M96 61.9L224 40.3L352 40.2L480 39.2" class="fig-edge"/> <rect x="92" y="57.9" width="8" height="8" rx="1" class="fig-s2"/> <rect x="220" y="36.3" width="8" height="8" rx="1" class="fig-s2"/> <rect x="348" y="36.2" width="8" height="8" rx="1" class="fig-s2"/> <rect x="476" y="35.2" width="8" height="8" rx="1" class="fig-s2"/> <text x="96" y="52" text-anchor="middle" class="fig-num">83.07</text> <text x="224" y="31" text-anchor="middle" class="fig-num">93.87</text> <text x="352" y="54" text-anchor="middle" class="fig-num">93.93</text> <text x="510" y="43" text-anchor="start" class="fig-num">94.40</text> <path d="M96 88.9L224 68.7L352 68.5L480 57.2" class="fig-edge"/> <circle cx="96" cy="88.9" r="4" class="fig-s3"/> <circle cx="224" cy="68.7" r="4" class="fig-s3"/> <circle cx="352" cy="68.5" r="4" class="fig-s3"/> <circle cx="480" cy="57.2" r="4" class="fig-s3"/> <text x="96" y="104" text-anchor="middle" class="fig-num">69.54</text> <text x="224" y="61" text-anchor="middle" class="fig-num">79.67</text> <text x="352" y="83" text-anchor="middle" class="fig-num">79.74</text> <text x="480" y="73" text-anchor="middle" class="fig-num">85.42</text> <circle cx="110" cy="210" r="4" class="fig-s1"/> <text x="120" y="214" class="fig-label">工程项目组合分析</text> <rect x="246" y="206" width="8" height="8" rx="1" class="fig-s2"/> <text x="260" y="214" class="fig-label">医保审核</text> <circle cx="350" cy="210" r="4" class="fig-s3"/> <text x="360" y="214" class="fig-label">法院书记员业务</text> </svg> <ol class="fig-steps"> <li>工程项目组合分析：无技能初测 49.24，初版 Skill 74.86，第 1 轮迭代 97.33，第 2 轮迭代 100.00</li> <li>医保审核：无技能初测 83.07，初版 Skill 93.87，第 1 轮迭代 93.93，第 2 轮迭代 94.40</li> <li>法院书记员业务：无技能初测 69.54，初版 Skill 79.67，第 1 轮迭代 79.74，第 2 轮迭代 85.42</li> </ol> <figcaption>三个场景在连续训练容器内的五题平均分变化（百分制）：从无技能初测到提炼初版技能，再经两轮迭代实现提升。</figcaption> </figure>
+<figure class="post-figure" data-figure="skilladam-progression"> <svg class="fig-svg" viewBox="0 0 560 220" role="img" aria-labelledby="gdpevo-self-evolution-skilladam-progression-zh-title"> <title id="gdpevo-self-evolution-skilladam-progression-zh-title">三个子 Benchmark 在连续训练容器内的五题平均得分演进曲线</title> <path d="M56 28H532M56 68H532M56 108H532M56 148H532" class="fig-link"/> <path d="M56 28V168H532" class="fig-axis"/> <text x="46" y="32" text-anchor="end" class="fig-tick">100</text> <text x="46" y="72" text-anchor="end" class="fig-tick">80</text> <text x="46" y="112" text-anchor="end" class="fig-tick">60</text> <text x="46" y="152" text-anchor="end" class="fig-tick">40</text> <text x="96" y="188" text-anchor="middle" class="fig-label">无技能初测</text> <text x="224" y="188" text-anchor="middle" class="fig-label">初版 Skill</text> <text x="352" y="188" text-anchor="middle" class="fig-label">第 1 轮迭代</text> <text x="480" y="188" text-anchor="middle" class="fig-label">第 2 轮迭代</text> <path d="M96 129.5L224 78.3L352 33.3L480 28.0" class="fig-edge"/> <circle cx="96" cy="129.5" r="4" class="fig-s1"/> <circle cx="224" cy="78.3" r="4" class="fig-s1"/> <circle cx="352" cy="33.3" r="4" class="fig-s1"/> <circle cx="480" cy="28.0" r="4" class="fig-s1"/> <text x="96" y="145" text-anchor="middle" class="fig-num">49.24</text> <text x="224" y="94" text-anchor="middle" class="fig-num">74.86</text> <text x="352" y="23" text-anchor="middle" class="fig-num">97.33</text> <text x="480" y="19" text-anchor="middle" class="fig-num">100.00</text> <path d="M96 61.9L224 40.3L352 40.2L480 39.2" class="fig-edge"/> <rect x="92" y="57.9" width="8" height="8" rx="1" class="fig-s2"/> <rect x="220" y="36.3" width="8" height="8" rx="1" class="fig-s2"/> <rect x="348" y="36.2" width="8" height="8" rx="1" class="fig-s2"/> <rect x="476" y="35.2" width="8" height="8" rx="1" class="fig-s2"/> <text x="96" y="52" text-anchor="middle" class="fig-num">83.07</text> <text x="224" y="31" text-anchor="middle" class="fig-num">93.87</text> <text x="352" y="54" text-anchor="middle" class="fig-num">93.93</text> <text x="510" y="43" text-anchor="start" class="fig-num">94.40</text> <path d="M96 88.9L224 68.7L352 68.5L480 57.2" class="fig-edge"/> <circle cx="96" cy="88.9" r="4" class="fig-s3"/> <circle cx="224" cy="68.7" r="4" class="fig-s3"/> <circle cx="352" cy="68.5" r="4" class="fig-s3"/> <circle cx="480" cy="57.2" r="4" class="fig-s3"/> <text x="96" y="104" text-anchor="middle" class="fig-num">69.54</text> <text x="224" y="61" text-anchor="middle" class="fig-num">79.67</text> <text x="352" y="83" text-anchor="middle" class="fig-num">79.74</text> <text x="480" y="73" text-anchor="middle" class="fig-num">85.42</text> <circle cx="110" cy="210" r="4" class="fig-s1"/> <text x="120" y="214" class="fig-label">工程项目组合分析</text> <rect x="246" y="206" width="8" height="8" rx="1" class="fig-s2"/> <text x="260" y="214" class="fig-label">医保审核</text> <circle cx="350" cy="210" r="4" class="fig-s3"/> <text x="360" y="214" class="fig-label">法院书记员业务</text> </svg> <ol class="fig-steps"> <li>工程项目组合分析：无技能初测 49.24，初版 Skill 74.86，第 1 轮迭代 97.33，第 2 轮迭代 100.00</li> <li>医保审核：无技能初测 83.07，初版 Skill 93.87，第 1 轮迭代 93.93，第 2 轮迭代 94.40</li> <li>法院书记员业务：无技能初测 69.54，初版 Skill 79.67，第 1 轮迭代 79.74，第 2 轮迭代 85.42</li> </ol> <figcaption>三个子 Benchmark 在连续训练容器内的五题平均分变化（百分制）：从无技能初测到提炼初版技能，再经两轮迭代实现提升。</figcaption> </figure>
 
-| 业务场景 | 无技能初测 | 初版 Skill | 第 1 轮迭代 | 第 2 轮迭代 | 最终保留得分 |
+| Benchmark | 无技能初测 | 初版 Skill | 第 1 轮迭代 | 第 2 轮迭代 | 最终保留得分 |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | 工程项目组合分析 | 49.24 | 74.86 | 97.33 (采纳) | 100.00 (采纳) | 100.00 |
 | 医保审核 | 83.07 | 93.87 | 93.93 (采纳) | 94.40 (采纳) | 94.40 |
 | 法院书记员业务 | 69.54 | 79.67 | 79.74 (采纳) | 85.42 (采纳) | 85.42 |
 
-可以看到，在工程项目组合分析、医保审核与法院书记员业务三个场景中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，提炼出初版 `SKILL.md` 后得分明显提升，再经过两轮迭代修改，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
+可以看到，在工程项目组合分析、医保审核与法院书记员业务三个 Benchmark 中，Agent 从无技能初测的 49.24 分、83.07 分和 69.54 分出发，提炼出初版 `SKILL.md` 后得分明显提升，再经过两轮迭代修改，训练均分分别达到 100.00 分、94.40 分和 85.42 分。
 
 除 SkillAdam 外，本次实验还同步评测了另外三种代表性自进化方法，四者的原论文与核心机制对比如下：
 
@@ -94,15 +94,15 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ### 第三步：选择工具包并发送启动指令
 
-由于“单容器连续训练一次、冻结导出 `SKILL.md`、在测试集上对 Baseline 与 Final 各重复测试 3 轮”以及具体的任务路径和评分规则均已内置在 `skilladam-rsi-toolkit` 与 Benchmark 包说明中，启动指令无需重复描述实验流程，只需在输入框中通过 `/skilladam-rsi-toolkit`（或点击技能图标）挂载工具包，并指明工具包名称、评测场景、目标 Agent 使用的模型与思考强度以及 Docker 并发上限即可。
+由于“单容器连续训练一次、冻结导出 `SKILL.md`、在测试集上对 Baseline 与 Final 各重复测试 3 轮”以及具体的任务路径和评分规则均已内置在 `skilladam-rsi-toolkit` 与 Benchmark 包说明中，启动指令无需重复描述实验流程，只需在输入框中通过 `/skilladam-rsi-toolkit`（或点击技能图标）挂载工具包，并指明工具包名称、目标 Benchmark、模型与思考强度以及 Docker 并发上限即可。
 
-如果只跑单个场景（以服务工单处理 `service-ticket-resolution` 为例），在聊天框输入：
+如果只跑单个 Benchmark（以 `service-ticket-resolution` 为例），在聊天框输入：
 
-> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 的 `service-ticket-resolution` 场景上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
+> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 的 `service-ticket-resolution` Benchmark 上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
 
-如果直接开展全量六个场景的实验，在聊天框输入：
+如果直接开展 GDPEVO Essential 系列全部六个子 Benchmark 的实验，在聊天框输入：
 
-> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 的全部六个场景上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
+> 使用 `skilladam-rsi-toolkit`，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验。模型使用 `DeepSeek V4.1 Flash`，思考强度 `max`，Docker 并发上限 `4`。
 
 如果要评测其他自进化算法，只需将挂载的技能与指令中的 `skilladam-rsi-toolkit` 替换为 `skillopt-rsi-toolkit`、`trace-rsi-toolkit` 或 `openskill-rsi-toolkit`。
 
@@ -116,7 +116,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ### 1. 多轮训练循环
 
-任务环境准备就绪后，**主控 Agent** 先保留一份不挂载任何业务技能的初始状态作为基线对照（Baseline），同时通过 **Harbor** 为当前业务场景拉起一个共享训练容器。Docker 为训练场景提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。**目标 Agent** 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题，经历多轮诊断与迭代修改。
+任务环境准备就绪后，**主控 Agent** 先保留一份不挂载任何业务技能的初始状态作为基线对照（Baseline），同时通过 **Harbor** 为当前 Benchmark 拉起一个共享训练容器。Docker 为该 Benchmark 提供了完整的环境隔离：业务后端服务、任务数据与在线评分接口均运行在容器内部。**目标 Agent** 在该共享容器的同一个持久会话中按顺序循环试做 5 道训练题，经历多轮诊断与迭代修改。
 
 ### 2. 产出进化 Agent
 
@@ -124,7 +124,7 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ### 3. 多轮隔离测试
 
-**主控 Agent** 通过 **Harbor** 将**进化 Agent**（以及基线对照状态）投放到同场景的 5 道保留测试题上，完整重复运行 3 轮测试（单场景共 15 个独立测试容器）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭在线训练评分接口。
+**主控 Agent** 通过 **Harbor** 将**进化 Agent**（以及基线对照状态）投放到该 Benchmark 的 5 道保留测试题上，完整重复运行 3 轮测试（单个 Benchmark 共 15 个独立测试容器）。在测试阶段，每一道题目的每一次作答均在全新的 Docker 容器与空白会话中独立运行，不同题目与不同轮次之间互不共享文件系统、数据库状态或会话历史，且容器内关闭在线训练评分接口。
 
 ### 4. 离线判分出分
 
@@ -134,11 +134,11 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 实验的分数与开销按以下两级聚合规则统计：
 
-- **单场景测试得分**：设第 <i>r</i> 轮测试（<i>r</i> ∈ {1, 2, 3}）中第 <i>q</i> 道测试题（<i>q</i> ∈ {1..5}）的得分为 <i>s<sub>r,q</sub></i>。先计算每一轮测试内 5 道题的平均分 <i>s̄<sub>r</sub></i> = (1/5) ∑<sub><i>q</i>=1..5</sub> <i>s<sub>r,q</sub></i>，再对 3 轮测试的均分计算均值 <i>μ</i> = (1/3) ∑<sub><i>r</i>=1..3</sub> <i>s̄<sub>r</sub></i> 与样本标准差 <i>s</i> = √((1/2) ∑<sub><i>r</i>=1..3</sub> (<i>s̄<sub>r</sub></i> − <i>μ</i>)<sup>2</sup>)。
-- **跨场景总体得分**：在每一轮测试 <i>r</i> 内，先对 6 个场景的单轮均分求等权平均得到该轮总体均分 <i>S̄<sub>r</sub></i> = (1/6) ∑<sub><i>d</i>=1..6</sub> <i>s̄<sub>r,d</sub></i>，再对 3 轮总体均分计算均值与样本标准差。
-- **费用与耗时**：训练阶段每个场景只跑 1 次，直接汇总 6 个场景实际产生的总费用与总耗时。测试阶段共跑 3 轮，表中展示的测试费用与耗时为“3 轮完整测试合计除以 3”，即完成一轮完整测试（30 道测试题）的平均开销。费用按 MMSP 的统一计费标准核算。
+- **单 Benchmark 测试得分**：设第 <i>r</i> 轮测试（<i>r</i> ∈ {1, 2, 3}）中第 <i>q</i> 道测试题（<i>q</i> ∈ {1..5}）的得分为 <i>s<sub>r,q</sub></i>。先计算每一轮测试内 5 道题的平均分 <i>s̄<sub>r</sub></i> = (1/5) ∑<sub><i>q</i>=1..5</sub> <i>s<sub>r,q</sub></i>，再对 3 轮测试的均分计算均值 <i>μ</i> = (1/3) ∑<sub><i>r</i>=1..3</sub> <i>s̄<sub>r</sub></i> 与样本标准差 <i>s</i> = √((1/2) ∑<sub><i>r</i>=1..3</sub> (<i>s̄<sub>r</sub></i> − <i>μ</i>)<sup>2</sup>)。
+- **系列总体得分**：在每一轮测试 <i>r</i> 内，先对 6 个子 Benchmark 的单轮均分求等权平均得到该轮总体均分 <i>S̄<sub>r</sub></i> = (1/6) ∑<sub><i>d</i>=1..6</sub> <i>s̄<sub>r,d</sub></i>，再对 3 轮总体均分计算均值与样本标准差。
+- **费用与耗时**：训练阶段每个 Benchmark 只跑 1 次，直接汇总 6 个子 Benchmark 实际产生的总费用与总耗时。测试阶段共跑 3 轮，表中展示的测试费用与耗时为“3 轮完整测试合计除以 3”，即完成全系列一轮完整测试（30 道测试题）的平均开销。费用按 MMSP 的统一计费标准核算。
 
-四种方法与统一基线在六个场景上的总体结果如下：
+四种方法与统一基线在 GDPEVO Essential 系列六个 Benchmark 上的总体结果如下：
 
 | 方法 | 总体测试得分 (均分 ± 标准差) | 相比 Baseline 提升 | 训练总费用 | 训练总耗时 | 单轮测试平均费用 | 单轮测试平均耗时 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -148,9 +148,9 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 | TRACE | 68.02 ± 1.80 | +11.69 | $5.29 | 3h 26m | $1.67 | 3h 37m |
 | OpenSkill | 62.16 ± 2.31 | +5.83 | $5.56 | 8h 15m | $2.63 | 4h 45m |
 
-六个业务场景的分项测试得分（均分 ± 标准差）如下：
+六个子 Benchmark 的分项测试得分（均分 ± 标准差）如下：
 
-| 业务场景 | Baseline | SkillAdam | SkillOpt | TRACE | OpenSkill |
+| Benchmark | Baseline | SkillAdam | SkillOpt | TRACE | OpenSkill |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | 服务工单处理 | 48.90 ± 10.06 | 65.78 ± 0.00 (+16.88) | 69.95 ± 6.30 (+21.05) | 59.38 ± 3.85 (+10.49) | 61.46 ± 0.28 (+12.57) |
 | 财务管控 | 50.97 ± 1.08 | 63.89 ± 4.42 (+12.93) | 58.03 ± 7.14 (+7.07) | 62.56 ± 1.55 (+11.59) | 52.45 ± 9.15 (+1.48) |
@@ -161,4 +161,4 @@ GDPEVO Essential 包含六个企业级业务场景，共 30 道训练题与 30 �
 
 ## 6. 实验洞察与讨论（待补充）
 
-> **TODO（Insights 占位符）**：本节预留用于后续补充本次 GDPEVO Essential 自进化实验的核心洞察与深入分析（例如不同业务场景下的技能迁移特性、有监督在线评分反馈与无监督虚拟测试的边界对比、以及演进后推理步数与成本下降的机理讨论）。
+> **TODO（Insights 占位符）**：本节预留用于后续补充本次 GDPEVO Essential 系列 Benchmark 自进化实验的核心洞察与深入分析（例如不同子 Benchmark 下的技能提炼特性、有监督在线评分反馈与无监督虚拟测试的边界对比、以及演进后推理步数与成本下降的机理讨论）。
