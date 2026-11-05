@@ -160,6 +160,8 @@ done; routine work in one's own partition is simply done.
   neither is an acknowledgement: the ticket and the board show it. Never \`@all\` for chatter.
 - A handoff is one line and the ticket (\`--ref-ticket <id>\`); the deliverables are listed in the
   ticket's \`## Result\`. A mention of yourself is never delivered: move the ticket instead.
+- Cite a file as \`[what it is](<app_data_dir>/…)\`: the reader sees those words and opens the
+  file from the message.
 - Answer in the channel the trigger names (its \`channel:\` line):
   \`penguin org channel send --channel <id> -m …\`. During your calendar sweep read the channels
   you are in: \`penguin org channel ls\`, then \`penguin org channel tail --channel <id>\`.
@@ -290,6 +292,7 @@ CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募
 
 - 只发需要别人据此行动的消息（提问、拍板、阻塞、交给对方的下一步），并 @ 那个人。开始做、正在做、做完了分内的工作都不是消息，回执也不是：工单和看板上都看得到。绝不为闲谈 \`@all\`。
 - 交接只写一行并带上工单（\`--ref-ticket <id>\`）；交付物列在工单的 \`## Result\` 里。@ 自己的消息永远送不到：改为移动工单。
+- 引用文件写成 \`[它是什么](<app_data_dir>/…)\`：读者看到的是方括号里的字，并能直接从消息里打开文件。
 - 在触发块指明的频道里作答（它的 \`channel:\` 行）：\`penguin org channel send --channel <id> -m …\`。日历巡检时读一遍自己所在的频道：\`penguin org channel ls\`，再 \`penguin org channel tail --channel <id>\`。
 - 一条线索会淹没全员频道时就另开频道——一条工作线或一张大工单一个（\`penguin org channel create <id>\`），只邀请这项工作需要的主体（\`penguin org channel invite <id> <principal>\`），并在全员频道里说明一次。
 - 你只在自己是成员的频道里读和发；员工只有被成员邀请才会加入一个频道。需要董事会拍板的事情要发到全员频道——他们在那里读。
