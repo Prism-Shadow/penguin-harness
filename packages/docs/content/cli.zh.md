@@ -271,7 +271,7 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 
 ### penguin agent export
 
-把 Agent 写成 zip，与 Agents 页面上的**导出**得到的文件相同。zip 总会带上 Agent 的配置：`system_config.yaml`（形似凭据的 MCP 值会被清空，并在 manifest 中列出名称）、`AGENTS.md` 和 `tools/`。其余部分由选项选择，缺省值与导出对话框一致。vault 的值从不随文件迁移，manifest 只列出 vault 的键名。zip 以流式写入磁盘，命令最后打印写入位置和大小。
+把 Agent 写成 zip，与 Agents 页面卡片上的**导出 Agent** 图标、或 Agent 设置中的**导出…**得到的文件相同。zip 总会带上 Agent 的配置：`system_config.yaml`（形似凭据的 MCP 值会被清空，并在 manifest 中列出名称）、`AGENTS.md` 和 `tools/`。其余部分由选项选择，缺省值与导出对话框一致。vault 的值从不随文件迁移，manifest 只列出 vault 的键名。zip 以流式写入磁盘，命令最后打印写入位置和大小。
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |

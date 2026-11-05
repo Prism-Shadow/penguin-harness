@@ -158,20 +158,28 @@ function formatSize(bytes: number): string {
  * is, streamed from disk (the server tells a zip from a `.tar.gz` by its first bytes). Throws,
  * nothing sent, for a missing path, a folder without a manifest, or more than an import accepts.
  */
-async function uploadBody(source: string, t: Messages): Promise<UploadBody> {
+async function uploadBody(
+  source: string,
+  t: Messages,
+  maxUploadBytes: number,
+): Promise<UploadBody> {
   const stat = await fs.promises.stat(source).catch(() => null);
   if (stat === null) throw new Error(t.agent.importNotFound(source));
-  const maxMib = AGENT_ARCHIVE_MAX_UPLOAD_BYTES / MiB;
+  const maxMib = maxUploadBytes / MiB;
   if (stat.isDirectory()) {
     const manifest = await fs.promises.stat(path.join(source, "manifest.json")).catch(() => null);
     if (manifest === null || !manifest.isFile()) throw new Error(t.agent.importNoManifest(source));
-    const zip = await zipFolder(source, AGENT_ARCHIVE_MAX_UPLOAD_BYTES);
+    const zip = await zipFolder(source, maxUploadBytes);
     if (zip === null) throw new Error(t.agent.importTooLarge(source, maxMib));
     return zip;
   }
-  if (stat.size > AGENT_ARCHIVE_MAX_UPLOAD_BYTES)
-    throw new Error(t.agent.importTooLarge(source, maxMib));
+  if (stat.size > maxUploadBytes) throw new Error(t.agent.importTooLarge(source, maxMib));
   return () => fs.createReadStream(source);
+}
+
+/** What `import` holds an upload to before sending it: the server's cap, unless a test lowers it. */
+export interface ArchiveLimits {
+  maxUploadBytes: number;
 }
 
 /** The text report of an import: what was created or replaced, what came along, what did not. */
@@ -195,7 +203,11 @@ function importReport(t: Messages, projectId: string, res: AgentArchiveImportRes
   return `${lines.join("\n")}\n`;
 }
 
-export function registerArchiveCommands(agent: Command, t: Messages): void {
+export function registerArchiveCommands(
+  agent: Command,
+  t: Messages,
+  limits: ArchiveLimits = { maxUploadBytes: AGENT_ARCHIVE_MAX_UPLOAD_BYTES },
+): void {
   agent
     .command("export <agent-id>")
     .description(t.agent.exportDesc)
@@ -239,7 +251,7 @@ export function registerArchiveCommands(agent: Command, t: Messages): void {
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (input: string, opts: ImportOpts) => {
-      const body = await uploadBody(path.resolve(input), t);
+      const body = await uploadBody(path.resolve(input), t, limits.maxUploadBytes);
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const query = new URLSearchParams();
