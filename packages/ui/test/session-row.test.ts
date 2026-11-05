@@ -3,7 +3,7 @@
  * button that opens the conversation, the title drawn by the caller in the row's ink, marks that
  * each name themselves, one reserved box for the live state, and a trailing slot whose time gives
  * way to the hover actions. The row's menu mounts only while open, which a static render never
- * is; what its wiring must keep doing is pinned against the source.
+ * is; what its wiring must keep doing on a real page is session-row.dom.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -122,5 +122,17 @@ describe("RowHoverActions", () => {
   it("names each button", () => {
     expect(html).toContain('data-tooltip="Archive" aria-label="Archive"');
     expect(html).toContain('data-tooltip="More" aria-label="More" aria-haspopup="menu"');
+  });
+
+  // A named guard, kept by decision: the hidden buttons' tap gate lives in these classes alone,
+  // and without it a tap on a row's hidden trailing edge archives or deletes on a touch screen.
+  it("gates taps exactly as it gates sight, on hover and on focus", () => {
+    expect(classTokens(html)).toEqual(
+      expect.arrayContaining([
+        "pointer-events-none",
+        "group-hover:pointer-events-auto",
+        "focus:pointer-events-auto",
+      ]),
+    );
   });
 });

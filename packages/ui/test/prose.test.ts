@@ -1,11 +1,10 @@
 /**
  * Prose and Md: Markdown in its reading box, the three densities, the link default and the
- * resolver that overrides it, fenced code routed into CodeBlock, and the stylesheets the box reads.
- * How the pipeline typesets math is prose-math.test.ts; where a bare URL ends is
- * remark-autolink-boundary.test.ts.
+ * resolver that overrides it, and fenced code routed into CodeBlock. How the pipeline typesets
+ * math is prose-math.test.ts; where a bare URL ends is remark-autolink-boundary.test.ts; the
+ * stylesheets the box reads are held with every component stylesheet by
+ * component-stylesheets.test.ts.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
@@ -17,10 +16,6 @@ import {
 import type { ProseLinkResolver } from "../src/components/content/prose/prose";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
-
-const PROSE = join(SRC_DIR, "components/content/prose");
-const read = (name: string) => readFileSync(join(PROSE, name), "utf8");
 
 /** All rendered <a ...> opening tags. */
 const anchors = (html: string) => html.match(/<a\b[^>]*>/g) ?? [];
@@ -109,33 +104,5 @@ describe("Md code", () => {
     );
     expect(html).toContain("<i>image</i>");
     expect(html).toContain("code-block");
-  });
-});
-
-describe("the content stylesheet", () => {
-  const css = read("prose.css");
-
-  it("stays unlayered and free of Tailwind directives, so it needs no build pass and beats utilities", () => {
-    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
-  });
-
-  it("colours through tokens alone", () => {
-    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(/i);
-    expect(rules).not.toMatch(/--color-/);
-  });
-});
-
-describe("the Markdown table stylesheet", () => {
-  const rules = read("markdown-table.css").replace(/\/\*[\s\S]*?\*\//g, "");
-
-  it("stays unlayered and free of Tailwind directives, so it needs no build pass and beats utilities", () => {
-    expect(rules).not.toMatch(/@layer|@apply|@reference|@import/);
-  });
-
-  it("names no palette of its own, so every host's palette and mode can map onto it", () => {
-    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b|\brgb\(|\boklch\(/i);
-    expect(rules).not.toMatch(/--color-|--ui-|--site-|\.dark\b/);
   });
 });
