@@ -1,5 +1,5 @@
 /**
- * Type-level markers the interface generator (scripts/gen-ifaces.mjs) recognizes in a
+ * Type-level markers the interface generator (bin/gen-ifaces.mjs) recognizes in a
  * package. They exist only to be projected; at runtime they are the types
  * they wrap.
  */
