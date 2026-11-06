@@ -8,8 +8,9 @@ description: Use when developing PenguinHarness itself — changing packages/{co
 PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server
 (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell
 (`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package
-per plugin under the repo root's `plugins/`, with `packages/plugins` as the loader that depends on
-them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
+per plugin under the repo root's `plugins/`, each declaring what it carries in `src/index.ts`, which
+its `build` turns into the `ifaces.json` core's loader reads; the server is the host package that
+depends on them all. It **consumes** LLM providers through `@prismshadow/mmsp` (MMSP, formerly
 `@prismshadow/agenthub`) and implements no provider clients of its own.
 
 This page is the part that applies to every change. The reference files carry the detail, read
@@ -109,7 +110,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | --- | --- |
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
-| `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
+| `plugins/**` (repo root) | that plugin's `build` (a change to `src/index.ts` reaches the library only through the `ifaces.json` it writes) and its own `test` where it has one, the server's `plugin-library.test.ts` (every shipped package reads clean, the README tables), core's `goal-hooks.test.ts` / `continual-learning-hook.test.ts` / `plugin-porting.test.ts` when those scripts changed, `docs`'s `skills-sync.test.ts`, and `node scripts/check-plugin-versions.mjs origin/main` |
 | The model catalog | server `model-catalog.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
 | The credential rule or a row's effective connection | core `model-connection.test.ts`, server `models.test.ts` and `models-balance.test.ts` |
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |

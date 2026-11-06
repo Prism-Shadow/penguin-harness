@@ -5,18 +5,25 @@
  */
 import fs from "node:fs/promises";
 import { Hono } from "hono";
+import { agentDir } from "@prismshadow/penguin-core";
 import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTransferRouteDeps {
+  /** The data root, for the Agent's directory the workbench migration works in. */
+  root: string;
   agentConfigService: AgentConfig;
   access: Access;
   snapshots: Snapshots;
+  workbenches: Pick<Workbenches, "whileReleased">;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
+import { migrateWorkbenches } from "../../workbenches/migrate.js";
+import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -46,6 +53,8 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    // Workbenches still in an older layout move into agent_state/ first, so the package has them.
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
     const { file, fileName } = await deps.snapshots.exportArchive(projectId, agentId);
     const bytes = await fs.readFile(file);
     return new Response(new Uint8Array(bytes), {
@@ -64,8 +73,16 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const body = await readJson(c);
     const archive = readArchiveBase64(body);
     const confirm = body.confirm === true;
-    const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, {
-      confirm,
+    // The workbenches live inside agent_state/. Ones still in an older layout move in first, so
+    // the backup taken before the swap holds them and the package's cannot take their ids; then
+    // what the server holds open there lets go, and stays let go until the swap is over
+    // (Windows cannot rename a watched directory).
+    await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
+    const { version } = await deps.workbenches.whileReleased(projectId, agentId, async () => {
+      const imported = await deps.snapshots.importArchive(projectId, agentId, archive, { confirm });
+      // A State without workbenches would leave the old place's link leading nowhere.
+      await ensureWorkbenchLinkTarget(agentDir(deps.root, projectId, agentId));
+      return imported;
     });
     const res: AgentImportResponse = { version };
     return c.json(res);

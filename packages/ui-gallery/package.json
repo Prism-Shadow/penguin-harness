@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
