@@ -24,6 +24,14 @@ describe("mergePetState", () => {
     expect(mergePetState(stored, { pet: { fullness: "many" } })).toEqual({ pet: { name: "Mochi" } });
   });
 
+  it("keeps portions whole, coins fractional, and both non-negative", () => {
+    expect(mergePetState({}, { pet: { food: 2.6 } })).toEqual({ pet: { food: 3 } });
+    expect(mergePetState({}, { pet: { food: -1 } })).toEqual({ pet: { food: 0 } });
+    expect(mergePetState({}, { pet: { coins: 1.239 } })).toEqual({ pet: { coins: 1.24 } });
+    expect(mergePetState({}, { pet: { coins: -5 } })).toEqual({ pet: { coins: 0 } });
+    expect(mergePetState({}, { pet: { food: "lots" } })).toEqual({ pet: {} });
+  });
+
   it("drops a facet written null, and keeps unknown facets as written", () => {
     const stored = { pet: { name: "Mochi" }, mood: { doing: "sit" }, extra: { note: 1 } };
     const next = mergePetState(stored, { mood: null, extra: { note: 2 } });

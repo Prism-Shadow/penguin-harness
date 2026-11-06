@@ -17,6 +17,18 @@ export interface PetState {
     name?: string;
     /** How fed the pet is, 0–100; feeding raises it, the widget's idle ticks lower it. */
     fullness?: number;
+    /** Portions of food in the pantry; a feed eats one. Absent = none. */
+    food?: number;
+    /** Coins: earned from Token usage (1M tokens = 1 coin), spent on food in the widget's shop. */
+    coins?: number;
+    /** Lifetime Tokens already turned into coins — the waterline the widget's next sync measures from. */
+    mined?: number;
+    /** Whether the pet's one-off starter bowl was granted; true after the first run. */
+    gift?: boolean;
+    /** How often the pet speaks on its own: `off` | `rare` | `normal` | `chatty`. */
+    talk?: string;
+    /** How much of the page the pet may roam: `page` | `lower` | `dock` | `spot`. */
+    area?: string;
   };
   /** The transient facet: what the pet is doing right now, as the widget draws it. */
   mood?: {
@@ -31,6 +43,16 @@ export interface PetState {
 function fullnessOf(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/**
+ * A count the pet's document keeps non-negative: portions are whole, coins may be fractional
+ * (a million Tokens is one coin, and usage arrives in smaller pieces than that).
+ */
+function amountOf(value: unknown, whole: boolean): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const n = whole ? Math.round(value) : Math.round(value * 100) / 100;
+  return Math.max(0, n);
 }
 
 /** True when the value is a plain object (not an array, not null). */
@@ -60,8 +82,17 @@ export function mergePetState(
         if (fullness === undefined) delete pet.fullness;
         else pet.fullness = fullness;
       }
+      for (const [key, whole] of [
+        ["food", true],
+        ["coins", false],
+      ] as const) {
+        if (!(key in value)) continue;
+        const amount = amountOf(value[key], whole);
+        if (amount === undefined) delete pet[key];
+        else pet[key] = amount;
+      }
       for (const [k, v] of Object.entries(value)) {
-        if (k === "fullness") continue;
+        if (k === "fullness" || k === "food" || k === "coins") continue;
         if (v === null) delete pet[k];
         else pet[k] = v;
       }

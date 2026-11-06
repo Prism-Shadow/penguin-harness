@@ -9,12 +9,18 @@
  * reader-and-occasional-writer contract as before, at GET/PATCH
  * /api/plugins/<package>/state with the user's cookie (`credentials: "same-origin"`): an
  * idle tick lowers the fullness a little and PATCHes it back, so the pet grows hungry
- * however you look at it. Feeding is a double-click: +fullness, PATCHed.
+ * however you look at it. Feeding is a double-click: it eats one portion from the pantry
+ * (+fullness), PATCHed.
+ *
+ * Her menu is a right-click on her (#menu, #shop): the pantry is bought with the coins her
+ * owner's Token usage earns (TOKENS_PER_COIN), she can be told how often to talk on her own,
+ * and how much of the page she may roam. Both are stored in the same document, so every face
+ * of the pet — the CLI's `pet` commands included — sees one pet.
  *
  * The dock mounts this document bare and fills the window with it (no card, no title bar, no
  * close button — the dock's tile opens and closes it), so the page is her stage and the document
  * also answers where the pointer is over her: the handshake below is what keeps the page beneath
- * this frame clickable.
+ * this frame clickable — her own panels count as "on her", or they could not be clicked at all.
  */
 
 import * as kit from "./figure/kit/body.js";
@@ -22,7 +28,7 @@ import { createWhaleBody } from "./figure/whale/figure.js";
 
 const STATE_URL = "/api/plugins/@penguinharness/pet/state";
 const TICK_MS = 30_000;
-/** Fullness lost per idle tick, and gained per feed. */
+/** Fullness lost per idle tick, and gained per portion eaten. */
 const HUNGER = 2;
 const FEED = 20;
 /** How long a bubble line stays up. */
@@ -32,24 +38,100 @@ const BUBBLE_MS = 3400;
  * not a share of the window: a pet that grew with the window would tower over a maximized app.
  */
 const PET_PX = 280;
+/** What a coin is: one million Tokens used, and the portions one coin buys at her shop. */
+const TOKENS_PER_COIN = 1_000_000;
+const PORTIONS_PER_COIN = 5;
+/** The starter bowl a new pet comes with, so the first feed needs no Token history. */
+const GIFT_COINS = 3;
+/** How often the Token total is read again — the coin balance follows it. */
+const MINE_MS = 5 * 60_000;
+/** How many coins the shop sells at once. */
+const BUY_AMOUNTS = [1, 5, 10];
 
 const root = document.getElementById("root");
 const bubbleEl = document.getElementById("bubble");
+const hud = document.getElementById("hud");
+const menuEl = document.getElementById("menu");
+const shopEl = document.getElementById("shop");
+const menuFood = document.getElementById("menu-food");
+const menuShop = document.getElementById("menu-shop");
+const shopCoins = document.getElementById("shop-coins");
+const shopUsed = document.getElementById("shop-used");
+const shopFood = document.getElementById("shop-food");
+const shopBuy = document.getElementById("shop-buy");
+const shopHint = document.getElementById("shop-hint");
+const talkChips = document.getElementById("talk-chips");
+const areaChips = document.getElementById("area-chips");
 
 let body = null;
 let fullness = 0;
+/** Portions of food in the pantry. */
+let food = 0;
+/** Coins: earned from Token usage, spent on food. */
+let coins = 0;
+/** Lifetime Tokens already turned into coins — the waterline the next sync measures from. */
+let mined = 0;
+/** Whether the starter bowl was granted (it is granted once, then the state says so). */
+let gift = false;
 let doing = "idle";
 let bubbleUntil = 0;
+
+/* ---------- her menu's vocabulary ---------- */
+
+/** How often she speaks on her own: the idle gap, and the label the menu shows. */
+const TALKS = {
+  off: { label: "静音", idle: 0 },
+  rare: { label: "少", idle: 4 * 60_000 },
+  normal: { label: "中", idle: 100_000 },
+  chatty: { label: "多", idle: 30_000 },
+};
+let talk = "normal";
+
+/** How much of the page she may roam: the stage box, and whether she wanders at all. */
+const AREAS = {
+  page: { label: "全页", top: "0", roam: "free" },
+  lower: { label: "下半屏", top: "52%", roam: "free" },
+  dock: { label: "底部", top: "calc(100% - 240px)", roam: "free" },
+  spot: { label: "原地", top: "0", roam: "off" },
+};
+let area = "page";
+
+/** Where the stage box sits in this document, so a stage point and a document point convert. */
+let rootBox = { left: 0, top: 0 };
 
 /** The stage the body stands on: the whole page — one logo unit is S pixels, the whale inside a 256-unit square. */
 function bounds() {
   const r = root.getBoundingClientRect();
-  return { W: r.width, H: r.height, floorY: r.height - 8, S: Math.min(PET_PX, r.height - 24) / 256 };
+  // Her size follows the window, not the stage box: switching to a low activity area must not
+  // shrink her, and a stage box shorter than she is simply lets her head stand above it.
+  return {
+    W: r.width,
+    H: r.height,
+    floorY: r.height - 8,
+    S: Math.min(PET_PX, innerHeight - 24) / 256,
+  };
 }
 
-function stagePoint(e) {
+function refreshBox() {
   const r = root.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+  rootBox = { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+
+function docPoint(e) {
+  return { x: e.clientX, y: e.clientY };
+}
+
+/** A document point in the stage's own pixels (the stage box need not start at 0,0). */
+function stagePoint(e) {
+  return { x: e.clientX - rootBox.left, y: e.clientY - rootBox.top };
+}
+
+/** Puts the stage box where the chosen area keeps it, and lets her wander (or not) there. */
+function applyArea() {
+  root.style.top = (AREAS[area] ?? AREAS.page).top;
+  refreshBox();
+  body?.resize();
+  body?.set({ roam: (AREAS[area] ?? AREAS.page).roam });
 }
 
 /* ---------- what the body reports → the bubble ---------- */
@@ -65,10 +147,26 @@ const TOUCH_LINES = {
 
 const HUNGRY_LINES = ["肚子……空了……", "饿扁了，投喂一下？", "闻到饭味了吗（没有）"];
 const FEED_LINES = ["好吃！谢谢你！", "嗷呜——饱了饱了", "这口是山珍海味"];
+const BROKE_LINES = ["没吃的了……右键我，用币买一点？", "仓库空啦，点我右键看看"];
+const BUY_LINES = ["买到了！这下不饿了", "口粮到货～", "囤货好开心"];
+const COIN_LINES = ["攒到一个币！", "又有币进账了", "用掉的 token 变成饭钱了"];
+/** What she says when nobody is asking: short, quiet, about the day. */
+const MUSINGS = [
+  "今天也写了好多代码呢",
+  "要不要起来走两步？",
+  "我在这儿陪着你",
+  "这个项目好大呀",
+  "喝点水吧",
+  "光标又闪了好久",
+  "刚才那行好像写错了（小声）",
+  "累了就歇一会儿",
+];
 
 const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
+/** One line in the bubble. A muted pet says nothing — not the reactions either. */
 function say(text, ms = BUBBLE_MS) {
+  if (talk === "off") return;
   bubbleEl.textContent = text;
   bubbleEl.style.display = "";
   bubbleUntil = performance.now() + ms;
@@ -87,8 +185,9 @@ function onEvent(kind, detail) {
  * dock relays every pointer position it sees over the frame as
  * `{ penguin: "widget-probe", x, y }` in this document's pixels, and gives the frame pointer
  * events only while we answer `{ penguin: "widget-over", over: true }` — the body's own hit
- * circles (layout().hit) are what we check against. The pointer leaving the frame, or walking
- * off her while she is drawn elsewhere, answers false and the page gets its clicks back.
+ * circles (layout().hit) are what we check against, plus the panel she has open (a menu the
+ * page could click through would be unusable). The pointer leaving the frame, or walking off
+ * her while she is drawn elsewhere, answers false and the page gets its clicks back.
  */
 
 let over = false;
@@ -97,7 +196,20 @@ let lastAt = null;
 
 function onPet(at) {
   if (!body || at === null) return false;
-  return body.layout().hit.some((c) => Math.hypot(at.x - c.x, at.y - c.y) < c.r);
+  const x = at.x - rootBox.left;
+  const y = at.y - rootBox.top;
+  return body.layout().hit.some((c) => Math.hypot(x - c.x, y - c.y) < c.r);
+}
+
+/** Whether a document point is on one of her open panels. */
+function onPanel(at) {
+  if (at === null) return false;
+  for (const el of [menuEl, shopEl]) {
+    if (el.hidden) continue;
+    const r = el.getBoundingClientRect();
+    if (at.x >= r.left - 2 && at.x <= r.right + 2 && at.y >= r.top - 2 && at.y <= r.bottom + 2) return true;
+  }
+  return false;
 }
 
 function answered(next) {
@@ -106,6 +218,8 @@ function answered(next) {
   // The dock is the only parent this document has; posting to itself (opened on its own) is
   // harmless — nothing here acts on the message it sends.
   parent.postMessage({ penguin: "widget-over", over: next }, location.origin);
+  // The pointer went back to the page: whatever she had open is dismissed with it.
+  if (!next) closePanels();
 }
 
 addEventListener("message", (e) => {
@@ -114,53 +228,238 @@ addEventListener("message", (e) => {
   if (data === null || typeof data !== "object" || data.penguin !== "widget-probe") return;
   if (typeof data.x !== "number" || typeof data.y !== "number") return;
   lastAt = { x: data.x, y: data.y };
-  answered(onPet(lastAt));
+  answered(onPet(lastAt) || onPanel(lastAt));
 });
 
-/* ---------- pointer: the stage relays to the body ---------- */
+/* ---------- pointer: the document relays to the body ----------
+ *
+ * The listeners are on the document, not on the stage box: her head is drawn above a low stage
+ * box, and a click there must count as a click on her.
+ */
 
-root.addEventListener("pointerdown", (e) => {
-  root.setPointerCapture?.(e.pointerId);
-  pressed = true;
-  body?.pointer("down", stagePoint(e));
+document.addEventListener("pointerdown", (e) => {
+  if (hud.contains(e.target)) return; // the panels' own controls
+  const at = docPoint(e);
+  if (onPet(at)) {
+    root.setPointerCapture?.(e.pointerId);
+    pressed = true;
+    body?.pointer("down", stagePoint(e));
+  } else {
+    closePanels();
+  }
 });
-root.addEventListener("pointermove", (e) => {
-  const at = stagePoint(e);
+
+document.addEventListener("pointermove", (e) => {
+  const at = docPoint(e);
   lastAt = at;
-  body?.pointer("move", at);
-  if (!pressed) answered(onPet(at));
+  body?.pointer("move", stagePoint(e));
+  if (!pressed) answered(onPet(at) || onPanel(at));
 });
-root.addEventListener("pointerup", (e) => {
-  const at = stagePoint(e);
+
+document.addEventListener("pointerup", (e) => {
+  const at = docPoint(e);
   pressed = false;
-  body?.pointer("up", at);
-  answered(onPet(at));
+  body?.pointer("up", stagePoint(e));
+  answered(onPet(at) || onPanel(at));
 });
-root.addEventListener("pointercancel", (e) => {
+
+document.addEventListener("pointercancel", (e) => {
   pressed = false;
   body?.pointer("cancel", stagePoint(e));
 });
-root.addEventListener("pointerleave", () => {
+
+document.documentElement.addEventListener("pointerleave", () => {
   body?.pointer("leave", null);
   lastAt = null;
   answered(false);
 });
 
-/** Feeding: a double-click fills the whale up, and the server keeps the number. */
-root.addEventListener("dblclick", async () => {
+addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePanels();
+});
+
+/* ---------- her menu ---------- */
+
+let idleAt = 0;
+
+/** Fills a chips row: one button per option, the current one pressed. */
+function chips(into, table, current, onPick) {
+  into.textContent = "";
+  for (const [key, def] of Object.entries(table)) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "chip";
+    el.textContent = def.label;
+    el.setAttribute("aria-pressed", String(key === current));
+    el.addEventListener("click", () => onPick(key));
+    into.appendChild(el);
+  }
+}
+
+function renderMenu() {
+  menuFood.textContent = `${food} 份`;
+  chips(talkChips, TALKS, talk, (key) => {
+    talk = key;
+    idleAt = 0;
+    renderMenu();
+    void patch({ pet: { talk } });
+  });
+  chips(areaChips, AREAS, area, (key) => {
+    area = key;
+    applyArea();
+    renderMenu();
+    void patch({ pet: { area } });
+  });
+}
+
+function renderShop() {
+  shopCoins.textContent = coins.toFixed(1);
+  shopUsed.textContent = (mined / TOKENS_PER_COIN).toFixed(1);
+  shopFood.textContent = String(food);
+  shopBuy.textContent = "";
+  for (const n of BUY_AMOUNTS) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "btn";
+    el.disabled = coins < n;
+    el.textContent = `买 ${n} 币 · ${n * PORTIONS_PER_COIN} 份食物`;
+    el.addEventListener("click", () => void buy(n));
+    shopBuy.appendChild(el);
+  }
+  shopHint.textContent =
+    coins < 1
+      ? "每用掉 1M tokens 攒 1 币，聊几句就涨"
+      : "双击她投喂 1 份（饱食度 +20）";
+}
+
+/** Puts a panel beside a document point, kept inside the window. */
+function place(el, at) {
+  const pad = 8;
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  el.style.left = `${Math.min(Math.max(pad, at.x + 6), Math.max(pad, innerWidth - w - pad))}px`;
+  el.style.top = `${Math.min(Math.max(pad, at.y + 6), Math.max(pad, innerHeight - h - pad))}px`;
+}
+
+/** An open panel keeps her still and keeps the frame's pointer: both are "on her". */
+function panelsOpen(open) {
+  body?.set({ dialogOpen: open });
+}
+
+function openMenu(at) {
+  shopEl.hidden = true;
+  renderMenu();
+  menuEl.hidden = false;
+  place(menuEl, at);
+  panelsOpen(true);
+  answered(true);
+}
+
+function openShop(at) {
+  menuEl.hidden = true;
+  renderShop();
+  shopEl.hidden = false;
+  place(shopEl, at);
+  panelsOpen(true);
+  answered(true);
+}
+
+function closePanels() {
+  if (menuEl.hidden && shopEl.hidden) return;
+  menuEl.hidden = true;
+  shopEl.hidden = true;
+  panelsOpen(false);
+}
+
+/** Where a panel opens when the click did not come from the page (a hungry double-click). */
+function nearHer() {
+  const at = lastAt ?? { x: innerWidth / 2, y: innerHeight / 2 };
+  return { x: Math.min(innerWidth - 300, at.x), y: Math.min(innerHeight - 240, at.y) };
+}
+
+menuShop.addEventListener("click", () => {
+  const r = menuShop.getBoundingClientRect();
+  openShop({ x: r.left, y: r.bottom + 6 });
+});
+
+document.getElementById("shop-close").addEventListener("click", () => closePanels());
+
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const at = docPoint(e);
+  if (onPet(at)) openMenu(at);
+  else closePanels();
+});
+
+/* ---------- the pantry: feeding, buying, and the coins Token usage earns ---------- */
+
+async function feed() {
   if (!body) return;
+  if (food < 1) {
+    say(pick(BROKE_LINES));
+    openShop(nearHer());
+    return;
+  }
+  food -= 1;
+  fullness = Math.min(100, fullness + FEED);
   body.do("excited");
   say(pick(FEED_LINES));
-  fullness = Math.min(100, fullness + FEED);
-  try { await patch({ pet: { fullness } }); } catch { /* the next tick reads the truth back */ }
-});
+  try {
+    await patch({ pet: { fullness, food } });
+  } catch {
+    /* the next tick reads the truth back */
+  }
+}
+
+async function buy(n) {
+  if (coins < n) return;
+  coins -= n;
+  food += n * PORTIONS_PER_COIN;
+  say(pick(BUY_LINES));
+  renderShop();
+  try {
+    await patch({ pet: { coins, food } });
+  } catch {
+    /* the next read reads the truth back */
+  }
+}
+
+/** Reads every Project's lifetime Token total and turns what is new into coins. */
+let mining = false;
+async function mine() {
+  if (mining) return;
+  mining = true;
+  try {
+    const projects = await readJson("/api/projects");
+    let lifetime = 0;
+    for (const p of projects.projects ?? []) {
+      const totals = await readJson(`/api/projects/${encodeURIComponent(p.projectId)}/usage/model-totals`);
+      for (const t of totals.totals ?? []) lifetime += typeof t.tokens === "number" ? t.tokens : 0;
+    }
+    if (lifetime <= mined) return;
+    const wasWhole = Math.floor(coins);
+    coins += (lifetime - mined) / TOKENS_PER_COIN;
+    mined = lifetime;
+    if (Math.floor(coins) > wasWhole) say(pick(COIN_LINES));
+    await patch({ pet: { coins, mined } });
+    renderShop();
+  } catch {
+    /* an unreachable server keeps the balance she already has */
+  } finally {
+    mining = false;
+  }
+}
 
 /* ---------- server state: read, patch, apply ---------- */
 
-async function read() {
-  const res = await fetch(STATE_URL, { credentials: "same-origin" });
-  if (!res.ok) throw new Error(`state ${res.status}`);
+async function readJson(url) {
+  const res = await fetch(url, { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`${url} ${res.status}`);
   return res.json();
+}
+
+async function read() {
+  return readJson(STATE_URL);
 }
 
 async function patch(update) {
@@ -187,7 +486,27 @@ function wish(next) {
 
 function apply(state) {
   const doc = state ?? {};
-  if (typeof doc.pet?.fullness === "number") fullness = doc.pet.fullness;
+  const pet = doc.pet ?? {};
+  if (typeof pet.fullness === "number") fullness = pet.fullness;
+  if (typeof pet.food === "number") food = pet.food;
+  if (typeof pet.coins === "number") coins = pet.coins;
+  if (typeof pet.mined === "number") mined = pet.mined;
+  if (typeof pet.talk === "string" && Object.hasOwn(TALKS, pet.talk) && pet.talk !== talk) {
+    talk = pet.talk;
+    idleAt = 0;
+    if (!menuEl.hidden) renderMenu();
+  }
+  if (typeof pet.area === "string" && Object.hasOwn(AREAS, pet.area) && pet.area !== area) {
+    area = pet.area;
+    applyArea();
+    if (!menuEl.hidden) renderMenu();
+  }
+  // Her starter bowl: granted once, and the state says so from then on.
+  if (pet.gift !== true && !gift) {
+    gift = true;
+    coins += GIFT_COINS;
+    void patch({ pet: { coins, gift: true } }).catch(() => {});
+  }
   if (doc.mood?.doing) wish(doc.mood.doing);
   const line = doc.mood?.bubble;
   if (line) say(line);
@@ -205,18 +524,30 @@ async function tick() {
 
 /* ---------- the frame loop ---------- */
 
+/** Her own chatter: one line per gap, only while the page is in front of someone. */
+function chatter(now) {
+  const gap = TALKS[talk]?.idle ?? 0;
+  if (!gap) { idleAt = 0; return; }
+  if (!idleAt) { idleAt = now + gap; return; }
+  if (now < idleAt) return;
+  idleAt = now + gap * (0.75 + Math.random() * 0.5);
+  if (document.hidden) return;
+  say(fullness < 30 ? pick(HUNGRY_LINES) : pick(MUSINGS));
+}
+
 let last = 0;
 function frame(now) {
   const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
   last = now;
   body.step(dt);
+  chatter(now);
   // She walks: a pointer that was on her a moment ago may be over the page again now.
-  if (over && !pressed) answered(onPet(lastAt));
+  if (over && !pressed) answered(onPet(lastAt) || onPanel(lastAt));
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
     const at = body.layout().bubble;
-    bubbleEl.style.left = `${at.x}px`;
-    bubbleEl.style.top = `${Math.max(18, at.y)}px`;
+    bubbleEl.style.left = `${rootBox.left + at.x}px`;
+    bubbleEl.style.top = `${rootBox.top + Math.max(18, at.y)}px`;
   } else if (bubbleEl.style.display !== "none") {
     bubbleEl.style.display = "none";
     bubbleEl.textContent = "";
@@ -237,6 +568,7 @@ async function start() {
   try {
     const answer = await read();
     document.querySelector(".err")?.remove();
+    refreshBox();
     const stage = bounds();
     body = await createWhaleBody(new URL("./figure/whale/", import.meta.url), {
       kit,
@@ -253,12 +585,23 @@ async function start() {
       },
     });
     apply(answer.state);
-    addEventListener("resize", () => body.resize());
+    applyArea();
+    addEventListener("resize", () => { refreshBox(); body.resize(); });
     requestAnimationFrame(frame);
     setInterval(tick, TICK_MS);
+    void mine();
+    setInterval(mine, MINE_MS);
   } catch (err) {
     fail(`The pet is not around right now. ${err?.message ?? ""}`);
   }
 }
+
+/** Feeding: a double-click fills the whale up from her pantry, and the server keeps the numbers. */
+document.addEventListener("dblclick", (e) => {
+  if (hud.contains(e.target)) return;
+  const at = docPoint(e);
+  if (!onPet(at)) return;
+  void feed();
+});
 
 start();

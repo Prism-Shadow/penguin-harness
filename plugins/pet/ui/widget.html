@@ -9,8 +9,10 @@
   the plugin state routes with the user's own cookie — GET to look, PATCH to move it.
   The pet herself is the DeepSeek whale (大肥鱼) figure pack drawn by the Coopanion kit
   (./figure/): a WebGL sprite rig the kit's body simulation walks, sits, sleeps, is picked
-  up and answered by touch. The document holds only the stage element and the speech
-  bubble; everything else the kit and the figure draw.
+  up and answered by touch. The document holds only the stage element, the speech bubble and
+  the pet's own panel; everything else the kit and the figure draw.
+  She keeps her own menu (right-click on her, #menu/#shop): food bought with the coins Token
+  usage earns, how often she talks, and how much of the page she may roam.
 -->
 <html lang="en">
 <head>
@@ -63,11 +65,78 @@
     transform: rotate(45deg);
   }
   .err { position: absolute; inset: 0; display: grid; place-items: center; color: #a55; font-size: 12px; padding: 12px; text-align: center; }
+
+  /* ---- her own panel: the right-click menu and the shop beside it ---- */
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  .panel {
+    position: absolute;
+    min-width: 246px;
+    max-width: 320px;
+    padding: 9px 11px;
+    background: #fff;
+    border: 1.5px solid #b9c7d8;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+    pointer-events: auto;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .panel[hidden] { display: none; }
+  .panel h2 { font-size: 12px; font-weight: 600; color: #46525f; display: flex; align-items: center; justify-content: space-between; }
+  .panel .row { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
+  .panel .row + .row { border-top: 1px dashed #e6ecf3; }
+  .panel .k { color: #8b98a8; white-space: nowrap; }
+  .panel .v { color: #46525f; margin-left: auto; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-left: auto; }
+  .chip {
+    font: inherit;
+    padding: 2px 9px;
+    border: 1px solid #cfd9e5;
+    border-radius: 999px;
+    background: #f7f9fc;
+    color: #46525f;
+    cursor: pointer;
+  }
+  .chip:hover { border-color: #9fb4cc; }
+  .chip[aria-pressed="true"] { background: #4a7fc1; border-color: #4a7fc1; color: #fff; }
+  .btn {
+    font: inherit;
+    padding: 2px 9px;
+    border: 1px solid #cfd9e5;
+    border-radius: 8px;
+    background: #f7f9fc;
+    color: #46525f;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: #9fb4cc; }
+  .btn.primary { background: #4a7fc1; border-color: #4a7fc1; color: #fff; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .x { border: 0; background: none; color: #8b98a8; font: inherit; cursor: pointer; padding: 0 2px; }
+  #shop .head { font-size: 12px; font-weight: 600; color: #46525f; display: flex; align-items: center; justify-content: space-between; }
+  #shop p { color: #6b7787; margin-top: 4px; }
+  #shop b { color: #3a3330; font-weight: 600; }
+  #shop .buy { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  #shop .buy .btn { text-align: left; }
 </style>
 </head>
 <body>
   <div id="root"></div>
   <div id="bubble"></div>
+  <div id="hud">
+    <div id="menu" class="panel" role="menu" hidden>
+      <div class="row"><span class="k">食物</span><span class="v" id="menu-food">0 份</span><button class="btn" id="menu-shop" type="button">买</button></div>
+      <div class="row"><span class="k">发言</span><div class="chips" id="talk-chips"></div></div>
+      <div class="row"><span class="k">活动</span><div class="chips" id="area-chips"></div></div>
+    </div>
+    <div id="shop" class="panel" role="dialog" aria-label="用币买食物" hidden>
+      <div class="head"><span>用币买食物</span><button class="x" id="shop-close" type="button" aria-label="关闭">✕</button></div>
+      <p>可用 <b id="shop-coins">0.0</b> 币 · 1M tokens = 1 币</p>
+      <p>已用 <b id="shop-used">0.0</b>M tokens · 库存 <b id="shop-food">0</b> 份</p>
+      <div class="buy" id="shop-buy"></div>
+      <p id="shop-hint"></p>
+    </div>
+  </div>
   <script type="module" src="./widget.js"></script>
 </body>
 </html>

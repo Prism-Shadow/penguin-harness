@@ -15,11 +15,14 @@ import type { PluginCliCommandHost } from "@prismshadow/penguin-server/plugin";
 
 /** The pet's document, as the persistent and transient facets hold it (server: pet-state.ts). */
 interface PetDoc {
-  pet?: { name?: string; fullness?: number };
+  pet?: { name?: string; fullness?: number; food?: number; coins?: number };
   mood?: { doing?: string; bubble?: string | null };
 }
 
 const DEFAULT_NAME = { en: "the pet", zh: "宠物" } as const;
+
+/** What one portion of the pantry fills. */
+const FULLNESS_PER_PORTION = 20;
 
 /** The name to print: the stored one, or the locale's placeholder. */
 function nameOf(doc: PetDoc, language: "en" | "zh"): string {
@@ -30,13 +33,15 @@ function nameOf(doc: PetDoc, language: "en" | "zh"): string {
 function statusLine(doc: PetDoc, language: "en" | "zh"): string {
   const name = nameOf(doc, language);
   const fullness = doc.pet?.fullness ?? 0;
+  const food = doc.pet?.food ?? 0;
+  const coins = doc.pet?.coins ?? 0;
   const doing = doc.mood?.doing;
   if (language === "zh") {
     const mood = doing ? `，现在${doing}` : "";
-    return `${name}：饱食度 ${fullness}/100${mood}`;
+    return `${name}：饱食度 ${fullness}/100，食物 ${food} 份，币 ${coins.toFixed(1)}${mood}`;
   }
   const mood = doing ? `, currently ${doing}` : "";
-  return `${name}: fullness ${fullness}/100${mood}`;
+  return `${name}: fullness ${fullness}/100, food ${food}, coins ${coins.toFixed(1)}${mood}`;
 }
 
 /**
@@ -51,25 +56,46 @@ export function registerPetCommands(program: CliCommandProgram, host: PluginCliC
 
   root
     .command("feed")
-    .description(zh ? "喂宠物（默认 +20 饱食度）" : "Feed the pet (fullness +20 by default)")
-    .option("--amount <n>", zh ? "增加的饱食度" : "how much fullness to add", "20")
-    .action(async (opts: { amount: string }) => {
+    .description(
+      zh
+        ? "喂宠物：吃一份仓里的食物，饱食度 +20"
+        : "Feed the pet: eats one portion from its pantry, fullness +20",
+    )
+    .option("--portions <n>", zh ? "吃几份" : "how many portions to eat", "1")
+    .action(async (opts: { portions: string }) => {
       const doc = host.state.read() as PetDoc;
-      const amount = Number(opts.amount);
-      if (!Number.isFinite(amount)) {
-        process.stderr.write(zh ? "数量必须是数字\n" : "the amount must be a number\n");
+      const portions = Number(opts.portions);
+      if (!Number.isInteger(portions) || portions < 1) {
+        process.stderr.write(
+          zh ? "份数必须是正整数\n" : "the portions must be a positive whole number\n",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const food = doc.pet?.food ?? 0;
+      if (food < portions) {
+        process.stderr.write(
+          zh
+            ? `食物不够：库存 ${food} 份，右键宠物用币买一些\n`
+            : `not enough food: ${food} portion(s) left — right-click the pet to buy some with coins\n`,
+        );
         process.exitCode = 1;
         return;
       }
       const stored = doc.pet?.fullness ?? 0;
       // The server clamps the merged fullness into 0–100; print what it kept.
       const next = (await Promise.resolve(
-        host.state.merge({ pet: { fullness: Math.min(100, Math.max(0, stored + amount)) } }),
+        host.state.merge({
+          pet: {
+            fullness: Math.min(100, Math.max(0, stored + FULLNESS_PER_PORTION * portions)),
+            food: food - portions,
+          },
+        }),
       )) as PetDoc;
       process.stdout.write(
         zh
-          ? `${nameOf(next, "zh")} 吃饱了：饱食度 ${next.pet?.fullness ?? 0}/100\n`
-          : `${nameOf(next, "en")} ate: fullness ${next.pet?.fullness ?? 0}/100\n`,
+          ? `${nameOf(next, "zh")} 吃饱了：饱食度 ${next.pet?.fullness ?? 0}/100，食物 ${next.pet?.food ?? 0} 份\n`
+          : `${nameOf(next, "en")} ate: fullness ${next.pet?.fullness ?? 0}/100, ${next.pet?.food ?? 0} portion(s) left\n`,
       );
     });
 

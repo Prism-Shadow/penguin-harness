@@ -119,29 +119,41 @@ describe("the code half", () => {
     expect(run.out).toContain("宠物");
   });
 
-  it("feed merges the added fullness and prints what the server kept", async () => {
-    const state: FakeState = { doc: { pet: { name: "Mochi", fullness: 90 } }, merges: [] };
+  it("feed eats a portion from the pantry and prints what the server kept", async () => {
+    const state: FakeState = { doc: { pet: { name: "Mochi", fullness: 90, food: 2 } }, merges: [] };
     const program = registered(state);
-    const run = await capture(() =>
-      program.parseAsync(["feed", "--amount", "20"], { from: "user" }),
-    );
+    const run = await capture(() => program.parseAsync(["feed"], { from: "user" }));
     expect(run.exitCode).toBe(0);
-    expect(state.merges).toEqual([{ pet: { fullness: 100 } }]);
+    expect(state.merges).toEqual([{ pet: { fullness: 100, food: 1 } }]);
     expect(run.out).toContain("100/100");
+    expect(run.out).toContain("1 portion");
   });
 
-  it("feed defaults to +20 and reports a non-numeric amount on stderr", async () => {
-    const state: FakeState = { doc: {}, merges: [] };
+  it("feed takes several portions at once", async () => {
+    const state: FakeState = { doc: { pet: { fullness: 10, food: 3 } }, merges: [] };
     const program = registered(state);
-    const ok = await capture(() => program.parseAsync(["feed"], { from: "user" }));
-    expect(ok.exitCode).toBe(0);
-    expect(state.merges[0]).toEqual({ pet: { fullness: 20 } });
+    const run = await capture(() =>
+      program.parseAsync(["feed", "--portions", "2"], { from: "user" }),
+    );
+    expect(run.exitCode).toBe(0);
+    expect(state.merges).toEqual([{ pet: { fullness: 50, food: 1 } }]);
+  });
+
+  it("feed refuses a short pantry and a portion count that is not a positive whole number", async () => {
+    const state: FakeState = { doc: { pet: { fullness: 10, food: 1 } }, merges: [] };
+    const program = registered(state);
+    const short = await capture(() =>
+      program.parseAsync(["feed", "--portions", "2"], { from: "user" }),
+    );
+    expect(short.exitCode).toBe(1);
+    expect(short.err).toContain("not enough food");
+    expect(state.merges).toHaveLength(0);
 
     const bad = await capture(() =>
-      program.parseAsync(["feed", "--amount", "lots"], { from: "user" }),
+      program.parseAsync(["feed", "--portions", "0"], { from: "user" }),
     );
     expect(bad.exitCode).toBe(1);
-    expect(bad.err).toContain("number");
+    expect(bad.err).toContain("positive whole number");
   });
 
   it("name merges the name, say merges the bubble", async () => {
