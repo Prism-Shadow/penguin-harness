@@ -200,6 +200,9 @@ export class DesktopService {
   requestCommand(command: string): boolean {
     if (!this.commandSender) return false;
     this.commandSender(command);
+    return true;
+  }
+
   // --- window relay ------------------------------------------------------------
 
   private openWindowSender: (() => void) | null = null;
