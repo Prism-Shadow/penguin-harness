@@ -495,6 +495,7 @@ function apply(state) {
   if (typeof pet.food === "number") food = pet.food;
   if (typeof pet.coins === "number") coins = pet.coins;
   if (typeof pet.mined === "number") mined = pet.mined;
+  if (typeof pet.gift === "boolean") gift = pet.gift;
   if (typeof pet.talk === "string" && Object.hasOwn(TALKS, pet.talk) && pet.talk !== talk) {
     talk = pet.talk;
     idleAt = 0;
