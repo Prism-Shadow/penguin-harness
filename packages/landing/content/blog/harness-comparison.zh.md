@@ -114,11 +114,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 ## 4. 得分与消耗怎么算？
 
-600 次作答全部落盘后，我们按统一的评估数据与提交流程规范汇总结果。每种 Harness 跑满三轮共作答 150 题次，每多做对 1 题次，三轮总体均分就会涨 0.67 分。具体汇总情况如图 4 所示：
+600 次作答全部落盘后，我们按统一的评估数据与提交流程规范汇总结果。首先是得分：每种 Harness 跑满三轮共作答 150 题次，每多做对 1 题次，三轮总体均分就会涨 0.67 分，具体计算方式如图 4 所示：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2392" alt="图 4｜总体均分与样本标准差的计算" /><figcaption>图 4｜总体均分与样本标准差的计算</figcaption></figure>
 
-资源消耗同样取三轮均值，汇总跑完一整轮 50 道题的 API 费用、累计耗时，并将 Token 拆分为非缓存输入、缓存读取与模型输出三项统计。
+其次是资源消耗：我们将每轮跑完 50 道题的 API 费用、Agent 累计运行时间与 Token 用量分别累加，再跨三轮取平均值；其中 Token 用量按计费方式拆分为非缓存输入、缓存读取、模型输出三类分别统计。
 
 ## 5. 实测中的四个有趣现象
 
@@ -136,27 +136,21 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜四种 Harness 在五个子集上的得分对比" /><figcaption>图 6｜四种 Harness 在五个子集上的得分对比</figcaption></figure>
 
-四款 Harness 在五个子集上的整体难度走势一致——数据分析与软件工程得分最高，科学计算得分最低，但在具体题型上各有所长：到了断网修 Bug 的 **Sec B 软件工程**，PenguinHarness 拿到全场最高的 `70.00` 分，在真实开源仓库的缺陷定位与补丁修复上优势明显；在 **Sec A 数据分析**中，PenguinHarness 与 DSH 同拿第一，其中 DSH 三轮一分不差；**Sec C 自动化工作流**与 **Sec E 终端排障**分别由 DSH 和 Pi 拿到最高分；而在难度最高的 **Sec D 科学计算**中，四家得分都在 10 分及以下。
-
-如果把每道题在四种 Harness、各跑三轮的 12 次作答合在一起统计，这 50 道题里其实有 **31 道题**被这颗模型成功解出过，占总题数的 **62%**。其中四家都能做对的有 17 道题，另外 **14 道题**则依赖特定 Harness 才能跑通，换一套 Harness 就三轮全挂；其余 19 道题在 12 次尝试中均未通过。
+如图 6 所示，PenguinHarness 在断网修 Bug 的 **Sec B 软件工程**子集上优势最为突出，拿到全场最高的 `70.00` 分。更有意思的是，如果把每道题在四种 Harness、各跑三轮的 12 次作答合在一起统计，这 50 道题里其实有 **31 道题**被这颗模型成功解出过，占总题数的 **62%**——其中四家都能做对的只有 17 道题，另外 **14 道题**全靠特定 Harness 才能跑通，换一套就三轮全挂；其余 19 道题在 12 次尝试中均未通过。
 
 换句话说，当你的 Agent 搞不定一个任务时，很大概率不是底层模型不会做，而是当前 Harness 的工具设计和上下文反馈，没能帮模型把原本具备的能力释放出来。
 
-**现象二：从 Pass@3 到三轮全过缩水过半，“能做出来”和“每次都对”是两码事**
+**现象二：看 Pass@3，PenguinHarness 与 DSH 并列第一，拉低总分的原因是发挥不稳定**
 
 既然单家 Harness 单轮平均只能做对 15 到 19.3 道题，那如果给它三次机会呢？我们统计了每道题在三轮测试中的通过频次：三轮至少做对一次，就是这组 Harness 的 **Pass@3**，代表能力探索上限；三轮全部做对，则是它的**稳定交付率**。
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/09-pass-frequency.png" width="2880" height="1330" alt="图 7｜50 道题在三轮测试中的通过频次分布" /><figcaption>图 7｜50 道题在三轮测试中的通过频次分布</figcaption></figure>
 
-看完图 7，四款 Harness 的稳定性差异一目了然：
+从图 7 可以直接看出，DSH 与 PenguinHarness 虽然都在三轮内解出了 25 道题，但内部结构截然不同：PenguinHarness 有全场最多的 `12` 道题卡在“三轮过两轮”；而 Pi 虽然三轮全过题数不少，却有大量题目停留在“三轮只对一次”，直接拖累了单轮均分。
 
-1. **同为 50% 的 Pass@3，内部结构大不相同**：DSH 与 PenguinHarness 都在三轮内解出了 25 道题，但 DSH 靠更多的“三轮全过”守住总榜第一；PenguinHarness 虽然三轮全过少 3 道，却有全场最多的 **`12` 道题拿到“三轮过两轮”**，只要把这批题的偶发失误压住，总分就会大幅跃升。
-2. **全过题数多，不等于总分高**：Pi 的三轮全过题数其实比 PenguinHarness 还多 1 道，但其余已解题里有过半都停留在“三轮只对一次”，直接拖累了单轮均分；Codex 的通过分布则更为分散。
-3. **Sec B 软件工程子集把这种反差推到了极致**：在这 10 道修 Bug 题目上，DSH 和 PenguinHarness 的 **Pass@3 都达到了 100%**——10 道题在三轮之内全被它们修好过，但真正能三轮全过的分别只有 `2` 题和 `3` 题，各有 `5` 道题卡在“三轮过两轮”。
+这种反差在 **Sec B 软件工程**子集上尤为极端：这 10 道修 Bug 题目在三轮内其实**全部被 DSH 和 PenguinHarness 修好过**，两家的子集 Pass@3 都达到了 `100%`，但真正能三轮全过的分别只有 `2` 题和 `3` 题，各有 `5` 道题卡在“三轮过两轮”。可见单次交付的稳定性才是最大短板——只要通过更严密的交卷前自检把那批“三轮过两轮”的题目推上“三轮全过”，总分就会大幅跃升。
 
-这组数据说明，哪怕在 DSH 和 PenguinHarness 三轮内全部修通的 Sec B 子集上，单次交付的稳定性依然是最大短板；放眼全部 50 道题，如何通过更严密的提交前自检闭环，把那批“三轮过两轮”的题目推上“三轮全过”，才是提分的关键。
-
-**现象三：三轮总分一分不差、标准差 0.00？小心被“换题抵消”骗了**
+**现象三：三轮总分一模一样，做对的题却换了——看评测结果不能只看总分**
 
 在看子集数据时，我们注意到一个奇怪的现象：全部 20 组子集实验里，有 **4 组非零分实验的样本标准差刚好是 `0.00`**。也就是说，它们三轮跑出来的子集总分一模一样。
 
@@ -164,37 +158,29 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1560" alt="图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录" /><figcaption>图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录</figcaption></figure>
 
-结果一目了然：虽然每轮都拿 20 分，但真正三轮全过的只有 `CASE-008 嵌入漂移监测` 这一道题！另一个得分名额，在第 1 轮属于 `CASE-010 FreeCAD 平台建模`，到了第 2、3 轮却悄悄换成了 `CASE-004 MVCC / LSM 压缩`。
-
-顺着全部 20 组子集往下查，4 组零方差成绩里，只有 DSH 在 Sec A 的 `70.00 ± 0.00` 是实打实的同 7 道题三轮全过；除了上面看到的 PenguinHarness 在 Sec E 换题之外，**剩下两组零方差成绩同样存在“换题抵消”**：
+如图 8 所示，虽然每轮都拿 20 分，但真正三轮全过的只有 `CASE-008` 一道题，另一个得分名额其实是在 `CASE-010` 和 `CASE-004` 之间跨轮轮换。顺着全部 20 组子集往下查，4 组零方差成绩里，只有 DSH 在 Sec A 的 `70.00 ± 0.00` 是实打实的同 7 道题三轮全过，**另外两组零方差成绩同样存在“换题抵消”**：
 
 1. **Codex 在 Sec A 的 `60.00 ± 0.00`**：第 2 轮靠 `CASE-002` 与 `CASE-007` 的一增一减，刚好凑出同样的 60 分。
 2. **Codex 在 Sec D 的 `10.00 ± 0.00`**：最夸张的一组——它甚至**没有任何一道题三轮全过**，第 1 轮做对的是 `CASE-010 小行星定轨`，第 2、3 轮做对的却换成了 `CASE-003 脑成像配准`，跨轮次拼出了三个 10 分。
 
 这给我们敲了一记警钟：平时迭代完提示词或工具链，如果只跑单轮评测，或者跑完多轮只盯着总分涨跌，根本分不清一次改动到底是真提分，还是修好了 A 题、弄坏了 B 题。
 
-**现象四：高达 99% 的输入都走了缓存；多花掉的算力，一半是功劳，一半是空转**
+**现象四：多花 Token 不一定能提分——修 Bug 的题越跑分越高，科学计算题却在超时白跑**
 
-最后我们来看这 600 次测试的资源消耗。跑完一整轮 50 道题，四家 Harness 分别花了多少钱、多少时间和多少 Token？我们按资源消耗**从低到高**排出了下面两组对比：
+最后我们来看这 600 次测试的资源消耗。跑完一整轮 50 道题，四家 Harness 的费用、耗时与三类 Token 用量从低到高对比如图 9、图 10 所示：
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08-resource-comparison.png" width="2880" height="1640" alt="图 9｜单轮 50 题的 API 费用与累计运行时间对比" /><figcaption>图 9｜单轮 50 题的 API 费用与累计运行时间对比</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/image.png" width="2880" height="1640" alt="" /><figcaption></figcaption></figure>
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08b-token-comparison.png" width="2880" height="2260" alt="图 10｜单轮 50 题的三类 Token 用量对比" /><figcaption>图 10｜单轮 50 题的三类 Token 用量对比</figcaption></figure>
 
-对照图 9 和图 10，有两件非常反直觉的事：
+由于四家都有约 99% 的输入命中了缓存，API 费用高低主要由模型的输出 Token 决定。那么，让 Agent 多输出 Token、多花时间尝试，到底能不能换来更高分？
 
-**第一，跑一轮要喂进去两三亿 Token，为什么单轮费用才三四美元？**
+拆到具体题型里看，结果完全相反：
 
-因为四家都有 **98.5% 到 99.1% 的输入 Token 命中了缓存读取**，真正按原价计费的非缓存输入全都只有三百多万 Token。由于缓存读取单价远低于非缓存输入与输出，**最终决定费用高低排序的，其实是模型自己的输出 Token 用量**——四家的 API 费用从低到高排序，与各自的输出 Token 排名完全重合。
+1. 在 Sec B 软件工程题上，多花 Token 确实换来了高分：因为修 Bug 题可以边改代码边跑测试，Agent 看得到报错就能接着改。PenguinHarness 在这 10 道题上单轮输出了 1.45 M Token、花费 $1.48，靠更充分的测试和修改拿下了全场最高的 70.00 分；而输出与花费依次减少的 DSH、Pi 与 Codex，得分也跟着往下掉。
+2. 在 Sec D 科学计算题上，多花的时间全在超时白跑：这 10 道题耗掉了各家整轮 34% 到 53% 的运行时间，单轮就要跑上 4 到 5 个多小时，最后四家得分却全在 10 分及以下。在保留了逐题耗时的 DSH 和 Codex 记录里，30 次尝试分别有 10 次和 12 次一直拖过 35 分钟、贴着 40 分钟超时线退出。因为这类题中间没法简单验证对错，Agent 一旦思路走偏又不懂及时停下，就会一直白跑到超时。
 
-**第二，多花出去的 Token 和时间，到底值不值？**
-
-拆到子集里看，多投入的算力走向了两个截然相反的结局：
-
-1. **在 Sec B 软件工程里，多投入的 Token 换来了真高分**：PenguinHarness 在这 10 道题上单轮输出了 `1.45 M` Token、花掉 `$1.48`，通过更密集的跑测试与改代码循环拿下全场最高的 `70.00` 分；而输出与花费依次递减的 DSH、Pi 与 Codex，得分也随之阶梯式回落。有单元测试做锚点时，让 Agent 多验证几轮是划算的。
-2. **在 Sec D 科学计算里，多花的时间全变成了超时空转**：这 10 道题吞掉了各家整轮 **34% 到 53% 的运行时间**，单轮就要跑上 4 到 5 个多小时，最后四家得分却全在 10 分及以下。在保留了逐题耗时的 DSH 和 Codex 记录里，30 次尝试分别有 `10` 次和 `12` 次一路拖过了 35 分钟，贴着 40 分钟超时线退出。缺乏早停和方向纠偏机制时，Agent 一旦在科学建模题上走偏，就会把时限一路耗尽。
-
-## 6. 接下来我们盯什么？
+## 6. 接下来我们做什么？
 
 跑完这 600 次测试，这 50 道题就成了我们后续迭代 Harness 的固定基线。接下来每次改提示词、调工具链，我们都会在这条基线上重点推进三件事：
 
