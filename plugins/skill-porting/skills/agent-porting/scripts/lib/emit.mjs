@@ -623,8 +623,11 @@ const reply = (value) => {
 };
 
 // A command that could not start at all: a guard fails closed, anything else lets the event pass.
+// EPIPE is not this: it only says the command exited before we finished writing it the payload —
+// it ran, and its status and stderr are still its own (a probe: echo >&2; exit 2 with a >64 KiB
+// stdin answers EPIPE with status 2 and the message intact), so the normal path below decides.
 const failed =
-  run.error && run.error.code !== "ETIMEDOUT"
+  run.error && run.error.code !== "ETIMEDOUT" && run.error.code !== "EPIPE"
     ? String(run.error.code ?? "spawn error")
     : run.status === 127
       ? "exit 127, command not found"
