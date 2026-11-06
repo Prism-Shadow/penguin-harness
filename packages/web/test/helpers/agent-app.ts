@@ -31,6 +31,15 @@
  * answers them masked, and the state switch turns one on or off. This server answers which
  * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
+ * Every server answers the Agent archive too: the preview of a parts query (`archivePreview`,
+ * by default a fixed small one, or the refusal `previewRefusal` names), the zip download under `<agentId>-20261104.zip`, and the import
+ * of an uploaded file — read no further than its name — which creates the Agent the `agentId`
+ * query names (without one, the id the file records: `archiveAgentId`, `imported` by default),
+ * answers 409 `agent_exists` for one this server already lists unless `overwrite=1` asks to
+ * replace it, and answers 403 for that from a member. The signed-in user owns the Project unless
+ * `role` says member. An Agent's Skill list is what was installed on it (from the library, or
+ * `skills` for the configured Agent from the start).
+ *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
  * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. Beside the
@@ -45,6 +54,8 @@ import type { ReactElement } from "react";
 import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
+  AgentArchiveImportResponse,
+  AgentArchivePreview,
   AgentConfigResponse,
   AgentSummary,
   ChatDefaultsDto,
@@ -252,11 +263,26 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** The signed-in user's role in the Project (by default its owner). */
+    role?: "owner" | "member";
+    /** The Skills the configured Agent carries from the start, on this server. */
+    skills?: string[];
+    /** The Agent id an uploaded file records, which an import without `agentId` takes. */
+    archiveAgentId?: string;
+    /** What an archive preview answers instead of a preview: the server's refusal. */
+    previewRefusal?: { status: number; code: string; message: string };
+    /** What an archive preview answers for its parts query (by default a fixed small one). */
+    archivePreview?: (query: URLSearchParams) => AgentArchivePreview;
+    /** What a landed import reports beside its mode and Agent (by default nothing came in). */
+    importReport?: Partial<
+      Pick<AgentArchiveImportResponse, "imported" | "skippedTraces" | "toFill" | "notes">
+    >;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
   const installs = new Map<string, string[]>();
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  if (options.skills !== undefined) installs.set(installKey(null, AGENT_ID), [...options.skills]);
   const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
@@ -488,7 +514,7 @@ export function agentServer(
       const project = (projectId: string, name: string) => ({
         projectId,
         name,
-        role: "owner",
+        role: options.role ?? "owner",
         ownerUserId: "admin",
         createdAt: "2026-01-01T00:00:00Z",
       });
@@ -552,11 +578,81 @@ export function agentServer(
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
     }
+    if (path === `/api/projects/${PROJECT_ID}/agents/import` && method === "POST") {
+      const agentId = request.query.get("agentId") || (options.archiveAgentId ?? "imported");
+      const overwrite = request.query.get("overwrite") === "1";
+      if (overwrite && options.role === "member") return apiError(403, "forbidden");
+      const exists =
+        request.machine === null
+          ? localAgentIds.includes(agentId)
+          : (machines.find((m) => m.machineId === request.machine)?.agents ?? []).includes(agentId);
+      if (exists && !overwrite) {
+        return json(
+          {
+            error: {
+              code: "agent_exists",
+              message: `Agent already exists: ${agentId}`,
+              details: { agentId },
+            },
+          },
+          409,
+        );
+      }
+      if (!exists && request.machine === null) localAgentIds = [...localAgentIds, agentId];
+      const report: AgentArchiveImportResponse = {
+        agent: { ...summaryOf(agentId), name: agentId === AGENT_ID ? stored.config.name : agentId },
+        mode: exists ? "overwritten" : "created",
+        version: 4,
+        ...(exists ? { previousVersion: stored.config.version } : {}),
+        imported: options.importReport?.imported ?? {
+          skills: 0,
+          hooks: 0,
+          memoryFiles: 0,
+          workbenches: 0,
+          schedules: 0,
+          traces: { sessions: 0, files: 0 },
+        },
+        skippedTraces: options.importReport?.skippedTraces ?? [],
+        toFill: options.importReport?.toFill ?? [],
+        notes: options.importReport?.notes ?? [],
+      };
+      return json(report, 201);
+    }
     const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
     if (localAgent !== null && method === "DELETE" && request.machine === null) {
       const agentId = decodeURIComponent(localAgent[1]!);
       localAgentIds = localAgentIds.filter((id) => id !== agentId);
       return new Response(null, { status: 204 });
+    }
+    const archive = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive(\/preview)?$/.exec(path);
+    if (archive !== null && method === "GET") {
+      if (archive[2] !== undefined) {
+        const no = options.previewRefusal;
+        if (no !== undefined) return apiError(no.status, no.code, no.message);
+        return json(
+          options.archivePreview?.(request.query) ?? {
+            parts: {
+              skills: { files: 2, bytes: 2048 },
+              hooks: { files: 0, bytes: 0 },
+              memory: { files: 1, bytes: 1024 },
+              workbenches: { files: 0, bytes: 0 },
+              schedules: { files: 0, bytes: 0 },
+            },
+            traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
+            totalBytes: 4096,
+            entries: 5,
+            vaultKeys: [],
+            redacted: [],
+            notes: [],
+          },
+        );
+      }
+      return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": `attachment; filename="${decodeURIComponent(archive[1]!)}-20261104.zip"`,
+        },
+      });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
@@ -663,7 +759,13 @@ export function agentServer(
       );
       return new Response(null, { status: 204 });
     }
-    if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
+    const skillsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/skills$/.exec(path);
+    if (skillsPath !== null && method === "GET") {
+      const names = installs.get(installKey(request.machine, decodeURIComponent(skillsPath[1]!)));
+      return json({
+        skills: (names ?? []).map((name) => ({ name, description: "", version: "" })),
+      });
+    }
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
     if (path === `${AGENT_PATH}/memory`) {
       return json({

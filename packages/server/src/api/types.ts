@@ -1435,13 +1435,6 @@ export interface AgentCreateRequest {
    */
   skillsDirectory?: string;
   directorySkills?: string[];
-  /**
-   * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
-   * initialized from the package instead of the default template. Mutually exclusive with
-   * seeding (`plugins` / `skillsDirectory`) — the package carries its own skills and hooks.
-   * Explicit `name` / `description` override the package's values; absent ones keep them.
-   */
-  dataBase64?: string;
 }
 
 export interface AgentCreateResponse {
@@ -4718,19 +4711,202 @@ export interface ScheduleUpsertRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Agent State version and snapshots
+// Agent archive (zip export/import)
+//
+//   GET  /api/projects/:projectId/agents/:agentId/archive?<parts>          the zip, streamed (member)
+//   GET  /api/projects/:projectId/agents/:agentId/archive/preview?<parts>  AgentArchivePreview (member)
+//   POST /api/projects/:projectId/agents/import[?agentId=<id>][&overwrite=1]
+//        body: the raw zip or an old `.tar.gz` Agent State package, `Content-Type:
+//        application/octet-stream` → 201 AgentArchiveImportResponse (member; owner with overwrite)
+//
+// `<parts>` is the query both GETs take: `skills`, `hooks`, `memory`, `workbenches`,
+// `workbenchData` and `schedules` are `0` or `1`, and `traces` is `none`, `last:<N>` (1–500) or
+// `<from>..<to>` (local dates, YYYY-MM-DD). An absent key takes the export dialog's default:
+// skills, hooks, memory, workbenches and workbenchData on; schedules off; traces none.
+//
+// Import errors: 400 `bad_request` for a malformed archive (nothing written), 409
+// `agent_exists` with `details.agentId` when the id is taken and `overwrite` is absent, 403 for
+// a member's `overwrite=1`, 413 `archive_too_large` past a cap.
 // ---------------------------------------------------------------------------
 
-export interface AgentImportRequest {
-  /** Base64 of the snapshot package (tar.gz). */
-  dataBase64: string;
-  /** Explicit confirmation is required when the package version is equal to or lower than the current version, otherwise 409. */
-  confirm?: boolean;
+/** The largest zip or `.tar.gz` the import takes, as uploaded (413 `archive_too_large` past it). */
+export const AGENT_ARCHIVE_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/** The most Sessions `traces=last:<N>` selects. */
+export const AGENT_ARCHIVE_MAX_LAST_SESSIONS = 500;
+
+/** One selectable slice of an Agent; the config (`system_config.yaml`, `AGENTS.md`, `tools/`) always travels. */
+export type AgentArchivePart =
+  "skills" | "hooks" | "memory" | "workbenches" | "schedules" | "traces";
+
+/** Which Sessions an export carries. A Session travels whole: every `_NNN` file and its row facts. */
+export type TraceSelection =
+  | { kind: "none" }
+  /** The `count` most recently active top-level Sessions, 1–500. */
+  | { kind: "last"; count: number }
+  /** The Sessions whose Trace date directory lies in `from`..`to`: local dates YYYY-MM-DD, inclusive. */
+  | { kind: "range"; from: string; to: string };
+
+/** What an archive carries, beyond the config. */
+export interface AgentArchiveParts {
+  skills: boolean;
+  hooks: boolean;
+  memory: boolean;
+  workbenches: boolean;
+  /** Each workbench's `state.json`; means nothing when `workbenches` is false. */
+  workbenchData: boolean;
+  schedules: boolean;
+  traces: TraceSelection;
 }
 
-export interface AgentImportResponse {
-  /** Agent State version number after import (taken from the package's value). */
+/** `manifest.json` at the top of the zip (inside its one top-level directory, or at the root). */
+export interface AgentArchiveManifest {
+  format: "penguin-agent-zip/1";
+  exportedAt: string;
+  exportedBy?: { penguinVersion: string };
+  /** Where it was exported from; absent in a hand-written zip. */
+  source?: { projectId: string; agentId: string; version: number };
+  /** The suggested Agent id, held to the create route's rule (`^[a-z][a-z0-9_]{1,63}$`); the import's `agentId` query overrides it. */
+  agentId: string;
+  name?: string;
+  description?: string;
+  /** What the zip carries. A part marked false is not imported from it, and an overwrite keeps the Agent's own. */
+  parts: AgentArchiveParts;
+  /** The vault's key names; values never travel. */
+  vaultKeys: string[];
+  /**
+   * What the export took out: each blanked MCP credential by place (`mcp:<server>:env:<NAME>`,
+   * `…:headers:<NAME>`, `…:oauth:<path>`, `…:url:password`, `…:url:query:<name>`,
+   * `…:args:--<flag>`, `…:args:<scheme>://<host>:password`, `…:args:<scheme>://<host>:query:<name>`;
+   * a URL or a connection string in any other value by that value's place: `…:env:<NAME>:password`,
+   * `…:env:<NAME>:query:<name>`, `…:env:<NAME>:conn:<key>`), and, for the Trace files,
+   * `traces:vault-values:<n>` and `traces:unparsed-lines:<n>` (lines that did not parse, their
+   * values replaced as plain text).
+   */
+  redacted: string[];
+  /** Only when `agent_state/system_config.yaml` is absent: a hand-written Agent (the `agent-porting` Skill writes one). */
+  definition?: AgentArchiveDefinition;
+}
+
+/** A hand-written Agent, applied over a template Agent through the config service (which validates it). */
+export interface AgentArchiveDefinition {
+  /** Credential values empty: the import names them in `toFill`. */
+  mcpServers?: MCPServerConfig[];
+  model?: { thinkingLevel?: ThinkingLevelName; maxTokens?: number; timeoutMs?: number };
+  /** Names kept from the default toolset; a name this install does not ship is reported in `notes`. */
+  tools?: { builtin: string[] };
+}
+
+/** One row of `traces/sessions.json`: the sessions-table facts of a Session the zip carries. */
+export interface ArchivedSessionFacts {
+  sessionId: string;
+  /** How many `_NNN` files the Session has. */
+  files: number;
+  createdAt: string;
+  lastActiveAt: string;
+  title: string | null;
+  archivedAt: string | null;
+  keptAt: string | null;
+  approvalMode: ApprovalMode;
+  thinkingLevel: ThinkingLevelName | null;
+  client: string;
+  workspace: string;
+  provider: string;
+  modelId: string;
+  /** A subagent child that rode along with its parent. */
+  parentSessionId?: string;
+}
+
+/** One Session as the preview names it. */
+export interface AgentArchiveSessionRef {
+  sessionId: string;
+  title: string | null;
+  createdAt: string;
+}
+
+/** What an export with these parts would hold, before it is downloaded. */
+export interface AgentArchivePreview {
+  /**
+   * The zip entries of each selected part, and their bytes (an unselected one reads zero): every
+   * file the part puts in the zip, memory's indexes and markers included; workbenches count their
+   * data too when it is selected.
+   */
+  parts: Record<Exclude<AgentArchivePart, "traces">, { files: number; bytes: number }>;
+  traces: {
+    sessions: number;
+    files: number;
+    bytes: number;
+    /** Selected Sessions left out: one of their files is larger than an import accepts. */
+    skipped: Array<{ sessionId: string; reason: "too_large" }>;
+    newest: AgentArchiveSessionRef | null;
+    oldest: AgentArchiveSessionRef | null;
+  };
+  /**
+   * Uncompressed bytes of everything the zip would hold, config included. The upload cap
+   * (`AGENT_ARCHIVE_MAX_UPLOAD_BYTES`) applies to the compressed zip, which is smaller: compare
+   * against it as "uncompressed".
+   */
+  totalBytes: number;
+  /** How many entries the zip would hold. */
+  entries: number;
+  /**
+   * Why the export would be refused (413 `archive_too_large`), when it would: the selection is
+   * past what an import accepts — more entries than its entry cap (`entries`), more bytes than it
+   * inflates (`inflated`), or one file past its per-entry cap (`entry`, `subject` naming it).
+   * `limit` is the cap in entries or bytes.
+   */
+  refusal?: { reason: "entries" | "inflated" | "entry"; limit: number; subject?: string };
+  vaultKeys: string[];
+  redacted: string[];
+  /** What the export leaves out besides the rules, e.g. a part whose directory is a link. */
+  notes: AgentArchiveNote[];
+}
+
+/** What an archive note is about, for a client to say in its own language. */
+export type AgentArchiveNoteCode =
+  /** The definition named a built-in tool this install does not ship (`subject`: the tool). */
+  | "unknown_tool"
+  /** None of the definition's built-in tools exist here; the toolset was kept. */
+  | "no_known_tools"
+  /** A part's directory (or `tools/`) is a link, so the export leaves it out (`subject`: the directory). */
+  | "link_skipped"
+  /** The overwritten Agent's own config did not parse, so no blanked credential was filled from it. */
+  | "current_config_invalid";
+
+/** One note of a preview or an import: a code to localize, what it is about, and an English sentence. */
+export interface AgentArchiveNote {
+  code: AgentArchiveNoteCode;
+  subject?: string;
+  message: string;
+}
+
+export interface AgentArchiveImportResponse {
+  agent: AgentSummary;
+  mode: "created" | "overwritten";
+  /** The Agent State version adopted from the file. */
   version: number;
+  /** The version the Agent had before (overwrite only). */
+  previousVersion?: number;
+  /** The snapshot written before an overwrite: `snapshots/import-backup-v<N>-<time>-<rand>.tar.gz`. */
+  backup?: string;
+  imported: {
+    skills: number;
+    hooks: number;
+    /** Memories as the Agent card's `memoryCount` counts them: topic files, not indexes or markers. */
+    memoryFiles: number;
+    workbenches: number;
+    schedules: number;
+    traces: { sessions: number; files: number };
+  };
+  /**
+   * `exists`: a Session with that id (letter case aside) is already in this install; `invalid`:
+   * its files or its row do not hold up, or it could not be moved in (`detail` says which).
+   */
+  skippedTraces: Array<{ sessionId: string; reason: "exists" | "invalid"; detail?: string }>;
+  /** What the user must set: vault key names and blanked MCP values (as in `AgentArchiveManifest.redacted`). */
+  toFill: string[];
+  /** Anything else worth saying, e.g. a built-in tool the definition named that this install lacks. */
+  notes: AgentArchiveNote[];
 }
 
 // ---------------------------------------------------------------------------

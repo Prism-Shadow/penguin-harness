@@ -246,11 +246,13 @@ penguin session rename 402a2e24 -t "Q3 release prep" --json
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent export` and `agent import` move an agent as a zip; see [penguin agent export](#penguin-agent-export) and [penguin agent import](#penguin-agent-import). `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
 penguin agent create --agent-id <id> [options]
+penguin agent export <agent-id> [options]
+penguin agent import <file.zip|file.tar.gz|directory> [options]
 ```
 
 Options of `agent create`:
@@ -265,6 +267,45 @@ Options of `agent create`:
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export
+
+Writes an agent to a zip: the same file as the **Export agent** icon on its Agents page card, or **Export…** in its settings. The zip always carries the agent's config: `system_config.yaml`, with credential-looking MCP values blanked and named in the manifest, `AGENTS.md` and `tools/`. The options choose the rest, with the export dialog's defaults. Vault values never travel; the manifest lists the vault key names. The command first asks the server what the zip would hold. It prints on stderr what the export leaves out: a part whose folder is a link, and Sessions with a file larger than an import accepts. When the selection is more than an import accepts, it stops there and downloads nothing. Otherwise the zip streams to disk, and the command prints where it went and its size.
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--out <file\|dir>` | Where to write the zip: a file path, whose parent is created, or a directory, where the file takes the server's name, `<agent-id>-<yyyymmdd>.zip`. | The current directory |
+| `--no-skills` / `--no-hooks` / `--no-memory` | Leave the Skills, the hook packages or the memory out. | Included |
+| `--no-workbenches` / `--no-workbench-data` | Leave the workbenches out, or keep their source and leave their data (`state.json`) out. | Included, with their data |
+| `--schedules` | Include the schedules. They run on the install that imports the zip. | Left out |
+| `--traces <selection>` | The Traces to include: `none`; `last:<N>`, the N most recently active Sessions (1–500); or `<from>..<to>`, the Sessions dated in that range (`YYYY-MM-DD`, inclusive). A Session travels whole, with its subagent children. Any other value fails before a request is sent. | `none` |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). `--json` prints `{agentId, projectId, file, bytes, notes}`, `notes` being the server's notes on what the export leaves out. | — |
+
+```bash
+penguin agent export helper --out ./exports
+penguin agent export helper --traces last:20 --no-skills --no-memory --schedules
+penguin agent export helper --traces 2026-10-01..2026-10-31 --json
+```
+
+### penguin agent import
+
+Creates an agent from a zip, the way **Import agent** on the Agents page does. It also takes an older `.tar.gz` Agent State package, which then needs `--agent-id`, and a folder laid out as the zip, with `manifest.json` at its root. The CLI zips such a folder itself, leaving `.git` out, so no `zip` program is needed. This is how the `agent-porting` Skill brings in an agent from another coding tool. A file or zipped folder larger than 100 MiB is refused before anything is sent.
+
+The agent id comes from `--agent-id`, else from the manifest. A taken id fails with `agent_exists`: import under another id, or replace the existing agent with `--overwrite`. Overwriting replaces the agent's state with what the file carries and keeps its Traces, vault, API keys and employment. A part the file leaves out keeps the agent's current contents. The server writes a backup snapshot first, and only a Project owner may overwrite.
+
+The command prints the agent it created or replaced and its Agent State version, the backup, what it imported, the Sessions it left out (one already in this install, or one whose files are missing), what is left to fill in (vault keys and blanked MCP values) and the server's notes.
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--agent-id <id>` | The id for the agent. | The id in the file |
+| `--overwrite` | Replace the agent that has this id, as described above. | Off |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). `--json` prints the server's whole response. | — |
+
+```bash
+penguin agent import ./exports/helper-20261104.zip --agent-id helper_2
+penguin agent import ./agent-port/helper --project-id my-project
+penguin agent import ./helper-v12.tar.gz --agent-id helper --overwrite
 ```
 
 ### penguin agent api

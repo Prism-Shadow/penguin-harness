@@ -166,7 +166,7 @@ import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore, Traces } from "../../mechanisms/traces.js";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
-import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { AgentConfig, AgentHolds, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { UserDraftsStore } from "../../mechanisms/account-data.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
@@ -1843,6 +1843,7 @@ export class SessionApiRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
+  @Use() private readonly agentHolds!: AgentHolds;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1948,6 +1949,7 @@ export class SessionApiRoutes {
       traceIndex: this.traceIndex,
       workbenches: this.workbenches,
       drafts: this.drafts,
+      holds: this.agentHolds,
     });
     this.agentDeletionsRoutes = agentDeletionsRoutes({ access, agentService: this.agents });
     this.agentConfigRoutes = agentConfigRoutes({

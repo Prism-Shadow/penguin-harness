@@ -73,20 +73,33 @@ export abstract class AgentConfig {
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract ensureSnapshot(
+  /** Packs the current State into a new `snapshots/import-backup-v<N>-…tar.gz`; answers `snapshots/<name>`. */
+  abstract backupBeforeImport(projectId: string, agentId: string): Promise<string>;
+  /**
+   * Replaces `agent_state/` with `incoming` in one rename swap, the current vault and the
+   * entries at the `carry` paths (relative to `agent_state/`) kept, rolled back on failure;
+   * `backup` is named by an error that leaves the Agent's parts in its marked staging folder.
+   */
+  abstract swapAgentState(
     projectId: string,
     agentId: string,
-  ): Promise<{ version: number; file: string }>;
-  abstract exportArchive(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string; fileName: string }>;
-  abstract importArchive(
-    projectId: string,
-    agentId: string,
-    archive: Buffer<ArrayBufferLike>,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }>;
+    incoming: string,
+    carry?: readonly string[],
+    backup?: string | null,
+  ): Promise<void>;
+  /** Puts back what interrupted swaps left (marked staging folders), for one Agent or all. */
+  abstract recoverStrandedSwaps(scope?: { projectId: string; agentId: string }): Promise<void>;
+}
+
+/**
+ * AgentHolds: one import or delete at a time per Agent, keyed `<projectId>/<agentId>`; the
+ * mechanism AgentHoldQueue implements (agent-archive/agent-hold.ts). The archive routes and the
+ * Agent routes share it.
+ */
+@Interface()
+export abstract class AgentHolds {
+  /** Runs `work` once every earlier holder of `key` is done. */
+  abstract hold<T>(key: string, work: () => Promise<T>): Promise<T>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -189,7 +202,6 @@ export abstract class AgentLifecycle {
     description?: string,
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
-    archive?: Buffer<ArrayBufferLike>,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

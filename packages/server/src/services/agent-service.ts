@@ -43,7 +43,7 @@ import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { isTopicFileName } from "./memory-service.js";
+import { countMemoryTopics } from "./memory-service.js";
 import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
@@ -51,7 +51,7 @@ import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
 import type { AgentIndex } from "../mechanisms/projects.js";
 
 /**
@@ -158,7 +158,6 @@ export class AgentService implements AgentLifecycle {
   }
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly agentConfig!: AgentConfig;
-  @Use() private readonly snapshots!: Snapshots;
   @Use() private readonly library!: PluginLibrary;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
@@ -477,27 +476,8 @@ export class AgentService implements AgentLifecycle {
   }
 
   /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
-  private async memoryCount(projectId: string, agentId: string): Promise<number> {
-    const base = memoryDir(this.root, projectId, agentId);
-    let scopes: Dirent[];
-    try {
-      scopes = await fs.readdir(base, { withFileTypes: true });
-    } catch {
-      return 0;
-    }
-    const counts = await Promise.all(
-      scopes
-        .filter((d) => d.isDirectory())
-        .map(async (d) => {
-          try {
-            const files = await fs.readdir(path.join(base, d.name), { withFileTypes: true });
-            return files.filter((f) => f.isFile() && isTopicFileName(f.name)).length;
-          } catch {
-            return 0;
-          }
-        }),
-    );
-    return counts.reduce((sum, n) => sum + n, 0);
+  private memoryCount(projectId: string, agentId: string): Promise<number> {
+    return countMemoryTopics(memoryDir(this.root, projectId, agentId));
   }
 
   /** Last config modification time: the later of system_config.yaml and AGENTS.md mtime; omitted if neither is readable. */
@@ -676,11 +656,8 @@ export class AgentService implements AgentLifecycle {
    * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all.
    *
-   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
-   * it instead of the default template (explicit name/description override the package's
-   * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
-   * package carries its own skills and hooks. An invalid package fails the whole creation
-   * inside the same cleanup window, leaving no empty Agent behind.
+   * An Agent made from an archive is created here first and then filled
+   * (../agent-archive/import.ts), which removes it again when the filling fails.
    */
   async createAgent(
     projectId: string,
@@ -689,20 +666,12 @@ export class AgentService implements AgentLifecycle {
     description?: string,
     pluginNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
-    archive?: Buffer,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
-      );
-    }
-    if (archive !== undefined && (pluginNames?.length || directory)) {
-      throw new HttpError(
-        400,
-        "snapshot_with_plugins",
-        "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
       );
     }
     const taken =
@@ -726,29 +695,9 @@ export class AgentService implements AgentLifecycle {
       : [];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
-      if (archive !== undefined) {
-        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
-        // version confirmation: both guards protect existing State, and this Agent has
-        // none yet — its template state is not worth preserving.
-        await this.snapshots.importArchive(projectId, agentId, archive, {
-          confirm: true,
-          preSnapshot: false,
-        });
-        // Explicit name/description override the package's values; absent ones keep them.
-        // No id fallback here: the package is the identity being copied in.
-        if (name !== undefined || description !== undefined) {
-          await this.agentConfig.updateConfig(projectId, agentId, {
-            config: {
-              ...(name !== undefined ? { name } : {}),
-              ...(description !== undefined ? { description } : {}),
-            },
-          });
-        }
-      } else {
-        await this.agentConfig.updateConfig(projectId, agentId, {
-          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
-        });
-      }
+      await this.agentConfig.updateConfig(projectId, agentId, {
+        config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+      });
       for (const plugin of librarySeed) {
         await installPlugin(this.root, projectId, agentId, plugin);
       }
@@ -770,24 +719,20 @@ export class AgentService implements AgentLifecycle {
     }
     const createdAt = new Date().toISOString();
     this.agents.insertOrIgnore({ projectId, agentId, createdAt });
-    // Read back the actual values: the init template ships a default toolset and version
-    // number, and a snapshot seed brings the package's own name, description, version,
-    // skills, schedules and memory.
+    // Read back the actual values: the init template ships a default toolset and version number.
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
-    const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
-    const cardDescription = archive !== undefined ? meta.description : description;
     const installed = await this.installedPlugins(projectId, agentId, this.library.list());
     return {
       agentId,
-      name: cardName,
-      ...(cardDescription !== undefined ? { description: cardDescription } : {}),
+      name: displayName,
+      ...(description !== undefined ? { description } : {}),
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
       version: meta.version,
       kernelOutdated: meta.kernelOutdated,
-      // The vault never travels in a snapshot, so this is 0 either way; the other counts
-      // are real reads because a package may carry any of them.
+      // A new Agent has no vault; the other counts are real reads because the seed plugins may
+      // carry any of them.
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
       workbenchCount: await this.workbenchCount(projectId, agentId),

@@ -37,6 +37,8 @@ import { promptLabel } from "./trace-prompt-label.js";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
+  ApprovalMode,
+  ArchivedSessionFacts,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
@@ -58,6 +60,7 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
+import { readTraceHeadWithin } from "../internal/trace-head.js";
 import {
   ratesAt,
   requestCostParts,
@@ -274,6 +277,31 @@ export interface MessagesPageResult {
   /** Agent State directory from the same context's metadata, for memory-change detection. */
   agentState?: string;
 }
+
+/** One Session of an Agent archive, staged on disk by the import and ready to move in. */
+export interface StagedTraceSession {
+  /** The row facts the archive recorded for it (`traces/sessions.json`). */
+  facts: ArchivedSessionFacts;
+  /** Its `_NNN` files as staged: the index, the date directory it goes to, and where it is now. */
+  files: Array<{ index: number; date: string; path: string }>;
+  /** Why its row does not hold up, when it does not: the Session is skipped as `invalid`. */
+  problem?: string;
+}
+
+/** What `importTraceFiles` did with the Sessions it was handed. */
+export interface StagedTraceImport {
+  imported: { sessions: number; files: number };
+  skipped: Array<{ sessionId: string; reason: "exists" | "invalid"; detail?: string }>;
+}
+
+const DATE_DIR_RE = /^\d{4}-\d{2}-\d{2}$/;
+const APPROVAL_MODES: readonly ApprovalMode[] = [
+  "allow-all",
+  "deny-all",
+  "read-only",
+  "always-ask",
+];
+const SESSION_CLIENTS = ["web", "cli", "org", "api", "workbench"] as const;
 
 export interface ForkTraceResult {
   sessionId: string;
@@ -2231,42 +2259,214 @@ export class TraceService implements Traces {
   }
 
   /**
+   * Moves the Sessions an Agent archive import staged into this Agent's Trace directory, each
+   * whole: all its files, then its index rows, then its sessions-table row from the facts the
+   * archive recorded (title, dates, archived/kept marks, approval mode, thinking level, client)
+   * instead of the single-file import's defaults.
+   *
+   * A Session is `invalid` when its files are not exactly `_001` to `_<files>` in valid date
+   * directories, or its `_001` does not open with a `session_meta` naming the same id (a bounded
+   * head read, as the index reads heads — a large file is never parsed whole). It is `exists`
+   * when the install already knows the id, as a row anywhere or as an indexed Trace: a Session id
+   * is an identity across the install (see importTraceFile). A skipped Session's files stay where
+   * they were staged, for the import to remove.
+   */
+  async importTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessions: readonly StagedTraceSession[],
+  ): Promise<StagedTraceImport> {
+    const out: StagedTraceImport = { imported: { sessions: 0, files: 0 }, skipped: [] };
+    for (const session of sessions) {
+      const sessionId = session.facts.sessionId;
+      const skip = (reason: "exists" | "invalid", detail?: string): void => {
+        out.skipped.push({ sessionId, reason, ...(detail !== undefined ? { detail } : {}) });
+      };
+      if (session.problem !== undefined) {
+        skip("invalid", session.problem);
+        continue;
+      }
+      const files = [...session.files].sort((a, b) => a.index - b.index);
+      const head = await this.stagedHead(sessionId, files, session.facts.files);
+      if (typeof head === "string") {
+        skip("invalid", head);
+        continue;
+      }
+      if (
+        this.store.getSession(sessionId) !== null ||
+        this.sessions?.findById?.(sessionId) ||
+        (await this.locateAll(projectId, agentId, sessionId)).length > 0
+      ) {
+        skip("exists");
+        continue;
+      }
+      try {
+        const placed = await this.placeStaged(projectId, agentId, session.facts, files, head);
+        if (placed === null) {
+          skip("exists");
+          continue;
+        }
+        out.imported.sessions += 1;
+        out.imported.files += placed;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        skip("invalid", `It could not be moved in${code !== undefined ? ` (${code})` : ""}.`);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Moves one staged Session's files into the Agent's Trace directory and indexes them, or
+   * nothing at all: a file already at a target (under any letter case the disk folds) stops it,
+   * answering null; a failure part-way moves the files back out (or removes them) and drops what
+   * was indexed, then throws. Answers how many files moved in.
+   */
+  private async placeStaged(
+    projectId: string,
+    agentId: string,
+    facts: ArchivedSessionFacts,
+    files: ReadonlyArray<{ index: number; date: string; path: string }>,
+    head: AmspRecord[],
+  ): Promise<number | null> {
+    const sessionId = facts.sessionId;
+    const base = tracesDir(this.root, projectId, agentId);
+    const placed: Array<{ index: number; date: string; size: number; from: string; to: string }> =
+      [];
+    const undo = async (): Promise<void> => {
+      for (const file of placed) {
+        await fs.rename(file.to, file.from).catch(() => fs.rm(file.to, { force: true }));
+      }
+      this.index.removeSession(projectId, agentId, sessionId);
+      this.sessions?.deleteById?.(sessionId);
+      this.sources?.delete(sessionId);
+    };
+    try {
+      for (const file of files) {
+        const dir = path.join(base, file.date);
+        await fs.mkdir(dir, { recursive: true });
+        const to = path.join(dir, `${sessionId}_${String(file.index).padStart(3, "0")}.jsonl`);
+        // A rename replaces what is there: never over a Trace this install already has.
+        if (
+          await fs.lstat(to).then(
+            () => true,
+            () => false,
+          )
+        ) {
+          await undo();
+          return null;
+        }
+        await fs.rename(file.path, to);
+        placed.push({ ...file, from: file.path, to, size: (await fs.stat(to)).size });
+      }
+      for (const file of placed) {
+        this.index.registerImportedFile({
+          projectId,
+          agentId,
+          sessionId,
+          fileIndex: file.index,
+          date: file.date,
+          sizeBytes: file.size,
+          ...(file.index === 1 ? { records: head } : {}),
+        });
+      }
+      this.indexImportedSession(projectId, agentId, sessionId, facts);
+      return placed.length;
+    } catch (err) {
+      await undo().catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /**
+   * The head records of a staged Session's `_001`, or why the Session does not hold up: an id
+   * that cannot be a file name, files other than exactly `_001`..`_<count>`, a date directory
+   * that is not a date, or a head that is not this Session's `session_meta` — read within the
+   * head window only, so a first line longer than it is refused rather than read whole.
+   */
+  private async stagedHead(
+    sessionId: string,
+    files: ReadonlyArray<{ index: number; date: string; path: string }>,
+    count: number,
+  ): Promise<AmspRecord[] | string> {
+    if (!IMPORT_SESSION_ID_RE.test(sessionId)) return "Its id cannot name a Trace file.";
+    if (files.length === 0 || files.length !== count) {
+      return `It lists ${count} files and the archive holds ${files.length}.`;
+    }
+    if (files.some((file, i) => file.index !== i + 1 || !DATE_DIR_RE.test(file.date))) {
+      return "Its files are not _001 to its count, in date directories.";
+    }
+    let records: AmspRecord[] | null;
+    try {
+      records = await readTraceHeadWithin(files[0]!.path);
+    } catch {
+      records = null;
+    }
+    const first = records?.[0];
+    if (records === null || first === undefined || !isSessionMeta(first)) {
+      return "Its first file does not open with a session_meta.";
+    }
+    if ((first.payload as { session_id?: unknown }).session_id !== sessionId) {
+      return "Its first file is another Session's.";
+    }
+    return records;
+  }
+
+  /**
    * Registers an imported Trace as a **Session of the receiving Agent**, from the facts the
-   * registration above just head-read (no second parse).
+   * registration above just head-read (no second parse) — or, for a Session an Agent archive
+   * carried, from the row facts it recorded.
    *
    * Without this the import produced a Trace file and nothing else: the conversation list is
    * served straight from the sessions table, so an imported Trace stayed invisible unless
    * "show CLI sessions" was on — that filter adopts Sessions this server never created, and
-   * a file the user deliberately imported is not one of those. Hence `client: "web"`: an
-   * imported conversation is a conversation of this install.
+   * a file the user deliberately imported is not one of those. Hence `client: "web"` for a
+   * single file: an imported conversation is a conversation of this install. An archived
+   * Session keeps the client it had.
    *
-   * `approvalMode` is backfilled with the default (a Trace does not record it), and the
-   * origin is recorded in the shared registry so the row lands in the right sidebar
-   * category. Facts too old or too broken to name a model are skipped rather than inserted
-   * half-formed — the Trace file itself is already written and readable either way.
+   * `approvalMode` is backfilled with the default (a Trace does not record it) unless the
+   * archive recorded one, and the origin is recorded in the shared registry so the row lands in
+   * the right sidebar category. Facts too old or too broken to name a model are skipped rather
+   * than inserted half-formed — the Trace file itself is already written and readable either way.
    */
-  private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
+  private indexImportedSession(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    recorded?: ArchivedSessionFacts,
+  ): void {
     const sessions = this.sessions;
     if (!sessions) return;
     const facts = this.store.getSession(sessionId);
-    if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
+    if (!facts?.metaRead) return;
+    const provider = recorded?.provider || facts.provider;
+    const modelId = recorded?.modelId || facts.modelId;
+    if (!provider || !modelId) return;
     this.sources?.set(sessionId, facts.source);
-    const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
+    const createdAt =
+      recorded?.createdAt ||
+      (sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString());
+    const client = SESSION_CLIENTS.find((known) => known === recorded?.client) ?? "web";
     sessions.insertOrIgnore?.({
       sessionId,
       projectId,
       agentId,
-      provider: facts.provider,
-      modelId: facts.modelId,
-      workspace: facts.workspace,
-      approvalMode: "allow-all",
-      title: facts.title,
-      client: "web",
+      provider,
+      modelId,
+      // The head's own Workspace before the archive's row: the row is the archive's word.
+      workspace: facts.workspace || recorded?.workspace || "",
+      approvalMode: APPROVAL_MODES.find((mode) => mode === recorded?.approvalMode) ?? "allow-all",
+      title: recorded !== undefined ? (recorded.title ?? facts.title) : facts.title,
+      client,
       hasTrace: true,
       createdAt,
-      // Nothing has run here yet: the imported conversation reads as last-active when it
-      // was created, until it is resumed on this install.
-      lastActiveAt: createdAt,
+      // Nothing has run here yet: a single imported file reads as last-active when it was
+      // created, until it is resumed on this install; an archived Session keeps its own.
+      lastActiveAt: recorded?.lastActiveAt || createdAt,
+      ...(recorded?.thinkingLevel ? { thinkingLevel: recorded.thinkingLevel } : {}),
     });
+    // The listing marks are not insert columns: set the one the archive recorded, if any.
+    if (recorded?.archivedAt) sessions.setListing?.([sessionId], "archived", recorded.archivedAt);
+    else if (recorded?.keptAt) sessions.setListing?.([sessionId], "kept", recorded.keptAt);
   }
 }

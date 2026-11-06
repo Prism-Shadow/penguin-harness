@@ -181,9 +181,9 @@ id 长 2–64 个字符，以小写字母开头，只能包含小写字母、数
 - 重命名或删除 Project、管理成员，以及修改**默认值**和**安全策略**（member 只能查看这些页面）。
 - 修改模型、密钥保险柜和定时任务。
 - 创建和删除 Benchmark、删除 Agent、清空成本中心的异常记录、设置远程控制。
-- 导入 Agent 快照、记忆和 Trace。
+- 从文件替换 Agent 的 Agent State、导入时覆盖现有 Agent，以及导入记忆和 Trace。
 
-member 仍然可以创建 Agent 和对话，也可以删除对话、Skill、钩子包和记忆文件。
+member 仍然可以创建和导入 Agent、创建对话，也可以删除对话、Skill、钩子包和记忆文件。
 
 > [!NOTE]
 > `default_project` 与 CLI 共用，不能在 Web App 中删除；一个账号的最后一个 Project 也不能删除。
