@@ -2,6 +2,7 @@
 title: "Organizing Cross-Harness Comparison Experiments with PenguinHarness"
 date: 2026-11-05
 category: practice
+author: "Zhihao Liu (Prism Shadow AI)"
 excerpt: "With the base model and thinking effort fixed, we compare four harnesses—PenguinHarness, DSH, Pi, and Codex—across five benchmarks totaling 50 tasks over three full repetitions, examining pass rates, multi-run stability, and resource costs, and showing how to organize and reproduce the evaluation in PenguinHarness."
 ---
 
