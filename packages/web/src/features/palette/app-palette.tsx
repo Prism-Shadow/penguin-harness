@@ -121,7 +121,13 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
   const { locale } = useLocale();
   const [offers, setOffers] = useState<HostCommandOffer[]>([]);
   useEffect(() => {
-    if (!isAdmin) return;
+    // The palette now outlives a logout (it is mounted beside the route tree, not inside
+    // RequireAuth), so a demotion has to drop the cached admin-only offers too — not just
+    // stop refetching them — or the next non-admin session still lists them and eats a 403.
+    if (!isAdmin) {
+      setOffers([]);
+      return;
+    }
     let cancelled = false;
     void api
       .getHostCommands()
