@@ -48,7 +48,6 @@ import {
   ICON_SIZE,
   NoticeStrip,
   Skeleton,
-  toastError,
   toastSuccess,
   WallpaperSurface,
 } from "@prismshadow/penguin-ui";
@@ -99,6 +98,7 @@ import {
 } from "./channel-stream";
 import type { ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -258,7 +258,7 @@ export function ChannelView() {
           : [{ date: target, messages: res.messages }, ...prev],
       );
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setLoadingEarlier(false);
     }
@@ -369,7 +369,7 @@ export function ChannelView() {
       );
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
   };
@@ -384,7 +384,7 @@ export function ChannelView() {
       await loadDetail();
       void company.reloadChannels();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setJoining(false);
     }

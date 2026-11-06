@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /**
- * The shared retry row as it lives on a page — the UI package's `RetryStatus`, which the
- * Machines card and dialog, a conversation on an unreachable machine and a model request's retry
- * show — across renders, on a fake clock.
+ * The machine's retry row as it lives on a page — the UI package's `RetryStatus`, which the
+ * Machines card and dialog and a conversation on an unreachable machine show — across renders,
+ * on a fake clock.
  *
  * - Given a wait 40 s out, a second later the sentence says a second less; when the moment comes
  *   the seconds go and the row says the attempt is being tried.
+ * - Given a wait 10 s out, the seconds keep two digits' room as they tick to 9, so nothing after
+ *   them moves (the conversation's retry line counts down through the same slot).
  * - Given Retry now pressed twice, one retry is asked for; the button stays held until the next
  *   attempt begins, and then takes a press again.
  * - Given a retry the server refused (its promise rejects), the button takes a press again at once.
@@ -60,6 +62,16 @@ describe("the retry status on a page", () => {
     await elapse(40_000);
     expect(seconds(container)).toBeNull();
     expect(container.textContent).toBe("Reconnecting (attempt 4/5)");
+  });
+
+  it("keeps the seconds' room from 10 s down to 9 s, so nothing after them moves", async () => {
+    const { container } = await mount(h(RetryStatus, waiting({ nextAt: NOW + 10_000 })));
+    const slot = () => container.querySelector("[data-retry-countdown] [data-digits]");
+    expect(slot()?.textContent).toBe("10");
+    expect(slot()?.getAttribute("data-digits")).toBe("00");
+    await elapse(1_100);
+    expect(slot()?.textContent).toBe("9");
+    expect(slot()?.getAttribute("data-digits")).toBe("00");
   });
 
   it("asks once for two presses, holds the button until the next attempt, then takes a press again", async () => {

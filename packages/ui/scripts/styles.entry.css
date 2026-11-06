@@ -1,0 +1,20 @@
+/**
+ * The entry of the published stylesheet, `dist/styles.css` (scripts/build-dist.mjs): Tailwind's
+ * base reset and utilities, the token bridge and the three themes, compiled once so that a page or
+ * a project using the package needs no Tailwind of its own. The build puts the components' own CSS
+ * (prose, tables, charts, KaTeX) after this file, in the order the components import it, which is
+ * the order the Web App's bundle gets.
+ *
+ * The utilities are the ones the components spell. Automatic detection is off, so neither the test
+ * helpers' class patterns nor the public site's components reach the sheet.
+ */
+@import "tailwindcss" source(none);
+@import "../src/theme.css";
+@import "../src/themes/github.css";
+@import "../src/themes/modern.css";
+@import "../src/themes/geek.css";
+
+@source "../src";
+@source not "../src/testing";
+@source not "../src/components/site";
+@source not "../src/site*";

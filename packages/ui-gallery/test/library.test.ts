@@ -7,12 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  choiceFillText,
-  formFillText,
-  parseChoicePick,
-  parseFormFill,
-} from "@prismshadow/penguin-core/a2ui";
+import { choiceFillText, formFillText, parseChoicePick, parseFormFill } from "@prismshadow/a2ui";
 import { STREAM_REVEALS, TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import { HOME_SURFACE } from "../src/app/surfaces";
 import { SEEDED_KEYS } from "../src/app/frame";
@@ -77,6 +72,7 @@ describe("the library's topics", () => {
       "data",
       "machines",
       "retry",
+      "report",
       "attachments",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;

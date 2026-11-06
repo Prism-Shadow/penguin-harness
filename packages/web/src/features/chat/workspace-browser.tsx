@@ -54,7 +54,6 @@ import type {
 } from "react";
 import {
   Button,
-  CloseIcon,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -105,7 +104,6 @@ import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useReaderFind } from "../../lib/reader-find";
 import { isShortcut } from "../../lib/shortcuts/match";
 import { currentPlatform } from "../../lib/shortcuts/platform";
@@ -156,6 +154,7 @@ import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
 import { WorkspaceTreeView } from "./workspace-tree-view";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to
@@ -502,7 +501,6 @@ export function WorkspaceBrowser({
   // the new tab to the same-origin sandbox (which the link flags rather than failing
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated: serverPreviewIsolated, desktopMode, sessionVia } = useAuth();
-  const saveShortcut = useShortcutLabel("editor.save");
   // The Markdown preview's reader: its outline and find buttons sit in the panel's header row,
   // and its find takes the find.open binding while it has the focus.
   const reader = useMarkdownReader(useReaderFind());
@@ -559,7 +557,6 @@ export function WorkspaceBrowser({
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveConfirm, setSaveConfirm] = useState(false);
   /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
   const [conflict, setConflict] = useState<{ name: string } | null>(null);
   /**
@@ -675,7 +672,6 @@ export function WorkspaceBrowser({
     setPreview(null);
     setSourceError(null);
     setEditor(null);
-    setSaveConfirm(false);
     setConflict(null);
     setDiscardPrompt(null);
     // The upload and save flows finish against the Session they captured and skip their own
@@ -990,7 +986,7 @@ export function WorkspaceBrowser({
     } else if (err instanceof ApiError && err.code === "target_exists" && to !== undefined) {
       toastError(S.files.targetExists(to));
     } else {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
 
@@ -1370,19 +1366,52 @@ export function WorkspaceBrowser({
     else unsavedDrafts.set(key, draft);
   };
 
-  const requestSave = (): void => {
+  /**
+   * Whether the save under way leaves the editor once it lands: the header's ✓ is "done" and
+   * returns to the preview, the save shortcut keeps the editor open, as a code editor's does.
+   * Read when the write lands, so it outlives the conflict dialog in between.
+   */
+  const leaveOnSave = useRef(false);
+
+  /** The header's Edit, where the keyboard picks up once the editor is gone. */
+  const editButtonRef = useRef<HTMLButtonElement | null>(null);
+  const focusAfterLeave = useRef(false);
+
+  /**
+   * Back to the source view, the draft dropped without asking: the header's ✗ is the discard
+   * itself, and a save that has just landed has nothing left to lose. The source view comes
+   * back where the editor was scrolled, not where it was before Edit, and the focus goes to Edit
+   * (or the preview) rather than falling to the page with the button that had it.
+   */
+  const leaveEditor = (): void => {
+    const host = editorHost.current;
+    bodyScrollOnReturn.current =
+      host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
+    focusAfterLeave.current = true;
+    discardEditor();
+  };
+  useEffect(() => {
+    if (editor !== null || !focusAfterLeave.current) return;
+    focusAfterLeave.current = false;
+    (editButtonRef.current ?? previewBodyRef.current)?.focus({ preventScroll: true });
+  }, [editor]);
+
+  /** A save asked for: by the ✓ (`leave`, back to the preview once written) or by the shortcut. */
+  const requestSave = (leave = false): void => {
     const current = editorRef.current;
     if (current === null || saving) return;
     if (!isDirty(current)) {
-      toastInfo(S.common.noChangesToSave);
+      // Nothing to write: ✓ is done all the same, while the shortcut says why nothing happened.
+      if (leave) leaveEditor();
+      else toastInfo(S.common.noChangesToSave);
       return;
     }
-    // Already known to have moved under the editor: the ordinary "the file will be
-    // overwritten" confirmation understates that, so ask the conflict question instead —
-    // and sending the stale precondition first would only earn the same dialog a round
-    // trip later.
+    leaveOnSave.current = leave;
+    // The press is the decision, so an ordinary save writes at once. Already known to have
+    // moved under the editor, it asks the conflict question instead — sending the stale
+    // precondition first would only earn the same dialog a round trip later.
     if (current.changedOnDisk === true) setConflict({ name: baseName(current.path) });
-    else setSaveConfirm(true);
+    else void save();
   };
 
   /**
@@ -1391,7 +1420,9 @@ export function WorkspaceBrowser({
    * offers `overwrite`, which is the same write with no precondition. The draft is never
    * dropped on a refusal: the editor stays exactly as the user left it.
    *
-   * A save that lands leaves the editor open, as a code editor does: nothing remounts it, so
+   * A save from the ✓ returns to the preview once it lands — unless something was typed while
+   * the write was in flight, which stays in the editor, unsaved. A save from the shortcut
+   * leaves the editor open, as a code editor does: nothing remounts it, so
    * the caret, the selection and the scroll stay where they were. What was written becomes the
    * baseline — anything typed while the write was in flight stays unsaved on top of it — and
    * the version the write produced is the next save's precondition. A server that reports no
@@ -1399,7 +1430,6 @@ export function WorkspaceBrowser({
    * reads the file again.
    */
   const save = async (opts?: { overwrite?: boolean }): Promise<void> => {
-    setSaveConfirm(false);
     setConflict(null);
     const current = editorRef.current;
     if (current === null) return;
@@ -1419,7 +1449,9 @@ export function WorkspaceBrowser({
       );
       if (scopeKeyRef.current !== key) return;
       const stash = draftKey(key, current.path);
-      if (written === null) {
+      if (leaveOnSave.current && editorRef.current?.draft === sent) {
+        leaveEditor();
+      } else if (written === null) {
         unsavedDrafts.delete(stash);
         setEditor(null);
       } else {
@@ -1458,22 +1490,10 @@ export function WorkspaceBrowser({
         setConflict({ name: baseName(current.path) });
         return;
       }
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       if (scopeKeyRef.current === key) setSaving(false);
     }
-  };
-
-  /**
-   * Leaves the editor for the source view, asking first when there are unsaved changes. The
-   * source view comes back where the editor was scrolled, not where it was before Edit.
-   */
-  const stopEditing = (): void => {
-    const host = editorHost.current;
-    const at = host === null ? null : { top: host.scrollTop, left: host.scrollLeft };
-    void navigateGuarded(null, () => {
-      bodyScrollOnReturn.current = at;
-    });
   };
 
   // ------------------------------------------------------------------------------ upload
@@ -1502,7 +1522,7 @@ export function WorkspaceBrowser({
       }
       toastSuccess(S.files.uploadedCount(uploaded.length));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     } finally {
       if (scopeKeyRef.current === key) setUploading(null);
     }
@@ -1599,7 +1619,7 @@ export function WorkspaceBrowser({
       if (err instanceof ApiError && err.code === "target_exists") {
         toastError(S.files.targetExists(path));
       } else {
-        toastError(apiErrorText(err));
+        toastApiError(err);
       }
     } finally {
       if (scopeKeyRef.current === key) setCreating(false);
@@ -1616,7 +1636,7 @@ export function WorkspaceBrowser({
     try {
       await files.reveal(filePath);
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
 
@@ -2111,6 +2131,7 @@ export function WorkspaceBrowser({
   const editButton = (
     <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
       <button
+        ref={editButtonRef}
         type="button"
         aria-label={S.common.edit}
         onClick={() => void startEdit()}
@@ -2356,32 +2377,29 @@ export function WorkspaceBrowser({
         )}
         {/* Icon buttons, not text ones, so the row is the same height whether or not a draft
             is open: a `Button size="sm"` stands 29px against these 27px, and the header would
-            grow by two pixels the moment Edit was pressed. The save keeps no primary tint —
-            it opens a confirmation whose own button carries that weight. */}
-        <Tooltip label={S.files.stopEditing} placement="bottom" className="shrink-0">
+            grow by two pixels the moment Edit was pressed. The two are one icon family at one
+            size, a pair of answers: keep what was typed, or drop it. */}
+        <Tooltip label={S.files.discardChanges} placement="bottom" className="shrink-0">
           <button
             type="button"
-            aria-label={S.files.stopEditing}
-            onClick={stopEditing}
+            aria-label={S.files.discardChanges}
+            onClick={leaveEditor}
             disabled={saving}
             className={`${iconActionClass} disabled:opacity-40`}
           >
-            <CloseIcon size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.cross} size={ICON_SIZE.iconButton} />
           </button>
         </Tooltip>
+        {/* No shortcut in its hint: the save shortcut saves and stays, this one leaves. */}
         <Tooltip
-          label={
-            saving
-              ? S.common.saving
-              : `${S.common.save}${saveShortcut !== null ? ` (${saveShortcut})` : ""}`
-          }
+          label={saving ? S.common.saving : S.files.saveAndClose}
           placement="bottom"
           className="shrink-0"
         >
           <button
             type="button"
-            aria-label={S.common.save}
-            onClick={requestSave}
+            aria-label={S.files.saveAndClose}
+            onClick={() => requestSave(true)}
             disabled={saving}
             className={`${iconActionClass} disabled:opacity-40`}
           >
@@ -2465,7 +2483,7 @@ export function WorkspaceBrowser({
             initialScroll={editorOpening.current}
             hostRef={editorHost}
             onChange={updateDraft}
-            onSave={requestSave}
+            onSave={() => requestSave()}
             // The editor.save binding (⌘S / Ctrl+S by default), read from the keymap at the
             // keystroke so a rebinding in the settings takes effect without a remount.
             isSaveKey={(event) => isShortcut(event, keymap(), "editor.save", currentPlatform())}
@@ -2668,22 +2686,6 @@ export function WorkspaceBrowser({
             ))}
           </ul>
         </div>
-      </ConfirmModal>
-
-      {/* Save confirmation: the file in the Workspace is overwritten, like every server-side write. */}
-      <ConfirmModal
-        open={saveConfirm}
-        title={S.files.saveConfirmTitle}
-        tone="primary"
-        confirmLabel={S.common.save}
-        cancelLabel={S.common.cancel}
-        busy={saving}
-        onClose={() => setSaveConfirm(false)}
-        onConfirm={() => void save()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.files.saveConfirm(editor !== null ? baseName(editor.path) : "")}
-        </p>
       </ConfirmModal>
 
       {/* Rename or move: one field holding the whole Workspace-relative path, so a rename and a

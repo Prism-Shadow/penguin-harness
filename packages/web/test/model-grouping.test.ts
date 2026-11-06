@@ -105,6 +105,7 @@ describe("groupModelRows", () => {
       "anthropic",
       "siliconflow",
       "atlascloud",
+      "runcrate",
       "zhipu",
       "moonshot",
       "minimax",

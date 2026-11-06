@@ -87,6 +87,9 @@
     --wallpaper-selected-fill: color-mix(in srgb, var(--ui-fg) 8%, transparent);
     --wallpaper-well-fill: color-mix(in srgb, var(--ui-fg) 3%, transparent);
     --wallpaper-choice-fill: color-mix(in srgb, var(--ui-surface) 40%, transparent);
+    /* The code gutter has no fill (prose.css), so on the image its numbers take the secondary
+       ink rather than the theme's faint gutter grey, which a busy image washes out. */
+    --ui-code-gutter: var(--ui-fg-muted);
   }
   .ui-shell[data-wallpaper]
     [data-wallpaper-surface="panel"]:not([role="dialog"] *)

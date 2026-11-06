@@ -14,13 +14,15 @@
  * - Given the machine connected again, the history is read again on its own, once.
  * - Given a machine whose server is stopped (nothing is bringing it back), the transcript says
  *   so by its alias, and Go to Machines opens the Machines page.
- * - Given a conversation on this server, the read's own error is shown with a Retry.
+ * - Given a conversation on this server, the read's own error is shown with a Retry; when the read
+ *   failed on a defect (the server's converged 500), Report stands beside Retry, and not for an
+ *   expected failure (the network gone).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import { ADMIN_ME } from "./helpers/admin-settings";
-import { button, click, mount, settle, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, hasButton, mount, settle, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FetchRequest } from "./helpers/fetch";
 
@@ -127,7 +129,7 @@ async function fresh() {
 type Modules = Awaited<ReturnType<typeof fresh>>;
 
 /** The transcript on a chat route, beside the Machines page it can open. */
-async function open(modules: Modules, onRetry: () => void) {
+async function open(modules: Modules, onRetry: () => void, cause?: unknown) {
   const router = modules.router.createMemoryRouter(
     [
       {
@@ -136,6 +138,7 @@ async function open(modules: Modules, onRetry: () => void) {
           projectId: PROJECT,
           sessionId: SESSION,
           error: TRANSPORT_ERROR,
+          cause,
           onRetry,
         }),
       },
@@ -277,5 +280,17 @@ describe("a conversation's history that could not be read", () => {
     expect(document.querySelector("[data-retry-phase]")).toBeNull();
     await click(button(modules.en.common.retry));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<[string, unknown, boolean]>([
+    ["the server's converged 500", { name: "ApiError", status: 500, code: "internal" }, true],
+    ["the network gone", { name: "ApiError", status: 0, code: "network_error" }, false],
+  ])("for a read that failed on %s, offers Report beside Retry: %s", async (_, cause, offered) => {
+    server("waiting");
+    const modules = await fresh();
+    await open(modules, vi.fn(), cause);
+    await waitFor(() => visibleText().includes(modules.en.chat.historyLoadFailed));
+    expect(hasButton(modules.en.report.action)).toBe(offered);
+    expect(hasButton(modules.en.common.retry)).toBe(true);
   });
 });

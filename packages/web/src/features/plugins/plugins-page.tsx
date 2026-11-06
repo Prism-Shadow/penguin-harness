@@ -129,6 +129,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -404,7 +405,7 @@ export function PluginsPage() {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
     } catch (e) {
-      if (isCurrentVisit()) toastError(apiErrorText(e));
+      if (isCurrentVisit()) toastApiError(e);
     } finally {
       if (isCurrentVisit()) {
         setPendingSpecifier(null);
@@ -625,7 +626,7 @@ export function PluginsPage() {
       }
     } catch (e) {
       written();
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
     written();
@@ -650,7 +651,7 @@ export function PluginsPage() {
     );
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (!failed) toastSuccess(S.plugins.updatedToast(name, keys.length));
-    else toastError(apiErrorText(failed.reason));
+    else toastApiError(failed.reason);
     // The outdated marks and the nav badge are both read off `AgentSummary.pluginUpdates`,
     // which this page's install map does not feed: without reloading the Agent list the dot
     // would survive the very update it led the user to. Runs after a partial failure too —
@@ -701,7 +702,7 @@ export function PluginsPage() {
     try {
       await reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBulkRunning(false);
       setPendingBulk(null);

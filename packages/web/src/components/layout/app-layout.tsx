@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import {
   AppShell,
+  CrashBoundary,
   Drawer,
   ICONS,
   MobileTopBar,
@@ -307,6 +308,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 export function AppLayout() {
   const { currentProject } = useProject();
   const { user, desktopMode, sessionVia } = useAuth();
+  const { pathname } = useLocation();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
   // a parked draft id), qualified by its Project like the browser's, is a scope of its own,
@@ -495,7 +497,11 @@ export function AppLayout() {
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Outlet />
+        {/* A page that crashes says so here, with Reload and Report, and leaves the sidebar
+            working: going to another page gives the body another chance. */}
+        <CrashBoundary resetKey={pathname}>
+          <Outlet />
+        </CrashBoundary>
       </main>
       {/* The docks themselves render inside the chat page (features/dock); the xterm
           views live in this pool and are adopted into dock tab bodies by DOM handoff,

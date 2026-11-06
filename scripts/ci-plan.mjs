@@ -64,8 +64,12 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       reason = `Shared or unclassified input changed: ${file}`;
     }
     if (file.startsWith("plugins/")) {
-      // These tests enumerate the on-disk library, including plugins not imported by core.
-      for (const name of ["core", "docs", "landing"]) add(`${prefix}${name}`);
+      // These tests read the on-disk plugins, including ones no package imports: the server's
+      // suite reads the shipped library (its package is the library's host), core's runs the
+      // plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them,
+      // and the A2UI grammar's suite reads the a2ui Skill and its bundled checker.
+      for (const name of ["core", "server", "docs", "landing"]) add(`${prefix}${name}`);
+      add("@prismshadow/a2ui");
     }
     if (file === "packages/web/index.html") add(`${prefix}ui`);
   }
@@ -105,20 +109,38 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   // The web's tests run from source too, so a shard testing it builds only what it imports; its
   // bundle is built by browser-smoke, which runs whenever the web is affected. The other bundles
   // are built where they are tested: that is the only place a pull request builds them.
+  // The UI package is read from source by every package that imports it. Its build is the npm
+  // package and the Workbench runtime, and only the web's bundle copies the runtime in, so a build
+  // that does not bundle the web leaves the UI package out.
+  const ui = `${prefix}ui`;
+  const selections = new Map();
+  const withoutUnusedUi = (filters) => {
+    if (!byName.has(ui)) return filters;
+    const key = filters.join(",");
+    if (!selections.has(key)) {
+      selections.set(
+        key,
+        new Set(list(filters.flatMap((f) => ["--filter", f])).map((p) => p.name)),
+      );
+    }
+    const selected = selections.get(key);
+    return selected.has(ui) && !selected.has(`${prefix}web`) ? [...filters, `!${ui}`] : filters;
+  };
   const build = (names) => {
+    if (names.length === 0) return "";
     const builds = new Set(
       names.map((name) => (name === `${prefix}web` ? `${name}^...` : `${name}...`)),
     );
     if (names.includes(`${prefix}desktop`)) builds.add(`${prefix}web...`);
-    return [...builds].join(",");
+    return withoutUnusedUi([...builds]).join(",");
   };
   const typecheckBuild = (names) =>
     names.length === 0
       ? ""
-      : [
+      : withoutUnusedUi([
           ...names.map((name) => `${name}^...`),
           ...projects.filter((p) => isBundle(p.name)).map((p) => `!${p.name}`),
-        ].join(",");
+        ]).join(",");
   /** `split` ("1/2") runs half of every package's test files: vitest's `--shard`. */
   const testTask = (split) => (split ? `test --shard=${split}` : "test");
   const shard = (name, names, extra = {}) => ({
@@ -217,8 +239,8 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     typecheck: types.length > 0,
     typecheck_build: typecheckBuild(types),
     typecheck_command: types.length ? command(types, "typecheck") : "",
-    // A selected core suite already includes the README check.
-    readme: !has("core") && files.some(isCatalogReadme),
+    // A selected server suite already includes the README check (test/plugin-library.test.ts).
+    readme: !has("server") && files.some(isCatalogReadme),
     plugins: full || files.some((file) => file.startsWith("plugins/") && !isCatalogReadme(file)),
     packaging:
       full ||
@@ -227,7 +249,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
           /^(packages|plugins)\/[^/]+\/(package\.json|tsup\.config\.[^/]+|vite\.config\.[^/]+)$/.test(
             file,
           ) ||
-          /^(packages\/core\/src\/index\.ts|packages\/server\/src\/plugin\/|packages\/(core|server|cli)\/test\/(build-info|version|deploy-same-build|plugin-registry)\.test\.ts)/.test(
+          /^(packages\/core\/src\/index\.ts|packages\/server\/src\/plugin\/|packages\/ui\/scripts\/|packages\/(core|server|cli)\/test\/(build-info|version|deploy-same-build|plugin-registry)\.test\.ts)/.test(
             file,
           ),
       ),

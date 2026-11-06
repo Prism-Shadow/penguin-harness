@@ -359,6 +359,10 @@ export interface ModelSwitchOrigin {
  * pair. The earlier history is deliberately NOT injected — some models require thinking
  * payloads and provider `fidelity` byte-for-byte when history is replayed, which cannot cross
  * models — so the model reads the Trace file itself when it needs the context.
+ *
+ * An in-session switch that could not summarize (core's Trace handoff) opens its next context
+ * with this same block, word for word: there `session` names the Session itself, which is how a
+ * reader tells the two apart (see `parseInPlaceModelSwitch`).
  */
 export function buildModelSwitchMessage(origin: ModelSwitchOrigin): string {
   const title = origin.sessionTitle ? ` (${origin.sessionTitle})` : "";
@@ -370,7 +374,7 @@ export function buildModelSwitchMessage(origin: ModelSwitchOrigin): string {
   return markerBlock(
     MARKER_TAGS.modelSwitchFrom,
     [
-      "The user switched models: this conversation continues an earlier conversation, now on a different model. Its origin is listed below and the user's message, if any, follows. The earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results).",
+      "The user switched models: you continue the conversation listed below, now on a different model. Its earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results). Earlier trace files of that conversation, if any, have the same name with a lower number, in the same or an earlier date folder. The user's message, if any, follows.",
       ...lines,
     ].join("\n"),
   );
@@ -400,6 +404,21 @@ export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null 
     else origin.prevProvider = value;
   }
   return origin.sessionId ? origin : null;
+}
+
+/**
+ * The origin of an in-session model switch's Trace handoff (see `buildModelSwitchMessage`)
+ * when `text` is one, for the Session `sessionId`: a whole `[model_switch_from]` block naming
+ * that Session itself. A `/model` new conversation's block names the Session it
+ * came from instead, so it is null here. Render and outline layers read the handoff as part of
+ * the switch rather than as a Prompt.
+ */
+export function parseInPlaceModelSwitch(
+  text: string,
+  sessionId: string | undefined,
+): ModelSwitchOrigin | null {
+  const origin = sessionId === undefined ? null : parseModelSwitchMessage(text);
+  return origin !== null && origin.sessionId === sessionId ? origin : null;
 }
 
 // ---------------------------------------------------------------------------

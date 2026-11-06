@@ -16,6 +16,8 @@
  *   to overwrite, and exports byte-identically.
  * - Too many archive entries are refused without installing any files.
  * - Oversized declared entries or totals are refused before inflation, without installing files.
+ * - A directory entry is never inflated: a 262 KB zip whose directory entry holds 256 MB of
+ *   zeros installs its files without that memory ever being taken.
  * - The Agent list's pluginUpdates names a Skill once the library moves past it (the legacy
  *   version spelling reading as the same version), never one the library does not carry, and
  *   never a directory with no readable SKILL.md.
@@ -45,7 +47,9 @@ import type {
   ProjectCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { contentTable } from "./plugin-fixtures.js";
 import type { TestApp } from "./helpers.js";
+import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
 
 describe("skills api", () => {
   let t: TestApp;
@@ -621,6 +625,27 @@ describe("skills api", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("archive: a directory entry is never inflated: 256 MB of zeros in it cost no memory", async () => {
+    await createPlainAgent("zip_dir_bomb_agent");
+    const url = `${base("zip_dir_bomb_agent")}/archive`;
+    const zip = zeroDirectoryZip(
+      { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) },
+      "zip-skill/pad/",
+      256,
+    );
+    expect(zip.byteLength).toBeLessThan(300 * 1024);
+    const dataBase64 = Buffer.from(zip).toString("base64");
+    let status = 0;
+    const growth = await peakRssGrowth(async () => {
+      status = (await owner.post(url, { dataBase64 })).status;
+    });
+    expect(status).toBe(201);
+    // Inflating the entry takes all 256 MB at once, however soon they are dropped again.
+    expect(growth).toBeLessThan(128 * 1024 * 1024);
+    const dir = path.join(skillsDir(t.root, projectId, "zip_dir_bomb_agent"), "zip-skill");
+    expect(await fs.readdir(dir)).toEqual(["SKILL.md"]);
+  });
+
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {
     await createPlainAgent("zip_over_agent");
     const url = `${base("zip_over_agent")}/archive`;
@@ -805,7 +830,7 @@ describe("skills api", () => {
    *
    * - Right after the upgrade, an Agent whose copy the previous release wrote — every part
    *   stamped with the plugin's one date version — is current: nothing is offered.
-   * - A newer version of one skill, or of the hook package (`penguin.hooks.version`), is an
+   * - A newer version of one skill, or of the hook package (its hooks contribution's `version`), is an
    *   update for that plugin, named once; a new npm version alone is not. Reinstalling clears it.
    * - The org runtime's per-plugin answer pairs the part that is behind with its library side.
    * - The listing shows the npm version beside each part's dated version.
@@ -820,17 +845,25 @@ describe("skills api", () => {
     };
     const skillMd = (name: string, version: string) =>
       `---\nname: ${name}\ndescription: Do ${name}.\nversion: ${version}\n---\n\n## Before you start\n`;
-    /** The sample plugin's package.json: its npm version and its hook package's dated version. */
-    const manifest = (version: string, hooksVersion: string) =>
-      JSON.stringify({
-        name: "@penguinharness/sample",
-        version,
-        description: "A sample plugin.",
-        penguin: {
-          category: "office-productivity",
+    /** The sample plugin's package.json (its npm version) and its table (its hook package's dated version). */
+    const declare = async (version: string, hooksVersion: string) => {
+      await write(
+        "package.json",
+        JSON.stringify({
+          name: "@penguinharness/sample",
+          version,
+          description: "A sample plugin.",
+        }),
+      );
+      await write(
+        "ifaces.json",
+        contentTable("@penguinharness/sample", {
+          card: { category: "office-productivity" },
+          skills: ["one", "two"],
           hooks: { version: hooksVersion, stop: [{ command: "stop.mjs" }] },
-        },
-      });
+        }),
+      );
+    };
     const updatesOf = async (agentId: string) =>
       (
         (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as AgentsResponse
@@ -842,7 +875,7 @@ describe("skills api", () => {
         path.join(host, "package.json"),
         JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
       );
-      await write("package.json", manifest("1.0.0", "2026.10.04.1"));
+      await declare("1.0.0", "2026.10.04.1");
       await write("skills/one/SKILL.md", skillMd("one", "2026.10.04.1"));
       await write("skills/two/SKILL.md", skillMd("two", "2026.10.04.1"));
       await write("hooks/stop.mjs", "export {};\n");
@@ -871,10 +904,10 @@ describe("skills api", () => {
     it("names the plugin when its hook package moves on, and never for a new npm version alone", async () => {
       await createPlainAgent("parts_hook");
       expect((await owner.post(plugins("parts_hook"), { names: ["sample"] })).status).toBe(201);
-      await write("package.json", manifest("2.0.0", "2026.10.04.1"));
+      await declare("2.0.0", "2026.10.04.1");
       expect(await updatesOf("parts_hook")).toEqual([]);
 
-      await write("package.json", manifest("2.0.0", "2026.10.09.2"));
+      await declare("2.0.0", "2026.10.09.2");
       expect(await updatesOf("parts_hook")).toEqual([{ name: "sample", version: "2026.10.09.2" }]);
       const hooksJson = JSON.parse(
         await fs.readFile(

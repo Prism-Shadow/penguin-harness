@@ -24,7 +24,7 @@
  */
 import { useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import { Button, toastError, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
+import { Button, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -44,6 +44,7 @@ import {
 import type { Draft } from "./plugin-config-draft";
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** A card's draft: each member entry's typed fields, and the secrets the next Save clears. */
 export interface CardDraft {
@@ -225,7 +226,7 @@ export function PluginCard({
       dispatchPluginConfigSaved({ group: entry.name, card: card.name });
       if (next && name === entry.configuration.switch) onSwitchedOn(stored ?? entry);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setFlipping((prev) => {
         const rest = { ...prev };
@@ -263,7 +264,7 @@ export function PluginCard({
               ? /^"([^"]+)"/.exec(e.message)?.[1]
               : undefined;
           if (named !== undefined) setRefused({ [keyOf(entry.name, named)]: apiErrorText(e) });
-          else toastError(apiErrorText(e));
+          else toastApiError(e);
           // What did land is stored now; the rest of the draft stays, still unsaved.
           if (saved.length > 0) form.setDraft((prev) => withSaved(prev, saved));
           return;

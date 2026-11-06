@@ -955,7 +955,8 @@
 /* ---- Phone width: one column, the section's list in the drawer, nothing sideways -------- */
 
 /* The drawer only exists while open, under the navbar and over the gallery's bar: the site's links
-   (their own `md:hidden`) and the section's list. At desktop widths it is never shown. */
+   (shown up to 1023px, where the navbar's link row takes over) and, up to 900px, the section's
+   list, which beyond that sits in its side column. At desktop widths it is never shown. */
 .g-drawer {
   display: none;
 }
@@ -973,7 +974,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .g-drawer {
     display: block;
     position: fixed;
@@ -988,6 +989,15 @@
   .g-drawer .g-nav-group {
     margin-top: 16px;
   }
+}
+
+@media (min-width: 901px) {
+  .g-drawer-list {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
   .g-body,
   .g-site[data-nav] .g-body,
   .g-site[data-nav][data-toc] .g-body,

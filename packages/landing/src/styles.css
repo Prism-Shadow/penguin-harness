@@ -1,8 +1,9 @@
 /**
  * Landing page styles: a Tailwind CSS 4 entry over the public sites' shared page base
  * (site-page.css) and components and article prose (site.css), both from
- * @prismshadow/penguin-ui, plus what is the landing page's own — section anchors, the scroll
- * reveal, the hero, the ambient backdrop and the home page's animations. GitHub-style
+ * @prismshadow/penguin-ui, plus what is the landing page's own — section anchors, the hero, the
+ * ambient backdrop and the home page's animations. Sections hold still while the page scrolls:
+ * motion is kept for content that shows something moving. GitHub-style
  * simplicity: solid backgrounds, 1px borders, one brand blue accent. Dark theme is toggled via
  * the html.dark class.
  */
@@ -22,19 +23,6 @@
   .section-anchor {
     scroll-margin-top: 5.5rem;
   }
-}
-
-/* Scroll reveal: sections start slightly offset and settle in when they enter the viewport. */
-.reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 500ms cubic-bezier(0.2, 0.7, 0.3, 1),
-    transform 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
-}
-.reveal-visible {
-  opacity: 1;
-  transform: none;
 }
 
 /* Hero backdrop: a faint dot grid fading out downwards — subtle, no gradients on content. */
@@ -185,7 +173,9 @@
    Viewport-FIXED (the page background stays put while content scrolls over it) with a
    uniform page background behind every section, so nothing jumps at section boundaries.
    Each glow wanders freely across the whole screen on its own slow route (vw/vh
-   amplitudes), soft and blue-family only (enterprise tone; hue drift stays within blues). Reduced-motion freezes them in place. */
+   amplitudes), soft and blue-family only. Only `transform` moves: the blur is drawn once and the
+   compositor slides it, where an animated filter would repaint four large blurred layers on
+   every frame. Reduced-motion freezes them in place. */
 .neon-bg {
   position: fixed;
   inset: 0;
@@ -199,9 +189,8 @@
   height: 48rem;
   border-radius: 9999px;
   opacity: 0.12;
-  will-change: transform, filter;
+  will-change: transform;
   filter: blur(88px);
-  animation: neon-hue 44s linear infinite alternate;
 }
 .dark .neon-blob {
   opacity: 0.16;
@@ -210,33 +199,25 @@
   top: -12rem;
   left: -10rem;
   background: radial-gradient(circle, #4285f4 0%, transparent 66%);
-  animation:
-    neon-wander-a 44s ease-in-out infinite,
-    neon-hue 46s linear infinite alternate;
+  animation: neon-wander-a 44s ease-in-out infinite;
 }
 .neon-blob-b {
   top: 8%;
   right: -12rem;
   background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
-  animation:
-    neon-wander-b 56s ease-in-out infinite,
-    neon-hue 52s linear infinite alternate -16s;
+  animation: neon-wander-b 56s ease-in-out infinite;
 }
 .neon-blob-c {
   bottom: -14rem;
   left: 18%;
   background: radial-gradient(circle, #06b6d4 0%, transparent 66%);
-  animation:
-    neon-wander-c 50s ease-in-out infinite,
-    neon-hue 58s linear infinite alternate -30s;
+  animation: neon-wander-c 50s ease-in-out infinite;
 }
 .neon-blob-d {
   top: 42%;
   left: -14rem;
   background: radial-gradient(circle, #2563eb 0%, transparent 66%);
-  animation:
-    neon-wander-d 62s ease-in-out infinite,
-    neon-hue 48s linear infinite alternate -22s;
+  animation: neon-wander-d 62s ease-in-out infinite;
 }
 @keyframes neon-wander-a {
   0%,
@@ -298,14 +279,6 @@
     transform: translate3d(28vw, 24vh, 0) scale(1.08);
   }
 }
-@keyframes neon-hue {
-  from {
-    filter: blur(88px) hue-rotate(-8deg);
-  }
-  to {
-    filter: blur(88px) hue-rotate(12deg);
-  }
-}
 
 /* ---------- Trend-line growth: draw from zero rightwards, hold, fade, loop ----------
    Paths must set pathLength=1; the dot pops in once the line has fully grown. */
@@ -352,13 +325,24 @@
   }
 }
 
+/* Hub detail pages: the panels rise in one after another when the page opens (never on
+   scroll); site-page.css's reduced-motion rule stops it. */
+.hub-stagger > * {
+  animation: rise-in 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.hub-stagger > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.hub-stagger > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.hub-stagger > :nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+
 /* Reduced motion (site-page.css stops every animation and transition): the states those leave
    behind are restored here. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
   /* With animations disabled the trend lines' base state is hidden; restore them fully drawn. */
   .anim-line-draw {
     stroke-dashoffset: 0;
@@ -437,14 +421,6 @@ html.dark .amsp-code .shiki span {
   }
 }
 
-/* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
-@media print {
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 /* ---------- Drawn blog figures: inline SVG in a post's Markdown ----------
    A drawn figure is one <figure class="post-figure"> holding an <svg class="fig-svg">, a visually
    hidden <ol class="fig-steps"> that says the same thing as text, and a <figcaption>. Every mark
@@ -508,7 +484,7 @@ html.dark .post-figure figcaption {
 }
 .fig-svg .fig-note,
 .fig-svg .fig-tick {
-  font-size: 11.5px;
+  font-size: 12px;
   fill: var(--site-gray-500);
 }
 .fig-svg .fig-num {

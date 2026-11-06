@@ -1,7 +1,9 @@
 /**
  * The toasts (src/components/overlays/toaster/toaster.tsx): the store the `toast*` functions write
  * to and how long each kind stays, and the stack as it is drawn — a polite live region named in
- * the interface's words, each toast a notice-strip button on an opaque backing.
+ * the interface's words, each toast a notice-strip button on an opaque backing. An error toast
+ * that carries a problem report holds two presses — its words, which dismiss it, and
+ * 「[报告问题]」, which opens the report — and stays longer, so the second can be reached.
  *
  * The portal itself needs a document, which this suite has not; `ToastStack` is what `Toaster`
  * portals, so the markup is asserted on it.
@@ -18,6 +20,7 @@ import {
   toastSuccess,
 } from "../src/components/overlays/toaster/toaster";
 import type { ToastItem } from "../src/components/overlays/toaster/toaster";
+import type { ErrorReport } from "../src/components/report/error-report";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
@@ -68,7 +71,22 @@ describe("the toast store", () => {
     expect(items().map((t) => t.kind)).toEqual(["attention", "error"]);
     expect(items().every((t) => t.leaving)).toBe(true);
   });
+
+  it("keeps an error toast that offers a report for 10 s, so its Report can be reached", () => {
+    toastError("Internal server error", { report: () => REPORT });
+    vi.advanceTimersByTime(6000);
+    expect(items()[0]?.leaving).toBeUndefined();
+    vi.advanceTimersByTime(4000);
+    expect(items()[0]?.leaving).toBe(true);
+  });
 });
+
+const REPORT: ErrorReport = {
+  heading: "PenguinHarness error report",
+  title: "Unexpected error",
+  intro: "An unexpected error happened.",
+  facts: [],
+};
 
 const STACK: ToastItem[] = [
   { id: 1, kind: "success", text: "Saved" },
@@ -130,6 +148,24 @@ describe("ToastStack", () => {
     expect(zh).toContain('hidden="">关闭</span>');
     expect(zh).not.toContain("Notifications");
     expect(zh).not.toContain("Dismiss");
+  });
+});
+
+describe("an error toast that carries a report", () => {
+  const html = stack([{ id: 1, kind: "error", text: "Internal server error", report: REPORT }]);
+
+  it("dismisses by its words and offers Report beside them, two presses side by side", () => {
+    const buttons = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)];
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]![1]).toContain('<span data-slot="body">Internal server error</span>');
+    expect(buttons[1]![0]).toContain('aria-label="Report"');
+    expect(html).toMatch(/<div [^>]*data-tone="danger"/);
+  });
+
+  it("is a plain dismissing button, as it always was, without a report", () => {
+    const plain = stack([{ id: 1, kind: "error", text: "No access to this Project" }]);
+    expect(plain.match(/<button\b/g)).toHaveLength(1);
+    expect(plain).not.toContain('aria-label="Report"');
   });
 });
 

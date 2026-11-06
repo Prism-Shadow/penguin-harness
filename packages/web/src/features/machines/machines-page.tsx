@@ -48,7 +48,6 @@ import {
   PageFrame,
   PageHeader,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -74,6 +73,7 @@ import { MachineCard } from "./machine-card";
 import { MachineDetailDialog } from "./machine-detail-dialog";
 import type { MachineVerb } from "./machine-detail-dialog";
 import { programDirOf } from "./machine-detail-view";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */
 const FALLBACK_POLL_MS = 5_000;
@@ -337,7 +337,7 @@ export function MachinesPage() {
     try {
       setHostForm(await api.getSshHost(projectId, alias));
     } catch (err) {
-      toastError(apiErrorText(err));
+      toastApiError(err);
     }
   };
   /**

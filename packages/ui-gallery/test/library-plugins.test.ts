@@ -3,7 +3,7 @@
  * mock library, and the start page counts its `rsi` group as the self-evolution algorithms, so:
  *
  * - Given the plugins directory, when the demo library is built, then its `rsi` group holds
- *   exactly the plugins whose package.json files them under `rsi`, titled as core titles the
+ *   exactly the plugins whose card files them under `rsi`, titled as core titles the
  *   category, and each plugin carries its Skills as their SKILL.md files name, describe and
  *   version them.
  * - Given Agent Evaluation, which every toolkit measures through, then it sits under its own
@@ -13,20 +13,22 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PLUGIN_CATEGORIES } from "@prismshadow/penguin-core";
+import { PLUGIN_CATEGORIES, readLibraryPackage } from "@prismshadow/penguin-core";
+import { parseFrontmatter } from "@prismshadow/skills";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { IDS } from "../src/app/mock/ids";
 
 const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 
+/** The category a plugin's card names, read from its built ifaces.json as the library reads it. */
 const categoryOf = (plugin: string): string | undefined =>
-  (
-    JSON.parse(readFileSync(join(pluginsRoot, plugin, "package.json"), "utf8")) as {
-      penguin?: { category?: string };
-    }
-  ).penguin?.category;
+  readLibraryPackage(join(pluginsRoot, plugin)).category;
 
-/** A plugin's Skills as their SKILL.md frontmatter has them, by name. */
+/**
+ * A plugin's Skills as their SKILL.md frontmatter has them, by name, read as YAML by the
+ * repository's SKILL.md parser (`parseFrontmatter`, vendored from vercel-labs/skills); a shipped
+ * SKILL.md that is not valid YAML fails the test.
+ */
 function shippedSkills(
   plugin: string,
 ): Array<{ name: string; description: string; version: string }> {
@@ -35,9 +37,11 @@ function shippedSkills(
     .filter((name) => existsSync(join(dir, name, "SKILL.md")))
     .sort()
     .map((name) => {
-      const head =
-        /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, name, "SKILL.md"), "utf8"))?.[1] ?? "";
-      const field = (key: string) => new RegExp(`^${key}: (.*)$`, "m").exec(head)?.[1] ?? "";
+      const { data } = parseFrontmatter(readFileSync(join(dir, name, "SKILL.md"), "utf8"));
+      const field = (key: string) => {
+        const value = data[key];
+        return typeof value === "string" ? value : "";
+      };
       return { name: field("name"), description: field("description"), version: field("version") };
     });
 }
