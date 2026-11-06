@@ -14,5 +14,5 @@ Added a Chinese experiment blog post and its English draft comparing PenguinHarn
 - Added ten diagrams and four interface screenshots covering experiment design, reproduction, execution, statistics, scores, task stability and resource use.
 - Added the article to the practice-post index and synchronized the figures with the reviewed source assets.
 - Updated the Chinese article from Feishu revision 279 and corrected the Sec E command paths and task link against the pinned benchmark snapshot.
-- Synchronized the Chinese manuscript, captions, selected figures from Feishu revision 556 while retaining the selected article title.
+- Synchronized the Chinese manuscript, captions, selected figures from Feishu revision 577 while retaining the selected article title.
 - Set the Chinese and English article bylines to Zhihao Liu (Prism Shadow AI).
