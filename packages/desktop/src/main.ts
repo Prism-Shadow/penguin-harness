@@ -85,6 +85,7 @@ import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { openAppWindow, parseOpenWindowRequest } from "./app-window.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
@@ -297,21 +298,8 @@ function createWindow(url: string): void {
   win.on("closed", () => {
     win = null;
   });
-  // The page refused to unload: the Web App holds unsaved edits and asked through its
-  // beforeunload listener. Electron draws nothing for that and simply cancels the close, so the
-  // shell asks in the page's place — over the window, shown first, since a Quit from the tray
-  // may find it hidden — and lets the page go only on "discard" (see unload-prompt.ts).
-  const host = win;
-  host.webContents.on("will-prevent-unload", (event) => {
-    if (host.isDestroyed()) return;
-    host.show();
-    const answer = afterUnloadAnswer(
-      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
-      quitting,
-    );
-    quitting = answer.quitting;
-    if (answer.unload) event.preventDefault();
-  });
+  // Unsaved edits ask before the window goes (see armUnloadPrompt).
+  armUnloadPrompt(win);
   // New windows, from this window and from every window it opens, go through one rule
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
@@ -465,6 +453,28 @@ function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void 
       event.preventDefault();
       openInSystem(target);
     }
+  });
+}
+
+/**
+ * Unsaved edits ask before the window goes: the Web App holds a `beforeunload` listener for
+ * exactly as long as a form is dirty, and Electron draws nothing for that — without an answer
+ * here it cancels the close silently. The shell asks in the page's place, over the window
+ * (shown first, since a Quit from the tray may find it hidden), and lets the page go only on
+ * "discard" (see unload-prompt.ts). The main window and every window of the full App — New
+ * Window opens one — arm this; a preview or terminal window hosts no editor, so nothing there
+ * ever asks.
+ */
+function armUnloadPrompt(host: BrowserWindow): void {
+  host.webContents.on("will-prevent-unload", (event) => {
+    if (host.isDestroyed()) return;
+    host.show();
+    const answer = afterUnloadAnswer(
+      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
+      quitting,
+    );
+    quitting = answer.quitting;
+    if (answer.unload) event.preventDefault();
   });
 }
 
@@ -673,6 +683,23 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
     if (handleFolderAccessFrame(message, folderAccess)) return;
+    if (parseOpenWindowRequest(message)) {
+      const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
+      openAppWindow({
+        origin: appOrigin,
+        iconPath,
+        create: (options) => new BrowserWindow(options),
+        guard: (child) => {
+          guardOpenedWindow(child, iconPath);
+          // A window of the full App can hold unsaved edits like the main one can: answer the
+          // page's refusal the same way instead of letting Electron cancel the close silently.
+          armUnloadPrompt(child);
+        },
+        load: (child, url) => child.loadURL(url),
+        log: logLine,
+      });
+      return;
+    }
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);

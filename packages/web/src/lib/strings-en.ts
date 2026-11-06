@@ -1005,6 +1005,7 @@ export const en: Strings = {
     checkingUpdates: "Checking for updates…",
     openDevTools: "Open DevTools",
     projectOnGitHub: "Project on GitHub",
+    newWindow: "New Window",
   },
   modelPicker: {
     groups: "Model groups",

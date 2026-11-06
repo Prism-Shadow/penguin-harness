@@ -1,15 +1,15 @@
 /**
  * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
  * /api/desktop/update, the tray-icon preference at /api/desktop/tray, the Privacy & Security
- * pane at /api/desktop/privacy-settings, plus the shared desktop-mode guard that turns off
- * multi-user surfaces (see rejectInDesktopMode).
+ * pane at /api/desktop/privacy-settings, a second window at /api/desktop/window, plus the
+ * shared desktop-mode guard that turns off multi-user surfaces (see rejectInDesktopMode).
  *
  * Platform code, all of it: what the shell's window may ask of the shell is policy. The
  * shutdown route is authenticated by the shell's Bearer token, not the cookie session (the
  * shell holds no cookie), so its group is unauthenticated and checks the token itself; it
  * answers 202 first, then triggers the graceful shutdown a beat later so the response is not
- * cut off by the closing listener. The update, tray and privacy-settings routes are called by
- * the page, so their groups sit behind the cookie gate and are further restricted to the
+ * cut off by the closing listener. The update, tray, privacy-settings and window routes are
+ * called by the page, so their groups sit behind the cookie gate and are further restricted to the
  * shell's own window.
  */
 import { Hono } from "hono";
@@ -200,6 +200,33 @@ export function desktopPrivacySettingsRoutes(deps: DesktopRouteDeps): Hono<AppEn
   return app;
 }
 
+/**
+ * Opens another window of the desktop app on the App, for the command palette's New Window.
+ * The page cannot open one itself: the shell refuses a window-open request for the App from
+ * any page, because it cannot tell the App's own frame from the Agent-written HTML the Files
+ * panel previews. So the request comes here, where the session is what is checked, and the
+ * shell opens the window. It sends nothing back, so the answer is an acknowledgement; a shell
+ * older than this route ignores the frame, and nothing opens. Like the relays above, the
+ * member is optional on a layer older than the route.
+ */
+export function desktopWindowRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", (c) => {
+    const desktop = shellSessionOf(
+      deps,
+      c,
+      "A window of the desktop app is opened from the desktop app's own window.",
+    );
+    if (!desktop.requestOpenWindow?.()) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
+
+  return app;
+}
+
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -262,5 +289,20 @@ export class DesktopPrivacySettingsRoutes {
   @Bind("DesktopPrivacySettingsRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopPrivacySettingsRoutes({ desktop: this.desktop.current() });
+  }
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      { id: "DesktopWindowRoutes.routes", prefix: "/api/desktop/window", auth: "user", order: 10 },
+    ],
+  },
+})
+export class DesktopWindowRoutes {
+  @Use() private readonly desktop!: Desktop;
+  @Bind("DesktopWindowRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = desktopWindowRoutes({ desktop: this.desktop.current() });
   }
 }
