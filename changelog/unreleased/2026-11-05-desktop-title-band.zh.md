@@ -3,6 +3,7 @@
 - **Date:** 2026-11-05
 - **Type:** feature
 - **Scope:** `desktop`, `ui`, `web`
+- **PR:** [#1501](https://github.com/Prism-Shadow/penguin-harness/pull/1501)
 
 [English](2026-11-05-desktop-title-band.md)
 
