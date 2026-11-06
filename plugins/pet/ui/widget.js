@@ -326,10 +326,14 @@ function renderShop() {
     el.addEventListener("click", () => void buy(n));
     shopBuy.appendChild(el);
   }
+  // The starter bowl is worth explaining until real usage has been credited.
+  document.getElementById("shop-gift").hidden = !(gift && mined === 0);
   shopHint.textContent =
-    coins < 1
-      ? "每用掉 1M tokens 攒 1 币，聊几句就涨"
-      : "双击她投喂 1 份（饱食度 +20）";
+    food < 1
+      ? "买好后双击她投喂，1 份 = 饱食度 +20"
+      : coins < 1
+        ? "每用掉 1M tokens 攒 1 币，聊几句就涨"
+        : "双击她投喂 1 份（饱食度 +20）";
 }
 
 /** Puts a panel beside a document point, kept inside the window. */
