@@ -17,6 +17,8 @@ import {
   nextUpdateStatus,
   parseUpdaterCommand,
   updaterStatusMessage,
+  hostCommandsMessage,
+  parseHostCommand,
 } from "../src/updater-status.js";
 import type { UpdaterEvent } from "../src/updater-status.js";
 
@@ -211,5 +213,33 @@ describe("port frames", () => {
     ]) {
       expect(parseUpdaterCommand(data)).toBeNull();
     }
+  });
+});
+
+describe("host commands on the port", () => {
+  it("frames what the host offers, and reads back only a well-formed ask", () => {
+    // The words travel with the command: the page renders what it is given, so a shell can
+    // offer something the page it serves has never heard of.
+    expect(hostCommandsMessage(["install-cli", "open-devtools"])).toEqual({
+      type: "host-commands",
+      commands: [
+        {
+          command: "install-cli",
+          label: "Install 'penguin' command…",
+          labelZh: "安装 penguin 命令…",
+        },
+        { command: "open-devtools", label: "Open DevTools", labelZh: "打开开发者工具" },
+      ],
+    });
+    expect(parseHostCommand({ type: "host-command", command: "install-cli" })).toBe("install-cli");
+    expect(parseHostCommand({ type: "host-command", command: "check-updates" })).toBe(
+      "check-updates",
+    );
+    expect(parseHostCommand({ type: "host-command", command: "open-devtools" })).toBe(
+      "open-devtools",
+    );
+    expect(parseHostCommand({ type: "host-command", command: "format-disk" })).toBeNull();
+    expect(parseHostCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
+    expect(parseHostCommand(null)).toBeNull();
   });
 });

@@ -3,11 +3,12 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `docs`
+- **PR:** [#1456](https://github.com/Prism-Shadow/penguin-harness/pull/1456)
 - **Issue:** [#1451](https://github.com/Prism-Shadow/penguin-harness/issues/1451)
 
 [English](2026-11-04-copy-an-agent.md)
 
-现在可以一步复制一个 Agent，不用先导出快照、再用快照新建 Agent。一个用途是用同一个 baseline 分别跑几种自进化方法。副本建在同一台服务器或机器上，从原 Agent 当前的 Agent State 开始：配置、提示词、Skill、钩子、记忆、定时任务、描述和版本号。副本不包括密钥保险柜、会话、Trace 和 API 密钥，被复制的 Agent 也不会被写入任何东西，连快照都不会生成。
+现在可以一步复制一个 Agent，不用先导出快照、再用快照新建 Agent。一个用途是用同一个 baseline 分别跑几种自进化方法。副本建在同一台服务器或机器上，从原 Agent 当前的 Agent State 开始：配置、提示词、Skill、钩子、记忆、定时任务、工作台、描述和版本号。副本不包括密钥保险柜、会话、Trace、API 密钥和工作台的版本历史，被复制的 Agent 也不会被写入任何东西，连快照都不会生成。
 
 ## 入口
 

@@ -5,6 +5,8 @@
  *   files, name, description and version — and none of its vault, Sessions or API exposure.
  * - The copy is of the State as it is now, not of a stored snapshot of the same version, and
  *   nothing is written to the source: its snapshots/ and its files stay as they were.
+ * - A workbench's source is copied; its build output, packages and staging leftovers are left
+ *   out as a snapshot leaves them, and its history, which sits beside the State, stays behind.
  * - Explicit name and description win over the source's.
  * - `copyFrom` excludes a snapshot package (400 `copy_with_snapshot`) and seeding (400
  *   `copy_with_plugins`); a source that does not exist is 404 `agent_not_found` and a taken id
@@ -13,14 +15,16 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import * as tar from "tar";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentsResponse,
   ProjectCreateResponse,
   VaultResponse,
 } from "../src/api/types.js";
+import { AgentStateRepo, agentStateRepoDir } from "../src/workbenches/repo.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -131,6 +135,71 @@ describe("copying an agent", () => {
     );
     // The copy starts with no snapshots of its own, as a package seed does.
     await expect(fs.access(snapshotsDir(t.root, projectId, "fresh_copy"))).rejects.toThrow();
+  });
+
+  it("copies a workbench's source, without its build output, packages, staging leftovers or history", async () => {
+    const state = agentStateDir(t.root, projectId, "default_agent");
+    const demo = path.join(state, "workbenches", "demo");
+    const files = { "package.json": '{"name":"demo"}', "index.ts": "export default {};" };
+    await fs.mkdir(demo, { recursive: true });
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.writeFile(path.join(demo, rel), text);
+    }
+    const repoOf = (agentId: string) =>
+      new AgentStateRepo({
+        gitdir: agentStateRepoDir(agentDir(t.root, projectId, agentId)),
+        now: () => new Date(),
+        log: () => {},
+      });
+    const { commit } = await repoOf("default_agent").commitPath(
+      "workbenches/demo",
+      Object.entries(files).map(([rel, text]) => ({ rel, body: Buffer.from(text) })),
+      "workbench demo @1",
+    );
+    for (const rel of [
+      ".build/0123abcd/index.js",
+      "node_modules/dep/index.js",
+      ".restore.penguin-tmpab12cd/0",
+    ]) {
+      await fs.mkdir(path.dirname(path.join(demo, rel)), { recursive: true });
+      await fs.writeFile(path.join(demo, rel), "{}");
+    }
+
+    // The package a copy starts from holds none of that: build output and packages are never
+    // read into memory, whatever the import would drop on its own.
+    const archive = await t.deps.snapshots.packState(projectId, "default_agent");
+    const packed: string[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const list = tar.t({ onReadEntry: (entry) => void packed.push(entry.path) });
+      list.on("end", resolve).on("error", reject);
+      list.end(archive);
+    });
+    expect(
+      packed.filter((e) => /(^|\/)(\.build|node_modules)(\/|$)|\.penguin-tmp/.test(e)),
+    ).toEqual([]);
+    expect(packed).toEqual(
+      expect.arrayContaining([
+        "agent_state/workbenches/demo/index.ts",
+        "agent_state/workbenches/demo/package.json",
+      ]),
+    );
+
+    expect(
+      (await owner.post(agents, { agentId: "bench_copy", copyFrom: "default_agent" })).status,
+    ).toBe(201);
+    const copied = path.join(agentStateDir(t.root, projectId, "bench_copy"), "workbenches", "demo");
+    expect((await fs.readdir(copied)).sort()).toEqual(["index.ts", "package.json"]);
+    await expect(fs.readFile(path.join(copied, "index.ts"), "utf8")).resolves.toBe(
+      files["index.ts"],
+    );
+    // The history sits beside the State: the source keeps its version, the copy has none of it.
+    expect(
+      (await repoOf("default_agent").history("workbenches/demo")).map((v) => v.commit),
+    ).toEqual([commit.slice(0, 12)]);
+    const copyHistory = await repoOf("bench_copy")
+      .history("workbenches/demo")
+      .catch(() => []);
+    expect(copyHistory.map((v) => v.commit)).not.toContain(commit.slice(0, 12));
   });
 
   it("takes an explicit name and description over the source's", async () => {

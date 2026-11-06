@@ -3,11 +3,12 @@
 - **Date:** 2026-11-04
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `docs`
+- **PR:** [#1456](https://github.com/Prism-Shadow/penguin-harness/pull/1456)
 - **Issue:** [#1451](https://github.com/Prism-Shadow/penguin-harness/issues/1451)
 
 [中文版](2026-11-04-copy-an-agent.zh.md)
 
-An agent can now be copied in one step, without exporting a snapshot and creating a new agent from it. Running the same baseline under several self-evolution methods is one use. The copy starts from the agent's current Agent State, on the same server or machine: its configuration, prompt, Skills, hooks, memory, schedules, description and version. It gets none of the vault, Sessions, Traces or API keys, and nothing is written to the agent being copied, not even a snapshot.
+An agent can now be copied in one step, without exporting a snapshot and creating a new agent from it. Running the same baseline under several self-evolution methods is one use. The copy starts from the agent's current Agent State, on the same server or machine: its configuration, prompt, Skills, hooks, memory, schedules, workbenches, description and version. It gets none of the vault, Sessions, Traces, API keys or workbench version history, and nothing is written to the agent being copied, not even a snapshot.
 
 ## Where
 

@@ -13,8 +13,8 @@
  *
  * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
  * serve a UI file (and the page runtime compiled pages import), and the version history
- * every successful load appends to — which is what makes an Agent's own edits to its
- * workbench reversible.
+ * every successful load commits to the Agent State repository — which is what makes an
+ * Agent's own edits to its workbench reversible.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
@@ -163,7 +163,7 @@ export interface WorkbenchInfo {
   id: string;
   name: string;
   version: string | null;
-  /** Content revision of the whole folder (what history records). */
+  /** git's tree id (12 hex) of the folder's source: what history records. */
   revision: string;
   /** Content revision of `ui/`: the cache key of the workbench's pages. Null when it has no `ui/`. */
   uiRev: string | null;
@@ -206,14 +206,13 @@ export interface WorkbenchUiRuntimeFile {
   etag: string;
 }
 
+/** A version of a workbench: a commit of the Agent State repository that changed its folder. */
 export interface WorkbenchVersion {
+  /** The folder's revision at that commit (`WorkbenchInfo.revision` when it was loaded). */
   revision: string;
+  /** The commit (12 hex) in `<agentDir>/agent_state.git`. */
+  commit: string;
   savedAt: string;
-  name: string;
-  version: string | null;
-  uiRev: string | null;
-  /** The files of that version (relative paths), for display. */
-  files: string[];
 }
 
 @Interface()
@@ -257,12 +256,21 @@ export abstract class Workbenches {
     workbenchId: string,
     revision: string,
   ): Promise<WorkbenchInfo>;
-  /** Deletes the folder and its recorded versions; the instance goes with them. */
+  /**
+   * Deletes the folder, state included, and records the removal; its earlier versions are no
+   * longer listed. The instance goes with it.
+   */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
   /**
-   * Lets go of everything held for one Agent before its folder is deleted: the folder watcher,
-   * pending reloads, loads in flight and the loaded instances. A later listing takes them up
-   * again, so an Agent whose deletion is then refused loses nothing.
+   * Lets go of everything held for one Agent before its folder is deleted or its State is
+   * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A
+   * later listing takes them up again, so an Agent whose deletion is then refused loses nothing.
    */
   abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
+  /**
+   * Runs `work` (an Agent State import) with the Agent's workbenches released as by
+   * `releaseAgent` and kept so until it settles: a request for them meanwhile waits for the end
+   * instead of watching or loading the directory being replaced.
+   */
+  abstract whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T>;
 }

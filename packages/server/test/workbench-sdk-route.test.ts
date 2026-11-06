@@ -19,7 +19,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type * as Amsp from "@prismshadow/amsp";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentStateDir } from "@prismshadow/penguin-core";
 import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
 import { webDistWithUiRuntime } from "./fixtures/workbench-runtime.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
@@ -77,7 +77,7 @@ describe("the workbench page SDK", () => {
     });
     expect(created.status, await created.text()).toBe(201);
     // A workbench folder is enough: its load fails before the compiler, and it still exists.
-    const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+    const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "demo");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), '{"name":"demo","type":"module"}');
   });
