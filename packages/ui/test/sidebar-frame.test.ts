@@ -4,10 +4,11 @@
  *
  * - Given fixed entries (New chat and the favourites), the frame stands them between the
  *   switcher and the scroll area, never inside the element that scrolls; the scroll area holds
- *   exactly what it is given. (That a scroll leaves them in place, how far apart their rows
- *   stand, and how a short column gives way are measured in a real engine:
+ *   exactly what it is given. (That a scroll leaves them in place and draws a line at the
+ *   boundary without moving anything, how far apart the rows stand across that boundary, and
+ *   how a short column gives way are measured in a real engine:
  *   packages/ui-gallery/e2e/sidebar-favorites.spec.mjs.)
- * - Given no fixed entries, the column keeps the gap under the switcher.
+ * - Given no fixed entries, the column keeps an empty gap under the switcher, and no fixed nav.
  * - The fold folds through the shared `Fold`; with nothing to fold it draws nothing at all, and
  *   with a drop target it is ringed only while a drag it would take is over it.
  * - Entries carry a star toggle, drag as a whole, and move between the areas without a reveal.
@@ -79,9 +80,9 @@ describe("SidebarFrame", () => {
     expect(html.indexOf("data-find-region")).toBeLessThan(html.indexOf("Account"));
   });
 
-  it("keeps the gap under the switcher with no fixed entries", () => {
+  it("keeps an empty gap under the switcher with no fixed entries", () => {
     const html = frame();
-    expect(html).toContain('<div class="shrink-0 pb-2"></div><div data-find-region="sessions"');
+    expect(html).toMatch(/<div class="[^"]*"><\/div><div data-find-region="sessions"/);
     expect(html).not.toContain("<nav");
   });
 

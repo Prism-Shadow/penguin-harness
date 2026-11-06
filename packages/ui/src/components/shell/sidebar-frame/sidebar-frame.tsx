@@ -8,7 +8,12 @@
  * switcher's and the account's buttons.
  *
  * The fixed block holds still while the scroll area scrolls under it; the fold sits at the top
- * of the scroll area and rides up with the list. A column of fixed chrome taller than a short
+ * of the scroll area and rides up with the list. At rest the two read as one column of rows:
+ * between the last fixed row and the first row below it is the rows' own one-pixel gap, nothing
+ * more. Once the list is scrolled away from its top, that pixel turns into a hairline in the
+ * column's rule colour, so rows sliding up under the block do not run into it; back at the top
+ * it clears. The pixel is always there (a transparent border at rest), so the line moves nothing
+ * when it shows. A column of fixed chrome taller than a short
  * window would push the document into a second scrollbar, so both blocks give way: the scroll
  * area shrinks first, down to a floor that keeps the list's header and a row or two in view,
  * and past that the fixed block shrinks and scrolls its own rows. The scroll area is its own
@@ -86,6 +91,9 @@ export function SidebarFrame({
   overlays,
   rootRef,
 }: SidebarFrameProps) {
+  // Whether the scroll area has left its top: the boundary above it shows its hairline.
+  const [scrolled, setScrolled] = useState(false);
+  const edge = `border-b transition-colors duration-150 ${scrolled ? "border-line" : "border-transparent"}`;
   return (
     <div ref={rootRef} className="flex h-full w-full flex-col">
       {modeSwitch !== undefined && (
@@ -107,22 +115,24 @@ export function SidebarFrame({
         )}
         {switcher}
       </div>
-      {/* The gap to the scroll area belongs to this block, not to padding inside the scroll
-          area: padding there belongs to the scrolled content and slides away with it, and a
-          scrolled row would end up flush against the last fixed one. The block keeps the same
-          gaps with its rows' own scroller inside it: that scroller holds most of each gap as its
-          padding, room for a focused row's ring, and the block a sliver outside it, so even
-          scrolled its rows stop short of the scroll area. */}
+      {/* The boundary with the scroll area is this block's bottom border: the one-pixel row gap
+          at rest, the hairline once the list is scrolled. It belongs to the block, not to the
+          scroll area, whose own padding would slide away with the scrolled rows. The rows sit in
+          a scroller of their own, for a column too short for them; it holds the gap under the
+          switcher as its top padding (room for a focused row's ring), with a sliver outside it.
+          With no fixed rows, the column keeps its gap under the switcher, the same border at
+          its foot. */}
       {pinned === undefined ? (
-        <div className="shrink-0 pb-2" />
+        <div className={`h-2 shrink-0 ${edge}`} />
       ) : (
-        <nav className="flex min-h-0 flex-col py-0.5">
-          <div className="min-h-0 overflow-y-auto overflow-x-clip px-2 py-1.5">{pinned}</div>
+        <nav className={`flex min-h-0 flex-col pt-0.5 ${edge}`}>
+          <div className="min-h-0 overflow-y-auto overflow-x-clip px-2 pt-1.5">{pinned}</div>
         </nav>
       )}
       {/* The floor (`min-h-24`) is where the fixed block starts giving way instead. */}
       <div
         {...(findRegion === undefined ? {} : { "data-find-region": findRegion })}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
         className="relative min-h-24 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2"
       >
         {children}

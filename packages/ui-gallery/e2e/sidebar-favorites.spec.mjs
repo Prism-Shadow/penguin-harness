@@ -8,8 +8,12 @@
  *   favourites do not move while the fold rides up with the list; when a folded entry's star is
  *   clicked, the entry joins the fixed block and is no longer inside the list that scrolls, and
  *   a second click sends it back.
- * - Given New chat and the favourites, in each theme, they stand exactly as far apart as the
- *   fold's rows: no extra gap under New chat.
+ * - Given the list at its top, in each theme, every nav row stands exactly as far apart as the
+ *   next, across the fixed block's boundary too: no extra gap under New chat or under the last
+ *   favourite, and no line at the boundary.
+ * - Given the list scrolled away from its top, in each theme, a hairline in the column's rule
+ *   colour (the one above the account row) marks the boundary, and nothing moves for it: the
+ *   fixed rows and the scroll area keep their boxes. Back at the top the line clears.
  * - Given a column too short for the fixed block and a useful scroll area both, the scroll area
  *   keeps room for rows (more than two of them) and the fixed block scrolls its own rows
  *   instead; nothing is pushed out of the column.
@@ -84,14 +88,55 @@ test("the favourites hold still while the list scrolls, and a star moves an entr
   await expect(row(list, FOLDED[1])).toHaveCount(1);
 });
 
+/**
+ * The boundary's bottom border (the fixed block's), and the column's rule above the account row,
+ * as computed colours and widths.
+ */
+const boundary = (sidebar) =>
+  row(sidebar, NEW_CHAT).evaluate((newChat) => {
+    const block = newChat.closest("nav");
+    const rule = document.querySelector(
+      'aside[data-slot="nav"] [data-find-region]',
+    ).nextElementSibling;
+    const edge = getComputedStyle(block);
+    return {
+      colour: edge.borderBottomColor,
+      width: edge.borderBottomWidth,
+      rule: getComputedStyle(rule).borderTopColor,
+    };
+  });
+
+/** Whether a computed colour paints anything. */
+const opaque = (css) => !/^rgba\([^)]*,\s*0\)$|^transparent$/.test(css);
+
 for (const theme of ["github", "modern", "geek"]) {
-  test(`New chat and the favourites stand as far apart as the fold's rows (${theme})`, async ({
+  test(`every nav row stands evenly at rest, and a hairline marks the boundary once scrolled (${theme})`, async ({
     page,
   }) => {
     const sidebar = await openApp(page, { theme });
-    const fixed = gaps(await boxes(sidebar, FIXED));
-    const folded = gaps(await boxes(sidebar, FOLDED));
-    for (const gap of [...fixed, ...folded]) expect(gap).toBeCloseTo(folded[0], 1);
+    const list = sidebar.locator('[data-find-region="sessions"]');
+    const all = [...FIXED, ...FOLDED];
+    const rest = await boxes(sidebar, all);
+    const spacing = gaps(rest);
+    for (const gap of spacing) expect(gap).toBeCloseTo(spacing[1], 1);
+    expect(opaque((await boundary(sidebar)).colour)).toBe(false);
+
+    const listBox = await list.boundingBox();
+    await list.evaluate((el) => (el.scrollTop = 40));
+    // The line fades in to the rule's own colour.
+    await expect
+      .poll(async () => {
+        const line = await boundary(sidebar);
+        return opaque(line.colour) && line.colour === line.rule;
+      })
+      .toBe(true);
+    expect((await boundary(sidebar)).width).toBe("1px");
+    // The line takes no room: the fixed rows and the scroll area keep their boxes.
+    expect(await boxes(sidebar, FIXED)).toEqual(rest.slice(0, FIXED.length));
+    expect(await list.boundingBox()).toEqual(listBox);
+
+    await list.evaluate((el) => (el.scrollTop = 0));
+    await expect.poll(async () => opaque((await boundary(sidebar)).colour)).toBe(false);
   });
 }
 

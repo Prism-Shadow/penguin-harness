@@ -14,8 +14,11 @@ the same way.
 
 ## Details
 
-- The rows in the fixed block are spaced like the rows in the fold. The extra gap under New chat
-  is gone, and the gap between the block and the list is unchanged.
+- At rest every nav row is spaced the same, across the edge of the fixed block too. The extra gaps
+  under New chat and under the last favorite are gone.
+- Once the list is scrolled away from its top, a thin line in the theme's divider color marks
+  where the fixed block ends. In company mode with no favorites, it marks the gap under the
+  switcher. The line clears at the top again and moves nothing when it shows.
 - When a window or the phone drawer is too short for both, the list keeps room for a few rows and
   the fixed block scrolls its own rows instead.
 - In company mode the star, dragging between the areas, keyboard focus following a moved entry
