@@ -16,3 +16,4 @@ Added a Chinese experiment blog post and its English draft comparing PenguinHarn
 - Updated the Chinese article from Feishu revision 279 and corrected the Sec E command paths and task link against the pinned benchmark snapshot.
 - Synchronized the Chinese manuscript, captions, selected figures from Feishu revision 592 while retaining the selected article title.
 - Set the Chinese and English article bylines to Zhihao Liu (Prism Shadow AI).
+- Set the source-reference paragraphs in regular text with only their labels in bold.
