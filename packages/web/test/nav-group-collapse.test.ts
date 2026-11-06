@@ -20,23 +20,34 @@
  *   boolean values, and anything unparseable reads as none.
  * - A storage that throws (quota, private mode, a throwing getter) never escapes: storing is a
  *   no-op and reading yields the defaults.
+ * - Company mode: with nothing stored no entry is a favourite, so all six start in the fold.
+ *   Starring one moves it to the favourites in manifest order and is kept under company mode's
+ *   own key; a remount reads it back, and unstarring removes the stored choice.
+ * - Starring in one mode never moves an entry in the other: neither mode's choices are written
+ *   to, or read from, the other's key, and a key of the other mode in a record is ignored.
  */
 import { describe, expect, it } from "vitest";
 import {
+  COMPANY_NAV_PINNED_KEY,
   NAV_GROUP_COLLAPSED_KEY,
   NAV_PINNED_KEY,
+  initialCompanyNavPinOverrides,
   initialNavGroupCollapsed,
   initialNavPinOverrides,
   isNavPinnable,
   isNavPinned,
   navEntryKeysFor,
   navKeysFor,
+  splitCompanyNavEntries,
   splitNavEntries,
+  storeCompanyNavPinOverrides,
   storeNavGroupCollapsed,
   storeNavPinOverrides,
   visibleNavKeys,
+  withCompanyNavPinned,
   withNavPinned,
 } from "../src/lib/nav-group-collapse";
+import { COMPANY_NAV_KEYS } from "../src/features/company/company-nav";
 import type { NavCollapseStorage, NavPinOverrides } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -300,5 +311,63 @@ describe("persisted pin choices (one global localStorage key)", () => {
   it("storage whose GETTER throws degrades instead of escaping the useState initializer", () => {
     expect(() => initialNavPinOverrides(hostileStorage)).not.toThrow();
     expect(initialNavPinOverrides(hostileStorage)).toEqual({});
+  });
+});
+
+describe("company mode's favourites (their own localStorage key)", () => {
+  it("with nothing stored no entry is a favourite: all six start in the fold, and reading writes nothing", () => {
+    const s = memoryStorage();
+    expect(splitCompanyNavEntries(initialCompanyNavPinOverrides(s))).toEqual({
+      pinned: [],
+      collapsible: [...COMPANY_NAV_KEYS],
+    });
+    expect(s.map.size).toBe(0);
+  });
+
+  it("a star moves an entry to the favourites in manifest order, a remount reads it back, and unstarring forgets it", () => {
+    const s = memoryStorage();
+    const starred = withCompanyNavPinned(withCompanyNavPinned({}, "finance", true), "chart", true);
+    storeCompanyNavPinOverrides(starred, s);
+    const restored = initialCompanyNavPinOverrides(s);
+    expect(splitCompanyNavEntries(restored)).toEqual({
+      pinned: ["chart", "finance"],
+      collapsible: ["overview", "calendar", "tickets", "handbook"],
+    });
+    const back = withCompanyNavPinned(restored, "chart", false);
+    expect(back).toEqual({ finance: true });
+    // A star that changes nothing returns the same record, so the sidebar skips the write.
+    expect(withCompanyNavPinned(back, "finance", true)).toBe(back);
+    expect(withCompanyNavPinned(back, "overview", false)).toBe(back);
+  });
+
+  it("a star in one mode never moves an entry in the other", () => {
+    const s = memoryStorage();
+    storeNavPinOverrides(withNavPinned({}, "models", false), s);
+    const devBefore = s.map.get(NAV_PINNED_KEY);
+    storeCompanyNavPinOverrides(withCompanyNavPinned({}, "tickets", true), s);
+    // Company mode's star left development mode's record and its areas as they were …
+    expect(s.map.get(NAV_PINNED_KEY)).toBe(devBefore);
+    expect(splitNavEntries(navEntryKeysFor(true), initialNavPinOverrides(s)).pinned).toEqual([
+      "newChat",
+      "agents",
+      "plugins",
+    ]);
+    // … and development mode's star moved nothing in company mode.
+    expect(splitCompanyNavEntries(initialCompanyNavPinOverrides(s)).pinned).toEqual(["tickets"]);
+  });
+
+  it("a record holding the other mode's keys keeps only its own", () => {
+    const s = memoryStorage({
+      [COMPANY_NAV_PINNED_KEY]: JSON.stringify({ agents: true, overview: true }),
+      [NAV_PINNED_KEY]: JSON.stringify({ handbook: true, usage: true }),
+    });
+    expect(initialCompanyNavPinOverrides(s)).toEqual({ overview: true });
+    expect(initialNavPinOverrides(s)).toEqual({ usage: true });
+  });
+
+  it("storage that throws reads as no favourites and is never escaped", () => {
+    expect(() => storeCompanyNavPinOverrides({ overview: true }, blockedStorage())).not.toThrow();
+    expect(initialCompanyNavPinOverrides(blockedStorage())).toEqual({});
+    expect(initialCompanyNavPinOverrides(hostileStorage)).toEqual({});
   });
 });
