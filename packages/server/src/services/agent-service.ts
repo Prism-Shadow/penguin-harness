@@ -681,6 +681,11 @@ export class AgentService implements AgentLifecycle {
    * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
    * package carries its own skills and hooks. An invalid package fails the whole creation
    * inside the same cleanup window, leaving no empty Agent behind.
+   *
+   * `copyFrom` names an Agent of the same Project to copy: its current Agent State, packed as
+   * a snapshot would be and without writing one, seeds the new Agent the way `archive` does —
+   * so the copy has the source's config, skills, hooks, memory, schedules and version, and none
+   * of its secrets, Sessions or API keys. Exclusive with `archive` and with seeding.
    */
   async createAgent(
     projectId: string,
@@ -690,6 +695,7 @@ export class AgentService implements AgentLifecycle {
     pluginNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
     archive?: Buffer,
+    copyFrom?: string,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
@@ -698,11 +704,25 @@ export class AgentService implements AgentLifecycle {
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
       );
     }
+    if (archive !== undefined && copyFrom !== undefined) {
+      throw new HttpError(
+        400,
+        "copy_with_snapshot",
+        "Copying an Agent and initializing from a snapshot package are mutually exclusive.",
+      );
+    }
     if (archive !== undefined && (pluginNames?.length || directory)) {
       throw new HttpError(
         400,
         "snapshot_with_plugins",
         "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
+      );
+    }
+    if (copyFrom !== undefined && (pluginNames?.length || directory)) {
+      throw new HttpError(
+        400,
+        "copy_with_plugins",
+        "Copying an Agent and seeding are mutually exclusive: the copy carries the source Agent's own skills and hooks.",
       );
     }
     const taken =
@@ -714,6 +734,11 @@ export class AgentService implements AgentLifecycle {
     if (taken) {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
+    // A copy is the source's current State packed as a snapshot would be, vault left out, and
+    // then initialized exactly like an uploaded package. Packed before anything is written, so a
+    // source that does not exist fails while the new Agent still does not.
+    const seed =
+      copyFrom !== undefined ? await this.snapshots.packState(projectId, copyFrom) : archive;
     const displayName = name ?? agentId;
     // Both sources are resolved before a single file is written, so a name that has since left the
     // library or the directory fails while the Agent still does not exist. Directory Skills are
@@ -726,11 +751,11 @@ export class AgentService implements AgentLifecycle {
       : [];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
-      if (archive !== undefined) {
+      if (seed !== undefined) {
         // Seed the fresh state from the snapshot package. No pre-import snapshot and no
         // version confirmation: both guards protect existing State, and this Agent has
         // none yet — its template state is not worth preserving.
-        await this.snapshots.importArchive(projectId, agentId, archive, {
+        await this.snapshots.importArchive(projectId, agentId, seed, {
           confirm: true,
           preSnapshot: false,
         });
@@ -774,8 +799,8 @@ export class AgentService implements AgentLifecycle {
     // number, and a snapshot seed brings the package's own name, description, version,
     // skills, schedules and memory.
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
-    const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
-    const cardDescription = archive !== undefined ? meta.description : description;
+    const cardName = seed !== undefined ? (meta.name ?? agentId) : displayName;
+    const cardDescription = seed !== undefined ? meta.description : description;
     const installed = await this.installedPlugins(projectId, agentId, this.library.list());
     return {
       agentId,

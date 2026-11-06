@@ -72,7 +72,12 @@ import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-sc
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
 import { useMachines } from "../../state/machines";
-import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
+import {
+  AgentLocationContext,
+  agentSettingsPath,
+  machineInSearch,
+  useAgentLocation,
+} from "../../lib/agent-location";
 import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
@@ -95,6 +100,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
+import { CopyAgentDialog } from "./copy-agent-dialog";
 import { effectiveThinkingLevel } from "../chat/thinking-level";
 import { ThinkingLevelSelect } from "../chat/thinking-level-select";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -144,7 +150,7 @@ export function AgentSettingsPage() {
   const params = useParams<{ agentId: string }>();
   const agentId = params.agentId ?? "";
   useDocumentTitle(S.agent.settings);
-  const { currentProject, reloadAgents: reloadHere } = useProject();
+  const { currentProject, reloadAgents: reloadHere, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // The route's Agent is one of the Project the page was opened in: a Project switch leaves for
   // the new Project's Agents, where every tab would otherwise answer "This agent no longer exists."
@@ -233,6 +239,16 @@ export function AgentSettingsPage() {
       void reloadAgents();
     },
     [load, reloadAgents],
+  );
+
+  /** A copy was created where this Agent lives: the list learns of it, and the page goes to it. */
+  const onCopied = useCallback(
+    async (copiedId: string) => {
+      await reloadAgents();
+      if (machineId === null) setCurrentAgentId(copiedId);
+      navigate(agentSettingsPath(copiedId, machineId));
+    },
+    [reloadAgents, machineId, setCurrentAgentId, navigate],
   );
 
   /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
@@ -366,6 +382,7 @@ export function AgentSettingsPage() {
               agentId={agentId}
               onSave={save}
               onImported={onImported}
+              onCopied={onCopied}
               onConfigReset={onConfigReset}
               onKernelUpdated={onKernelUpdated}
             />
@@ -472,6 +489,7 @@ function OverviewTab({
   agentId,
   onSave,
   onImported,
+  onCopied,
   onConfigReset,
   onKernelUpdated,
 }: {
@@ -479,6 +497,7 @@ function OverviewTab({
   agentId: string;
   onSave: SaveFn;
   onImported: (version: number) => void;
+  onCopied: (agentId: string) => Promise<void>;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
 }) {
@@ -498,6 +517,7 @@ function OverviewTab({
   const [conflict, setConflict] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
   const [kernelOpen, setKernelOpen] = useState(false);
   const [kernelUpdating, setKernelUpdating] = useState(false);
   /** Last kernel update's merge report (kept fields listed under the section until the next full reload). */
@@ -621,6 +641,13 @@ function OverviewTab({
               >
                 {S.agent.exportSnapshot}
               </a>
+            )}
+            {/* Copying, like exporting, is open to any member: it creates an Agent beside this
+                one and leaves this one as it is. */}
+            {projectId && (
+              <Button size="sm" onClick={() => setCopyOpen(true)}>
+                {S.agent.copyAgent}
+              </Button>
             )}
             {isOwner && (
               <label
@@ -818,6 +845,19 @@ function OverviewTab({
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>
+
+      <CopyAgentDialog
+        open={copyOpen}
+        projectId={projectId}
+        sourceId={agentId}
+        sourceName={data.config.name ?? agentId}
+        machineId={machineId}
+        onClose={() => setCopyOpen(false)}
+        onCopied={async (copiedId) => {
+          setCopyOpen(false);
+          await onCopied(copiedId);
+        }}
+      />
     </div>
   );
 }

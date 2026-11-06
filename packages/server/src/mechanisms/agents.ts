@@ -81,6 +81,8 @@ export abstract class Snapshots {
     projectId: string,
     agentId: string,
   ): Promise<{ version: number; file: string; fileName: string }>;
+  /** The Agent's current State as a snapshot-format package, in memory: what a copy starts from. */
+  abstract packState(projectId: string, agentId: string): Promise<Buffer<ArrayBufferLike>>;
   abstract importArchive(
     projectId: string,
     agentId: string,
@@ -190,6 +192,8 @@ export abstract class AgentLifecycle {
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
     archive?: Buffer<ArrayBufferLike>,
+    /** An Agent of the Project whose current State the new one starts from; exclusive with `archive` and seeding. */
+    copyFrom?: string,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,
