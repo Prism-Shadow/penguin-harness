@@ -19,6 +19,9 @@ const problems = [];
 
 for (const [what, rel] of [
   ["the desktop shell build", "dist/main.js"],
+  // The main window's window-controls bridge: without it Windows and Linux windows have no
+  // minimize, maximize or close button at all.
+  ["the main window's preload", "dist/preload.cjs"],
   ["the embedded server bundle", "dist/server.js"],
   // Where the server bundle's `require("node-pty")` lands; without it every terminal
   // session fails to spawn, and only once the user opens a terminal panel.

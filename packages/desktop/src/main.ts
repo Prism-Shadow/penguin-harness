@@ -5,8 +5,8 @@
  * shell boots and hosts; it does not implement product behavior. It is also
  * the least updatable code in the system — a change here reaches users only
  * through a new installer — so a capability that could instead be delivered
- * by a platform push must be. A rejected example: adding a preload bridge so
- * the web UI could open DevTools, when the shell's own View menu already
+ * by a platform push must be. A rejected example: widening the preload bridge
+ * so the web UI could open DevTools, when the shell's own View menu already
  * does it. The page can still ask for DevTools — through the host-command
  * relay every other shell action uses (`open-devtools`), which needs no
  * bridge and no capability in the renderer.
@@ -15,8 +15,10 @@
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
  * still free, so origin-scoped localStorage preferences survive restarts), and load
  * `http://localhost:<port>/api/auth/claim?token=…` — the one-shot token lands
- * the window signed in as admin. The window is a plain browser environment (no preload,
- * no node integration); every capability flows through the server's HTTP API.
+ * the window signed in as admin. The window is a plain browser environment (no node
+ * integration); every capability flows through the server's HTTP API. Its one preload is the
+ * window-controls bridge (preload.ts), which carries minimize, maximize and close for the title
+ * band the page draws (title-bar.ts), and nothing else.
  *
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead. The one-shot token buys nothing there, so the shell
@@ -65,7 +67,7 @@ import {
   autoUpdater as electronUpdater,
   BrowserWindow,
   dialog,
-  nativeTheme,
+  ipcMain,
   session,
   shell,
 } from "electron";
@@ -95,9 +97,10 @@ import { installAppMenu } from "./menu.js";
 import { isDevToolsKey, isMenuBarKey } from "./shortcuts.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
-import { overlayColors, TITLE_BAR_FALLBACK_CSS, titleBarWindowOptions } from "./title-bar.js";
+import { titleBarWindowOptions } from "./title-bar.js";
 import { resolveTrayLocale } from "./tray-menu.js";
 import { afterUnloadAnswer, unloadPrompt } from "./unload-prompt.js";
+import { installWindowControls, reportMaximized } from "./window-controls.js";
 import type { TrayLocale } from "./tray-menu.js";
 import { installTray } from "./tray.js";
 import type { TrayHandle } from "./tray.js";
@@ -262,10 +265,12 @@ function createWindow(url: string): void {
     show: false,
     autoHideMenuBar: true,
     // No system title bar: the Web App's top band takes its place (see title-bar.ts).
-    ...titleBarWindowOptions(process.platform, nativeTheme.shouldUseDarkColors),
+    ...titleBarWindowOptions(process.platform),
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
-      // The window is a plain browser: no Node, no preload — the minimal attack surface.
+      // The window is a plain browser: no Node — the minimal attack surface. The preload is
+      // the window-controls bridge alone, isolated and sandboxed like the page (preload.ts).
+      preload: path.join(app.getAppPath(), "dist", "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -275,7 +280,7 @@ function createWindow(url: string): void {
     },
   });
   builtinBrowser.host(win);
-  followPageTitleBar(win);
+  reportMaximized(win);
   win.once("ready-to-show", () => win?.show());
   // The automatic update schedule reaches the network: it starts once a window is on screen.
   win.once("show", noteMainWindowShown);
@@ -349,27 +354,6 @@ function createWindow(url: string): void {
 }
 
 /**
- * Keeps the window controls legible over the page's top band, and gives a page that lays out no
- * band of its own one to drag the window by (both in title-bar.ts). The page names its colour in
- * `<meta name="theme-color">`, which reaches this process without any channel into the page.
- */
-function followPageTitleBar(target: BrowserWindow): void {
-  target.webContents.on("dom-ready", () => {
-    target.webContents
-      .insertCSS(TITLE_BAR_FALLBACK_CSS)
-      .catch((err: unknown) =>
-        logLine(`[shell] the title bar fallback was refused: ${String(err)}`),
-      );
-  });
-  // macOS draws its own traffic lights; the overlay's colours are Windows' and Linux's.
-  if (process.platform === "darwin") return;
-  target.webContents.on("did-change-theme-color", (_event, color) => {
-    if (target.isDestroyed()) return;
-    target.setTitleBarOverlay(overlayColors(color, nativeTheme.shouldUseDarkColors));
-  });
-}
-
-/**
  * Reloads the main window's page after its renderer died: at once the first time, then after
  * a growing pause (rendererReloadDelayMs) while it keeps dying. A page that then stays up for
  * RENDERER_HEALTHY_MS starts the ladder over.
@@ -408,7 +392,8 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
           // and must never get Node. Nor <webview>, the main window's alone: Electron copies
           // an opener's preference only when it is the safe one, so without this line the
           // main window's `webviewTag: true` leaves a features string (`webviewTag=yes`) in
-          // charge.
+          // charge. An opener's preload is never copied, so the window-controls bridge stays
+          // the main window's: these windows keep the system's title bar.
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -909,7 +894,10 @@ if (!app.requestSingleInstanceLock()) {
         iconPath: resolveWindowIcon(app.getAppPath(), process.platform),
         log: (line) => logLine(`[shell] ${line}`),
       });
-      // Standard menu plus native desktop-only actions; the window gets no IPC channel.
+      // The window-controls bridge's handlers: the one IPC channel the window has, open to its
+      // own page alone (window-controls.ts).
+      installWindowControls(ipcMain, () => win, logLine);
+      // Standard menu plus native desktop-only actions.
       // The install item is the release profile's, like the per-launch repair below: the
       // `penguin` command has one owner, and a `--dev` instance of the same install would
       // rewrite it and record having done so in its own userData.

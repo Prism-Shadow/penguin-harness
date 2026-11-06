@@ -18,12 +18,16 @@
  * Nothing in the window is fixed or transformed: chrome that makes a stacking context would trap
  * the overlays the columns open.
  *
- * In the desktop app the window's own controls sit in a band across its top, as tall as the
- * Window Controls Overlay's `titlebar-area-height` (a browser defines none, and the band is
- * zero). The window reserves the band above its columns, so what shows there is the window's own
- * fill — the theme's field, or the page canvas where the theme paints none — and the band reads as
- * the app's top edge rather than a bar of the system's. Every column starts below it: a column
- * rule never runs between the traffic lights, whatever width the navigation column is folded to.
+ * In the desktop app the system's title bar gives way to a band across the window's top,
+ * `--window-band-height` tall (window-band.css; zero in a browser). The window reserves it above
+ * its columns, so every column starts below it and a column rule never runs between the traffic
+ * lights, whatever width the navigation column is folded to. With no `band` the reserved strip
+ * shows the window's own fill. With one, the strip is a `band` slot holding the caller's controls
+ * after whatever the system draws at its start (the macOS traffic lights, `titlebar-area-x`), and
+ * the window takes on the desktop look: the band and the gaps around the main column in the
+ * navigation column's colour, and the main column a card inset from the band and the window's
+ * edges, in the theme's own surface, line and radius. The band drags the window; its controls do
+ * not.
  */
 import type { ReactNode } from "react";
 import { NavigationBackdrop, WallpaperContext, WallpaperLayer } from "./wallpaper";
@@ -42,6 +46,11 @@ export interface AppShellProps {
   dock?: ReactNode;
   /** Layers mounted beside the columns rather than in one: dialogs, the phone's drawer. */
   overlays?: ReactNode;
+  /**
+   * The desktop window's title band: its controls (the sidebar toggle, back and forward). Given
+   * only where the page draws the band itself; the window then frames the main column as a card.
+   */
+  band?: ReactNode;
 }
 
 export function AppShell({
@@ -51,15 +60,26 @@ export function AppShell({
   children,
   dock,
   overlays,
+  band,
 }: AppShellProps) {
   const width = navCollapsed ? "w-12" : "w-64 lg:w-72";
   return (
     <WallpaperContext.Provider value={background}>
       <div
         data-wallpaper={background === undefined ? undefined : ""}
-        className="ui-shell flex h-full pt-[env(titlebar-area-height,0px)]"
+        data-window-band={band === undefined ? undefined : ""}
+        className={`ui-shell flex h-full pt-[var(--window-band-height,0px)]${band === undefined ? "" : " relative"}`}
       >
         <WallpaperLayer />
+        {band !== undefined && (
+          <div
+            data-slot="band"
+            data-window-drag
+            className="absolute inset-x-0 top-0 flex h-[var(--window-band-height,0px)] items-center gap-1 ps-[calc(env(titlebar-area-x,0px)+8px)]"
+          >
+            {band}
+          </div>
+        )}
         <aside
           data-slot="nav"
           data-layout-motion
