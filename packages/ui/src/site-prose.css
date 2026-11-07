@@ -93,6 +93,11 @@
   background: color-mix(in oklab, var(--site-brand-50) 40%, transparent);
   padding: 0.1em 0.3em;
   font-size: 0.875em;
+  /* Monospace font metrics must not enlarge a paragraph's line boxes. Keep the chip complete
+     on each wrapped fragment while the surrounding prose sets the baseline spacing. */
+  line-height: 1;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   color: var(--site-gray-900);
   overflow-wrap: anywhere;
 }

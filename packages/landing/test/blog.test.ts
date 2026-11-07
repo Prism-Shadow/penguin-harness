@@ -123,6 +123,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      "harness-comparison",
       "testing-agent-harnesses",
       // Posts that share a date are ordered by slug, ascending.
       "build-agent-apps-with-workflows",
