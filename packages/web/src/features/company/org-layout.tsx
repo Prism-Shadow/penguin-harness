@@ -39,7 +39,7 @@ import {
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useProject } from "../../state/project";
 import { orgKey, orgPagePath, resolveOrgLanding } from "../../lib/company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";

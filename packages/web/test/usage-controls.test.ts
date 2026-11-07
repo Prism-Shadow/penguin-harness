@@ -32,7 +32,7 @@ import {
   rangeDays,
   rateSeries,
   sumCounts,
-} from "../src/features/usage/usage-controls";
+} from "../src/lib/usage-controls";
 import { SERIES_COLORS } from "../src/lib/category-colors";
 
 const point = (over: Partial<UsageSeriesPoint>): UsageSeriesPoint => ({

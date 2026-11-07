@@ -228,7 +228,7 @@ import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useSchedulesAcross } from "../../features/schedules/schedule-store";
 import { useLocalShown } from "../../lib/local-first";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../lib/company-context";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
 import { CompanyBetaBadge } from "../../features/company/company-beta";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
