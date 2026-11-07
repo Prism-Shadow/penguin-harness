@@ -218,7 +218,9 @@ const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
 function say(text, ms = BUBBLE_MS) {
   if (talk === "off") return;
   bubbleEl.textContent = text;
-  bubbleEl.style.display = "";
+  // `#bubble` is `display: none` until she has something to say, and the empty string falls back
+  // to that rule rather than overriding it — the balloon has to be given a display of its own.
+  bubbleEl.style.display = "block";
   bubbleUntil = performance.now() + ms;
   body?.talk?.();
 }
