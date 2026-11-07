@@ -20,6 +20,7 @@ const BROWSER_ALL = [
   "Mod+Shift+KeyT", // reopen closed tab
   "Mod+KeyN", // new window
   "Mod+Shift+KeyN", // new private / incognito window
+  "Mod+Shift+KeyP", // private window (Firefox)
   "Mod+Digit1", // switch to tab 1…
   "Mod+Digit2",
   "Mod+Digit3",
@@ -68,7 +69,6 @@ const BROWSER_BY_PLATFORM: Record<Platform, readonly string[]> = {
  */
 const COMMON_ALL = [
   "Mod+KeyP", // print
-  "Mod+Shift+KeyP", // Firefox private window; palette default, configurable by the user
   "Mod+KeyS", // save page
   "Mod+KeyO", // open a file
   "Mod+KeyF", // find
@@ -186,6 +186,7 @@ const COMMON_BY_PLATFORM: Record<Platform, readonly string[]> = {
     "Mod+Alt+KeyE", // network monitor (Firefox)
     "Mod+Alt+KeyF", // search the web
     "Mod+Alt+KeyI", // developer tools
+    "Mod+Alt+KeyP", // page setup (Chrome)
     "Mod+Alt+KeyJ", // JavaScript console
     "Mod+Alt+KeyK", // web console (Firefox)
     "Mod+Alt+KeyM", // responsive design mode (Firefox)

@@ -1,6 +1,6 @@
 /**
  * The app's command palette: which actions exist, the shortcut that opens it (the
- * `palette.toggle` command, ⌘⇧P / Ctrl+Shift+P by default), and its words. Mounted once in
+ * `palette.toggle` command, ⌥⌘P / Ctrl+Alt+P by default), and its words. Mounted once in
  * App. The UI package's CommandPalette is the mechanism; this file is the registry: an
  * action here, never a new global shortcut. An action opens an overlay over the current page
  * rather than navigating — closing it leaves the user exactly where they were.

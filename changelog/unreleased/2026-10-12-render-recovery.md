@@ -10,4 +10,4 @@ The app mounted one command palette beside a route error boundary. A failed rout
 
 ## Safe mode and startup recovery
 
-Safe mode persisted per tab, accepted `?safe`, suppressed workflow contribution requests and frames, and could be exited from the marker or palette. Startup failures retained the recovery panel. The palette default changed to Mod+Shift+KeyP; user overrides were retained, and Firefox can reserve this chord for a private window.
+Safe mode persisted per tab, accepted `?safe`, suppressed workflow contribution requests and frames, and could be exited from the marker or palette. Startup failures retained the recovery panel. The palette default stayed on Mod+Alt+KeyP; user overrides were retained, and Firefox reserves Mod+Shift+KeyP for its private window, so the page never receives that chord.

@@ -20,8 +20,8 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     overDialogs: true,
     scope: "global",
     group: "general",
-    // Mod+P is the browser's Print. On macOS this takes over Firefox's ⇧⌘P (private window).
-    defaults: { default: "Mod+Shift+KeyP" },
+    // Mod+P is the browser's Print. On macOS this takes over Chrome's ⌥⌘P (Page Setup).
+    defaults: { default: "Mod+Alt+KeyP" },
   },
   {
     id: "sessions.search",

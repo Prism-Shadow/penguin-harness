@@ -10,4 +10,4 @@
 
 ## 安全模式与启动恢复
 
-安全模式按标签页保存，支持`?safe`，禁止workflow贡献请求与frame显示，可从标记或面板退出。启动失败保留恢复面板。面板默认键改为Mod+Shift+KeyP，保留用户改绑；Firefox可能将此键用于隐私窗口。
+安全模式按标签页保存，支持`?safe`，禁止workflow贡献请求与frame显示，可从标记或面板退出。启动失败保留恢复面板。面板默认键保持Mod+Alt+KeyP，保留用户改绑；Firefox保留Mod+Shift+KeyP用于隐私窗口，页面收不到该事件。

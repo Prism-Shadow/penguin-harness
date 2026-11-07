@@ -215,12 +215,12 @@ describe("external changes and the keyboard layout", () => {
     configureKeybindingsStoreForTests({ layout: dvorak });
     expect(bindingOf("palette.toggle")?.code).toBe("KeyR");
     // The user records the key labelled P (physically KeyR): that is the default, not an override.
-    setBinding("palette.toggle", parseChord("Mod+Shift+KeyR"));
+    setBinding("palette.toggle", parseChord("Mod+Alt+KeyR"));
     expect(isOverridden("palette.toggle")).toBe(false);
     // A stored user chord is physical and does not move.
-    setBinding("palette.toggle", parseChord("Mod+Shift+KeyP"));
+    setBinding("palette.toggle", parseChord("Mod+Alt+KeyP"));
     expect(bindingOf("palette.toggle")?.code).toBe("KeyP");
-    expect(stored()).toEqual({ v: 1, linux: { "palette.toggle": "Mod+Shift+KeyP" } });
+    expect(stored()).toEqual({ v: 1, linux: { "palette.toggle": "Mod+Alt+KeyP" } });
   });
 });
 

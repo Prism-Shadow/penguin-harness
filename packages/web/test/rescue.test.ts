@@ -71,7 +71,7 @@ describe("ErrorBoundary", () => {
       expect(html).toContain(dict.rescue.reloadSafe);
       expect(html).toContain(dict.commandPalette.harnessHistory);
       // The palette's chord is spelled out: it still opens over the panel.
-      expect(html).toContain(dict.rescue.paletteHint("Ctrl+Shift+P"));
+      expect(html).toContain(dict.rescue.paletteHint("Ctrl+Alt+P"));
     }
   });
 
