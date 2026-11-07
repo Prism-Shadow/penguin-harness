@@ -11,9 +11,9 @@
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
  *
- * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
- * serve a UI file (and the page runtime compiled pages import), and the version history
- * every successful load commits to the Agent State repository — which is what makes an
+ * `Workbenches` is the platform-side mechanism the routes drive: list, reload, switch on and
+ * off, dispatch, serve a UI file (and the page runtime compiled pages import), and the version
+ * history every successful load commits to the Agent State repository — which is what makes an
  * Agent's own edits to its workbench reversible.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
@@ -159,6 +159,12 @@ export interface WorkbenchTab {
   renderer: WorkbenchTabRenderer;
 }
 
+/**
+ * One workbench as the server holds it. One that does not run (its own switch or the Agent-wide
+ * one is off) is listed from its folder alone, never loaded for the listing: `revision` and
+ * `uiRev` are its source's as it stands on disk (so history still marks the current version),
+ * `tabs` and `hints` are empty, `error` is null (nothing was tried) and `loadedAt` is null.
+ */
 export interface WorkbenchInfo {
   id: string;
   name: string;
@@ -169,7 +175,11 @@ export interface WorkbenchInfo {
   uiRev: string | null;
   /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
   tabs: WorkbenchTab[];
-  loadedAt: string;
+  /**
+   * When the serving instance (or the failed attempt, with none serving) was loaded; null while
+   * the workbench does not run.
+   */
+  loadedAt: string | null;
   /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
   error: string | null;
   /**
@@ -177,6 +187,13 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
+  /**
+   * Its own switch: false while a `.disabled` marker sits in its folder. It runs only while this
+   * and the Agent-wide switch (`WorkbenchesResponse.enabled`) are both on; a disabled one is not
+   * loaded, serves nothing and shows no tab, but is still listed here. Absent from a server that
+   * predates the switches, which the Web reads as "no switch to show".
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -215,10 +232,49 @@ export interface WorkbenchVersion {
   savedAt: string;
 }
 
+/**
+ * Every route that serves a workbench refuses one that does not run — its own switch or the
+ * Agent-wide one is off — with 409 `workbench_disabled`: its pages, the page runtime, its API,
+ * a reload. Listing, history, rollback (source only), export and removal still work.
+ */
 @Interface()
 export abstract class Workbenches {
+  /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
+  /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
+  abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
+  /** Loads the folder now; one that does not run is refused (409 `workbench_disabled`). */
   abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
+  /**
+   * After its source was written (an archive import): loads it as `reload` does when it runs,
+   * and otherwise answers it as it stands, not loaded.
+   */
+  abstract reloadIfEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo>;
+  /**
+   * Sets one workbench's own switch. Off unloads it at once (its subscriptions end with its
+   * tree); on loads it, unless the Agent-wide switch is off. The Project's users hear
+   * `workbench_updated`.
+   */
+  abstract setEnabled(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    enabled: boolean,
+  ): Promise<WorkbenchInfo>;
+  /**
+   * Sets the Agent-wide switch, leaving each workbench's own as it is: off unloads every
+   * workbench of the Agent at once, on loads the ones whose own switch is on. Answers the
+   * listing after the change; each workbench is announced as `workbench_updated`.
+   */
+  abstract setAgentEnabled(
+    projectId: string,
+    agentId: string,
+    enabled: boolean,
+  ): Promise<{ workbenches: WorkbenchInfo[]; enabled: boolean }>;
   abstract dispatch(
     projectId: string,
     agentId: string,
@@ -250,6 +306,7 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<WorkbenchVersion[]>;
+  /** Restores a version's source; it is loaded (and recorded as the newest version) only when it runs. */
   abstract rollback(
     projectId: string,
     agentId: string,
@@ -257,8 +314,8 @@ export abstract class Workbenches {
     revision: string,
   ): Promise<WorkbenchInfo>;
   /**
-   * Deletes the folder, state included, and records the removal; its earlier versions are no
-   * longer listed. The instance goes with it.
+   * Deletes the folder, state and switch included, and records the removal; its earlier
+   * versions are no longer listed. The instance goes with it.
    */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
   /**
