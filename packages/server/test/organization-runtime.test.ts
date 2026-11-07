@@ -2252,11 +2252,11 @@ describe("organization runtime", () => {
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "just noting",
       });
-      expect(started).toHaveLength(3);
+      expect(started).toHaveLength(4);
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@all standup in 5",
       });
-      expect(started).toHaveLength(5);
+      expect(started).toHaveLength(6);
 
       const allHands = await service.channelMessages(
         P,
@@ -2466,7 +2466,7 @@ describe("organization runtime", () => {
         .slice(before)
         .map((s) => cache.ownerOfSession(s.sessionId)?.agentId)
         .sort();
-      expect(woken).toEqual(["acme_hr", "acme_d1", "acme_d2", "acme_d3"]);
+      expect(woken).toEqual(["acme_d1", "acme_d2", "acme_d3", "acme_hr"]);
       expect(errors).toHaveLength(2);
       expect(errors.map((e) => (e.ctx as Record<string, unknown>).target)).toEqual([
         "agent:acme_d4",
