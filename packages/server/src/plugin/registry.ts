@@ -617,7 +617,9 @@ export interface MergedIndex {
  *
  * On a name collision the FIRST source wins, and the builtin registry is listed first: what this
  * deployment actually ships is the truth about it, and a published index claiming the same
- * specifier does not get to describe a package the operator already has.
+ * specifier does not get to describe a package the operator already has. Within one source, the
+ * newest row per name wins (see newestPerName) — a publisher's document may carry several
+ * versions of a package, and the listing carries the one a consumer would want.
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
@@ -650,12 +652,98 @@ export async function mergeIndexes(
       continue;
     }
     if (answer.error !== null) failures.push({ source, error: answer.error });
-    for (const entry of answer.entries) {
-      const key = `${entry.name}@${entry.version}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+    for (const entry of newestPerName(answer.entries)) {
+      if (seen.has(entry.name)) continue;
+      seen.add(entry.name);
       entries.push(entry);
     }
   }
   return { entries, failures, pending };
+}
+
+/** A parsed semver: the numeric core and the prerelease identifiers, `null` when there are none. */
+interface ParsedSemver {
+  core: [number, number, number];
+  pre: string[] | null;
+}
+
+const SEMVER =
+  /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function parseSemver(version: string): ParsedSemver | null {
+  const match = SEMVER.exec(version);
+  if (match === null) return null;
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    pre: match[4] === undefined ? null : match[4].split("."),
+  };
+}
+
+/** Whether the version parses as a semver at all (a row whose version does not is unranked). */
+export function isSemver(version: string): boolean {
+  return parseSemver(version) !== null;
+}
+
+/**
+ * SemVer 2.0.0 precedence (semver.org §11), negative when `a` ranks below `b`, positive above,
+ * zero when equivalent: the numeric core first; then a prerelease ranks BELOW the release it
+ * belongs to (`0.0.1-alpha.2 < 0.0.1`), its dot-separated identifiers compare left to right —
+ * numeric identifiers by value (`alpha.2 < alpha.10`, the trap a string compare falls into),
+ * alphanumeric by ASCII (`alpha < beta`), numeric below alphanumeric — and a shorter prerelease
+ * that matches so far ranks lower (`alpha < alpha.1`). Build metadata never takes part:
+ * `1.0.0+x` and `1.0.0+y` are equivalent. Both versions must parse (`isSemver`); one that does
+ * not throws — the caller gates on `isSemver` first.
+ */
+export function compareSemver(a: string, b: string): number {
+  const left = parseSemver(a);
+  const right = parseSemver(b);
+  if (left === null) throw new Error(`not a semver: ${a}`);
+  if (right === null) throw new Error(`not a semver: ${b}`);
+  for (let i = 0; i < 3; i += 1) {
+    if (left.core[i] !== right.core[i]) return left.core[i]! - right.core[i]!;
+  }
+  if (left.pre === null && right.pre === null) return 0;
+  if (left.pre === null) return 1;
+  if (right.pre === null) return -1;
+  const shared = Math.min(left.pre.length, right.pre.length);
+  for (let i = 0; i < shared; i += 1) {
+    const x = left.pre[i]!;
+    const y = right.pre[i]!;
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn) {
+      if (x !== y) return Number(x) - Number(y);
+    } else if (xn !== yn) {
+      return xn ? -1 : 1;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return left.pre.length - right.pre.length;
+}
+
+/** Whether version `a` outranks `b` for the same package: a semver outranks a non-semver, two non-semvers keep the first, two semvers go by precedence (equal keeps the first). */
+function outranks(a: string, b: string): boolean {
+  const parsedA = isSemver(a);
+  const parsedB = isSemver(b);
+  if (parsedA !== parsedB) return parsedA;
+  if (!parsedA) return false;
+  return compareSemver(a, b) > 0;
+}
+
+/**
+ * The newest row per package name: of a document's several rows for one package — the format is
+ * a flat array of per-version entries — the one a consumer would want. The winner is the highest
+ * SemVer 2.0.0 precedence (see compareSemver for what that means for prereleases); a row whose
+ * version does not parse as semver loses to any row that does, and keeps the document's first
+ * among themselves; rows of equal precedence (a build-metadata difference) keep the first. The
+ * survivors come back in the document's own order.
+ */
+export function newestPerName(entries: readonly PluginIndexEntry[]): PluginIndexEntry[] {
+  const newest = new Map<string, PluginIndexEntry>();
+  for (const entry of entries) {
+    const held = newest.get(entry.name);
+    if (held === undefined || outranks(entry.version, held.version)) newest.set(entry.name, entry);
+  }
+  return entries.filter((entry) => newest.get(entry.name) === entry);
 }

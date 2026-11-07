@@ -46,8 +46,11 @@ import {
   NIGHTLY_INDEX_URL,
   builtinPluginRegistry,
   cachedRegistry,
+  compareSemver,
   httpPluginRegistry,
+  isSemver,
   mergeIndexes,
+  newestPerName,
   parsePluginIndex,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
@@ -664,6 +667,92 @@ describe("cachedRegistry", () => {
   });
 });
 
+describe("compareSemver", () => {
+  // The chain semver.org §11 itself gives, in ascending order.
+  const chain = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+  ];
+  it("ranks the spec's own example chain in order", () => {
+    for (let i = 0; i < chain.length - 1; i += 1) {
+      expect(compareSemver(chain[i]!, chain[i + 1]!)).toBeLessThan(0);
+      expect(compareSemver(chain[i + 1]!, chain[i]!)).toBeGreaterThan(0);
+      expect(compareSemver(chain[i]!, chain[i]!)).toBe(0);
+    }
+  });
+
+  it("compares numeric identifiers by value, not as strings", () => {
+    // The trap: "alpha.10" sorts before "alpha.2" as text, after it as a semver.
+    expect(compareSemver("0.0.1-alpha.2", "0.0.1-alpha.10")).toBeLessThan(0);
+    expect(compareSemver("0.10.0", "0.9.0")).toBeGreaterThan(0);
+  });
+
+  it("ranks a prerelease below the release it belongs to, and ignores build metadata", () => {
+    expect(compareSemver("0.0.1-alpha.2", "0.0.1")).toBeLessThan(0);
+    expect(compareSemver("1.0.0+x", "1.0.0+y")).toBe(0);
+    expect(compareSemver("1.0.0+x", "1.0.0")).toBe(0);
+  });
+
+  it("refuses to rank a version that does not parse", () => {
+    expect(isSemver("0.0.3")).toBe(true);
+    expect(isSemver("0.0.1-alpha.2")).toBe(true);
+    expect(isSemver("latest")).toBe(false);
+    expect(isSemver("1.0")).toBe(false);
+    expect(() => compareSemver("latest", "0.0.3")).toThrow();
+  });
+});
+
+describe("newestPerName", () => {
+  it("keeps the highest version per name, in the document's order", () => {
+    const kept = newestPerName([
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.2" },
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.3" },
+      { ...VALID_ENTRY, name: "@example/b", version: "1.0.0" },
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.10" },
+    ]);
+    expect(kept.map((e) => [e.name, e.version])).toEqual([
+      ["@example/b", "1.0.0"],
+      ["@example/a", "0.0.10"],
+    ]);
+  });
+
+  it("never lets a prerelease outrank the release, but ranks prereleases among themselves", () => {
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "0.0.1-alpha.2" },
+        { ...VALID_ENTRY, version: "0.0.1" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.1"]);
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "0.0.1-alpha.2" },
+        { ...VALID_ENTRY, version: "0.0.1-alpha.10" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.1-alpha.10"]);
+  });
+
+  it("ranks a version that parses over one that does not, and keeps the first otherwise", () => {
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "latest" },
+        { ...VALID_ENTRY, version: "0.0.3" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.3"]);
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "1.0.0+one" },
+        { ...VALID_ENTRY, version: "1.0.0+two" },
+      ]).map((e) => e.version),
+    ).toEqual(["1.0.0+one"]);
+  });
+});
+
 describe("mergeIndexes", () => {
   const remoteEntry: IndexDocumentEntry = {
     ...VALID_ENTRY,
@@ -694,6 +783,28 @@ describe("mergeIndexes", () => {
     // A dead remote shortens the listing; it does not empty it.
     expect(entries.map((e) => e.name)).toEqual([VALID_ENTRY.name]);
     expect(failures).toEqual([{ source: "remote", error: "index answered HTTP 503" }]);
+  });
+
+  it("carries one row per name: a document's several versions collapse to the newest", async () => {
+    const { entries } = await mergeIndexes([
+      stubRegistry("remote", [
+        { ...remoteEntry, version: "0.0.2" },
+        { ...remoteEntry, version: "0.0.3" },
+      ]).registry,
+    ]);
+    expect(entries.map((e) => e.version)).toEqual(["0.0.3"]);
+  });
+
+  it("the first source wins a name even where a later source's version is newer", async () => {
+    // What this deployment ships stays what the page describes, whatever a published index
+    // claims: a newer remote row does not outrank the shipped package.
+    const mine = { ...VALID_ENTRY, description: "the shipped one", version: "1.0.0" };
+    const theirs = { ...VALID_ENTRY, description: "the published one", version: "2.0.0" };
+    const { entries } = await mergeIndexes([
+      stubRegistry("builtin", [mine]).registry,
+      stubRegistry("remote", [theirs]).registry,
+    ]);
+    expect(entries).toEqual([mine]);
   });
 });
 
