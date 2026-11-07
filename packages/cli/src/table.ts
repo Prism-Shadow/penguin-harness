@@ -45,7 +45,9 @@ export function renderTable(header: string[], rows: string[][]): string {
 
 /**
  * Compact relative time for list rows ("now", "5m", "3h", "2d", else yyyy-mm-dd) —
- * digits + a unit letter, deliberately language-neutral.
+ * digits + a unit letter, deliberately language-neutral. The date is the reader's own
+ * calendar day, the one `--days` counts in: the instant is a `...Z` stamp, and its date part
+ * names the UTC day — a row last active at 07:00 on the 31st in UTC+8 would read as the 30th.
  */
 export function relativeTime(iso: string, now: Date = new Date()): string {
   const then = Date.parse(iso);
@@ -55,5 +57,7 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
   if (seconds < 14 * 86400) return `${Math.floor(seconds / 86400)}d`;
-  return new Date(then).toISOString().slice(0, 10);
+  const day = new Date(then);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
 }
