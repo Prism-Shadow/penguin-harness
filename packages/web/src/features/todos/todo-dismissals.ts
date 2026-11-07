@@ -27,7 +27,7 @@ import { useStore } from "zustand/react";
 
 import * as api from "../../api/endpoints";
 import type { TodoKey } from "./todo-badges";
-import { toastApiError } from "./toast-api-error";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The `ui_prefs` key the whole map is stored under. */
 export const TODO_PREFS_KEY = "todoDismissed";

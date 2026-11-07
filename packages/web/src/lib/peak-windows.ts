@@ -3,7 +3,7 @@
  * both dictionaries take it; the models feature computes it (`peakWindows` in
  * features/models/model-grouping.ts).
  */
-import type { OffPeakDiscount } from "@prismshadow/penguin-core/model-catalog";
+import type { OffPeakDiscount } from "@prismshadow/penguin-server/model-catalog";
 
 /**
  * A schedule's peak windows reduced to the parts a sentence about them needs. Each dictionary

@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
 import { CodeSurface } from "@prismshadow/penguin-ui";
-import { highlightCode } from "../src/features/chat/code-highlight";
+import { highlightCode } from "../src/lib/highlight/code-highlight";
 import { mount, unmountAll, waitFor } from "./helpers/dom";
 
 const LINES = [
