@@ -54,6 +54,32 @@ async function loadModel() {
   return res.json();
 }
 
+/**
+ * The app's mode, for the one thing this document paints itself — her speech balloon. The sheet
+ * that carries the theme's own tokens is only loaded on the first right-click, and the balloon is
+ * up long before that, so the mode is read here from the store the Web App writes it to (this
+ * document is same-origin with it) and kept live: a switch made in the app reaches this frame as a
+ * `storage` event, and a "system" mode whose OS flips as a media query. The sheet re-applies the
+ * same mode, with the rest of the theme, whenever it is drawn.
+ */
+function applyScheme() {
+  let mode = null;
+  try {
+    mode = localStorage.getItem("penguin.theme");
+  } catch {
+    /* a store that refuses reads: follow the system, below */
+  }
+  const dark =
+    mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
+}
+
+applyScheme();
+addEventListener("storage", (e) => {
+  if (e.key === null || e.key === "penguin.theme") applyScheme();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyScheme);
+
 const TICK_MS = 30_000;
 /** Fullness lost per idle tick, and gained per portion eaten. */
 const HUNGER = 2;

@@ -106,6 +106,20 @@
         padding: 12px;
         text-align: center;
       }
+      /* Her balloon is the one thing this document paints itself, and it is up long before the
+         sheet that carries the theme's tokens is ever loaded — so it spells the app's mode in two
+         rules of its own, and widget.js keeps `dark` on <html> from the same store the Web App
+         writes. (The sheet's own tokens would be a third source of truth for one small box.) */
+      :root.dark #bubble {
+        background: #262729;
+        border-color: rgb(255 255 255 / 0.16);
+        color: #e4e4e5;
+        box-shadow: 0 2px 10px rgb(0 0 0 / 45%);
+      }
+      :root.dark #bubble::after {
+        background: #262729;
+        border-color: rgb(255 255 255 / 0.16);
+      }
     </style>
   </head>
   <body>
