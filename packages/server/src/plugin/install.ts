@@ -205,18 +205,27 @@ export async function installPluginFiles(
   }
 }
 
-/** The tarball `npm pack --json` wrote: `[{ filename }]` on stdout. */
-function packedFileName(stdout: string): string {
+/**
+ * The tarball `npm pack --json` wrote, from its report on stdout: `[{ filename }]` through
+ * npm 11, `{ "<name>": { filename } }` from npm 12 on. Exported for tests: the shape follows
+ * whichever npm the machine has.
+ */
+export function packedFileName(stdout: string): string {
   let parsed: unknown;
   try {
-    // npm prints its JSON after any notices a lifecycle could not suppress; the array is last.
-    parsed = JSON.parse(stdout.slice(stdout.indexOf("[")));
+    // npm prints its JSON after any notices a lifecycle could not suppress; the report opens a
+    // line of its own and runs to the end.
+    parsed = JSON.parse(stdout.slice(stdout.search(/^[[{]/m)));
   } catch {
     throw new PluginInstallError("npm pack did not report the tarball it wrote");
   }
-  const file = Array.isArray(parsed)
-    ? (parsed[0] as { filename?: unknown } | undefined)
-    : undefined;
+  // One package was packed: the array's one entry, or the object's one value.
+  const reports: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? Object.values(parsed)
+      : [];
+  const file = reports[0] as { filename?: unknown } | undefined;
   if (typeof file?.filename !== "string" || path.basename(file.filename) !== file.filename) {
     throw new PluginInstallError("npm pack did not report the tarball it wrote");
   }
