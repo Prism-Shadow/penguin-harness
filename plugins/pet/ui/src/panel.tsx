@@ -6,7 +6,7 @@
  * What it holds is what the board asked a shop window for: the daily签到 and the daily Token
  * usage of this install (a contribution graph, one cell per day) on the left, her state and the
  * shop on the right, and her habits — how often she talks, how much of the page she roams —
- * underneath them, where the old right-click menu used to keep them.
+ * under the graph, where the old right-click menu used to keep them.
  *
  * widget.js owns her state and loads this module on the first right-click, so nothing here costs
  * anything until the dialog is asked for. It hands the module a snapshot and the actions to call
@@ -34,9 +34,14 @@ import { addDays, formatTokens, heatLevel, localDay, readDailyUsage } from "./us
 /** How many weeks of daily usage the graph draws — half a year, which fits beside her state. */
 const WEEKS = 26;
 
-/** One cell per level, from "nothing that day" to the window's busiest day. */
+/**
+ * One cell per level, from "nothing that day" to the window's busiest day. The empty cell is a
+ * mix of the subtle ink rather than the theme's inset surface: the inset is barely a shade off
+ * the card, and a graph of days that happen to have no usage has to look like a grid, not like
+ * a blank.
+ */
 const CELL_FILL = [
-  "var(--ui-inset)",
+  "color-mix(in oklab, var(--ui-fg-subtle) 18%, var(--ui-surface))",
   "color-mix(in oklab, var(--ui-accent) 20%, var(--ui-surface))",
   "color-mix(in oklab, var(--ui-accent) 40%, var(--ui-surface))",
   "color-mix(in oklab, var(--ui-accent) 65%, var(--ui-surface))",
@@ -351,11 +356,11 @@ function PetDialog({
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <CheckInCard pet={pet} host={host} busy={busy} run={run} />
           <UsageCard host={host} />
+          <HabitCard pet={pet} host={host} quiet={quiet} />
         </div>
         <div className="flex w-full flex-col gap-4 sm:w-72 sm:shrink-0">
           <StatusCard pet={pet} host={host} />
           <ShopCard pet={pet} host={host} busy={busy} run={run} />
-          <HabitCard pet={pet} host={host} quiet={quiet} />
         </div>
       </div>
     </Modal>
