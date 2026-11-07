@@ -9,9 +9,6 @@ components/layout/app-layout.tsx -> features/company/channel-sidebar.tsx
 components/layout/app-layout.tsx -> features/company/company-nav-icons.ts
 components/layout/app-layout.tsx -> features/company/org-session-groups.tsx
 components/layout/app-layout.tsx -> features/dock/dock-state.ts
-components/layout/app-layout.tsx -> features/settings/shortcut-runtime.tsx
-components/layout/app-layout.tsx -> features/terminal/index.ts
-components/layout/app-layout.tsx -> features/todos/index.ts
 components/layout/project-dialogs.tsx -> features/chat/chat-defaults-event.ts
 components/layout/project-dialogs.tsx -> features/chat/draft-cache.ts
 components/layout/project-dialogs.tsx -> features/chat/model-select.tsx
@@ -43,7 +40,6 @@ cycle: features/agents -> features/ai-create
 cycle: features/agents -> features/chat
 cycle: features/agents -> features/plugins
 cycle: features/agents -> features/schedules
-cycle: features/agents -> features/todos
 cycle: features/ai-create -> features/chat
 cycle: features/builtin-browser -> features/dock
 cycle: features/builtin-browser -> features/settings
@@ -61,28 +57,22 @@ cycle: features/company -> features/chat
 cycle: features/company -> features/models
 cycle: features/company -> features/plugins
 cycle: features/company -> features/traces
-cycle: features/company -> features/usage
 cycle: features/dock -> features/builtin-browser
 cycle: features/dock -> features/chat
 cycle: features/dock -> features/terminal
 cycle: features/models -> features/ai-create
 cycle: features/models -> features/chat
-cycle: features/models -> features/todos
 cycle: features/plugins -> features/agents
 cycle: features/plugins -> features/ai-create
 cycle: features/plugins -> features/chat
 cycle: features/plugins -> features/settings
-cycle: features/plugins -> features/todos
 cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/chat
 cycle: features/schedules -> features/models
 cycle: features/settings -> features/builtin-browser
 cycle: features/settings -> features/dock
 cycle: features/terminal -> features/dock
-cycle: features/todos -> features/models
-cycle: features/todos -> features/usage
 cycle: features/traces -> features/chat
-cycle: features/usage -> features/todos
 features/agents/agent-settings-page.tsx -> features/chat/thinking-level-select.tsx
 features/agents/agent-settings-page.tsx -> features/chat/thinking-level.ts
 features/agents/workbenches-tab.tsx -> features/chat/skill-use.ts
@@ -103,17 +93,8 @@ features/terminal/terminal-panel.tsx -> features/dock/dock-state.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
 features/terminal/terminal-panel.tsx -> features/dock/panel-context.tsx
 features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts
-features/todos/todo-badges.ts -> features/models/catalog-sync.ts
-features/todos/use-project-todos.ts -> features/usage/usage-controls.ts
-features/todos/use-update-badges.ts -> features/models/catalog-sync.ts
 features/traces/trace-file-view.tsx -> features/chat/history-loading.tsx
 lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
 lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts
 lib/strings.ts -> features/models/model-sort.ts
 rescue/rescue-panel.tsx -> features/harness/harness-history-overlay.tsx
-state/company.tsx -> features/company/channel-list.ts
-state/company.tsx -> features/company/company-beta.tsx
-state/company.tsx -> features/company/org-sessions.ts
-state/company.tsx -> features/company/work-mode.ts
-state/sessions.tsx -> features/builtin-browser/browser-events.ts
-state/sessions.tsx -> features/schedules/schedule-store.ts
