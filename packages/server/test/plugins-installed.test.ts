@@ -18,7 +18,7 @@ import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types
 import { PluginHost } from "../src/plugin/host.js";
 import { PluginInstallError } from "../src/plugin/install.js";
 import { openPushSlip } from "../src/hmr/push-plugins.js";
-import { decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
+import { contentTable, decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -90,12 +90,21 @@ describe("installed plugins", () => {
   async function packTarball(name: string, version: string): Promise<Uint8Array> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-channel-pkg-"));
     try {
-      await fs.mkdir(path.join(dir, "package", "skills"), { recursive: true });
+      await fs.mkdir(path.join(dir, "package", "skills", "keep"), { recursive: true });
       await fs.writeFile(
         path.join(dir, "package", "package.json"),
         JSON.stringify({ name, version }),
       );
-      await fs.writeFile(path.join(dir, "package", "skills", "keep.txt"), "a skill lives here");
+      // A built plugin carries its ifaces.json: the install vets what landed and refuses a
+      // package that contributes nothing (it would not list), so the fixture is one.
+      await fs.writeFile(
+        path.join(dir, "package", "ifaces.json"),
+        contentTable(name, { skills: ["keep"] }),
+      );
+      await fs.writeFile(
+        path.join(dir, "package", "skills", "keep", "SKILL.md"),
+        "---\nname: keep\ndescription: a skill lives here\n---\n\nKeeps the install a plugin.\n",
+      );
       // Relative to the dir: a Windows path carries a drive letter, which GNU tar reads as a
       // remote host name.
       await execFileAsync("tar", ["-czf", "asset.tgz", "package"], { cwd: dir });
