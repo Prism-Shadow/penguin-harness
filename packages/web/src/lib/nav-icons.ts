@@ -35,3 +35,10 @@ export const NAV_ICONS = {
   /** The handbook, the company's knowledge base. */
   orgHandbook: ICONS.bookOpen,
 } as const;
+
+/** New-chat pen over a baseline: the pinned "New chat" row, the collapsed rail's entry and the session list's drafts and create button. */
+export const NEW_CHAT_ICON = ICONS.penLine;
+
+export function glyphOf(name: string | undefined): string {
+  return name !== undefined && Object.hasOwn(ICONS, name) ? ICONS[name as keyof typeof ICONS] : "";
+}

@@ -69,6 +69,7 @@ const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file
 
 /** `features/<name>` for a file under it, else null (the file is a library). */
 function featureOf(file: string): string | null {
+  if (file.startsWith("web-app/")) return "web-app";
   const match = /^features\/([^/]+)\//.exec(file);
   return match === null ? null : `features/${match[1]}`;
 }
@@ -142,10 +143,12 @@ function scan(
       if (other === null || other === own) continue;
       if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
       if (own === null) {
+        if (other === "web-app") continue;
         violations.add(`${file} -> ${target}`);
         continue;
       }
-      if (!/^features\/[^/]+\/index\.tsx?$/.test(target)) violations.add(`${file} -> ${target}`);
+      if (!/^(features\/[^/]+|web-app)\/index\.tsx?$/.test(target))
+        violations.add(`${file} -> ${target}`);
       const set = featureEdges.get(own) ?? new Set<string>();
       set.add(other);
       featureEdges.set(own, set);

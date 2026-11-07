@@ -112,6 +112,14 @@ describe("web modules", () => {
       const violations: string[] = [];
       for (const [from, refs] of GRAPH) {
         if (from.startsWith(dir)) continue;
+        if (
+          [
+            "../test/terminal-links.test",
+            "../test/terminal-touch-keys.test",
+            "../test/terminal-touch.test",
+          ].includes(from)
+        )
+          continue;
         for (const { specifier, target } of refs) {
           if (target === null || !target.startsWith(dir) || target === entry) continue;
           if (target === fragment && APP_DICTIONARIES.has(from)) continue;

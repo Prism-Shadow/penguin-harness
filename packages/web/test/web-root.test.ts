@@ -36,13 +36,14 @@ import { WebAppModule } from "../src/web-app/module";
 import { navPagesOf, type WebAppPage } from "../src/web-app";
 
 import { contributedPages, orgPagesOf, pageTableOf } from "../src/web-app/page-table";
-import { navKeysFor } from "../src/lib/nav-group-collapse";
+import { navKeysFor } from "../src/web-app/sidebar/nav-state";
 import { zh } from "../src/lib/strings";
 import { NAV_ICONS } from "../src/lib/nav-icons";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
+import { ORG_PAGE_RENDERERS } from "../src/features/company/company-nav";
 import { ChatPage } from "../src/features/chat/chat-page";
 
 let pages: readonly WebAppPage[] = [];
