@@ -26,11 +26,11 @@ Four mechanisms start the server. All of them converge: the same env vars drive 
 | CLI auto-start | A CLI command that finds no running server spawns a detached `server` subcommand with `PORT=0` and attaches once the root's lock is live |
 | Desktop | `utilityProcess.fork` launches a separate server process with the server's env injected |
 
-The supervised child runs as `node <entry> server …`, marked `PENGUIN_SERVE_CHILD=1` and told `PENGUIN_SUPERVISED=1`. The parent forwards the terminal's signals, exits with the child's code, and relaunches the child when it exits with the restart code that **Restart to update** asks for. A dev run through tsx cannot be re-spawned by node, so the CLI imports the server in-process instead. `penguin web` additionally polls for readiness and opens the browser.
+The supervised child runs as `node <entry> server …`, marked `PENGUIN_SERVE_CHILD=1` and told `PENGUIN_SUPERVISED=1`. The parent forwards the terminal's signals, exits with the child's code, and relaunches the child when it exits with the restart code that **Restart to update** asks for. Each time it starts a child, the parent checks the data root: when a CLI has been pushed there, `<entry>` is the `penguin-hmr` loader next to the installed entry, so the child runs the pushed CLI; otherwise it is the installed entry. The child exports its own `<entry>` as `PENGUIN_CLI_ENTRY`, so once a push has landed the Agents' `penguin` and the self-update both run the pushed CLI (`penguin update` finds the installation from the loader beside the installed entry). Auto-start goes through the same parent, so a server started that way also runs the pushed CLI. A dev run through tsx cannot be re-spawned by node, so the CLI imports the server in-process instead. `penguin web` additionally polls for readiness and opens the browser.
 
 Auto-start output goes to `<root>/logs/server-auto-<date>.log`.
 
-The desktop process injects `PENGUIN_HOME`, `HOST`, `PORT`, `PENGUIN_DESKTOP_TOKEN` and `PENGUIN_PORT_FILE` via env, plus `PENGUIN_WEB_DIST` and `PENGUIN_CLI_ENTRY` when the app pins them.
+The desktop process injects `PENGUIN_HOME`, `HOST`, `PORT`, `PENGUIN_DESKTOP_TOKEN` and `PENGUIN_PORT_FILE` via env, plus `PENGUIN_WEB_DIST` and `PENGUIN_CLI_ENTRY` when the app pins them. The process it forks runs the pushed CLI's server when the data root has one, with `PENGUIN_CLI_ENTRY` set to the `penguin-hmr` loader bundled beside the app's CLI, and otherwise the server bundled with the app.
 
 > [!NOTE]
 > The server's own configuration comes from environment variables only (`server/src/config.ts`). `system_config.yaml` is agent-level state, read when a Session runs; it plays no part in server boot.

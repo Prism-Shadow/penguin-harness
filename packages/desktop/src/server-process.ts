@@ -35,13 +35,13 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * The server bundle — forked by path. tsup emits @prismshadow/penguin-server as one
- * self-contained file in this package's dist/, so a source run and a packaged app fork the
- * same artifact from the same app-path-relative location (asar is off, see
- * electron-builder.yml, so it is a plain file either way).
+ * The server's entry — forked by path. server-launch.ts runs the pushed CLI's server when the
+ * data root has one, else the server bundle tsup emits as one self-contained dist/server.js.
+ * A source run and a packaged app fork the same artifact from the same app-path-relative
+ * location (asar is off, see electron-builder.yml, so it is a plain file either way).
  */
 function serverEntryPath(): string {
-  return path.join(app.getAppPath(), "dist", "server.js");
+  return path.join(app.getAppPath(), "dist", "server-launch.js");
 }
 
 /**

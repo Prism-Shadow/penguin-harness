@@ -20,6 +20,8 @@ const problems = [];
 for (const [what, rel] of [
   ["the desktop shell build", "dist/main.js"],
   ["the embedded server bundle", "dist/server.js"],
+  ["the embedded server's entry", "dist/server-launch.js"],
+  ["the pushed-CLI loader", "dist/penguin-hmr.js"],
   // Where the server bundle's `require("node-pty")` lands; without it every terminal
   // session fails to spawn, and only once the user opens a terminal panel.
   ["the staged node-pty package", "dist/node_modules/node-pty/package.json"],

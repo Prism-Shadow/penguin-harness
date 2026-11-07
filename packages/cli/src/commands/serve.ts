@@ -39,6 +39,7 @@ import type { Messages, WebProbeFailureKind } from "../i18n.js";
 import { registerResetPasswordCommand } from "./reset-password.js";
 import { registerStatusCommand } from "./server-status.js";
 import { registerStopCommand } from "./server-stop.js";
+import { serverStartEntry } from "../server-entry.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -151,14 +152,18 @@ export function supervisorDecision(
 
 /**
  * Runs the service as a child of this process and keeps it running across restart
- * requests. Returns once the first child is spawned; the process then lives as long as
- * the child does (the handle keeps the event loop alive) and takes its exit code.
+ * requests. Each child starts through the pushed CLI when the data root has one
+ * (server-entry.ts), so a restart after a push runs the pushed entry. Returns once the
+ * first child is spawned; the process then lives as long as the child does (the handle
+ * keeps the event loop alive) and takes its exit code.
  */
 function supervise(cliEntry: string, host: string, port: number, t: Messages): void {
   let stopping = false;
   let child: ChildProcess | null = null;
-  const spawnChild = (): void => {
-    child = spawn(process.execPath, [cliEntry, "server", "--port", String(port), "--host", host], {
+  const spawnChild = async (): Promise<void> => {
+    const entry = await serverStartEntry(cliEntry, resolveRoot());
+    if (stopping) return;
+    child = spawn(process.execPath, [entry, "server", "--port", String(port), "--host", host], {
       stdio: "inherit",
       env: { ...process.env, [SERVE_CHILD_ENV]: "1", PENGUIN_SUPERVISED: "1" },
     });
@@ -166,7 +171,7 @@ function supervise(cliEntry: string, host: string, port: number, t: Messages): v
       const decision = supervisorDecision({ code, signal }, stopping);
       if (decision.action === "respawn") {
         process.stdout.write(`${t.serve.restarting}\n`);
-        spawnChild();
+        void spawnChild();
         return;
       }
       process.exitCode = decision.code;
@@ -184,7 +189,7 @@ function supervise(cliEntry: string, host: string, port: number, t: Messages): v
       });
     }
   }
-  spawnChild();
+  void spawnChild();
 }
 
 async function startServer(
@@ -195,11 +200,13 @@ async function startServer(
   const host = opts.host ?? process.env.HOST ?? DEFAULT_HOST;
   process.env.PORT = String(port);
   process.env.HOST = host;
-  // Tell the server which CLI entry script launched it: the admin self-update endpoint
-  // (POST /api/version/update) re-runs `node <entry> update --yes`. Set before the import
-  // so it is visible however the server captures its environment; when the server was not
-  // started through the CLI (or the entry is not re-runnable by plain node, e.g. a tsx dev
-  // run) the variable stays unset and the endpoint reports "unsupported".
+  // Tell the server which CLI entry script launched it — the CLI of the harness that runs
+  // it: the `penguin-hmr` loader for a child the supervisor started on the pushed CLI. The
+  // `<root>/bin/penguin` shim the Agents run execs it, and the admin self-update endpoint
+  // (POST /api/version/update) re-runs it as `node <entry> update --yes`. Set before the
+  // import so it is visible however the server captures its environment; when the entry is
+  // not re-runnable by plain node (e.g. a tsx dev run) the variable stays unset and the
+  // endpoint reports "unsupported".
   const cliEntry = cliEntryFor(process.argv[1]);
   if (cliEntry !== null) {
     process.env.PENGUIN_CLI_ENTRY = cliEntry;
