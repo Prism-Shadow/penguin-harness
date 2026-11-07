@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
-import { createServer, type AddressInfo } from "node:http";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -95,7 +96,9 @@ describe("installed plugins", () => {
         JSON.stringify({ name, version }),
       );
       await fs.writeFile(path.join(dir, "package", "skills", "keep.txt"), "a skill lives here");
-      await execFileAsync("tar", ["-czf", path.join(dir, "asset.tgz"), "-C", dir, "package"]);
+      // Relative to the dir: a Windows path carries a drive letter, which GNU tar reads as a
+      // remote host name.
+      await execFileAsync("tar", ["-czf", "asset.tgz", "package"], { cwd: dir });
       return new Uint8Array(await fs.readFile(path.join(dir, "asset.tgz")));
     } finally {
       await fs.rm(dir, { recursive: true, force: true });

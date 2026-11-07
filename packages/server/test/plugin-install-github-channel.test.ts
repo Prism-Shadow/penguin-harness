@@ -59,7 +59,9 @@ async function packTarball(name: string, version: string): Promise<Uint8Array> {
       path.join(dir, "package", "package.json"),
       JSON.stringify({ name, version }),
     );
-    await execFileAsync("tar", ["-czf", path.join(dir, "asset.tgz"), "-C", dir, "package"]);
+    // Relative to the dir: a Windows path carries a drive letter, which GNU tar reads as a
+    // remote host name.
+    await execFileAsync("tar", ["-czf", "asset.tgz", "package"], { cwd: dir });
     return new Uint8Array(await fs.readFile(path.join(dir, "asset.tgz")));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
