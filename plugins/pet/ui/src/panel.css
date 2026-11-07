@@ -1,0 +1,42 @@
+/**
+ * The pet dialog's sheet: Tailwind 4 over the shared UI package's theme system — the same stack
+ * the Web App draws its pages with (packages/web/src/styles.css), so every class the package's
+ * components spell resolves here too.
+ *
+ * penguin-ui ships source, not a built stylesheet, so its component classes have to be named to
+ * Tailwind explicitly: `source(none)` turns off the automatic scan (this directory also holds
+ * the committed figure pack and the built bundle, neither of which spells utility classes) and
+ * the two `@source` lines hand it exactly the files that do.
+ */
+@import "tailwindcss" source(none);
+@import "@prismshadow/penguin-ui/theme.css";
+@import "@prismshadow/penguin-ui/themes/github.css";
+@import "@prismshadow/penguin-ui/themes/modern.css";
+@import "@prismshadow/penguin-ui/themes/geek.css";
+
+@source "./";
+@source "../../../../packages/ui/src";
+@source not "../../../../packages/ui/src/testing";
+
+/*
+ * The two rules the frame's own contract needs, and they are unlayered on purpose: everything
+ * above lives in the theme's cascade layers, which an unlayered rule outranks whatever its
+ * specificity. (widget.html carries the long version.)
+ *
+ * 1. The dock draws this document bare over the app's page, and its frame element declares
+ *    `color-scheme: only light`; a frame whose document disagrees is painted as an opaque canvas
+ *    instead of letting the page show through. The dialog still follows the app's dark tokens —
+ *    the theme's `dark` class on <html> — but the used colour scheme has to stay light, and the
+ *    theme's own rule would turn it dark.
+ * 2. The theme paints the page (`body { background-color: var(--ui-canvas) }`); this document is
+ *    a window onto the page behind it, so that paint has to stay transparent.
+ */
+:root,
+:root.dark {
+  color-scheme: only light;
+}
+
+html,
+body {
+  background: transparent;
+}

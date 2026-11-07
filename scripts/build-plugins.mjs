@@ -162,6 +162,10 @@ async function sourceHash(dir, into) {
     const sub = path.join(dir, name);
     if (!fs.existsSync(sub) || !fs.statSync(sub).isDirectory()) continue;
     for (const rel of await walk(sub)) {
+      // The same rule one level down: a shipped directory may hold a build of its own (a
+      // plugin's `ui/dist`, written by that package's `build`), and hashing it would key the
+      // cache on the last build's output instead of on its sources — one rebuild, forever.
+      if (rel.split("/").some((part) => part === "dist" || part === "vendor")) continue;
       into
         .update(`${name}/${rel}`)
         .update("\0")

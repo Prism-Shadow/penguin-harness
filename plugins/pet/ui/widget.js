@@ -12,15 +12,19 @@
  * however you look at it. Feeding is a double-click: it eats one portion from the pantry
  * (+fullness), PATCHed.
  *
- * Her menu is a right-click on her (#menu, #shop): the pantry is bought with the coins her
- * owner's Token usage earns (TOKENS_PER_COIN), she can be told how often to talk on her own,
- * and how much of the page she may roam. Both are stored in the same document, so every face
- * of the pet — the CLI's `pet` commands included — sees one pet.
+ * Her dialog is a right-click on her (#panel, ./src/panel.tsx → ./dist by `pnpm build:ui`): the
+ * daily签到 and the daily Token graph beside her state and the shop her coins are spent in, and
+ * how often she talks and how much of the page she roams. It is the shared UI package's work
+ * (React + @prismshadow/penguin-ui) and is loaded on that first right-click, so the preload the
+ * dock does costs nothing until someone asks for it; this file owns her state and hands the
+ * dialog a snapshot to draw. Everything is stored in the same document, so every face of the
+ * pet — the CLI's `pet` commands included — sees one pet.
  *
  * The dock mounts this document bare and fills the window with it (no card, no title bar, no
  * close button — the dock's tile opens and closes it), so the page is her stage and the document
  * also answers where the pointer is over her: the handshake below is what keeps the page beneath
- * this frame clickable — her own panels count as "on her", or they could not be clicked at all.
+ * this frame clickable — while her dialog is up the whole frame counts as "on her", or the
+ * dialog could not be clicked at all.
  */
 
 import * as kit from "./figure/kit/body.js";
@@ -70,21 +74,16 @@ const GIFT_COINS = 3;
 const MINE_MS = 5 * 60_000;
 /** How many coins the shop sells at once. */
 const BUY_AMOUNTS = [1, 5, 10];
+/** What a daily签到 pays, and the extra it pays every STREAK_EVERY days in a row. */
+const CHECKIN_FOOD = 1;
+const CHECKIN_COINS = 2;
+const STREAK_EVERY = 7;
+const STREAK_BONUS = 5;
 
 const root = document.getElementById("root");
 const bubbleEl = document.getElementById("bubble");
-const hud = document.getElementById("hud");
-const menuEl = document.getElementById("menu");
-const shopEl = document.getElementById("shop");
-const menuFood = document.getElementById("menu-food");
-const menuShop = document.getElementById("menu-shop");
-const shopCoins = document.getElementById("shop-coins");
-const shopUsed = document.getElementById("shop-used");
-const shopFood = document.getElementById("shop-food");
-const shopBuy = document.getElementById("shop-buy");
-const shopHint = document.getElementById("shop-hint");
-const talkChips = document.getElementById("talk-chips");
-const areaChips = document.getElementById("area-chips");
+/** Where the dialog's React tree is mounted (empty until the first right-click). */
+const panelRoot = document.getElementById("panel");
 
 let body = null;
 let fullness = 0;
@@ -96,26 +95,28 @@ let coins = 0;
 let mined = 0;
 /** Whether the starter bowl was granted (it is granted once, then the state says so). */
 let gift = false;
+/** The last day she was signed in for, and how many days in a row (`pet.checkin`). */
+let checkin = { last: "", streak: 0 };
 let doing = "idle";
 let bubbleUntil = 0;
 
 /* ---------- her menu's vocabulary ---------- */
 
-/** How often she speaks on her own: the idle gap, and the label the menu shows. */
+/** How often she speaks on her own: the idle gap between one line and the next. */
 const TALKS = {
-  off: { label: "静音", idle: 0 },
-  rare: { label: "少", idle: 4 * 60_000 },
-  normal: { label: "中", idle: 100_000 },
-  chatty: { label: "多", idle: 30_000 },
+  off: { idle: 0 },
+  rare: { idle: 4 * 60_000 },
+  normal: { idle: 100_000 },
+  chatty: { idle: 30_000 },
 };
 let talk = "normal";
 
 /** How much of the page she may roam: the stage box, and whether she wanders at all. */
 const AREAS = {
-  page: { label: "全页", top: "0", roam: "free" },
-  lower: { label: "下半屏", top: "52%", roam: "free" },
-  dock: { label: "底部", top: "calc(100% - 240px)", roam: "free" },
-  spot: { label: "原地", top: "0", roam: "off" },
+  page: { top: "0", roam: "free" },
+  lower: { top: "52%", roam: "free" },
+  dock: { top: "calc(100% - 240px)", roam: "free" },
+  spot: { top: "0", roam: "off" },
 };
 let area = "page";
 
@@ -220,6 +221,15 @@ function onEvent(kind, detail) {
 let over = false;
 let pressed = false;
 let lastAt = null;
+/** Whether her dialog is on screen: while it is, the frame holds the pointer for its whole life. */
+let panelOpen = false;
+/**
+ * A pointer that has not moved since the dialog opened. She walks while it is up, so the point
+ * the frame was given can stop being on her a moment later — but the hand the opened it has not
+ * gone anywhere, and a dialog that shut itself as she stepped away could not be used at all.
+ * Only a NEW position (the dock's probe, or a move of our own) may take the pointer back.
+ */
+let resting = false;
 /**
  * Whether anyone can see this document. The dock mounts the frame AHEAD of the click that
  * opens it — that is the preload — and says which state it is in with
@@ -240,25 +250,14 @@ function onPet(at) {
   return body.layout().hit.some((c) => Math.hypot(x - c.x, y - c.y) < c.r);
 }
 
-/** Whether a document point is on one of her open panels. */
-function onPanel(at) {
-  if (at === null) return false;
-  for (const el of [menuEl, shopEl]) {
-    if (el.hidden) continue;
-    const r = el.getBoundingClientRect();
-    if (at.x >= r.left - 2 && at.x <= r.right + 2 && at.y >= r.top - 2 && at.y <= r.bottom + 2) return true;
-  }
-  return false;
-}
-
 function answered(next) {
   if (next === over) return;
   over = next;
   // The dock is the only parent this document has; posting to itself (opened on its own) is
   // harmless — nothing here acts on the message it sends.
   parent.postMessage({ penguin: "widget-over", over: next }, location.origin);
-  // The pointer went back to the page: whatever she had open is dismissed with it.
-  if (!next) closePanels();
+  // The pointer went back to the page: her dialog goes with it.
+  if (!next) closePanel();
 }
 
 addEventListener("message", (e) => {
@@ -275,7 +274,7 @@ addEventListener("message", (e) => {
   if (!shown || typeof data.x !== "number" || typeof data.y !== "number") return;
   lastAt = { x: data.x, y: data.y };
   resting = false;
-  answered(onPet(lastAt) || onPanel(lastAt));
+  answered(onPet(lastAt) || panelOpen);
 });
 
 /* ---------- pointer: the document relays to the body ----------
@@ -285,30 +284,32 @@ addEventListener("message", (e) => {
  */
 
 document.addEventListener("pointerdown", (e) => {
-  if (hud.contains(e.target)) return; // the panels' own controls
+  // Her dialog owns every pointer it gets: the frame only takes events while it is up, and the
+  // scrim under it is the dialog's own (it dismisses on a click, not the stage).
+  if (panelOpen) return;
   const at = docPoint(e);
   if (onPet(at)) {
     root.setPointerCapture?.(e.pointerId);
     pressed = true;
     body?.pointer("down", stagePoint(e));
-  } else {
-    closePanels();
   }
 });
 
 document.addEventListener("pointermove", (e) => {
+  if (panelOpen) return;
   const at = docPoint(e);
   lastAt = at;
   resting = false;
   body?.pointer("move", stagePoint(e));
-  if (!pressed) answered(onPet(at) || onPanel(at));
+  if (!pressed) answered(onPet(at));
 });
 
 document.addEventListener("pointerup", (e) => {
+  if (panelOpen) return;
   const at = docPoint(e);
   pressed = false;
   body?.pointer("up", stagePoint(e));
-  answered(onPet(at) || onPanel(at));
+  answered(onPet(at));
 });
 
 document.addEventListener("pointercancel", (e) => {
@@ -317,142 +318,183 @@ document.addEventListener("pointercancel", (e) => {
 });
 
 document.documentElement.addEventListener("pointerleave", () => {
+  if (panelOpen) return; // a dialog stays up while the pointer is out of the window
   body?.pointer("leave", null);
   lastAt = null;
   answered(false);
 });
 
-addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closePanels();
-});
-
-/* ---------- her menu ---------- */
+/* ---------- her dialog: the shared UI package's panel, loaded on demand ---------- */
 
 let idleAt = 0;
 
-/** Fills a chips row: one button per option, the current one pressed. */
-function chips(into, table, current, onPick) {
-  into.textContent = "";
-  for (const [key, def] of Object.entries(table)) {
-    const el = document.createElement("button");
-    el.type = "button";
-    el.className = "chip";
-    el.textContent = def.label;
-    el.setAttribute("aria-pressed", String(key === current));
-    el.addEventListener("click", () => onPick(key));
-    into.appendChild(el);
-  }
-}
-
-function renderMenu() {
-  menuFood.textContent = `${food} 份`;
-  chips(talkChips, TALKS, talk, (key) => {
-    talk = key;
-    idleAt = 0;
-    renderMenu();
-    void patch({ pet: { talk } });
-  });
-  chips(areaChips, AREAS, area, (key) => {
-    area = key;
-    applyArea();
-    renderMenu();
-    void patch({ pet: { area } });
-  });
-}
-
-function renderShop() {
-  shopCoins.textContent = coins.toFixed(1);
-  shopUsed.textContent = (mined / TOKENS_PER_COIN).toFixed(1);
-  shopFood.textContent = String(food);
-  shopBuy.textContent = "";
-  for (const n of BUY_AMOUNTS) {
-    const el = document.createElement("button");
-    el.type = "button";
-    el.className = "btn";
-    el.disabled = coins < n;
-    el.textContent = `买 ${n} 币 · ${n * PORTIONS_PER_COIN} 份食物`;
-    el.addEventListener("click", () => void buy(n));
-    shopBuy.appendChild(el);
-  }
-  // The starter bowl is worth explaining until real usage has been credited.
-  document.getElementById("shop-gift").hidden = !(gift && mined === 0);
-  shopHint.textContent =
-    food < 1
-      ? "买好后双击她投喂，1 份 = 饱食度 +20"
-      : coins < 1
-        ? "每用掉 1M tokens 攒 1 币，聊几句就涨"
-        : "双击她投喂 1 份（饱食度 +20）";
-}
-
-/** Puts a panel beside a document point, kept inside the window. */
-function place(el, at) {
-  const pad = 8;
-  const w = el.offsetWidth;
-  const h = el.offsetHeight;
-  el.style.left = `${Math.min(Math.max(pad, at.x + 6), Math.max(pad, innerWidth - w - pad))}px`;
-  el.style.top = `${Math.min(Math.max(pad, at.y + 6), Math.max(pad, innerHeight - h - pad))}px`;
-}
-
-/** An open panel keeps her still and keeps the frame's pointer: both are "on her". */
+/** An open dialog keeps her still: she must not walk out from under the hand using it. */
 function panelsOpen(open) {
   body?.set({ dialogOpen: open });
 }
 
-/**
- * A pointer that has not moved since a panel opened. She walks while a menu is up, so the
- * point the frame was given can stop being on her or on the panel a moment later — but the
- * hand that opened it has not gone anywhere, and a panel that shut itself as she stepped away
- * could not be used at all. Only a NEW position (the dock's probe, or a move of our own) may
- * take the pointer back; until then the panel keeps it.
- */
-let resting = false;
+/** The pet, as her dialog draws it (ui/src/types.ts: PetSnapshot). */
+function snapshot() {
+  return { name: "", fullness, food: Math.floor(food), coins, mined, gift, talk, area, checkin };
+}
 
-function openMenu(at) {
-  shopEl.hidden = true;
-  renderMenu();
-  menuEl.hidden = false;
-  place(menuEl, at);
+/** A file beside this document, under the version stamp it was framed with (see VERSION). */
+function uiUrl(path) {
+  const url = new URL(path, import.meta.url);
+  if (VERSION !== "") url.search = `?v=${encodeURIComponent(VERSION)}`;
+  return url.href;
+}
+
+/** The dialog's sheet, in before it is drawn: a dialog that landed unstyled would flash. */
+let sheet = null;
+function loadSheet() {
+  sheet ??= new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = uiUrl("./dist/panel.css");
+    link.dataset.petPanel = "";
+    link.addEventListener("load", () => resolve());
+    link.addEventListener("error", () => reject(new Error(`panel.css ${link.href}`)));
+    document.head.append(link);
+  });
+  return sheet;
+}
+
+/** The dialog module and the handle it hands back; both stay null until the first right-click. */
+let panel = null;
+let loading = null;
+
+/** Loads the dialog once: its sheet, then the module — React and the UI package ride inside it. */
+function ensurePanel() {
+  loading ??= Promise.all([loadSheet(), import(uiUrl("./dist/panel.js"))])
+    .then(([, mod]) => {
+      panel = mod.mountPetPanel(panelRoot, {
+        // What the dialog prints is what this file spends: the rules are handed over, never
+        // copied into a second vocabulary that could drift from these numbers.
+        rules: {
+          feed: FEED,
+          portionsPerCoin: PORTIONS_PER_COIN,
+          tokensPerCoin: TOKENS_PER_COIN,
+          buyAmounts: BUY_AMOUNTS,
+          checkinFood: CHECKIN_FOOD,
+          checkinCoins: CHECKIN_COINS,
+          streakEvery: STREAK_EVERY,
+          streakBonus: STREAK_BONUS,
+        },
+        buy,
+        checkin: signIn,
+        setTalk: (key) => setTalk(key),
+        setArea: (key) => setArea(key),
+        close: closePanel,
+      });
+    })
+    .catch((err) => {
+      loading = null;
+      fail(`她的小店没开起来。${err?.message ?? ""}`);
+      throw err;
+    });
+  return loading;
+}
+
+/** A load already under way (a second right-click while the bundle is in flight). */
+let opening = false;
+
+/** Hands the dialog the current numbers; a closed dialog keeps nothing. */
+function pushSnapshot() {
+  if (panelOpen) panel?.update(snapshot());
+}
+
+async function openPanel() {
+  if (panelOpen || opening || !shown) return;
+  opening = true;
+  try {
+    await ensurePanel();
+  } catch {
+    return;
+  } finally {
+    opening = false;
+  }
+  panelOpen = true;
   resting = true;
   panelsOpen(true);
+  panel?.open(snapshot());
   answered(true);
 }
 
-function openShop(at) {
-  menuEl.hidden = true;
-  renderShop();
-  shopEl.hidden = false;
-  place(shopEl, at);
-  resting = true;
-  panelsOpen(true);
-  answered(true);
-}
-
-function closePanels() {
+function closePanel() {
+  if (!panelOpen) return;
+  panelOpen = false;
   resting = false;
-  if (menuEl.hidden && shopEl.hidden) return;
-  menuEl.hidden = true;
-  shopEl.hidden = true;
+  panel?.close();
   panelsOpen(false);
+  // Whoever was looking gets the pointer back the way they had it: over her, if it still is.
+  answered(onPet(lastAt));
 }
 
-/** Where a panel opens when the click did not come from the page (a hungry double-click). */
-function nearHer() {
-  const at = lastAt ?? { x: innerWidth / 2, y: innerHeight / 2 };
-  return { x: Math.min(innerWidth - 300, at.x), y: Math.min(innerHeight - 240, at.y) };
+/* ---------- her habits: how often she talks, how much of the page she roams ---------- */
+
+async function setTalk(key) {
+  if (!Object.hasOwn(TALKS, key) || key === talk) return;
+  talk = key;
+  idleAt = 0;
+  pushSnapshot();
+  try {
+    await patch({ pet: { talk } });
+  } catch {
+    /* the next read reads the truth back */
+  }
 }
 
-menuShop.addEventListener("click", () => {
-  const r = menuShop.getBoundingClientRect();
-  openShop({ x: r.left, y: r.bottom + 6 });
-});
+async function setArea(key) {
+  if (!Object.hasOwn(AREAS, key) || key === area) return;
+  area = key;
+  applyArea();
+  pushSnapshot();
+  try {
+    await patch({ pet: { area } });
+  } catch {
+    /* the next read reads the truth back */
+  }
+}
 
-document.getElementById("shop-close").addEventListener("click", () => closePanels());
+/** The local calendar day of an instant, `yyyy-mm-dd` — the签到's own clock. */
+function dayKey(at) {
+  const y = at.getFullYear();
+  const m = String(at.getMonth() + 1).padStart(2, "0");
+  const d = String(at.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * 签到: once a day, a portion of food and a couple of coins, and a little extra every
+ * STREAK_EVERY days in a row. The reward is computed here and written in one PATCH; a refused
+ * write puts the numbers back, because a dialog that said "已签到" for a day the server never
+ * heard of would be worse than no签到 at all.
+ */
+async function signIn() {
+  const today = dayKey(new Date());
+  if (checkin.last === today) return;
+  const yesterday = dayKey(new Date(Date.now() - 86_400_000));
+  const before = { food, coins, checkin };
+  const streak = checkin.last === yesterday ? checkin.streak + 1 : 1;
+  const bonus = streak % STREAK_EVERY === 0 ? STREAK_BONUS : 0;
+  checkin = { last: today, streak };
+  food += CHECKIN_FOOD;
+  coins += CHECKIN_COINS + bonus;
+  pushSnapshot();
+  say(bonus > 0 ? `连续 ${streak} 天！多给你 ${bonus} 枚币` : "签到成功，今天也有饭吃～");
+  try {
+    await patch({ pet: { food, coins, checkin } });
+  } catch {
+    ({ food, coins, checkin } = before);
+    pushSnapshot();
+  }
+}
 
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  const at = docPoint(e);
-  if (onPet(at)) openMenu(at);
-  else closePanels();
+  if (onPet(docPoint(e))) void openPanel();
+  else closePanel();
 });
 
 /* ---------- the pantry: feeding, buying, and the coins Token usage earns ---------- */
@@ -461,7 +503,7 @@ async function feed() {
   if (!body) return;
   if (food < 1) {
     say(pick(BROKE_LINES));
-    openShop(nearHer());
+    void openPanel();
     return;
   }
   food -= 1;
@@ -473,6 +515,7 @@ async function feed() {
   } catch {
     /* the next tick reads the truth back */
   }
+  pushSnapshot();
 }
 
 async function buy(n) {
@@ -480,12 +523,13 @@ async function buy(n) {
   coins -= n;
   food += n * PORTIONS_PER_COIN;
   say(pick(BUY_LINES));
-  renderShop();
+  pushSnapshot();
   try {
     await patch({ pet: { coins, food } });
   } catch {
     /* the next read reads the truth back */
   }
+  pushSnapshot();
 }
 
 /** Reads every Project's lifetime Token total and turns what is new into coins. */
@@ -506,7 +550,7 @@ async function mine() {
     mined = lifetime;
     if (Math.floor(coins) > wasWhole) say(pick(COIN_LINES));
     await patch({ pet: { coins, mined } });
-    renderShop();
+    pushSnapshot();
   } catch {
     /* an unreachable server keeps the balance she already has */
   } finally {
@@ -559,12 +603,17 @@ function apply(state) {
   if (typeof pet.talk === "string" && Object.hasOwn(TALKS, pet.talk) && pet.talk !== talk) {
     talk = pet.talk;
     idleAt = 0;
-    if (!menuEl.hidden) renderMenu();
   }
   if (typeof pet.area === "string" && Object.hasOwn(AREAS, pet.area) && pet.area !== area) {
     area = pet.area;
     applyArea();
-    if (!menuEl.hidden) renderMenu();
+  }
+  if (pet.checkin !== null && typeof pet.checkin === "object") {
+    const stored = pet.checkin;
+    checkin = {
+      last: typeof stored.last === "string" ? stored.last : "",
+      streak: typeof stored.streak === "number" ? stored.streak : 0,
+    };
   }
   // Her starter bowl: granted once, and the state says so from then on.
   if (pet.gift !== true && !gift) {
@@ -575,6 +624,7 @@ function apply(state) {
   if (doc.mood?.doing) wish(doc.mood.doing);
   const line = doc.mood?.bubble;
   if (line) say(line);
+  pushSnapshot();
 }
 
 /** One idle tick: the pet grows a little hungry, and the server keeps the document. */
@@ -610,7 +660,7 @@ function frame(now) {
   chatter(now);
   // She walks: a pointer that was on her a moment ago may be over the page again now — unless
   // it has not moved since a panel opened, which keeps the frame's pointer (see `resting`).
-  if (over && !pressed && !resting) answered(onPet(lastAt) || onPanel(lastAt));
+  if (over && !pressed && !resting) answered(onPet(lastAt) || panelOpen);
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
     const at = body.layout().bubble;
@@ -647,7 +697,7 @@ function setShown(next) {
   if (next === shown) return;
   shown = next;
   if (!shown) {
-    closePanels();
+    closePanel();
     bubbleUntil = 0;
     bubbleEl.textContent = "";
     bubbleEl.style.display = "none";
@@ -719,7 +769,7 @@ async function start() {
 
 /** Feeding: a double-click fills the whale up from her pantry, and the server keeps the numbers. */
 document.addEventListener("dblclick", (e) => {
-  if (hud.contains(e.target)) return;
+  if (panelOpen) return;
   const at = docPoint(e);
   if (!onPet(at)) return;
   void feed();
