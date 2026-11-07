@@ -40,3 +40,18 @@ html,
 body {
   background: transparent;
 }
+
+/*
+ * The ink follows the theme too. widget.html gives the document a colour of its own for the
+ * speech bubble — a game bubble, not chrome — and an inherited colour would reach the dialog and
+ * paint its headlines near-invisible on a dark surface. The bubble keeps its own; everything else
+ * here is the theme's.
+ */
+body {
+  color: var(--ui-fg);
+  font-family: var(--ui-font-ui);
+}
+
+#bubble {
+  color: #3a3330;
+}
