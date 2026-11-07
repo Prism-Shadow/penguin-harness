@@ -541,7 +541,9 @@ async function mine() {
     const projects = await readJson("/api/projects");
     let lifetime = 0;
     for (const p of projects.projects ?? []) {
-      const totals = await readJson(`/api/projects/${encodeURIComponent(p.projectId)}/usage/model-totals`);
+      const totals = await readJson(
+        `/api/projects/${encodeURIComponent(p.projectId)}/usage/model-totals`,
+      );
       for (const t of totals.totals ?? []) lifetime += typeof t.tokens === "number" ? t.tokens : 0;
     }
     if (lifetime <= mined) return;
@@ -588,8 +590,10 @@ function wish(next) {
   if (next === "walk") body.walk(bounds().W * (0.2 + Math.random() * 0.6));
   else if (next === "sit") body.do("sit");
   else if (next === "sleep") body.do("sleep");
-  else if (next === "eat") { body.do("excited"); say("好好吃！"); }
-  else body.do("stand");
+  else if (next === "eat") {
+    body.do("excited");
+    say("好好吃！");
+  } else body.do("stand");
 }
 
 function apply(state) {
@@ -629,12 +633,20 @@ function apply(state) {
 
 /** One idle tick: the pet grows a little hungry, and the server keeps the document. */
 async function tick() {
-  if (fullness <= 0) { if (body && Math.random() < 0.5) say(pick(HUNGRY_LINES)); return; }
+  if (fullness <= 0) {
+    if (body && Math.random() < 0.5) say(pick(HUNGRY_LINES));
+    return;
+  }
   try {
     const answer = await patch({ pet: { fullness: Math.max(0, fullness - HUNGER) } });
     apply(answer.state);
-    if (fullness < 15 && Math.random() < 0.5) { body?.do("sad"); say(pick(HUNGRY_LINES)); }
-  } catch { /* the next tick tries again; a widget stays quiet about its failures */ }
+    if (fullness < 15 && Math.random() < 0.5) {
+      body?.do("sad");
+      say(pick(HUNGRY_LINES));
+    }
+  } catch {
+    /* the next tick tries again; a widget stays quiet about its failures */
+  }
 }
 
 /* ---------- the frame loop ---------- */
@@ -642,8 +654,14 @@ async function tick() {
 /** Her own chatter: one line per gap, only while the page is in front of someone. */
 function chatter(now) {
   const gap = TALKS[talk]?.idle ?? 0;
-  if (!gap) { idleAt = 0; return; }
-  if (!idleAt) { idleAt = now + gap; return; }
+  if (!gap) {
+    idleAt = 0;
+    return;
+  }
+  if (!idleAt) {
+    idleAt = now + gap;
+    return;
+  }
   if (now < idleAt) return;
   idleAt = now + gap * (0.75 + Math.random() * 0.5);
   if (document.hidden) return;
@@ -653,7 +671,10 @@ function chatter(now) {
 let last = 0;
 function frame(now) {
   frameId = 0;
-  if (!shown) { last = 0; return; }
+  if (!shown) {
+    last = 0;
+    return;
+  }
   const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
   last = now;
   body.step(dt);
@@ -754,7 +775,10 @@ async function start() {
     });
     apply(answer.state);
     applyArea();
-    addEventListener("resize", () => { refreshBox(); body.resize(); });
+    addEventListener("resize", () => {
+      refreshBox();
+      body.resize();
+    });
     ready = true;
     // The dock may have mounted this frame closed (the preload) and said so while the figure
     // was still loading: only a frame someone can see starts its loops.

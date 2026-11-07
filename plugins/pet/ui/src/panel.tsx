@@ -223,7 +223,10 @@ function StatusCard({ pet, host }: { pet: PetSnapshot; host: PetPanelHost }) {
   const portions = Math.floor(pet.food);
   return (
     <Card padding="md">
-      <CardHeader title="她的状态" description={`已用 ${(pet.mined / 1_000_000).toFixed(1)}M tokens`} />
+      <CardHeader
+        title="她的状态"
+        description={`已用 ${(pet.mined / 1_000_000).toFixed(1)}M tokens`}
+      />
       <div className="flex items-center justify-between text-xs">
         <span className="text-fg-muted">饱食度</span>
         <span className="tabular-nums text-fg">{fullness} / 100</span>
@@ -335,15 +338,12 @@ function PetDialog({
   const quiet = useCallback((act: () => Promise<unknown>) => {
     void act().catch(() => {});
   }, []);
-  const run = useCallback(
-    (key: string, act: () => Promise<unknown>) => {
-      setBusy(key);
-      void act()
-        .catch(() => {})
-        .finally(() => setBusy(null));
-    },
-    [],
-  );
+  const run = useCallback((key: string, act: () => Promise<unknown>) => {
+    setBusy(key);
+    void act()
+      .catch(() => {})
+      .finally(() => setBusy(null));
+  }, []);
   return (
     <Modal
       open
