@@ -15,6 +15,11 @@ import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
  * The server and the CLI are bundled from their own packages' build output, so the app runs
  * exactly what an `npm install` of those packages would, linked into one file each.
  *
+ * A sixth, the main window's preload (src/preload.ts), is built by a config of its own: a
+ * sandboxed preload cannot load an ES module, so it is CommonJS, and it may require nothing but
+ * Electron's renderer modules, so it carries no banner. The shell's config cleans dist/ around it
+ * rather than racing it — tsup runs the two at once.
+ *
  * Bundling absorbs every JavaScript dependency, so the app carries no JavaScript dependency
  * tree. Two things cannot be absorbed: node-pty, a native module the server reaches through a
  * runtime `require` whose loader resolves the binary relative to its own package directory —
@@ -23,31 +28,44 @@ import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
  * bundled core loader resolves by package name from the bundle's own location, which travel
  * as this package's declared dependencies (electron-builder collects them, pnpm links them).
  */
-export default defineConfig({
-  entry: {
-    main: "src/main.ts",
-    launcher: "src/launcher.ts",
-    "pty-payload": "src/pty-payload.ts",
-    server: "../server/dist/index.js",
-    penguin: "../cli/dist/penguin.js",
+export default defineConfig([
+  {
+    entry: {
+      main: "src/main.ts",
+      launcher: "src/launcher.ts",
+      "pty-payload": "src/pty-payload.ts",
+      server: "../server/dist/index.js",
+      penguin: "../cli/dist/penguin.js",
+    },
+    format: ["esm"],
+    target: "node24",
+    platform: "node",
+    // Everything but the preload, which the second config writes beside these at the same time.
+    clean: ["!preload.cjs", "!preload.cjs.map"],
+    // Generated for a source run; electron-builder.yml keeps the .map files out of installers,
+    // where they would roughly triple what these bundles add.
+    sourcemap: true,
+    splitting: false,
+    // Load-bearing: bundled CJS dependencies reference `require` (yaml, tar, smol-toml,
+    // commander, mmsp) and `__dirname` (@larksuiteoapi/node-sdk) inside their own wrapper,
+    // and an ESM bundle supplies neither. scripts/deploy.mjs uses the same banner.
+    banner: { js: ESM_CJS_BANNER },
+    // `electron` is a runtime builtin inside the Electron main process, and its npm package is
+    // only a shim that reads the binary's path from disk — bundling that shim is what a bare
+    // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
+    // this package's `dependencies`, and the only ones it declares are the data-only plugin
+    // packages, which nothing imports.
+    external: ["electron"],
+    define: buildGitDefine(),
   },
-  format: ["esm"],
-  target: "node24",
-  platform: "node",
-  clean: true,
-  // Generated for a source run; electron-builder.yml keeps the .map files out of installers,
-  // where they would roughly triple what these bundles add.
-  sourcemap: true,
-  splitting: false,
-  // Load-bearing: bundled CJS dependencies reference `require` (yaml, tar, smol-toml,
-  // commander, mmsp) and `__dirname` (@larksuiteoapi/node-sdk) inside their own wrapper,
-  // and an ESM bundle supplies neither. scripts/deploy.mjs uses the same banner.
-  banner: { js: ESM_CJS_BANNER },
-  // `electron` is a runtime builtin inside the Electron main process, and its npm package is
-  // only a shim that reads the binary's path from disk — bundling that shim is what a bare
-  // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
-  // this package's `dependencies`, and the only ones it declares are the data-only plugin
-  // packages, which nothing imports.
-  external: ["electron"],
-  define: buildGitDefine(),
-});
+  {
+    entry: { preload: "src/preload.ts" },
+    format: ["cjs"],
+    target: "node24",
+    platform: "node",
+    clean: false,
+    sourcemap: true,
+    splitting: false,
+    external: ["electron"],
+  },
+]);

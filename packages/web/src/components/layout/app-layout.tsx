@@ -6,6 +6,9 @@
  *   sidebar in a drawer.
  * The shell owns the wallpaper and navigation's separate glass layer, so the columns make no
  * stacking context that could trap their menus.
+ * In the desktop shell's window the page also draws the window's title band (window-chrome.tsx):
+ * the sidebar toggle lives there, and the sidebar and the rail then carry no fold button of their
+ * own.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
@@ -47,6 +50,8 @@ import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-se
 import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { FindBar } from "../find/find-bar";
+import { windowBridge } from "../../lib/window-bridge";
+import { TitleBand } from "./window-chrome";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
@@ -70,7 +75,8 @@ function pinnedSidebarOnScreen(): boolean {
 }
 
 /**
- * The folded navigation column: the unfold button on top; below it, in product-specified order,
+ * The folded navigation column: the unfold button on top (in the desktop window it is the title
+ * band's sidebar toggle instead, and the rail has none); below it, in product-specified order,
  * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
  * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
  * sidebar's avatar does. No logo.
@@ -85,7 +91,7 @@ function pinnedSidebarOnScreen(): boolean {
  * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
  * strings as the pinned nav's, so the rail follows the UI language with it.
  */
-function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
@@ -194,13 +200,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
     <Rail
       head={
-        <RailItem
-          label={S.nav.expandSidebar}
-          tooltip={expandTitle}
-          glyph={ICONS.chevronRightPipe}
-          onClick={onExpand}
-          className="shrink-0"
-        />
+        onExpand === undefined ? undefined : (
+          <RailItem
+            label={S.nav.expandSidebar}
+            tooltip={expandTitle}
+            glyph={ICONS.chevronRightPipe}
+            onClick={onExpand}
+            className="shrink-0"
+          />
+        )
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
@@ -415,6 +423,12 @@ export function AppLayout() {
   }, [collapsed, inCompany, newChat]);
 
   const background = useBackground();
+  const foldSidebar = () => {
+    setOpenSearchOnExpand(false);
+    toggleCollapsed();
+  };
+  // In the desktop window the band's toggle is the one fold button: the column offers none.
+  const band = windowBridge() !== null;
   return (
     <AppShell
       background={
@@ -423,20 +437,15 @@ export function AppLayout() {
           : backgroundStyle(background.image, background.settings)
       }
       navCollapsed={collapsed}
+      band={
+        band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
+      }
       nav={
         collapsed ? (
-          <CollapsedRail
-            onExpand={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
-          />
+          <CollapsedRail {...(band ? {} : { onExpand: foldSidebar })} />
         ) : (
           <Sidebar
-            onCollapse={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
+            {...(band ? {} : { onCollapse: foldSidebar })}
             initialSearchOpen={openSearchOnExpand}
           />
         )

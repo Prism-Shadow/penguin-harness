@@ -438,6 +438,8 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   panelLeftText: "slate",
   rectangle: "slate",
   rectangleCheck: "slate",
+  square: "slate",
+  squareStack: "slate",
   boxArrowOut: "slate",
   tiles: "slate",
   cornersOut: "slate",
