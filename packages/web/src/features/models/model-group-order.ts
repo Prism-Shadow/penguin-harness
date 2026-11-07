@@ -36,8 +36,12 @@
  * Storage is injectable (model-group-expansion.ts convention: vitest runs in Node, no
  * localStorage); malformed values degrade to an empty order, i.e. the catalog sequence.
  */
-import { moveInSequence, readStringArray, writeStringArray } from "../../lib/session-order";
-import type { SessionOrderStorage } from "../../lib/session-order";
+import {
+  moveInSequence,
+  readStringArray,
+  writeStringArray,
+  type SessionOrderStorage,
+} from "../../lib/session-order";
 
 /** Minimal storage interface, shared with session-order.ts; tests inject an in-memory implementation. */
 export type ModelGroupOrderStorage = SessionOrderStorage;

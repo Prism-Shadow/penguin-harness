@@ -5,8 +5,8 @@
   "type": "module",
   "description": "PenguinHarness UI gallery (dev tool, Vite + React; also published on the public site under /gallery/): the real Web App framed against an in-browser demo API, one page per surface in every theme, mode, text size, font pairing and language, plus the Foundations boards and the bundled fonts.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vite",
+    "build": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",

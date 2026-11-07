@@ -30,8 +30,10 @@ import {
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
+  type Todo,
+  type TodoKey,
 } from "./todo-badges";
-import type { Todo, TodoKey } from "./todo-badges";
+
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
 import { catalogDelta } from "../models/catalog-sync";

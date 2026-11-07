@@ -23,8 +23,8 @@
  * shares one frame and one header row instead of each drawing its own; a page's sections are
  * the package's `RuledSection`.
  */
-import { createContext, useContext, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+
 import { Navigate, Outlet, useNavigate, useParams } from "react-router";
 import type { OrganizationSummary } from "@prismshadow/penguin-server/api";
 import {
@@ -41,7 +41,7 @@ import {
 import { S } from "../../lib/strings";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
+import { orgKey, orgPagePath, resolveOrgLanding } from "../../lib/company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";
 import { TicketDialogHost } from "./ticket-dialog";

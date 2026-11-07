@@ -24,8 +24,15 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
 import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
-import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
-import type { DraftCache, DraftStorage } from "./draft-cache";
+import {
+  clearDraft,
+  draftFromUnknown,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  type DraftCache,
+  type DraftStorage,
+} from "./draft-cache";
 
 export interface DraftSessionEntry {
   /** Route id (`draft-<8 hex>`). */

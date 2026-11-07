@@ -33,8 +33,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceFile } from "./helpers/roots";
+import { expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
 
 const SCAN = scanSources([".tsx", ".ts"]);
 

@@ -13,7 +13,7 @@
  */
 import type { PeakWindows } from "./peak-windows";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
+import type { StartPageSiteId } from "./browser-start-sites";
 
 export const zh = {
   appName: "PenguinHarness",
