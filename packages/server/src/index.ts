@@ -194,7 +194,7 @@ class PenguinServer {
       }
     }
     for (const [specifier, reason] of result.failed) {
-      console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+      console.error(`[plugins] skipped ${specifier}: ${reason}`);
     }
   }
 

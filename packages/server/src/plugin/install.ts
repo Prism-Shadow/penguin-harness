@@ -18,14 +18,19 @@
  * tarball is kept in `<prefix>/archives/`, because npm records the install as a `file:`
  * dependency and reconciles the prefix against it on every later install. Installing runs the
  * package's install scripts exactly as installing it from the registry does — the same trust.
+ * A fourth arrives through the plugin index: a version published on a github release channel
+ * is fetched, verified against the sha512 the entry pins, and its verified bytes install as
+ * the same `file:` record (installPluginChannel) — npm stays the first source; the channel is
+ * where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
+import type { IndexChannel } from "./registry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,7 +47,17 @@ const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
 const STAGING_DIR = ".staging";
 
-export class PluginInstallError extends Error {}
+export class PluginInstallError extends Error {
+  /**
+   * Why npm failed, when the failure came from npm: "unavailable" — npm answered that the
+   * package (or the requested version of it) does not exist on the registry, the one outcome
+   * a published-index channel may stand in for; "other" — everything else (a refusing
+   * registry, a dependency that will not resolve, a failed lifecycle script), where the
+   * channel is not the answer and the failure is reported as is. Undefined on errors that
+   * did not come from npm at all.
+   */
+  reason?: "unavailable" | "other";
+}
 
 /** A package npm put in the prefix: its name and the version it settled on. */
 export interface InstalledPackage {
@@ -86,7 +101,15 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(npmCommand(), [...args], {
+    // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
+    // — every install, from a name, a link or a `file:` tarball, would fail there. cmd.exe is
+    // a real executable, so the line runs through it: `/d` skips the AutoRun scripts, and
+    // `/s /c` runs the rest as given, with each argument quoted by Node on the way in.
+    const [file, argv] =
+      process.platform === "win32"
+        ? (["cmd.exe", ["/d", "/s", "/c", npmCommand(), ...args]] as const)
+        : ([npmCommand(), [...args]] as const);
+    const { stdout } = await execFileAsync(file, argv, {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
@@ -94,8 +117,23 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     });
     return stdout;
   } catch (err) {
-    throw new PluginInstallError(npmReason((err as { stderr?: string }).stderr, err as Error));
+    const stderr = (err as { stderr?: string }).stderr;
+    const failure = new PluginInstallError(npmReason(stderr, err as Error));
+    failure.reason = npmFailureKind(stderr);
+    throw failure;
   }
+}
+
+/**
+ * Which bucket a failed npm run falls in, from its stderr's `code E<NAME>` lines: E404 (the
+ * package or the requested version is not on the registry) and ETARGET (no version matches
+ * the requested range) are the outcomes a published-index channel may stand in for —
+ * "unavailable". Everything else — a refusing registry, a dependency that will not resolve,
+ * a failed lifecycle script — is "other", and stays a failure. This reads the raw stderr, so
+ * it runs before npmReason strips the `code E404` line the answer lives on.
+ */
+export function npmFailureKind(stderr: string | undefined): "unavailable" | "other" {
+  return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
 }
 
 const install = (prefix: string, spec: string) =>
@@ -314,6 +352,184 @@ function npmReason(stderr: string | undefined, err: Error): string {
 /** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
 function npmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+/**
+ * Checks the bytes a channel served against the hash the index entry pins: npm's
+ * `integrity` shape, `sha512-<base64>`. A mismatch, or an integrity that is not even
+ * readable, refuses the install — the verified bytes are the only ones that install. Returns
+ * the base64 digest, which names the archive file the verified bytes are written under.
+ */
+export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
+  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
+  if (pinned === null) {
+    throw new PluginInstallError(
+      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(integrity)}`,
+    );
+  }
+  const actual = createHash("sha512").update(bytes).digest("base64");
+  const expected = pinned[1]!;
+  if (
+    actual.length !== expected.length ||
+    !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+  ) {
+    throw new PluginInstallError(
+      "the release asset does not match the sha512 the index entry pins; it is not installed",
+    );
+  }
+  return actual;
+}
+
+/** The size step a no-length answer reports by: every mebibyte read, rather than every chunk. */
+const PROGRESS_MIB = 1024 * 1024;
+
+/**
+ * The response's body, whole. With `onProgress` the body is read chunk by chunk and the
+ * reader is told as it goes — the bytes received and the total when the answer names one —
+ * but only in steps: one call per percent of a known size, one per mebibyte without it. A
+ * call per chunk would be thousands for one asset, none the caller could show. Without an
+ * `onProgress` nothing streams, and the body arrives as it always did.
+ */
+async function readAsset(
+  res: Awaited<ReturnType<typeof fetch>>,
+  onProgress: ((received: number, total: number | null) => void) | undefined,
+): Promise<Uint8Array> {
+  const totalHeader = Number(res.headers.get("content-length"));
+  const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
+  if (res.body === null || onProgress === undefined) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    onProgress?.(bytes.byteLength, total ?? bytes.byteLength);
+    return bytes;
+  }
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  let lastStep = -1;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    // The step counter doubles as the mebibyte counter when no total is known; either way a
+    // step is a call, and a chunk is not.
+    const step =
+      total === null
+        ? Math.floor(received / PROGRESS_MIB)
+        : Math.min(100, Math.floor((received / total) * 100));
+    if (step > lastStep) {
+      lastStep = step;
+      onProgress(received, total);
+    }
+  }
+  onProgress(received, total ?? received);
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/**
+ * Installs a version through an index entry's github channel: the release asset is
+ * fetched, verified against the entry's sha512, and only the verified bytes are written —
+ * into the prefix's archives, where `npm install` takes them as a `file:` dependency, the
+ * same record an uploaded zip installs under. The hash pins the bytes, not what they are:
+ * before anything is published under its final name, the tarball's own package.json is read
+ * (`tar -xzOf`) and has to agree with the entry's name and version — an archive that says it
+ * is another package, or another version, is refused, so the manifest never names a package
+ * that was not what the index published, and the caller's post-install vetting cannot end up
+ * vetting, or uninstalling, the wrong one. The verified bytes are written to a temporary file
+ * first and renamed into place, so a concurrent install never sees a half-written archive.
+ * `fetchImpl` and `install` are injectable so a test stands in for the network and npm;
+ * `onProgress`, when given, is called as the asset is read — the bytes received so far and
+ * the total when the answer carries a content-length — in steps a progress bar can show.
+ */
+export async function installPluginChannel(
+  root: string,
+  channel: IndexChannel,
+  {
+    fetchImpl = fetch,
+    install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
+    onProgress = undefined,
+  }: {
+    fetchImpl?: typeof fetch;
+    install?: (prefix: string, spec: string) => Promise<void>;
+    onProgress?: (received: number, total: number | null) => void;
+  } = {},
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  let res: Awaited<ReturnType<typeof fetch>>;
+  try {
+    res = await fetchImpl(channel.url, { redirect: "follow" });
+  } catch (err) {
+    throw new PluginInstallError(
+      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!res.ok) {
+    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
+  }
+  const bytes = new Uint8Array(await readAsset(res, onProgress));
+  const digest = verifyIntegrity(bytes, channel.integrity);
+  const archives = path.join(prefix, ARCHIVES_DIR);
+  await fs.mkdir(archives, { recursive: true });
+  const staging = path.join(archives, `.tmp-${randomUUID()}.tgz`);
+  await fs.writeFile(staging, bytes);
+  // The tarball's own manifest, read straight out of the archive; anything unreadable, or
+  // disagreeing with the index entry, refuses the install and leaves nothing behind.
+  let manifest: { name?: unknown; version?: unknown };
+  try {
+    manifest = JSON.parse(
+      // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
+      // reads as a remote host name.
+      (
+        await execFileAsync("tar", ["-xzOf", path.basename(staging), "package/package.json"], {
+          cwd: path.dirname(staging),
+        })
+      ).stdout,
+    ) as { name?: unknown; version?: unknown };
+  } catch (err) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the release asset does not carry a readable package/package.json: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (manifest.name !== channel.name || manifest.version !== channel.version) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the release asset's package.json says ${JSON.stringify(manifest.name)}@${JSON.stringify(manifest.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
+    );
+  }
+  // A file name under the prefix's archives: a package name's safe characters with the scope
+  // slash joined, a version's, and the first sixteen characters of the verified digest — so
+  // two entries that sanitize to the same name cannot overwrite one another, and a re-served
+  // tarball for the same version lands under its own name rather than replacing bytes npm may
+  // still be reading.
+  const base = `${channel.name
+    .split("/")
+    .filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part))
+    .join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
+  if (base === "-" || base.length < 3) {
+    await fs.rm(staging, { force: true });
+    throw new PluginInstallError(
+      `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
+    );
+  }
+  // The digest tags the archive file. Base64 carries `/` and `+`, neither of which belongs in
+  // a file name (a `/` would make the rename a write into a directory that does not exist), so
+  // the tag is the digest's first sixteen file-safe characters — still collision-proof, since
+  // a sha512's base64 is 44 characters of which almost all are safe.
+  const tag = (digest.match(/[A-Za-z0-9._~-]/g) ?? []).slice(0, 16).join("");
+  const file = `${base}-${tag}.tgz`;
+  await fs.rename(staging, path.join(archives, file));
+  try {
+    await run(prefix, `./${ARCHIVES_DIR}/${file}`);
+  } finally {
+    await pruneArchives(prefix);
+  }
+  return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
 }
 
 /**

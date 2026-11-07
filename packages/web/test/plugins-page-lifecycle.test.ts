@@ -93,7 +93,7 @@ vi.mock("@prismshadow/penguin-ui", async (original) => ({
 }));
 vi.mock("../src/api/endpoints", () => ({
   getInstalledPlugins: vi.fn(),
-  installPlugin: vi.fn(),
+  installPluginStream: vi.fn(),
   uninstallPlugin: vi.fn(),
   getPluginLibrary: vi.fn(),
   getPluginIndex: vi.fn(),
@@ -150,11 +150,16 @@ describe("the Plugins page's response lifecycle", () => {
         .mockResolvedValueOnce({ ...snapshot("initial"), plugins: [], shipped: ["initial"] })
         .mockResolvedValueOnce(snapshot("B"))
         .mockReturnValueOnce(read.promise);
-      vi.mocked(api.installPlugin).mockReturnValueOnce(write.promise);
+      vi.mocked(api.installPluginStream).mockReturnValueOnce(write.promise);
       const page = await mount(h(PluginsPage));
       await click(row("initial")!.querySelector("button")!);
       await click(document.querySelector("[data-confirm]")!);
-      expect(api.installPlugin).toHaveBeenCalledWith("A", "initial", "self");
+      expect(api.installPluginStream).toHaveBeenCalledWith(
+        "A",
+        "initial",
+        "self",
+        expect.any(Function),
+      );
       context.projectId = "B";
       await page.rerender(h(PluginsPage));
       context.projectId = "A";
@@ -182,13 +187,18 @@ describe("the Plugins page's response lifecycle", () => {
         here: false,
       })),
     };
-    vi.mocked(api.installPlugin).mockResolvedValue(installed);
+    vi.mocked(api.installPluginStream).mockResolvedValue(installed);
     vi.mocked(api.uninstallPlugin).mockResolvedValue(empty);
     await mount(h(PluginsPage));
     await click(document.querySelector('[data-machine="Other00000000000"]')!);
     await click(row("plugin")!.querySelector("button")!);
     await click(document.querySelector("[data-confirm]")!);
-    expect(api.installPlugin).toHaveBeenCalledWith("A", "@acme/plugin", "Other00000000000");
+    expect(api.installPluginStream).toHaveBeenCalledWith(
+      "A",
+      "@acme/plugin",
+      "Other00000000000",
+      expect.any(Function),
+    );
     await click(row("plugin")!.querySelector("button")!);
     await click(document.querySelector("[data-confirm]")!);
     expect(api.uninstallPlugin).toHaveBeenCalledWith("A", "@acme/plugin", "Other00000000000");
@@ -262,7 +272,7 @@ describe("a server module installed for the machine in view", () => {
         machineReads += 1;
         return machineReads === 1 ? Promise.resolve(machineAnswer(false)) : afterInstall.promise;
       });
-      vi.mocked(api.installPlugin).mockResolvedValue(tables(true));
+      vi.mocked(api.installPluginStream).mockResolvedValue(tables(true));
       await mount(h(PluginsPage));
       await click(document.querySelector(`[data-machine="${OTHER}"]`)!);
       const state = watchText('[data-row="plugin"] [data-status]');
@@ -270,7 +280,12 @@ describe("a server module installed for the machine in view", () => {
 
       await click(row("plugin")!.querySelector("button")!);
       await click(document.querySelector("[data-confirm]")!);
-      expect(api.installPlugin).toHaveBeenCalledWith("A", "@acme/plugin", OTHER);
+      expect(api.installPluginStream).toHaveBeenCalledWith(
+        "A",
+        "@acme/plugin",
+        OTHER,
+        expect.any(Function),
+      );
       expect(machineReads).toBe(2);
       expect(state.texts()).toEqual(["available"]);
 

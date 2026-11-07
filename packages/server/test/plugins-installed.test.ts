@@ -4,14 +4,21 @@
  * load anything (plugins load once per process, in the runtime).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
+import { PluginInstallError } from "../src/plugin/install.js";
 import { openPushSlip } from "../src/hmr/push-plugins.js";
-import { decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
+import { contentTable, decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -56,6 +63,75 @@ describe("installed plugins", () => {
     (await (
       await admin.get("/api/projects/default_project/plugins/installed")
     ).json()) as InstalledPluginsResponse;
+
+  /** The `event:`/`data:` pairs of an SSE answer, in the order the stream wrote them. */
+  const parseSSE = (text: string): Array<{ event: string; data: string }> =>
+    text
+      .split("\n\n")
+      .filter((block) => block.trim() !== "")
+      .map((block) => ({
+        event: block
+          .split("\n")
+          .find((line) => line.startsWith("event:"))!
+          .slice("event:".length)
+          .trim(),
+        data: block
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trim())
+          .join("\n"),
+      }));
+
+  /**
+   * A real gzipped tarball of a Skills-only package, packed by the system tar — the bytes a
+   * github release channel serves, whose manifest npm reads back on a `file:` install.
+   */
+  const execFileAsync = promisify(execFile);
+  async function packTarball(name: string, version: string): Promise<Uint8Array> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-channel-pkg-"));
+    try {
+      await fs.mkdir(path.join(dir, "package", "skills", "keep"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "package", "package.json"),
+        JSON.stringify({ name, version }),
+      );
+      // A built plugin carries its ifaces.json: the install vets what landed and refuses a
+      // package that contributes nothing (it would not list), so the fixture is one.
+      await fs.writeFile(
+        path.join(dir, "package", "ifaces.json"),
+        contentTable(name, { skills: ["keep"] }),
+      );
+      await fs.writeFile(
+        path.join(dir, "package", "skills", "keep", "SKILL.md"),
+        "---\nname: keep\ndescription: a skill lives here\n---\n\nKeeps the install a plugin.\n",
+      );
+      // Relative to the dir: a Windows path carries a drive letter, which GNU tar reads as a
+      // remote host name.
+      await execFileAsync("tar", ["-czf", "asset.tgz", "package"], { cwd: dir });
+      return new Uint8Array(await fs.readFile(path.join(dir, "asset.tgz")));
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  /** npm's answer as the route sees it from its stand-in: a failure sorted into a bucket. */
+  const npmSays = (message: string, reason: "unavailable" | "other"): never => {
+    const err = new PluginInstallError(message);
+    err.reason = reason;
+    throw err;
+  };
+
+  /** An SSE POST, the cookie and the accept header the page's stream fetch sends. */
+  const postStream = (cookie: string, specifier: string) =>
+    t.app.request("/api/projects/default_project/plugins/installed", {
+      method: "POST",
+      headers: {
+        cookie,
+        "content-type": "application/json",
+        accept: "text/event-stream",
+      },
+      body: JSON.stringify({ specifier }),
+    });
 
   it("reports an empty list when nothing is installed", async () => {
     const res = await view();
@@ -421,5 +497,112 @@ describe("installed plugins", () => {
     const res = await admin.get("/api/projects/default_project/plugins/installed");
     expect(res.status).toBe(400);
     expect(await res.text()).toContain(".project_config.toml");
+  });
+
+  it("a stream install answers its events in order — the download, npm, the result", async () => {
+    // The beforeEach app has no channel to fall through to; this one does: a published index
+    // and its release asset, both served here. npm stands in and refuses the name the way the
+    // registry does, so the install takes the channel — whose asset this server fetches,
+    // reports, verifies, and npm-installs from the file: record it keeps.
+    await t.cleanup();
+    const tarball = await packTarball("@acme/channels", "1.0.0");
+    // The asset's URL needs the port, which exists only once the server listens; the index
+    // answers per request, by which time it is set.
+    let base = "";
+    const serve = createServer((req, res) => {
+      if (req.url === "/index.json") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify([
+            {
+              name: "@acme/channels",
+              version: "1.0.0",
+              description: "the package the channel serves",
+              authors: ["acme"],
+              license: "MIT",
+              integrity: `sha512-${createHash("sha512").update(tarball).digest("base64")}`,
+              channels: [{ kind: "github", url: `${base}/asset.tgz` }],
+            },
+          ]),
+        );
+      } else if (req.url === "/asset.tgz") {
+        res.writeHead(200, {
+          "content-type": "application/x-tar",
+          "content-length": String(tarball.byteLength),
+        });
+        res.end(tarball);
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+    await new Promise<void>((resolve) => serve.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(serve.address() as AddressInfo).port}`;
+    try {
+      t = await createTestApp({
+        pluginPackages: {
+          install: async (_root, source) =>
+            npmSays(
+              `npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/${source}`,
+              "unavailable",
+            ),
+          installFiles: async () => npmSays("not used", "other"),
+          remove: async () => {},
+        },
+        config: { pluginIndexUrl: `${base}/index.json` },
+      });
+      const cookie = (await loginAdmin(t.app)).cookie;
+      admin = apiClient(t.app, cookie);
+      const res = await postStream(cookie, "@acme/channels");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+      const events = parseSSE(await res.text());
+      // The first event says the download began; the last one carries the finished answer,
+      // with npm's hand-off between — whatever the asset's chunking reported between.
+      expect(events[0]).toEqual({
+        event: "download",
+        data: JSON.stringify({ received: 0, total: null }),
+      });
+      expect(events.at(-1)!.event).toBe("result");
+      expect(events.at(-2)!.event).toBe("npm");
+      const reported = events
+        .slice(1, -2)
+        .map((e) => JSON.parse(e.data) as { received: number; total: number | null });
+      expect(reported.length).toBeGreaterThan(0);
+      for (const progress of reported) expect(progress.total).toBe(tarball.byteLength);
+      expect(reported.at(-1)!.received).toBe(tarball.byteLength);
+      const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
+      // A Skills-only package joins the library, not the Project's table.
+      expect(result.installed).toMatchObject({
+        name: "@acme/channels",
+        version: "1.0.0",
+        library: true,
+      });
+      expect(result.plugins).toEqual([]);
+    } finally {
+      serve.close();
+      serve.closeAllConnections();
+    }
+  });
+
+  it("a stream install that fails rides the failure as an error event, with the status the JSON answer would have had", async () => {
+    await t.cleanup();
+    t = await createTestApp({
+      pluginPackages: {
+        install: async () => npmSays("npm error code EACCES\nnpm error permission denied", "other"),
+        installFiles: async () => npmSays("not used", "other"),
+        remove: async () => {},
+      },
+    });
+    const cookie = (await loginAdmin(t.app)).cookie;
+    admin = apiClient(t.app, cookie);
+    const res = await postStream(cookie, "@acme/denied");
+    expect(res.status).toBe(200); // the stream itself answers well
+    const events = parseSSE(await res.text());
+    expect(events.map((e) => e.event)).toEqual(["download", "error"]);
+    expect(JSON.parse(events[1]!.data)).toMatchObject({
+      status: 400,
+      code: "plugin_install_failed",
+      message: expect.stringContaining("npm: npm error code EACCES"),
+    });
   });
 });
