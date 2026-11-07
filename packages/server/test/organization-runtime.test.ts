@@ -44,7 +44,7 @@ import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js"
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { UtilityCompletion } from "../src/services/project-config-service.js";
-import type { ServerEvent } from "../src/api/types.js";
+import type { OrgChannelMessage, ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 
 const P = "p1";
@@ -2358,7 +2358,7 @@ describe("organization runtime", () => {
       const deskOf = async (agentId: string): Promise<string> =>
         (await service.desk(P, ORG, agentId, {})).sessionId;
       started.length = 0;
-      const send = (sessionId: string, text: string): Promise<unknown> =>
+      const send = (sessionId: string, text: string): Promise<OrgChannelMessage> =>
         service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, { text, sessionId });
 
       // person → CEO (hop 0) → dev (hop 1) → deployer (hop 2) → its two hop-3 answers.
@@ -2375,7 +2375,9 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(5);
       expect(m4.hop).toBe(3);
       expect(m5.hop).toBe(3);
-      expect(errors.filter((e) => e.code.startsWith("org_mention_"))).toEqual([]);
+      expect(
+        errors.filter((e) => (e.code ?? "").startsWith("org_mention_")),
+      ).toEqual([]);
     });
 
     it("the chain ceiling is a backstop that records and names its targets", async () => {

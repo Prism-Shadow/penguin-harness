@@ -249,15 +249,15 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     });
     const mentionWindowMinutes = optionalNumber(body, "mentionWindowMinutes", {
       integer: true,
-      positive: true,
+      nonNegative: true,
     });
     const mentionPairLimit = optionalNumber(body, "mentionPairLimit", {
       integer: true,
-      positive: true,
+      nonNegative: true,
     });
     const mentionFanoutLimit = optionalNumber(body, "mentionFanoutLimit", {
       integer: true,
-      positive: true,
+      nonNegative: true,
     });
     const budgetWarnRatio = optionalNumber(body, "budgetWarnRatio", { nonNegative: true });
     const budgetPauseRatio = optionalNumber(body, "budgetPauseRatio", { nonNegative: true });
