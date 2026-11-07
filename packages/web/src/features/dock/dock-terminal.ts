@@ -15,8 +15,9 @@ import { useSyncExternalStore } from "react";
 import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { HttpStatusError, fetchJson, type TerminalInfo } from "../terminal/terminal-view";
 import {
+  HttpStatusError,
+  fetchJson,
   liveTerminals,
   noteTerminalCreated,
   noteTerminalReowned,
@@ -24,7 +25,9 @@ import {
   terminalApiSupported,
   terminalsOf,
   watchTerminals,
-} from "../terminal/terminal-list";
+  type TerminalInfo,
+} from "../terminal";
+
 import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   currentDockScope,

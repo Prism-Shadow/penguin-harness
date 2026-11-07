@@ -23,8 +23,8 @@ import {
   workspaceGroupKey,
   workspaceGroupPath,
   workspaceLabel,
+  type WorkspaceGroup,
 } from "./session-grouping";
-import type { WorkspaceGroup } from "./session-grouping";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */
 export interface WorkspaceEntry {

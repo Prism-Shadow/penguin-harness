@@ -10,12 +10,17 @@
  * release are read off `window` for the length of the press, so the pointer is followed wherever
  * it goes without capturing it. Columns are found by `data-ticket-column` under the pointer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  RefObject,
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
+
 import type { OrgTicketItem, OrgTicketStatus } from "@prismshadow/penguin-server/api";
 import { canMove, isTicketStatus } from "./ticket-board";
 import { createTicketPress, edgeScrollStep } from "./ticket-press";

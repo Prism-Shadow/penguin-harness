@@ -10,7 +10,7 @@
  * this build does not carry. A toast would report an outage the user cannot act on.
  */
 import { useEffect } from "react";
-import * as api from "../../api/endpoints";
+import * as api from "../api/endpoints";
 import { registerRuntimeLanguages } from "@prismshadow/penguin-ui";
 
 export function useRuntimeLanguages(signedIn: boolean): void {

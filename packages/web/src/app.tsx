@@ -1,7 +1,8 @@
 /**
- * App root: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
- * Router provider composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes
- * prompt) beside the router. The shared UI package's copy controls get the app's clipboard
+ * App root component: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
+ * the shell's root (the router, from the booted module tree — see web-root.ts) provider
+ * composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes prompt)
+ * beside the router. The shared UI package's copy controls get the app's clipboard
  * writer, and every code surface of the package gets the app's worker-backed code highlighter
  * (lib/highlight/code-highlight.ts).
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
@@ -12,7 +13,8 @@
  * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
  * drop on the sidebar do something; it makes it do nothing.
  */
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
+
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
@@ -26,11 +28,9 @@ import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
 import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
-import { AppRouter } from "./router";
-import type { ComponentType } from "react";
+import type { AppRouterProps } from "./web-app/router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
 import { SafeModeMarker } from "./rescue/safe-mode-marker";
-import { AppPalette } from "./features/palette/app-palette";
 import { ErrorBoundary } from "./rescue/error-boundary";
 import { RescuePanel } from "./rescue/rescue-panel";
 import { writeClipboard } from "./lib/clipboard";
@@ -39,13 +39,17 @@ import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./lib/highlight/code-highlight";
 
 /**
- * `initialPath`: mount the app on an in-memory router opened at that path instead of the
- * browser's address bar (see AppRouter) — for a host document that frames the app.
+ * `Root`: the shell's root component, which `bootWeb()` returns. `initialPath`: mount the app on
+ * an in-memory router opened at that path instead of the browser's address bar (see AppRouter)
+ * — for a host document that frames the app.
  */
 export function App({
+  Root,
   initialPath,
-  Root = AppRouter,
-}: { initialPath?: string; Root?: ComponentType<{ initialPath?: string }> } = {}) {
+}: {
+  Root: ComponentType<AppRouterProps>;
+  initialPath?: string;
+}) {
   // The guard reads `defaultPrevented` rather than assuming it runs last: the chat area's
   // drop zone is a window listener too, so the two fire in registration order. Both orders
   // converge — whichever runs second either finds the drag already claimed and bails, or
@@ -76,9 +80,6 @@ export function App({
                       <Root {...(initialPath === undefined ? {} : { initialPath })} />
                     </ErrorBoundary>
                   </CrashBoundary>
-                  <ErrorBoundary fallback={() => null}>
-                    <AppPalette />
-                  </ErrorBoundary>
                   <ErrorBoundary fallback={() => null}>
                     <SafeModeMarker />
                   </ErrorBoundary>

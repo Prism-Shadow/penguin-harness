@@ -14,8 +14,8 @@
  * it once a nickname stands in for it. Both anchors are avatars, and the rail's is nothing but
  * an avatar, so without the header the menu never says whose account its rows act on.
  */
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
 import { useNavigate } from "react-router";
 import {
   ConfirmModal,
@@ -24,8 +24,9 @@ import {
   Menu,
   MenuItem,
   UserAvatar,
+  type DropdownPortal,
 } from "@prismshadow/penguin-ui";
-import type { DropdownPortal } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { AppInfoRow } from "../account/app-info-row";

@@ -19,8 +19,8 @@
  * the snapshot goes to it, and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type {
   AgentCreateRequest,
   PluginItem,
@@ -49,13 +49,18 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import { SemanticIdField } from "../semantic-id";
+import { WorkspaceSelect } from "../chat";
+import {
+  SkillPickList,
+  type PickableItem,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
+
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,

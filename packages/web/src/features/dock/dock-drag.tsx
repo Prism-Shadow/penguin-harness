@@ -15,7 +15,7 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { panelWidth } from "../chat/use-panel-width";
+import { panelWidth } from "../chat";
 import { bottomDockHeight } from "./bottom-dock-size";
 import { composerHeight } from "./composer-height";
 import { bottomRatio, type DockPosition } from "./dock-state";

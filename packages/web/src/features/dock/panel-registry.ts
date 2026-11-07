@@ -22,8 +22,8 @@
  * moment of registration, not from the first subscriber: the built-ins register at module load,
  * before any component is mounted to listen, and their later `offered` flips must still reach it.
  */
-import { useMemo, useSyncExternalStore } from "react";
-import type { ComponentType } from "react";
+import { useMemo, useSyncExternalStore, type ComponentType } from "react";
+
 import { ICONS } from "@prismshadow/penguin-ui";
 import type { CommandId } from "../../lib/shortcuts/types";
 import type { DockPosition } from "./dock-state";

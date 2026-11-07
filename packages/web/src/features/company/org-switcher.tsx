@@ -30,7 +30,12 @@ import {
 import { S } from "../../lib/strings";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
-import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
+import {
+  groupOrganizationsByProject,
+  orgKey,
+  orgPagePath,
+  parseOrgKey,
+} from "../../lib/company-nav";
 import {
   CreateOrganizationDialog,
   OrganizationSettingsDialog,

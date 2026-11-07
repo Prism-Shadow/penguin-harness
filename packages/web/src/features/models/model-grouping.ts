@@ -20,9 +20,10 @@ import {
   MODEL_PROVIDERS,
   catalogEntryFor,
   offPeakAt,
+  type ModelProviderInfo,
+  type OffPeakDiscount,
   retainedCatalogPricing,
 } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo, OffPeakDiscount } from "@prismshadow/penguin-server/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
 import type { PeakWindows } from "../../lib/peak-windows";

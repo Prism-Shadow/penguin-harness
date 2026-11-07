@@ -24,8 +24,12 @@
  * Project with such a group. Storage is injectable (vitest runs in Node, no localStorage);
  * nothing stored, unrecognized values and throwing storage all read as the default.
  */
-import { billedPrice } from "./model-grouping";
-import type { ModelRowLike, PricingBucketsLike, ProviderGroup } from "./model-grouping";
+import {
+  billedPrice,
+  type ModelRowLike,
+  type PricingBucketsLike,
+  type ProviderGroup,
+} from "./model-grouping";
 
 /** How one group orders its models. */
 export type ModelGroupSort = "price-asc" | "price-desc" | "name";

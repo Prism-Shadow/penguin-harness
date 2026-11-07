@@ -32,8 +32,8 @@ import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+
 import { VaultAddDialog } from "./vault-add-dialog";
 
 export function VaultTab({

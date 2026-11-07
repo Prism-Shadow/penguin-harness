@@ -12,8 +12,8 @@
  *   renders; Shiki only loads in an effect, which static markup never runs).
  */
 import { describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
-import type { MouseEvent } from "react";
+import { createElement, type MouseEvent } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { Md } from "@prismshadow/penguin-ui";
 import { WorkspaceLinksProvider } from "../src/features/chat/workspace-links";
