@@ -154,7 +154,12 @@ describe("the Plugins page's response lifecycle", () => {
       const page = await mount(h(PluginsPage));
       await click(row("initial")!.querySelector("button")!);
       await click(document.querySelector("[data-confirm]")!);
-      expect(api.installPluginStream).toHaveBeenCalledWith("A", "initial", "self", expect.any(Function));
+      expect(api.installPluginStream).toHaveBeenCalledWith(
+        "A",
+        "initial",
+        "self",
+        expect.any(Function),
+      );
       context.projectId = "B";
       await page.rerender(h(PluginsPage));
       context.projectId = "A";
@@ -188,7 +193,12 @@ describe("the Plugins page's response lifecycle", () => {
     await click(document.querySelector('[data-machine="Other00000000000"]')!);
     await click(row("plugin")!.querySelector("button")!);
     await click(document.querySelector("[data-confirm]")!);
-    expect(api.installPluginStream).toHaveBeenCalledWith("A", "@acme/plugin", "Other00000000000", expect.any(Function));
+    expect(api.installPluginStream).toHaveBeenCalledWith(
+      "A",
+      "@acme/plugin",
+      "Other00000000000",
+      expect.any(Function),
+    );
     await click(row("plugin")!.querySelector("button")!);
     await click(document.querySelector("[data-confirm]")!);
     expect(api.uninstallPlugin).toHaveBeenCalledWith("A", "@acme/plugin", "Other00000000000");
@@ -270,7 +280,12 @@ describe("a server module installed for the machine in view", () => {
 
       await click(row("plugin")!.querySelector("button")!);
       await click(document.querySelector("[data-confirm]")!);
-      expect(api.installPluginStream).toHaveBeenCalledWith("A", "@acme/plugin", OTHER, expect.any(Function));
+      expect(api.installPluginStream).toHaveBeenCalledWith(
+        "A",
+        "@acme/plugin",
+        OTHER,
+        expect.any(Function),
+      );
       expect(machineReads).toBe(2);
       expect(state.texts()).toEqual(["available"]);
 
