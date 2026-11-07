@@ -75,8 +75,8 @@ describe("a boot that meets plugins its build cannot run", () => {
   };
   /** Disabled plugins go to console.error; ones running without part of themselves only console.log. */
   const said = (error: ReturnType<typeof vi.spyOn>, log: ReturnType<typeof vi.spyOn>) => [
-    ...error.mock.calls.map((c) => String(c[0])),
-    ...log.mock.calls.map((c) => String(c[0])),
+    ...error.mock.calls.map((c: unknown[]) => String(c[0])),
+    ...log.mock.calls.map((c: unknown[]) => String(c[0])),
   ];
 
   it("nobody waiting (a cold start): boots without them and says so on the host and in the log", async () => {

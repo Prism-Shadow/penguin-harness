@@ -474,7 +474,13 @@ export async function installPluginChannel(
   let manifest: { name?: unknown; version?: unknown };
   try {
     manifest = JSON.parse(
-      (await execFileAsync("tar", ["-xzOf", staging, "package/package.json"])).stdout,
+      // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
+      // reads as a remote host name.
+      (await execFileAsync(
+        "tar",
+        ["-xzOf", path.basename(staging), "package/package.json"],
+        { cwd: path.dirname(staging) },
+      )).stdout,
     ) as { name?: unknown; version?: unknown };
   } catch (err) {
     await fs.rm(staging, { force: true });
