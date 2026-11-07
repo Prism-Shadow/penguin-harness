@@ -81,7 +81,13 @@ export interface PetSnapshot {
   checkin: CheckIn;
 }
 
-/** What the dialog may ask the host to do. Every call resolves once the server has the write. */
+/** Where a secondary click landed, in the frame's own viewport coordinates. */
+export interface MenuPoint {
+  x: number;
+  y: number;
+}
+
+/** What the surfaces may ask the host to do. Every call resolves once the server has the write. */
 export interface PetPanelHost {
   readonly rules: PetRules;
   buy(amount: number): Promise<void>;
@@ -90,11 +96,22 @@ export interface PetPanelHost {
   setArea(key: AreaKey): Promise<void>;
   /** The dialog closed itself (its own button, Escape, the scrim): the host gives the pointer back. */
   close(): void;
+  /** The quick menu's shop row: the host puts the menu away and opens the dialog instead. */
+  openDialog(): void;
+  /** The quick menu dismissed itself (Escape, a click elsewhere, a scroll): give the pointer back. */
+  closeMenu(): void;
 }
 
-/** The handle widget.js keeps: open the dialog, keep it current, close it. */
+/**
+ * The handle widget.js keeps. Two surfaces share one bundle and one theme: the quick menu a
+ * secondary click opens (her pantry, her habits) and the dialog the shop then opens.
+ */
 export interface PetPanel {
   open(pet: PetSnapshot): void;
   update(pet: PetSnapshot): void;
   close(): void;
+  /** Opens the quick menu at a point, replacing any menu already up. */
+  menu(at: MenuPoint, pet: PetSnapshot): void;
+  updateMenu(pet: PetSnapshot): void;
+  closeMenu(): void;
 }

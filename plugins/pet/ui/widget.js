@@ -223,8 +223,10 @@ let pressed = false;
 let lastAt = null;
 /** Whether her dialog is on screen: while it is, the frame holds the pointer for its whole life. */
 let panelOpen = false;
+/** Whether her quick menu is on screen (the panel a secondary click opens): same rule. */
+let menuOpen = false;
 /**
- * A pointer that has not moved since the dialog opened. She walks while it is up, so the point
+ * A pointer that has not moved since a sheet opened. She walks while it is up, so the point
  * the frame was given can stop being on her a moment later — but the hand the opened it has not
  * gone anywhere, and a dialog that shut itself as she stepped away could not be used at all.
  * Only a NEW position (the dock's probe, or a move of our own) may take the pointer back.
@@ -256,8 +258,8 @@ function answered(next) {
   // The dock is the only parent this document has; posting to itself (opened on its own) is
   // harmless — nothing here acts on the message it sends.
   parent.postMessage({ penguin: "widget-over", over: next }, location.origin);
-  // The pointer went back to the page: her dialog goes with it.
-  if (!next) closePanel();
+  // The pointer went back to the page: whatever she had open goes with it.
+  if (!next) closeSheet();
 }
 
 addEventListener("message", (e) => {
@@ -274,7 +276,7 @@ addEventListener("message", (e) => {
   if (!shown || typeof data.x !== "number" || typeof data.y !== "number") return;
   lastAt = { x: data.x, y: data.y };
   resting = false;
-  answered(onPet(lastAt) || panelOpen);
+  answered(onPet(lastAt) || sheetOpen());
 });
 
 /* ---------- pointer: the document relays to the body ----------
@@ -284,9 +286,9 @@ addEventListener("message", (e) => {
  */
 
 document.addEventListener("pointerdown", (e) => {
-  // Her dialog owns every pointer it gets: the frame only takes events while it is up, and the
-  // scrim under it is the dialog's own (it dismisses on a click, not the stage).
-  if (panelOpen) return;
+  // A sheet owns every pointer it gets: the frame only takes events while it is up, and the
+  // scrim under a dialog is the dialog's own (it dismisses on a click, not the stage).
+  if (sheetOpen()) return;
   const at = docPoint(e);
   if (onPet(at)) {
     root.setPointerCapture?.(e.pointerId);
@@ -296,7 +298,7 @@ document.addEventListener("pointerdown", (e) => {
 });
 
 document.addEventListener("pointermove", (e) => {
-  if (panelOpen) return;
+  if (sheetOpen()) return;
   const at = docPoint(e);
   lastAt = at;
   resting = false;
@@ -305,7 +307,7 @@ document.addEventListener("pointermove", (e) => {
 });
 
 document.addEventListener("pointerup", (e) => {
-  if (panelOpen) return;
+  if (sheetOpen()) return;
   const at = docPoint(e);
   pressed = false;
   body?.pointer("up", stagePoint(e));
@@ -318,7 +320,7 @@ document.addEventListener("pointercancel", (e) => {
 });
 
 document.documentElement.addEventListener("pointerleave", () => {
-  if (panelOpen) return; // a dialog stays up while the pointer is out of the window
+  if (sheetOpen()) return; // a sheet stays up while the pointer is out of the window
   body?.pointer("leave", null);
   lastAt = null;
   answered(false);
@@ -328,7 +330,12 @@ document.documentElement.addEventListener("pointerleave", () => {
 
 let idleAt = 0;
 
-/** An open dialog keeps her still: she must not walk out from under the hand using it. */
+/** Whether one of her surfaces is up — the dialog or the quick menu. */
+function sheetOpen() {
+  return panelOpen || menuOpen;
+}
+
+/** An open sheet keeps her still: she must not walk out from under the hand using it. */
 function panelsOpen(open) {
   body?.set({ dialogOpen: open });
 }
@@ -386,6 +393,8 @@ function ensurePanel() {
         setTalk: (key) => setTalk(key),
         setArea: (key) => setArea(key),
         close: closePanel,
+        openDialog: () => void openPanel(),
+        closeMenu,
       });
     })
     .catch((err) => {
@@ -399,20 +408,36 @@ function ensurePanel() {
 /** A load already under way (a second right-click while the bundle is in flight). */
 let opening = false;
 
-/** Hands the dialog the current numbers; a closed dialog keeps nothing. */
-function pushSnapshot() {
-  if (panelOpen) panel?.update(snapshot());
-}
-
-async function openPanel() {
-  if (panelOpen || opening || !shown) return;
+/** Loads the bundle both surfaces share, once. False when it could not be had. */
+async function openBundle() {
+  if (opening) return false;
   opening = true;
   try {
     await ensurePanel();
+    return true;
   } catch {
-    return;
+    return false;
   } finally {
     opening = false;
+  }
+}
+
+/** Hands the surface that is up the current numbers; a closed one keeps nothing. */
+function pushSnapshot() {
+  if (panelOpen) panel?.update(snapshot());
+  else if (menuOpen) panel?.updateMenu(snapshot());
+}
+
+/** The dialog: her day, the graph, her state and the shop. */
+async function openPanel() {
+  // A menu may be what asked for it (its shop row), so only a dialog already up stops this.
+  if (panelOpen || !shown) return;
+  if (!(await openBundle()) || !shown) return;
+  // The menu it was opened from goes in the same breath: closing it separately would hand the
+  // pointer back to the page for a moment, and the page would take the dialog down with it.
+  if (menuOpen) {
+    menuOpen = false;
+    panel?.closeMenu();
   }
   panelOpen = true;
   resting = true;
@@ -424,11 +449,37 @@ async function openPanel() {
 function closePanel() {
   if (!panelOpen) return;
   panelOpen = false;
-  resting = false;
+  if (!menuOpen) resting = false;
   panel?.close();
-  panelsOpen(false);
+  if (!menuOpen) panelsOpen(false);
   // Whoever was looking gets the pointer back the way they had it: over her, if it still is.
-  answered(onPet(lastAt));
+  answered(onPet(lastAt) || sheetOpen());
+}
+
+/** The quick menu: her pantry and her two habits, at the point a secondary click landed. */
+async function openMenu(at) {
+  if (sheetOpen() || !shown) return;
+  if (!(await openBundle()) || !shown) return;
+  menuOpen = true;
+  resting = true;
+  panelsOpen(true);
+  panel?.menu(at, snapshot());
+  answered(true);
+}
+
+function closeMenu() {
+  if (!menuOpen) return;
+  menuOpen = false;
+  if (!panelOpen) resting = false;
+  panel?.closeMenu();
+  if (!panelOpen) panelsOpen(false);
+  answered(onPet(lastAt) || sheetOpen());
+}
+
+/** Every surface goes at once: a click on the page, Escape, the dock closing her. */
+function closeSheet() {
+  closeMenu();
+  closePanel();
 }
 
 /* ---------- her habits: how often she talks, how much of the page she roams ---------- */
@@ -493,8 +544,9 @@ async function signIn() {
 
 document.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  if (onPet(docPoint(e))) void openPanel();
-  else closePanel();
+  const at = docPoint(e);
+  if (onPet(at)) void openMenu(at);
+  else closeSheet();
 });
 
 /* ---------- the pantry: feeding, buying, and the coins Token usage earns ---------- */
@@ -680,8 +732,8 @@ function frame(now) {
   body.step(dt);
   chatter(now);
   // She walks: a pointer that was on her a moment ago may be over the page again now — unless
-  // it has not moved since a panel opened, which keeps the frame's pointer (see `resting`).
-  if (over && !pressed && !resting) answered(onPet(lastAt) || panelOpen);
+  // it has not moved since a sheet opened, which keeps the frame's pointer (see `resting`).
+  if (over && !pressed && !resting) answered(onPet(lastAt) || sheetOpen());
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
     const at = body.layout().bubble;
@@ -718,7 +770,7 @@ function setShown(next) {
   if (next === shown) return;
   shown = next;
   if (!shown) {
-    closePanel();
+    closeSheet();
     bubbleUntil = 0;
     bubbleEl.textContent = "";
     bubbleEl.style.display = "none";
@@ -793,7 +845,7 @@ async function start() {
 
 /** Feeding: a double-click fills the whale up from her pantry, and the server keeps the numbers. */
 document.addEventListener("dblclick", (e) => {
-  if (panelOpen) return;
+  if (sheetOpen()) return;
   const at = docPoint(e);
   if (!onPet(at)) return;
   void feed();

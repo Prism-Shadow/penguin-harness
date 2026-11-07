@@ -20,13 +20,14 @@ import {
   Button,
   Card,
   CardHeader,
+  Dropdown,
   Modal,
   Pill,
   ProgressBar,
   Segmented,
   StatTile,
 } from "@prismshadow/penguin-ui";
-import type { PetPanel, PetPanelHost, PetSnapshot, ChoiceOption } from "./types";
+import type { PetPanel, PetPanelHost, PetSnapshot, ChoiceOption, MenuPoint } from "./types";
 import { TALK_OPTIONS, AREA_OPTIONS } from "./types";
 import type { DayUsage } from "./usage";
 import { addDays, formatTokens, heatLevel, localDay, readDailyUsage } from "./usage";
@@ -39,13 +40,18 @@ const WEEKS = 26;
  * mix of the subtle ink rather than the theme's inset surface: the inset is barely a shade off
  * the card, and a graph of days that happen to have no usage has to look like a grid, not like
  * a blank.
+ *
+ * The filled levels are the success tone, not the accent: the accent in this theme is the ink a
+ * primary button sets its label on, which in the dark mode is a near-white — an accent ramp
+ * drawn on a dark card reads as the light theme's grid, which is the one thing a contribution
+ * graph must not do. The success tone is green in both modes and lifts itself for the dark page.
  */
 const CELL_FILL = [
   "color-mix(in oklab, var(--ui-fg-subtle) 18%, var(--ui-surface))",
-  "color-mix(in oklab, var(--ui-accent) 20%, var(--ui-surface))",
-  "color-mix(in oklab, var(--ui-accent) 40%, var(--ui-surface))",
-  "color-mix(in oklab, var(--ui-accent) 65%, var(--ui-surface))",
-  "var(--ui-accent)",
+  "color-mix(in oklab, var(--ui-tone-success-fg) 24%, var(--ui-surface))",
+  "color-mix(in oklab, var(--ui-tone-success-fg) 48%, var(--ui-surface))",
+  "color-mix(in oklab, var(--ui-tone-success-fg) 72%, var(--ui-surface))",
+  "var(--ui-tone-success-fg)",
 ] as const;
 
 /**
@@ -54,15 +60,32 @@ const CELL_FILL = [
  * behind is wearing. The package's own pre-paint script is the one that maps them onto <html>
  * (mode class, theme id, accent, text size) — run here, before the first render, so the dialog
  * is drawn in the app's theme rather than flashing the default one.
+ *
+ * It runs again on every open, and it starts by clearing what it last wrote: the script only
+ * ever adds what the store says, so a dialog that booted while the app was light would keep the
+ * light class after the app went dark. This document outlives a theme change made in the page
+ * behind it — the frame is mounted once and kept — so the store's own events are the signal:
+ * `storage` fires here for a write the app made in its document (the same origin), and the media
+ * query covers a "system" mode whose OS flips.
  */
-let themeApplied = false;
+const THEME_ATTRS = ["theme", "accent", "fontLatin", "fontCjk"] as const;
+let following = false;
+
 function applyStoredTheme(): void {
-  if (themeApplied) return;
-  themeApplied = true;
+  const root = document.documentElement;
+  root.classList.remove("dark");
+  for (const name of THEME_ATTRS) delete root.dataset[name];
+  root.style.fontSize = "";
   const script = document.createElement("script");
   script.textContent = BOOT_SCRIPT;
   document.head.append(script);
   script.remove();
+  if (following) return;
+  following = true;
+  addEventListener("storage", (e) => {
+    if (e.key === null || e.key.startsWith("penguin.")) applyStoredTheme();
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyStoredTheme);
 }
 
 /** The last seven days, oldest first, and which of them the current streak covers. */
@@ -144,7 +167,7 @@ function CheckInCard({
             key={day}
             title={`${day} ${on ? "已签到" : "没有签到"}`}
             className="size-2 rounded-[2px]"
-            style={{ background: on ? "var(--ui-accent)" : "var(--ui-inset)" }}
+            style={{ background: on ? "var(--ui-tone-success-fg)" : "var(--ui-inset)" }}
           />
         ))}
         <span className="ml-1 text-xs text-fg-subtle">最近七天</span>
@@ -368,42 +391,150 @@ function PetDialog({
 }
 
 /**
- * Mounts the dialog into `element` and hands widget.js the handle it drives. The open flag and
+ * The quick menu a secondary click opens on her: the pantry and her two habits, at the point the
+ * click landed. It is drawn from the panel primitive the app's own menus use — `Dropdown` in
+ * `anchorRect` mode, the one that exists for "the point a secondary click landed on" — so the
+ * dismiss stack (Escape through the shared esc-layer, a click elsewhere, a scroll), the viewport
+ * clamping and the flip all come from the package, and the theme with them.
+ *
+ * It is a menu, not a dialog: the shop is the dialog. This row only says how many portions are
+ * in the pantry and opens it.
+ */
+function PetMenu({
+  at,
+  pet,
+  host,
+  onClose,
+}: {
+  at: MenuPoint;
+  pet: PetSnapshot;
+  host: PetPanelHost;
+  onClose: () => void;
+}) {
+  // A point is a box with no sides: placement reads nothing but the edges.
+  const anchor = { top: at.y, bottom: at.y, left: at.x, right: at.x };
+  const quiet = (act: () => Promise<unknown>) => void act().catch(() => {});
+  return (
+    <Dropdown
+      button={null}
+      open
+      setOpen={(next) => {
+        if (!next) onClose();
+      }}
+      portal={{ direction: "down", align: "left" }}
+      anchorRect={anchor}
+      // Opened by the pointer at the cursor: pulling focus would draw a focus ring on the first
+      // control of a menu nobody asked to type into.
+      focusOnOpen={false}
+      menuClass="w-72"
+    >
+      <div className="flex flex-col gap-2 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-fg-muted">食物</span>
+          <span className="text-xs tabular-nums text-fg">{pet.food} 份</span>
+          <Button
+            className="ml-auto"
+            size="sm"
+            variant="secondary"
+            onClick={() => host.openDialog()}
+          >
+            商店
+          </Button>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-fg-muted">发言</span>
+          <Segmented<PetSnapshot["talk"]>
+            options={TALK_OPTIONS as ReadonlyArray<ChoiceOption<PetSnapshot["talk"]>>}
+            value={pet.talk}
+            cols={4}
+            onChange={(key) => quiet(() => host.setTalk(key))}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-fg-muted">活动范围</span>
+          <Segmented<PetSnapshot["area"]>
+            options={AREA_OPTIONS as ReadonlyArray<ChoiceOption<PetSnapshot["area"]>>}
+            value={pet.area}
+            cols={4}
+            onChange={(key) => quiet(() => host.setArea(key))}
+          />
+        </div>
+      </div>
+    </Dropdown>
+  );
+}
+
+/**
+ * Mounts both surfaces into `element` and hands widget.js the handle it drives. What is open and
  * the snapshot live outside React: the host may `open()` on the very turn this module finished
  * loading, before React's first commit, and a queued render would drop it.
  */
 export function mountPetPanel(element: HTMLElement, host: PetPanelHost): PetPanel {
   applyStoredTheme();
   const root = createRoot(element);
-  let view: { open: boolean; pet: PetSnapshot | null } = { open: false, pet: null };
+  let view: { dialog: PetSnapshot | null; menu: { at: MenuPoint; pet: PetSnapshot } | null } = {
+    dialog: null,
+    menu: null,
+  };
   const draw = (): void => {
+    const { menu, dialog } = view;
     root.render(
-      view.open && view.pet !== null ? (
-        <PetDialog
-          pet={view.pet}
-          host={host}
-          onClose={() => {
-            view = { open: false, pet: view.pet };
-            draw();
-            host.close();
-          }}
-        />
-      ) : null,
+      <>
+        {menu !== null && (
+          <PetMenu
+            at={menu.at}
+            pet={menu.pet}
+            host={host}
+            onClose={() => {
+              view = { ...view, menu: null };
+              draw();
+              host.closeMenu();
+            }}
+          />
+        )}
+        {dialog !== null && (
+          <PetDialog
+            pet={dialog}
+            host={host}
+            onClose={() => {
+              view = { ...view, dialog: null };
+              draw();
+              host.close();
+            }}
+          />
+        )}
+      </>,
     );
   };
   const panel: PetPanel = {
     open(pet) {
-      view = { open: true, pet };
+      applyStoredTheme();
+      view = { dialog: pet, menu: null };
       draw();
     },
     update(pet) {
-      if (!view.open) return;
-      view = { ...view, pet };
+      if (view.dialog === null) return;
+      view = { ...view, dialog: pet };
       draw();
     },
     close() {
-      if (!view.open) return;
-      view = { open: false, pet: view.pet };
+      if (view.dialog === null) return;
+      view = { ...view, dialog: null };
+      draw();
+    },
+    menu(at, pet) {
+      applyStoredTheme();
+      view = { ...view, menu: { at, pet } };
+      draw();
+    },
+    updateMenu(pet) {
+      if (view.menu === null) return;
+      view = { ...view, menu: { ...view.menu, pet } };
+      draw();
+    },
+    closeMenu() {
+      if (view.menu === null) return;
+      view = { ...view, menu: null };
       draw();
     },
   };
