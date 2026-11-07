@@ -2466,7 +2466,10 @@ describe("organization runtime", () => {
         .sort();
       expect(woken).toEqual(["acme_hr", "acme_d1", "acme_d2", "acme_d3"]);
       expect(errors).toHaveLength(2);
-      expect(errors.map((e) => e.ctx.target)).toEqual(["agent:acme_d4", "agent:acme_d5"]);
+      expect(errors.map((e) => (e.ctx as Record<string, unknown>).target)).toEqual([
+        "agent:acme_d4",
+        "agent:acme_d5",
+      ]);
       for (const e of errors)
         expect(e).toMatchObject({ code: "org_mention_fanout_limit", ctx: { reason: "fanout" } });
       const line = (
