@@ -157,7 +157,12 @@ describe("company store event routing", () => {
       currentOrgKey: "p1/acme",
       channels: [channel({ unread: 3 })],
       channelUnread: 3,
-      orgChart: { ceoAgentId: "ceo", employees: [] },
+      orgChart: {
+        ceoAgentId: "ceo",
+        employees: [],
+        budgetWarnRatio: 0.8,
+        budgetPauseRatio: 1,
+      },
       orgChartError: "boom",
     });
     store.getState().setCurrentOrg("p1/other");

@@ -758,7 +758,12 @@ export class OrganizationService {
     const org = await this.requireOrg(projectId, orgId);
     const { tickets } = await listTickets(this.deps, org);
     const spend = await computeSpend(this.deps, org, tickets);
-    return { ceoAgentId: ceoAgentId(orgId), employees: await this.employeeItems(org, spend) };
+    return {
+      ceoAgentId: ceoAgentId(orgId),
+      employees: await this.employeeItems(org, spend),
+      budgetWarnRatio: org.config.budgetWarnRatio,
+      budgetPauseRatio: org.config.budgetPauseRatio,
+    };
   }
 
   private async employeeItems(org: LoadedOrg, spend: OrgSpend): Promise<OrgEmployeeItem[]> {
