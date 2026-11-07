@@ -97,7 +97,7 @@ function WidgetDock() {
         ) : null,
       )}
       {open !== null && "iframe" in open.renderer && open.chrome !== "bare" && (
-        <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
+        <div className="relative z-10 flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
           <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
             <span>{open.titleZh ?? open.title ?? open.key}</span>
             <button
@@ -116,7 +116,7 @@ function WidgetDock() {
           />
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="relative z-10 flex gap-2">
         {widgets.map((w) => (
           <WidgetTile key={w.id} widget={w} open={w.key === openKey} onToggle={() => setOpenKey(w.key === openKey ? null : w.key)} />
         ))}
@@ -143,7 +143,9 @@ function WidgetDock() {
  * the host relays the position to the document as `{ penguin: "widget-probe", x, y }` in the
  * frame's own pixels; the document answers `{ penguin: "widget-over", over }` when the position
  * is on something it drew, and only then does the frame take pointer events. The document
- * reports the pointer leaving by itself, which hands the page the pointer back.
+ * reports the pointer leaving by itself, which hands the page the pointer back. The dock's own
+ * controls stay above the frame (`relative z-10`): a companion that wandered onto the tile
+ * could otherwise swallow the one press that closes her.
  *
  * The frame also has to be see-through, and a browser only composites one that way while the
  * frame's colour scheme agrees with its element's: a document that leaves it `normal` counts as
