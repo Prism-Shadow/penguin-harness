@@ -2966,7 +2966,8 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
     for (;;) {
       const { done, value } = await reader.read();
       if (done) {
-        if (buffer.trim() !== "") throw new ApiError(0, "network_error", "the stream ended mid-event.");
+        if (buffer.trim() !== "")
+          throw new ApiError(0, "network_error", "the stream ended mid-event.");
         return;
       }
       buffer += decoder.decode(value, { stream: true });

@@ -2902,7 +2902,8 @@ export const en: Strings = {
     install: "Install",
     installing: "Installing…",
     /** A channel install's download: the percent while the total is known, a pulse before that. */
-    downloading: (percent: number | null) => (percent === null ? "Downloading…" : `Downloading ${percent}%`),
+    downloading: (percent: number | null) =>
+      percent === null ? "Downloading…" : `Downloading ${percent}%`,
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */

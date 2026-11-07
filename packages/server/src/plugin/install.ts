@@ -476,11 +476,11 @@ export async function installPluginChannel(
     manifest = JSON.parse(
       // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
       // reads as a remote host name.
-      (await execFileAsync(
-        "tar",
-        ["-xzOf", path.basename(staging), "package/package.json"],
-        { cwd: path.dirname(staging) },
-      )).stdout,
+      (
+        await execFileAsync("tar", ["-xzOf", path.basename(staging), "package/package.json"], {
+          cwd: path.dirname(staging),
+        })
+      ).stdout,
     ) as { name?: unknown; version?: unknown };
   } catch (err) {
     await fs.rm(staging, { force: true });
