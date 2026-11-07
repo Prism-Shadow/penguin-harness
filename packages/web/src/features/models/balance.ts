@@ -7,7 +7,7 @@
  *   request in flight per key serves every reader asking at once. The server caches for 60 s
  *   as well; a click asks it to skip that (`force`).
  * - **The pin** is stored per ACCOUNT, in `ui_prefs.pinnedBalance`, following the precedent of
- *   `todoDismissed` (lib/todo-dismissals.ts): a user who pins a balance expects it wherever they
+ *   `todoDismissed` (features/todos/todo-dismissals.ts): a user who pins a balance expects it wherever they
  *   sign in, and on a shared machine another user must not inherit it. `PUT /me/prefs` merges
  *   at the top level, so the field is always written whole; `null` is "nothing pinned". Until
  *   the prefs arrive the pin reads as absent, so nothing appears and then vanishes.

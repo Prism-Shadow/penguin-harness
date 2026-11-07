@@ -23,7 +23,7 @@
  * flag), which is why `setWorkMode` is the single handler both mode switches call.
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
- * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
+ * `lastOrgKey` in ui_prefs) mirrored into localStorage (features/company/work-mode.ts) so a reload stands
  * in the right mode before the preferences arrive; the stored copy wins once it does. Both
  * the open and the remembered organization are forgotten once a complete listing comes back
  * without them: a deleted organization that keeps the shell aimed at it costs a broken
@@ -75,7 +75,7 @@ import {
   initialWorkMode,
   storeLastOrgKey,
   storeWorkMode,
-} from "../lib/work-mode";
+} from "../features/company/work-mode";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
 

@@ -7,8 +7,8 @@
  * is mirrored. Storage is injectable (nav-group-collapse.ts convention: vitest runs in Node
  * with no localStorage), and every read degrades to the default on anything unexpected.
  */
-import type { WorkMode } from "../features/company/company-nav";
-import { parseOrgKey } from "../features/company/company-nav";
+import type { WorkMode } from "./company-nav";
+import { parseOrgKey } from "./company-nav";
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory one. */
 export interface WorkModeStorage {

@@ -1,6 +1,6 @@
 /**
  * Company mode's navigation (features/company/company-nav.ts) and the work-mode mirrors in
- * localStorage (lib/work-mode.ts).
+ * localStorage (features/company/work-mode.ts).
  *
  * - An organization key is `<projectId>/<orgId>` and parses back; anything but two non-empty
  *   segments is refused.
@@ -36,7 +36,7 @@ import {
   initialWorkMode,
   storeLastOrgKey,
   storeWorkMode,
-} from "../src/lib/work-mode";
+} from "../src/features/company/work-mode";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 describe("org keys and paths", () => {

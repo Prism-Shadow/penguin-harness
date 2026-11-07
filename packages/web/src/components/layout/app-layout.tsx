@@ -32,7 +32,7 @@ import { latestConversation, withoutOrgSessions } from "../../lib/session-groupi
 import { navKeysFor } from "../../lib/nav-group-collapse";
 import { ErrorBoundary } from "../../rescue/error-boundary";
 import { RescuePanel } from "../../rescue/rescue-panel";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";

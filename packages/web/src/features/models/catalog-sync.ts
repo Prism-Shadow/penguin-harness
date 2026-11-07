@@ -32,7 +32,7 @@ interface ModelRef {
 
 /**
  * The presets the saved table lacks. `refs` is what a dismissal is stamped against, so a later
- * catalog release adding a different model raises the badge again (see `lib/todo-badges.ts`).
+ * catalog release adding a different model raises the badge again (see `features/todos/todo-badges.ts`).
  */
 export function catalogDelta(
   models: readonly ModelRef[],
