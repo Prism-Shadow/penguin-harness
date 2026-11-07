@@ -316,8 +316,20 @@ function onPet(at) {
   return body.layout().hit.some((c) => Math.hypot(x - c.x, y - c.y) < c.r);
 }
 
+/**
+ * Tells the dock whether the frame is taking the pointer, and closes whatever she had open when it
+ * is not.
+ *
+ * The answer is posted on every call rather than only when it differs from the last one. The dock
+ * keeps its own copy of this boolean (it is the one that sets `pointer-events`), and its copy can
+ * be reset without this document hearing about it — a closed and reopened frame, a tile pressed
+ * while a sheet was up. Once the two disagree, a "only when it changed" answer is never sent again:
+ * the dock keeps handing the frame's pointer to the page (or holding it with no sheet up), she
+ * cannot be poked, and the page cannot be clicked. Answering every time makes the dock's copy
+ * follow this one instead of drifting from it; an unchanged value costs a React state update that
+ * bails out. Per-frame and per-pointer-move calls keep the overhead to one postMessage.
+ */
 function answered(next) {
-  if (next === over) return;
   over = next;
   // The dock is the only parent this document has; posting to itself (opened on its own) is
   // harmless — nothing here acts on the message it sends.
