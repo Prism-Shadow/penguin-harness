@@ -26,8 +26,13 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [tailwindcss()],
   // .tsx is compiled by esbuild; the runtime transform is the one React 19 needs, and no Babel
-  // pass is wanted in a production library build.
-  esbuild: { jsx: "automatic" },
+  // pass is wanted in a production library build. React's and the UI package's licence texts stay
+  // in the bundle (esbuild's own option — Rollup has no `legalComments`).
+  esbuild: { jsx: "automatic", legalComments: "inline" },
+  // A library build is left to its consumer to choose NODE_ENV in, which is not this one: this
+  // bundle runs in the browser, where `process` does not exist, and React would have to pick its
+  // development branch — 1.2 MB of warnings beside a dialog. The build is the production build.
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
   build: {
     lib: {
       entry: "src/panel.tsx",
@@ -45,8 +50,6 @@ export default defineConfig({
         // A stable file name (no content hash): the URL is what widget.js imports, and the
         // `?v=` stamp — not the name — is what makes the file cacheable for good.
         entryFileNames: "[name].js",
-        // React's and the UI package's licence texts stay in the bundle.
-        legalComments: "inline",
       },
     },
   },

@@ -12,6 +12,7 @@
  * anything until the dialog is asked for. It hands the module a snapshot and the actions to call
  * (types.ts), and is told back when the dialog closed itself.
  */
+import "./panel.css";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BOOT_SCRIPT } from "@prismshadow/penguin-ui/boot";
