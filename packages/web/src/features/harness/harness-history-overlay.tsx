@@ -22,6 +22,7 @@ import type {
   VersionHistoryResponse,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { openUserEvents } from "../../api/sse";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { ModuleTreeView } from "./module-tree-view";
@@ -171,6 +172,20 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
 
   const startRollback = async (id: string) => {
     setRollback({ state: "pushing", id });
+    // The swap's own signal (`web_updated` on /api/events) is wired to a reload inside
+    // SessionsProvider — which is inside RequireAuth and gone from every tree this overlay is
+    // a recovery surface for (route crash, boot failure, the /app page's partial wiring).
+    // Listen directly, so a successful rollback reloads this tab instead of running out the
+    // poll below into a false "timeout".
+    const conn = openUserEvents({
+      onRecord: () => undefined,
+      onServerEvent: (ev) => {
+        if (ev.type === "web_updated") {
+          conn.close();
+          window.location.reload();
+        }
+      },
+    });
     try {
       await api.rollbackVersion(id);
       // The swap, if it comes, reloads this tab; what can arrive here is the refusal.
@@ -191,6 +206,8 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
       await reload();
     } catch (err) {
       setRollback({ state: "error", message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      conn.close();
     }
   };
 

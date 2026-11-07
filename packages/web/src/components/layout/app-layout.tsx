@@ -11,7 +11,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import {
   AppShell,
-  CrashBoundary,
   Drawer,
   ICONS,
   MobileTopBar,
@@ -31,6 +30,8 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
+import { ErrorBoundary } from "../../rescue/error-boundary";
+import { RescuePanel } from "../../rescue/rescue-panel";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
@@ -57,7 +58,6 @@ import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
-import { AppPalette } from "../../features/palette/app-palette";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -497,11 +497,13 @@ export function AppLayout() {
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* A page that crashes says so here, with Reload and Report, and leaves the sidebar
-            working: going to another page gives the body another chance. */}
-        <CrashBoundary resetKey={pathname}>
+        {/* A page that crashes says so here, and leaves the sidebar working: going to another
+            page gives the body another chance. The recovery panel (error details, safe reload,
+            harness history) stands in for the bare crash notice — the same fallback the shell
+            root uses, so a broken server contribution is recoverable in place. */}
+        <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
           <Outlet />
-        </CrashBoundary>
+        </ErrorBoundary>
       </main>
       {/* The docks themselves render inside the chat page (features/dock); the xterm
           views live in this pool and are adopted into dock tab bodies by DOM handoff,
@@ -513,7 +515,6 @@ export function AppLayout() {
           and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
           reloads, so navigating the app must never re-parent one. */}
       <BuiltinBrowserLayer />
-      <AppPalette />
     </AppShell>
   );
 }
