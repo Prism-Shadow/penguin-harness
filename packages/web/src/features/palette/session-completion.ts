@@ -39,12 +39,15 @@ export const SESSION_ID_PREFIX = "session-";
 export const SESSION_COMPLETION_MAX = 20;
 
 /**
- * The cap one machine source's query rides: a machine out of reach must not hold the wait —
- * the cap rejects its call, the call's signal aborts the HTTP path underneath (the socket
- * path is bounded by its own answer timeout), and the source is silently dropped. This
- * server's own source is a local database read, not a network one, and carries no cap.
+ * The cap one source's query rides: a source out of reach — a machine, or this server under a
+ * heavy load — must not hold the wait. The cap rejects the call, the call's signal aborts the
+ * HTTP path underneath (the socket path is bounded by its own answer timeout), and the source
+ * is silently dropped; the rows the cache and the loaded store hold answer meanwhile.
  */
-export const MACHINE_SOURCE_TIMEOUT_MS = 3_000;
+export const SOURCE_TIMEOUT_MS = 3_000;
+
+/** How long a keystroke waits before the sources are asked: a typed prefix lands as one query, not one per key. */
+export const QUERY_DEBOUNCE_MS = 250;
 
 /** The query's session-id prefix, or null when the query does not start one. */
 export function sessionQueryPrefix(query: string): string | null {
@@ -198,10 +201,10 @@ export interface CompletionSource {
  * contributes nothing and does not hold the others — the wait ends when the last source
  * settles, and it is that wait (`onSettled`) the hook's `pending` stands for.
  *
- * A machine source's call is capped (see {@link MACHINE_SOURCE_TIMEOUT_MS}) and rides a signal
- * that aborts its HTTP path; this server's own call, a local read, is uncapped. Fire and
- * forget: the completion merges the answers as they land and clears the wait when `onSettled`
- * runs — nothing is awaited.
+ * Every source's call is capped (see {@link SOURCE_TIMEOUT_MS}) and rides a signal that
+ * aborts its HTTP path — this server's own read included, for a host with a heavy session
+ * index must not hold the palette either. Fire and forget: the completion merges the answers
+ * as they land and clears the wait when `onSettled` runs — nothing is awaited.
  */
 export function askCompletionSources(args: {
   projectId: string;
@@ -215,11 +218,7 @@ export function askCompletionSources(args: {
     call?: { signal?: AbortSignal },
   ) => Promise<{ readonly sessions: readonly SessionInfo[] }>;
   /** One source's answer, as it lands — the hook remembers and merges it live. */
-  onAnswer: (
-    source: string | null,
-    agentId: string,
-    rows: readonly SessionInfo[],
-  ) => void;
+  onAnswer: (source: string | null, agentId: string, rows: readonly SessionInfo[]) => void;
   /** When every source has answered or been dropped — the hook clears its wait. */
   onSettled: () => void;
 }): void {
@@ -235,14 +234,11 @@ export function askCompletionSources(args: {
   };
   for (const { source, agentIds } of args.agentsBySource) {
     for (const agentId of agentIds) {
-      const answer =
-        source === null
-          ? args.ask(args.projectId, agentId, opts, source)
-          : cappedSourceQuery(
-              (signal) =>
-                args.ask(args.projectId, agentId, opts, source, signal === undefined ? {} : { signal }),
-              MACHINE_SOURCE_TIMEOUT_MS,
-            );
+      const answer = cappedSourceQuery(
+        (signal) =>
+          args.ask(args.projectId, agentId, opts, source, signal === undefined ? {} : { signal }),
+        SOURCE_TIMEOUT_MS,
+      );
       answer
         .then((res) => args.onAnswer(source, agentId, res.sessions))
         .catch(() => {})
@@ -257,10 +253,12 @@ export function askCompletionSources(args: {
  * The completion as the palette takes it: the store's rows and the router's navigate, memoized.
  * A query starting a session id answers at once — from the loaded rows, the remembered answers
  * and the previous query's — and asks every source (this server, then the Project's machines)
- * with the prefix live; the answers merge in as they land. While the sources are still answering,
- * `pending` says so and the palette draws a word for the wait. A source that fails — the network,
- * a machine out of reach, one cut loose past its cap — is silently dropped: the loaded and
- * remembered rows still answer, which is what the palette did before the live query existed.
+ * with the prefix live, once the keystroke has settled and never twice for the prefix a live
+ * query is already out for; the answers merge in as they land. While the sources are still
+ * answering, `pending` says so and the palette draws a word for the wait. A source that fails —
+ * the network, a machine out of reach, one cut loose past its cap — is silently dropped: the
+ * loaded and remembered rows still answer, which is what the palette did before the live query
+ * existed.
  */
 export function useSessionCompletion(): {
   suggest: (query: string) => readonly PaletteAction[];
@@ -274,6 +272,17 @@ export function useSessionCompletion(): {
   const [pending, setPending] = useState(false);
   /** The query the `live` rows answer, so a keystroke that has no answer yet reads the last one's. */
   const asked = useRef<string>("");
+  /** The keystroke's ask waits this long: a typed prefix lands as one query, not one per key. */
+  const askTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The prefix a live query is out for; a keystroke sharing it rides the answer already coming. */
+  const asking = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (askTimer.current !== undefined) clearTimeout(askTimer.current);
+    },
+    [],
+  );
 
   return useMemo(
     () => ({
@@ -283,6 +292,7 @@ export function useSessionCompletion(): {
         let answer = live;
         if (prefix === null) {
           asked.current = "";
+          if (askTimer.current !== undefined) clearTimeout(askTimer.current);
           setLive([]);
           setPending(false);
           answer = sessions;
@@ -314,20 +324,30 @@ export function useSessionCompletion(): {
                 for (const s of cachedCompletionRows(projectId, source, agentId)) merged.push(s);
               }
             }
-            // Every source is asked the moment a fresh prefix arrives; a slow, failing or
-            // capped one simply never contributes, and the loaded and remembered rows carried
-            // the answer meanwhile.
-            askCompletionSources({
-              projectId,
-              prefix,
-              agentsBySource,
-              ask: api.listSessions,
-              onAnswer: (source, agentId, rows) => {
-                rememberCompletionRows(projectId, source, agentId, rows);
-                setLive((prev) => mergeCompletionRows([], [], [prev, rows]));
-              },
-              onSettled: () => setPending(false),
-            });
+            // The sources are asked once the keystroke has settled (a typed prefix lands as
+            // one query, not one per key), and a keystroke sharing the prefix a live query is
+            // already out for rides that answer instead of re-asking. A slow, failing or
+            // capped source simply never contributes, and the loaded and remembered rows
+            // carried the answer meanwhile.
+            if (askTimer.current !== undefined) clearTimeout(askTimer.current);
+            askTimer.current = setTimeout(() => {
+              if (asking.current === prefix) return;
+              asking.current = prefix;
+              askCompletionSources({
+                projectId,
+                prefix,
+                agentsBySource,
+                ask: api.listSessions,
+                onAnswer: (source, agentId, rows) => {
+                  rememberCompletionRows(projectId, source, agentId, rows);
+                  setLive((prev) => mergeCompletionRows([], [], [prev, rows]));
+                },
+                onSettled: () => {
+                  if (asking.current === prefix) asking.current = null;
+                  setPending(false);
+                },
+              });
+            }, QUERY_DEBOUNCE_MS);
             setPending(true);
             setLive(merged);
             answer = merged;

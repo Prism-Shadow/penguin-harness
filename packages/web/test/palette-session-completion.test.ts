@@ -15,9 +15,9 @@ import {
   resetCompletionCache,
 } from "../src/lib/completion-cache";
 import {
-  MACHINE_SOURCE_TIMEOUT_MS,
   SESSION_COMPLETION_MAX,
   SESSION_DETAIL_ID_MAX,
+  SOURCE_TIMEOUT_MS,
   askCompletionSources,
   cappedSourceQuery,
   mergeCompletionRows,
@@ -309,9 +309,14 @@ describe("askCompletionSources", () => {
     });
     expect(settled).toBe(0);
     await vi.advanceTimersByTimeAsync(0);
-    expect(answered).toEqual(["a1", "session-2026-10-01-local", "a2", "session-2026-10-02-machine"]);
+    expect(answered).toEqual([
+      "a1",
+      "session-2026-10-01-local",
+      "a2",
+      "session-2026-10-02-machine",
+    ]);
     expect(settled).toBe(1);
-    // The machine's call is the one capped: it rides a signal, the local read does not.
+    // Every source's call is capped and rides a signal — this server's own read included.
     expect(calls).toEqual([null, "machine-1"]);
   });
 
@@ -330,8 +335,8 @@ describe("askCompletionSources", () => {
         const promise =
           agentId === "a1"
             ? Promise.resolve({ sessions: localAnswer })
-            // A machine that never answers: the run ignores whatever it is told.
-            : new Promise<{ sessions: readonly SessionInfo[] }>(() => {});
+            : // A machine that never answers: the run ignores whatever it is told.
+              new Promise<{ sessions: readonly SessionInfo[] }>(() => {});
         if (source !== null && call?.signal !== undefined) machineSignals.push(call.signal);
         return promise;
       },
@@ -343,11 +348,37 @@ describe("askCompletionSources", () => {
     expect(settled).toBe(0);
     // Past the cap the hung source is dropped on its own: nothing of it answers, and the
     // wait — the palette's Finding sessions — ends with the sources that answered.
-    await vi.advanceTimersByTimeAsync(MACHINE_SOURCE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
     expect(answered).toEqual(["a1", "session-2026-10-01-local"]);
     expect(settled).toBe(1);
     expect(machineSignals).toHaveLength(1);
     expect(machineSignals[0]!.aborted).toBe(true);
+  });
+
+  it("cuts this server's own source loose past its cap too, and clears the wait with the sources that answered", async () => {
+    const answered: string[] = [];
+    let settled = 0;
+    const localSignals: AbortSignal[] = [];
+    askCompletionSources({
+      projectId: "p",
+      prefix: "session-",
+      agentsBySource: [{ source: null, agentIds: ["a1"] }],
+      ask: (_projectId, _agentId, _opts, _source, call) => {
+        if (call?.signal !== undefined) localSignals.push(call.signal);
+        // This server under a heavy index: asked, never answers.
+        return new Promise<{ sessions: readonly SessionInfo[] }>(() => {});
+      },
+      onAnswer: (_source, agentId, rows) => answered.push(agentId, rows[0]!.sessionId),
+      onSettled: () => {
+        settled += 1;
+      },
+    });
+    expect(settled).toBe(0);
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+    expect(answered).toEqual([]);
+    expect(settled).toBe(1);
+    expect(localSignals).toHaveLength(1);
+    expect(localSignals[0]!.aborted).toBe(true);
   });
 
   it("answers nothing when no source has agents, clearing the wait at once", () => {
@@ -376,22 +407,19 @@ describe("cappedSourceQuery", () => {
 
   it("answers with the request when it settles inside the cap", async () => {
     const answer = { sessions: [row({ sessionId: "session-2026-10-01-aaaa" })] };
-    const p = cappedSourceQuery(() => Promise.resolve(answer), MACHINE_SOURCE_TIMEOUT_MS);
+    const p = cappedSourceQuery(() => Promise.resolve(answer), SOURCE_TIMEOUT_MS);
     await vi.advanceTimersByTimeAsync(0);
     expect(await p).toBe(answer);
   });
 
   it("rejects past the cap and aborts the signal it gave the request", async () => {
     const signals: AbortSignal[] = [];
-    const p = cappedSourceQuery(
-      (signal) => {
-        signals.push(signal!);
-        return new Promise(() => {});
-      },
-      MACHINE_SOURCE_TIMEOUT_MS,
-    );
+    const p = cappedSourceQuery((signal) => {
+      signals.push(signal!);
+      return new Promise(() => {});
+    }, SOURCE_TIMEOUT_MS);
     const settled = expect(p).rejects.toMatchObject({ name: "TimeoutError" });
-    await vi.advanceTimersByTimeAsync(MACHINE_SOURCE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
     await settled;
     expect(signals[0]!.aborted).toBe(true);
   });

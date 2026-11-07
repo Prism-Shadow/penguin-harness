@@ -609,13 +609,23 @@ export class SessionService {
     workspaceLatest?: Record<string, string>;
     workspaceLatestActive?: Record<string, string>;
   }> {
-    const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg, sessionIdPrefix } = opts;
-    const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
-
-    if (sessionIdPrefix !== undefined) {
-      const lower = sessionIdPrefix.toLowerCase();
-      for (const [id] of rows) if (!id.toLowerCase().startsWith(lower)) rows.delete(id);
-    }
+    const {
+      paging,
+      order = "created",
+      category,
+      workspaceGroup,
+      withCounts,
+      excludeOrg,
+      sessionIdPrefix,
+    } = opts;
+    // The prefix narrows inside the walk (see walkRows): before the hydration pass, so the
+    // query pays only for the rows it can serve.
+    const { rows, orgIds, traces } = await this.walkRows(
+      projectId,
+      agentId,
+      excludeOrg === true,
+      sessionIdPrefix,
+    );
 
     const sorted = [...rows.values()].sort(
       order === "activity" ? compareActivityDesc : compareCreatedDesc,
@@ -643,8 +653,9 @@ export class SessionService {
               prefix: sessionIdPrefix.toLowerCase(),
               known: new Set(rows.keys()),
               ...(excludeOrg && orgIds.size > 0 ? { orgIds } : {}),
-              leftToServe:
-                paging ? Math.max(0, paging.limit - page.length) : SessionService.TRACE_ONLY_CAP,
+              leftToServe: paging
+                ? Math.max(0, paging.limit - page.length)
+                : SessionService.TRACE_ONLY_CAP,
             })
           : [];
       return { sessions: extras.length === 0 ? page : [...page, ...extras] };
@@ -795,6 +806,7 @@ export class SessionService {
     projectId: string,
     agentId: string,
     excludeOrg: boolean,
+    sessionIdPrefix?: string,
   ): Promise<{
     rows: Map<string, SessionRow>;
     orgIds: ReadonlyMap<string, string>;
@@ -817,6 +829,14 @@ export class SessionService {
       // inherited by sub-sessions, which no cache names. The caches catch a row the
       // reconcile pass has not stamped yet.
       for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
+    }
+    // A prefix query narrows before the hydration pass: the pass exists to classify the rows
+    // the list serves, and the palette's completion serves only the rows whose id starts the
+    // prefix — the rest of the Agent's history must not be walked (and its discovery paid)
+    // for one typed prefix.
+    if (sessionIdPrefix !== undefined) {
+      const lower = sessionIdPrefix.toLowerCase();
+      for (const [id] of rows) if (!id.toLowerCase().startsWith(lower)) rows.delete(id);
     }
 
     let traces: ReadonlySet<string> | undefined;

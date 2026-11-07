@@ -902,8 +902,9 @@ export const listSessions = (
   machineId?: string | null,
   /**
    * The call's own knobs: the `signal` aborts its HTTP path (the socket path is bounded by
-   * its own answer timeout — see api/client.ts). The command palette's completion caps each
-   * machine source's query with it, so an unreachable machine cannot hold the wait.
+   * its own answer timeout — see api/client.ts). The command palette's completion caps every
+   * source's query with it, so an unreachable machine — or this server under a heavy index —
+   * cannot hold the wait.
    */
   call?: { signal?: AbortSignal },
 ) => {
