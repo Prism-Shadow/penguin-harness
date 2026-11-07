@@ -1,7 +1,7 @@
 ---
 name: company-employee
 description: The protocol every employee of a PenguinHarness organization follows — read the handbook first, act on [org_trigger] work runs, schedule tickets from the desk session and do the work in ticket sessions, block instead of idling, ask the board in the all-hands channel before anything heavy, costly, irreversible or outside the workspace, keep channel and budget discipline, and drive it all with penguin org.
-version: 2026.11.03.1
+version: 2026.11.05.1
 ---
 
 # Company Employee
@@ -14,7 +14,7 @@ If the message only names this skill (e.g. "use company-employee skill") without
 
 ## Every work run starts with the handbook
 
-The organization lives at `<app_data_dir>/organizations/<org_id>/` — substitute the App Data Dir from your Environment and the `org:` line of the trigger block. Paths in tickets, channels and notes are written as `<app_data_dir>/…` where you can (an absolute path is fine when that is what a tool gave you) — always a full path, never a bare file name. Read `handbook/README.md`, the organization handbook's index, first, every work run, before anything else: it is the index of the directory — the layout, the ticket and channel protocol, the principal notation, the role conventions (who accepts, who reviews, which priorities need review) and the list of documents in the knowledge base. `handbook/` is the company's knowledge base: one Markdown file per subject (board decisions, conventions, how-tos, product and market facts), each listed in the index with one line saying when it matters — read a document only when that line says it matters to the work at hand, and when you learn something the next run must not have to rediscover, write it there (`penguin org handbook write <path> -m …`, or file tools) and add its line to the index. A desk outlives its context window many times over; the handbook is what you rely on, not what you remember.
+The organization lives at `<app_data_dir>/organizations/<org_id>/` — substitute the App Data Dir from your Environment and the `org:` line of the trigger block. Paths in tickets, channels and notes are written as `<app_data_dir>/…` where you can (an absolute path is fine when that is what a tool gave you) — always a full path, never a bare file name. Where a person reads you — a channel message, your reply in a desk conversation — cite a file with a label, as "Writing a channel message" shows. Read `handbook/README.md`, the organization handbook's index, first, every work run, before anything else: it is the index of the directory — the layout, the ticket and channel protocol, the principal notation, the role conventions (who accepts, who reviews, which priorities need review) and the list of documents in the knowledge base. `handbook/` is the company's knowledge base: one Markdown file per subject (board decisions, conventions, how-tos, product and market facts), each listed in the index with one line saying when it matters — read a document only when that line says it matters to the work at hand, and when you learn something the next run must not have to rediscover, write it there (`penguin org handbook write <path> -m …`, or file tools) and add its line to the index. A desk outlives its context window many times over; the handbook is what you rely on, not what you remember.
 
 Write in the organization's **working language** — the one the handbook's 「工作语言」 / “Working language” section names: channel messages, tickets (title, goal, acceptance criteria, progress, result), handbook documents, calendar prompts and employee briefs are all written in it. Commands, ids, file names and field names stay ASCII whatever the language is.
 
@@ -204,6 +204,7 @@ A channel is read by people scanning it between other things, and a message that
 - **No hedging boilerplate**: no "pending", "subject to", "see the dashboard for the latest", "this does not mean". Write a caveat only when it would change the reader's decision, as one plain sentence. What is still unverified belongs in a progress line on the ticket.
 - **A channel message is not your final answer.** Your final answer reports the run to whoever started it. A channel gets only what someone else must know or do.
 - **Markdown renders**: bullets, `**bold**` for the one thing that must not be missed, links. Use no headings and no tables; content that needs them is a document.
+- **Cite a file with a label**: `[Weekly submissions](<app_data_dir>/organizations/co_lab/workspace/growth/weekly-submissions.md)`. The reader sees the label and opens the file from the message; the full path stays in it for the next run. The label is a few words saying what the file is, not its file name. A bare path still works, and reads as its file name.
 - **Pass a multi-line message through a quoted heredoc**, so the shell leaves the `$`, backticks and quotes inside it alone:
 
 ```bash
