@@ -110,7 +110,7 @@ A self-improving harness needs a community that improves with it. Come discuss, 
 
 - [Discord](https://discord.gg/eFHKqqcU3D): chat with us and other developers in real time.
 - [X (Twitter)](https://x.com/code_hiyouga): follow the latest updates.
-- [WeChat group](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg): discussions in the Chinese community.
+- [WeChat group](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg): discussions in the Chinese community.
 - [GitHub](https://github.com/Prism-Shadow/penguin-harness): stars, issues and pull requests are all welcome.
 
 ## Get started

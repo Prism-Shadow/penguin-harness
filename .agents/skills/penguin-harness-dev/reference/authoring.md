@@ -15,9 +15,9 @@ check and ship. Docs pages and landing copy go the same way. Posts cite their so
 footnotes that the skill generates from its fact markers; a `**Sources**` footer is the older form.
 
 **The images are not in this repo.** Screenshots and demo videos live in the sibling
-`Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published
-post's screenshots are never deleted, so that asset class grows without bound in the number of
-posts written; keeping it out of this history keeps everyone's clone small.
+`Prism-Shadow/penguin-harness-community` repo, under `assets/blog-assets/` and `assets/videos/`.
+A published post's screenshots are never deleted, so that asset class grows without bound in the
+number of posts written; keeping it out of this history keeps everyone's clone small.
 
 **Posts still write a repo-local path.** Reference an image as `/blog-assets/<name>` — both
 `![alt](…)` and the raw `<img src="…">` some posts use — and let the renderer resolve it:
