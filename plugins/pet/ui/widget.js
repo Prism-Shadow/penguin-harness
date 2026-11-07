@@ -274,6 +274,7 @@ addEventListener("message", (e) => {
   // probe arrives after the close it must not hand the frame back its events.
   if (!shown || typeof data.x !== "number" || typeof data.y !== "number") return;
   lastAt = { x: data.x, y: data.y };
+  resting = false;
   answered(onPet(lastAt) || onPanel(lastAt));
 });
 
@@ -298,6 +299,7 @@ document.addEventListener("pointerdown", (e) => {
 document.addEventListener("pointermove", (e) => {
   const at = docPoint(e);
   lastAt = at;
+  resting = false;
   body?.pointer("move", stagePoint(e));
   if (!pressed) answered(onPet(at) || onPanel(at));
 });
@@ -396,11 +398,21 @@ function panelsOpen(open) {
   body?.set({ dialogOpen: open });
 }
 
+/**
+ * A pointer that has not moved since a panel opened. She walks while a menu is up, so the
+ * point the frame was given can stop being on her or on the panel a moment later — but the
+ * hand that opened it has not gone anywhere, and a panel that shut itself as she stepped away
+ * could not be used at all. Only a NEW position (the dock's probe, or a move of our own) may
+ * take the pointer back; until then the panel keeps it.
+ */
+let resting = false;
+
 function openMenu(at) {
   shopEl.hidden = true;
   renderMenu();
   menuEl.hidden = false;
   place(menuEl, at);
+  resting = true;
   panelsOpen(true);
   answered(true);
 }
@@ -410,11 +422,13 @@ function openShop(at) {
   renderShop();
   shopEl.hidden = false;
   place(shopEl, at);
+  resting = true;
   panelsOpen(true);
   answered(true);
 }
 
 function closePanels() {
+  resting = false;
   if (menuEl.hidden && shopEl.hidden) return;
   menuEl.hidden = true;
   shopEl.hidden = true;
@@ -594,8 +608,9 @@ function frame(now) {
   last = now;
   body.step(dt);
   chatter(now);
-  // She walks: a pointer that was on her a moment ago may be over the page again now.
-  if (over && !pressed) answered(onPet(lastAt) || onPanel(lastAt));
+  // She walks: a pointer that was on her a moment ago may be over the page again now — unless
+  // it has not moved since a panel opened, which keeps the frame's pointer (see `resting`).
+  if (over && !pressed && !resting) answered(onPet(lastAt) || onPanel(lastAt));
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
     const at = body.layout().bubble;
