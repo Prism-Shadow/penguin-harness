@@ -142,6 +142,8 @@ export const BUNDLED_FONT_FAMILIES = {
   MiSans: "MiSans",
   "Noto Sans SC": "Noto Sans SC Variable",
   "JetBrains Mono": "JetBrains Mono Variable",
+  "Shantell Sans": "Shantell Sans Variable",
+  "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
 } as const;
 export type BundledFontName = keyof typeof BUNDLED_FONT_FAMILIES;
 
@@ -167,6 +169,7 @@ export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
   github: { latin: SYSTEM_FONT, cjk: SYSTEM_FONT, mono: "JetBrains Mono" },
   modern: { latin: "MiSans", cjk: "MiSans", mono: "JetBrains Mono" },
   geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
+  cartoon: { latin: "Shantell Sans", cjk: "LXGW WenKai GB Screen", mono: "JetBrains Mono" },
 };
 
 // ---------------------------------------------------------------------------

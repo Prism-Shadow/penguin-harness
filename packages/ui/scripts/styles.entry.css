@@ -13,6 +13,7 @@
 @import "../src/themes/github.css";
 @import "../src/themes/modern.css";
 @import "../src/themes/geek.css";
+@import "../src/themes/cartoon.css";
 
 @source "../src";
 @source not "../src/testing";

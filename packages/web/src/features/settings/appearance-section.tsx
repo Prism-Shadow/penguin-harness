@@ -178,7 +178,7 @@ export function AppearanceSection() {
   return (
     <SettingsGroup>
       <PrefRow label={S.settings.theme} info={S.settings.themeInfo}>
-        <Segmented options={themeIdOptions} value={themeId} onChange={setThemeId} />
+        <Segmented options={themeIdOptions} value={themeId} onChange={setThemeId} cols={4} />
       </PrefRow>
       <PrefRow label={S.settings.colorMode} info={S.settings.colorModeInfo}>
         <Segmented options={themeOptions} value={mode} onChange={setMode} />

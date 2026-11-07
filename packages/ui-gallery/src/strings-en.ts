@@ -190,7 +190,7 @@ export const en: GalleryStrings = {
   home: {
     eyebrow: "Surface gallery",
     title: "Penguin UI",
-    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
+    lead: "The real Web App, running in four themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
     appLead:
       "This is the app itself: the sidebar, every center, the chat and the settings all open. The theme and size controls drive the app in the frame; sending a message streams a scripted reply.",
@@ -205,7 +205,7 @@ export const en: GalleryStrings = {
   },
   rail: {
     theme: "Theme",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console", cartoon: "Doodle" },
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -377,6 +377,8 @@ export const en: GalleryStrings = {
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-widget":
         "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
+      "ui-edge":
+        "the edge of a box a person presses, types into or wrote: a boxed button, a text field or select, their own message bubble",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
       "ui-stream":
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",

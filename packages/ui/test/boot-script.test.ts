@@ -259,7 +259,12 @@ describe("BOOT_SCRIPT", () => {
     expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: DEFAULT_THEME_ID }, false).theme).toBe(
       undefined,
     );
-    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: "geek" }, false).theme).toBe("geek");
+    // Every other theme the package lists is painted from the first frame as it was stored.
+    for (const themeId of THEME_IDS.filter((id) => id !== DEFAULT_THEME_ID)) {
+      expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: themeId }, false).theme, themeId).toBe(
+        themeId,
+      );
+    }
   });
 
   it("knows every preset every theme lists, and writes one under any theme", () => {

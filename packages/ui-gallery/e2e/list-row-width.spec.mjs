@@ -19,7 +19,7 @@
 import { test, expect } from "@playwright/test";
 
 const TITLE = { en: "User memory", zh: "用户记忆" };
-const THEMES = ["modern", "geek", "github"];
+const THEMES = ["modern", "geek", "github", "cartoon"];
 const NARROWED = [360, 280, 220];
 
 /** Opens the data board and returns the memory section. */

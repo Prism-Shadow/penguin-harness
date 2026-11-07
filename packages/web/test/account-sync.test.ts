@@ -10,6 +10,8 @@
  *   account has not acknowledged, which keeps the cached value and goes up again. The cached
  *   image is fetched only when its id is not the account's, and dropped when the account has
  *   none.
+ * - Given an account whose theme this build does not know (a newer build chose it), the id is
+ *   cached as it is and never sent back, and the app paints the theme a browser starts in.
  * - A cached draft key maps to the account's `<kind>:<id>` key and back for every kind, a user
  *   named "session" included; another user's key maps to nothing.
  * - Given a first sign-in, cached drafts the account lacks go up, except form answers (their keys
@@ -20,6 +22,7 @@
  *   send failed stays pending across a reload and wins over the account's older value at the next
  *   sign-in.
  */
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeCached } from "../src/lib/account-sync/cache";
 import { accountKeyOf, cacheKeyOf, planDrafts } from "../src/lib/account-sync/drafts";
@@ -32,6 +35,7 @@ import {
   stopAccountSync,
   syncPendingKey,
 } from "../src/lib/account-sync/sync";
+import { readThemeId } from "../src/state/theme-prefs";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { memoryStorage, stubLocalStorage } from "./helpers/storage";
 
@@ -73,6 +77,23 @@ describe("reading the account's preferences into the cache", () => {
     ]);
     expect(plan.upload).toEqual(["lang"]);
     expect(plan.image).toBe("fetch");
+  });
+
+  it("caches a theme this build does not know as it is, paints the initial theme, and never sends it back", () => {
+    // A newer build on the same account may have chosen a theme this one has not heard of.
+    const store = memoryStorage({ "penguin.themeId": "geek" });
+    const plan = planPrefs({ themeId: "sketchbook" }, store, {
+      importing: false,
+      pending: new Set(),
+    });
+    expect(plan.cache).toEqual([["penguin.themeId", "sketchbook"]]);
+    expect(plan.upload).toEqual([]);
+    for (const [key, value] of plan.cache) {
+      if (value === null) store.removeItem(key);
+      else store.setItem(key, value);
+    }
+    expect(readThemeId(store)).toBe(INITIAL_THEME_ID);
+    expect(store.getItem("penguin.themeId")).toBe("sketchbook");
   });
 
   it("fetches the image only when it is not the cached one, and drops it when the account has none", () => {

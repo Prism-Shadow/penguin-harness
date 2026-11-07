@@ -56,6 +56,11 @@
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>` |
+ * |                    | a button with a fill or a line, a text field or a select |                                                       |
+ * |                    | trigger, the person's own message bubble; hosts:         |                                                       |
+ * |                    | `Button`, `Input`, `Textarea`, `Select`, `OptionMenu`,   |                                                       |
+ * |                    | `SearchInput`, `FormPickerTrigger`, `MessageBubble`      |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -228,6 +233,14 @@
  * face (a reading is data) and the illustration's lines square-capped on crisp edges; Primer keeps
  * the host's card. The illustration's loops run on `--ui-live-timing`, so they step in Console and
  * glide elsewhere.
+ *
+ * `ui-edge` (2026-11-04) is a box's own edge, for the boxes no other hook names: a button with a
+ * fill or a line (a ghost or link button has no box and never takes it), the text fields and
+ * select triggers that share the control look (`controlBase`), and the person's own message
+ * bubble. The host writes the class and nothing else; a field that failed validation already
+ * says so in `aria-invalid`. Primer, Frost and Console leave it alone. Doodle draws every such
+ * edge, and the frames, overlays, notices and widgets the other hooks name, as a pen line laid
+ * over the host's 1px border (`themes/cartoon.css`).
  */
 export const HOOKS = [
   "ui-glass",
@@ -247,6 +260,7 @@ export const HOOKS = [
   "ui-stream",
   "ui-glyph",
   "ui-widget",
+  "ui-edge",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

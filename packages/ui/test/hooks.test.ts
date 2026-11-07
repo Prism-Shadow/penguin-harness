@@ -16,9 +16,10 @@
  * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
  * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
- * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
- * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
- * source to it:
+ * style, of which the theme's CSS shows its own), the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04), and the eighteenth,
+ * `ui-edge` (the edge of a boxed button, a text field or the person's own bubble, which Doodle
+ * draws by hand; 2026-11-04). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -72,6 +73,7 @@ const APPENDIX_A = [
   "ui-stream",
   "ui-glyph",
   "ui-widget",
+  "ui-edge",
 ];
 
 /**
@@ -191,6 +193,18 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
   // blocks render on, and the chart and resources blocks (2026-10-19).
   "ui-widget": ["WidgetSurface"],
+  // A box's own edge (2026-11-04): a button with a fill or a line, the text fields and select
+  // triggers on the shared control look, and the person's own message bubble.
+  "ui-edge": [
+    "Button",
+    "Input",
+    "Textarea",
+    "Select",
+    "OptionMenu",
+    "SearchInput",
+    "FormPickerTrigger",
+    "MessageBubble",
+  ],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -272,7 +286,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the seventeen of Appendix A, each with its hosts", () => {
+  it("are the eighteen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });

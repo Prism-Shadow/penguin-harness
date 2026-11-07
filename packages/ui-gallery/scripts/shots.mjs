@@ -16,7 +16,7 @@
  *   --base      gallery origin                 (default http://localhost:7372)
  *   --out       output directory               (default packages/ui-gallery/shots)
  *   --surfaces  surface ids, or `all`          (default all)
- *   --themes    github,modern,geek             (default: all three)
+ *   --themes    github,modern,geek,cartoon     (default: all four)
  *   --modes     light,dark                     (default: both)
  *   --langs     en,zh                          (default: both)
  *   --size      xs | s | m | l | xl            (default m: the 16 px root)
@@ -69,7 +69,7 @@ const surfaces =
   args.surfaces === undefined || args.surfaces === "all"
     ? [...SURFACE_IDS]
     : list(args.surfaces, []);
-const themes = list(args.themes, ["github", "modern", "geek"]);
+const themes = list(args.themes, ["github", "modern", "geek", "cartoon"]);
 const modes = list(args.modes, ["light", "dark"]);
 const langs = list(args.langs, ["en", "zh"]);
 const size = args.size ?? "m";

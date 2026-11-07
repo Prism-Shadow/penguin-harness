@@ -996,6 +996,9 @@
     stroke-linejoin: miter;
     shape-rendering: crispEdges;
   }
+
+  /* `.ui-edge` is a documented no-op: a button, a text field and a bubble keep the hairline and
+     the square corner the tokens give every box here. */
 }
 
 /*
