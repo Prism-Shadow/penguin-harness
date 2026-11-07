@@ -3,6 +3,7 @@
 - **Date:** 2026-11-07
 - **Type:** fix
 - **Scope:** `cli`, `docs`
+- **PR:** [#1503](https://github.com/Prism-Shadow/penguin-harness/pull/1503)
 
 [中文版](2026-11-07-cli-resume-running-session.zh.md)
 
