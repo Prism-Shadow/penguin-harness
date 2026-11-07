@@ -133,4 +133,18 @@ describe("web modules", () => {
       expect(violations).toEqual([]);
     });
   }
+
+  it("names each module once", () => {
+    expect(new Set(WEB_MODULES.map((m) => m.name)).size).toBe(WEB_MODULES.length);
+  });
+
+  it("declares dependsOn paths that exist in src", () => {
+    for (const m of WEB_MODULES) {
+      for (const dep of m.dependsOn) {
+        const base = dep.endsWith("/") ? dep : `${dep}.`;
+        const hit = [...GRAPH.keys()].some((key) => key === dep || key.startsWith(base));
+        expect(hit, `${m.name} dependsOn ${dep}`).toBe(true);
+      }
+    }
+  });
 });
