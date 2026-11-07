@@ -59,6 +59,7 @@ export class SessionStream {
   private readonly abort = new AbortController();
   private iterator: AsyncGenerator<SseFrame> | null = null;
   private attempts = 0;
+  private covered: ((frame: SseFrame) => boolean) | null = null;
 
   private static readonly MAX_RECONNECTS = 5;
 
@@ -71,6 +72,15 @@ export class SessionStream {
   close(): void {
     this.closed = true;
     this.abort.abort();
+  }
+
+  /**
+   * From here on, `next()` passes over the frames `covered` names — a stream that joined a
+   * run already under way repeats some of what the client holds (see live-join.ts). A frame
+   * passed over still moves the reconnect position.
+   */
+  skip(covered: (frame: SseFrame) => boolean): void {
+    this.covered = covered;
   }
 
   /** The next frame, reconnecting through connection drops; null once closed. */
@@ -93,6 +103,7 @@ export class SessionStream {
         }
         this.attempts = 0;
         if (value.id !== undefined) this.lastEventId = value.id;
+        if (this.covered?.(value) === true) continue;
         return value;
       } catch (err) {
         if (this.closed) return null;

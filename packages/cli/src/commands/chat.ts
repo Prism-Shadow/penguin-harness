@@ -27,7 +27,12 @@
  *
  * `--resume` reuses an existing Session (full id or unique fragment; omitted = the
  * agent's most recent Session) and first renders its history from GET /messages; it
- * takes no model flags — `/switch-model` changes the model inside the chat.
+ * takes no model flags — `/switch-model` changes the model inside the chat. A Session
+ * still running when the chat comes to it (the terminal that started its Task closed, or
+ * another surface started one) is followed, not refused: on resume the chat subscribes
+ * before reading the history and follows the run to its end before the first prompt; a
+ * message sent while a Task from elsewhere runs steers that Task and the chat follows it.
+ * Either way the run is this chat's from then on (live-join.ts has the seam).
  * Ctrl-C behavior (state-dependent): buffer has content -> clear it; awaiting approval
  * -> deny; running -> abort the current turn; empty buffer -> y/N exit confirmation.
  * Docs: /docs/cli § "penguin chat".
@@ -41,7 +46,7 @@ import type {
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { MessagesLiveTail, SessionInfo } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
@@ -65,6 +70,7 @@ import {
 import {
   callerSessionContext,
   createServerSession,
+  getSessionHistory,
   getSessionInfo,
   getSessionMessages,
   listAgentSessions,
@@ -73,6 +79,7 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
+import { coveredFrames, runningRecords } from "../live-join.js";
 import type { Messages } from "../i18n.js";
 
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
@@ -88,6 +95,16 @@ interface PendingSession {
   provider?: string;
   approvalMode?: string;
   thinkingLevel?: ThinkingLevelName;
+}
+
+/**
+ * A run the chat came to while it was under way: the Session's stream, subscribed before
+ * `messages` was read, and the live tail that read came with.
+ */
+interface JoinedRun {
+  stream: SessionStream;
+  messages: AmspRecord[];
+  live: MessagesLiveTail;
 }
 
 export type SigintAction = "deny" | "abort" | "clear" | "confirm-exit" | "exit";
@@ -175,6 +192,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
        */
       let pinAfterCreate: ThinkingLevelName | null = null;
       let resumedMessages: AmspRecord[] | null = null;
+      /** The run the resumed Session was still in, followed before the first prompt. */
+      let resumedRun: JoinedRun | null = null;
       if (opts.resume !== undefined) {
         let sessionId: string | undefined;
         if (typeof opts.resume === "string") {
@@ -189,7 +208,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
           return;
         }
         let resumed = await getSessionInfo(client, sessionId);
-        resumedMessages = await getSessionMessages(client, sessionId);
+        if (resumed.status === "idle") {
+          resumedMessages = await getSessionMessages(client, sessionId);
+        } else {
+          // Still running: subscribe first, read the history second, so every event published
+          // after the history was captured is already on this stream (see live-join.ts).
+          const stream = new SessionStream(client, sessionId, t);
+          try {
+            await stream.waitReady();
+            const history = await getSessionHistory(client, sessionId);
+            resumedMessages = history.messages;
+            if (history.live !== undefined) {
+              resumedRun = { stream, messages: history.messages, live: history.live };
+            } else {
+              stream.close(); // it ended in between: the history holds all of it
+            }
+          } catch (err) {
+            stream.close();
+            throw err;
+          }
+        }
         if (opts.approve !== undefined) {
           await client.request("PATCH", `/api/sessions/${resumed.sessionId}`, {
             approvalMode: mode,
@@ -382,9 +420,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       // Mid-run steering over the API: POST /steer; a 409 (the task just finished — the
       // running->idle race) must not drop the line, so it becomes the next prompt — fed
-      // straight to a waiting askLine, else stashed for the next one.
-      const steer = (text: string): void => {
-        void client
+      // straight to a waiting askLine, else stashed for the next one. Settles once the line is
+      // delivered or put back; never rejects.
+      const steer = (text: string): Promise<void> =>
+        client
           .request("POST", `/api/sessions/${live().sessionId}/steer`, { text })
           .then(() => {
             renderer.printLine(dim(t.steerQueued(text)));
@@ -398,7 +437,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
               queuedPrompt = text;
             }
           });
-      };
 
       rl.on("line", (line) => {
         if (state === "confirming-exit") {
@@ -444,7 +482,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
           const text = message.trim();
           if (text.length === 0) return;
-          steer(text);
+          void steer(text);
         }
       });
 
@@ -563,19 +601,34 @@ export function registerChatCommand(program: Command, t: Messages): void {
        */
       const runTurn = async (
         post: () => Promise<unknown>,
-        watch: { goal?: boolean; inline?: (response: unknown) => boolean } = {},
+        watch: {
+          goal?: boolean;
+          inline?: (response: unknown) => boolean;
+          /**
+           * A plain message: should the Session be running a Task started elsewhere, the text
+           * steers that Task and the chat follows it (followBusy) instead of being refused.
+           */
+          steerIfBusy?: string;
+        } = {},
       ): Promise<boolean> => {
         const sessionId = live().sessionId;
         const stream = new SessionStream(client, sessionId, t);
-        let aborted = false;
-        abortTurn = () => {
-          if (aborted) return;
-          aborted = true;
-          void client.request("POST", `/api/sessions/${sessionId}/abort`).catch(() => undefined);
-        };
-        try {
-          await stream.waitReady();
-          const response = await post();
+        return turnOn(stream, async () => {
+          const ready = await stream.waitReady();
+          if (ready !== "idle" && watch.steerIfBusy !== undefined) {
+            await followBusy(stream, watch.steerIfBusy);
+            return true;
+          }
+          let response: unknown;
+          try {
+            response = await post();
+          } catch (err) {
+            // A Task started elsewhere between the subscription and the POST: the same case.
+            const busy = err instanceof ApiError && err.code === "task_in_progress";
+            if (!busy || watch.steerIfBusy === undefined) throw err;
+            await followBusy(stream, watch.steerIfBusy);
+            return true;
+          }
           if (watch.inline?.(response)) return false;
           await watchTask(stream, {
             client,
@@ -586,10 +639,71 @@ export function registerChatCommand(program: Command, t: Messages): void {
             ...(watch.goal ? { goal: { out } } : {}),
           });
           return true;
+        });
+      };
+
+      /**
+       * Runs `body` as this chat's turn on `stream`: Ctrl-C POSTs /abort, exactly once, for as
+       * long as it runs; the stream is closed after.
+       */
+      const turnOn = async <T>(stream: SessionStream, body: () => Promise<T>): Promise<T> => {
+        const sessionId = live().sessionId;
+        let aborted = false;
+        abortTurn = () => {
+          if (aborted) return;
+          aborted = true;
+          void client.request("POST", `/api/sessions/${sessionId}/abort`).catch(() => undefined);
+        };
+        try {
+          return await body();
         } finally {
           abortTurn = null;
           stream.close();
         }
+      };
+
+      /**
+       * Follows a run the chat came to while it was under way, to its end: the renderer takes
+       * on what the run did so far (its records in `joined.messages`, which are on the screen
+       * already), the live tail's fragments put the output still streaming back on the screen,
+       * and the stream goes on from there, what those two hold passed over. The run is then
+       * this chat's like its own: typing steers it, Ctrl-C stops it, an approval it waits on is
+       * asked here.
+       */
+      const followRun = async (joined: JoinedRun): Promise<void> => {
+        renderer.prime(runningRecords(joined.messages));
+        joined.stream.skip(coveredFrames(joined.messages, joined.live.cursor));
+        for (const fragment of joined.live.fragments) renderer.handle(fragment);
+        await watchTask(joined.stream, {
+          client,
+          sessionId: live().sessionId,
+          t,
+          renderer,
+          approvalPrompt: interactivePrompt,
+        });
+      };
+
+      /**
+       * A message sent while the Session runs a Task started elsewhere (the Web App, another
+       * terminal, a schedule): it steers that Task, as a line typed during one of this chat's
+       * own does, and the chat follows the Task — its records so far are printed first, since
+       * this chat has not shown them. A Task that ended in between takes no steering: the text
+       * is the next prompt then, a Task of its own (see steer for the same race later on).
+       */
+      const followBusy = async (stream: SessionStream, text: string): Promise<void> => {
+        const history = await getSessionHistory(client, live().sessionId);
+        if (history.live === undefined) {
+          queuedPrompt = text;
+          return;
+        }
+        out.write(`${dim(t.chatFollowingBusy())}\n`);
+        renderHistory(runningRecords(history.messages), out, t, {
+          collapseToolOutput: !verbose,
+        });
+        // Delivered before the reply still streaming is put back, so its acknowledgement does
+        // not land in the middle of that reply.
+        await steer(text);
+        await followRun({ stream, messages: history.messages, live: history.live });
       };
 
       // Whether this Session already has (or gained) history worth a resume hint.
@@ -704,6 +818,24 @@ export function registerChatCommand(program: Command, t: Messages): void {
         (opts.agentId ? ` --agent-id ${opts.agentId}` : "");
 
       try {
+        if (resumedRun !== null) {
+          // The resumed Session is still running: followed as a turn before the first prompt.
+          const joined = resumedRun;
+          resumedRun = null;
+          state = "running";
+          mark("C");
+          let failed = false;
+          out.write(`${dim(t.chatFollowingResumed())}\n`);
+          try {
+            await turnOn(joined.stream, () => followRun(joined));
+          } catch (err) {
+            failed = true;
+            out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
+          } finally {
+            state = "idle";
+            mark("D", failed ? 1 : 0);
+          }
+        }
         for (;;) {
           const line = await askLine();
           if (line === null) break;
@@ -856,10 +988,12 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 failed = true;
               } else {
                 resumable = true;
-                await runTurn(() =>
-                  client.request("POST", `/api/sessions/${current.sessionId}/tasks`, {
-                    input: [{ type: "text", text }],
-                  }),
+                await runTurn(
+                  () =>
+                    client.request("POST", `/api/sessions/${current.sessionId}/tasks`, {
+                      input: [{ type: "text", text }],
+                    }),
+                  { steerIfBusy: text },
                 );
               }
             }
@@ -892,6 +1026,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
         }
       } finally {
+        resumedRun?.stream.close();
         rl.close();
         cleanup();
         process.removeListener("exit", cleanup);

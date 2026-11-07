@@ -1105,6 +1105,10 @@ export interface Messages {
   resumeNoSession(): string;
   /** One-line prompt shown after a successful resume, before rendering history. */
   resumedBanner(sessionId: string, messageCount: number): string;
+  /** Dim line after a resumed Session's history when it is still running: the chat follows the run before its first prompt, and says what typing and Ctrl-C do meanwhile. */
+  chatFollowingResumed(): string;
+  /** Dim line when a message finds the Session running a Task started elsewhere: the message steers it and the chat follows it. */
+  chatFollowingBusy(): string;
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
   langInvalid(value: string): string;
@@ -2266,6 +2270,10 @@ const en: Messages = {
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
+  chatFollowingResumed: () =>
+    "[running] This Session is still running; following it here. Type to steer it, press Ctrl-C to stop it.",
+  chatFollowingBusy: () =>
+    "[running] This Session is running a Task started elsewhere; your message steers it, and the chat follows it here.",
   resumeHint: (command) => `To continue this conversation: ${command}`,
   langInvalid: (value) => `Invalid language "${value}". Use en or zh.`,
   langWindowsUnsupported: (lang) =>
@@ -3341,6 +3349,9 @@ const zh: Messages = {
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
+  chatFollowingResumed: () => "[运行中] 该 Session 仍在运行，已在此接上：输入即插话，Ctrl-C 中断。",
+  chatFollowingBusy: () =>
+    "[运行中] 该 Session 正在运行别处发起的任务：你的消息作为插话发给它，并在此接上。",
   resumeHint: (command) => `继续本次对话：${command}`,
   langInvalid: (value) => `无效的语言 "${value}"。请使用 en 或 zh。`,
   langWindowsUnsupported: (lang) =>

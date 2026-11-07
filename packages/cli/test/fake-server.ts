@@ -14,9 +14,12 @@
  * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
- * (default-event AmspRecord frames, `event: server_event` control frames, incrementing
+ * (default-event AmspRecord frames, `event: server_event` control frames, `<epoch>-<seq>`
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
- * then `task_state idle` — enough for watchTask's full lifecycle.
+ * then `task_state idle` — enough for watchTask's full lifecycle. A Session that is not idle
+ * refuses a task POST with 409 `task_in_progress`, answers GET /messages with a live tail
+ * (`liveFragments` under the current cursor) and replays `pendingApprovals` to a new
+ * subscriber after its `task_state` snapshot, as the server does.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -127,6 +130,9 @@ interface Subscriber {
 
 const encoder = new TextEncoder();
 
+/** The epoch half of every event id the fake assigns (`<epoch>-<seq>`, the server channel's shape). */
+const EVENT_EPOCH = "fake";
+
 /** The fake's fixed clock for company mode (the day file, the period, minted ids). */
 const ORG_NOW = "2026-09-02T10:00:00.000Z";
 const ORG_TODAY = "2026-09-02";
@@ -217,6 +223,12 @@ export class FakeServer {
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
   /** Messages GET /messages returns. */
   history: unknown[] = [];
+  /** The live tail's fragments GET /messages carries while a Session is not idle (`partial_* start` records holding their content so far). */
+  liveFragments: unknown[] = [];
+  /** Runs at the start of GET /messages, before its cursor is taken: what a run publishes between a client's subscription and its history read. */
+  beforeHistoryRead: ((session: FakeSessionState) => void) | null = null;
+  /** The approval requests a running Session is waiting on: replayed to each new subscriber, after the snapshot. */
+  pendingApprovals: Json[] = [];
   /** POST /compact behavior: "reject" -> 409 nothing_to_compact; a function emits its messages like a task. */
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
   /**
@@ -447,9 +459,14 @@ export class FakeServer {
     };
   }
 
+  /** The id of the most recently assigned event: the live tail's cursor. */
+  get lastEventId(): string {
+    return `${EVENT_EPOCH}-${this.nextEventId - 1}`;
+  }
+
   /** Emits one SSE frame to every subscriber of the session. */
   emit(sessionId: string, data: unknown, event?: string): void {
-    const id = this.nextEventId++;
+    const id = `${EVENT_EPOCH}-${this.nextEventId++}`;
     const text =
       `id: ${id}\n` +
       (event !== undefined ? `event: ${event}\n` : "") +
@@ -2021,7 +2038,14 @@ export class FakeServer {
         if (typeof body?.title === "string") session.title = body.title;
         return this.json({ session: this.sessionInfo(session) });
       }
-      if (rest === "/messages" && method === "GET") return this.json({ messages: this.history });
+      if (rest === "/messages" && method === "GET") {
+        this.beforeHistoryRead?.(session);
+        const live =
+          session.status === "idle"
+            ? {}
+            : { live: { cursor: this.lastEventId, fragments: this.liveFragments } };
+        return this.json({ messages: this.history, ...live });
+      }
       if (rest === "/stream" && method === "GET") {
         const subs = this.subscribers.get(sessionId) ?? [];
         this.subscribers.set(sessionId, subs);
@@ -2031,15 +2055,16 @@ export class FakeServer {
           start(controller) {
             const sub: Subscriber = { controller, closed: false };
             subs.push(sub);
-            const id = server.nextEventId++;
-            controller.enqueue(
-              encoder.encode(
-                `id: ${id}\nevent: server_event\ndata: ${JSON.stringify({
-                  type: "task_state",
-                  state: state.status,
-                })}\n\n`,
-              ),
-            );
+            const snapshot: Json[] = [
+              { type: "task_state", state: state.status },
+              ...(state.status === "idle" ? [] : server.pendingApprovals),
+            ];
+            for (const ev of snapshot) {
+              const id = `${EVENT_EPOCH}-${server.nextEventId++}`;
+              controller.enqueue(
+                encoder.encode(`id: ${id}\nevent: server_event\ndata: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
           },
           cancel() {
             for (const sub of subs) sub.closed = true;
@@ -2053,6 +2078,13 @@ export class FakeServer {
       if (rest === "/tasks" && method === "POST") {
         const refusal = this.refuseTasks.shift();
         if (refusal !== undefined) return this.error(409, refusal, `Refused: ${refusal}.`);
+        if (session.status !== "idle") {
+          return this.error(
+            409,
+            "task_in_progress",
+            "This Session already has a Task in progress.",
+          );
+        }
         session.tasks.push(body ?? {});
         if (this.hangTasks) {
           session.status = "running";

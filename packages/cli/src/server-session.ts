@@ -7,6 +7,7 @@ import path from "node:path";
 import type {
   AgentsResponse,
   AgentSummary,
+  MessagesLiveTail,
   MessagesResponse,
   ModelRefDto,
   ModelsResponse,
@@ -199,16 +200,32 @@ export async function resolveSessionTarget(
   return latest.sessionId;
 }
 
-/** GET /messages — full history messages (rendered through renderHistory). */
-export async function getSessionMessages(
+/** A Session's whole history, and the live tail it came with while the Session runs. */
+export interface SessionHistory {
+  messages: AmspRecord[];
+  /** Present only while the Session runs: what a client joining mid-run seeds from (see live-join.ts). */
+  live?: MessagesLiveTail;
+}
+
+/** GET /messages — the full history and, while the Session runs, its live tail. */
+export async function getSessionHistory(
   client: ServerClient,
   sessionId: string,
-): Promise<AmspRecord[]> {
+): Promise<SessionHistory> {
   const res = await client.request<MessagesResponse>(
     "GET",
     `/api/sessions/${enc(sessionId)}/messages`,
   );
   // MessagesResponse messages are records plus an optional tracePosition tag the
   // renderer ignores.
-  return res.messages as unknown as AmspRecord[];
+  const messages = res.messages as unknown as AmspRecord[];
+  return res.live !== undefined ? { messages, live: res.live } : { messages };
+}
+
+/** GET /messages — full history messages (rendered through renderHistory). */
+export async function getSessionMessages(
+  client: ServerClient,
+  sessionId: string,
+): Promise<AmspRecord[]> {
+  return (await getSessionHistory(client, sessionId)).messages;
 }
