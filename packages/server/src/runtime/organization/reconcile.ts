@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
-import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
+import type { ChannelConfig, OrgConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";
 import { DEFAULT_CHANNEL_ID } from "../../organization/paths.js";
@@ -29,6 +29,7 @@ import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { budgetPaused, budgetWarned, systemMessage } from "./notices.js";
 import type { SystemLine } from "./notices.js";
+import type { MentionGate } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, syncDeskCache } from "./triggers.js";
 
 export interface LoadedTicket extends TicketForSpend {
@@ -50,12 +51,17 @@ function recordError(
   code: string,
   message: string,
   agentId?: string,
+  extra?: Record<string, unknown>,
 ): void {
   deps.errors.record({
     source: "organization",
     err: new Error(message),
     code,
-    ctx: { projectId: org.projectId, ...(agentId !== undefined ? { agentId } : {}) },
+    ctx: {
+      projectId: org.projectId,
+      ...(agentId !== undefined ? { agentId } : {}),
+      ...(extra !== undefined ? extra : {}),
+    },
   });
 }
 
@@ -595,6 +601,69 @@ function mentionBody(all: readonly OrgChannelMessage[], msg: OrgChannelMessage):
 }
 
 /**
+ * The `system` line a backstop stop leaves behind: the message reached the hop ceiling and
+ * triggered nobody. A mention chain stops there on purpose — a person or the calendar
+ * restarts the thread.
+ */
+function mentionChainLimited(
+  msg: OrgChannelMessage,
+  channelId: string,
+  limit: number,
+): SystemLine {
+  return {
+    text: `Message ${msg.id} from ${msg.sender} in ${channelId} triggered nobody: its hop ${msg.hop} reached the mention chain limit ${limit}. To keep the thread going, wait for the calendar, or ask a person to step in.`,
+    notice: {
+      kind: "mention_chain_limited",
+      params: {
+        message: msg.id,
+        channel: channelId,
+        sender: msg.sender,
+        hop: String(msg.hop),
+        limit: String(limit),
+      },
+    },
+  };
+}
+
+/**
+ * The `system` line a rate budget leaves behind, naming every target the message did not
+ * wake and the budget that stopped each one. The window slides on, so the budget comes
+ * back by itself; until then, wait for the calendar or ask a person to step in.
+ */
+function mentionBudgetLimited(
+  msg: OrgChannelMessage,
+  channelId: string,
+  blocked: ReadonlyArray<{ agentId: string; reason: "pair" | "fanout"; count: number }>,
+  config: Pick<OrgConfig, "mentionPairLimit" | "mentionFanoutLimit" | "mentionWindowMinutes">,
+): SystemLine {
+  const targets = blocked.map((b) => `agent:${b.agentId}`).join(", ");
+  const reason =
+    blocked[0]?.reason === "fanout"
+      ? `the sender's fan-out limit (${blocked[0].count} wakes in ${config.mentionWindowMinutes} minutes, limit ${config.mentionFanoutLimit})`
+      : `the pair limit (${blocked[0]?.count ?? 0} wakes between the same two employees in ${config.mentionWindowMinutes} minutes, limit ${config.mentionPairLimit})`;
+  return {
+    text: `Message ${msg.id} from ${msg.sender} in ${channelId} did not wake ${targets}: ${reason} was reached. The budget comes back as the window slides on; to keep going sooner, wait for the calendar, or ask a person to step in.`,
+    notice: {
+      kind: "mention_budget_limited",
+      params: {
+        message: msg.id,
+        channel: channelId,
+        sender: msg.sender,
+        targets,
+        reason: blocked[0]?.reason ?? "pair",
+        count: String(blocked[0]?.count ?? 0),
+        limit: String(
+          blocked[0]?.reason === "fanout"
+            ? config.mentionFanoutLimit
+            : config.mentionPairLimit,
+        ),
+        windowMinutes: String(config.mentionWindowMinutes),
+      },
+    },
+  };
+}
+
+/**
  * The employees a channel delivers to: every employee for the all-hands channel, the
  * `agent:` members for any other. An `agent:` member who has since left the organization is
  * not one — the chart decides who exists.
@@ -619,6 +688,7 @@ export async function scanChannels(
   org: LoadedOrg,
   spend: OrgSpend,
   triggers: boolean,
+  gate?: MentionGate,
 ): Promise<void> {
   for (const file of await deps.store.listChannels(org.dir)) {
     if (!file.parsed.ok) {
@@ -669,8 +739,26 @@ export async function scanChannels(
           message: msg,
         });
         if (!triggers || org.config.status === "paused" || msg.sender === "system") continue;
-        if (msg.hop >= org.config.mentionChainLimit) continue;
         const senderAgent = principalAgentId(msg.sender);
+        // The backstop: a message at or beyond the hop ceiling triggers nobody — recorded,
+        // never silent. The rate budgets below are what shapes everyday delivery.
+        if (msg.hop >= org.config.mentionChainLimit) {
+          recordError(
+            deps,
+            org,
+            "org_mention_chain_limit",
+            `Message ${msg.id} from ${msg.sender} in ${channelId} triggered nobody: its hop ${msg.hop} reached the mention chain limit ${org.config.mentionChainLimit}.`,
+            undefined,
+            {
+              messageId: msg.id,
+              channel: channelId,
+              hop: msg.hop,
+              limit: org.config.mentionChainLimit,
+            },
+          );
+          await appendSystemMessage(deps, org, channelId, mentionChainLimited(msg, channelId, org.config.mentionChainLimit), []);
+          continue;
+        }
         const targets = new Set<string>();
         for (const m of msg.mentions) {
           const p = parsePrincipal(m);
@@ -683,9 +771,28 @@ export async function scanChannels(
           }
         }
         if (senderAgent !== null) targets.delete(senderAgent);
+        // The two rate budgets hold only employee senders: a person's word is what restarts
+        // a thread, and it never counts against any budget. The budgets count delivered
+        // wakes only — a blocked wake would otherwise fill the window it was blocked by.
+        const windowMs = org.config.mentionWindowMinutes * 60_000;
+        const nowMs = nowOf(deps);
+        const orgKey = `${org.projectId}/${org.orgId}`;
+        const blocked: Array<{ agentId: string; code: string; reason: "pair" | "fanout"; count: number }> = [];
         for (const agentId of targets) {
           if (!org.byId.has(agentId)) continue;
-          await dispatchToDesk(
+          if (senderAgent !== null && gate !== undefined) {
+            const pairCount = gate.pairCount(orgKey, senderAgent, agentId, nowMs, windowMs);
+            if (pairCount >= org.config.mentionPairLimit) {
+              blocked.push({ agentId, code: "org_mention_pair_limit", reason: "pair", count: pairCount });
+              continue;
+            }
+            const senderCount = gate.senderCount(orgKey, senderAgent, nowMs, windowMs);
+            if (senderCount >= org.config.mentionFanoutLimit) {
+              blocked.push({ agentId, code: "org_mention_fanout_limit", reason: "fanout", count: senderCount });
+              continue;
+            }
+          }
+          const outcome = await dispatchToDesk(
             deps,
             org,
             agentId,
@@ -696,6 +803,42 @@ export async function scanChannels(
             },
             mentionBody(all, msg),
             { hop: msg.hop, budget: budgetLine(org, spend, agentId) },
+          );
+          if (senderAgent !== null && gate !== undefined && outcome !== "skipped") {
+            gate.count(orgKey, senderAgent, agentId, nowMs);
+          }
+        }
+        if (blocked.length > 0) {
+          const windowMinutes = org.config.mentionWindowMinutes;
+          for (const b of blocked) {
+            recordError(
+              deps,
+              org,
+              b.code,
+              b.reason === "pair"
+                ? `Message ${msg.id} from ${msg.sender} in ${channelId} did not wake agent:${b.agentId}: the pair has been woken ${b.count} times in ${windowMinutes} minutes (limit ${org.config.mentionPairLimit}).`
+                : `Message ${msg.id} from ${msg.sender} in ${channelId} did not wake agent:${b.agentId}: the sender has woken ${b.count} desks in ${windowMinutes} minutes (limit ${org.config.mentionFanoutLimit}).`,
+              b.agentId,
+              {
+                messageId: msg.id,
+                channel: channelId,
+                target: `agent:${b.agentId}`,
+                reason: b.reason,
+                count: b.count,
+                limit:
+                  b.reason === "pair"
+                    ? org.config.mentionPairLimit
+                    : org.config.mentionFanoutLimit,
+                windowMinutes,
+              },
+            );
+          }
+          await appendSystemMessage(
+            deps,
+            org,
+            channelId,
+            mentionBudgetLimited(msg, channelId, blocked, org.config),
+            [],
           );
         }
       }
@@ -794,7 +937,7 @@ export async function reconcileOrg(
   deps: OrgDeps,
   projectId: string,
   orgId: string,
-  opts: { triggers?: boolean } = {},
+  opts: { triggers?: boolean; gate?: MentionGate } = {},
 ): Promise<ReconcileResult | null> {
   const org = await loadOrg(deps, projectId, orgId);
   if (org === null) return null;
@@ -815,6 +958,6 @@ export async function reconcileOrg(
   const paused = pausedEmployees(deps, org, spend.period);
   await reconcileCalendar(deps, org, tickets, spend, paused, triggers);
   await reconcileTickets(deps, org, tickets);
-  await scanChannels(deps, org, spend, triggers);
+  await scanChannels(deps, org, spend, triggers, opts.gate);
   return { org, tickets, spend };
 }

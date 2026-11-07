@@ -7,8 +7,11 @@
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
- * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
- * resume (a zero budget being over before anything is spent); a ticket session the runner
+ * channel mentions reach desks under two rate budgets (a pair of employees, a sender's
+ * fan-out) with the hop ceiling as the backstop; budgets count delivered wakes only, a
+ * person's word counts against neither, and a stop leaves a system line; budgets warn,
+ * pause and resume (a zero budget being over before anything is spent); a ticket session
+ * the runner
  * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
  * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
  * employee whose company plugins fell behind the library back up to it.
@@ -27,7 +30,11 @@ import { ProjectsRepo } from "../src/db/repos/projects.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { OrgStore } from "../src/organization/store.js";
-import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
+import {
+  parseChannelConfig,
+  serializeCalendarEvent,
+  serializeChannelMessageLine,
+} from "../src/organization/files.js";
 import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
@@ -706,6 +713,12 @@ describe("organization runtime", () => {
         { mentionChainLimit: 101 },
         { mentionChainLimit: -1 },
         { mentionChainLimit: 1.5 },
+        { mentionWindowMinutes: 0 },
+        { mentionWindowMinutes: 1441 },
+        { mentionPairLimit: 1 },
+        { mentionPairLimit: 101 },
+        { mentionFanoutLimit: 0 },
+        { mentionFanoutLimit: 1001 },
         { budgetWarnRatio: 0 },
         { budgetPauseRatio: 11 },
       ]) {
@@ -713,8 +726,19 @@ describe("organization runtime", () => {
       }
       // The bounds themselves still pass, and the file stays readable.
       expect(
-        await service.patch(P, ORG, { mentionChainLimit: 100, budgetPauseRatio: 10 }, "alice"),
-      ).toMatchObject({ mentionChainLimit: 100, budgetPauseRatio: 10 });
+        await service.patch(
+          P,
+          ORG,
+          { mentionChainLimit: 100, mentionWindowMinutes: 1440, mentionPairLimit: 2, mentionFanoutLimit: 1000, budgetPauseRatio: 10 },
+          "alice",
+        ),
+      ).toMatchObject({
+        mentionChainLimit: 100,
+        mentionWindowMinutes: 1440,
+        mentionPairLimit: 2,
+        mentionFanoutLimit: 1000,
+        budgetPauseRatio: 10,
+      });
       expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
     });
 
@@ -2179,7 +2203,7 @@ describe("organization runtime", () => {
       started.length = 0;
     });
 
-    it("delivers mentions to desks, records the rest, and stops the chain at the limit", async () => {
+    it("delivers mentions to desks, records the rest, and labels each with its hop", async () => {
       const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@acme_hr welcome, and @nobody too",
       });
@@ -2203,7 +2227,9 @@ describe("organization runtime", () => {
       const ceoDesk = started[1]!.sessionId;
       expect(cache.ownerOfSession(ceoDesk)?.agentId).toBe(CEO);
 
-      // CEO replies: hop 2, delivered to HR; HR replies: hop 3 = the limit, recorded only.
+      // CEO replies: hop 2, delivered to HR; HR replies: hop 3 — still delivered. The hop
+      // is a label now: the pair {HR, CEO} has used 3 of its 6 wakes this hour, and the
+      // chain ceiling sits at 12, so nothing stops the answer.
       const m3 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${HR} thanks`,
         sessionId: ceoDesk,
@@ -2216,7 +2242,11 @@ describe("organization runtime", () => {
       });
       expect(m4.hop).toBe(3);
       expect(m4.mentions).toEqual([`agent:${CEO}`]);
-      expect(started).toHaveLength(3);
+      expect(started).toHaveLength(4);
+      expect(parseOrgTriggerMessage(started[3]!.text)?.origin).toMatchObject({
+        kind: "mention",
+        message: `${m4.id} from agent:${HR}`,
+      });
 
       // A plain message reaches nobody; @all reaches everyone but the sender.
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
@@ -2253,6 +2283,235 @@ describe("organization runtime", () => {
         text: `@${HR} hello?`,
       });
       expect(started).toHaveLength(0);
+    });
+
+    // The mention rate budgets: the tests below fix W = 60 (the default), K = 3 and F = 4
+    // (small, so each case stays short) and drive the clock by `nowMs`.
+    const pairAndFanout = { mentionPairLimit: 3, mentionFanoutLimit: 4 };
+
+    it("the pair budget stops the fourth wake between two employees and recovers as the window slides", async () => {
+      await service.patch(P, ORG, pairAndFanout, "alice");
+      // A person's wake counts against nothing.
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${HR} kickoff`,
+      });
+      expect(started).toHaveLength(1);
+      const hrDesk = started[0]!.sessionId;
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      started.length = 0;
+
+      const wake = (from: string, to: string): Promise<unknown> =>
+        service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+          text: `@${to} round`,
+          sessionId: from,
+        });
+      // CEO→HR, HR→CEO, CEO→HR: the pair's first three wakes, all delivered.
+      await wake(ceoDesk, HR);
+      await wake(hrDesk, CEO);
+      await wake(ceoDesk, HR);
+      expect(started).toHaveLength(3);
+      errors.length = 0;
+
+      // The fourth wake of the same pair is stopped: one error record, one system line.
+      await wake(hrDesk, CEO);
+      expect(started).toHaveLength(3);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({
+        code: "org_mention_pair_limit",
+        ctx: {
+          target: `agent:${CEO}`,
+          reason: "pair",
+          count: 3,
+          limit: 3,
+          windowMinutes: 60,
+          channel: DEFAULT_CHANNEL_ID,
+        },
+      });
+      const line = (
+        await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})
+      ).messages.at(-1)!;
+      expect(line).toMatchObject({
+        sender: "system",
+        notice: {
+          kind: "mention_budget_limited",
+          params: { targets: `agent:${CEO}`, reason: "pair", limit: "3", windowMinutes: "60" },
+        },
+      });
+      expect(line.text).toContain(`agent:${CEO}`);
+
+      // An hour later the wake is inside no one's window: the pair delivers again.
+      nowMs += 61 * 60_000;
+      await wake(ceoDesk, HR);
+      expect(started).toHaveLength(4);
+      expect(errors).toHaveLength(1);
+    });
+
+    it("a deep wake does not poison the answers: the deployer shape delivers at hop 3", async () => {
+      const DEV = "acme_dev";
+      const DEPLOYER = "acme_deployer";
+      await service.hire(P, ORG, { newAgent: { agentId: DEV }, title: "Developer", reportsTo: CEO });
+      await service.hire(P, ORG, {
+        newAgent: { agentId: DEPLOYER },
+        title: "Deployer",
+        reportsTo: CEO,
+      });
+      const deskOf = async (agentId: string): Promise<string> =>
+        (await service.desk(P, ORG, agentId, {})).sessionId;
+      started.length = 0;
+      const send = (sessionId: string, text: string): Promise<unknown> =>
+        service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, { text, sessionId });
+
+      // person → CEO (hop 0) → dev (hop 1) → deployer (hop 2) → its two hop-3 answers.
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, { text: `@${CEO} go` });
+      await deskOf(DEV);
+      await deskOf(DEPLOYER);
+      const m2 = await send(started[0]!.sessionId, `@${DEV} build it`);
+      const m3 = await send(started[1]!.sessionId, `@${DEPLOYER} ship it`);
+      const m4 = await send(started[2]!.sessionId, `@${DEV} released`);
+      const m5 = await send(started[2]!.sessionId, `@${CEO} done`);
+      expect(m2.hop).toBe(1);
+      expect(m3.hop).toBe(2);
+      // Both hop-3 answers delivered, no budget stopped either, and the hop is still 3.
+      expect(started).toHaveLength(5);
+      expect(m4.hop).toBe(3);
+      expect(m5.hop).toBe(3);
+      expect(errors.filter((e) => e.code.startsWith("org_mention_"))).toEqual([]);
+    });
+
+    it("the chain ceiling is a backstop that records and names its targets", async () => {
+      const DEV = "acme_dev";
+      await service.hire(P, ORG, { newAgent: { agentId: DEV }, title: "Developer", reportsTo: CEO });
+      // Provision the desk first so the reconcile below does not count a provision init run.
+      await service.desk(P, ORG, DEV, {});
+      started.length = 0;
+      const deep = async (hop: number): Promise<void> => {
+        const time = new Date(nowMs).toISOString();
+        const id = `msg-${time.slice(0, 19).replaceAll("-", "-").replaceAll(":", "-").replaceAll("T", "-")}-${hop
+          .toString(16)
+          .padStart(8, "0")}`;
+        await deps.store.appendMessageLine(
+          store.dir(P, ORG),
+          DEFAULT_CHANNEL_ID,
+          zonedDate("Asia/Shanghai", nowMs),
+          serializeChannelMessageLine({
+            id,
+            time,
+            sender: `agent:${CEO}`,
+            hop,
+            text: `@${DEV} ping at hop ${hop}`,
+            mentions: [`agent:${DEV}`],
+          }),
+        );
+      };
+      await deep(12);
+      await scheduler.reconcile(P, ORG);
+      expect(started).toHaveLength(0);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({
+        code: "org_mention_chain_limit",
+        ctx: { hop: 12, limit: 12, channel: DEFAULT_CHANNEL_ID },
+      });
+      const line = (
+        await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})
+      ).messages.at(-1)!;
+      expect(line).toMatchObject({ sender: "system", notice: { kind: "mention_chain_limited" } });
+
+      // The negative control: one hop below the ceiling delivers.
+      await deep(11);
+      await scheduler.reconcile(P, ORG);
+      expect(started).toHaveLength(1);
+      expect(errors).toHaveLength(1);
+    });
+
+    it("the fan-out budget stops a sender's fifth wake and counts @all by its expanded targets", async () => {
+      const devs = ["acme_d1", "acme_d2", "acme_d3", "acme_d4", "acme_d5"];
+      for (const agentId of devs)
+        await service.hire(P, ORG, { newAgent: { agentId }, title: "Developer", reportsTo: CEO });
+      await service.patch(P, ORG, pairAndFanout, "alice");
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      started.length = 0;
+
+      // Four different pairs, one wake each: every pair is well inside its own budget.
+      for (const agentId of devs.slice(0, 4))
+        await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+          text: `@${agentId} hello`,
+          sessionId: ceoDesk,
+        });
+      expect(started).toHaveLength(4);
+      errors.length = 0;
+
+      // The fifth desk this sender would wake is over the fan-out budget, not any pair's.
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${devs[4]} hello`,
+        sessionId: ceoDesk,
+      });
+      expect(started).toHaveLength(4);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({
+        code: "org_mention_fanout_limit",
+        ctx: { target: `agent:${devs[4]}`, reason: "fanout", count: 4, limit: 4 },
+      });
+
+      // An hour later, `@all` counts by its expanded targets: six colleagues, four woken.
+      nowMs += 61 * 60_000;
+      errors.length = 0;
+      const before = started.length;
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@all standup",
+        sessionId: ceoDesk,
+      });
+      const woken = started
+        .slice(before)
+        .map((s) => cache.ownerOfSession(s.sessionId)?.agentId)
+        .sort();
+      expect(woken).toEqual(["acme_hr", "acme_d1", "acme_d2", "acme_d3"]);
+      expect(errors).toHaveLength(2);
+      expect(errors.map((e) => e.ctx.target)).toEqual(["agent:acme_d4", "agent:acme_d5"]);
+      for (const e of errors)
+        expect(e).toMatchObject({ code: "org_mention_fanout_limit", ctx: { reason: "fanout" } });
+      const line = (
+        await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})
+      ).messages.at(-1)!;
+      expect(line.notice?.kind).toBe("mention_budget_limited");
+      expect(line.notice?.params.targets).toBe("agent:acme_d4, agent:acme_d5");
+    });
+
+    it("a person's wakes count against no budget, and blocked wakes count toward none", async () => {
+      await service.patch(P, ORG, pairAndFanout, "alice");
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      started.length = 0;
+
+      // K + F + 1 = 8 person→HR wakes, every one delivered.
+      for (let i = 0; i < 8; i++)
+        await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+          text: `@${HR} nudge ${i}`,
+        });
+      expect(started).toHaveLength(8);
+      expect(errors).toHaveLength(0);
+
+      // The person's wakes left the pair {CEO, HR} untouched: a full three-wake exchange.
+      const wake = (from: string, to: string): Promise<unknown> =>
+        service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+          text: `@${to} round`,
+          sessionId: from,
+        });
+      await wake(ceoDesk, HR);
+      await wake(hrDesk, CEO);
+      await wake(ceoDesk, HR);
+      expect(started).toHaveLength(11);
+      expect(errors).toHaveLength(0);
+
+      // Blocked wakes count toward none: three delivered at t = 0, 1, 2, the fourth at
+      // t = 3 stopped — and at t = 60.5 only the two inside the window remain, so one more
+      // wake fits. Had the blocked wake counted, this one would be stopped too.
+      nowMs += 3 * 60_000;
+      await wake(hrDesk, CEO);
+      expect(started).toHaveLength(11);
+      expect(errors.map((e) => e.code)).toEqual(["org_mention_pair_limit"]);
+      nowMs += 57.5 * 60_000;
+      await wake(hrDesk, CEO);
+      expect(started).toHaveLength(12);
     });
   });
 

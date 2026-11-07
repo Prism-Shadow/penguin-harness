@@ -247,6 +247,18 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
       integer: true,
       nonNegative: true,
     });
+    const mentionWindowMinutes = optionalNumber(body, "mentionWindowMinutes", {
+      integer: true,
+      positive: true,
+    });
+    const mentionPairLimit = optionalNumber(body, "mentionPairLimit", {
+      integer: true,
+      positive: true,
+    });
+    const mentionFanoutLimit = optionalNumber(body, "mentionFanoutLimit", {
+      integer: true,
+      positive: true,
+    });
     const budgetWarnRatio = optionalNumber(body, "budgetWarnRatio", { nonNegative: true });
     const budgetPauseRatio = optionalNumber(body, "budgetPauseRatio", { nonNegative: true });
     const workspace =
@@ -265,6 +277,9 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(timezone !== undefined ? { timezone } : {}),
         ...(language !== undefined ? { language } : {}),
         ...(mentionChainLimit !== undefined ? { mentionChainLimit } : {}),
+        ...(mentionWindowMinutes !== undefined ? { mentionWindowMinutes } : {}),
+        ...(mentionPairLimit !== undefined ? { mentionPairLimit } : {}),
+        ...(mentionFanoutLimit !== undefined ? { mentionFanoutLimit } : {}),
         ...(budgetWarnRatio !== undefined ? { budgetWarnRatio } : {}),
         ...(budgetPauseRatio !== undefined ? { budgetPauseRatio } : {}),
         ...(workspace !== undefined ? { workspace } : {}),

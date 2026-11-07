@@ -51,7 +51,19 @@ export interface OrgConfig {
   status: OrgStatus;
   timezone: string;
   approvalMode: OrgApprovalMode;
+  /**
+   * The backstop on the mention chain: a message whose hop reaches it triggers nobody. It is
+   * no longer the gate that shapes everyday delivery — the two rate budgets below are — so
+   * it sits high enough that only a runaway cascade (a dozen hops with no person or calendar
+   * in between) reaches it.
+   */
   mentionChainLimit: number;
+  /** The window, in minutes, the two mention rate budgets count over. */
+  mentionWindowMinutes: number;
+  /** How many times one pair of employees may wake each other within the window, either direction. */
+  mentionPairLimit: number;
+  /** How many desks one sender may wake by mention within the window. */
+  mentionFanoutLimit: number;
   budgetWarnRatio: number;
   budgetPauseRatio: number;
   createdBy: string;
@@ -83,18 +95,25 @@ export function orgLanguage(config: OrgConfig): OrgLanguage {
 }
 
 /**
- * The bounds `parseOrgConfig` holds the two numeric settings to. Exported because the write
+ * The bounds `parseOrgConfig` holds the numeric settings to. Exported because the write
  * path has to refuse exactly what the loader would: a value past them is written happily and
  * then fails to parse on the next load, which marks the organization invalid and stops every
  * automatic trigger until somebody edits the file by hand.
  */
 export const MENTION_CHAIN_LIMIT_MAX = 100;
+export const MENTION_WINDOW_MINUTES_MAX = 1440;
+export const MENTION_PAIR_LIMIT_MIN = 2;
+export const MENTION_PAIR_LIMIT_MAX = 100;
+export const MENTION_FANOUT_LIMIT_MAX = 1000;
 export const BUDGET_RATIO_MAX = 10;
 
 export const ORG_CONFIG_DEFAULTS = {
   status: "active" as OrgStatus,
   approvalMode: "allow-all" as OrgApprovalMode,
-  mentionChainLimit: 3,
+  mentionChainLimit: 12,
+  mentionWindowMinutes: 60,
+  mentionPairLimit: 6,
+  mentionFanoutLimit: 12,
   budgetWarnRatio: 0.8,
   budgetPauseRatio: 1.0,
 };
@@ -146,6 +165,39 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
   ) {
     return fail(`mention_chain_limit must be an integer between 0 and ${MENTION_CHAIN_LIMIT_MAX}`);
   }
+  const windowMinutes = table["mention_window_minutes"] ?? ORG_CONFIG_DEFAULTS.mentionWindowMinutes;
+  if (
+    typeof windowMinutes !== "number" ||
+    !Number.isInteger(windowMinutes) ||
+    windowMinutes < 1 ||
+    windowMinutes > MENTION_WINDOW_MINUTES_MAX
+  ) {
+    return fail(
+      `mention_window_minutes must be an integer between 1 and ${MENTION_WINDOW_MINUTES_MAX}`,
+    );
+  }
+  const pairLimit = table["mention_pair_limit"] ?? ORG_CONFIG_DEFAULTS.mentionPairLimit;
+  if (
+    typeof pairLimit !== "number" ||
+    !Number.isInteger(pairLimit) ||
+    pairLimit < MENTION_PAIR_LIMIT_MIN ||
+    pairLimit > MENTION_PAIR_LIMIT_MAX
+  ) {
+    return fail(
+      `mention_pair_limit must be an integer between ${MENTION_PAIR_LIMIT_MIN} and ${MENTION_PAIR_LIMIT_MAX}`,
+    );
+  }
+  const fanoutLimit = table["mention_fanout_limit"] ?? ORG_CONFIG_DEFAULTS.mentionFanoutLimit;
+  if (
+    typeof fanoutLimit !== "number" ||
+    !Number.isInteger(fanoutLimit) ||
+    fanoutLimit < 1 ||
+    fanoutLimit > MENTION_FANOUT_LIMIT_MAX
+  ) {
+    return fail(
+      `mention_fanout_limit must be an integer between 1 and ${MENTION_FANOUT_LIMIT_MAX}`,
+    );
+  }
   const warn = table["budget_warn_ratio"] ?? ORG_CONFIG_DEFAULTS.budgetWarnRatio;
   const pause = table["budget_pause_ratio"] ?? ORG_CONFIG_DEFAULTS.budgetPauseRatio;
   for (const [key, v] of [
@@ -191,6 +243,9 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
       timezone,
       approvalMode,
       mentionChainLimit: limit,
+      mentionWindowMinutes: windowMinutes,
+      mentionPairLimit: pairLimit,
+      mentionFanoutLimit: fanoutLimit,
       budgetWarnRatio: warn as number,
       budgetPauseRatio: pause as number,
       createdBy,
@@ -209,6 +264,9 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     timezone: cfg.timezone,
     approval_mode: cfg.approvalMode,
     mention_chain_limit: cfg.mentionChainLimit,
+    mention_window_minutes: cfg.mentionWindowMinutes,
+    mention_pair_limit: cfg.mentionPairLimit,
+    mention_fanout_limit: cfg.mentionFanoutLimit,
     budget_warn_ratio: cfg.budgetWarnRatio,
     budget_pause_ratio: cfg.budgetPauseRatio,
     created_by: cfg.createdBy,
@@ -222,6 +280,10 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     "# org_config.toml — organization settings (the id is the directory name and never changes).",
     "# status: active | paused (paused stops every automatic trigger; people can still talk to any desk).",
     "# approval_mode: allow-all | read-only | deny-all for desk and ticket sessions.",
+    "# mention_chain_limit: the backstop hop ceiling — a message at or beyond it triggers nobody.",
+    "# mention_window_minutes: the window the two mention rate budgets count over.",
+    "# mention_pair_limit: how many times one pair of employees may wake each other per window.",
+    "# mention_fanout_limit: how many desks one sender may wake by mention per window.",
     "# language: zh | en — the working language of everything the organization writes (optional; detected from the mission when absent).",
     "# workspace: an absolute directory used as the shared workspace instead of ./workspace (optional).",
     "# [model]: provider + model_id for desks and ticket sessions when the employee names none (optional).",

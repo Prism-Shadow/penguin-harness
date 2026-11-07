@@ -52,6 +52,9 @@ const config: OrgConfig = {
   timezone: "Asia/Shanghai",
   approvalMode: "allow-all",
   mentionChainLimit: 3,
+  mentionWindowMinutes: 30,
+  mentionPairLimit: 4,
+  mentionFanoutLimit: 5,
   budgetWarnRatio: 0.8,
   budgetPauseRatio: 1,
   createdBy: "alice",
@@ -78,8 +81,34 @@ describe("org_config.toml", () => {
     expect(parsed).toEqual({ ok: true, value: config });
     const minimal = parseOrgConfig('name = "Acme"\nmission = "x"\ncreated_by = "alice"\n');
     expect(minimal.ok && minimal.value.status).toBe("active");
-    expect(minimal.ok && minimal.value.mentionChainLimit).toBe(3);
+    expect(minimal.ok && minimal.value.mentionChainLimit).toBe(12);
+    expect(minimal.ok && minimal.value.mentionWindowMinutes).toBe(60);
+    expect(minimal.ok && minimal.value.mentionPairLimit).toBe(6);
+    expect(minimal.ok && minimal.value.mentionFanoutLimit).toBe(12);
     expect(minimal.ok && minimal.value.timezone).toBe("UTC");
+  });
+
+  it("round-trips the mention rate budgets and rejects out-of-range values", () => {
+    for (const extra of [
+      "mention_window_minutes = 0\n",
+      "mention_window_minutes = 1441\n",
+      "mention_window_minutes = 1.5\n",
+      "mention_pair_limit = 1\n",
+      "mention_pair_limit = 101\n",
+      "mention_fanout_limit = 0\n",
+      "mention_fanout_limit = 1001\n",
+      "mention_chain_limit = 101\n",
+    ]) {
+      expect(
+        parseOrgConfig(`name = "A"\nmission = "x"\ncreated_by = "u"\n${extra}`).ok,
+      ).toBe(false);
+    }
+    const edge = parseOrgConfig(
+      'name = "A"\nmission = "x"\ncreated_by = "u"\nmention_window_minutes = 1\nmention_pair_limit = 2\nmention_fanout_limit = 1\n',
+    );
+    expect(edge.ok && edge.value.mentionWindowMinutes).toBe(1);
+    expect(edge.ok && edge.value.mentionPairLimit).toBe(2);
+    expect(edge.ok && edge.value.mentionFanoutLimit).toBe(1);
   });
 
   it("round-trips the working language and rejects anything but zh or en", () => {

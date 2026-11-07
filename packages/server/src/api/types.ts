@@ -6313,8 +6313,17 @@ export interface OrganizationSettings {
   /** IANA timezone: budget periods (natural months) and chat day files follow it. */
   timezone: string;
   approvalMode: OrgApprovalMode;
-  /** Chat @-chain limit: a message whose hop reaches it records its mentions without triggering anyone. */
+  /**
+   * The backstop on the mention chain: a message whose hop reaches it triggers nobody. The
+   * two rate budgets below are what shape everyday delivery; this only stops a runaway cascade.
+   */
   mentionChainLimit: number;
+  /** The window, in minutes, the two mention rate budgets count over. */
+  mentionWindowMinutes: number;
+  /** How many times one pair of employees may wake each other within the window, either direction. */
+  mentionPairLimit: number;
+  /** How many desks one sender may wake by mention within the window. */
+  mentionFanoutLimit: number;
   budgetWarnRatio: number;
   budgetPauseRatio: number;
   createdBy: string;
@@ -6535,6 +6544,8 @@ export type OrgChannelNoticeKind =
   | "channel_removed"
   | "budget_warned"
   | "budget_paused"
+  | "mention_chain_limited"
+  | "mention_budget_limited"
   /**
    * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
    * the board and the overview's inbox. These three kinds stay so the lines already in an
@@ -6786,6 +6797,9 @@ export interface OrganizationPatchRequest {
   approvalMode?: OrgApprovalMode;
   timezone?: string;
   mentionChainLimit?: number;
+  mentionWindowMinutes?: number;
+  mentionPairLimit?: number;
+  mentionFanoutLimit?: number;
   budgetWarnRatio?: number;
   budgetPauseRatio?: number;
   /** null returns to the organization's own `workspace/`. */

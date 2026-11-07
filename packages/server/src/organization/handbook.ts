@@ -169,7 +169,7 @@ done; routine work in one's own partition is simply done.
 - You read and post only in channels you are a member of, and an employee joins one only when a
   member invites it. What the board must decide goes to the all-hands channel, where they read.
 - A message that mentions someone who is not in the channel is refused: invite them first.
-- Mention chains stop after a few hops on purpose; a person or the calendar restarts the thread.
+- A pair of colleagues can wake each other only a limited number of times an hour, and one employee can wake only a limited number of desks an hour; a mention a limit stops leaves a system line in the channel. To keep going, wait for the calendar, or ask a person to step in.
 
 ## Roles
 
@@ -294,7 +294,7 @@ CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募
 - 一条线索会淹没全员频道时就另开频道——一条工作线或一张大工单一个（\`penguin org channel create <id>\`），只邀请这项工作需要的主体（\`penguin org channel invite <id> <principal>\`），并在全员频道里说明一次。
 - 你只在自己是成员的频道里读和发；员工只有被成员邀请才会加入一个频道。需要董事会拍板的事情要发到全员频道——他们在那里读。
 - 提及了不在该频道的人，整条消息会被拒收：先邀请对方。
-- @ 连锁在若干跳之后会有意停止；由人或日历重新发起线索。
+- 同一对同事一小时内互相唤醒有次数上限，一名员工一小时内能唤醒的工位次数也有上限；被拦下的提及会在频道里留一行系统消息。需要继续时等日历，或请人出面。
 
 ## 角色
 

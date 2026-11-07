@@ -75,6 +75,10 @@ import {
   BUDGET_RATIO_MAX,
   DEFAULT_CEO_BUDGET,
   MENTION_CHAIN_LIMIT_MAX,
+  MENTION_FANOUT_LIMIT_MAX,
+  MENTION_PAIR_LIMIT_MAX,
+  MENTION_PAIR_LIMIT_MIN,
+  MENTION_WINDOW_MINUTES_MAX,
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
   defaultTicketNotify,
@@ -183,15 +187,42 @@ const allHandsImmutable = (message: string): HttpError =>
   new HttpError(400, "all_hands_immutable", message);
 
 /**
- * The two numeric settings, held to the bounds the config parser enforces. The settings
- * write path is the looser of the two, so a value it let through would be written and then
- * refuse to parse on the next load — the organization is marked invalid and its automation
- * stops. The bounds themselves live beside the parser; only the request wording is here.
+ * The numeric settings, held to the bounds the config parser enforces. The settings write
+ * path is the looser of the two, so a value it let through would be written and then refuse
+ * to parse on the next load — the organization is marked invalid and its automation stops.
+ * The bounds themselves live beside the parser; only the request wording is here.
  */
 const requireChainLimit = (value: number): number => {
   if (!Number.isInteger(value) || value < 0 || value > MENTION_CHAIN_LIMIT_MAX) {
     throw badRequest(
       `mentionChainLimit must be an integer between 0 and ${MENTION_CHAIN_LIMIT_MAX}.`,
+    );
+  }
+  return value;
+};
+
+const requireWindowMinutes = (value: number): number => {
+  if (!Number.isInteger(value) || value < 1 || value > MENTION_WINDOW_MINUTES_MAX) {
+    throw badRequest(
+      `mentionWindowMinutes must be an integer between 1 and ${MENTION_WINDOW_MINUTES_MAX}.`,
+    );
+  }
+  return value;
+};
+
+const requirePairLimit = (value: number): number => {
+  if (!Number.isInteger(value) || value < MENTION_PAIR_LIMIT_MIN || value > MENTION_PAIR_LIMIT_MAX) {
+    throw badRequest(
+      `mentionPairLimit must be an integer between ${MENTION_PAIR_LIMIT_MIN} and ${MENTION_PAIR_LIMIT_MAX}.`,
+    );
+  }
+  return value;
+};
+
+const requireFanoutLimit = (value: number): number => {
+  if (!Number.isInteger(value) || value < 1 || value > MENTION_FANOUT_LIMIT_MAX) {
+    throw badRequest(
+      `mentionFanoutLimit must be an integer between 1 and ${MENTION_FANOUT_LIMIT_MAX}.`,
     );
   }
   return value;
@@ -403,6 +434,9 @@ export class OrganizationService {
       timezone: org.config.timezone,
       approvalMode: org.config.approvalMode,
       mentionChainLimit: org.config.mentionChainLimit,
+      mentionWindowMinutes: org.config.mentionWindowMinutes,
+      mentionPairLimit: org.config.mentionPairLimit,
+      mentionFanoutLimit: org.config.mentionFanoutLimit,
       budgetWarnRatio: org.config.budgetWarnRatio,
       budgetPauseRatio: org.config.budgetPauseRatio,
       createdBy: org.config.createdBy,
@@ -599,6 +633,9 @@ export class OrganizationService {
       language,
       approvalMode: ORG_CONFIG_DEFAULTS.approvalMode,
       mentionChainLimit: ORG_CONFIG_DEFAULTS.mentionChainLimit,
+      mentionWindowMinutes: ORG_CONFIG_DEFAULTS.mentionWindowMinutes,
+      mentionPairLimit: ORG_CONFIG_DEFAULTS.mentionPairLimit,
+      mentionFanoutLimit: ORG_CONFIG_DEFAULTS.mentionFanoutLimit,
       budgetWarnRatio: ORG_CONFIG_DEFAULTS.budgetWarnRatio,
       budgetPauseRatio: ORG_CONFIG_DEFAULTS.budgetPauseRatio,
       createdBy: userId,
@@ -724,6 +761,12 @@ export class OrganizationService {
       if (req.language !== undefined) next.language = req.language;
       if (req.mentionChainLimit !== undefined)
         next.mentionChainLimit = requireChainLimit(req.mentionChainLimit);
+      if (req.mentionWindowMinutes !== undefined)
+        next.mentionWindowMinutes = requireWindowMinutes(req.mentionWindowMinutes);
+      if (req.mentionPairLimit !== undefined)
+        next.mentionPairLimit = requirePairLimit(req.mentionPairLimit);
+      if (req.mentionFanoutLimit !== undefined)
+        next.mentionFanoutLimit = requireFanoutLimit(req.mentionFanoutLimit);
       if (req.budgetWarnRatio !== undefined)
         next.budgetWarnRatio = requireBudgetRatio("budgetWarnRatio", req.budgetWarnRatio);
       if (req.budgetPauseRatio !== undefined)
