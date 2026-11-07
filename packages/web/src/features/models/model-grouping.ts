@@ -400,3 +400,5 @@ export function visibleChatModels<T extends ModelCredentialRowLike>(
         );
   return keep.filter((m) => matchesQuery(m, query));
 }
+
+export type { PeakWindows } from "../../lib/peak-windows";
