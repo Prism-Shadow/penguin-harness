@@ -40,6 +40,7 @@ import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { PostPending } from "../components/post-pending";
+import { MdFigure } from "../blog-widgets/figure";
 
 /**
  * The host names that are this site: the production ones, and the one this page is served from
@@ -158,6 +159,7 @@ export function MdImage({
 export const MD_COMPONENTS: SiteMarkdownComponents = {
   a: MdLink,
   img: MdImage,
+  figure: MdFigure,
 };
 
 /**
