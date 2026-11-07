@@ -71,6 +71,7 @@ import { newAuthRuntimeState } from "./auth/runtime-state.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
+import { ifNoneMatchHits } from "./http/static-files.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
@@ -599,27 +600,6 @@ function etagOfBuffer(content: Buffer): string {
     memEtags.set(content, etag);
   }
   return etag;
-}
-
-/**
- * Whether `If-None-Match` claims this exact representation, per RFC 9110's rules rather than
- * by string equality — both of which a real deployment hits:
- *
- * - It is a LIST. A client holding several validators sends `"a", "b"`.
- * - Comparison is WEAK, so `W/"x"` and `"x"` are the same tag. A proxy that re-encodes a
- *   response (nginx's gzip module is the common one) downgrades a strong ETag to weak on the
- *   way out, and the client sends back what it was given.
- *
- * Getting this wrong costs only 304s — the bytes are still correct — which is exactly why it
- * would never be noticed, and why it is worth a few lines rather than a string compare.
- */
-function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
-  if (header === undefined) return false;
-  const bare = (tag: string) => tag.trim().replace(/^W\//, "");
-  // `*` means "any current representation": for a resource that exists, that is a match.
-  if (header.trim() === "*") return true;
-  const want = bare(etag);
-  return header.split(",").some((tag) => bare(tag) === want);
 }
 
 /**

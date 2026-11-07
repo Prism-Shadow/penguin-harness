@@ -5,7 +5,10 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Hmr } from "../../hmr/capabilities.js";
+import { pluginHostFrom } from "../../plugin/host.js";
+import { packageNamed, uiStampOf } from "../../plugin/package.js";
 import type {
   ContributionsResponse,
   RendererRef,
@@ -68,6 +71,39 @@ export interface WebShellSlots {
   widgets: WebWidgetData;
 }
 
+/**
+ * A plugin document the server itself serves: `/api/plugins/<package>/ui/<file>`. Only that
+ * shape carries a stamp — a contribution pointing anywhere else (another origin, a path the
+ * app resolves) is versioned by whoever serves it.
+ */
+const PLUGIN_UI_SRC = /^\/api\/plugins\/((?:@[^/]+\/)?[^/]+)\/ui\//;
+
+/**
+ * A widget whose document is a plugin's own file, with that package's UI stamp on the URL
+ * (`?v=`, plugin/package.ts). The dock mounts this frame ahead of the click that opens it
+ * (web-app/app-layout.tsx), so its document and the hundreds of files a figure pack loads
+ * beside it are fetched once and then served from the browser's cache without a question —
+ * while an edit under `ui/` moves the stamp and with it the URL (http/static-files.ts).
+ */
+function stampedWidget(
+  widget: WebWidgetContribution,
+  stampOf: (pkg: string) => string | null,
+): WebWidgetContribution {
+  if (!("iframe" in widget.renderer)) return widget;
+  const src = widget.renderer.iframe.src;
+  const pkg = PLUGIN_UI_SRC.exec(src)?.[1];
+  if (pkg === undefined) return widget;
+  const stamp = stampOf(pkg);
+  if (stamp === null) return widget;
+  const join = src.includes("?") ? "&" : "?";
+  return {
+    ...widget,
+    renderer: {
+      iframe: { ...widget.renderer.iframe, src: `${src}${join}v=${encodeURIComponent(stamp)}` },
+    },
+  };
+}
+
 @Module({
   contributes: {
     "HttpModule.routes": [
@@ -82,6 +118,7 @@ export interface WebShellSlots {
 })
 export class WebModule {
   @Provide() web!: WebShell;
+  @Use() private readonly hmr!: Hmr;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
     // The kernel checked each contribution's data against its slot's type at boot.
@@ -99,7 +136,20 @@ export class WebModule {
       sessionTabs: collect("sessionTabs"),
       widgets: collect<WebWidgetContribution>("widgets"),
     };
-    const web: WebShell = { contributions: () => response };
+    // Claimed per call rather than captured, as the ui route does: a hot swap hands the same
+    // process a new plugin host.
+    const hmr = this.hmr;
+    const stampOf = (name: string): string | null => {
+      const entries = [...pluginHostFrom(hmr.resources).entries().values()].map((e) => e.file);
+      const pkg = packageNamed(entries, name);
+      return pkg === null ? null : uiStampOf(pkg.dir);
+    };
+    const web: WebShell = {
+      contributions: () => ({
+        ...response,
+        widgets: response.widgets.map((w) => stampedWidget(w, stampOf)),
+      }),
+    };
     this.web = web;
     this.contributionsRoutes = contributionsRoutes({ web });
   }

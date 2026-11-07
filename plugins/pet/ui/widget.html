@@ -4,7 +4,13 @@
   contribution. The dock draws it bare — no card, no title bar, no background — and covers the
   whole window with it, so the whale has the page for a stage: she walks about it, stands where
   you drop her, and the document answers where the pointer is over her; the dock's tile is the
-  only control.
+  only control. The frame is mounted when the app settles, before the tile is pressed, and kept
+  hidden until then (the dock says `{ penguin: "widget-shown", shown }`): opening her is meant to
+  show her, not to fetch a figure pack and build it.
+  The URL carries `?v=<stamp>` — the version of this package's `ui/` files, put there by the
+  server (plugin/package.ts) — so this document and everything it loads beside itself stay in
+  the browser's cache between opens, while an edit under `ui/` moves the stamp and the URL with
+  it (widget.js passes the same query to the pack's textures).
   Same-origin with the server, so it reads and writes the pet's state through
   the plugin state routes with the user's own cookie — GET to look, PATCH to move it.
   The pet herself is the DeepSeek whale (大肥鱼) figure pack drawn by the Coopanion kit

@@ -27,6 +27,29 @@ import * as kit from "./figure/kit/body.js";
 import { createWhaleBody } from "./figure/whale/figure.js";
 
 const STATE_URL = "/api/plugins/@penguinharness/pet/state";
+/**
+ * The version of this package's `ui/` files, as the server stamped the URL it framed
+ * (`?v=`, server: plugin/package.ts, contributions.ts). Every file the figure pack loads
+ * carries the same query, so the browser keeps them for good instead of re-fetching the
+ * whole pack on each open — and an edit under `ui/` moves the stamp, so the URL too.
+ */
+const VERSION = new URLSearchParams(location.search).get("v") ?? "";
+const FIGURE_BASE = new URL("./figure/whale/", import.meta.url);
+
+/** A file of the figure pack, under the version this document was framed with (see VERSION). */
+function packUrl(p) {
+  const url = new URL(p, FIGURE_BASE);
+  if (VERSION !== "") url.search = `?v=${encodeURIComponent(VERSION)}`;
+  return url;
+}
+
+/** The pack's model, read here rather than by the figure so it carries the same query. */
+async function loadModel() {
+  const res = await fetch(packUrl("model.json"), { credentials: "same-origin" });
+  if (!res.ok) throw new Error(`model.json answered ${res.status}`);
+  return res.json();
+}
+
 const TICK_MS = 30_000;
 /** Fullness lost per idle tick, and gained per portion eaten. */
 const HUNGER = 2;
@@ -188,11 +211,27 @@ function onEvent(kind, detail) {
  * circles (layout().hit) are what we check against, plus the panel she has open (a menu the
  * page could click through would be unusable). The pointer leaving the frame, or walking off
  * her while she is drawn elsewhere, answers false and the page gets its clicks back.
+ *
+ * The dock also mounts this document BEFORE the tile that opens it is pressed (that is what
+ * makes the press instant), so the frame is told which state it is in —
+ * `{ penguin: "widget-shown", shown }` — and runs nothing while it is closed.
  */
 
 let over = false;
 let pressed = false;
 let lastAt = null;
+/**
+ * Whether anyone can see this document. The dock mounts the frame AHEAD of the click that
+ * opens it — that is the preload — and says which state it is in with
+ * `{ penguin: "widget-shown", shown }` on its own load and on every open and close. Closed
+ * means nothing runs: no frame loop, no hunger tick, no Token mining, no pointer probes. A
+ * preloaded pet therefore costs nothing while she is out of sight.
+ */
+let shown = true;
+let frameId = 0;
+/** Her state is read and her figure is up: the clocks may run. */
+let ready = false;
+const clocks = new Set();
 
 function onPet(at) {
   if (!body || at === null) return false;
@@ -225,8 +264,15 @@ function answered(next) {
 addEventListener("message", (e) => {
   if (e.origin !== location.origin) return;
   const data = e.data;
-  if (data === null || typeof data !== "object" || data.penguin !== "widget-probe") return;
-  if (typeof data.x !== "number" || typeof data.y !== "number") return;
+  if (data === null || typeof data !== "object") return;
+  if (data.penguin === "widget-shown") {
+    if (typeof data.shown === "boolean") setShown(data.shown);
+    return;
+  }
+  if (data.penguin !== "widget-probe") return;
+  // A frame nobody sees takes no pointer: the dock does not relay one either, and if an old
+  // probe arrives after the close it must not hand the frame back its events.
+  if (!shown || typeof data.x !== "number" || typeof data.y !== "number") return;
   lastAt = { x: data.x, y: data.y };
   answered(onPet(lastAt) || onPanel(lastAt));
 });
@@ -542,6 +588,8 @@ function chatter(now) {
 
 let last = 0;
 function frame(now) {
+  frameId = 0;
+  if (!shown) { last = 0; return; }
   const dt = last ? Math.min((now - last) / 1000, 0.1) : 0;
   last = now;
   body.step(dt);
@@ -557,7 +605,51 @@ function frame(now) {
     bubbleEl.style.display = "none";
     bubbleEl.textContent = "";
   }
-  requestAnimationFrame(frame);
+  frameId = requestAnimationFrame(frame);
+}
+
+/** The two clocks that write her state: hunger beside the pack's own eating, and the Token waterline. */
+function startClocks() {
+  // Nothing ticks before her state is read and the figure is up: a tick against a state that
+  // has not arrived yet would patch over it, and mining would count the whole history at once.
+  if (!ready || clocks.size > 0) return;
+  clocks.add(setInterval(tick, TICK_MS));
+  void mine();
+  clocks.add(setInterval(mine, MINE_MS));
+}
+
+function stopClocks() {
+  for (const id of clocks) clearInterval(id);
+  clocks.clear();
+}
+
+/**
+ * The dock's open/close, as the pet sees it: closed stops every loop and clears whatever she
+ * was showing, so reopening starts from the same place as a fresh look — with her where she
+ * was left (the state on the server), never mid-animation.
+ */
+function setShown(next) {
+  if (next === shown) return;
+  shown = next;
+  if (!shown) {
+    closePanels();
+    bubbleUntil = 0;
+    bubbleEl.textContent = "";
+    bubbleEl.style.display = "none";
+    // A pointer that was on her when the dock closed never comes back: the next open starts
+    // with the page holding its own clicks.
+    over = false;
+    pressed = false;
+    stopClocks();
+    return;
+  }
+  last = 0;
+  // The window may have been resized while nobody was looking: the stage is measured again
+  // before she is drawn, so she stands where the page actually is now.
+  refreshBox();
+  body?.resize();
+  if (body && !frameId) frameId = requestAnimationFrame(frame);
+  startClocks();
 }
 
 function fail(message) {
@@ -575,8 +667,14 @@ async function start() {
     document.querySelector(".err")?.remove();
     refreshBox();
     const stage = bounds();
-    body = await createWhaleBody(new URL("./figure/whale/", import.meta.url), {
+    body = await createWhaleBody(FIGURE_BASE, {
       kit,
+      // The model and the pack's textures come from the package's own `ui/`, under the
+      // version this document was framed with: cacheable for good, and never stale (see
+      // VERSION above). `model` is read here rather than by the figure so that it, too,
+      // carries the query — it is the first file the figure needs.
+      model: await loadModel(),
+      asset: packUrl,
       // The dock gives this document the whole window, so the page is her stage: she stands and
       // walks anywhere on it (`ground: "free"`), and the drop point is wherever you put her.
       ground: "free",
@@ -592,10 +690,13 @@ async function start() {
     apply(answer.state);
     applyArea();
     addEventListener("resize", () => { refreshBox(); body.resize(); });
-    requestAnimationFrame(frame);
-    setInterval(tick, TICK_MS);
-    void mine();
-    setInterval(mine, MINE_MS);
+    ready = true;
+    // The dock may have mounted this frame closed (the preload) and said so while the figure
+    // was still loading: only a frame someone can see starts its loops.
+    if (shown) {
+      frameId = requestAnimationFrame(frame);
+      startClocks();
+    }
   } catch (err) {
     fail(`The pet is not around right now. ${err?.message ?? ""}`);
   }

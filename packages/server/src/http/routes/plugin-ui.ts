@@ -13,8 +13,12 @@
  *
  * Like a workflow's `ui/*`, it is a plain authenticated route: the frame is same-origin and
  * carries the user's cookie, which is what lets the app theme it (lib/workflow-theme.ts in web).
+ *
+ * Caching is the SPA's contract (http/static-files.ts): `no-cache` with a validator, and
+ * `immutable` when the request carries `?v=<stamp>` and that stamp is still the package's own —
+ * the URL a document gets from contributions.ts. Everything a plugin's document loads beside
+ * itself is then cached for good, while an edit under `ui/` moves the stamp and with it the URL.
  */
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -23,33 +27,13 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { Hmr } from "../../hmr/capabilities.js";
 import { pluginHostFrom } from "../../plugin/host.js";
 import { PACKAGE_NAME } from "../../plugin/loader.js";
+import { PLUGIN_UI_DIR, packageNamed, uiStampOf } from "../../plugin/package.js";
 import { HttpError } from "../errors.js";
 import { containedFile, uiFileResponse } from "../static-files.js";
-
-/** Where a plugin's shipped UI lives inside its package. */
-const PLUGIN_UI_DIR = "ui";
 
 export interface PluginUiRouteDeps {
   /** The entry file of every plugin this process runs (null for one the installation resolved by bare name). */
   loadedEntries: () => Iterable<string | null | undefined>;
-}
-
-/** The package above an entry file — its directory and its manifest's name — or null. */
-function packageOf(file: string): { dir: string; name: string } | null {
-  let dir = path.dirname(file);
-  for (;;) {
-    try {
-      const { name } = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
-        name?: unknown;
-      };
-      return typeof name === "string" ? { dir, name } : null;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") return null;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
 }
 
 const notFound = () =>
@@ -59,15 +43,7 @@ export function pluginUiRoutes(deps: PluginUiRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const serve = async (c: Context<AppEnv>, name: string) => {
     if (!PACKAGE_NAME.test(name)) throw notFound();
-    let pkg: { dir: string; name: string } | null = null;
-    for (const file of deps.loadedEntries()) {
-      if (file == null) continue;
-      const found = packageOf(file);
-      if (found?.name === name) {
-        pkg = found;
-        break;
-      }
-    }
+    const pkg = packageNamed(deps.loadedEntries(), name);
     if (pkg === null) throw notFound();
     const raw = c.req.path.split(`/${name}/${PLUGIN_UI_DIR}/`)[1] ?? "";
     let rel: string;
@@ -78,7 +54,9 @@ export function pluginUiRoutes(deps: PluginUiRouteDeps): Hono<AppEnv> {
     }
     const file = await containedFile(path.join(pkg.dir, PLUGIN_UI_DIR), rel);
     if (file === null) throw notFound();
-    return uiFileResponse(c, file);
+    // Versioned and current: the browser may keep it forever. Anything else revalidates.
+    const v = c.req.query("v");
+    return uiFileResponse(c, file, { immutable: v !== undefined && v === uiStampOf(pkg.dir) });
   };
   app.get("/:scope{@[^/]+}/:name/ui/*", (c) =>
     serve(c, `${c.req.param("scope")}/${c.req.param("name")}`),

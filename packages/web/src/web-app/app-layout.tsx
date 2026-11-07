@@ -8,7 +8,7 @@ import { backgroundStyle, useBackground } from "../state/background";
  * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
  * transform would trap the menus it opens); the package's components say how.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet } from "react-router";
 import {
   AppShell,
@@ -56,40 +56,66 @@ function WidgetDock() {
   const widgets = useContributedWidgets();
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // A bare widget's frame is mounted before the tile is pressed, which is what makes the
+  // press instant: its document and the files it draws with are fetched, decoded and drawn
+  // while the page is still being read. Not at the first paint, though — a companion is not
+  // worth delaying the screen — so it waits for an idle moment (or the tile itself).
+  const [warm, setWarm] = useState(false);
   useEffect(() => {
     void widgetStore().refresh().then(() => setLoaded(true));
+  }, []);
+  useEffect(() => {
+    let stopped = false;
+    const wake = () => {
+      if (!stopped) setWarm(true);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(wake, { timeout: 3000 });
+      return () => {
+        stopped = true;
+        window.cancelIdleCallback(id);
+      };
+    }
+    const id = window.setTimeout(wake, 1200);
+    return () => {
+      stopped = true;
+      window.clearTimeout(id);
+    };
   }, []);
   if (!loaded || widgets.length === 0) return null;
   const open = widgets.find((w) => w.key === openKey) ?? null;
   return (
     <div className="fixed right-3 bottom-10 z-40 flex flex-col items-end gap-2 print:hidden">
-      {open !== null &&
-        "iframe" in open.renderer &&
-        (open.chrome === "bare" ? (
+      {widgets.map((w) =>
+        w.chrome === "bare" && "iframe" in w.renderer && (warm || w.key === openKey) ? (
           <BareWidget
+            key={w.id}
+            src={w.renderer.iframe.src}
+            title={w.titleZh ?? w.title ?? w.key}
+            open={w.key === openKey}
+          />
+        ) : null,
+      )}
+      {open !== null && "iframe" in open.renderer && open.chrome !== "bare" && (
+        <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
+          <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
+            <span>{open.titleZh ?? open.title ?? open.key}</span>
+            <button
+              type="button"
+              className="ml-3 cursor-pointer text-content-faint hover:text-content"
+              aria-label="Close widget"
+              onClick={() => setOpenKey(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <iframe
             src={open.renderer.iframe.src}
             title={open.titleZh ?? open.title ?? open.key}
+            className="h-64 w-72 border-0 bg-transparent"
           />
-        ) : (
-          <div className="flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface shadow-lg">
-            <div className="flex items-center justify-between px-3 py-1.5 text-sm text-content-secondary">
-              <span>{open.titleZh ?? open.title ?? open.key}</span>
-              <button
-                type="button"
-                className="ml-3 cursor-pointer text-content-faint hover:text-content"
-                aria-label="Close widget"
-                onClick={() => setOpenKey(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <iframe
-              src={open.renderer.iframe.src}
-              title={open.titleZh ?? open.title ?? open.key}
-              className="h-64 w-72 border-0 bg-transparent"
-            />
-          </div>
-        ))}
+        </div>
+      )}
       <div className="flex gap-2">
         {widgets.map((w) => (
           <WidgetTile key={w.id} widget={w} open={w.key === openKey} onToggle={() => setOpenKey(w.key === openKey ? null : w.key)} />
@@ -105,6 +131,13 @@ function WidgetDock() {
  * window rather than one dock-sized cell, so what it draws — a companion that walks about — has
  * the page for a stage instead of a box in the corner.
  *
+ * The frame stays mounted for as long as the dock lives, hidden while its tile is closed: a
+ * companion that had to be fetched, decoded and built on every press took tens of seconds to
+ * appear on a slow link, so the dock loads it ahead of the press and only shows it. The
+ * document is told which state it is in — `{ penguin: "widget-shown", shown }` on its own load
+ * and on every open and close — so a closed frame runs nothing: no frame loop, no state ticks,
+ * no pointer probes.
+ *
  * A frame that size would swallow every click on the page, so it is `pointer-events: none` and
  * the page beneath keeps working. While the pointer is over the frame — or a finger taps in it —
  * the host relays the position to the document as `{ penguin: "widget-probe", x, y }` in the
@@ -117,21 +150,37 @@ function WidgetDock() {
  * light, so over a dark page the mismatch paints the whole frame an opaque white. The element
  * says `only light` whatever the app's theme is, and the document declares the same scheme.
  */
-function BareWidget({ src, title }: { src: string; title: string }) {
+function BareWidget({ src, title, open }: { src: string; title: string; open: boolean }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [over, setOver] = useState(false);
+  // The document load handler and the once-registered message listener read the current
+  // state through a ref: the frame they talk to survives every render.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const tell = useCallback(() => {
+    frameRef.current?.contentWindow?.postMessage(
+      { penguin: "widget-shown", shown: openRef.current },
+      location.origin,
+    );
+  }, []);
+  useEffect(() => {
+    tell();
+    if (!open) setOver(false);
+  }, [open, tell]);
   useEffect(() => {
     const onAnswer = (e: MessageEvent) => {
       const data = e.data as { penguin?: unknown; over?: unknown } | null;
       if (data?.penguin !== "widget-over" || typeof data.over !== "boolean") return;
       if (e.source !== frameRef.current?.contentWindow) return;
+      // A closed frame takes no pointer: an answer that was already in flight is stale.
+      if (!openRef.current) return;
       setOver(data.over);
     };
     addEventListener("message", onAnswer);
     return () => removeEventListener("message", onAnswer);
   }, []);
   useEffect(() => {
-    if (over) return; // the frame holds the pointer now; it says when the pointer has left it
+    if (!open || over) return; // closed: nothing to probe; over: the frame holds the pointer
     const relay = (e: PointerEvent) => {
       const frame = frameRef.current;
       if (frame === null || frame.contentWindow === null) return;
@@ -148,14 +197,22 @@ function BareWidget({ src, title }: { src: string; title: string }) {
       removeEventListener("pointermove", relay);
       removeEventListener("pointerdown", relay);
     };
-  }, [over]);
+  }, [open, over]);
   return (
     <iframe
       ref={frameRef}
       src={src}
       title={title}
+      onLoad={tell}
       className="fixed inset-0 h-full w-full border-0 bg-transparent"
-      style={{ pointerEvents: over ? "auto" : "none", colorScheme: "only light" }}
+      style={{
+        // Hidden, not unmounted and not `display: none`: the document keeps the window's real
+        // size, so where she stands is the same before and after a press, and `visibility`
+        // takes no pointer at all. A zero-sized frame would give her a zero-sized stage.
+        visibility: open ? "visible" : "hidden",
+        pointerEvents: over ? "auto" : "none",
+        colorScheme: "only light",
+      }}
     />
   );
 }

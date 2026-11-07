@@ -15,6 +15,7 @@ import path from "node:path";
 import { writeClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { uiStampOf } from "../src/plugin/package.js";
 
 describe("plugin ui route", () => {
   let t: TestApp;
@@ -107,5 +108,46 @@ describe("plugin ui route", () => {
     await ship("@acme/pages", "Pages");
     await install("@acme/pages");
     expect((await t.app.request(`${UI}/index.html`)).status).toBe(401);
+  });
+
+  /**
+   * The caching contract the widget dock depends on: a plugin document is stored but asked
+   * about (`no-cache` + a validator, so a 304 costs one round trip), and a document served
+   * under the package's own stamp is never asked about at all — the browser keeps it, and
+   * everything the document loads beside itself, across restarts. An edit under `ui/` moves
+   * the stamp and with it the URL (plugin/package.ts).
+   */
+  it("revalidates with a validator, and caches a stamped URL forever", async () => {
+    const dir = await ship("@acme/pages", "Pages");
+    const cookie = (await loginAdmin(t.app)).cookie;
+    admin = apiClient(t.app, cookie);
+    await install("@acme/pages");
+
+    const plain = await admin.get(`${UI}/index.html`);
+    expect(plain.headers.get("cache-control")).toBe("no-cache");
+    const etag = plain.headers.get("etag");
+    expect(etag).toMatch(/^W\/"[0-9]+-[0-9]+"$/);
+
+    const again = await t.app.request(`${UI}/index.html`, {
+      headers: { cookie, "if-none-match": etag! },
+    });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe("");
+    const unrelated = await t.app.request(`${UI}/index.html`, {
+      headers: { cookie, "if-none-match": 'W/"0-0"' },
+    });
+    expect(unrelated.status).toBe(200);
+
+    const current = uiStampOf(dir);
+    const versioned = await admin.get(`${UI}/index.html?v=${encodeURIComponent(current)}`);
+    expect(versioned.status).toBe(200);
+    expect(versioned.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    expect(await versioned.text()).toBe("<h1>hello</h1>");
+
+    // A stamp the package no longer has is some other URL's version: it revalidates like any
+    // other file rather than being cached forever under a name that now means other bytes.
+    const stale = await admin.get(`${UI}/index.html?v=stale`);
+    expect(stale.status).toBe(200);
+    expect(stale.headers.get("cache-control")).toBe("no-cache");
   });
 });
