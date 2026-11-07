@@ -10,9 +10,17 @@
  * - A member's nav drops admin-only pages and adds nothing the admin lacks.
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
+ * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
  * - Beside the booted table, a contributed page whose key the app owns is ignored, and the
  *   company-mode proposals page passes the renderers company mode carries.
  */
+import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
+import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
+import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
+import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
+import { AppPalette } from "../src/features/palette/app-palette";
+import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
+import type { UserEventHandler } from "../src/state/user-events";
 import {
   bootModules,
   moduleDefOf,
@@ -34,6 +42,7 @@ import { NAV_ICONS } from "../src/lib/nav-icons";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
+import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
 
 let pages: readonly WebAppPage[] = [];
@@ -113,6 +122,16 @@ describe("the booted page table", () => {
   it("routes chat, the dashboard and one machine's ports through their modules", () => {
     const page = (key: string) => pages.find((p) => p.key === key);
     expect(page("chat")?.Component).toBe(ChatPage);
+  });
+
+  it("leads home through company mode's page, inside the shell and off the nav", () => {
+    expect(pages.find((p) => p.key === "home")).toMatchObject({
+      path: "*",
+      frame: "shell",
+      nav: "none",
+      admin: false,
+      Component: HomeRedirect,
+    });
   });
 
   it("lets a contributed page in beside the table only under a key the app does not own", () => {
