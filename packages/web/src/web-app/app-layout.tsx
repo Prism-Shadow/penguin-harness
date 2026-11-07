@@ -24,6 +24,7 @@ import { onCommand } from "../lib/shortcuts/dispatcher";
 import { useWebAppLayers } from "./index";
 import { webAppDeps } from "./deps";
 import { useAuth } from "../state/auth";
+import { useTheme } from "../state/theme";
 import { useCompletionNotifications } from "../state/use-completion-notifications";
 import { useTrayLocale } from "../state/use-tray-locale";
 import { ChangePasswordDialog } from "../components/account/change-password-dialog";
@@ -54,6 +55,9 @@ function pinnedSidebarOnScreen(): boolean {
  */
 function WidgetDock() {
   const widgets = useContributedWidgets();
+  // What the frames are told to wear: the app's resolved appearance, which they cannot read for
+  // themselves (they are documents of their own).
+  const { dark } = useTheme();
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   // A bare widget's frame is mounted before the tile is pressed, which is what makes the
@@ -93,6 +97,7 @@ function WidgetDock() {
             src={w.renderer.iframe.src}
             title={w.titleZh ?? w.title ?? w.key}
             open={w.key === openKey}
+            dark={dark}
           />
         ) : null,
       )}
@@ -134,9 +139,11 @@ function WidgetDock() {
  * The frame stays mounted for as long as the dock lives, hidden while its tile is closed: a
  * companion that had to be fetched, decoded and built on every press took tens of seconds to
  * appear on a slow link, so the dock loads it ahead of the press and only shows it. The
- * document is told which state it is in — `{ penguin: "widget-shown", shown }` on its own load
- * and on every open and close — so a closed frame runs nothing: no frame loop, no state ticks,
- * no pointer probes.
+ * document is told which state it is in — `{ penguin: "widget-shown", shown, dark }` on its own
+ * load, on every open and close, and whenever the app switches between light and dark — so a
+ * closed frame runs nothing: no frame loop, no state ticks, no pointer probes. `dark` travels
+ * with it because the frame is a document of its own: it cannot see the page's appearance
+ * otherwise, and a widget that paints anything of its own (a speech balloon) has to follow it.
  *
  * A frame that size would swallow every click on the page, so it is `pointer-events: none` and
  * the page beneath keeps working. While the pointer is over the frame — or a finger taps in it —
@@ -152,23 +159,35 @@ function WidgetDock() {
  * light, so over a dark page the mismatch paints the whole frame an opaque white. The element
  * says `only light` whatever the app's theme is, and the document declares the same scheme.
  */
-function BareWidget({ src, title, open }: { src: string; title: string; open: boolean }) {
+function BareWidget({
+  src,
+  title,
+  open,
+  dark,
+}: {
+  src: string;
+  title: string;
+  open: boolean;
+  dark: boolean;
+}) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [over, setOver] = useState(false);
   // The document load handler and the once-registered message listener read the current
   // state through a ref: the frame they talk to survives every render.
   const openRef = useRef(open);
   openRef.current = open;
+  const darkRef = useRef(dark);
+  darkRef.current = dark;
   const tell = useCallback(() => {
     frameRef.current?.contentWindow?.postMessage(
-      { penguin: "widget-shown", shown: openRef.current },
+      { penguin: "widget-shown", shown: openRef.current, dark: darkRef.current },
       location.origin,
     );
   }, []);
   useEffect(() => {
     tell();
     if (!open) setOver(false);
-  }, [open, tell]);
+  }, [open, dark, tell]);
   useEffect(() => {
     const onAnswer = (e: MessageEvent) => {
       const data = e.data as { penguin?: unknown; over?: unknown } | null;

@@ -55,12 +55,28 @@ async function loadModel() {
 }
 
 /**
+ * What the app itself says it is wearing, from the dock's own `{ penguin: "widget-shown" }`
+ * message (`dark`). The dock resolves the appearance in the page that owns both documents, so
+ * this is the authoritative answer; `null` until the first message lands.
+ */
+let toldDark = null;
+
+/**
  * The app's mode, for the one thing this document paints itself — her speech balloon. The sheet
  * that carries the theme's own tokens is only loaded on the first right-click, and the balloon is
  * up long before that, so the mode is read here from the store the Web App writes it to (this
  * document is same-origin with it) and kept live: a switch made in the app reaches this frame as a
  * `storage` event, and a "system" mode whose OS flips as a media query. The sheet re-applies the
  * same mode, with the rest of the theme, whenever it is drawn.
+ *
+ * The store is the fallback, not the truth: a frame whose read disagrees with the page behind it
+ * (a store written by another build of the app, a mode the form states differently) hides the
+ * whole companion behind a white balloon. The dock tells the frame what the page resolved, and
+ * that answer wins for as long as it stands.
+ *
+ * The outcome is also stamped on `<html>` as `data-penguin-dark`, because the dialog's module
+ * (`./src`) runs in this same document and applies the theme through the package's own pre-paint
+ * script: that script only knows the store, so it reads this attribute to agree with the app.
  */
 function applyScheme() {
   let mode = null;
@@ -70,8 +86,11 @@ function applyScheme() {
     /* a store that refuses reads: follow the system, below */
   }
   const dark =
-    mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    typeof toldDark === "boolean"
+      ? toldDark
+      : mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.dataset.penguinDark = dark ? "dark" : "light";
 }
 
 applyScheme();
@@ -296,6 +315,12 @@ addEventListener("message", (e) => {
   if (data === null || typeof data !== "object") return;
   if (data.penguin === "widget-shown") {
     if (typeof data.shown === "boolean") setShown(data.shown);
+    // The page's own answer for the appearance, re-sent on every open and on a switch made in
+    // the app (see applyScheme): it outranks the store this document can read for itself.
+    if (typeof data.dark === "boolean" && data.dark !== toldDark) {
+      toldDark = data.dark;
+      applyScheme();
+    }
     return;
   }
   if (data.penguin !== "widget-probe") return;

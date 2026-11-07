@@ -30,7 +30,7 @@ import {
 import type { PetPanel, PetPanelHost, PetSnapshot, ChoiceOption, MenuPoint } from "./types";
 import { TALK_OPTIONS, AREA_OPTIONS } from "./types";
 import type { DayUsage } from "./usage";
-import { addDays, formatTokens, heatLevel, localDay, readDailyUsage } from "./usage";
+import { addDays, dayWindow, formatTokens, heatLevel, localDay, readDailyUsage } from "./usage";
 
 /** How many weeks of daily usage the graph draws — half a year, which fits beside her state. */
 const WEEKS = 26;
@@ -67,6 +67,11 @@ const CELL_FILL = [
  * behind it — the frame is mounted once and kept — so the store's own events are the signal:
  * `storage` fires here for a write the app made in its document (the same origin), and the media
  * query covers a "system" mode whose OS flips.
+ *
+ * The mode the page resolved is not always what the store says, so widget.js stamps it on the
+ * element as `data-penguin-dark` (it is the frame the dock told). When that attribute is there it
+ * has the last word: the dialog must wear what the page behind it wears, whatever a store written
+ * by another build might claim.
  */
 const THEME_ATTRS = ["theme", "accent", "fontLatin", "fontCjk"] as const;
 let following = false;
@@ -80,6 +85,8 @@ function applyStoredTheme(): void {
   script.textContent = BOOT_SCRIPT;
   document.head.append(script);
   script.remove();
+  const told = root.dataset.penguinDark;
+  if (told === "dark" || told === "light") root.classList.toggle("dark", told === "dark");
   if (following) return;
   following = true;
   addEventListener("storage", (e) => {
@@ -208,35 +215,49 @@ function UsageGraph({ days }: { days: DayUsage[] }) {
   );
 }
 
+/**
+ * The Token card. Its grid is drawn before the read starts — from the same window the read will
+ * return (`dayWindow`) — so the dialog's height is settled at its first paint: a card that held
+ * one line until the numbers landed grew by a half-year grid once they did, in a panel already on
+ * screen, which is a layout shift exactly where the eye is. What the read changes is the cells'
+ * colours; the three states it can be in (reading, read, failed) are said in the header, which is
+ * one line tall in all three.
+ */
 function UsageCard({ host }: { host: PetPanelHost }) {
-  const [days, setDays] = useState<DayUsage[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [days, setDays] = useState<DayUsage[]>(() => dayWindow(WEEKS));
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   useEffect(() => {
     let live = true;
     readDailyUsage(WEEKS)
       .then((next) => {
-        if (live) setDays(next);
+        if (!live) return;
+        setDays(next);
+        setStatus("ready");
       })
       .catch(() => {
-        if (live) setFailed(true);
+        if (live) setStatus("failed");
       });
     return () => {
       live = false;
     };
   }, []);
-  const recent = days?.slice(-7).reduce((sum, day) => sum + day.tokens, 0) ?? 0;
+  const recent = days.slice(-7).reduce((sum, day) => sum + day.tokens, 0);
   return (
     <Card padding="md">
       <CardHeader
         title="每日 Token 用量"
         description={`最近 ${WEEKS} 周 · 每 ${formatTokens(host.rules.tokensPerCoin)} tokens 攒 1 枚币`}
-        actions={<span className="text-xs text-fg-muted">近 7 天 {formatTokens(recent)}</span>}
+        actions={
+          <span className="text-xs text-fg-muted">
+            {status === "failed"
+              ? "用量读不到"
+              : status === "loading"
+                ? "读取中…"
+                : `近 7 天 ${formatTokens(recent)}`}
+          </span>
+        }
       />
-      {days === null ? (
-        <p className="text-xs text-fg-subtle">{failed ? "用量读不到（服务没应）" : "读取中…"}</p>
-      ) : (
-        <UsageGraph days={days} />
-      )}
+      <UsageGraph days={days} />
     </Card>
   );
 }

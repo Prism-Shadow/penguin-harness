@@ -70,16 +70,39 @@ async function projectIds(): Promise<string[]> {
     .filter((id): id is string => typeof id === "string");
 }
 
+/**
+ * The window the graph draws, before anything is read: the same `weeks` weeks, oldest first,
+ * every day at zero.
+ *
+ * It exists so the graph can be drawn from the first frame. The dialog is measured the moment it
+ * opens, so a card that held a one-line "reading…" until the numbers landed would grow by the
+ * height of a half-year grid when they did — a layout shift in a panel whose height is already
+ * on screen, and the numbers arrive slowly (one usage read per Project). Drawn from this window,
+ * the cells are in place from the first paint and only their colours change.
+ */
+export function dayWindow(weeks: number, today: Date = new Date()): DayUsage[] {
+  const days: DayUsage[] = [];
+  for (let at = windowStart(weeks, today); at <= today; at = addDays(at, 1)) {
+    days.push({ day: localDay(at), tokens: 0 });
+  }
+  return days;
+}
+
+/** The Monday `weeks - 1` weeks before this week's: the first day the window covers. */
+function windowStart(weeks: number, today: Date): Date {
+  return addDays(weekStart(today), -(weeks - 1) * 7);
+}
+
 /** The last `weeks` weeks of daily totals, oldest first, zero-filled. */
 export async function readDailyUsage(weeks: number): Promise<DayUsage[]> {
   const today = new Date();
-  const from = addDays(weekStart(today), -(weeks - 1) * 7);
+  const days = dayWindow(weeks, today);
   const totals = new Map<string, number>();
   for (const id of await projectIds()) {
     const query = new URLSearchParams({
       groupBy: "date",
       granularity: "day",
-      from: localDay(from),
+      from: localDay(windowStart(weeks, today)),
       to: localDay(today),
     });
     const res = await fetch(`${API}/${encodeURIComponent(id)}/usage?${query}`, {
@@ -94,12 +117,7 @@ export async function readDailyUsage(weeks: number): Promise<DayUsage[]> {
       totals.set(point.bucket, (totals.get(point.bucket) ?? 0) + point.total);
     }
   }
-  const days: DayUsage[] = [];
-  for (let at = from; at <= today; at = addDays(at, 1)) {
-    const day = localDay(at);
-    days.push({ day, tokens: totals.get(day) ?? 0 });
-  }
-  return days;
+  return days.map(({ day }) => ({ day, tokens: totals.get(day) ?? 0 }));
 }
 
 /**
