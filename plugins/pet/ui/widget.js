@@ -233,10 +233,27 @@ const MUSINGS = [
 
 const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
+/**
+ * Puts the balloon on the anchor her own body reports. It is moved with `translate`, not
+ * `left`/`top`: she walks while a line is up, so the balloon is placed on every frame, and a
+ * positioned box that changes `left`/`top` is a layout change the browser counts (and repaints
+ * the page for) — a balloon following her head would score as a layout shift over and over, and
+ * the first frame after a line lands would flash it at the document's corner, where it sits
+ * until the next frame places it. A translate is a paint-time move: same pixels, no layout.
+ */
+function placeBubble() {
+  if (!body) return;
+  const at = body.layout().bubble;
+  bubbleEl.style.translate = `${rootBox.left + at.x}px ${rootBox.top + Math.max(18, at.y)}px`;
+}
+
 /** One line in the bubble. A muted pet says nothing — not the reactions either. */
 function say(text, ms = BUBBLE_MS) {
   if (talk === "off") return;
   bubbleEl.textContent = text;
+  // Placed before it is shown: the loop would place it a frame later, and the one frame in
+  // between is a balloon at the corner of the page.
+  placeBubble();
   // `#bubble` is `display: none` until she has something to say, and the empty string falls back
   // to that rule rather than overriding it — the balloon has to be given a display of its own.
   bubbleEl.style.display = "block";
@@ -789,9 +806,7 @@ function frame(now) {
   if (over && !pressed && !resting) answered(onPet(lastAt) || sheetOpen());
   const bubble = bubbleEl.textContent && now < bubbleUntil;
   if (bubble) {
-    const at = body.layout().bubble;
-    bubbleEl.style.left = `${rootBox.left + at.x}px`;
-    bubbleEl.style.top = `${rootBox.top + Math.max(18, at.y)}px`;
+    placeBubble();
   } else if (bubbleEl.style.display !== "none") {
     bubbleEl.style.display = "none";
     bubbleEl.textContent = "";

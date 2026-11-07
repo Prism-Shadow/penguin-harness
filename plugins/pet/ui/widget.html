@@ -69,6 +69,9 @@
       }
       #bubble {
         position: absolute;
+        /* Where it sits is the script's `translate` (widget.js, placeBubble): a balloon that
+           follows her head must not write left/top on every frame, which the browser counts as a
+           layout shift and repaints for. This anchor is the box's own origin. */
         left: 0;
         top: 0;
         transform: translate(-50%, -100%);
