@@ -101,7 +101,15 @@ export async function prefixDependencies(prefix: string): Promise<Record<string,
 
 async function npm(prefix: string, args: readonly string[], cwd = prefix): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(npmCommand(), [...args], {
+    // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
+    // — every install, from a name, a link or a `file:` tarball, would fail there. cmd.exe is
+    // a real executable, so the line runs through it: `/d` skips the AutoRun scripts, and
+    // `/s /c` runs the rest as given, with each argument quoted by Node on the way in.
+    const [file, argv] =
+      process.platform === "win32"
+        ? (["cmd.exe", ["/d", "/s", "/c", npmCommand(), ...args]] as const)
+        : ([npmCommand(), [...args]] as const);
+    const { stdout } = await execFileAsync(file, argv, {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
