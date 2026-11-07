@@ -18,32 +18,7 @@ export interface WebModule {
 }
 
 export const WEB_MODULES: readonly WebModule[] = [
-  {
-    name: "terminal",
-    dependsOn: [
-      // The locale runtime (`S`). The shared UI primitives are the @prismshadow/penguin-ui
-      // package, which a module may import like any other package.
-      "lib/strings",
-      // Pointer and viewport hooks the touch key bar and the /terminal page size themselves by.
-      "lib/use-coarse-pointer",
-      "lib/use-visual-viewport-height",
-      // Copy and paste, and the keymap: which chords the focused terminal keeps for the shell
-      // and which it hands to the app (close, the clipboard pair).
-      "lib/clipboard",
-      "lib/shortcuts/",
-      // The probe the shell list fetches with.
-      "api/session-probe",
-      // The app's API channel: the shell list reads the Response itself (`apiRequest`).
-      "api/client",
-      // Theme and sign-in state the view reads.
-      "state/theme",
-      "state/auth",
-      // Where the server is, and which machine a shell runs on.
-      "lib/server-context",
-      "lib/terminal-machines",
-      // The dock's visibility store: the view pool keeps a shell mounted while its dock tab is
-      // hidden. Declared by file until the dock is a module with an entry of its own.
-      "features/dock/dock-state",
-    ],
-  },
+  // Empty for now: the terminal module's entry, dictionary fragment and test directory belong
+  // to the layer that restructures the terminal feature, and the app's current tree does not
+  // have them yet. The guard runs over an empty manifest until that layer fills this list.
 ];
