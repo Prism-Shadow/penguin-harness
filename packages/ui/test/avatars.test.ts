@@ -8,6 +8,8 @@
  * - Given two Agents in different palette slots, their heads differ.
  * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
  *   scales to the box, antialiased.
+ * - Given a picture of the Agent's own, it is drawn instead of the mascot, in the Agent's
+ *   rounded tile rather than a circle, under the same hook; a stack draws an Agent's picture too.
  * - An account's disc is drawn in tokens, and a stack shows a few avatars then a count, with the
  *   avatars themselves hidden from assistive technology.
  */
@@ -64,6 +66,19 @@ describe("AgentAvatar", () => {
     expect(head(a!)).not.toBe(head(b!));
   });
 
+  it("draws the Agent's own picture in its rounded tile, under the hook, instead of the mascot", () => {
+    const html = renderStatic(
+      createElement(AgentAvatar, { id: "qa", size: 48, src: "/pictures/qa.png" }),
+    );
+    expect(html).toMatch(/^<img /);
+    expect(html).toContain('src="/pictures/qa.png"');
+    expect(html).toContain('alt=""');
+    expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-avatar", "object-cover"]));
+    // The flat drawing's corner (rx 5 of 24) at 48px — not an account's 50%.
+    expect(html).toContain("border-radius:10px");
+    expect(drawings(html).size).toBe(0);
+  });
+
   it("lays the pixel face on whole pixels from 16px up, and scales it into a smaller box", () => {
     const pixel = (size: number) =>
       drawings(renderStatic(createElement(AgentAvatar, { id: "qa", size, variant: "pixel" }))).get(
@@ -111,6 +126,17 @@ describe("AvatarStack", () => {
     const html = renderStatic(createElement(AvatarStack, { items, size: 18 }));
     expect(html.match(/<svg/g)).toHaveLength(3);
     expect(html).toContain(">+2</span>");
+  });
+
+  it("draws an Agent's own picture among the tiles", () => {
+    const html = renderStatic(
+      createElement(AvatarStack, {
+        items: [{ id: "qa", name: "QA", src: "/pictures/qa.png" }, ...items.slice(0, 2)],
+        size: 24,
+      }),
+    );
+    expect(html).toContain('src="/pictures/qa.png"');
+    expect(html.match(/<svg/g)).toHaveLength(2);
   });
 
   it("draws no count when everything fits", () => {

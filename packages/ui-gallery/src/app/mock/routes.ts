@@ -2447,6 +2447,13 @@ router
   )
   .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
 
+// An Agent's own picture: the demo's Agents have none (no `avatarRev`), so each draws its default.
+router
+  .get("/api/projects/:projectId/agents/:agentId/avatar", () => notFound("The agent's avatar"))
+  .put("/api/projects/:projectId/agents/:agentId/avatar", () =>
+    readOnly("change an agent's avatar"),
+  );
+
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)
 // ---------------------------------------------------------------------------------------------

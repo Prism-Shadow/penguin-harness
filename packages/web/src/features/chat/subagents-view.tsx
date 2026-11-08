@@ -51,6 +51,7 @@ import { ChatInput, type ComposerControl } from "./chat-input";
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { machineForSession } from "../../lib/session-machines";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -115,6 +116,7 @@ export function SubagentsView({
   parentThinkingLevel: string;
 }) {
   const { agents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   const { sessions } = useSessions();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -221,6 +223,7 @@ export function SubagentsView({
               nodes={nodes}
               selectedId={active?.sessionId ?? null}
               labelFor={labelFor}
+              avatarFor={(node) => avatarSrc(node.agentId ?? "", machineForSession(node.sessionId))}
               onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
             />
           </div>
@@ -250,7 +253,11 @@ export function SubagentsView({
           {/* Slim identity strip for the conversation below. The spawning call's description
               belongs to its node in the graph above, not here — one line, one place. */}
           <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
-            <AgentAvatar id={activeModel.meta?.agentId ?? active.sessionId} size={16} />
+            <AgentAvatar
+              id={activeModel.meta?.agentId ?? active.sessionId}
+              size={16}
+              src={avatarSrc(activeModel.meta?.agentId ?? "", machineForSession(active.sessionId))}
+            />
             <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
               {activeLabel}
             </span>

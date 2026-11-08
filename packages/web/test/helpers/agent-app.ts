@@ -28,7 +28,9 @@
  * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
  *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
- * answers them masked, and the state switch turns one on or off. This server answers which
+ * answers them masked, and the state switch turns one on or off. Each keeps its Agents' own
+ * pictures too: a PUT of `…/agents/:id/avatar` stores or clears one on the server it reached,
+ * and that server's Agent list then carries its `avatarRev`. This server answers which
  * servers hold a bot (`accountHolders`), the way it would after asking its machines.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
@@ -222,6 +224,8 @@ export interface AgentServer {
   setReconnecting(machineId: string, reconnecting: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
+  /** The picture an Agent of that server (null: this one) has now, as the data URL written; null for none. */
+  avatarOf(machineId: string | null, agentId: string): string | null;
 }
 
 export function agentServer(
@@ -296,6 +300,14 @@ export function agentServer(
       entry.bindings,
     ]),
   );
+  /** Agents' own pictures by `<machine or "">/<agent>`: the data URL written and its revision. */
+  const avatarKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  const avatars = new Map<string, { dataUrl: string; rev: string }>();
+  /** The `avatarRev` an Agent's list entry carries on that server, when it has a picture. */
+  const avatarFields = (machineId: string | null, agentId: string) => {
+    const avatar = avatars.get(avatarKey(machineId, agentId));
+    return avatar === undefined ? {} : { avatarRev: avatar.rev };
+  };
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   /** Per held machine, the answers waiting for its release. */
@@ -396,6 +408,7 @@ export function agentServer(
       return json({
         agents: machine.agents.map((id, i) => ({
           ...summaryOf(id),
+          ...avatarFields(machine.machineId, id),
           name: id,
           createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
         })),
@@ -505,6 +518,7 @@ export function agentServer(
       return json({
         agents: localAgentIds.map((id) => ({
           ...summaryOf(id),
+          ...avatarFields(null, id),
           name: id === AGENT_ID ? stored.config.name : id,
         })),
       });
@@ -518,6 +532,20 @@ export function agentServer(
     }
     if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
       return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const avatarPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/avatar$/.exec(path);
+    if (avatarPath !== null && method === "PUT") {
+      const refusedWrite = refused();
+      if (refusedWrite !== null) return refusedWrite;
+      const key = avatarKey(request.machine, decodeURIComponent(avatarPath[1]!));
+      const { avatar } = request.body as { avatar: string | null };
+      if (avatar === null) {
+        avatars.delete(key);
+        return json({});
+      }
+      const rev = `rev${avatars.size + 1}`;
+      avatars.set(key, { dataUrl: avatar, rev });
+      return json({ avatarRev: rev });
     }
     const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
     if (messagingPath !== null) {
@@ -793,6 +821,7 @@ export function agentServer(
       if (machine !== undefined) machine.reconnecting = reconnecting;
     },
     messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
+    avatarOf: (machineId, agentId) => avatars.get(avatarKey(machineId, agentId))?.dataUrl ?? null,
   };
 }
 

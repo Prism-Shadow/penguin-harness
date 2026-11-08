@@ -8,6 +8,7 @@ import { agentSkillsRoutes } from "../http/routes/skills.js";
 import { agentTransferRoutes } from "../http/routes/agent-transfer.js";
 import { agentTracesRoutes } from "../http/routes/agent-traces.js";
 import { agentApiRoutes } from "../http/routes/agent-api.js";
+import { agentAvatarRoutes } from "../http/routes/agent-avatar.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
 import type { AgentConfig, Benchmarks, Memory, Snapshots } from "../mechanisms/agents.js";
 import type { Access, ProjectConfigStore } from "../mechanisms/projects.js";
@@ -16,8 +17,8 @@ import type { Traces } from "../mechanisms/traces.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
 
 /**
- * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, transfer,
- * traces — and benchmarks, which are Project-level peers of an Agent but read through the same
+ * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, the Agent's
+ * own avatar, transfer, traces — and benchmarks, which are Project-level peers of an Agent but read through the same
  * services.
  */
 @Component({
@@ -46,6 +47,12 @@ import type { Workbenches } from "../mechanisms/workbenches.js";
         prefix: "/api/projects/:projectId/agents/:agentId/api",
         auth: "user",
         order: 225,
+      },
+      {
+        id: "agents.avatar",
+        prefix: "/api/projects/:projectId/agents/:agentId/avatar",
+        auth: "user",
+        order: 228,
       },
       {
         id: "agents.transfer",
@@ -80,6 +87,7 @@ export class AgentRoutes {
   @Bind("agents.benchmarks") benchmarksRoutes!: Hono<AppEnv>;
   @Bind("agents.skills") skillsRoutes!: Hono<AppEnv>;
   @Bind("agents.api") apiRoutes!: Hono<AppEnv>;
+  @Bind("agents.avatar") avatarRoutes!: Hono<AppEnv>;
   @Bind("agents.transfer") transferRoutes!: Hono<AppEnv>;
   @Bind("agents.traces") tracesRoutes!: Hono<AppEnv>;
 
@@ -97,6 +105,11 @@ export class AgentRoutes {
       access,
       settings: this.settings,
       now: () => clock.now(),
+    });
+    this.avatarRoutes = agentAvatarRoutes({
+      root: this.paths.root,
+      agentConfigService,
+      access,
     });
     this.transferRoutes = agentTransferRoutes({
       root: this.paths.root,

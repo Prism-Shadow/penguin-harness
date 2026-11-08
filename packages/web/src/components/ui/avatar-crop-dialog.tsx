@@ -6,9 +6,9 @@
  * exactly what is stored (lib/avatar-image.ts draws that same rectangle), so there is no
  * preview beside it to disagree with.
  *
- * One dialog for every avatar the product has — a person's own and an employee's — since both
- * are stored by the same rule. It owns nothing but the choice: the caller decodes the file,
- * and gets the crop back to encode and send.
+ * One dialog for every avatar the product has — a person's own, an employee's and an Agent's
+ * own — since all are stored by the same rule. It owns nothing but the choice: the picker
+ * (avatar-picker.tsx) decodes the file, and gets the crop back to encode and send.
  */
 import {
   useEffect,

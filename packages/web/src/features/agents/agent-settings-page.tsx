@@ -22,6 +22,9 @@
  * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
  * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
+ *
+ * The header leads with the Agent's avatar — its own picture, or the default — and ends with the
+ * controls that change it (agent-avatar-controls.tsx).
  */
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
@@ -34,6 +37,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
+  AgentAvatar,
   Button,
   Card,
   ConfirmModal,
@@ -75,6 +79,9 @@ import { useProject } from "../../state/project";
 import { useMachines } from "../../state/machines";
 import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
 import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
+import { publishMachineAgentsChanged, readMachineAgents } from "../../lib/machine-agent-lists";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { AGENT_HEADER_AVATAR_PX, AgentAvatarControls } from "./agent-avatar-controls";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
 import {
@@ -184,6 +191,25 @@ export function AgentSettingsPage() {
     () => (machineId === null ? reloadHere() : Promise.resolve()),
     [machineId, reloadHere],
   );
+  const avatarSrc = useAgentAvatarSrc();
+  /** The Agent's own picture, from the list that names it; undefined draws the default. */
+  const picture = avatarSrc(agentId, machineId);
+  // A machine's list is what the header's picture is looked up in: read it as the page opens,
+  // once the machine can be asked (it is answered from the store when it answered moments ago).
+  useEffect(() => {
+    if (projectId === null || machineId === null || !reachable) return;
+    readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reachable]);
+  /** After the picture changed: the list it is looked up in is read again, here or on the machine. */
+  const avatarChanged = useCallback(async () => {
+    if (projectId === null) return;
+    if (machineId === null) {
+      await reloadHere();
+      return;
+    }
+    publishMachineAgentsChanged(machineId);
+    await readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reloadHere]);
   /** Writes the tab into `?tab=` (replacing the history entry, keeping the other params). */
   const switchTab = useCallback(
     (next: TabKey) => {
@@ -337,6 +363,7 @@ export function AgentSettingsPage() {
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
         title={data.config.name ?? agentId}
+        media={<AgentAvatar id={agentId} size={AGENT_HEADER_AVATAR_PX} src={picture} />}
         back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
         // 16px rather than the description line's body height. A machine's Agent names the
@@ -346,6 +373,15 @@ export function AgentSettingsPage() {
             {agentId}
             {machineLabel !== null && ` ${S.chat.machineTag(machineLabel)}`}
           </span>
+        }
+        actions={
+          <AgentAvatarControls
+            projectId={projectId}
+            agentId={agentId}
+            machineId={machineId}
+            hasPicture={picture !== undefined}
+            onChanged={avatarChanged}
+          />
         }
       />
       {/* The kernel update action lives in the Overview tab's Kernel section, so the trail

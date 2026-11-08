@@ -913,6 +913,7 @@ export function DraftView({
         modeSaving={false}
         autoFocus
         agents={agents}
+        agentsMachineId={workspaceMachine}
         {...(agentId ? { currentAgentId: agentId } : {})}
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
@@ -930,6 +931,7 @@ export function DraftView({
           selected={selectedAgent}
           onSelect={selectAgent}
           empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+          machineId={workspaceMachine}
         />
         <WorkspaceSelect
           projectId={projectId}

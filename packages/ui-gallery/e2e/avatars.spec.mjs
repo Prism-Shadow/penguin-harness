@@ -10,6 +10,8 @@
  *   at once, with no reload.
  * - Given a theme id no stylesheet draws an avatar for, the avatars show Primer's flat drawing.
  * - Given the same Agent, its head is painted the same colour in every theme.
+ * - Given an Agent with a picture of its own, the picture shows in the Agent's rounded tile, in
+ *   every theme; given a picture that fails to load, the default drawing shows in its place.
  */
 import { test, expect } from "@playwright/test";
 
@@ -71,3 +73,28 @@ test("a theme switch redraws the open avatars, and an unknown theme falls back t
   await setTheme("no-such-theme");
   expect(new Set(await shown(page))).toEqual(new Set(["flat"]));
 });
+
+for (const theme of Object.keys(DRAWN)) {
+  test(`${theme}: an Agent's own picture keeps its rounded tile, and a broken one draws the default`, async ({
+    page,
+  }) => {
+    await open(page, theme);
+    const pictures = page.locator('[data-avatar-board="picture"] img.ui-avatar');
+    await expect(pictures).toHaveCount(3);
+    const corners = await pictures.evaluateAll((imgs) =>
+      imgs.map((img) => ({
+        width: img.getBoundingClientRect().width,
+        radius: parseFloat(getComputedStyle(img).borderTopLeftRadius),
+        loaded: img.complete && img.naturalWidth > 0,
+      })),
+    );
+    for (const { width, radius, loaded } of corners) {
+      expect(loaded).toBe(true);
+      // The flat drawing's corner, rx 5 of its 24-unit box — not a circle.
+      expect(radius).toBeCloseTo((width * 5) / 24, 1);
+    }
+    const broken = page.locator('[data-avatar-board="broken"]');
+    await expect(broken.locator("svg.ui-avatar")).toBeVisible();
+    await expect(broken.locator("img")).toHaveCount(0);
+  });
+}

@@ -1,7 +1,8 @@
 /**
  * A page of the app: `PageFrame` is the scrolling column a page sits in, at the width it reads
  * best at, and `PageHeader` its title row — the page's one display title with its "?", a line
- * under it, the page's actions at the end, and an optional way back above it.
+ * under it, the page's actions at the end, an optional way back above it, and for a page about
+ * one thing, that thing's mark (an avatar) before the title and its line.
  *
  * The title is the page's one `h1`, carrying the display hook (`ui-display`) so a theme restyles
  * every page title at once. It keeps the app's page-title size (`text-xl`, semibold), not the
@@ -55,6 +56,8 @@ export function PageFrame({
 export interface PageHeaderProps {
   /** The page's name. */
   title: ReactNode;
+  /** The mark of the one thing the page is about — an avatar — before the title and its line. */
+  media?: ReactNode;
   /** One line under the title: what the page holds, or the entity's id. */
   description?: ReactNode;
   /** What the page is for, disclosed by a "?" beside the title. */
@@ -74,6 +77,7 @@ export interface PageHeaderProps {
  */
 export function PageHeader({
   title,
+  media,
   description,
   info,
   actions,
@@ -81,6 +85,17 @@ export function PageHeader({
   children,
   className = "",
 }: PageHeaderProps) {
+  const heading = (
+    <div className="min-w-0">
+      <h1 className={`ui-display flex min-w-0 items-center ${ICON_GAP.row} text-xl font-semibold`}>
+        {title}
+        {info !== undefined && (
+          <InfoPopover label={typeof title === "string" ? title : undefined}>{info}</InfoPopover>
+        )}
+      </h1>
+      {description !== undefined && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
+    </div>
+  );
   return (
     <div className={`mb-4 min-w-0 ${className}`}>
       {back !== undefined && (
@@ -95,19 +110,14 @@ export function PageHeader({
         </Button>
       )}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <h1
-            className={`ui-display flex min-w-0 items-center ${ICON_GAP.row} text-xl font-semibold`}
-          >
-            {title}
-            {info !== undefined && (
-              <InfoPopover label={typeof title === "string" ? title : undefined}>
-                {info}
-              </InfoPopover>
-            )}
-          </h1>
-          {description !== undefined && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
-        </div>
+        {media === undefined ? (
+          heading
+        ) : (
+          <div className={`flex min-w-0 items-center ${ICON_GAP.card}`}>
+            <div className="flex shrink-0 items-center">{media}</div>
+            {heading}
+          </div>
+        )}
         {actions !== undefined && (
           <div className="flex min-w-0 max-w-full grow flex-wrap items-center justify-end gap-2 sm:grow-0">
             {actions}
