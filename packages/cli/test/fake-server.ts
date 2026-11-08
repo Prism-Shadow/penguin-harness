@@ -17,9 +17,12 @@
  * (default-event AmspRecord frames, `event: server_event` control frames, `<epoch>-<seq>`
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
  * then `task_state idle` — enough for watchTask's full lifecycle. A Session that is not idle
- * refuses a task POST with 409 `task_in_progress`, answers GET /messages with a live tail
- * (`liveFragments` under the current cursor) and replays `pendingApprovals` to a new
- * subscriber after its `task_state` snapshot, as the server does.
+ * takes a task POST's input as steering when it asks `steerIfBusy` (queues it while
+ * compacting) and refuses it with 409 `task_in_progress` otherwise; GET /messages with
+ * `live=run` answers `history` (the transcript before the run under way) with the run form of
+ * the live tail (`liveRun` under the current cursor); a new subscriber gets
+ * `pendingApprovals` replayed after its `task_state` snapshot — all as the server does.
+ * `legacyServer` answers as a server from before `live=run` and `steerIfBusy`.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -43,8 +46,10 @@ export interface FakeSessionState {
   lastActiveAt: string;
   /** Bodies of every POST /tasks, in order. */
   tasks: Json[];
-  /** Bodies of every POST /steer, in order. */
+  /** What the Session took as steering, in order: POST /steer bodies, and `{ text }` of a task POST it steered with (`steerIfBusy`). */
   steers: Json[];
+  /** Task POST bodies queued behind a compaction (`steerIfBusy`), in order. */
+  followUps: Json[];
   /** PATCH bodies, in order. */
   patches: Json[];
   aborts: number;
@@ -221,10 +226,21 @@ export class FakeServer {
   userId = "admin";
   /** Messages a task emits between running and idle (default: one assistant echo). */
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
-  /** Messages GET /messages returns. */
+  /** Messages GET /messages returns: with `live=run` while a run is under way, the transcript before it. */
   history: unknown[] = [];
-  /** The live tail's fragments GET /messages carries while a Session is not idle (`partial_* start` records holding their content so far). */
-  liveFragments: unknown[] = [];
+  /**
+   * The run under way, as the run form of the live tail carries it while a Session is not idle:
+   * its records as published, each streamed fragment's deltas folded into its `start`.
+   */
+  liveRun: unknown[] = [];
+  /** How many older records of the run the server no longer holds (the run form's `omitted`). */
+  liveRunOmitted = 0;
+  /**
+   * Answer as a server from before `live=run` and `steerIfBusy`: a running Session's live tail
+   * carries `liveRun` as its open fragments and no records, an idle one none, and a busy
+   * Session refuses every task POST.
+   */
+  legacyServer = false;
   /** Runs at the start of GET /messages, before its cursor is taken: what a run publishes between a client's subscription and its history read. */
   beforeHistoryRead: ((session: FakeSessionState) => void) | null = null;
   /** The approval requests a running Session is waiting on: replayed to each new subscriber, after the snapshot. */
@@ -382,6 +398,7 @@ export class FakeServer {
       lastActiveAt: now,
       tasks: [],
       steers: [],
+      followUps: [],
       patches: [],
       aborts: 0,
       ...overrides,
@@ -2040,10 +2057,21 @@ export class FakeServer {
       }
       if (rest === "/messages" && method === "GET") {
         this.beforeHistoryRead?.(session);
-        const live =
-          session.status === "idle"
+        const idle = session.status === "idle";
+        const runForm = url.searchParams.get("live") === "run" && !this.legacyServer;
+        const live = runForm
+          ? {
+              live: {
+                cursor: this.lastEventId,
+                status: session.status,
+                fragments: [],
+                records: idle ? [] : this.liveRun,
+                ...(this.liveRunOmitted > 0 ? { omitted: this.liveRunOmitted } : {}),
+              },
+            }
+          : idle
             ? {}
-            : { live: { cursor: this.lastEventId, fragments: this.liveFragments } };
+            : { live: { cursor: this.lastEventId, fragments: this.liveRun } };
         return this.json({ messages: this.history, ...live });
       }
       if (rest === "/stream" && method === "GET") {
@@ -2079,11 +2107,20 @@ export class FakeServer {
         const refusal = this.refuseTasks.shift();
         if (refusal !== undefined) return this.error(409, refusal, `Refused: ${refusal}.`);
         if (session.status !== "idle") {
-          return this.error(
-            409,
-            "task_in_progress",
-            "This Session already has a Task in progress.",
-          );
+          if (body?.steerIfBusy !== true || this.legacyServer) {
+            return this.error(
+              409,
+              "task_in_progress",
+              "This Session already has a Task in progress.",
+            );
+          }
+          if (session.status === "running" && this.steerMode === "accept") {
+            const text = (body.input as Array<{ text?: string }> | undefined)?.[0]?.text;
+            session.steers.push({ text });
+            return this.json({ sessionId: session.sessionId, queued: false, steered: true }, 202);
+          }
+          session.followUps.push(body);
+          return this.json({ sessionId: session.sessionId, queued: true }, 202);
         }
         session.tasks.push(body ?? {});
         if (this.hangTasks) {

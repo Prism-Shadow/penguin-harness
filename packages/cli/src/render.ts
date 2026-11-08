@@ -48,6 +48,7 @@
  */
 import {
   isEventMessage,
+  isHarnessInput,
   isModelMessage,
   parseInPlaceModelSwitch,
   parseUserSteeringText,
@@ -75,7 +76,6 @@ import type {
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import { Writable } from "node:stream";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
@@ -223,6 +223,13 @@ export interface RenderOptions {
    * REPL turns it on unless `--verbose`.
    */
   collapseToolOutput?: boolean;
+  /**
+   * Print the input a run opens with (`> text`), as history shows it. The chat REPL follows
+   * runs it did not start — another surface's, or one under way when it resumed — whose input
+   * nobody typed on this screen; its own message is on the screen already (see expectInput).
+   * Off for `penguin run`, whose input is its argument.
+   */
+  echoInput?: boolean;
 }
 
 /**
@@ -354,13 +361,16 @@ function writeSteeringLines(
  * tool-render callback from core (rendering has moved down into the CLI).
  */
 export class StreamRenderer {
-  /** Where output goes: the terminal, or nowhere while `prime` takes on a run's past. */
-  private out: NodeJS.WritableStream;
+  private readonly out: NodeJS.WritableStream;
   private readonly t: Messages;
   /** This renderer's palette, decided once at construction from the output stream and NO_COLOR/FORCE_COLOR/TERM (see supportsColor). */
   private readonly c: Palette;
   /** Collapse long tool outputs to head/tail + a dim elision marker (see RenderOptions); toggled live by the chat REPL's `/verbose`. */
   private collapseToolOutput: boolean;
+  /** Print a run's input (see RenderOptions.echoInput). */
+  private readonly echoInput: boolean;
+  /** The message this screen just sent, whose echoed input is not printed again (expectInput). */
+  private expectedInput: string | null = null;
   /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
   private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
@@ -506,6 +516,15 @@ export class StreamRenderer {
     this.t = t;
     this.c = paletteFor(out);
     this.collapseToolOutput = opts.collapseToolOutput === true;
+    this.echoInput = opts.echoInput === true;
+  }
+
+  /**
+   * The text this screen just sent as a message: its input record, when the run echoes it, is
+   * not printed again under the line typed. Null forgets it (the message did not start a run).
+   */
+  expectInput(text: string | null): void {
+    this.expectedInput = text;
   }
 
   /**
@@ -520,29 +539,6 @@ export class StreamRenderer {
   handle(msg: AmspRecord): void {
     this.pending.push(msg);
     this.drain();
-  }
-
-  /**
-   * Takes on the past of a run this renderer joins while it is under way — the run's records
-   * so far, from the history (see live-join.ts) — without printing any of it: the history is
-   * on the screen already. What later output depends on is what they leave behind: the tool
-   * names an output's gutter carries, an open compaction (whose summary streams off the
-   * screen), and the usage and start time of the Task its stats line reports.
-   */
-  prime(records: AmspRecord[]): void {
-    const out = this.out;
-    this.out = new Writable({ write: (_chunk, _encoding, done) => done() });
-    try {
-      for (const msg of records) this.handle(msg);
-    } finally {
-      this.out = out;
-    }
-    // Nothing reached the screen, so no line is open on it.
-    this.inLine = false;
-    this.inDim = false;
-    this.toolOutLineStart = true;
-    this.lastLineKey = null;
-    this.partialToolCallLineId = null;
   }
 
   /**
@@ -811,9 +807,25 @@ export class StreamRenderer {
               this.out.write(`${dim(this.t.switchModelHandedOver(handover.tracePath), this.c)}\n`);
               this.lastLineKey = null;
             }
+            if (steering === null && handover === null && this.echoInput && !isHarnessInput(msg)) {
+              if (this.expectedInput === p.text) {
+                this.expectedInput = null;
+              } else {
+                this.finishLine();
+                this.out.write(`\n> ${p.text}\n`);
+                this.lastLineKey = null;
+              }
+            }
           }
           return;
         }
+        case "image_url":
+          if (this.echoInput && (payload as { role?: string }).role === "user") {
+            this.finishLine();
+            this.out.write(`\n> ${dim("[image]", this.c)}\n`);
+            this.lastLineKey = null;
+          }
+          return;
         default:
           return;
       }
