@@ -6071,71 +6071,6 @@ export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] a
 export type HostCommand = (typeof HOST_COMMANDS)[number];
 
 /**
- * One command the host offers, carrying the words to show for it.
- *
- * The words travel WITH the command because the three programs involved ship apart: the
- * shell reaches users through an installer, the server and the page through a hot push. A
- * page that could only render commands it already had words for made the offer list pointless
- * — a host could never offer anything new — and reading words it did not have blanked it.
- *
- * `command` is opaque to both server and page: the host decides what it means and the host
- * runs it. Neither side validates it against a list of its own; the only question either asks
- * is whether the host offered it.
- */
-export interface HostCommandOffer {
-  command: string;
-  label: string;
-  /** The same words in Chinese. A host with only one language sends it in both. */
-  labelZh: string;
-}
-
-/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
-export interface HostCommandsMessage {
-  type: "host-commands";
-  commands: HostCommandOffer[];
-}
-
-/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
-export interface HostCommandsResponse {
-  /**
-   * The offered ids this build also has words for, and nothing else.
-   *
-   * For pages older than `offers`, which look up every id in a table of their own: an id
-   * they have never heard of throws while they build the palette, and a throw there blanks
-   * the App. So this field stays conservative and the new field carries everything.
-   */
-  commands: HostCommand[];
-  /** Everything the host offers, in the host's words. What a current page renders. */
-  offers: HostCommandOffer[];
-}
-
-/** Server → shell: run one. `POST /api/command/:command` sends it. */
-export interface HostCommandMessage {
-  type: "host-command";
-  command: string;
-}
-
-/**
- * A native action the host process can run on the page's behalf — what the desktop shell's
- * application menu used to offer, reached from the command palette instead (the menu bar
- * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
- *
- * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
- * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
- * someone reading a console error has to be told a key. Naming it here makes it findable.
- * It stays a HOST command, run by the shell on its own window: the page is a plain browser
- * environment with no bridge of its own, and adding one for this was rejected
- * (packages/desktop/src/main.ts).
- *
- * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
- * writes it. What this list holds is the ids this build has its OWN words for, so the page
- * can show a better label than the host sent (translated, with search terms). An id absent
- * here is still offered, still runnable, and shown in the host's words.
- */
-export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
-export type HostCommand = (typeof HOST_COMMANDS)[number];
-
-/**
  * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
  * that predates `offers` knows. That page looks every id up in a table of its own and
  * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
@@ -6188,6 +6123,12 @@ export interface HostCommandMessage {
   type: "host-command";
   command: string;
 }
+
+/**
+ * The outcome of one self-update run (`penguin update --yes` on the server host), carried
+ * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
+ * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ */
 
 /**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
