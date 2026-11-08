@@ -11,7 +11,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import {
   AppShell,
-  CrashBoundary,
   Drawer,
   ICONS,
   MobileTopBar,
@@ -32,6 +31,9 @@ import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { usePublishedSessionCompletion } from "../../features/palette/session-completion";
 import { navKeysFor } from "../../lib/nav-group-collapse";
+import { ErrorBoundary } from "../../rescue/error-boundary";
+import { RescuePanel } from "../../rescue/rescue-panel";
+import { navPagesOf, useWebAppLayers, useWebAppPages } from "../../web-app";
 import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
@@ -40,16 +42,14 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../lib/company-context";
 import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
+import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../lib/company-nav";
 import {
-  COMPANY_NAV_KEYS,
   ORG_PAGE_RENDERERS,
-  orgPagePath,
   orgPageRows,
-  parseOrgKey,
 } from "../../features/company/company-nav";
 import { useOrgPages } from "../../features/company/use-org-pages";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
@@ -60,11 +60,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
-import { TerminalDockRuntime } from "../../features/terminal";
-import { StatusBar } from "./status-bar";
-import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
-import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
+import { dispatchBrowser } from "../../features/builtin-browser";
 import { setDockScope } from "../../features/dock/dock-state";
 
 /**
@@ -95,6 +91,7 @@ function pinnedSidebarOnScreen(): boolean {
  */
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
+  const navPages = navPagesOf(useWebAppPages());
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
@@ -167,7 +164,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           };
         }),
       ]
-    : navKeysFor(user?.isAdmin === true).map((key) => ({
+    : navKeysFor(navPages, user?.isAdmin === true).map((key) => ({
         key,
         to: `/${key}`,
         label: S.nav[key],
@@ -365,6 +362,7 @@ export function AppLayout() {
   // that holds the sessions, so it publishes its `session-…` completion for it (the palette
   // reads it through lib-free module state, the way lib/terminal-machines.ts publishes).
   usePublishedSessionCompletion();
+  const layers = useWebAppLayers();
   // The drawer holds the sidebar, so the drawer button is named after what the sidebar lists:
   // conversations in development mode, channels in company mode.
   const company = useCompany();
@@ -534,22 +532,20 @@ export function AppLayout() {
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* A page that crashes says so here, with Reload and Report, and leaves the sidebar
-            working: going to another page gives the body another chance. */}
-        <CrashBoundary resetKey={pathname}>
+        {/* A page that crashes says so here, and leaves the sidebar working: going to another
+            page gives the body another chance. The recovery panel (error details, safe reload,
+            harness history) stands in for the bare crash notice — the same fallback the shell
+            root uses, so a broken server contribution is recoverable in place. */}
+        <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
           <Outlet />
-        </CrashBoundary>
+        </ErrorBoundary>
       </main>
-      {/* The docks themselves render inside the chat page (features/dock); the xterm
-          views live in this pool and are adopted into dock tab bodies by DOM handoff,
-          so navigating between pages never reconnects a terminal. */}
-      <TerminalDockRuntime />
-      {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
-      <ShortcutRuntime />
-      {/* The built-in browser's pages (desktop app only): they live here, outside every page,
-          and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
-          reloads, so navigating the app must never re-parent one. */}
-      <BuiltinBrowserLayer />
+      {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
+          mounted once here, outside every page, so navigating never remounts or re-parents
+          one — a terminal would reconnect, a built-in browser's webview would reload. */}
+      {layers.map(({ id, Component }) => (
+        <Component key={id} />
+      ))}
     </AppShell>
   );
 }

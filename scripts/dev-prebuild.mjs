@@ -11,6 +11,13 @@
  * which that build inlines and the dev server imports; the server's build script also
  * regenerates the interface table (src/ifaces.json) the dev server reads. packages/cli is
  * built as well: its dist is what the shim falls back to when the source cannot run (no tsx).
+ * So are the plugin packages that carry content (every `@penguinharness/*` but the sandbox
+ * backends, which the hot push and the desktop build stage themselves): their `build` writes the
+ * ifaces.json the plugin library reads what a plugin carries from, and a dev server reading the
+ * library without one fails at the first read.
+ *
+ * packages/a2ui builds with them: the Web App's components and the server's messaging bridge
+ * import the A2UI grammar from its dist.
  *
  * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev
@@ -39,7 +46,7 @@
  * directory (packages/server/plugins/, packages/cli/plugins/): a source checkout runs what the
  * CLI bundle runs, by the same path.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build core/hmr/server/cli/plugins) or
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build a2ui/core/hmr/server/cli/plugins) or
  * `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
@@ -122,7 +129,7 @@ function readText(file) {
 }
 
 /**
- * Content fingerprint of the injected workspace deps' build output (plugins + core dist):
+ * Content fingerprint of the injected workspace deps' build output (plugins + core and a2ui dist):
  * every file's bytes are hashed — chunk renames alone would not do, because tsup's entry
  * outputs keep stable filenames and hold entry-resident code, so an equal-length change
  * there would slip past a path+size check. mtimes are deliberately excluded (tsup runs
@@ -131,7 +138,7 @@ function readText(file) {
  */
 function injectedDistFingerprint() {
   const parts = [];
-  for (const rel of ["packages/core/dist"]) {
+  for (const rel of ["packages/core/dist", "packages/a2ui/dist"]) {
     const base = path.join(ROOT, rel);
     try {
       for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
@@ -226,7 +233,7 @@ try {
       exitCode = 0;
     } else {
       console.log(
-        "[dev-prebuild] building core, the server modules the CLI imports, and the CLI...",
+        "[dev-prebuild] building core, a2ui, the server modules the CLI imports, the CLI, and the plugins' tables...",
       );
       // One pnpm invocation, so they run in dependency order: the CLI bundle inlines core,
       // and the server build inlines hmr, so each has to be rebuilt before its consumer.
@@ -240,6 +247,8 @@ try {
             "--filter",
             `@prismshadow/penguin-${pkg}`,
           ]),
+          ...["--filter", "@prismshadow/a2ui"],
+          ...["--filter", "@penguinharness/*", "--filter", "!@penguinharness/sandbox-*"],
           "build",
         ],
         {

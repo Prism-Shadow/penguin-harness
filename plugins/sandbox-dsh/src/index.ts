@@ -260,6 +260,21 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
           "测试你执行命令时所处的沙盒。分三条命令执行：在当前工作区内写一个文件、在工作区外的家目录写一个文件、访问 https://example.com。报告哪些成功、哪些被拒；如果三条都成功，说明沙盒处于关闭状态（设置 → 插件 → 沙盒）。",
       },
     ],
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-dsh.card",
+        title: "DSH Sandbox",
+        titleZh: "DSH 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",
+        shortDescription: "Linux, macOS and Windows: confine file writes only.",
+        shortDescriptionZh: "Linux、macOS 与 Windows：只限制文件写入。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
     ],

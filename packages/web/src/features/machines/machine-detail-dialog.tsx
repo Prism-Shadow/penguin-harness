@@ -30,8 +30,8 @@
  * `MachineDetailBody` is a pure function of its props. The dialog around it adds one read, the
  * host block, which the machines list does not carry: the list is the ssh config's aliases only.
  */
-import { Fragment, useEffect, useId, useState } from "react";
-import type { ReactNode } from "react";
+import { Fragment, useEffect, useId, useState, type ReactNode } from "react";
+
 import type {
   MachineInfo,
   MachineJob,
@@ -71,17 +71,17 @@ import {
   reconnectView,
   verbGroups,
   verbHold,
+  skippedItems,
+  type CheckLine,
+  type ConfigSyncView,
+  type Fact,
+  type JobStep,
+  type MachineChip,
+  type StepState,
+  type ToolbarItem,
+  type ToolbarVerb,
 } from "./machine-detail-view";
-import type {
-  CheckLine,
-  ConfigSyncView,
-  Fact,
-  JobStep,
-  MachineChip,
-  StepState,
-  VerbContext,
-  VerbGroup,
-} from "./machine-detail-view";
+import type { VerbContext, VerbGroup } from "./machine-detail-view";
 import { outOfDate, readMachine, socketReading } from "./machines-view";
 
 /** Everything the dialog can ask its page to do for the machine. */

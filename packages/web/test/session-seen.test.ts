@@ -31,8 +31,9 @@ import {
   seedSessionSeen,
   serializeSessionSeen,
   sessionSeenKey,
+  type SessionSeenState,
 } from "../src/lib/session-seen";
-import type { SessionSeenState } from "../src/lib/session-seen";
+
 import { memoryStorage } from "./helpers/storage";
 
 const AT = (iso: string) => Date.parse(iso);

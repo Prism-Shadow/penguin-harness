@@ -54,8 +54,6 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import type { AppEnv } from "../../auth/middleware.js";
 import type {
   InstalledPlugin,
@@ -69,7 +67,7 @@ import { readJson, requireString, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
-  isLibraryPackage,
+  libraryParts,
   PLUGIN_MACHINE_ID,
   type PluginRequirement,
   type PluginTables,
@@ -283,10 +281,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** What a package in this server's prefix carries: skills, hooks or MCP servers (the library's), server modules (a table's). */
+  /** What a package in this server's prefix is, by its table (core plugin/kinds.ts): a library plugin (Skills, hooks, MCP servers or workbenches), server modules, or both. */
   const kindsOf = (name: string): { library: boolean; modules: boolean } => {
-    const dir = installedPackageDir(pluginsPrefix(deps.root), name);
-    return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
+    const parts = libraryParts(installedPackageDir(pluginsPrefix(deps.root), name));
+    return {
+      library: parts.skills || parts.hooks || parts.mcp || parts.workbenches,
+      modules: parts.modules,
+    };
   };
 
   /** A pinned content, npm's `sha512-<base64>`, or undefined when none is asked. */
@@ -421,7 +422,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor the ifaces.json of server modules.`,
+        `${installed.name} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry (a package without an ifaces.json was never built: its build runs penguin-gen-ifaces).`,
       );
     }
     return kinds;

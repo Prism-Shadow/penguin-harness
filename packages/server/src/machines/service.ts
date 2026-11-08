@@ -884,6 +884,7 @@ export class MachinesService {
       kind,
       ...(unavailable === null ? {} : { unavailable }),
       connection: session === null ? null : { pid: session.pid },
+      ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
       socket: row?.machineId == null ? null : (this.#effects.socketFact(row.machineId) ?? null),
       api: this.#apiSeen.get(id) ?? null,
       // The layout's own spelling, in the shell that machine speaks. Unknown platform

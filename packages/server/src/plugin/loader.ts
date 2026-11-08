@@ -27,12 +27,16 @@ import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import {
   effectivePluginTable,
+  IFACES_FILE,
   parsePluginTables,
   projectConfigPath,
   type PluginTable,
   type PluginTables,
+  readPluginTable,
 } from "@prismshadow/penguin-core";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { findPackageJSON } from "node:module";
+import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -52,6 +56,8 @@ import {
 } from "./activation.js";
 import { shippedNames, storeSources } from "./store.js";
 import { sweepPlugins, type PluginPin } from "./gc.js";
+import { pluginsPrefix } from "./install.js";
+import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -427,16 +433,10 @@ async function importPlugin(
   return { module: await import(specifier), file: null, stamp: null };
 }
 
-/** The generated table a plugin package ships beside its package.json. */
-export const IFACES_FILE = "ifaces.json";
+/** The generated table a plugin package ships beside its package.json (core plugin/table.ts reads it). */
+export { IFACES_FILE };
+export type { PluginDeclaration };
 
-/** The `plugin` entry of a package's table: the names its default export lists, read statically by the generator. */
-export interface PluginDeclaration {
-  modules: readonly string[];
-  replaces: readonly string[];
-}
-
-/**
 /**
  * What a listed specifier DECLARES, read from its generated table alone — the package is never
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
@@ -503,56 +503,18 @@ export async function readPackageTable(file: string | null): Promise<{
   plugin: PluginDeclaration;
 } | null> {
   if (file === null) return null;
-  let dir = path.dirname(file);
-  for (;;) {
+  for (let dir = path.dirname(file); ;) {
     const where = path.join(dir, "package.json");
-    try {
-      await fs.access(where);
-      const tableFile = path.join(dir, IFACES_FILE);
-      let text: string;
-      try {
-        text = await fs.readFile(tableFile, "utf8");
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        return {
-          where,
-          ifaces: { ifaces: {}, types: {} },
-          manifests: {},
-          plugin: { modules: [], replaces: [] },
-        };
-      }
-      const table = JSON.parse(text) as {
-        ifaces?: unknown;
-        types?: unknown;
-        modules?: unknown;
-        plugin?: unknown;
-      };
-      const isRecord = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
-      if (!isRecord(table.ifaces) || !isRecord(table.types) || !isRecord(table.modules)) {
-        throw new Error(`${tableFile}: expected { ifaces, types, modules } (gen-ifaces output)`);
-      }
-      const names = (v: unknown) => Array.isArray(v) && v.every((n) => typeof n === "string");
-      const plugin = (table.plugin ?? {}) as { modules?: unknown; replaces?: unknown };
-      if (!isRecord(plugin) || !names(plugin.modules ?? []) || !names(plugin.replaces ?? [])) {
-        throw new Error(
-          `${tableFile}#plugin: expected { modules: [<name>, …], replaces: [<name>, …] }`,
-        );
-      }
-      const manifests: Record<string, ModuleDef["manifest"]> = {};
-      for (const [name, doc] of Object.entries(table.modules as Record<string, unknown>)) {
-        manifests[name] = parseManifest(doc, `${tableFile}#modules.${name}`);
-      }
-      return {
-        where,
-        ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
-        manifests,
-        plugin: {
-          modules: (plugin.modules ?? []) as string[],
-          replaces: (plugin.replaces ?? []) as string[],
-        },
-      };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    if (existsSync(where)) {
+      const table = readPluginTable(dir);
+      return table === null
+        ? {
+            where,
+            ifaces: { ifaces: {}, types: {} },
+            manifests: {},
+            plugin: { modules: [], replaces: [] },
+          }
+        : { where, ifaces: table.ifaces, manifests: table.manifests, plugin: table.plugin };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;

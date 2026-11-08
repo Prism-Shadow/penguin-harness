@@ -24,10 +24,10 @@ import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
-import { useLocale } from "../state/locale";
-import type { LangPref } from "../state/locale";
-import { useTheme } from "../state/theme";
-import type { ThemeMode } from "../state/theme";
+import { useLocale, type LangPref } from "../state/locale";
+
+import { useTheme, type ThemeMode } from "../state/theme";
+
 import { LoginCircuit } from "./login-circuit";
 
 /** Which advice a failed claim asks for; the server decides it from the deployment, not from the token. */

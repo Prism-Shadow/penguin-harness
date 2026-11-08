@@ -1,7 +1,7 @@
 /**
- * A library plugin carries its quick start in its package.json (`penguin.quick_start`), listed
- * on GET /api/plugins. The page only pre-fills a draft from it, so what is checked here is that
- * the demo reaches it.
+ * A library plugin carries its quick start on its card (the `quickStart` its module declares),
+ * listed on GET /api/plugins. The page only pre-fills a draft from it, so what is checked here is
+ * that the demo reaches it.
  * Module plugins contribute their demo through WebModule.quickStarts.
  */
 import fs from "node:fs";

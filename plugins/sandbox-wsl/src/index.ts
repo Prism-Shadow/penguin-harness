@@ -471,6 +471,21 @@ export class SandboxWslStatus {
           "测试你执行命令时所处的 WSL 沙盒。以下每条单独执行，然后用表格报告每条的输出或是否被拒：\n1. `uname -a; id; pwd`\n2. 在当前工作区内写一个文件（例如 `echo ok > sandbox-probe.txt`）\n3. 在工作区外写文件：`echo x > /mnt/c/Users/sandbox-probe.txt` 和 `echo x > ~/sandbox-probe.txt`\n4. `ls /mnt/c`\n5. `curl -sS -m 10 -o /dev/null -w '%{http_code}' https://example.com`\n6. `/mnt/c/Windows/System32/cmd.exe /c ver`\n然后说明结果是否与沙盒设置一致（设置 → 插件 → 沙盒：模式、网络，以及 WSL 卡片上的 Windows 磁盘设置）。如果 `uname` 显示的不是 Linux WSL2 内核，说明当前执行命令的不是这个后端。",
       },
     ],
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-wsl.card",
+        title: "Windows Sandbox",
+        titleZh: "Windows 沙箱",
+        descriptionZh:
+          "PenguinHarness 在 Windows 上的 WSL 沙箱后端：命令在专用的 WSL2 发行版中经 bubblewrap 运行，并关闭 Windows 互操作。",
+        shortDescription: "Windows: run commands in a confined WSL2 distro.",
+        shortDescriptionZh: "Windows：在受限的 WSL2 发行版中运行命令。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-wsl.provider",

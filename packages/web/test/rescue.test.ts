@@ -13,7 +13,7 @@
  * This package's vitest is node-only (no DOM), and the server renderer does not run error
  * boundaries, so the boundary is driven through its own static and render methods; the
  * palette opening over the panel is covered by the dispatcher test (the chord runs over an
- * open dialog) and end to end by e2e/rescue.spec.mjs.
+ * open dialog).
  */
 import { createElement } from "react";
 import type { ReactNode } from "react";

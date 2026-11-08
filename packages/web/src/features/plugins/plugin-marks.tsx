@@ -16,7 +16,7 @@ import { Badge, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/pengu
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { toneInk, type Tone } from "../../lib/tone";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
 import type { LibraryUsage, PluginStatus } from "./plugin-status";
 

@@ -25,7 +25,7 @@
 import { Hono } from "hono";
 import { Component, Bind, Use } from "@prismshadow/penguin-core/kernel";
 import type { HostCommand, HostCommandOffer, HostCommandsResponse } from "../../api/types.js";
-import { HOST_COMMANDS } from "../../api/types.js";
+import { LEGACY_HOST_COMMANDS } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Desktop } from "../../hmr/capabilities.js";
@@ -53,10 +53,13 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
 
   app.get("/", (c) =>
     c.json({
+      // The legacy field is pinned to what the page that predates `offers` knows — that
+      // page looks every id up in its own table and throws on a miss, so a new id travels
+      // in `offers` alone.
       commands: offers()
         .map((offer) => offer.command)
         .filter((command): command is HostCommand =>
-          (HOST_COMMANDS as readonly string[]).includes(command),
+          (LEGACY_HOST_COMMANDS as readonly string[]).includes(command),
         ),
       offers: offers(),
     } satisfies HostCommandsResponse),
@@ -84,8 +87,9 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
 }
 
 /**
- * The platform's own copy, which is the one that serves. The runtime mounts these routes too,
- * but below the seam — that copy answers only for a platform old enough to decline the prefix.
+ * The platform's own copy is the one that serves. The runtime no longer mounts these
+ * routes itself — it publishes the shell's port as `platform.shellFrames`, and a platform
+ * too old to take the `/api/command` prefix simply has no host-command route at all.
  */
 @Component({
   contributes: {

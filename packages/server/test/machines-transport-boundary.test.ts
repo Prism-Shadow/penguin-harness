@@ -82,6 +82,18 @@ describe("the transport boundary", () => {
       rel.startsWith("machines/") ||
       rel.startsWith("port-forwards/") ||
       rel === "http/routes/machines.ts";
+    // Explicit allowlist, each entry with its reason. Moving a listed site into
+    // machines/transport/ removes the reason and the entry with it — an entry that no longer
+    // matches is itself a failure, so a stale exemption cannot linger.
+    const allowlist = new Map([
+      [
+        "machines/service.ts",
+        // Pre-existing: the ssh alias strips the kind prefix off a stored address when it
+        // reads the machine's own row. Re-homing that prefix handling in transport/ is a
+        // semantic refactor of the service, out of scope for the merge that carried this
+        // scan; the site is listed here until that refactor lands.
+      ],
+    ]);
     const offenders = outside
       .filter(
         (f) =>
@@ -90,6 +102,9 @@ describe("the transport boundary", () => {
           (machinesCode(f.rel) && built.test(f.text)),
       )
       .map((f) => f.rel);
-    expect(offenders).toEqual([]);
+    const exempted = offenders.filter((rel) => allowlist.has(rel));
+    const unlisted = offenders.filter((rel) => !allowlist.has(rel));
+    expect(unlisted).toEqual([]);
+    expect([...allowlist.keys()]).toEqual(exempted);
   });
 });

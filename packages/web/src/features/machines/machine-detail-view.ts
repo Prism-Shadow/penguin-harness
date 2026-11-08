@@ -24,9 +24,21 @@ import {
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
+import {
+  canSyncConfig,
+  failureText,
+  isPhase,
+  needsRestart,
+  outOfDate,
+  readMachine,
+  readingTone,
+  retryReading,
+  sshWords,
+  stepLabel,
+  type MachineReading,
+  type RetryReading,
+} from "./machines-view";
 import type { MachineVerb } from "./machine-detail-dialog";
-import { failureText, isPhase, readingTone, sshWords, stepLabel } from "./machines-view";
-import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
 export interface MachineChip {

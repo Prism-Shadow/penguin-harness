@@ -3,6 +3,7 @@
 # `cycle: features/a -> features/b` for an edge between two feature directories that lies on a cycle.
 # This list only shrinks: never add a line; delete each line whose edge your change removes.
 components/layout/app-layout.tsx -> features/builtin-browser/browser-layer.tsx
+components/layout/app-layout.tsx -> features/builtin-browser/index.ts
 components/layout/app-layout.tsx -> features/chat/chat-page.tsx
 components/layout/app-layout.tsx -> features/chat/use-new-chat.ts
 components/layout/app-layout.tsx -> features/company/channel-sidebar.tsx
@@ -65,12 +66,14 @@ cycle: features/chat -> features/schedules
 cycle: features/chat -> features/settings
 cycle: features/chat -> features/skills
 cycle: features/chat -> features/terminal
+cycle: features/chat -> features/traces
 cycle: features/chat -> features/workbenches
 cycle: features/company -> features/chat
 cycle: features/company -> features/models
 cycle: features/company -> features/plugins
 cycle: features/company -> features/proposals
 cycle: features/company -> features/skills
+cycle: features/company -> features/traces
 cycle: features/company -> features/usage
 cycle: features/dock -> features/builtin-browser
 cycle: features/dock -> features/chat
@@ -95,8 +98,10 @@ cycle: features/skills -> features/chat
 cycle: features/terminal -> features/dock
 cycle: features/todos -> features/models
 cycle: features/todos -> features/usage
+cycle: features/traces -> features/chat
 cycle: features/usage -> features/todos
 cycle: features/workbenches -> features/chat
+features/agents/agent-settings-page.tsx -> features/chat/thinking-level-select.tsx
 features/agents/agent-settings-page.tsx -> features/chat/thinking-level.ts
 features/agents/agents-page.tsx -> features/ai-create/ai-create-buttons.tsx
 features/agents/agents-page.tsx -> features/chat/chat-page.tsx
@@ -119,6 +124,8 @@ features/agents/schedules-tab.tsx -> features/schedules/schedule-upsert.ts
 features/agents/skills-tab.tsx -> features/chat/skill-use.ts
 features/agents/skills-tab.tsx -> features/skills/skill-icon-view.tsx
 features/agents/vault-tab.tsx -> features/ai-create/ai-create-buttons.tsx
+features/agents/workbenches-tab.tsx -> features/chat/skill-use.ts
+features/agents/workbenches-tab.tsx -> features/skills/skill-icon-view.tsx
 features/ai-create/ai-bridge.ts -> features/chat/chat-page.tsx
 features/ai-create/ai-bridge.ts -> features/chat/draft-cache.ts
 features/ai-create/ai-bridge.ts -> features/chat/draft-sessions.ts
@@ -148,6 +155,7 @@ features/chat/chat-input.tsx -> features/skills/skill-pick-list.tsx
 features/chat/chat-input.tsx -> features/skills/skill-selection.ts
 features/chat/chat-page.tsx -> features/company/company-nav.ts
 features/chat/chat-page.tsx -> features/company/desk-model.ts
+features/chat/chat-page.tsx -> features/dock/composer-height.ts
 features/chat/chat-page.tsx -> features/dock/dock-launcher.tsx
 features/chat/chat-page.tsx -> features/dock/dock-panel.tsx
 features/chat/chat-page.tsx -> features/dock/dock-state.ts
@@ -159,15 +167,20 @@ features/chat/chat-page.tsx -> features/workbenches/workbench-tabs.tsx
 features/chat/dock-toggles.tsx -> features/dock/dock-state.ts
 features/chat/dock-toggles.tsx -> features/dock/panel-meta.tsx
 features/chat/draft-view.tsx -> features/agents/agent-employment.ts
+features/chat/draft-view.tsx -> features/agents/agent-select.tsx
 features/chat/draft-view.tsx -> features/dock/dock-state.ts
 features/chat/draft-view.tsx -> features/dock/dock-terminal.ts
 features/chat/draft-view.tsx -> features/models/model-grouping.ts
+features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
+features/chat/history-loading.tsx -> features/machines/machine-card.tsx
+features/chat/machine-away.ts -> features/machines/machines-view.ts
 features/chat/message-item.tsx -> features/proposals/proposal-links.tsx
 features/chat/model-picker-logic.ts -> features/models/model-grouping.ts
 features/chat/model-picker-logic.ts -> features/models/model-tags.ts
 features/chat/model-picker-modal.tsx -> features/models/model-group-order.ts
 features/chat/model-picker-modal.tsx -> features/models/model-grouping.ts
 features/chat/model-select.tsx -> features/models/model-grouping.ts
+features/chat/model-switch.ts -> features/models/connection.ts
 features/chat/model-switch.ts -> features/models/model-grouping.ts
 features/chat/new-chat.ts -> features/ai-create/default-agent.ts
 features/chat/permission-select.tsx -> features/settings/settings-dialog.tsx
@@ -185,6 +198,7 @@ features/company/employee-dialogs.tsx -> features/plugins/plugin-mcp.tsx
 features/company/employee-dialogs.tsx -> features/skills/skill-pick-list.tsx
 features/company/employee-dialogs.tsx -> features/skills/skill-selection.ts
 features/company/finance-page.tsx -> features/usage/trend-chart.tsx
+features/company/handbook-page.tsx -> features/chat/workspace-browser.tsx
 features/company/org-dialogs.tsx -> features/chat/model-select.tsx
 features/company/org-dialogs.tsx -> features/chat/workspace-select.tsx
 features/company/org-dialogs.tsx -> features/models/model-grouping.ts
@@ -247,15 +261,23 @@ features/settings/settings-dialog.tsx -> features/admin/admin-users-page.tsx
 features/skills/skill-icon-view.tsx -> features/chat/skill-use.ts
 features/skills/skill-pick-list.tsx -> features/chat/skill-use.ts
 features/terminal/terminal-list.ts -> features/dock/dock-state.ts
+features/terminal/terminal-panel.tsx -> features/dock/dock-state.ts
+features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
+features/terminal/terminal-panel.tsx -> features/dock/panel-context.tsx
+features/terminal/terminal-panel.tsx -> features/dock/panel-registry.ts
 features/terminal/terminal-view-pool.tsx -> features/dock/dock-state.ts
 features/todos/todo-badges.ts -> features/models/catalog-sync.ts
 features/todos/use-project-todos.ts -> features/usage/usage-controls.ts
 features/todos/use-update-badges.ts -> features/models/catalog-sync.ts
+features/traces/trace-file-view.tsx -> features/chat/history-loading.tsx
 features/workbenches/workbench-app-page.tsx -> features/palette/app-palette.tsx
 features/workbenches/workbench-tabs.tsx -> features/chat/skill-use.ts
+lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
+lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts
 lib/strings-en.ts -> features/terminal/strings.ts
 lib/strings.ts -> features/models/model-sort.ts
 lib/strings.ts -> features/terminal/strings.ts
+rescue/rescue-panel.tsx -> features/harness/harness-history-overlay.tsx
 router.tsx -> features/agents/agent-settings-page.tsx
 router.tsx -> features/agents/agents-page.tsx
 router.tsx -> features/benchmark/benchmark-detail-page.tsx

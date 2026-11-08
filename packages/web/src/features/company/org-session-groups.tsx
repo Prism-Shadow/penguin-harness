@@ -60,7 +60,7 @@ import { S } from "../../lib/strings";
 import { sessionActivityLabel } from "../../lib/session-activity";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";
@@ -71,11 +71,13 @@ import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
+  type SessionRowAction,
+  type SessionRowState,
 } from "../../components/ui/session-row-menu";
-import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
+
 import { Truncated } from "../../components/ui/truncated";
-import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
-import { orgKey } from "./company-nav";
+import { MessagingBindingModal } from "../messaging";
+import { orgKey } from "../../lib/company-nav";
 import { INVALID_ICON } from "./shared";
 import {
   deskRowLabel,
@@ -83,16 +85,17 @@ import {
   orgRowActivity,
   orgSessionLocatePlan,
   ticketSessionTitles,
+  type OrgDeskRow,
 } from "./org-sessions";
-import type { OrgDeskRow } from "./org-sessions";
+
 import {
   dismissAllTempSessions,
   dismissTempSession,
   openTempSession,
   tempSessionRows,
   useTempSessions,
+  type TempSessionRow,
 } from "./temp-session";
-import type { TempSessionRow } from "./temp-session";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /**

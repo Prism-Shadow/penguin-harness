@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserServerEvent, ServerEvent } from "@prismshadow/penguin-server/api";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 import {
+  builtinBrowserUserEvents,
   isBuiltinBrowserEvent,
   subscribeBuiltinBrowserEvents,
   subscribeBuiltinBrowserResync,
@@ -45,7 +46,8 @@ describe("agent browser events on the user channel", () => {
     const seen: BuiltinBrowserServerEvent[] = [];
     const stop = subscribeBuiltinBrowserEvents((ev) => seen.push(ev));
     try {
-      for (const ev of EVENTS) applyUserEvent(listStore(), ev, () => undefined);
+      for (const ev of EVENTS)
+        applyUserEvent(listStore(), [builtinBrowserUserEvents], ev, () => undefined);
     } finally {
       stop();
     }
@@ -67,7 +69,8 @@ describe("agent browser events on the user channel", () => {
     const seen: [BuiltinBrowserServerEvent, string | null][] = [];
     const stop = subscribeBuiltinBrowserEvents((ev, server) => seen.push([ev, server]));
     try {
-      for (const ev of EVENTS) applyUserEvent(listStore(), ev, () => undefined, "machine-1");
+      for (const ev of EVENTS)
+        applyUserEvent(listStore(), [builtinBrowserUserEvents], ev, () => undefined, "machine-1");
     } finally {
       stop();
     }
@@ -78,8 +81,19 @@ describe("agent browser events on the user channel", () => {
     const resyncs: (string | null)[] = [];
     const stop = subscribeBuiltinBrowserResync((server) => resyncs.push(server));
     try {
-      applyUserEvent(listStore(), { type: "resync_required" }, () => undefined);
-      applyUserEvent(listStore(), { type: "resync_required" }, () => undefined, "machine-1");
+      applyUserEvent(
+        listStore(),
+        [builtinBrowserUserEvents],
+        { type: "resync_required" },
+        () => undefined,
+      );
+      applyUserEvent(
+        listStore(),
+        [builtinBrowserUserEvents],
+        { type: "resync_required" },
+        () => undefined,
+        "machine-1",
+      );
     } finally {
       stop();
     }

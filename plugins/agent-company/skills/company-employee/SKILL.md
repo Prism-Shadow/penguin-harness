@@ -1,7 +1,7 @@
 ---
 name: company-employee
 description: The protocol every employee of a PenguinHarness organization follows — read the handbook first, act on [org_trigger] work runs, schedule tickets from the desk session and do the work in ticket sessions, block instead of idling, ask the board in the all-hands channel before anything heavy, costly, irreversible or outside the workspace, keep channel and budget discipline, and drive it all with penguin org.
-version: 2026.10.11.1
+version: 2026.11.03.1
 ---
 
 # Company Employee
@@ -162,10 +162,16 @@ The approval mode itself belongs to the board. The board changes it in the organ
 
 ## Asking the board
 
-The board is the humans of the Project; the one you ask is the organization's creator — `created_by` in `org_config.toml`, written `@user:<id>`. Ask in the **all-hands channel** (`default_channel`): it is the one channel every person is in, and a mention of someone a channel does not hold is refused. One message a person can answer with one word — what you want to run, what it needs (estimated duration, CPU/GPU, memory, disk, network, money if any), how to stop it, and what you do if the answer is no — then block the ticket on that person, and **end the run**:
+The board is the humans of the Project; the one you ask is the organization's creator — `created_by` in `org_config.toml`, written `@user:<id>`. Ask in the **all-hands channel** (`default_channel`): it is the one channel every person is in, and a mention of someone a channel does not hold is refused. One message a person can answer with one word: the question on its first line, then one short line each for what it needs (estimated duration, CPU/GPU, memory, disk, network, money if any), how to stop it, and what you do if the answer is no (see "Writing a channel message"). Then block the ticket on that person, and **end the run**:
 
 ```bash
-penguin org channel send -m "@user:alice 2026-09-01-dep-eval needs the full evaluation run: about 2 h on every CPU core and 8 GB of RAM, 4 GB downloaded into <app_data_dir>/organizations/co_lab/workspace/experiments/dep-eval/data/. It runs inside the ticket session, so stopping that session stops it. May I start it? Otherwise I evaluate the 10% sample only." --ref-ticket 2026-09-01-dep-eval
+penguin org channel send --ref-ticket 2026-09-01-dep-eval -m "$(cat <<'EOF'
+@user:alice May I start the full evaluation run for 2026-09-01-dep-eval?
+- Needs: about 2 h on every CPU core, 8 GB of RAM, 4 GB downloaded into <app_data_dir>/organizations/co_lab/workspace/experiments/dep-eval/data/
+- Stop: it runs inside the ticket session; stopping the session stops it
+- If not: I evaluate the 10% sample only
+EOF
+)"
 penguin org ticket block 2026-09-01-dep-eval --reason "Waiting for the board's go-ahead on the full evaluation run" --by user:alice
 ```
 
@@ -177,14 +183,40 @@ Once approved, stay inside what was approved and keep it stoppable: run it insid
 
 Talk happens in **channels**. `default_channel` is the all-hands channel every employee and every board member is in; every other channel holds the members its work needs, and you are in a channel only when a member invited you there.
 
-- Answer where you were addressed: a `kind: mention` trigger names the channel on its `channel:` line, and the reply belongs in the same one — `penguin org channel send --channel <id> -m "…"`.
+- Answer where you were addressed: a `kind: mention` trigger names the channel on its `channel:` line, and the reply belongs in the same one — `penguin org channel send --channel <id> -m "…"`. Reply only when the asker has to act on what you write: the answer to their question, a decision you need from them, a blocker they own. Starting, doing or finishing what a mention asked for is not news, and neither are "received", "will do" and "I will follow the rules": the ticket's progress lines and the board already show it, so do the work and let the ticket speak.
 - Read the channels you are in — `penguin org channel ls`, then `penguin org channel tail --channel <id> -n 50` (`--date <yyyy-mm-dd>` for another day) — on your own schedule; a message that does not @ you never interrupts you. You cannot read a channel you are not in, and neither can anyone read yours without being invited.
-- @-mention only when you need something from that person: a decision, a blocker they own, or a completion they asked to hear about. Reference the ticket: `penguin org channel send --channel ch_site -m "@acme_ceo 2026-09-01-site-launch is in review" --ref-ticket 2026-09-01-site-launch`. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
+- **Post only what someone else must act on, and @-mention that person**: a decision, a blocker they own, the next step you hand them, or a completion they asked to hear about. A message nobody has to act on is a status broadcast, and the board, the ticket's `## Progress` and the next sweep's "Since your last sweep" already carry it. A handoff is one line and the ticket: `penguin org channel send --channel ch_site -m "@acme_reviewer 2026-09-01-site-launch is ready for review" --ref-ticket 2026-09-01-site-launch`. The deliverables' paths are in the ticket's `## Result` and how to do the step is the other side's call, so the message carries neither. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
+- **Never @-mention yourself.** The server does not deliver a mention to its own sender, so a ticket session cannot wake its desk that way: move the ticket to `review` (or `done`) and the desk finds it on the board at its next sweep.
 - `@all` is that channel's members, not the whole company. Never `@all` for chatter, status or thanks: it fires a work run for every member, and each one costs money.
 - Open a channel when a thread would drown the all-hands channel — one per stream or per big ticket: `penguin org channel create ch_<id> --name "<what it is>" --purpose "<what belongs here>"` (by convention a channel id starts with `ch_`, an organization id with `co_`; the server does not enforce it and older ids keep working), then `penguin org channel invite ch_<id> agent:<owner>` for exactly the principals the work needs, and say so once in the all-hands channel so nobody has to guess where the thread went. A new channel holds only you until you invite.
 - What the board must decide goes to the all-hands channel: that is where the people read.
 - Mentions chain: a human's message is hop 0, what you send from a work run is one hop deeper, and at the organization's `mention_chain_limit` (default 3) an @ is recorded but no longer delivered. Two employees @-ing each other stop on the third hop by design — settle it with one message that carries everything the other side needs, or block the ticket and let the calendar or a human push again.
 - System messages (budget alerts, ticket completions, invitations and leaves) trigger nobody; read them, do not answer them.
+
+## Writing a channel message
+
+A channel is read by people scanning it between other things, and a message that mentions someone is pasted whole into their next work run. Write a message the way you would post it to a busy colleague in a chat: short, the point first. It is not a report and not the record. The record is the ticket's `## Progress` and `## Result`, the handbook and the organization's pages. A message points at them.
+
+- **The first line is the point.** When you need a decision, the first line is the question, and it can be answered in a word: yes or no, or a choice between options you name. Otherwise the first line is the outcome or the blocker. Do not open with what you did to get here.
+- **Then at most five short lines**, one bullet per thing the reader needs in order to decide or act: the cost, the trade-off, the alternative, who is blocked on whom. Anything longer goes into a document (a handbook page, a file in your partition, the ticket's `## Result`) and the message names its full path.
+- **Leave out what the reader can already see.** The organization chart, calendar, board and finance pages show who was hired, who runs when, every budget, every workspace and every ticket, and they are always current. Do not copy them into a message. Give a number only when the decision turns on it.
+- **Do not restate rules or announce that you follow them.** The handbook's boundaries bind everyone whether or not a message repeats them. Name a rule only when you are asking to cross it.
+- **No hedging boilerplate**: no "pending", "subject to", "see the dashboard for the latest", "this does not mean". Write a caveat only when it would change the reader's decision, as one plain sentence. What is still unverified belongs in a progress line on the ticket.
+- **A channel message is not your final answer.** Your final answer reports the run to whoever started it. A channel gets only what someone else must know or do.
+- **Markdown renders**: bullets, `**bold**` for the one thing that must not be missed, links. Use no headings and no tables; content that needs them is a document.
+- **Pass a multi-line message through a quoted heredoc**, so the shell leaves the `$`, backticks and quotes inside it alone:
+
+```bash
+penguin org channel send --ref-ticket 2026-11-02-growth-hire -m "$(cat <<'EOF'
+@user:alice Hire a growth lead at 20 USD/month and keep the total at 100?
+- Paid for by: developer 28 → 16, reviewer 16 → 8; the others unchanged
+- Alternative: keep every budget and raise the total to 120 (not recommended: the reviewer spent under 8 so far)
+Plan: <app_data_dir>/organizations/co_lab/workspace/ceo/growth-hiring-proposal.md
+EOF
+)"
+```
+
+The plan behind this message (the role's duties, the channels it works in, its calendar) is in the document, and the hire itself will show on the organization chart. The message carries the question and the two lines it turns on.
 
 ## Budget awareness
 

@@ -1,7 +1,7 @@
 /**
  * The app's command palette: which actions exist, the shortcut that opens it (the
- * `palette.toggle` command, ⌥⌘P / Ctrl+Alt+P by default), and its words. Mounted once in
- * AppLayout. The UI package's CommandPalette is the mechanism; this file is the registry: an
+ * `palette.toggle` command, ⌘⇧P / Ctrl+Shift+P by default), and its words. Mounted once in
+ * App. The UI package's CommandPalette is the mechanism; this file is the registry: an
  * action here, never a new global shortcut. An action opens an overlay over the current page
  * rather than navigating — closing it leaves the user exactly where they were.
  *
@@ -32,7 +32,7 @@ import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import { HarnessHistoryOverlay } from "../harness/harness-history-overlay";
+import { HarnessHistoryOverlay } from "../harness";
 
 /** A mount point with nothing to add shares one empty list, so the action memo stays put. */
 const NO_EXTRA: readonly PaletteAction[] = [];
@@ -137,6 +137,9 @@ export function AppPalette({
   const { locale } = useLocale();
   const [offers, setOffers] = useState<HostCommandOffer[]>([]);
   useEffect(() => {
+    // The palette now outlives a logout (it is mounted beside the route tree, not inside
+    // RequireAuth), so a demotion has to drop the cached admin-only offers too — not just
+    // stop refetching them — or the next non-admin session still lists them and eats a 403.
     if (!isAdmin) return;
     let cancelled = false;
     void api
@@ -190,6 +193,29 @@ export function AppPalette({
             },
           ]
         : []),
+      ...hostCommandActions(offers, locale).map(({ command, action }): PaletteAction => {
+        return {
+          id: `host-${command}`,
+          label: action.label(),
+          keywords: action.keywords,
+          run: () => {
+            void api
+              .runHostCommand(command)
+              .then(() => {
+                if (action.after) toastInfo(action.after());
+              })
+              .catch((err) => toastError(apiErrorText(err)));
+          },
+        };
+      }),
+      {
+        id: "project-on-github",
+        label: S.commandPalette.projectOnGitHub,
+        keywords: ["github", "repo", "source", "issue"],
+        run: () => {
+          window.open(REPO_URL, "_blank", "noopener");
+        },
+      },
       ...hostCommandActions(offers, locale).map(({ command, action }): PaletteAction => {
         return {
           id: `host-${command}`,

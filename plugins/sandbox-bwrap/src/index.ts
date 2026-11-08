@@ -300,6 +300,21 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
           "测试你执行命令时所处的沙盒。分三条命令执行：在当前工作区内写一个文件、在工作区外的家目录写一个文件、访问 https://example.com。报告哪些成功、哪些被拒；如果三条都成功，说明沙盒处于关闭状态（设置 → 插件 → 沙盒）。",
       },
     ],
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-bwrap.card",
+        title: "Linux Sandbox",
+        titleZh: "Linux 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 Bubblewrap 沙箱后端：在 Linux 上限制文件写入，并提供网络隔离与路径屏蔽。",
+        shortDescription: "Linux: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "Linux：限制文件写入、断开网络、屏蔽路径。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-bwrap.provider",

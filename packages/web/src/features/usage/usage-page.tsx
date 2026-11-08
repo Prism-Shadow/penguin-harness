@@ -60,7 +60,7 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
 import { PerformancePanel } from "./performance-panel";
 import { useAuth } from "../../state/auth";

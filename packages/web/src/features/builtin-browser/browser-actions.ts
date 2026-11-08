@@ -12,7 +12,7 @@ import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { machineForSession } from "../../lib/session-machines";
-import { currentDockScope, openPanel } from "../dock/dock-state";
+import { currentDockScope, openPanel } from "../dock";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest, type RemoteBackend } from "./browser-state";
 import { toastApiError } from "../../lib/toast-api-error";

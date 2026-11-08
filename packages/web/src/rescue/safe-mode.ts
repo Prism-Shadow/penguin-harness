@@ -1,7 +1,8 @@
 /**
  * Safe mode: the app runs without anything the server contributes, so a contribution that
- * breaks the UI can be stepped around and the harness rolled back. The consumers are workflow tabs and full-page workflow frames in the plain app,
- * and the unified contribution store in the modular app; the rescue panel enters it, the
+ * breaks the UI can be stepped around and the harness rolled back. The consumers are workflow
+ * tabs and full-page workflow frames in the plain app, and the unified contribution store in
+ * the modular app; the rescue panel enters it, the
  * marker and the command palette leave it.
  *
  * The switch lives in sessionStorage, not in the URL. An in-app navigation drops the query

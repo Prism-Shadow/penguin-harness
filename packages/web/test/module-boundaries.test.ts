@@ -1,14 +1,18 @@
 /**
  * The static-import boundaries between the Web App's libraries and its feature modules, as a
  * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
- * is invisible to it, so these three rules are held here, over every file under `src/`:
+ * is invisible to it, so these rules are held here, over every file under `src/`:
  *
  * 1. A library — anything outside `features/` (`lib/`, `api/`, `state/`, `components/`, the root
- *    files) — imports nothing under `features/`.
+ *    files) — imports nothing under `features/`. The one exception is the composition root,
+ *    `web-root.ts`, which imports each feature's `module.ts` to list it in the tree.
  * 2. A file under `features/<a>/` reaches `features/<b>/` only through `features/<b>/index.ts`
  *    (or `index.tsx`), never one of its inner files.
  * 3. No import cycle between feature directories. An edge `features/a -> features/b` is reported
  *    when it lies on a cycle, i.e. both ends sit in the same strongly connected component.
+ * 4. A `module.ts` or `<name>.module.ts` (a module class) is imported by the composition root
+ *    and nothing else: a module reaches another through slots and interfaces, never through its
+ *    class.
  *
  * The code predates the rules, so what breaks them today is listed, one line per edge, in
  * `module-boundaries.baseline.txt`. A violation missing from the baseline fails; so does a
@@ -56,6 +60,12 @@ function resolveImport(
   const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
   return candidates.find(isFile);
 }
+
+/** The composition root: the one file that lists module classes. */
+const COMPOSITION_ROOT = "web-root.ts";
+
+/** Whether a file declares a module class. */
+const isModuleFile = (file: string): boolean => /(^|\/|\.)module\.ts$/.test(file);
 
 /** `features/<name>` for a file under it, else null (the file is a library). */
 function featureOf(file: string): string | null {
@@ -109,7 +119,7 @@ interface Scan {
   unresolved: string[];
 }
 
-/** Applies the three rules to a set of files; `read` and `isFile` take src-relative paths. */
+/** Applies the rules to a set of files; `read` and `isFile` take src-relative paths. */
 function scan(
   files: readonly string[],
   read: (rel: string) => string,
@@ -124,8 +134,13 @@ function scan(
       const target = resolveImport(file, spec, isFile);
       if (target === undefined) unresolved.push(`${file}: ${spec}`);
       if (target == null || !/\.tsx?$/.test(target)) continue;
+      if (isModuleFile(target) && file !== COMPOSITION_ROOT) {
+        violations.add(`${file} -> ${target}`);
+        continue;
+      }
       const other = featureOf(target);
       if (other === null || other === own) continue;
+      if (file === COMPOSITION_ROOT && isModuleFile(target)) continue;
       if (own === null) {
         violations.add(`${file} -> ${target}`);
         continue;
@@ -189,6 +204,35 @@ describe("the import scan", () => {
       "features/chat/chat-page.tsx -> features/models/model.ts",
       "features/models/model.ts -> features/chat/chat-page.tsx",
       "lib/x.ts -> features/models/model.ts",
+    ]);
+  });
+
+  it("lets the composition root import module classes, and nothing else import them", () => {
+    const tree: Record<string, string> = {
+      "web-root.ts": [
+        'import { WebAppModule } from "./web-app/module";',
+        'import { SessionsModule } from "./state/sessions.module";',
+        'import { ChatModule } from "./features/chat/module";',
+        'import { ChatPage } from "./features/chat/chat-page";',
+      ].join("\n"),
+      "web-app/module.ts": 'import type { UserEventHandlers } from "../state/user-events";',
+      "web-app/router.tsx": 'import type { WebApp } from "./module";',
+      "state/sessions.module.ts": "",
+      "state/user-events.ts": "",
+      "state/sessions.tsx": 'import { SessionsModule } from "./sessions.module";',
+      "features/chat/module.ts": 'import { ChatPage } from "./chat-page";',
+      "features/chat/chat-page.tsx": 'import { ChatModule } from "./module";',
+    };
+    const result = scan(
+      Object.keys(tree),
+      (rel) => tree[rel]!,
+      (rel) => rel in tree,
+    );
+    expect(result.violations).toEqual([
+      "features/chat/chat-page.tsx -> features/chat/module.ts",
+      "state/sessions.tsx -> state/sessions.module.ts",
+      "web-app/router.tsx -> web-app/module.ts",
+      "web-root.ts -> features/chat/chat-page.tsx",
     ]);
   });
 

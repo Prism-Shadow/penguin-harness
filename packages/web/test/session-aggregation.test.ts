@@ -20,21 +20,28 @@ const asked: { machineId: string | null; workspaceGroup?: string }[] = [];
 const key = (machineId: string | null, agentId: string) => `${machineId ?? ""}|${agentId}`;
 
 vi.mock("../src/api/endpoints", () => ({
-  listSessions: async (
+  batchSessions: async (
     _projectId: string,
-    agentId: string,
-    opts: { workspaceGroup?: string } | undefined,
+    requests: { agentId: string; workspaceGroup?: string; excludeOrg?: boolean }[],
     machineId?: string | null,
-  ) => {
-    asked.push({
-      machineId: machineId ?? null,
-      ...(opts?.workspaceGroup === undefined ? {} : { workspaceGroup: opts.workspaceGroup }),
-    });
-    const answer = answers.get(key(machineId ?? null, agentId));
-    if (answer === undefined) throw new ApiError(0, "network_error", "no answer");
-    if (answer instanceof Error) throw answer;
-    return answer;
-  },
+  ) => ({
+    results: requests.map(({ agentId, workspaceGroup, excludeOrg }) => {
+      expect(excludeOrg).toBe(true);
+      asked.push({
+        machineId: machineId ?? null,
+        ...(workspaceGroup === undefined ? {} : { workspaceGroup }),
+      });
+      const answer = answers.get(key(machineId ?? null, agentId));
+      if (answer === undefined || answer instanceof Error) {
+        return {
+          agentId,
+          ok: false,
+          reason: answer instanceof ApiError && answer.status === 404 ? "absent" : "error",
+        };
+      }
+      return { agentId, ok: true, ...answer };
+    }),
+  }),
 }));
 
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
@@ -271,8 +278,6 @@ describe("the list across machines", () => {
  * machine as from here.
  */
 describe("events arriving from a machine", () => {
-  // The merged list reloads for a person's Session only (`source: "user"`): what a program
-  // opens is archived until kept, and a child is in no list — nothing to fetch for either.
   const created = (projectId: string): ServerEvent =>
     ({
       type: "session_created",
@@ -280,7 +285,7 @@ describe("events arriving from a machine", () => {
       agentId: "a1",
       sessionId: "s1",
       source: "user",
-    }) as ServerEvent;
+    }) as const;
 
   const countingStore = () => {
     const store = createSessionsStore();
@@ -296,8 +301,8 @@ describe("events arriving from a machine", () => {
 
   it("reloads for this Project, wherever the Session was created", () => {
     const { store, reloads } = countingStore();
-    applyUserEvent(store, created("p"), () => undefined, "M1");
-    applyUserEvent(store, created("p"), () => undefined, null);
+    applyUserEvent(store, [], created("p"), () => undefined, "M1");
+    applyUserEvent(store, [], created("p"), () => undefined, null);
     expect(reloads()).toBe(2);
   });
 
@@ -305,8 +310,8 @@ describe("events arriving from a machine", () => {
     // Unconditional for machines, every Session and every subagent started in any other
     // Project on any connected machine refetched this whole list, Agents x sources.
     const { store, reloads } = countingStore();
-    applyUserEvent(store, created("other"), () => undefined, "M1");
-    applyUserEvent(store, created("other"), () => undefined, null);
+    applyUserEvent(store, [], created("other"), () => undefined, "M1");
+    applyUserEvent(store, [], created("other"), () => undefined, null);
     expect(reloads()).toBe(0);
   });
 
@@ -314,12 +319,12 @@ describe("events arriving from a machine", () => {
     // Every fetch asks for the user's own rows (excludeOrg), so reloading for a desk or ticket
     // Session came back with nothing new: Agents x sources calls per desk run.
     const { store, reloads } = countingStore();
-    const org = { ...created("p"), client: "org" } as ServerEvent;
-    applyUserEvent(store, org, () => undefined, "M1");
-    applyUserEvent(store, org, () => undefined, null);
+    const org = { ...created("p"), source: "company" } as const;
+    applyUserEvent(store, [], org, () => undefined, "M1");
+    applyUserEvent(store, [], org, () => undefined, null);
     expect(reloads()).toBe(0);
     // A server that predates the field says nothing about the creator, and still reloads.
-    applyUserEvent(store, created("p"), () => undefined, "M1");
+    applyUserEvent(store, [], created("p"), () => undefined, "M1");
     expect(reloads()).toBe(1);
   });
 });

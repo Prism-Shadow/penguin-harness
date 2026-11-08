@@ -151,6 +151,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { NpmPluginPackages } from "./plugin/install.js";
+import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { HarnessStatusRoutes } from "./http/routes/harness-status.js";
@@ -584,6 +585,7 @@ export class PackagesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
+    PluginLibraryModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,

@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Children, createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
   BrowserBackendInfo,

@@ -31,13 +31,18 @@ import {
   reconcileInstallScope,
   scopeOfKey,
   syncInstallScope,
+  type InstallScopeStorage,
 } from "../src/lib/install-scope";
-import type { InstallScopeStorage } from "../src/lib/install-scope";
+
 import { apiError, json, stubFetch } from "./helpers/fetch";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceScan } from "./helpers/roots";
-import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
-import type { MemoryStorage } from "./helpers/storage";
+import { expectEveryRootScanned, scanSources, type SourceScan } from "./helpers/roots";
+
+import {
+  blockedStorage,
+  memoryStorage,
+  stubLocalStorage,
+  type MemoryStorage,
+} from "./helpers/storage";
 
 /** State that names the data root's Projects, Sessions, Workspaces and terminals. */
 const INSTALL_STATE: Record<string, string> = {
@@ -129,6 +134,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
     "not a storage key: the plugin manifest field the import dialog's agent prompt names",
   "penguin.staleBuildReload":
     "sessionStorage: one tab's memory of the build it last reloaded for, gone with the tab",
+  "penguin.safeMode":
+    "sessionStorage: scoped to one tab's safe mode, so it cannot outlive a data root",
 };
 
 /**

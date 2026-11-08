@@ -50,10 +50,12 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HostCommandsResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListResponse,
@@ -189,6 +191,13 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  agentTabs: [],
+  sessionTabs: [],
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
@@ -2702,7 +2711,7 @@ router
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
   .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
-  .post("/api/desktop/window", () => notFound("Desktop mode"))
+  .post("/api/desktop/window", () => notFound("Desktop mode"));
   // Host commands: a plain server's host offers none, so there is nothing to run.
   .get("/api/command", (): HostCommandsResponse => ({ commands: [], offers: [] }))
   .post("/api/command/:command", () => notFound("Host command"));
@@ -2862,6 +2871,15 @@ router
     "/api/projects/:projectId/agents/:agentId/workbenches",
     (): { workbenches: WorkbenchInfo[] } => ({
       workbenches: [],
+    }),
+  )
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
+    readOnly("import a workbench archive"),
+  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.workbenchId}.zip"`,
     }),
   )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>

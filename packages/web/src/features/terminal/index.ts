@@ -9,6 +9,7 @@
  * view pool and the chrome below).
  */
 export { TerminalPage } from "./terminal-page";
+export { TerminalPanel } from "./terminal-panel";
 export {
   TerminalDockRuntime,
   subscribeTerminalCloseRequests,
@@ -21,9 +22,14 @@ export {
   killTerminal,
   liveTerminals,
   noteTerminalCreated,
+  noteTerminalReowned,
+  noteTerminalTitle,
   refreshTerminals,
   subscribeTerminals,
   terminalApiSupported,
+  terminalListComplete,
+  terminalsOf,
+  watchTerminals,
 } from "./terminal-list";
 export {
   HttpStatusError,

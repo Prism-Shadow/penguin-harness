@@ -58,7 +58,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { originRule } from "./http/public-origin.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken } from "./auth/api-token.js";

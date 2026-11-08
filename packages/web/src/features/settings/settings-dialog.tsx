@@ -15,15 +15,23 @@
  * does nothing until it answers; an instant control's write holds nothing.
  */
 import { useEffect, useState } from "react";
-import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
-import type { PagedDialogGroup } from "@prismshadow/penguin-ui";
+import {
+  ICONS,
+  PagedDialog,
+  guardLeave,
+  useGuardedClose,
+  type PagedDialogGroup,
+} from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
+  type SettingsGroupKey,
+  type SettingsSectionKey,
 } from "../../lib/settings-sections";
-import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
+
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
 import { ProfileSection } from "./profile-section";
@@ -40,7 +48,7 @@ import { ChromeExtensionSection } from "./chrome-extension-section";
 import { AgentApiSection } from "./agent-api-section";
 import { SharingSection } from "./sharing-section";
 import { PluginsSection } from "./plugins-section";
-import { AdminUsersSection } from "../admin/admin-users-page";
+import { AdminUsersSection } from "../admin";
 
 /** Where this browser remembers the size the dialog was dragged to (never sent to the server). */
 const DIALOG_SIZE_KEY = "penguin.settings.dialogSize";

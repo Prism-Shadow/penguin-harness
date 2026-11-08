@@ -19,7 +19,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { pickIndexEntry } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { PLUGIN_STATUSES, type ModuleState, type PluginStatus } from "./plugin-status";
 
 /** The server-module side of a row: the package a Project lists, or could. */

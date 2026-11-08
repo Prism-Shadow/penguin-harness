@@ -80,3 +80,4 @@ export type {
   ShellRunOptions,
   ShellSession,
 } from "../mechanisms/machines.js";
+export type { PluginLibrary, PluginLibrarySlots } from "./library-module.js";

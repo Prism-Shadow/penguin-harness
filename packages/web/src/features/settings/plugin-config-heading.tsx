@@ -12,7 +12,7 @@ import { Button, HelpFold, InfoPopover, NoticeStrip, Spinner } from "@prismshado
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Locale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { switchedOff } from "./plugin-config-draft";
 
 export function ConfigHeading({

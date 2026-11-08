@@ -4,7 +4,8 @@
  * company-nav.ts, which stays free of any icon import so the route grammar is testable alone).
  */
 import { NAV_ICONS } from "../../lib/nav-icons";
-import type { CompanyNavKey, OrgPageRenderer } from "./company-nav";
+import type { CompanyNavKey } from "../../lib/company-nav";
+import type { OrgPageRenderer } from "./company-nav";
 
 export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   overview: NAV_ICONS.orgOverview,

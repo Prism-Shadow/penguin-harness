@@ -29,10 +29,15 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { nameOnMachine } from "../../lib/workspace-machines";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useSessions } from "../../state/sessions";
 import { projectDisplayName, useProject } from "../../state/project";
-import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
+import {
+  groupOrganizationsByProject,
+  orgKey,
+  orgPagePath,
+  parseOrgKey,
+} from "../../lib/company-nav";
 import {
   CreateOrganizationDialog,
   OrganizationSettingsDialog,

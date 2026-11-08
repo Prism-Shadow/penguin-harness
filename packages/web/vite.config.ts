@@ -102,6 +102,10 @@ export default defineConfig({
   // carries its own table, at the commit this bundle was built from (scripts/probe-sites.mjs).
   // And each probe's one-sentence summary in both languages, from the probe reference itself.
   define: { ...probeSitesDefine(["packages/web/src"]), ...probeSummariesDefine() },
+  // The module classes (`module.ts`, web-root.ts) use standard decorators, which no browser
+  // runs yet. The production build lowers them for its browser target; the dev server
+  // transforms for `esnext` by default and would pass them through as a syntax error.
+  esbuild: { target: "es2022" },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every

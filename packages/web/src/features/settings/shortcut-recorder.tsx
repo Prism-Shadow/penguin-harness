@@ -6,8 +6,8 @@
  * lib/shortcuts/recorder.ts; this component only draws it and wires the DOM. The row draws the
  * command's existing bindings as chips beside this button.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { S } from "../../lib/strings";
 import { isModifierCode } from "../../lib/shortcuts/chord";
 import { formatChord } from "../../lib/shortcuts/format";

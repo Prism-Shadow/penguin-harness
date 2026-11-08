@@ -81,8 +81,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+
 import type {
   AgentSummary,
   ApprovalMode,
@@ -121,8 +126,10 @@ import {
   noAutofill,
   toastError,
   toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
 } from "@prismshadow/penguin-ui";
-import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { fitTextarea } from "../../lib/textarea-fit";
@@ -131,18 +138,23 @@ import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
-import { SkillIcon } from "../skills/skill-icon-view";
-import { SkillPickList } from "../skills/skill-pick-list";
-import { toggleSkillName } from "../skills/skill-selection";
-import { sameModelRef } from "../models/model-grouping";
+import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+
+import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents/agent-employment";
+import { employeesLast, isEmployee } from "../agents";
 import { ModelCatalogSelect, modelLabel } from "./model-select";
 import { ModelPickerModal } from "./model-picker-modal";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { ThinkingLevelSelect } from "./thinking-level-select";
-import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
+import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
+import {
+  BOOK_ICON,
+  buildSkillsMessage,
+  localizedShortText,
+  skillSlashItems,
+} from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
@@ -153,8 +165,9 @@ import {
   caretOnLastLine,
   historyStepBack,
   historyStepForward,
+  type HistoryStep,
 } from "./input-history";
-import type { HistoryStep } from "./input-history";
+
 import { isStopAction, midRunAction } from "./composer-send";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";

@@ -28,8 +28,10 @@ import {
   allowlistProblems,
   analyzeFile,
   deslopHits,
+  type DeslopAllowlist,
+  type DeslopPolicy,
 } from "../../ui/src/testing/deslop";
-import type { DeslopAllowlist, DeslopPolicy } from "../../ui/src/testing/deslop";
+
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();

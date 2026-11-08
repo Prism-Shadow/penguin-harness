@@ -24,11 +24,13 @@ import {
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { AppPalette } from "../palette/app-palette";
+import { useSafeMode } from "../../rescue/safe-mode";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
+  const safe = useSafeMode();
   const params = useParams();
   const projectId = params["projectId"] ?? "";
   const agentId = params["agentId"] ?? "";
@@ -71,6 +73,10 @@ export function WorkbenchAppPage() {
   }, [projectId, agentId, workbenchId, tabKey]);
 
   useEffect(() => {
+    if (safe) {
+      setTab(null);
+      return;
+    }
     let alive = true;
     const load = async () => {
       try {
@@ -103,7 +109,7 @@ export function WorkbenchAppPage() {
       window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
       conn.close();
     };
-  }, [projectId, agentId, workbenchId, tabKey, machineId]);
+  }, [safe, projectId, agentId, workbenchId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -134,6 +140,10 @@ export function WorkbenchAppPage() {
     ],
     [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
   );
+
+  usePaletteActions(exit);
+
+  if (safe) return <div role="status">{S.rescue.marker}</div>;
 
   return (
     <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
@@ -166,7 +176,11 @@ export function WorkbenchAppPage() {
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>
       )}
-      <AppPalette extra={exit} />
+      <div className="fixed right-4 bottom-4 z-40">
+        <Button variant="secondary" size="sm" onClick={() => exit[0]!.run()}>
+          {S.workbenches.exitFullPageButton}
+        </Button>
+      </div>
     </div>
   );
 }

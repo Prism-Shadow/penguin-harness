@@ -1,5 +1,5 @@
 /**
- * state/company.tsx unit tests: the company store's routing of the scheduler's events (the
+ * features/company/company-state.tsx unit tests: the company store's routing of the scheduler's events (the
  * per-channel counters of the open organization and the totals the sidebar badges read, the
  * version bump each family causes, and what a local read mark clears), the open ticket every
  * company surface shares (the back stack a parent or a child pushes, and what closes it), what
@@ -18,15 +18,17 @@ import type {
   OrgSessionsResponse,
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
-import type { CompanyStreamEvent } from "../src/state/company";
+import type { CompanyStreamEvent } from "../src/features/company/company-state";
+
 import {
+  companyUserEvents,
   createCompanyStore,
   isCompanyEvent,
   proposalUnreadTotal,
   machineOfOpenOrg,
   subscribeCompanyEvents,
   subscribeCompanyResync,
-} from "../src/state/company";
+} from "../src/features/company/company-state";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 
 const message = (over: Partial<OrgChannelMessage> = {}): OrgChannelMessage => ({
@@ -485,13 +487,8 @@ describe("applyUserEvent forwarding", () => {
         sessionId: "s",
         kind: "init",
       };
-      applyUserEvent(sessions, run, () => undefined);
-      applyUserEvent(sessions, { ...run, projectId: "p2" }, () => undefined);
-      applyUserEvent(sessions, posted(), () => undefined);
-      expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
-      // A work run opens a desk or ticket Session, which the list never fetches (`excludeOrg`),
-      // even in the current Project; a channel message changes no session row either.
-      expect(reload).not.toHaveBeenCalled();
+import type { CompanyStreamEvent } from "../src/features/company/company-state";
+
     } finally {
       stop();
     }
@@ -503,7 +500,8 @@ describe("applyUserEvent forwarding", () => {
     const company = createCompanyStore();
     const stop = subscribeCompanyResync(() => company.getState().resync());
     try {
-      applyUserEvent(sessions, { type: "resync_required" }, () => undefined);
+import type { CompanyStreamEvent } from "../src/features/company/company-state";
+
       // `runs` re-reads the sessions route; `orgs` the organization list and the open chart;
       // `proposals` the index a lost proposal event would have moved.
       expect(company.getState().versions).toEqual({

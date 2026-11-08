@@ -15,7 +15,7 @@
  * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
  *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
  *    with TS2322; the rolled-up declarations themselves check, and none names
- *    `@prismshadow/penguin-core`.
+ *    `@prismshadow/a2ui` (bundled, a devDependency) or `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
  *    map does not resolve, every module its declarations import is in its types tree, and those
@@ -240,9 +240,12 @@ try {
   );
   check(4, "a project's tsc accepts a valid prop and refuses a wrong one", [
     ...verdict(npmResult),
-    ...declarations
-      .filter((file) => readFileSync(file, "utf8").includes("@prismshadow/penguin-core"))
-      .map((file) => `${relative(installed, file)} names @prismshadow/penguin-core`),
+    ...declarations.flatMap((file) => {
+      const text = readFileSync(file, "utf8");
+      return ["@prismshadow/a2ui", "@prismshadow/penguin-core"]
+        .filter((name) => text.includes(name))
+        .map((name) => `${relative(installed, file)} names ${name}`);
+    }),
   ]);
 
   // --- rendered classes --------------------------------------------------------------------
