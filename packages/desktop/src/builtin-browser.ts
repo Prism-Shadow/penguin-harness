@@ -39,19 +39,22 @@ import {
   clearDataPlan,
   focusGuestScript,
   guestContextMenu,
+  guestUserAgents,
   hardenGuestPreferences,
   isGrantedPermission,
   isOpenableUrl,
   mayAttachGuest,
   mayNavigate,
+  navigationRequestHeaders,
   parseBrowserCommand,
   pickFavicon,
-  plainChromeUserAgent,
   privateMemoryKB,
+  restartsAtRedirect,
   tabLoads,
   typesIntoGuest,
+  userAgentForPage,
 } from "./builtin-browser-rules.js";
-import type { GuestMenuAction } from "./builtin-browser-rules.js";
+import type { GuestMenuAction, GuestUserAgents } from "./builtin-browser-rules.js";
 import type { TrayLocale } from "./tray-menu.js";
 import { urlForLog } from "./util.js";
 
@@ -93,6 +96,8 @@ interface Guest {
   playingMedia: number;
   /** Why the page's renderer last went away; reported while `wc.isCrashed()` says it still is. */
   crashReason?: string;
+  /** Navigations started over at a redirect since the main frame last committed a page. */
+  restarts: number;
 }
 
 /** The pages' processes: the guest's renderer and those of its cross-site frames (ads, embeds). */
@@ -125,6 +130,8 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   /** The pages of the hosted windows: the only embedders a guest may attach to. */
   const embedders = new WeakSet<WebContents>();
   const partitionSessions = new Map<string, Session>();
+  /** Each guest session's two user agents (userAgentForPage), set up with the session. */
+  const sessionAgents = new WeakMap<Session, GuestUserAgents>();
   let metricsTimer: NodeJS.Timeout | null = null;
   let metricsSoon: NodeJS.Timeout | null = null;
 
@@ -141,15 +148,34 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   });
 
   /**
-   * The guests' session, set up once before the first guest is created: the user agent sites
+   * The guests' session, set up once before the first guest is created: the user agents pages
    * see, and which permission prompts a page is granted. Downloads keep Electron's own save
    * dialog.
+   *
+   * Guests start with Chrome's user agent, and each tab then presents the one of the page its
+   * main frame goes to (adopt). A main-frame request still names the user agent its tab had
+   * when the navigation was created, so it takes the tab's on its way out. Only main-frame
+   * requests pass through the main process here: every subresource already carries its page's.
    */
   function browserSession(partition = BUILTIN_BROWSER_PARTITION): Session {
     const existing = partitionSessions.get(partition);
     if (existing !== undefined) return existing;
     const ses = session.fromPartition(partition);
-    ses.setUserAgent(plainChromeUserAgent(ses.getUserAgent()));
+    const agents = guestUserAgents(ses.getUserAgent());
+    sessionAgents.set(ses, agents);
+    ses.setUserAgent(agents.chrome);
+    ses.webRequest.onBeforeSendHeaders(
+      { urls: ["http://*/*", "https://*/*"], types: ["mainFrame"] },
+      (details, callback) => {
+        const guest =
+          details.webContentsId === undefined ? undefined : guests.get(details.webContentsId);
+        const requestHeaders =
+          guest === undefined || guest.wc.isDestroyed()
+            ? null
+            : navigationRequestHeaders(details.requestHeaders, guest.wc.getUserAgent(), agents);
+        callback(requestHeaders === null ? {} : { requestHeaders });
+      },
+    );
     ses.setPermissionRequestHandler((_wc, permission, callback) =>
       callback(isGrantedPermission(permission)),
     );
@@ -241,8 +267,17 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   function adopt(wc: WebContents): void {
     const id = wc.id;
     if (guests.has(id)) return;
-    const guest: Guest = { id, wc, relayed: new Set(), throttleAllowed: false, playingMedia: 0 };
+    const guest: Guest = {
+      id,
+      wc,
+      relayed: new Set(),
+      throttleAllowed: false,
+      playingMedia: 0,
+      restarts: 0,
+    };
     guests.set(id, guest);
+    const agents = sessionAgents.get(wc.session);
+    if (agents !== undefined) followSignIn(guest, agents);
     wc.on("media-started-playing", () => {
       guest.playingMedia += 1;
       applyThrottling(guest);
@@ -337,6 +372,53 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
     });
     push();
     followLoad();
+  }
+
+  /**
+   * Keeps a tab's user agent on the page its main frame is at (userAgentForPage). It may only
+   * change as a navigation starts: changed while one is under way, Chromium reloads the page the
+   * tab is leaving. So the tab switches at `did-start-navigation`; a redirect across Google's
+   * sign-in is cancelled and the navigation started again at its target, where it switches the
+   * same way; and when a navigation starts but never commits (a download, a stop), the page
+   * left showing gets its own user agent back once the tab stops loading.
+   */
+  function followSignIn(guest: Guest, agents: GuestUserAgents): void {
+    const { wc } = guest;
+    const present = (url: string) => {
+      const userAgent = userAgentForPage(url, agents);
+      if (wc.getUserAgent() !== userAgent) wc.setUserAgent(userAgent);
+    };
+    wc.on("did-start-navigation", (details) => {
+      if (details.isMainFrame && !details.isSameDocument) present(details.url);
+    });
+    wc.on("will-redirect", (details) => {
+      const restart = restartsAtRedirect(
+        {
+          url: details.url,
+          isMainFrame: details.isMainFrame,
+          tabUserAgent: wc.getUserAgent(),
+          restarts: guest.restarts,
+        },
+        agents,
+      );
+      if (!restart) return;
+      details.preventDefault();
+      guest.restarts += 1;
+      const { url } = details;
+      // On the next turn: Chromium cannot start a navigation from inside the redirect callback
+      // of the one being cancelled.
+      setImmediate(() => {
+        if (wc.isDestroyed()) return;
+        // A failure is the new navigation's own, and the tab reports it like any other.
+        wc.loadURL(url).catch(() => {});
+      });
+    });
+    wc.on("did-navigate", () => {
+      guest.restarts = 0;
+    });
+    wc.on("did-stop-loading", () => {
+      if (!wc.isDestroyed() && !wc.isLoading()) present(wc.getURL());
+    });
   }
 
   /**

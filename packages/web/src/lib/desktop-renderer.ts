@@ -11,9 +11,9 @@
  * window.
  *
  * Electron's default user agent carries `Electron/<version>` after Chrome's, and the shell
- * leaves it alone on the App's windows: the one setUserAgent in packages/desktop is on the
- * built-in browser's own partition (builtin-browser.ts). No browser's user agent contains that
- * token.
+ * leaves it alone on the App's windows: every setUserAgent in packages/desktop is on the
+ * built-in browser's own partitions and their pages (builtin-browser.ts). No browser's user agent
+ * contains that token.
  */
 export function isElectronRenderer(userAgent: string): boolean {
   return /\bElectron\//.test(userAgent);
