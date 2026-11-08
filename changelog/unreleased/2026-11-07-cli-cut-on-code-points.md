@@ -3,6 +3,7 @@
 - **Date:** 2026-11-07
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1504](https://github.com/Prism-Shadow/penguin-harness/pull/1504)
 
 [中文版](2026-11-07-cli-cut-on-code-points.zh.md)
 
