@@ -352,7 +352,7 @@ interface CompactionSettings {
 | `turns` | Session 轮数 ≥ `maxSessionTurns`（默认 -1，即不限） |
 | `manual` | 用户运行 `/compact` 或调用 `session.compact()`，或在会话内切换模型（切换先用当前模型压缩） |
 
-`context` 触发的生效阈值取 `maxContextLength`（默认 256000）与模型 `context_window` − 2048 中的较小者：32k 的本地 vLLM 因此在约 30.7k 处压缩，而不是先撞上窗口上限；1M 窗口的模型则在配置的 256000 处触发。条目没有可用的 `context_window`（未配置或小于 4096）时，按 128000 的假定窗口推导，即约 126k。
+`context` 触发的生效阈值取 `maxContextLength`（默认 256000）与模型 `context_window` − 2048 中的较小者：32k 的本地 vLLM 因此在约 30.7k 处压缩，而不是先撞上窗口上限；1M 窗口的模型则在配置的 256000 处触发。条目没有可用的 `context_window`（未配置或小于 4096）时，按 128000 的假定窗口推导，即约 126k。Agent 若配置了 `compaction.max_context_percent`，阈值改按模型的 `context_window` 取该百分比（同样被窗口 − 2048 裁剪），于是换模型后不必手改数字；此时 `maxContextLength` 不再参与计算。
 
 两种模式：
 
@@ -394,7 +394,7 @@ interface CompactionSettings {
 | --- | --- | --- |
 | 严格层 | 系统提示词、工具集（含 MCP）、模型引用 | 在运行中的上下文内绝不改变。它们构成请求前缀，上下文的前缀自开启固定到关闭，因此整个 Trace 文件内供应商的提示词缓存始终有效。 |
 | 软限制层 | 思考等级 | 纯粹的逐请求参数，允许在上下文中途更换，不记入 Trace，代价是供应商的消息缓存失效。 |
-| 不限制层 | 审批模式；`compaction` 一节（`max_context_length`、`max_session_turns`、`mode`、`prompt`） | 逐次决策或在每个压缩检查点重读，修改立即生效，且不触及请求。 |
+| 不限制层 | 审批模式；`compaction` 一节（`max_context_length`、`max_context_percent`、`max_session_turns`、`mode`、`prompt`） | 逐次决策或在每个压缩检查点重读，修改立即生效，且不触及请求。 |
 
 - 每次 LLM 请求取 Session 钉住的思考等级（Web App 对话内的选择器，或 CLI 的 `--thinking` / `/thinking`），未钉住时取上下文开启时读到的 Agent 配置缺省值。选择器会提醒先压缩，因为中途更换会让供应商的消息缓存失效。
 - 审批模式逐次决策时从数据库重读，因此修改即刻生效。

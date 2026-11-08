@@ -37,5 +37,6 @@ export {
   approximateTokens,
   approximateMessagesTokens,
   effectiveMaxOutputTokens,
+  effectiveCompactionThreshold,
   effectiveMaxContextLength,
 } from "./context-limits.js";

@@ -23,10 +23,9 @@
 import os from "node:os";
 import path from "node:path";
 import {
-  DEFAULT_MAX_CONTEXT_LENGTH,
   approximateMessagesTokens,
   approximateTokens,
-  effectiveMaxContextLength,
+  effectiveCompactionThreshold,
   lastNonTaskRecord,
 } from "@prismshadow/penguin-core";
 import type {
@@ -253,9 +252,10 @@ export function buildContextBreakdown(messages: AmspRecord[]): SessionContextPar
 
 /**
  * Where compaction will fire for a Session, in tokens of occupancy — the Agent's configured
- * `compaction.max_context_length` (its seeded default when unset) capped by what the model's
- * context window leaves room for, which is the same derivation the Agent applies when it builds a
- * Session's compaction settings.
+ * `compaction.max_context_percent` when it sets one, else its `compaction.max_context_length`
+ * (seeded default when unset), capped either way by what the model's context window leaves room
+ * for. That is the same derivation the Agent applies when it builds a Session's compaction
+ * settings, so a gauge marked here is marked where the Session actually compacts.
  *
  * Null means "nothing to mark on a gauge that runs to the window": compaction switched off
  * (`<= 0`), or a threshold at or past the window itself — which is what an implausibly small
@@ -265,11 +265,9 @@ export function buildContextBreakdown(messages: AmspRecord[]): SessionContextPar
 export function compactionThresholdFor(
   configured: number | undefined,
   contextWindow: number | undefined,
+  maxContextPercent?: number,
 ): number | null {
-  const threshold = effectiveMaxContextLength(
-    configured ?? DEFAULT_MAX_CONTEXT_LENGTH,
-    contextWindow,
-  );
+  const threshold = effectiveCompactionThreshold(configured, maxContextPercent, contextWindow);
   if (threshold <= 0) return null;
   return contextWindow !== undefined && threshold >= contextWindow ? null : threshold;
 }

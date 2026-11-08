@@ -329,7 +329,7 @@ Under **Processes**, the details card lists the background processes the convers
 
 ## Manage the context
 
-The context ring at the right of the toolbar shows how full the context is, measured against the point where compaction starts: the agent's `compaction.max_context_length`, capped by what the model's window allows. It turns amber past 80% and red past 95%. Right after a compaction, the ring is empty until the next request reports the usage.
+The context ring at the right of the toolbar shows how full the context is, measured against the point where compaction starts: the agent's `compaction.max_context_length` (or, when the agent sets `compaction.max_context_percent`, that percentage of the model's window), capped by what the model's window allows. It turns amber past 80% and red past 95%. Right after a compaction, the ring is empty until the next request reports the usage.
 
 Select the ring to open the context panel:
 
@@ -346,6 +346,8 @@ The dashed marker on the bar is the compaction threshold. The hatched stretch pa
 3. Confirm. The threshold is saved to the agent and applies to this conversation at once, even mid-run.
 
 A value above the model's window is accepted, with a note that the window's size is what takes effect. When the model's window is already smaller than the agent's threshold, a notice above the composer says so, with **Open agent settings** and **Dismiss**.
+
+When the agent sets `compaction.max_context_percent`, the threshold is a share of the window and the dashed marker becomes a readout: the bar notes the share in force, and the percentage itself is edited under **Agent settings › Runtime**. A window share takes precedence over the token threshold, so a dragged token count could not take effect — which is why the drag is not offered there.
 
 ## Organize the conversation list
 

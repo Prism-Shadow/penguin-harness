@@ -1745,6 +1745,9 @@ export const en: Strings = {
     compaction: "Context compaction",
     maxContextLength: "Context token threshold",
     maxContextLengthHint: "Context threshold that triggers compaction",
+    maxContextPercent: "Window share threshold (%)",
+    maxContextPercentHint:
+      "Trigger compaction at a percentage of the model's context window, following whichever model runs; when set it wins over the token threshold",
     maxSessionTurns: "Session turn threshold",
     maxSessionTurnsHint: "Turn threshold that triggers compaction",
     compactionMode: "Compaction method",
@@ -4035,6 +4038,8 @@ Scenarios:
     contextPartToolResults: "Tool results",
     contextTopTools: "Top 5 tools",
     contextWindowIs: (n: string): string => `Max context ${n}`,
+    contextThresholdByPercent: (p: number): string =>
+      `Compacts at ${p}% of the model window; change it in Agent settings`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
     contextTopFiles: "Top 5 files",

@@ -19,12 +19,13 @@ import type {
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 
-/** The five number boxes, in the order the tab shows them. */
+/** The six number boxes, in the order the tab shows them. */
 export const RUNTIME_NUMBER_FIELDS = [
   "maxTurns",
   "maxTokens",
   "timeoutMs",
   "maxContextLength",
+  "maxContextPercent",
   "maxSessionTurns",
 ] as const;
 
@@ -49,6 +50,7 @@ export function runtimeDraftOf(config: AgentConfigDto): RuntimeDraft {
     maxTokens: text(config.model?.maxTokens),
     timeoutMs: text(config.model?.timeoutMs),
     maxContextLength: text(config.compaction?.maxContextLength),
+    maxContextPercent: text(config.compaction?.maxContextPercent),
     maxSessionTurns: text(config.compaction?.maxSessionTurns),
     thinkingLevel: config.model?.thinkingLevel ?? "",
     mode: config.compaction?.mode ?? "",
@@ -75,6 +77,9 @@ export function normalizeRuntime(draft: RuntimeDraft): unknown {
 const changed = (draft: RuntimeDraft, baseline: RuntimeDraft, field: RuntimeNumberField) =>
   runtimeNumberOf(draft[field]) !== runtimeNumberOf(baseline[field]);
 
+/** The one box with an upper bound of its own: a window share is a percentage, and the server refuses anything above 100. */
+const FIELD_MAX: Partial<Record<RuntimeNumberField, number>> = { maxContextPercent: 100 };
+
 /**
  * The errors of the boxes that differ from the baseline (null when there are none). A box left
  * as it was is never judged: Save sends only what changed, so a stored value the server once
@@ -88,11 +93,13 @@ export function runtimeErrors(
   for (const field of RUNTIME_NUMBER_FIELDS) {
     if (!changed(draft, baseline, field)) continue;
     const value = runtimeNumberOf(draft[field]);
+    const max = FIELD_MAX[field];
     if (value === undefined) errors[field] = "cannotClear";
     else if (
       typeof value !== "number" ||
       !Number.isInteger(value) ||
-      (value <= 0 && value !== -1)
+      (value <= 0 && value !== -1) ||
+      (max !== undefined && value > max)
     ) {
       errors[field] = "invalid";
     }
@@ -130,6 +137,8 @@ export function runtimeUpdateOf(
   const compaction: AgentCompactionConfigDto = {};
   const maxContextLength = number("maxContextLength");
   if (maxContextLength !== undefined) compaction.maxContextLength = maxContextLength;
+  const maxContextPercent = number("maxContextPercent");
+  if (maxContextPercent !== undefined) compaction.maxContextPercent = maxContextPercent;
   const maxSessionTurns = number("maxSessionTurns");
   if (maxSessionTurns !== undefined) compaction.maxSessionTurns = maxSessionTurns;
   if (draft.mode !== "" && draft.mode !== baseline.mode) {

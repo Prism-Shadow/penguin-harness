@@ -22,6 +22,7 @@
  */
 import {
   DEFAULT_MAX_CONTEXT_LENGTH,
+  effectiveCompactionThreshold,
   effectiveMaxContextLength,
 } from "@prismshadow/penguin-core/context-limits";
 
@@ -59,12 +60,17 @@ export function configuredCompactionLimit(maxContextLength: number | undefined):
 export function contextFillBasis(
   compactionLimit: number | undefined,
   contextWindow: number | string | undefined | null,
+  maxContextPercent?: number,
 ): number {
   // Resolve first, then derive: core's own resolution only accepts a number, so a Trace-shaped
   // numeric string would reach it as "unconfigured" and silently derive from 128000 instead.
   const windowTokens = resolveContextWindow(contextWindow);
-  if (compactionLimit === undefined) return windowTokens;
-  const threshold = effectiveMaxContextLength(compactionLimit, windowTokens);
+  // A positive percent enables compaction on its own, whatever the absolute field says — an
+  // Agent carrying `max_context_length: 0` plus a percent is running with a threshold, and this
+  // composer must not fall back to the window and draw a ring that never fills.
+  const byPercent = maxContextPercent !== undefined && maxContextPercent > 0;
+  if (compactionLimit === undefined && !byPercent) return windowTokens;
+  const threshold = effectiveCompactionThreshold(compactionLimit, maxContextPercent, windowTokens);
   return threshold > 0 ? threshold : windowTokens;
 }
 

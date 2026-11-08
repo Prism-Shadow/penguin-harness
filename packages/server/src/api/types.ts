@@ -1491,6 +1491,8 @@ export interface AgentModelConfigDto {
 
 export interface AgentCompactionConfigDto {
   maxContextLength?: number;
+  /** Context threshold as a share of the model window, in percent (1–100). A positive value wins over `maxContextLength`. */
+  maxContextPercent?: number;
   maxSessionTurns?: number;
   mode?: "summarize" | "discard";
   prompt?: string;

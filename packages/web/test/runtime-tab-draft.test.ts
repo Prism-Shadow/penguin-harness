@@ -9,7 +9,8 @@
  * - Text that is not a number is a change too (it no longer slips past the leave guard as "no
  *   change"), and an error.
  * - Typing the stored number back, spaces and all, is no change.
- * - A number is accepted when it is an integer > 0 or exactly -1; 0, 1.5 and words are not.
+ * - A number is accepted when it is an integer > 0 or exactly -1; 0, 1.5 and words are not. The
+ *   window share is further bounded at 100, which is where the server stops accepting it.
  * - A box left as stored is never judged, so an odd stored value cannot block another edit.
  * - Save sends only the keys that changed, each in its own section.
  *
@@ -74,6 +75,23 @@ describe("the Runtime form's rules", () => {
   it("never judges a box left as stored", () => {
     const stored = { ...STORED, maxContextLength: "0" };
     expect(runtimeErrors({ ...stored, maxTurns: "60" }, stored)).toBeNull();
+  });
+
+  it("bounds the window share at 100%, since the server refuses anything above it", () => {
+    for (const ok of ["1", "80", "100", "-1"]) {
+      expect(runtimeErrors(edit({ maxContextPercent: ok }), STORED)).toBeNull();
+    }
+    for (const bad of ["0", "101", "2.5"]) {
+      expect(runtimeErrors(edit({ maxContextPercent: bad }), STORED)).toEqual({
+        maxContextPercent: "invalid",
+      });
+    }
+  });
+
+  it("sends a window share inside the compaction section", () => {
+    expect(runtimeUpdateOf(edit({ maxContextPercent: "80" }), STORED)).toEqual({
+      compaction: { maxContextPercent: 80 },
+    });
   });
 
   it("sends only the keys that changed, each in its section", () => {

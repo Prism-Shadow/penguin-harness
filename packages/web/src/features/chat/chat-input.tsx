@@ -577,6 +577,7 @@ export function ChatInput({
   onChangeTurnThinkingLevel,
   contextWindow,
   compactionLimit,
+  compactionPercent,
   onChangeCompactionLimit,
   onOpenAgentSettings,
   contextNow,
@@ -754,6 +755,12 @@ export function ChatInput({
    * window and the notice cannot be raised at all.
    */
   compactionLimit?: number;
+  /**
+   * The Agent's configured `compaction.max_context_percent`, when it sets one: a positive value
+   * is the threshold in force and takes precedence over `compactionLimit`, and the panel's
+   * cutter becomes a readout because the share is edited in Agent settings.
+   */
+  compactionPercent?: number;
   /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
   /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
@@ -2576,6 +2583,7 @@ export function ChatInput({
                 unknown={contextStale}
                 {...(contextWindow !== undefined ? { window: contextWindow } : {})}
                 {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+                {...(compactionPercent !== undefined ? { compactionPercent } : {})}
                 {...(sessionId !== undefined ? { sessionId } : {})}
                 agentName={currentAgentName}
                 {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}

@@ -363,4 +363,15 @@ describe("compactionThresholdFor", () => {
     // assumed default instead — a threshold far outside the gauge it would be drawn on.
     expect(compactionThresholdFor(256_000, 2000)).toBeNull();
   });
+
+  it("takes the window share when the Agent sets one, over the token threshold", () => {
+    // A share follows the window: one Agent setting, two models, two marks.
+    expect(compactionThresholdFor(256_000, 1_000_000, 80)).toBe(800_000);
+    expect(compactionThresholdFor(256_000, 200_000, 80)).toBe(160_000);
+    // Capped the same way, so even a 100% share stays below the window it is measured against.
+    expect(compactionThresholdFor(256_000, 32_768, 100)).toBe(32_768 - 2048);
+    // A non-positive share is "not set": the token field decides.
+    expect(compactionThresholdFor(100_000, 1_000_000, -1)).toBe(100_000);
+    expect(compactionThresholdFor(100_000, 1_000_000, 0)).toBe(100_000);
+  });
 });

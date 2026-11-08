@@ -110,6 +110,14 @@ export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
 export interface CompactionConfig {
   /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. */
   max_context_length?: number;
+  /**
+   * Context threshold as a share of the model's context window, in percent (1–100). A positive
+   * value takes precedence over `max_context_length`, which lets one Agent follow whichever
+   * model a Session runs on instead of carrying a token count tuned for one of them. Still
+   * capped by `context_window − COMPACTION_HEADROOM`, so 100% leaves the summary request its
+   * room. Absent or `<= 0` means "not set": the absolute threshold applies.
+   */
+  max_context_percent?: number;
   /** Session cumulative turn threshold (counted in LLM Requests, across Tasks); defaults to -1, <=0 means no limit. */
   max_session_turns?: number;
   /** Compaction mode; defaults to summarize. */

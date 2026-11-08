@@ -1047,6 +1047,17 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
               className="font-mono"
             />
             <Input
+              label={S.agent.maxContextPercent}
+              info={S.agent.maxContextPercentHint}
+              infoLabel={S.agent.maxContextPercent}
+              size="sm"
+              value={form.draft.maxContextPercent}
+              error={errorOf("maxContextPercent")}
+              onChange={(e) => setNumber("maxContextPercent", e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+            <Input
               label={S.agent.maxSessionTurns}
               info={S.agent.maxSessionTurnsHint}
               infoLabel={S.agent.maxSessionTurns}

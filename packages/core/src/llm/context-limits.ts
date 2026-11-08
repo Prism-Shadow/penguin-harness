@@ -217,3 +217,34 @@ export function effectiveMaxContextLength(configured: number, contextWindow: unk
   const window = resolveContextWindow(contextWindow) ?? DEFAULT_CONTEXT_WINDOW;
   return Math.min(configured, window - COMPACTION_HEADROOM);
 }
+
+/**
+ * Effective compaction threshold with the window-relative form of the setting on top.
+ *
+ * `compaction.max_context_percent` exists because a token threshold is a fixed number while the
+ * room it must fit into is a property of the model in use: 200000 is comfortable in a 1M window
+ * and impossible in a 128k one, so a threshold that follows the window has to be stated as a
+ * share of it. A positive percent therefore wins over `max_context_length`; it is capped by the
+ * same `context_window − COMPACTION_HEADROOM` ceiling (so 100% still leaves the summary request
+ * its room), and `<= 0` keeps the "not set" meaning the token form gives it, falling through to
+ * the absolute threshold.
+ *
+ * The result is floored at one token even for a minuscule percent: `0` is the configured value
+ * that means "compaction off", and a share of a small window round-tripping to zero would read
+ * as "never compact" instead of "compact immediately".
+ *
+ * An unconfigured window derives from {@link DEFAULT_CONTEXT_WINDOW}, exactly as the absolute
+ * form does — a share of the assumed window is still proportionate, which is the whole point.
+ */
+export function effectiveCompactionThreshold(
+  configured: number | undefined,
+  maxContextPercent: number | undefined,
+  contextWindow: unknown,
+): number {
+  if (maxContextPercent !== undefined && maxContextPercent > 0) {
+    const window = resolveContextWindow(contextWindow) ?? DEFAULT_CONTEXT_WINDOW;
+    const fromPercent = Math.round((window * maxContextPercent) / 100);
+    return Math.max(1, Math.min(fromPercent, window - COMPACTION_HEADROOM));
+  }
+  return effectiveMaxContextLength(configured ?? DEFAULT_MAX_CONTEXT_LENGTH, contextWindow);
+}

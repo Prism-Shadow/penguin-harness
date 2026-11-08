@@ -145,6 +145,7 @@ export function ContextGauge({
   now,
   window: win,
   compactionLimit,
+  compactionPercent,
   unknown = false,
   sessionId,
   agentName,
@@ -159,6 +160,14 @@ export function ContextGauge({
    * measured against a threshold nobody supplied would be a made-up number.
    */
   compactionLimit?: number;
+  /**
+   * The Agent's configured `compaction.max_context_percent`, when it sets one. A positive value
+   * is the threshold in force — it wins over `compactionLimit` — and it makes the panel's cutter
+   * a readout: the share is edited in Agent settings, where the field says what a percentage
+   * means, and a gesture that wrote tokens underneath a percent overriding them would silently
+   * do nothing.
+   */
+  compactionPercent?: number;
   unknown?: boolean;
   /** Enables the composition panel. Omitted where no Session-level endpoint can serve it (the subagent composer), leaving the ring a plain readout. */
   sessionId?: string;
@@ -172,7 +181,8 @@ export function ContextGauge({
    */
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
 }) {
-  const basis = contextFillBasis(compactionLimit, win);
+  const percentMode = compactionPercent !== undefined && compactionPercent > 0;
+  const basis = contextFillBasis(compactionLimit, win, compactionPercent);
   const windowTokens = resolveContextWindow(win);
   const pct = unknown ? 0 : Math.min(1, now / basis);
   const [open, setOpen] = useState(false);
@@ -207,7 +217,8 @@ export function ContextGauge({
   // off (no trigger point to draw) or no Agent config reached this composer. A threshold the
   // window cannot reach still draws — pinned to the right edge by `thresholdFraction` — because
   // the cutter is how such a threshold gets lowered.
-  const cutAt = compactionLimit !== undefined && compactionLimit > 0 ? basis : null;
+  const cutAt =
+    percentMode || (compactionLimit !== undefined && compactionLimit > 0) ? basis : null;
   const confirmThreshold = async (tokens: number): Promise<void> => {
     if (!onChangeCompactionLimit) return;
     setSavingThreshold(true);
@@ -270,6 +281,7 @@ export function ContextGauge({
               cutAt={cutAt}
               reloadTick={reloadTick}
               editable={onChangeCompactionLimit !== undefined}
+              percentThreshold={percentMode ? (compactionPercent ?? null) : null}
               pendingThreshold={pendingThreshold}
               onPendingThreshold={setPendingThreshold}
               onProposeThreshold={(tokens) => setProposal(tokens)}
@@ -301,6 +313,7 @@ function ContextPanel({
   cutAt,
   reloadTick,
   editable,
+  percentThreshold,
   pendingThreshold,
   onPendingThreshold,
   onProposeThreshold,
@@ -318,6 +331,8 @@ function ContextPanel({
   reloadTick: number;
   /** Whether the cutter accepts a gesture at all. */
   editable: boolean;
+  /** The Agent's configured window share when it sets one: named under the bar so a readout cutter says why it does not move. */
+  percentThreshold: number | null;
   /** The value the cutter is being dragged (or arrowed) to, held by the gauge above. */
   pendingThreshold: number | null;
   onPendingThreshold: (tokens: number | null) => void;
@@ -483,6 +498,12 @@ function ContextPanel({
           >
             {S.chat.contextWindowIs(humanizeTokens(windowTokens))}
           </p>
+
+          {percentThreshold !== null && (
+            <p className="mt-1 leading-relaxed text-gray-400 dark:text-gray-500">
+              {S.chat.contextThresholdByPercent(percentThreshold)}
+            </p>
+          )}
 
           {/* The bar's segments sit inside its aria-hidden track and stay mouse-only, so this
               legend is the only surface pinning can be reached from at all: each row is a

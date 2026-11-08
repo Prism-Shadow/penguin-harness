@@ -74,6 +74,15 @@ describe("contextFillBasis", () => {
     expect(contextFillBasis(undefined, 200000)).toBe(200000);
     expect(contextFillBasis(undefined, undefined)).toBe(DEFAULT_CONTEXT_WINDOW);
   });
+
+  it("follows a configured window share, which wins over the token threshold", () => {
+    expect(contextFillBasis(128000, 1_000_000, 80)).toBe(800000);
+    // A share is a threshold on its own: an Agent carrying the "off" token value plus a share
+    // is compacting, and a ring drawn against the window would never fill.
+    expect(contextFillBasis(0, 1_000_000, 80)).toBe(800000);
+    // Capped by the window like the token form, so a 100% share still marks below the end.
+    expect(contextFillBasis(128000, 32768, 100)).toBe(32768 - 2048);
+  });
 });
 
 describe("modelWindowBelowCompactionLimit", () => {

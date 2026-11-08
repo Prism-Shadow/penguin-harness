@@ -1867,6 +1867,9 @@ export const zh = {
     compaction: "上下文压缩",
     maxContextLength: "上下文 Token 阈值",
     maxContextLengthHint: "触发压缩的上下文阈值",
+    maxContextPercent: "窗口占比阈值（%）",
+    maxContextPercentHint:
+      "按模型上下文窗口的百分比触发压缩，随所选模型自动伸缩；填了就以它为准，优先于 Token 阈值",
     maxSessionTurns: "会话轮数阈值",
     maxSessionTurnsHint: "触发压缩的轮数阈值",
     compactionMode: "压缩方式",
@@ -4249,6 +4252,8 @@ Benchmark：
     contextTopTools: "工具用量 Top 5",
     /** Under the bar: the model window the bar is scaled to. */
     contextWindowIs: (n: string): string => `最大上下文 ${n}`,
+    contextThresholdByPercent: (p: number): string =>
+      `压缩阈值按模型窗口的 ${p}% 设定，在 Agent 设置中修改`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
     contextTopFiles: "文件用量 Top 5",
     contextTopFilesHint:

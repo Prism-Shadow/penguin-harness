@@ -13,6 +13,7 @@ import {
   OUTPUT_SAFETY_MARGIN,
   approximateMessagesTokens,
   approximateTokens,
+  effectiveCompactionThreshold,
   effectiveMaxContextLength,
   effectiveMaxOutputTokens,
   resolveContextWindow,
@@ -227,5 +228,54 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
   it("keeps <=0 as 'compaction disabled'", () => {
     expect(effectiveMaxContextLength(-1, 32768)).toBe(-1); // off: no clamping
     expect(effectiveMaxContextLength(0, 32768)).toBe(0); // off: no clamping
+  });
+});
+
+describe("effectiveCompactionThreshold (a threshold stated as a share of the window)", () => {
+  it("takes a positive percent of the window and ignores the token threshold", () => {
+    // The whole point of the form: the same Agent setting means different token counts on
+    // different models, and the token field stops taking part.
+    expect(effectiveCompactionThreshold(8000, 50, 1_000_000)).toBe(500_000);
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 80, 32_768)).toBe(26_214);
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 80, 200_000)).toBe(160_000);
+  });
+
+  it("caps the share at context_window − COMPACTION_HEADROOM, so even 100% leaves the summary room", () => {
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 100, 32_768)).toBe(
+      32_768 - COMPACTION_HEADROOM,
+    );
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 100, 1_000_000)).toBe(
+      1_000_000 - COMPACTION_HEADROOM,
+    );
+  });
+
+  it("derives from the assumed window when the entry configures none", () => {
+    // Same assumption the token form already made, so the share stays proportionate.
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 80, undefined)).toBe(
+      Math.round(DEFAULT_CONTEXT_WINDOW * 0.8),
+    );
+    expect(effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 80, 2048)).toBe(
+      Math.round(DEFAULT_CONTEXT_WINDOW * 0.8),
+    );
+  });
+
+  it("floors a minuscule share at one token, never the 0 that means 'off'", () => {
+    // 0.01% of a 4096 window rounds to 0, which `maxContextLength > 0` in the engine's
+    // trigger would read as "compaction disabled" — the opposite of what was asked for.
+    expect(
+      effectiveCompactionThreshold(DEFAULT_MAX_CONTEXT_LENGTH, 0.01, MIN_USABLE_CONTEXT_WINDOW),
+    ).toBe(1);
+  });
+
+  it("keeps the token form when the percent is absent or <= 0", () => {
+    expect(effectiveCompactionThreshold(8000, undefined, 1_000_000)).toBe(8000);
+    expect(effectiveCompactionThreshold(8000, 0, 1_000_000)).toBe(8000);
+    expect(effectiveCompactionThreshold(8000, -1, 1_000_000)).toBe(8000);
+    // An Agent with neither field still runs at the seeded threshold.
+    expect(effectiveCompactionThreshold(undefined, undefined, 1_000_000)).toBe(
+      DEFAULT_MAX_CONTEXT_LENGTH,
+    );
+    // And the disabled contract survives both forms.
+    expect(effectiveCompactionThreshold(-1, undefined, 32_768)).toBe(-1);
   });
 });
