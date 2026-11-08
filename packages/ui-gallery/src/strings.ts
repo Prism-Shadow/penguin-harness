@@ -741,6 +741,10 @@ export const zh = {
       infoText: "索引正在后台重建。",
       attentionText: "已保存，但有 2 个字段被截断。",
       errorText: "连接失败：无法访问 api.example。",
+      withAction: "带操作",
+      actionText: "已归档 1 个 Session。",
+      undo: "撤销",
+      undone: "已恢复。",
     },
     notices: {
       plain: "每种语气",

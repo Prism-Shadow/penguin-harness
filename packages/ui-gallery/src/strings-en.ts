@@ -756,6 +756,10 @@ export const en: GalleryStrings = {
       infoText: "The index is rebuilding in the background.",
       attentionText: "Saved, but 2 fields were truncated.",
       errorText: "Connection failed: api.example is unreachable.",
+      withAction: "With an action",
+      actionText: "Archived 1 Session.",
+      undo: "Undo",
+      undone: "Restored.",
     },
     notices: {
       plain: "Every tone",

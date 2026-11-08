@@ -2358,6 +2358,8 @@ describe("preset sync: add new models / restore defaults", () => {
       );
     expect((await api.put(url(), { models: edited })).status).toBe(200);
     await api.put(`${url()}/providers/tokendance`, { apiKey: "td-group-key-0007" });
+    // Keying TokenDance moved the default to its DeepSeek V4.1 Flash; the sync must leave it there.
+    const keyed = (await (await api.get(url())).json()) as ModelsResponse;
 
     const res = await sync("add");
     expect(res.status).toBe(200);
@@ -2377,7 +2379,7 @@ describe("preset sync: add new models / restore defaults", () => {
       output: 3,
     });
     expect(body.providers.tokendance?.apiKeyMasked).toBe("td-g…0007");
-    expect(body.defaultModel).toEqual(preset.defaultModel);
+    expect(body.defaultModel).toEqual(keyed.defaultModel);
 
     // Nothing left to add: nothing is written.
     const { mtimeMs } = await stat(cfgFile());

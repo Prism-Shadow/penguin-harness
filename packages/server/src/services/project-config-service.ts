@@ -93,6 +93,7 @@ import type {
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
+  DefaultModelSwitch,
   CommandPolicyRuleDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -111,11 +112,13 @@ import type {
   PresetSyncMode,
   PresetSyncResponse,
   ProviderConnectionDto,
+  ProviderConnectionResponse,
   ProviderConnectionUpdate,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import { connectDefaultSwitch } from "./connect-default-model.js";
 import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
@@ -136,6 +139,7 @@ import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
+  GroupKeyApplied,
   ModelPromotion,
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
@@ -412,6 +416,38 @@ function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
       groupKeyReaches(optStr(m.base_url), groupBaseUrl) &&
       (optStr(m.api_key)?.trim() ?? "") === "",
   ).length;
+}
+
+/**
+ * `next`, the table a write that stores `provider`'s group key is about to store, with the
+ * Project's default moved where connectDefaultSwitch says the key's landing moves it (that
+ * group's connect default, on the group's first key), and the switch that made.
+ */
+function withConnectDefault(
+  before: RawTable,
+  next: RawTable,
+  provider: string,
+): { table: RawTable; defaultSwitch?: DefaultModelSwitch } {
+  const previous = optRef(before.default_model);
+  const defaultSwitch = connectDefaultSwitch({
+    provider,
+    hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
+    hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
+    previous:
+      previous === undefined
+        ? undefined
+        : { provider: previous.provider, modelId: previous.model_id },
+    holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
+  });
+  if (defaultSwitch === undefined) return { table: next };
+  const { defaultModel } = defaultSwitch;
+  return {
+    table: {
+      ...next,
+      default_model: { provider: defaultModel.provider, model_id: defaultModel.modelId },
+    },
+    defaultSwitch,
+  };
 }
 
 /** A group's stored connection as the page reads it: the group's own values, the key masked. */
@@ -2030,22 +2066,30 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
    * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. A protocol
    * Penguin Go's fixed one does not allow is refused before anything is written
-   * (checkGroupProtocol). Returns the models view as it now stands.
+   * (checkGroupProtocol). A group's first key moves the default to the group's connect default
+   * in the same write (withConnectDefault). Returns the models view as it now stands, with the
+   * default it moved.
    */
   async setProviderConnection(
     projectId: string,
     provider: string,
     patch: ProviderConnectionUpdate,
-  ): Promise<ModelsResponse> {
+  ): Promise<ProviderConnectionResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
       checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
-      await this.writeRaw(projectId, { ...raw, providers: table });
+      const { table: next, defaultSwitch } = withConnectDefault(
+        raw,
+        { ...raw, providers: table },
+        provider,
+      );
+      await this.writeRaw(projectId, next);
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
       }
-      return this.getModels(projectId);
+      const res = await this.getModels(projectId);
+      return defaultSwitch === undefined ? res : { ...res, defaultSwitch };
     });
   }
 
@@ -2054,17 +2098,23 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Enter key, the Connect flows and the ModelScope refresh all land on. No row is read or
    * replaced: a model with its own key keeps it (and keeps billing the account it was given),
    * and a caller that never saw the rest of the table cannot flatten it. A group with no rows
-   * still takes the key.
+   * still takes the key. A group's first key moves the default to the group's connect default
+   * in the same write (withConnectDefault).
    *
-   * Returns how many of the group's rows now use it — the ones without a key of their own.
+   * Returns how many of the group's rows now use it — the ones without a key of their own —
+   * and the default it moved.
    */
-  async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+  async setGroupApiKey(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<GroupKeyApplied> {
     if (provider === MODELSCOPE_PROVIDER_ID) {
       return this.withProviderCredentialLock(projectId, provider, async () => {
-        const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+        const written = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
         // Written by hand: the authorization's refresh token belongs to the key it replaced.
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
-        return applied;
+        return written;
       });
     }
     return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
@@ -2088,7 +2138,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         const current = this.providerAuthTokens?.get(projectId, provider);
         if (current?.refreshToken !== options.expectedRefreshToken) return 0;
       }
-      const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+      const { applied } = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
       this.providerAuthTokens?.upsert(projectId, {
         provider,
         refreshToken: token.refreshToken,
@@ -2102,11 +2152,17 @@ export class ProjectConfigService implements ProjectConfigStore {
     projectId: string,
     provider: string,
     apiKey: string,
-  ): Promise<number> {
+  ): Promise<GroupKeyApplied> {
     const raw = await this.readRaw(projectId);
     const { table } = patchProviderTable(asTable(raw.providers), provider, { apiKey });
-    await this.writeRaw(projectId, { ...raw, providers: table });
-    return rowsFollowingGroupKey(raw, provider);
+    const { table: next, defaultSwitch } = withConnectDefault(
+      raw,
+      { ...raw, providers: table },
+      provider,
+    );
+    await this.writeRaw(projectId, next);
+    const applied = rowsFollowingGroupKey(raw, provider);
+    return defaultSwitch === undefined ? { applied } : { applied, defaultSwitch };
   }
 
   /** A group's key (`[providers.<id>].api_key`), never a row's own; never sent over HTTP. */
@@ -2166,7 +2222,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Returns how many rows were added, `updated` (price, promotion or route changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
-   * otherwise the rows added.
+   * otherwise the rows added. An authorization that writes the group's first key moves the
+   * default to the group's connect default in the same write (withConnectDefault) and reports
+   * it as `defaultSwitch`.
    */
   async mergePlatformModels(
     projectId: string,
@@ -2252,15 +2310,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
+    let defaultSwitch: DefaultModelSwitch | undefined;
     if (added.length > 0 || routesUpdated > 0 || pricesChanged || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
-      await this.writeRaw(projectId, {
-        ...raw,
-        ...(providers !== undefined ? { providers } : {}),
-        models: nextModels,
-      });
+      const written = withConnectDefault(
+        before,
+        { ...raw, ...(providers !== undefined ? { providers } : {}), models: nextModels },
+        provider,
+      );
+      defaultSwitch = written.defaultSwitch;
+      await this.writeRaw(projectId, written.table);
     }
     // After the file write, so each promotion applies to the list price that was persisted.
     // A missing promotion clears the advertised row's old one; unadvertised rows are kept.
@@ -2281,7 +2342,12 @@ export class ProjectConfigService implements ProjectConfigStore {
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
       : added.length;
-    return { added: added.length, updated: Math.max(routesUpdated, changedIds.size), applied };
+    return {
+      added: added.length,
+      updated: Math.max(routesUpdated, changedIds.size),
+      applied,
+      ...(defaultSwitch !== undefined ? { defaultSwitch } : {}),
+    };
   }
 
   /**

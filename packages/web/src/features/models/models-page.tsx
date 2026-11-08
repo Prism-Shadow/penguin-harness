@@ -66,6 +66,7 @@ import {
 
 import type {
   CredentialInfo,
+  DefaultModelSwitch,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -247,6 +248,7 @@ import {
 
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { announceDefaultSwitch } from "./connect-default-notice";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /**
@@ -1018,6 +1020,12 @@ export function ModelsPage() {
   const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
   const keyLanded = useRef(false);
+  /**
+   * The default model the key it wrote moved, said once the dialog is dismissed: the
+   * authorization ran in another tab, and a notice raised while the user is there is gone by
+   * the time they are back.
+   */
+  const landedSwitch = useRef<DefaultModelSwitch | undefined>(undefined);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -1148,6 +1156,27 @@ export function ModelsPage() {
   const envKeysDetected = useMemo(() => detectedEnvKeys(rows ?? []), [rows]);
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
+
+  /** Says a connect moved the default model, with Undo (connect-default-notice.ts). */
+  const announceSwitch = (
+    change: DefaultModelSwitch | undefined,
+    named: readonly { provider: string; modelId: string; displayName?: string | undefined }[],
+  ) => {
+    if (change === undefined || !projectId) return;
+    const defaultChanged = (ref: ModelRefDto) => {
+      setDefaultModel(ref);
+      // As after any default change here: the draft chat drops its stored model pick and
+      // follows the new default.
+      if (userId) clearDraftModelRef(userId, projectId);
+    };
+    announceDefaultSwitch({ projectId, defaultChanged }, change, named);
+  };
+  /** The end of a connect dialog's dismissal: the notice of a default its key moved, then a clean slate. */
+  const endConnect = () => {
+    announceSwitch(landedSwitch.current, rows ?? []);
+    keyLanded.current = false;
+    landedSwitch.current = undefined;
+  };
 
   /**
    * What the two catalog actions (preset-sync.tsx) run against: this Project's saved table, the
@@ -1903,6 +1932,7 @@ export function ModelsPage() {
           onSaved={(res) => {
             adopt(res);
             setSettingsFor(null);
+            announceSwitch(res.defaultSwitch, res.models);
           }}
         />
       )}
@@ -1927,10 +1957,11 @@ export function ModelsPage() {
             onClose={() => {
               setOauthFor(null);
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, change) => {
               keyLanded.current = true;
+              landedSwitch.current = change;
             }}
           />
         ) : (
@@ -1946,14 +1977,15 @@ export function ModelsPage() {
               // `load` also drops this Project's speed results — measurements that cost real API
               // quota and live only in page memory — and a cancelled flow changed nothing.
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, change) => {
               // The dialog stays open and reports the outcome itself (its `done` phase), because
               // the authorization ran in another tab and a toast would be announced to a window
-              // nobody is looking at. All this seam does is record that the dismissal has a
-              // reload to do.
+              // nobody is looking at. All this seam does is record what the dismissal has to do:
+              // a reload, and the notice of a default the key moved.
               keyLanded.current = true;
+              landedSwitch.current = change;
             }}
           />
         ))}
@@ -4214,7 +4246,8 @@ function ModelOAuthDialog({
   /** Models in the group with no key of their own: the ones that will use the new group key. */
   count: number;
   onClose: () => void;
-  onApplied: (applied: number) => void;
+  /** The key landed: how many models use it, and the default model it moved, if any. */
+  onApplied: (applied: number, defaultSwitch: DefaultModelSwitch | undefined) => void;
 }) {
   /** The route back the user picked. */
   const [manual, setManual] = useState(false);
@@ -4284,7 +4317,7 @@ function ModelOAuthDialog({
           const n = res.applied ?? count;
           setApplied(n);
           setPhase("done");
-          onAppliedRef.current(n);
+          onAppliedRef.current(n, res.defaultSwitch);
           return;
         }
         if (res.status === "error") {
@@ -4320,7 +4353,7 @@ function ModelOAuthDialog({
         const n = res.applied ?? count;
         setApplied(n);
         setPhase("done");
-        onAppliedRef.current(n);
+        onAppliedRef.current(n, res.defaultSwitch);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);

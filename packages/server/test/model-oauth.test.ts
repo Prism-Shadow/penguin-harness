@@ -17,7 +17,9 @@
  * - The routes: only the owner starts, polls and redeems; the key lands once, as the group's key
  *   every model of the group uses, and the Project's open Session channels hear
  *   credentials_updated; a rejected code reaches the dialog through the poll and touches no
- *   model; a malformed link answers a page. Disconnect (clearing the group key) is all it
+ *   model; a malformed link answers a page. TokenDance's first key makes its DeepSeek V4.1
+ *   Flash the default (connect-default-model.test.ts has the rule), and every done answer of
+ *   the poll, like the redeemed code's, says so. Disconnect (clearing the group key) is all it
  *   takes to undo it: no state of the flow outlives it, and models with their own key keep it.
  * - The redirect receiver answers without a session: the flow id buys a deposit and nothing
  *   more — not for another user, an unknown flow, another Project, a stale or replayed flow,
@@ -66,6 +68,12 @@ const TOKENDANCE = providerInfo("tokendance")!;
  * adding a row to this group does not fail three assertions that are not about the count.
  */
 const TOKENDANCE_MODELS = presetModelEntries().filter((m) => m.provider === "tokendance").length;
+
+/** What TokenDance's first key does to a new Project's default model. */
+const DEFAULT_SWITCH = {
+  defaultModel: { provider: "tokendance", modelId: "deepseek-v4.1-flash" },
+  previousDefault: { provider: "deepseek", modelId: "deepseek-flash" },
+};
 
 describe("PKCE derivation", () => {
   it("challenge is the unpadded base64url SHA-256 of the verifier (RFC 7636 vector)", () => {
@@ -209,7 +217,7 @@ describe("flow store", () => {
     service = wire(ModelOAuthService, {
       applyGroupKey: async (projectId: string, provider: string, apiKey: string) => {
         applied.push({ projectId, provider, apiKey });
-        return 6;
+        return { applied: 6 };
       },
       fetchImpl: exchange.fetch,
       now: () => clock,
@@ -282,7 +290,7 @@ describe("flow store", () => {
 
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
     service = wire(ModelOAuthService, {
-      applyGroupKey: async () => 6,
+      applyGroupKey: async () => ({ applied: 6 }),
       fetchImpl: fakeFetch(() => jsonResponse({}, 403)).fetch,
       now: () => clock,
     });
@@ -516,7 +524,12 @@ describe("model-oauth routes", () => {
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
     ).json()) as ModelOAuthStatusResponse;
-    expect(status).toEqual({ status: "done", provider: "tokendance", applied: TOKENDANCE_MODELS });
+    expect(status).toEqual({
+      status: "done",
+      provider: "tokendance",
+      applied: TOKENDANCE_MODELS,
+      defaultSwitch: DEFAULT_SWITCH,
+    });
 
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges()).toHaveLength(1);
@@ -554,6 +567,7 @@ describe("model-oauth routes", () => {
     expect(await (await owner.get(`${base()}/${started.flowId}`)).json()).toEqual({
       status: "done",
       provider: "tokendance",
+      defaultSwitch: DEFAULT_SWITCH,
     });
     expect(
       events.filter(
@@ -662,6 +676,7 @@ describe("model-oauth routes", () => {
     const body = (await res.json()) as ModelOAuthCodeResponse;
     expect(body.ok).toBe(true);
     expect(body.applied).toBeGreaterThan(0);
+    expect(body.defaultSwitch).toEqual(DEFAULT_SWITCH);
     expect(exchanges()[0]!.body.code).toBe("pasted-code");
 
     // Single use here too.
@@ -793,6 +808,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultSwitch: DEFAULT_SWITCH,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
@@ -809,6 +825,7 @@ describe("model-oauth callback without a session", () => {
       status: "done",
       provider: "tokendance",
       applied: TOKENDANCE_MODELS,
+      defaultSwitch: DEFAULT_SWITCH,
     });
     expect(exchange.calls).toHaveLength(1);
     expect(await groupHasKey()).toBe(true);
