@@ -1,14 +1,13 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { noteSessionSeen } from "../../lib/session-seen";
-import { isOrgRoute, type WorkMode } from "../company";
-
 import type { useMainSidebarApplyRegistryChange } from "./main-sidebar-apply-registry-change";
 
-/** Consecutive live main statements 125..126, called once in original hook order. */
+/** Consecutive live main statements 132..133, called once in original hook order. */
 export function useMainSidebarOpenSession(
   scope: ReturnType<typeof useMainSidebarApplyRegistryChange>,
 ) {
-  const { location, setCurrentAgentId, company, currentProjectId, go } = scope;
+  const { setCurrentAgentId, modes, modeStates, currentMode, modeKey, currentProjectId, go } =
+    scope;
 
   const openSession = (s: SessionInfo) => {
     // Opening is what "read" means here: stamp the marker before navigating.
@@ -23,11 +22,12 @@ export function useMainSidebarOpenSession(
    * first); development mode keeps whatever conversation is open and only leaves an
    * organization page, which has no development form.
    */
-  const switchMode = (mode: WorkMode) => {
-    if (mode === company.workMode) return;
-    company.setWorkMode(mode);
-    if (mode === "company") go("/org");
-    else if (isOrgRoute(location.pathname)) go("/chat");
+  const switchMode = (key: string) => {
+    if (key === modeKey) return;
+    let to = currentMode < 0 ? null : modeStates[currentMode]!.select(false);
+    const target = modes.findIndex((mode) => mode.key === key);
+    if (target >= 0) to = modeStates[target]!.select(true);
+    if (to !== null) go(to);
   };
   return { ...scope, openSession, switchMode };
 }

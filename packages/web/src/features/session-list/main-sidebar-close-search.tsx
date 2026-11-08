@@ -4,7 +4,7 @@ import { commitGroupOrder, isOrderableGroupMode, saveGroupOrder } from "./group-
 import { GROUP_DRAG_MIME, isGroupDrag } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarToggleGroup } from "./main-sidebar-toggle-group";
 
-/** Consecutive live main statements 100..103, called once in original hook order. */
+/** Consecutive live main statements 107..110, called once in original hook order. */
 export function useMainSidebarCloseSearch(scope: ReturnType<typeof useMainSidebarToggleGroup>) {
   const {
     currentProjectId,

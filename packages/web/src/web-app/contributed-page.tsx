@@ -1,1 +1,2 @@
-export * from "../lib/early-frame-contributed-page";
+/** Compatibility path; exact shared renderer identity. */
+export { ContributedPage } from "../lib/local-contributed-page";

@@ -1,7 +1,20 @@
+/**
+ * The pages the server's plugins contribute that this build can render (GET /api/contributions,
+ * web-app/page-table.ts `contributedPages`) — read here for its company-mode pages (`nav: "org"`):
+ * company mode routes them under the organization layout (org-routes.tsx) and the sidebar draws
+ * their rows.
+ *
+ * One fetch per signed-in user, shared by every caller through a module-level store. Until it
+ * answers — and if it never does — there are none: no contributed page is load-bearing.
+ *
+ * TODO(contributions-provider): the web UI stack's state/contributions.tsx (ContributionsProvider,
+ * which also carries the session surfaces) holds the same contributed pages for the whole tree.
+ * Once both stacks are on one line, read `useContributions().pages` instead and delete this module.
+ */
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import * as api from "../../api/endpoints";
-import { useWebAppPages } from "../../lib/early-frame-index";
-import { contributedPages, type PageEntry } from "../../lib/early-frame-page-table";
+import { useWebAppPages } from "../../lib/local-web-app-pages";
+import { contributedPages, type PageEntry } from "../../lib/local-page-table";
 import { useAuth } from "../../state/auth";
 import { ORG_PAGE_RENDERERS } from "../../lib/company-nav";
 

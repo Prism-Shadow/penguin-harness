@@ -1,16 +1,23 @@
-import { useState } from "react";
+import type { WorkspaceTarget, WorkspaceEntryHost } from "../../lib/session-row-contributions";
+import { useContext, useState } from "react";
+import { glyphOf } from "../../lib/nav-icons";
+import { MainRowExtensions } from "./index";
 import { Dropdown, GlyphIcon, ICONS, Menu, MenuItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 export function GroupOverflowMenu({
-  onBrowse,
+  target,
+  host,
   onRename,
   onDelete,
 }: {
-  onBrowse: () => void;
+  target: WorkspaceTarget;
+  host: WorkspaceEntryHost;
   onRename?: () => void;
   onDelete?: () => void;
 }) {
+  const extensions = useContext(MainRowExtensions);
+  if (extensions === null) throw new Error("Workspace menu mounted outside contributed list");
   const [open, setOpen] = useState(false);
   /** Close first, then act (the rename modal opens on top; the delete is immediate). */
   const item = (fn: () => void) => () => {
@@ -46,11 +53,14 @@ export function GroupOverflowMenu({
       }
     >
       <Menu density="sm">
-        <MenuItem
-          glyph={ICONS.folderOpen}
-          label={S.chat.browseWorkspaceFiles}
-          onSelect={item(onBrowse)}
-        />
+        {extensions.rows.workspaceEntries.map((entry) => (
+          <MenuItem
+            key={entry.id}
+            glyph={glyphOf(entry.icon)}
+            label={entry.label()}
+            onSelect={item(() => entry.run(target, host))}
+          />
+        ))}
         {onRename !== undefined && (
           <MenuItem glyph={ICONS.pencil} label={S.chat.renameWorkspace} onSelect={item(onRename)} />
         )}
