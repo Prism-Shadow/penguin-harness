@@ -317,6 +317,7 @@ enabled = false
 | `model.thinking_level` | `medium` | 每个模型上下文开启时使用的思考等级，除非 Session 钉住了等级 |
 | `model.timeoutMs` | `600000` | 每次 Request 的**空闲**时间预算，单位毫秒 |
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值 |
+| `compaction.max_context_percent` | — | 触发压缩的上下文阈值，按模型上下文窗口的百分比计（1–100）；设置后优先于 `max_context_length` |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 模式压缩使用的提示词 |
@@ -341,6 +342,7 @@ enabled = false
 - `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
 - `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
 - `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
+- `compaction.max_context_percent`：把阈值写成模型上下文窗口的百分比（1–100），于是它跟着 Session 实际运行的模型伸缩，不必为一个模型调好的数字在换模型后重调。填了正数就以它为准，`max_context_length` 不再起作用；两者同样被「窗口 − 2048」裁剪，因此即使填 100% 也给压缩请求本身留出了空间。`-1` 或留空表示不设置，回到 Token 阈值。没有 `context_window` 的模型条目按 128000 窗口计算百分比。
 - `compaction.max_session_turns`：`-1` 表示不限制。
 - `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **技能**，`schedules.prompt` 在 **定时任务**。
 - `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。

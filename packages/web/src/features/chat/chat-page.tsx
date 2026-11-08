@@ -830,12 +830,17 @@ export function ChatPage() {
   // the ring falls back to the model window and the notice stays down).
   const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
   const [compactionLimit, setCompactionLimit] = useState<number | undefined>(undefined);
+  // The same Agent's window-relative threshold. A positive value is the one in force, so the
+  // composer's cutter stops being a control: a token gesture written under a percent that
+  // overrides it would look like it did nothing.
+  const [compactionPercent, setCompactionPercent] = useState<number | undefined>(undefined);
   // Cleared on an Agent switch only. A plain refresh must not blank values that are about to
   // come back unchanged: doing that inside the fetch effect would flash the thinking picker's
   // em dash and drop the ring to the window basis on every refetch.
   useEffect(() => {
     setAgentThinkingLevel("");
     setCompactionLimit(undefined);
+    setCompactionPercent(undefined);
   }, [projectId, selectedAgentId, selectedAgentMachine]);
   // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
   // the value this composer holds can go stale under it. Routing to the settings page and back
@@ -857,6 +862,7 @@ export function ChatPage() {
         if (cancelled) return;
         setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
         setCompactionLimit(configuredCompactionLimit(res.config.compaction?.maxContextLength));
+        setCompactionPercent(res.config.compaction?.maxContextPercent);
       })
       .catch(() => undefined);
     return () => {
@@ -2270,7 +2276,10 @@ export function ChatPage() {
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
-      onChangeCompactionLimit={onChangeCompactionLimit}
+      {...(compactionPercent !== undefined ? { compactionPercent } : {})}
+      {...(compactionPercent !== undefined && compactionPercent > 0
+        ? {}
+        : { onChangeCompactionLimit })}
       onOpenAgentSettings={() =>
         navigate(agentSettingsPath(selected.agentId, selectedAgentMachine, "runtime"))
       }

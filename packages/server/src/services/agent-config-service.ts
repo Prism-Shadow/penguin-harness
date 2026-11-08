@@ -178,6 +178,9 @@ export class AgentConfigService implements AgentConfig {
       ...(typeof compaction.max_context_length === "number"
         ? { maxContextLength: compaction.max_context_length }
         : {}),
+      ...(typeof compaction.max_context_percent === "number"
+        ? { maxContextPercent: compaction.max_context_percent }
+        : {}),
       ...(typeof compaction.max_session_turns === "number"
         ? { maxSessionTurns: compaction.max_session_turns }
         : {}),
@@ -350,6 +353,14 @@ export class AgentConfigService implements AgentConfig {
       setIfProvided(
         ["compaction", "max_context_length"],
         optionalNumber(compaction, "maxContextLength", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(
+        ["compaction", "max_context_percent"],
+        optionalNumber(compaction, "maxContextPercent", {
+          integer: true,
+          positiveOrMinusOne: true,
+          max: 100,
+        }),
       );
       setIfProvided(
         ["compaction", "max_session_turns"],

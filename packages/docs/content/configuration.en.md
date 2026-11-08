@@ -316,6 +316,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `model.thinking_level` | `medium` | The thinking level each model context opens at, unless the Session pins one |
 | `model.timeoutMs` | `600000` | **Idle** budget for a Request, in milliseconds |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
+| `compaction.max_context_percent` | — | Context threshold as a percentage of the model window (1–100); takes precedence over `max_context_length` when set |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | Built-in template | Prompt used for summarize compaction |
@@ -340,6 +341,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `model.thinking_level`: `none` / `low` / `medium` / `high` / `xhigh` / `max`. The level is fixed for a model context, so a change lands at the next compaction. Without this field, the Project's `[default_chat]` `thinking_level` applies, then `medium`.
 - `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
+- `compaction.max_context_percent`: states the threshold as a percentage of the model's context window (1–100), so it follows whichever model the Session actually runs on instead of carrying a number tuned for one of them. A positive value wins over `max_context_length`, which then stops applying. Both are capped at `context_window` − 2048, so even 100% leaves the compaction request its own room. `-1` or unset means "not set": the token threshold applies. An entry with no `context_window` takes its percentage of a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
 - `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.

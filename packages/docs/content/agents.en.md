@@ -207,6 +207,7 @@ The switches and prompts for the vault, Skills, memory and scheduled tasks secti
 | `model.thinking_level` | `low`, `medium`, `high`, `xhigh` or `max`. A new agent uses `medium`. `xhigh` and `max` behave like the tier below them on some models. An agent that stored the old `none` tier keeps it, but it is no longer offered |
 | `model.timeoutMs` | How long to wait between events from the model provider, in milliseconds; not a limit on the whole request |
 | `max_context_length` | The context size that triggers compaction |
+| `max_context_percent` | The context threshold as a percentage of the model window (1–100); takes precedence over `max_context_length` when set |
 | `max_session_turns` | The number of turns that triggers compaction |
 | `mode` | `summarize` (the default) has the model summarize the old context and continues from the summary in a fresh window; `discard` drops the old context without a summary |
 | `prompt` | The prompt used to summarize the context |

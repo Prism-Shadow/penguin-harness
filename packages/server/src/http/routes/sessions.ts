@@ -245,7 +245,12 @@ async function sessionCompactionThreshold(
     const entry = (project.models ?? []).find(
       (m) => m.provider === row.provider && m.model_id === row.modelId,
     );
-    return compactionThresholdFor(agent.config.compaction?.maxContextLength, entry?.context_window);
+    const compaction = agent.config.compaction;
+    return compactionThresholdFor(
+      compaction?.maxContextLength,
+      entry?.context_window,
+      compaction?.maxContextPercent,
+    );
   } catch {
     return null;
   }

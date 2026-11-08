@@ -49,12 +49,7 @@ import {
   type ProjectConfig,
   type SystemConfig,
 } from "./state/index.js";
-import {
-  DEFAULT_MAX_CONTEXT_LENGTH,
-  GenerativeModel,
-  ToolCallIdAllocator,
-  effectiveMaxContextLength,
-} from "./llm/index.js";
+import { GenerativeModel, ToolCallIdAllocator, effectiveCompactionThreshold } from "./llm/index.js";
 import { unreachableModel } from "./llm/unreachable-model.js";
 import { Environment } from "./environment/index.js";
 import {
@@ -403,8 +398,9 @@ function resolveCompaction(
   contextWindow: number | undefined,
 ): CompactionSettings {
   return {
-    maxContextLength: effectiveMaxContextLength(
-      config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
+    maxContextLength: effectiveCompactionThreshold(
+      config?.max_context_length,
+      config?.max_context_percent,
       contextWindow,
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,

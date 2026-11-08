@@ -293,6 +293,8 @@ export interface NumberRule {
   nonNegative?: boolean;
   /** Require integer. */
   integer?: boolean;
+  /** Require at most this value: the upper bound beside `positiveOrMinusOne` (a percentage, say). */
+  max?: number;
   label?: string;
 }
 
@@ -310,6 +312,9 @@ export function optionalNumber(
     throw badRequest(`${label} must be greater than 0 or equal to -1.`);
   }
   if (rule.nonNegative && v < 0) throw badRequest(`${label} must not be negative.`);
+  if (rule.max !== undefined && v > rule.max) {
+    throw badRequest(`${label} must not be greater than ${rule.max}.`);
+  }
   return v;
 }
 

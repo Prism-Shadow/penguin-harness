@@ -352,7 +352,7 @@ Three triggers exist, recorded as `compaction_begin.reason`:
 | `turns` | Session turn count ≥ `maxSessionTurns` (default -1 = unlimited) |
 | `manual` | the user runs `/compact` or calls `session.compact()`, or switches the model inside the Session (the switch compacts on the current model first) |
 
-The effective context threshold for the `context` trigger is the smaller of `maxContextLength` (default 256000) and the model's `context_window` − 2048. A 32k local vLLM therefore compacts at ~30.7k instead of overflowing the window first, while a 1M-window model fires at the configured 256000. An entry without a usable `context_window` — unset, or below 4096 — derives from an assumed 128000 window, i.e. ~126k.
+The effective context threshold for the `context` trigger is the smaller of `maxContextLength` (default 256000) and the model's `context_window` − 2048. A 32k local vLLM therefore compacts at ~30.7k instead of overflowing the window first, while a 1M-window model fires at the configured 256000. An entry without a usable `context_window` — unset, or below 4096 — derives from an assumed 128000 window, i.e. ~126k. An Agent that configures `compaction.max_context_percent` instead takes that percentage of the model's `context_window` (capped the same way at window − 2048), so changing models needs no retuning; `maxContextLength` no longer enters the calculation.
 
 Two modes exist:
 
@@ -394,7 +394,7 @@ Runtime parameters fall into three tiers:
 | --- | --- | --- |
 | Strict | The system prompt, the toolset (MCP included), the model reference | Never change inside a running context. They shape the request prefix, and a context's prefix is fixed from open to close, so the provider's prompt cache stays valid across the whole Trace file. |
 | Soft | The thinking level | A purely per-request parameter, changeable mid-context and never recorded in the Trace, at the cost of the provider's cached messages. |
-| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_session_turns`, `mode`, `prompt`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
+| Unrestricted | The approval mode; the `compaction` section (`max_context_length`, `max_context_percent`, `max_session_turns`, `mode`, `prompt`) | Re-read per decision or per compaction checkpoint. Changes apply at once and never touch the request. |
 
 - Every LLM request takes the Session's pinned thinking level: the Web App's in-chat picker, or the CLI's `--thinking` / `/thinking`. Unpinned, it takes the agent config default read when the context opened. The pickers advise compacting first because a mid-context change costs the provider's cached messages.
 - The approval mode is re-read from the database per decision, so an edit applies immediately.

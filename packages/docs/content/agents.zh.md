@@ -207,6 +207,7 @@ Agent 的内核版本记录它的配置基于哪一代内置默认设置。已�
 | `model.thinking_level` | `low`、`medium`、`high`、`xhigh` 或 `max`。新建 Agent 默认 `medium`。在部分模型上，`xhigh` 和 `max` 的实际表现与低一档相同。保存过旧档位 `none` 的 Agent 会继续保留，但选项中不再提供 |
 | `model.timeoutMs` | 等待模型供应商事件的时间上限，单位毫秒；不限制整个请求的时长 |
 | `max_context_length` | 触发压缩的上下文大小 |
+| `max_context_percent` | 触发压缩的上下文阈值，按模型上下文窗口的百分比计（1–100）；设置后优先于 `max_context_length` |
 | `max_session_turns` | 触发压缩的轮数 |
 | `mode` | `summarize`（默认）：让模型总结旧上下文，然后在新的窗口里从总结继续；`discard`：直接丢弃旧上下文，不做总结 |
 | `prompt` | 总结上下文时使用的提示词 |
