@@ -41,6 +41,7 @@
     "@penguinharness/trace-rsi-toolkit": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
+    "@penguinharness/use-keenable": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*"
   },
   "devDependencies": {

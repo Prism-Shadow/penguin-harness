@@ -185,6 +185,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-keenable':
+        specifier: workspace:*
+        version: link:../../plugins/use-keenable
       '@prismshadow/a2ui':
         specifier: workspace:*
         version: link:../a2ui
@@ -358,6 +361,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-keenable':
+        specifier: workspace:*
+        version: link:../../plugins/use-keenable
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
@@ -560,6 +566,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-keenable':
+        specifier: workspace:*
+        version: link:../../plugins/use-keenable
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -680,6 +689,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-keenable':
+        specifier: workspace:*
+        version: link:../../plugins/use-keenable
       '@prismshadow/a2ui':
         specifier: workspace:*
         version: link:../a2ui
@@ -1285,6 +1297,18 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/use-firecrawl:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/use-keenable:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2305,6 +2329,9 @@ packages:
 
   '@penguinharness/use-firecrawl@file:plugins/use-firecrawl':
     resolution: {directory: plugins/use-firecrawl, type: directory}
+
+  '@penguinharness/use-keenable@file:plugins/use-keenable':
+    resolution: {directory: plugins/use-keenable, type: directory}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -6957,6 +6984,8 @@ snapshots:
 
   '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
 
+  '@penguinharness/use-keenable@file:plugins/use-keenable': {}
+
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
@@ -7038,6 +7067,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-keenable': file:plugins/use-keenable
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -7084,6 +7114,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-keenable': file:plugins/use-keenable
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -7190,6 +7221,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-keenable': file:plugins/use-keenable
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
@@ -7246,6 +7278,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-keenable': file:plugins/use-keenable
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
@@ -7302,6 +7335,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-keenable': file:plugins/use-keenable
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
