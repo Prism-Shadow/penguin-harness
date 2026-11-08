@@ -1,7 +1,7 @@
 import { draftSessionTitle } from "../chat";
 import type { useMainSidebarCloseSearch } from "./main-sidebar-close-search";
 
-/** Consecutive live main statements 104..105, called once in original hook order. */
+/** Consecutive live main statements 111..112, called once in original hook order. */
 export function useMainSidebarShownDrafts(scope: ReturnType<typeof useMainSidebarCloseSearch>) {
   const {
     byAgent,

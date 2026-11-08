@@ -15,7 +15,7 @@ import {
 import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
 
-/** Consecutive live main statements 109..115, called once in original hook order. */
+/** Consecutive live main statements 116..122, called once in original hook order. */
 export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSidebarFetchScope>) {
   const {
     navigate,
@@ -38,7 +38,6 @@ export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSid
     setDeletingDraft,
     renamingSession,
     setRenamingSession,
-    renameText,
     setRenameBusy,
     setRenameError,
     onNavigate,
@@ -61,10 +60,8 @@ export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSid
     }
   };
 
-  const confirmRename = async () => {
+  const confirmRename = async (title: string) => {
     if (!renamingSession) return;
-    const title = renameText.trim();
-    if (!title) return;
     setRenameBusy(true);
     setRenameError(null);
     try {

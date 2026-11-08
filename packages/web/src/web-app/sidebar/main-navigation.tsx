@@ -1,3 +1,4 @@
+import { marksFor } from "../../lib/sidebar-modes";
 import {
   SidebarAccountButton,
   SidebarNavEntry,
@@ -13,21 +14,22 @@ import {
 } from "../../lib/sidebar-nav-state";
 
 import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
+import { pageTitle } from "../../lib/local-page-table";
 import { UserMenu } from "./user-menu";
-import { PinnedBalanceBadge } from "../../features/models";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { navNoteFor } from "../../lib/use-update-badges";
-import { COMPANY_NAV_ICONS, COMPANY_NAV_KEYS, orgPagePath } from "../../features/company";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "../../features/session-list";
 
 export function createMainSidebarNavigation(scope: MainSidebarState) {
   const {
     location,
+    locale,
     user,
     badges,
-    inCompany,
-    navOrg,
+    slotBadges,
+    modeStates,
+    currentMode,
+    notes,
     navCollapsed,
     navPages,
     navPins,
@@ -48,18 +50,15 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
     to: string | null;
     label: string;
+    /** The resolved drawing: the contribution names the glyph in the registry. */
     icon: string;
-  }> = inCompany
-    ? COMPANY_NAV_KEYS.map((key) => ({
-        key,
-        // Company mode with no organization keeps its six rows and disables them: the pages
-        // exist, they just have no organization to show yet, and a nav that empties itself
-        // reads as a broken shell rather than as an empty one.
-        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-        label: S.nav.org[key],
-        icon: COMPANY_NAV_ICONS[key],
-      }))
-    : [];
+  }> =
+    currentMode < 0
+      ? []
+      : [...modeStates[currentMode]!.navItems].map((item) => ({
+          ...item,
+          icon: glyphOf(item.icon),
+        }));
 
   /**
    * Development mode's entries by area (nav-state.ts): New chat, then the main
@@ -81,14 +80,22 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
    */
   const renderNavEntry = (key: NavGroupKey) => {
     const to = `/${key}`;
-    const label = S.nav[key];
-    const note = navNoteFor(badges, to);
+    const page = navPages.find((page) => page.key === key);
+    // A page names itself in the interface's language (PageData.title / titleZh); the S.nav
+    // strings cover only the entries no page backs (New chat, the switches, the fold).
+    const label =
+      page !== undefined
+        ? pageTitle(page, locale)
+        : typeof S.nav[key as keyof typeof S.nav] === "string"
+          ? (S.nav[key as keyof typeof S.nav] as string)
+          : key;
+    const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, navPins);
     return (
       <SidebarNavEntry
         key={key}
         label={label}
-        glyph={NAV_ICONS[key as keyof typeof NAV_ICONS]}
+        glyph={page !== undefined ? glyphOf(page.icon) : NAV_ICONS[key as keyof typeof NAV_ICONS]}
         href={to}
         active={isCurrentPath(to, location.pathname)}
         renderLink={renderRouterLink}
@@ -147,10 +154,10 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
           onClick={toggle}
           // The dot alone is mysterious: name what is waiting on the trigger (hover tooltip +
           // accessible name), in the App info row's own wording.
-          {...(badges.softwareNote !== null
+          {...((notes.get("account") ?? null) !== null
             ? {
-                hint: badges.softwareNote,
-                label: `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
+                hint: notes.get("account") ?? undefined,
+                label: `${user?.displayName ?? user?.userId ?? ""} · ${notes.get("account") ?? null}`,
               }
             : {})}
           avatar={
@@ -165,7 +172,13 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
             </UserAvatar>
           }
           name={user?.displayName ?? user?.userId}
-          trailing={<PinnedBalanceBadge />}
+          trailing={
+            <>
+              {marksFor(slotBadges, "account").map(({ id, Mark }) => (
+                <Mark key={id} />
+              ))}
+            </>
+          }
           {...(user?.isAdmin ? { role: S.auth.admin } : {})}
         />
       )}

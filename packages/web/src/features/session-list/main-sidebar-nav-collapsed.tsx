@@ -8,7 +8,7 @@ import {
 import { NavArea } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarSessions } from "./main-sidebar-sessions";
 
-/** Consecutive live main statements 23..29, called once in original hook order. */
+/** Consecutive live main statements 30..36, called once in original hook order. */
 export function useMainSidebarNavCollapsed(scope: ReturnType<typeof useMainSidebarSessions>) {
   const { navPagesOf, useWebAppPages } = scope;
 

@@ -4,7 +4,7 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import type { useMainSidebarGroupMode } from "./main-sidebar-group-mode";
 
-/** Consecutive live main statements 42..50, called once in original hook order. */
+/** Consecutive live main statements 49..57, called once in original hook order. */
 export function useMainSidebarSearchOpen(scope: ReturnType<typeof useMainSidebarGroupMode>) {
   const { inCompany, initialSearchOpen } = scope;
 

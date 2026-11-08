@@ -6,13 +6,12 @@ import { SESSION_DRAG_MIME } from "../../lib/main-sidebar-persistence";
 import { SidebarSessionRow } from "./main-session-row";
 import type { useMainSidebarAgentNameById } from "./main-sidebar-agent-name-by-id";
 
-/** Consecutive live main statements 128..128, called once in original hook order. */
+/** Consecutive live main statements 135..135, called once in original hook order. */
 export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebarAgentNameById>) {
   const {
     locale,
     activeSessionId,
     sessionSeen,
-    scheduledSessions,
     pinnedSessions,
     dragSession,
     setDragSession,
@@ -112,7 +111,6 @@ export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebar
             // the whole transition sequence is testable without a DOM.
             activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
             background={sessionBackgroundTasks(s)}
-            scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
@@ -127,7 +125,6 @@ export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebar
             onTogglePin={(x) => toggleSessionPin(x.sessionId)}
             onRename={(x) => {
               setRenameError(null);
-              setRenameText(x.title ?? "");
               setRenamingSession(x);
             }}
             onMessaging={(x) => setMessagingSession(x)}

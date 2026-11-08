@@ -1,19 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { useSessionSeen } from "../../lib/session-seen";
 import { isSidebarRow } from "../../lib/session-grouping";
-import { pendingScheduleSessions, useSchedulesAcross } from "../schedules";
-import { useLocalShown } from "../../lib/local-first";
-import {
-  collapsedGroupsKey,
-  pinnedGroupsKey,
-  NO_SCHEDULED_SESSIONS,
-} from "../../lib/main-sidebar-persistence";
+import { collapsedGroupsKey, pinnedGroupsKey } from "../../lib/main-sidebar-persistence";
 import type { useMainSidebarInputs } from "./main-sidebar-inputs";
 
-/** Consecutive live main statements 12..22, called once in original hook order. */
+/** Consecutive live main statements 19..29, called once in original hook order. */
 export function useMainSidebarSessions(scope: ReturnType<typeof useMainSidebarInputs>) {
-  const { currentProject, allSessions, allByAgent, activeSessionId, machineIds } = scope;
+  const { currentProject, allSessions, allByAgent } = scope;
 
   /**
    * The rows this list renders: the user's OWN active conversations (isSidebarRow). The store
@@ -38,36 +32,9 @@ export function useMainSidebarSessions(scope: ReturnType<typeof useMainSidebarIn
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
-  // The Project's scheduled tasks, shared with the dock's schedules panel through one store, so
-  // that neither surface can take the other's answer away. The scope is the Project, not the
-  // current Agent: this list draws every Agent's Sessions in every grouping mode, so whether a
-  // row wears the mark must not depend on which Agent is current — the chat page moves that to
-  // whatever conversation is open, and with a per-Agent list every other Agent's rows lost their
-  // marks until the user came back to them. Re-read on every navigation: opening a conversation
-  // is the moment a task may just have been created or switched off — once this window's own content is on screen.
-  const localShown = useLocalShown();
-  const projectSchedules = useSchedulesAcross(
-    currentProjectId,
-    localShown ? machineIds : [],
-    activeSessionId ?? "",
-  );
-  // The Sessions wearing the alarm clock: one bound task with a next fire time is enough. The
-  // store re-renders these rows on every refresh (a navigation, a schedule event, a turn ending,
-  // the panel's poll), and the server recomputes `nextFireAt` on each listing, so a task that
-  // fired for the last time loses its mark at the next refresh.
-  const pendingScheduled = useMemo(
-    () => (projectSchedules === null ? null : pendingScheduleSessions(projectSchedules)),
-    [projectSchedules],
-  );
-  // A null list means "this Project has not been read yet", never "this Project has no tasks":
-  // reading it as the second blanks every alarm in the list for as long as a request takes. The
-  // marks on screen stand until a real answer replaces them, which is the standing the pin and
-  // the relay glyph get for free by being fields of the row itself.
-  const lastScheduledRef = useRef<ReadonlySet<string>>(NO_SCHEDULED_SESSIONS);
-  useEffect(() => {
-    if (pendingScheduled !== null) lastScheduledRef.current = pendingScheduled;
-  }, [pendingScheduled]);
-  const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
+  // The alarm clock on a row (the schedules module's contributed mark, session-row-mark.ts)
+  // reads the same store over the same servers: one reader here would only race it, and the
+  // row itself is where the mark's hook runs, so the list carries no schedule read of its own.
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   return {
@@ -76,10 +43,6 @@ export function useMainSidebarSessions(scope: ReturnType<typeof useMainSidebarIn
     byAgent,
     currentProjectId,
     sessionSeen,
-    projectSchedules,
-    pendingScheduled,
-    lastScheduledRef,
-    scheduledSessions,
     collapseStoreKey,
     pinStoreKey,
   };
