@@ -33,8 +33,7 @@ import {
   scheduleItems,
   scheduleItemsAcross,
 } from "../src/features/schedules/schedule-store";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch, FetchRequest } from "./helpers/fetch";
+import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./helpers/fetch";
 
 /** A task as the Project-wide listing returns it: stamped with the agent whose directory holds it. */
 function task(name: string, over: Partial<ProjectScheduleItem> = {}): ProjectScheduleItem {

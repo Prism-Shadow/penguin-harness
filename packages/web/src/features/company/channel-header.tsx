@@ -36,8 +36,9 @@ import {
   noAutofill,
   toastSuccess,
   usePortalPanel,
+  type AvatarStackItem,
 } from "@prismshadow/penguin-ui";
-import type { AvatarStackItem } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useProject } from "../../state/project";
@@ -45,8 +46,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
-import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
-import type { InviteCandidate } from "./channel-list";
+import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
+
 import { parsePrincipal } from "./principals";
 import { toastApiError } from "../../lib/toast-api-error";
 

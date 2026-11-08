@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { ModelSelect } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { sameModelRef } from "../models/model-grouping";
+import { sameModelRef } from "../models";
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";
 

@@ -59,16 +59,15 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { sameModelRef } from "../models/model-grouping";
+import { ModelCatalogSelect, modelLabel, WorkspaceSelect } from "../chat";
+import { sameModelRef } from "../models";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
-import { orgCreatedTarget } from "./company-nav";
+import { orgCreatedTarget } from "../../lib/company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { SemanticIdField } from "../semantic-id";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,

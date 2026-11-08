@@ -7,8 +7,16 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
 import {
   A2uiActionsProvider,
   EmptyState,

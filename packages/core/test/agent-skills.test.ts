@@ -7,7 +7,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill } from "../src/index.js";
 import {
   AGENTS_MD_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -44,9 +43,15 @@ const skillFile = (name: string, file: string) =>
 const skillMd = (name: string) => skillFile(name, "SKILL.md");
 const skillIcon = (name: string) => skillFile(name, "icon.svg");
 
+/** A library Skill as the loader stamps it: full frontmatter, then the body. */
+const stampedSkill = (name: string) => ({
+  name,
+  content: `---\nname: ${name}\ndescription: Configure ${name}.\nshort_description: ${name}\nversion: 2026.09.01.1\n---\n\n# ${name}\n\n## Before you start\n\nAsk first.\n`,
+});
+
 describe("installSkill / removeSkill", () => {
   it("writes skills/<name>/SKILL.md verbatim with a trailing newline", async () => {
-    const skill = librarySkill("penguin-config")!.skill;
+    const skill = stampedSkill("penguin-config");
     await install(skill.name, skill.content);
     expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(skill.content);
 
@@ -65,7 +70,7 @@ describe("installSkill / removeSkill", () => {
     // Library skills carry no icon (the plugin owns it), but installSkill still accepts one —
     // for user-authored skills and zip imports. An install with an icon writes it to disk.
     const icon = "<svg><rect /></svg>";
-    await install("penguin-sdk", librarySkill("penguin-sdk")!.skill.content, icon);
+    await install("penguin-sdk", stampedSkill("penguin-sdk").content, icon);
     expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(icon);
 
     // Overwrite semantics: this install has no icon -> the old icon.svg is removed, and the
@@ -119,14 +124,14 @@ describe("installSkill / removeSkill", () => {
   });
 
   it("stages the install and leaves no staging directory behind", async () => {
-    const skill = librarySkill("penguin-sdk")!.skill;
+    const skill = stampedSkill("penguin-sdk");
     await install(skill.name, skill.content);
     const entries = await fs.readdir(skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
     expect(entries).toEqual(["penguin-sdk"]);
   });
 
   it("removeSkill deletes the whole skill directory and is idempotent", async () => {
-    const skill = librarySkill("penguin-sdk")!.skill;
+    const skill = stampedSkill("penguin-sdk");
     await install(skill.name, skill.content);
     await removeSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, "penguin-sdk");
     await expect(fs.access(skillMd("penguin-sdk"))).rejects.toThrow();

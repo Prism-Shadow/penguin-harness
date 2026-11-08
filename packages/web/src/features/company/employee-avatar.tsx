@@ -8,7 +8,7 @@
  */
 import * as api from "../../api/endpoints";
 import { AgentAvatar, CHANNEL_RUN_AVATAR_PX } from "@prismshadow/penguin-ui";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 
 /**
  * How large a face is drawn, by where it sits. These are a chat product's rungs rather than

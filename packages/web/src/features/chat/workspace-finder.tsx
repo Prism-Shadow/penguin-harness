@@ -32,13 +32,19 @@
  * wear the text-control look, and the toolbar is the dialog's head — laid straight into the
  * dialog, as Modal's own footer is, so a theme's dialog recipe finds both.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,

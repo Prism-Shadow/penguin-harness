@@ -28,8 +28,10 @@ import {
   allowlistProblems,
   analyzeFile,
   deslopHits,
+  type DeslopAllowlist,
+  type DeslopPolicy,
 } from "../../ui/src/testing/deslop";
-import type { DeslopAllowlist, DeslopPolicy } from "../../ui/src/testing/deslop";
+
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
@@ -63,7 +65,6 @@ const POLICY: DeslopPolicy = {
 const ALLOWLIST: DeslopAllowlist = {
   "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
-  "components/layout/project-dialogs.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
   "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
