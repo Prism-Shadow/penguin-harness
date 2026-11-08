@@ -3,6 +3,7 @@
 - **Date:** 2026-11-07
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `ui-gallery`
+- **PR:** [#1506](https://github.com/Prism-Shadow/penguin-harness/pull/1506)
 
 [中文版](2026-11-07-agent-avatar-upload.zh.md)
 
