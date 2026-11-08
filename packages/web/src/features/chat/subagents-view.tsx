@@ -174,6 +174,16 @@ export function SubagentsView({
     // Last-resort label is the short session id, not a generic word: two unknown children must stay distinguishable in the graph.
     return resolveAgentLabel(node, agents, sessions) ?? shortSessionId(node.sessionId);
   };
+  /** A node's Agent's own picture, the Agent found as the label finds it (the root is this Session's). */
+  const avatarFor = (node: TopologyNode): string | undefined => {
+    const agentId =
+      node.depth === 0
+        ? session.agentId
+        : (node.agentId ?? sessions.find((s) => s.sessionId === node.sessionId)?.agentId);
+    return agentId === undefined
+      ? undefined
+      : avatarSrc(agentId, machineForSession(node.sessionId));
+  };
 
   const isRoot = active !== null && active.origin.length === 0;
   const activeNode = active ? (nodes.find((n) => n.sessionId === active.sessionId) ?? null) : null;
@@ -223,7 +233,7 @@ export function SubagentsView({
               nodes={nodes}
               selectedId={active?.sessionId ?? null}
               labelFor={labelFor}
-              avatarFor={(node) => avatarSrc(node.agentId ?? "", machineForSession(node.sessionId))}
+              avatarFor={avatarFor}
               onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
             />
           </div>
