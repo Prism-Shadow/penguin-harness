@@ -21,6 +21,7 @@ import { vi } from "vitest";
 import { createElement as h } from "react";
 import { Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type {
+  ChatDefaultsDto,
   MachinesResponse,
   ModelsResponse,
   ServerEvent,
@@ -111,7 +112,8 @@ export interface DraftWorld {
   healNext(): void;
 }
 
-export function draftWorld(): DraftWorld {
+/** `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by default). */
+export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): DraftWorld {
   socketWorld.reset();
   /** Every Session by id, with the server that holds it (null = this one). */
   const sessions = new Map<string, { info: SessionInfo; machine: string | null }>();
@@ -172,7 +174,7 @@ export function draftWorld(): DraftWorld {
     }
     const project = `/api/projects/${PROJECT_ID}`;
     if (path === `${project}/machines`) return json(machines);
-    if (path === `${project}/chat-defaults`) return json({});
+    if (path === `${project}/chat-defaults`) return json(options.chatDefaults ?? {});
     if (path === `${project}/models`) return json(MODELS);
     if (path === `${project}/agents` && method === "GET") {
       return json({
