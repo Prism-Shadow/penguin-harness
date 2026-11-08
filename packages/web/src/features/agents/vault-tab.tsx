@@ -33,7 +33,6 @@ import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
-
 import { VaultAddDialog } from "./vault-add-dialog";
 
 export function VaultTab({

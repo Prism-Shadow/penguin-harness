@@ -8,7 +8,7 @@
  *
  * After the organization's own pages come the company-mode pages a plugin contributes
  * (`nav: "org"`, use-org-pages.ts): their paths are relative to the organization, and the nav
- * row beside them is the sidebar's. A builtin one is drawn
+ * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). A builtin one is drawn
  * with the component this file names for it.
  */
 import type { ComponentType } from "react";

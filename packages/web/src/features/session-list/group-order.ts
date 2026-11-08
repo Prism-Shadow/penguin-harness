@@ -1,58 +1,12 @@
-/**
- * Manual order of the sidebar's GROUPS — the Workspace folders and the Agents the
- * conversation list is cut into (pure decisions, unit tested). The row-level counterpart
- * is session-order.ts, whose sequence algebra this module reuses rather than restates:
- * `orderWithinPinPartitions` renders the order, `moveInSequence` performs a drop, and
- * `readStringArray` / `writeStringArray` are the storage body. What differs is the key
- * namespace, which modes may be ordered, that there is no sort-mode switch — and how a
- * drop is committed (commitGroupOrder, below).
- *
- * - **Implicit mode.** Dragging a group IS the intent — there is no second toggle beside
- *   the rows' `recent | manual` one. A Project+mode with nothing stored keeps the
- *   automatic sort untouched (an empty order is the identity), so a fresh profile looks
- *   exactly as it did.
- * - **Workspace and Agent modes only.** The time mode's buckets are a fixed
- *   chronological ladder: putting the older bucket above the newer one is not an order
- *   anyone can mean. isOrderableGroupMode is the single gate — the store refuses to read
- *   or write for "time", so the exclusion cannot be undone by forgetting a check at one
- *   call site.
- * - **One array per Project AND grouping mode**, exactly like the rows: the modes cut
- *   the list into different groups, so one shared array would let a drag in one mode
- *   scramble the other.
- * - **Unknown keys go to the TOP**, keeping their automatic order among themselves —
- *   the rule the rows use for new Sessions, so a Workspace used for the first time or a
- *   freshly created Agent surfaces instead of hiding at the bottom of a long list.
- *
- * **Stale keys are inert, and nothing prunes them.** A stored key that matches no group
- * is only ever a failed membership lookup (applyManualOrder), so it costs a map entry
- * and changes nothing on screen. Pruning was tried at the drop and removed: deciding a
- * group is *gone* needs the mode's complete live key set, and the client cannot prove
- * one. In Workspace mode the per-Agent `workspaceCounts` look like such a proof but
- * describe only the rows the server's index knew at fetch time, so a Workspace whose
- * Sessions arrive later (a boot-time adoption, an import) can be absent from a
- * complete-looking picture; in Agent mode `agentsLoading === false` is not
- * proof of a *successful* fetch, and an empty Agent list is indistinguishable from a
- * failed one. A wrong proof silently discards an arrangement the user cannot restore,
- * which is a bad trade against a few hundred short strings in localStorage. If a group
- * ever comes back under the same key it resumes its old place, which is the honest
- * reading of "same key, same group".
- *
- * Ordering composes with the group pins the same way the rows compose with theirs: the
- * pinned cluster renders first and the manual order applies within the pinned cluster
- * and within the rest independently, so a drag can never pin or unpin a group.
- *
- * Storage is injectable (model-group-expansion.ts convention: vitest runs in Node, no
- * localStorage); malformed values degrade to the defaults.
- */
 import {
   moveInSequence,
   orderWithinPinPartitions,
   readStringArray,
   writeStringArray,
   type SessionOrderStorage,
-} from "./session-order";
+} from "../../lib/session-order";
 
-import type { GroupMode } from "../components/ui/group-list";
+import type { GroupMode } from "../../components/ui/group-list";
 
 /**
  * The grouping modes whose groups can be dragged into a manual order. "time" is

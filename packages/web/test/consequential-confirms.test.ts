@@ -20,8 +20,8 @@ const SCAN = scanSources();
 
 /** [module under packages/web/src, the function only a confirmation may call]. */
 const GUARDED: ReadonlyArray<readonly [string, string]> = [
-  ["components/layout/project-dialogs.tsx", "doRemove"],
-  ["components/layout/project-dialogs.tsx", "restoreDefaults"],
+  ["features/projects/project-dialogs/members-section.tsx", "doRemove"],
+  ["features/projects/project-dialogs/security-policy-section.tsx", "restoreDefaults"],
   ["features/agents/agent-settings-page.tsx", "runImport"],
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],

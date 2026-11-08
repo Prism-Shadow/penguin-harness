@@ -9,7 +9,7 @@ import { useState, type ReactNode } from "react";
 
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastError } from "@prismshadow/penguin-ui";
-import { useAiBridge, type AiChatRequest, pickDefaultAgent } from "../ai-create";
+import { useAiBridge, pickDefaultAgent, type AiChatRequest } from "../ai-create";
 
 import { S } from "../../lib/strings";
 
