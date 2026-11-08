@@ -3,6 +3,7 @@
 - **Date:** 2026-11-07
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1505](https://github.com/Prism-Shadow/penguin-harness/pull/1505)
 
 [中文版](2026-11-07-browser-google-signin.zh.md)
 
