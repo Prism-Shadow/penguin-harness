@@ -22,6 +22,7 @@ import {
   ServerClient,
   shortSessionId,
 } from "../client.js";
+import { cutText } from "../cut-text.js";
 import { listAgents, listAgentSessions } from "../server-session.js";
 import { relativeTime, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -90,7 +91,7 @@ export function registerLsCommand(session: Command, t: Messages): void {
           rows.map((s) => [
             shortSessionId(s.sessionId),
             s.agentId,
-            (s.title ?? "").slice(0, 40),
+            cutText(s.title ?? "", 40),
             stateText(s),
             relativeTime(s.lastActiveAt),
             workspaceTail(s.workspace),

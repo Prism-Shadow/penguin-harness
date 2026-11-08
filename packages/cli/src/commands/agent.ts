@@ -46,6 +46,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
+import { cutText } from "../cut-text.js";
 import { listAgents } from "../server-session.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -322,7 +323,7 @@ export function registerAgentCommand(program: Command, t: Messages): void {
             a.agentId,
             a.name ?? "",
             String(a.sessionCount),
-            (a.description ?? "").slice(0, 60),
+            cutText(a.description ?? "", 60),
           ]),
         ),
       );

@@ -25,6 +25,7 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "@prismshadow/penguin-server/api";
+import { cutText } from "./cut-text.js";
 import type { Messages } from "./i18n.js";
 import { renderTable } from "./table.js";
 
@@ -213,10 +214,10 @@ function returnLine(value: unknown, t: Messages, savedTo: string | undefined): s
   let text = full;
   let suffix = "";
   if (savedTo !== undefined) {
-    text = full.length > SAVED_PREVIEW ? `${full.slice(0, SAVED_PREVIEW)}…` : full;
+    text = full.length > SAVED_PREVIEW ? `${cutText(full, SAVED_PREVIEW)}…` : full;
     suffix = ` ${t.browser.savedTo(savedTo)}`;
   } else if (full.length > RETURN_LIMIT) {
-    text = full.slice(0, RETURN_LIMIT);
+    text = cutText(full, RETURN_LIMIT);
     suffix = ` ${t.browser.truncatedSave()}`;
   }
   const { label, line } = t.browser;
@@ -230,7 +231,7 @@ export function renderCdpResult(result: unknown, t: Messages): string {
   const text = JSON.stringify(result ?? null);
   return lines([
     text.length > RETURN_LIMIT
-      ? `${text.slice(0, RETURN_LIMIT)} ${t.browser.truncatedJson()}`
+      ? `${cutText(text, RETURN_LIMIT)} ${t.browser.truncatedJson()}`
       : text,
   ]);
 }
@@ -297,7 +298,7 @@ function label(tab: BuiltinBrowserTab, max: number): string {
 }
 
 function shorten(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  return text.length > max ? `${cutText(text, max - 1)}…` : text;
 }
 
 function oneLine(text: string): string {
