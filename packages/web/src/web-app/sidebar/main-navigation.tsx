@@ -1,3 +1,4 @@
+import { marksFor } from "../../lib/sidebar-modes";
 import {
   SidebarAccountButton,
   SidebarNavEntry,
@@ -14,10 +15,7 @@ import {
 
 import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
 import { UserMenu } from "./user-menu";
-import { PinnedBalanceBadge } from "../../features/models";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { navNoteFor } from "../../lib/use-update-badges";
-import { COMPANY_NAV_ICONS, COMPANY_NAV_KEYS, orgPagePath } from "../../features/company";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "../../features/session-list";
 
@@ -26,8 +24,10 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     location,
     user,
     badges,
-    inCompany,
-    navOrg,
+    slotBadges,
+    modeStates,
+    currentMode,
+    notes,
     navCollapsed,
     navPages,
     navPins,
@@ -49,17 +49,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     to: string | null;
     label: string;
     icon: string;
-  }> = inCompany
-    ? COMPANY_NAV_KEYS.map((key) => ({
-        key,
-        // Company mode with no organization keeps its six rows and disables them: the pages
-        // exist, they just have no organization to show yet, and a nav that empties itself
-        // reads as a broken shell rather than as an empty one.
-        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-        label: S.nav.org[key],
-        icon: COMPANY_NAV_ICONS[key],
-      }))
-    : [];
+  }> = currentMode < 0 ? [] : [...modeStates[currentMode]!.navItems];
 
   /**
    * Development mode's entries by area (nav-state.ts): New chat, then the main
@@ -81,8 +71,12 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
    */
   const renderNavEntry = (key: NavGroupKey) => {
     const to = `/${key}`;
-    const label = S.nav[key];
-    const note = navNoteFor(badges, to);
+    const page = navPages.find((page) => page.key === key);
+    const label =
+      typeof S.nav[key as keyof typeof S.nav] === "string"
+        ? (S.nav[key as keyof typeof S.nav] as string)
+        : (page?.title ?? key);
+    const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, navPins);
     return (
       <SidebarNavEntry
@@ -147,10 +141,10 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
           onClick={toggle}
           // The dot alone is mysterious: name what is waiting on the trigger (hover tooltip +
           // accessible name), in the App info row's own wording.
-          {...(badges.softwareNote !== null
+          {...((notes.get("account") ?? null) !== null
             ? {
-                hint: badges.softwareNote,
-                label: `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
+                hint: notes.get("account") ?? undefined,
+                label: `${user?.displayName ?? user?.userId ?? ""} · ${notes.get("account") ?? null}`,
               }
             : {})}
           avatar={
@@ -165,7 +159,13 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
             </UserAvatar>
           }
           name={user?.displayName ?? user?.userId}
-          trailing={<PinnedBalanceBadge />}
+          trailing={
+            <>
+              {marksFor(slotBadges, "account").map(({ id, Mark }) => (
+                <Mark key={id} />
+              ))}
+            </>
+          }
           {...(user?.isAdmin ? { role: S.auth.admin } : {})}
         />
       )}

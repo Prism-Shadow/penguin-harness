@@ -1,3 +1,9 @@
+export { MainSidebarFragments, MainRowExtensions } from "./main-sidebar-fragments";
+
+export { sessionListDeps } from "./deps";
+
+export { withEntries } from "./row-actions";
+
 export {
   loadPinnedSessions,
   removePinnedSession,

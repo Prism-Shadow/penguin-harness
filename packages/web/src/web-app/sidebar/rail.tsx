@@ -1,10 +1,11 @@
+import { sidebarDeps } from "./deps";
+import { currentModeIndex, sectionsIn } from "./modes";
 import { useMemo, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import {
   ICONS,
   Rail,
   RailAccountButton,
-  RailDivider,
   RailItem,
   Tooltip,
   UpdateDot,
@@ -14,22 +15,16 @@ import {
 import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import { NAV_ICONS, NEW_CHAT_ICON } from "../../lib/nav-icons";
+import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { navKeysFor } from "./nav-state";
 import { navPagesOf, useWebAppPages } from "../index";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompany } from "../../lib/company-context";
-import {
-  COMPANY_NAV_ICONS,
-  ChannelRailRows,
-  DefaultChannelRailRow,
-  DeskRailRows,
-  TempSessionRailRows,
-} from "../../features/company";
-import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../lib/company-nav";
+
+import { parseOrgKey } from "../../lib/company-nav";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
@@ -63,13 +58,19 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
    * every other badge here rides on a page entry, which is where its trail continues.
    */
   const badges = useUpdateBadges();
+  const { modes, sections, useModes, useNotes } = sidebarDeps.useDeps();
+  const modeStates = useModes();
+  const currentMode = currentModeIndex(modeStates);
+  const modeKey = currentMode < 0 ? "dev" : modes[currentMode]!.key;
+  const ModeTop = currentMode < 0 ? undefined : modes[currentMode]!.mode.RailTop;
+  const notes = useNotes();
   const company = useCompany();
   const location = useLocation();
   /**
    * Company mode: the all-hands channel takes the top slot, the organization's pages replace
    * the development ones, and its other channels follow them as rows.
    */
-  const inCompany = company.workMode === "company";
+  const inCompany = currentMode >= 0;
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
@@ -99,25 +100,30 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     label: string;
     icon: string;
     note: string | null;
-  }> = inCompany
-    ? [
-        ...COMPANY_NAV_KEYS.map((key) => ({
-          key,
-          // The six entries keep their places with no organization, disabled: a rail that
-          // empties itself reads as a broken shell rather than as an empty one.
-          to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-          label: S.nav.org[key],
-          icon: COMPANY_NAV_ICONS[key],
-          note: null as string | null,
-        })),
-      ]
-    : navKeysFor(navPages, user?.isAdmin === true).map((key) => ({
-        key,
-        to: `/${key}`,
-        label: S.nav[key],
-        icon: NAV_ICONS[key],
-        note: navNoteFor(badges, `/${key}`),
-      }));
+    childPaths?: readonly string[];
+  }> =
+    currentMode >= 0
+      ? modeStates[currentMode]!.navItems.map((item) => ({
+          ...item,
+          note: notes.get(item.key) ?? null,
+        }))
+      : navKeysFor(navPages, user?.isAdmin === true).flatMap((key) => {
+          const page = navPages.find((page) => page.key === key);
+          return page === undefined
+            ? []
+            : [
+                {
+                  key,
+                  to: `/${key}`,
+                  label:
+                    typeof S.nav[key as keyof typeof S.nav] === "string"
+                      ? (S.nav[key as keyof typeof S.nav] as string)
+                      : (page.title ?? key),
+                  icon: glyphOf(page.icon ?? key),
+                  note: notes.get(key) ?? null,
+                },
+              ];
+        });
 
   /**
    * The rail's avatar hangs its menu off the rail's OUTER edge rather than over the rail:
@@ -150,12 +156,12 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
    */
   const accountName = user?.displayName ?? user?.userId;
   const avatarName =
-    badges.softwareNote !== null
-      ? `${accountName ?? ""} · ${badges.softwareNote}`
+    (notes.get("account") ?? null) !== null
+      ? `${accountName ?? ""} · ${notes.get("account") ?? null}`
       : (accountName ?? S.auth.admin);
   const avatarTooltip =
-    badges.softwareNote !== null
-      ? `${S.nav.userSettings} · ${badges.softwareNote}`
+    (notes.get("account") ?? null) !== null
+      ? `${S.nav.userSettings} · ${notes.get("account") ?? null}`
       : S.nav.userSettings;
   const expandTitle = useShortcutTitle(S.nav.expandSidebar, "sidebar.toggle");
 
@@ -216,7 +222,9 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           organization's conversations are its channels, and the one everyone is in is where a
           person goes back to. */}
       {inCompany ? (
-        <DefaultChannelRailRow org={navOrg} />
+        ModeTop ? (
+          <ModeTop />
+        ) : null
       ) : (
         <RailItem
           label={S.nav.lastConversation}
@@ -250,7 +258,12 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             glyph={item.icon}
             href={item.to ?? ""}
             disabled={item.to === null}
-            active={item.to !== null && isCurrentPath(item.to, location.pathname)}
+            active={
+              item.to !== null &&
+              [item.to, ...(item.childPaths ?? [])].some((to) =>
+                isCurrentPath(to, location.pathname),
+              )
+            }
             renderLink={renderRouterLink}
             {...(item.note !== null ? { badge: <UpdateDot /> } : {})}
           />
@@ -261,13 +274,8 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           run ends (the channels and the Temporary entries draw their own, and only when they
           have rows); a channel row carries its own unread count and a desk or an entry its
           running dot, since a rail with no labels must still say how much is waiting. */}
-      {inCompany && navOrg !== null && (
-        <>
-          <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
-          <RailDivider />
-          <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
-          <TempSessionRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
-        </>
+      {sectionsIn(sections, modeKey, "body").map(({ id, section: { Rail: SectionRail } }) =>
+        SectionRail ? <SectionRail key={id} /> : null,
       )}
     </Rail>
   );

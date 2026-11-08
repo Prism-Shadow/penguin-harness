@@ -5,7 +5,8 @@
  * `layers` — so the shell imports no feature. What it provides is the root component the app
  * mounts, with the contributions bound into it (web-app/deps.ts), and the user event handlers
  * the sessions module collects (state/user-events.ts), which the router hands to the session
- * list.
+ * list. The layout mounts the sidebar module's column and rail, and opens the chat module's
+ * drafts on the New chat command.
  *
  * The kernel addresses a slot by the providing MODULE's name (`WebAppModule.pages`), while the
  * slot declaration hangs on the interface the module provides (`WebAppSlots` beside `WebApp`) —
@@ -23,6 +24,8 @@ import {
 } from "@prismshadow/penguin-core/kernel";
 
 import type { UserEventHandlers } from "../state/user-events";
+import type { ChatDrafts } from "../features/chat";
+import type { Sidebar } from "./sidebar/iface";
 import { webAppDeps, type WebAppLayer, type WebAppSessionProvider } from "./deps";
 
 import { pageTableOf, type PageData } from "./page-table";
@@ -63,6 +66,8 @@ function byOrder<P>(
 export class WebAppModule {
   @Provide() webApp!: WebApp;
   @Use() userEventHandlers!: UserEventHandlers;
+  @Use() sidebar!: Sidebar;
+  @Use() drafts!: ChatDrafts;
   setup({ contributions }: ClassCtx) {
     const pages = pageTableOf(contributions.pages ?? []);
     const sessionProviders: readonly WebAppSessionProvider[] = byOrder<{ children: ReactNode }>(
@@ -71,7 +76,22 @@ export class WebAppModule {
     const layers: readonly WebAppLayer[] = byOrder(contributions.layers ?? []);
     const userEvents = this.userEventHandlers.all();
     this.webApp = {
-      Root: webAppDeps.provide({ pages, sessionProviders, layers, userEvents }, AppRouter),
+      Root: localWebAppPages.provide(
+        pages,
+        webAppDeps.provide(
+          {
+            pages,
+            sessionProviders,
+            layers,
+            userEvents,
+            sidebar: this.sidebar,
+            drafts: this.drafts,
+          },
+          AppRouter,
+        ),
+      ),
     };
   }
 }
+
+import { localWebAppPages } from "../lib/local-web-app-pages";

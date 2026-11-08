@@ -13,7 +13,8 @@
  */
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
-import { ContributedPage, orgPagesOf } from "../../web-app";
+import { ContributedPage } from "../../lib/local-contributed-page";
+import { orgPagesOf } from "../../lib/local-page-table";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
 import { OrgChartPage } from "./org-chart-page";

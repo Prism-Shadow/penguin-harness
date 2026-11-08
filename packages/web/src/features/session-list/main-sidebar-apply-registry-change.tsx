@@ -10,7 +10,7 @@ import {
 
 import type { useMainSidebarNewEntity } from "./main-sidebar-new-entity";
 
-/** Consecutive live main statements 118..124, called once in original hook order. */
+/** Consecutive live main statements 125..131, called once in original hook order. */
 export function useMainSidebarApplyRegistryChange(
   scope: ReturnType<typeof useMainSidebarNewEntity>,
 ) {
@@ -76,14 +76,14 @@ export function useMainSidebarApplyRegistryChange(
   };
 
   /** Commit the alias (blank reverts the label to the directory basename). Direct save — no server, nothing destructive. */
-  const confirmRenameWorkspace = () => {
+  const confirmRenameWorkspace = (alias: string) => {
     if (!renamingWorkspace) return;
     applyRegistryChange(
       setWorkspaceAlias(
         registeredWorkspaces,
         renamingWorkspace.path,
         renamingWorkspace.machineId,
-        workspaceAliasText,
+        alias,
       ),
     );
     setRenamingWorkspace(null);

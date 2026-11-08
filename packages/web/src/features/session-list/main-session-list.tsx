@@ -56,7 +56,6 @@ export function renderMainSessionList(scope: MainSidebarState) {
     trackedLoadMore,
     go,
     newChat,
-    browseFiles,
     newEntity,
     newEntityLabel,
     addWorkspace,
