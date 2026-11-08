@@ -251,6 +251,8 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** More of this server's Agents, after the configured one, each with what its summary says differently. */
+    moreAgents?: Array<Partial<AgentSummary> & { agentId: string }>;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -307,7 +309,7 @@ export function agentServer(
   /** Requests to hold once each, oldest first, with the answers they wait for. */
   let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
   /** This server's Agents: the one the suites configure, unless a test deleted it. */
-  let localAgentIds = [AGENT_ID];
+  let localAgentIds = [AGENT_ID, ...(options.moreAgents ?? []).map((a) => a.agentId)];
   const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
@@ -506,6 +508,10 @@ export function agentServer(
         agents: localAgentIds.map((id) => ({
           ...summaryOf(id),
           name: id === AGENT_ID ? stored.config.name : id,
+          ...(id === AGENT_ID && stored.config.author !== undefined
+            ? { author: stored.config.author }
+            : {}),
+          ...options.moreAgents?.find((a) => a.agentId === id),
         })),
       });
     }

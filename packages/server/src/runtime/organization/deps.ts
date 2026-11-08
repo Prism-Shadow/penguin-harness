@@ -92,6 +92,7 @@ export function employeePlugins(extra: readonly string[] | undefined): string[] 
 /** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
 export interface OrgAgentGateway {
   exists(projectId: string, agentId: string): Promise<boolean>;
+  /** Creates an Agent with company mode as its author (`author: company`). */
   create(
     projectId: string,
     agentId: string,

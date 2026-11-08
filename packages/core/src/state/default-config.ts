@@ -367,6 +367,25 @@ Current tasks:
 ${SCHEDULE_LIST_PLACEHOLDER}`;
 
 /**
+ * Who made an Agent: a person in the Web App (`user`), an agent working in a Session (`agent`),
+ * or company mode creating an organization's CEO or a new hire (`company`). Recorded at creation
+ * and editable afterwards; it says nothing about what the Agent may do.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
+/** Every author, in the order the Agents page lists their groups. */
+export const AGENT_AUTHORS: readonly AgentAuthor[] = ["user", "agent", "company"];
+
+/**
+ * The author a stored config means: its `author` when that is one of the three, `user`
+ * otherwise. A missing field is the common case — every Agent made before the field existed,
+ * and every Agent the SDK or the CLI creates without a server.
+ */
+export function agentAuthorOf(config: { author?: unknown }): AgentAuthor {
+  return AGENT_AUTHORS.find((author) => author === config.author) ?? "user";
+}
+
+/**
  * System-level config for Agent State, serialized as `system_config.yaml`.
  * Docs: /docs/configuration § "Agent config".
  */
@@ -375,6 +394,8 @@ export interface SystemConfig {
   name?: string;
   /** Agent description. */
   description?: string;
+  /** Who made the Agent (see AgentAuthor); read through `agentAuthorOf`, absent means `user`. */
+  author?: AgentAuthor;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
   /**

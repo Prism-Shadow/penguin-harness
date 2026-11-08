@@ -308,6 +308,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | --- | --- | --- |
 | `name` | — | Agent display name; falls back to the id |
 | `description` | — | Agent description |
+| `author` | `user` | Who created the agent: `user`, `agent` or `company` |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `kernel_version` | The current kernel version | Which generation of the built-in defaults the config is based on (a date string) |
 | `system_prompt` | Built-in template | Required; the only template with placeholder substitution |
@@ -334,6 +335,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 
 ### Field details
 
+- `author`: `user` for an agent a person created in the Web App, `agent` for one an agent created (**Create with AI**, or `penguin agent create` run inside a conversation), `company` for one company mode created. A missing or unknown value reads as `user`. You can change it on the **Overview** tab, and the **Agents** page can group by it.
 - `kernel_version`: stamped at creation, when defaults are restored and at a kernel update. It is unrelated to `version` and never changed by your edits. A missing value means the config predates the mechanism, which counts as outdated.
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
@@ -390,11 +392,11 @@ An existing agent always runs with its on-disk config as written; newer code def
 
 - A tab the config lacks entirely, or one whose hash still matches a *recorded* generation's built-in default, is rewritten from the current defaults. This is also how tools added by a later version reach an existing agent.
 - A tab you have changed in any way stays unchanged **in full** and is listed in the result. If you edit one built-in tool, the whole **Tools** tab is kept: tools you added and tools you deleted both survive, and that tab stops following new defaults until you restore defaults.
-- `name`, `description`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
+- `name`, `description`, `author`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 

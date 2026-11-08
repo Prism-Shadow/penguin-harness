@@ -9,8 +9,8 @@
  * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
  * and route at once) and its contents are removed in the background, the removal reporting how
  * far it got; a server that stops mid-removal resumes it at its next start.
- * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
- * then write name/description into system_config.yaml (parseDocument preserves the
+ * Create: initialize Agent State via core's `createAgent` under the creator's id, then
+ * write name/description/author into system_config.yaml (parseDocument preserves the
  * template's comments).
  */
 import fs from "node:fs/promises";
@@ -44,7 +44,7 @@ import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
@@ -125,6 +125,8 @@ export interface AgentListItem {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent (system_config.yaml `author`; missing or unknown = `user`). */
+  author: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the later of system_config.yaml / AGENTS.md mtime. */
   updatedAt?: string;
@@ -148,6 +150,21 @@ export interface AgentListItem {
   pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
+}
+
+/** What a new Agent starts with, besides its id. Every field is optional. */
+export interface AgentCreation {
+  /** Display name; the id when omitted (a snapshot seed keeps the package's instead). */
+  name?: string;
+  description?: string;
+  /** Who is creating it; `user` when omitted. Written over whatever a snapshot seed carries. */
+  author?: AgentAuthor;
+  /** Library plugin names to install into it. */
+  plugins?: readonly string[];
+  /** Skills to import from a directory the creator picked. */
+  directory?: { path: string; names: readonly string[] };
+  /** An exported Agent State snapshot package to start from instead of the default template. */
+  archive?: Buffer;
 }
 
 @Component()
@@ -681,16 +698,18 @@ export class AgentService implements AgentLifecycle {
    * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
    * package carries its own skills and hooks. An invalid package fails the whole creation
    * inside the same cleanup window, leaving no empty Agent behind.
+   *
+   * `author` is always written, `user` when the creator names none: it says how this Agent
+   * came to be, so a package's own value — who made the Agent it was exported from — is
+   * replaced rather than kept.
    */
   async createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    pluginNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: Buffer,
+    creation: AgentCreation = {},
   ): Promise<AgentListItem> {
+    const { name, description, plugins: pluginNames, directory, archive } = creation;
+    const author = creation.author ?? "user";
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
@@ -736,17 +755,20 @@ export class AgentService implements AgentLifecycle {
         });
         // Explicit name/description override the package's values; absent ones keep them.
         // No id fallback here: the package is the identity being copied in.
-        if (name !== undefined || description !== undefined) {
-          await this.agentConfig.updateConfig(projectId, agentId, {
-            config: {
-              ...(name !== undefined ? { name } : {}),
-              ...(description !== undefined ? { description } : {}),
-            },
-          });
-        }
+        await this.agentConfig.updateConfig(projectId, agentId, {
+          config: {
+            ...(name !== undefined ? { name } : {}),
+            ...(description !== undefined ? { description } : {}),
+            author,
+          },
+        });
       } else {
         await this.agentConfig.updateConfig(projectId, agentId, {
-          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+          config: {
+            name: displayName,
+            ...(description !== undefined ? { description } : {}),
+            author,
+          },
         });
       }
       for (const plugin of librarySeed) {
@@ -781,6 +803,7 @@ export class AgentService implements AgentLifecycle {
       agentId,
       name: cardName,
       ...(cardDescription !== undefined ? { description: cardDescription } : {}),
+      author: meta.author,
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
