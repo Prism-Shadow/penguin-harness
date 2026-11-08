@@ -966,6 +966,13 @@ export const listSessions = (
    * servers are worth asking. null means this server.
    */
   machineId: string | null,
+  /**
+   * The call's own knobs: the `signal` aborts its HTTP path (the socket path is bounded by
+   * its own answer timeout — see api/client.ts). The command palette's completion caps every
+   * source's query with it, so an unreachable machine — or this server under a heavy index —
+   * cannot hold the wait.
+   */
+  call?: { signal?: AbortSignal },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}` +
@@ -980,7 +987,7 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
-    { server: machineId },
+    { server: machineId, ...(call?.signal !== undefined ? { signal: call.signal } : {}) },
   );
 };
 

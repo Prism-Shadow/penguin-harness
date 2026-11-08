@@ -5,7 +5,7 @@
  * (or the untitled fallback) with the status word beside the session's id; running one
  * navigates to that session's chat page.
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../src/lib/strings";
 import {
@@ -17,6 +17,9 @@ import {
 import {
   SESSION_COMPLETION_MAX,
   SESSION_DETAIL_ID_MAX,
+  SOURCE_TIMEOUT_MS,
+  askCompletionSources,
+  cappedSourceQuery,
   mergeCompletionRows,
   sessionCompletionActions,
   sessionDetailId,
@@ -61,7 +64,9 @@ describe("sessionQueryPrefix", () => {
 
 describe("sessionCompletionActions", () => {
   // The store's order (most recent first) is the order the palette shows; the completion
-  // never re-sorts it. The last three rows are rows the sidebar does not draw.
+  // never re-sorts it. The last three rows are rows the sidebar does not draw: the archived
+  // conversation and the organization's desk belong in an offer (their chat pages open them),
+  // the subagent is the one row the offer leaves to its parent's Agent panel.
   const sessions = [
     row({ sessionId: "session-2026-10-01-aaaa", title: "Palette work", status: "running" }),
     row({ sessionId: "session-2026-10-02-bbbb", status: "compacting" }),
@@ -71,12 +76,14 @@ describe("sessionCompletionActions", () => {
     row({ sessionId: "session-2026-10-06-ffff", title: "A subagent", source: "subagent" }),
   ];
 
-  it("offers the sidebar rows whose id starts the query, with title, status and id", () => {
+  it("offers the rows whose id starts the query, with title, status and id — archived and an organization's room included, a subagent left to its panel", () => {
     const actions = sessionCompletionActions(sessions, "session-2026-10-0", navigate);
     expect(actions.map((a) => a.id)).toEqual([
       "session:session-2026-10-01-aaaa",
       "session:session-2026-10-02-bbbb",
       "session:session-2026-10-03-cccc",
+      "session:session-2026-10-04-dddd",
+      "session:session-2026-10-05-eeee",
     ]);
     expect(actions[0]).toMatchObject({
       label: "Palette work",
@@ -264,5 +271,156 @@ describe("completion cache", () => {
       ),
     );
     expect(cachedCompletionRows("p", null, "agent-3")).toHaveLength(COMPLETION_CACHE_MAX);
+  });
+});
+
+describe("askCompletionSources", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const localAnswer = [row({ sessionId: "session-2026-10-01-local" })];
+  const machineAnswer = [row({ sessionId: "session-2026-10-02-machine" })];
+
+  it("answers from every source that answers and clears the wait when the last settles", async () => {
+    const answered: string[] = [];
+    let settled = 0;
+    const calls: (string | null)[] = [];
+    askCompletionSources({
+      projectId: "p",
+      prefix: "session-",
+      agentsBySource: [
+        { source: null, agentIds: ["a1"] },
+        { source: "machine-1", agentIds: ["a2"] },
+      ],
+      ask: (_projectId, agentId, _opts, source) => {
+        calls.push(source);
+        return Promise.resolve({
+          sessions: agentId === "a1" ? localAnswer : machineAnswer,
+        });
+      },
+      onAnswer: (_source, agentId, rows) => answered.push(agentId, rows[0]!.sessionId),
+      onSettled: () => {
+        settled += 1;
+      },
+    });
+    expect(settled).toBe(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answered).toEqual([
+      "a1",
+      "session-2026-10-01-local",
+      "a2",
+      "session-2026-10-02-machine",
+    ]);
+    expect(settled).toBe(1);
+    // Every source's call is capped and rides a signal — this server's own read included.
+    expect(calls).toEqual([null, "machine-1"]);
+  });
+
+  it("cuts a machine source loose past its cap and clears the wait with the sources that answered", async () => {
+    const answered: string[] = [];
+    let settled = 0;
+    const machineSignals: AbortSignal[] = [];
+    askCompletionSources({
+      projectId: "p",
+      prefix: "session-",
+      agentsBySource: [
+        { source: null, agentIds: ["a1"] },
+        { source: "machine-1", agentIds: ["a2"] },
+      ],
+      ask: (_projectId, agentId, _opts, source, call) => {
+        const promise =
+          agentId === "a1"
+            ? Promise.resolve({ sessions: localAnswer })
+            : // A machine that never answers: the run ignores whatever it is told.
+              new Promise<{ sessions: readonly SessionInfo[] }>(() => {});
+        if (source !== null && call?.signal !== undefined) machineSignals.push(call.signal);
+        return promise;
+      },
+      onAnswer: (_source, agentId, rows) => answered.push(agentId, rows[0]!.sessionId),
+      onSettled: () => {
+        settled += 1;
+      },
+    });
+    expect(settled).toBe(0);
+    // Past the cap the hung source is dropped on its own: nothing of it answers, and the
+    // wait — the palette's Finding sessions — ends with the sources that answered.
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+    expect(answered).toEqual(["a1", "session-2026-10-01-local"]);
+    expect(settled).toBe(1);
+    expect(machineSignals).toHaveLength(1);
+    expect(machineSignals[0]!.aborted).toBe(true);
+  });
+
+  it("cuts this server's own source loose past its cap too, and clears the wait with the sources that answered", async () => {
+    const answered: string[] = [];
+    let settled = 0;
+    const localSignals: AbortSignal[] = [];
+    askCompletionSources({
+      projectId: "p",
+      prefix: "session-",
+      agentsBySource: [{ source: null, agentIds: ["a1"] }],
+      ask: (_projectId, _agentId, _opts, _source, call) => {
+        if (call?.signal !== undefined) localSignals.push(call.signal);
+        // This server under a heavy index: asked, never answers.
+        return new Promise<{ sessions: readonly SessionInfo[] }>(() => {});
+      },
+      onAnswer: (_source, agentId, rows) => answered.push(agentId, rows[0]!.sessionId),
+      onSettled: () => {
+        settled += 1;
+      },
+    });
+    expect(settled).toBe(0);
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+    expect(answered).toEqual([]);
+    expect(settled).toBe(1);
+    expect(localSignals).toHaveLength(1);
+    expect(localSignals[0]!.aborted).toBe(true);
+  });
+
+  it("answers nothing when no source has agents, clearing the wait at once", () => {
+    let settled = 0;
+    askCompletionSources({
+      projectId: "p",
+      prefix: "session-",
+      agentsBySource: [],
+      ask: () => Promise.resolve({ sessions: [] }),
+      onAnswer: () => {},
+      onSettled: () => {
+        settled += 1;
+      },
+    });
+    expect(settled).toBe(1);
+  });
+});
+
+describe("cappedSourceQuery", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("answers with the request when it settles inside the cap", async () => {
+    const answer = { sessions: [row({ sessionId: "session-2026-10-01-aaaa" })] };
+    const p = cappedSourceQuery(() => Promise.resolve(answer), SOURCE_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await p).toBe(answer);
+  });
+
+  it("rejects past the cap and aborts the signal it gave the request", async () => {
+    const signals: AbortSignal[] = [];
+    const p = cappedSourceQuery((signal) => {
+      signals.push(signal!);
+      return new Promise(() => {});
+    }, SOURCE_TIMEOUT_MS);
+    const settled = expect(p).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+    await settled;
+    expect(signals[0]!.aborted).toBe(true);
   });
 });

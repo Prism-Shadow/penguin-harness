@@ -43,6 +43,7 @@ import type {
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
+import type { TraceSessionRow } from "../db/repos/trace-index.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,
@@ -604,6 +605,14 @@ export class SessionService {
    *
    * `view` is who reads the list (sourceSeenBy): every row is classified and served as that
    * reader sees it.
+   *
+   * A prefix query is also the one place Sessions that have a Trace but no index row surface:
+   * a boot-time adoption owns registering those, and in between they are nameable by nothing —
+   * the single GET answers 404 just the same. On the plain prefix query (no category, no
+   * Workspace filter, no counts) the reconciled trace index's own head facts are served for
+   * the ids no row holds, as pseudo rows carrying what the head read (title, Workspace, model,
+   * timestamps, the listing rule read with no marks); an id an index row holds is never
+   * duplicated, and the pseudo rows fill what remains of the asked page size, newest first.
    */
   async listSessions(
     projectId: string,
@@ -635,12 +644,14 @@ export class SessionService {
       sessionIdPrefix,
       view,
     } = opts;
-    const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
-
-    if (sessionIdPrefix !== undefined) {
-      const lower = sessionIdPrefix.toLowerCase();
-      for (const [id] of rows) if (!id.toLowerCase().startsWith(lower)) rows.delete(id);
-    }
+    // The prefix narrows inside the walk (see walkRows): before the hydration pass, so the
+    // query pays only for the rows it can serve.
+    const { rows, orgIds, traces } = await this.walkRows(
+      projectId,
+      agentId,
+      excludeOrg === true,
+      sessionIdPrefix,
+    );
 
     const sorted = [...rows.values()].sort(
       order === "activity" ? compareActivityDesc : compareCreatedDesc,
@@ -661,9 +672,19 @@ export class SessionService {
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
       const from = start + skip;
-      return {
-        sessions: await toPage(paging ? sorted.slice(from, from + paging.limit) : sorted),
-      };
+      const page = await toPage(paging ? sorted.slice(from, from + paging.limit) : sorted);
+      const extras =
+        sessionIdPrefix !== undefined
+          ? await this.traceOnlyInfos(projectId, agentId, {
+              prefix: sessionIdPrefix.toLowerCase(),
+              known: new Set(rows.keys()),
+              ...(excludeOrg && orgIds.size > 0 ? { orgIds } : {}),
+              leftToServe: paging
+                ? Math.max(0, paging.limit - page.length)
+                : SessionService.TRACE_ONLY_CAP,
+            })
+          : [];
+      return { sessions: extras.length === 0 ? page : [...page, ...extras] };
     }
 
     const want = paging ? skip + paging.limit : Infinity;
@@ -737,6 +758,74 @@ export class SessionService {
   }
 
   /**
+   * What a plain prefix query may spend on Sessions the index holds no row for
+   * (see {@link listSessions}): unbound at the asked page size when one was asked, this
+   * default otherwise — and the id-prefix query never grows past what the completion asks.
+   */
+  private static readonly TRACE_ONLY_CAP = 20;
+
+  /**
+   * The prefix-matched Sessions that have a Trace but no index row, as pseudo
+   * {@link SessionInfo}s (see {@link listSessions}): the trace index's head facts
+   * (sessionMeta read at its last reconcile), newest activity first, capped at what the
+   * page still has room for. Light on purpose: the reconcile is the same once-per-mtime
+   * walk every other list path pays, and the facts are one indexed read.
+   */
+  private async traceOnlyInfos(
+    projectId: string,
+    agentId: string,
+    args: {
+      prefix: string;
+      /** The ids the index rows already answer — an id here is never duplicated. */
+      known: ReadonlySet<string>;
+      /** An organization-stamped id leaves an own-rows stream (same rule as walkRows). */
+      orgIds?: { has(id: string): boolean };
+      leftToServe: number;
+    },
+  ): Promise<SessionInfo[]> {
+    if (args.leftToServe === 0) return [];
+    await this.deps.traceIndex.reconcileAgent(projectId, agentId);
+    const facts = this.deps.traceStore
+      .listSessionsByAgent(projectId, agentId)
+      .filter(
+        (f) =>
+          f.sessionId.toLowerCase().startsWith(args.prefix) &&
+          !args.known.has(f.sessionId) &&
+          (args.orgIds === undefined || !args.orgIds.has(f.sessionId)),
+      )
+      .sort((a, b) => (b.firstTs ?? "").localeCompare(a.firstTs ?? ""))
+      .slice(0, args.leftToServe);
+    return facts.map((f) => this.traceOnlyInfo(f));
+  }
+
+  /** One trace-only Session as the prefix query serves it (see {@link traceOnlyInfos}). */
+  private traceOnlyInfo(facts: TraceSessionRow): SessionInfo {
+    // A head written before the source was required records none; no index row backs the
+    // read-with-client fallback (readRecordedSource takes a row), so it stays unknown.
+    const source = facts.source === null ? undefined : facts.source;
+    const first = facts.firstTs ?? new Date(0).toISOString();
+    return {
+      sessionId: facts.sessionId,
+      projectId: facts.projectId,
+      agentId: facts.agentId,
+      provider: facts.provider ?? "",
+      modelId: facts.modelId ?? "",
+      workspace: facts.workspace,
+      approvalMode: "allow-all",
+      sandbox: this.sandboxView(this.defaultSandbox()),
+      ...(facts.title !== null ? { title: facts.title } : {}),
+      ...(source !== undefined ? { source } : {}),
+      createdAt: first,
+      lastActiveAt: first,
+      status: this.deps.manager.statusOf(facts.sessionId),
+      pendingApprovalCount: 0,
+      pendingFollowUpCount: 0,
+      hasTrace: true,
+      archived: listCategory(source, { archivedAt: null, keptAt: null }) === "archived",
+    };
+  }
+
+  /**
    * The rows a list walk starts from: the Agent's index rows, an organization's left out when
    * `excludeOrg` asks (see listSessions), with the Project's organization map; and when any row
    * predates this process, the one reconciled Trace discovery (`traces`) that lets every row be
@@ -747,6 +836,7 @@ export class SessionService {
     projectId: string,
     agentId: string,
     excludeOrg: boolean,
+    sessionIdPrefix?: string,
   ): Promise<{
     rows: Map<string, SessionRow>;
     orgIds: ReadonlyMap<string, string>;
@@ -769,6 +859,14 @@ export class SessionService {
       // inherited by sub-sessions, which no cache names. The caches catch a row the
       // reconcile pass has not stamped yet.
       for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
+    }
+    // A prefix query narrows before the hydration pass: the pass exists to classify the rows
+    // the list serves, and the palette's completion serves only the rows whose id starts the
+    // prefix — the rest of the Agent's history must not be walked (and its discovery paid)
+    // for one typed prefix.
+    if (sessionIdPrefix !== undefined) {
+      const lower = sessionIdPrefix.toLowerCase();
+      for (const [id] of rows) if (!id.toLowerCase().startsWith(lower)) rows.delete(id);
     }
 
     let traces: ReadonlySet<string> | undefined;

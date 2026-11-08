@@ -90,6 +90,13 @@ export interface ApiFetchOptions {
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
   /**
+   * Aborts the HTTP path of this call: the fetch carries the signal, so the request stops when
+   * it fires. The socket path cannot be aborted mid-call — it is bounded by its own answer
+   * timeout (api/socket.ts) — so a caller giving up on an answer cuts the wait itself and uses
+   * the signal only to free the HTTP request underneath.
+   */
+  signal?: AbortSignal;
+  /**
    * Which machine answers this call, when the caller knows and the path does not say.
    *
    * Omitted, a Session-scoped path routes itself to the machine that Session lives on (see
@@ -260,9 +267,9 @@ export async function apiFetchWithMeta<T>(
     // route it answers 421 for, and a read the server never answered — callOverSocket's own
     // retry rule, for a frame that was sent on a live socket that then went quiet.
     if (answer === null || answer.status === 415 || answer.status === 421)
-      answer = await callOverHttp(method, url, options.body);
+      answer = await callOverHttp(method, url, options.body, options.signal);
   } else {
-    answer = await callOverHttp(method, url, options.body);
+    answer = await callOverHttp(method, url, options.body, options.signal);
   }
 
   if (answer.status < 200 || answer.status >= 300) {
@@ -396,12 +403,18 @@ async function callOverSocket(
 
 const isReadMethod = (method: string): boolean => method === "GET" || method === "HEAD";
 
-async function callOverHttp(method: string, url: string, body: unknown): Promise<Answer> {
+async function callOverHttp(
+  method: string,
+  url: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<Answer> {
   let response: Response;
   try {
     response = await fetch(url, {
       method,
       credentials: "same-origin",
+      ...(signal !== undefined ? { signal } : {}),
       ...(body !== undefined
         ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
         : {}),
