@@ -3,6 +3,7 @@
 - **Date:** 2026-11-07
 - **Type:** feature
 - **Scope:** `server`, `model-catalog`, `web`, `ui`, `ui-gallery`
+- **PR:** [#1507](https://github.com/Prism-Shadow/penguin-harness/pull/1507)
 
 [中文版](2026-11-07-connect-sets-default-model.zh.md)
 
