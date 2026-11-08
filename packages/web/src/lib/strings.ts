@@ -2054,6 +2054,17 @@ export const zh = {
     transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
     exportSnapshot: "导出快照",
     importSnapshot: "导入快照",
+    /**
+     * The Agent State row's copy action and its dialog (copy-agent-dialog.tsx): a new Agent that
+     * starts from this one's current Agent State, on the server this one lives on.
+     */
+    copyAgent: "复制 Agent",
+    copyTitle: (name: string): string => `复制 ${name}`,
+    copyIntro:
+      "新 Agent 从这个 Agent 当前的 Agent State 开始：配置、提示词、Skill、钩子、记忆、工作台和版本号都相同，定时任务也会一起复制并在新 Agent 上照常运行。密钥保险柜、会话、Trace、API 密钥和工作台的版本历史不会复制，这个 Agent 本身不受影响。",
+    /** The copy's name until it is edited. */
+    copyNameOf: (name: string): string => `${name} 副本`,
+    copyConfirm: "复制",
     importing: "导入中…",
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",

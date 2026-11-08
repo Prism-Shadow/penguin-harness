@@ -83,6 +83,19 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 > [!NOTE]
 > 快照包自带 Skill 和钩子。选定快照包后，**插件**和**从项目目录导入技能**会隐藏。
 
+### 复制 Agent
+
+复制 Agent 会在同一台服务器或机器上，新建一个从它当前 Agent State 开始的 Agent，不用先导出再上传快照包。一个用途是用同一个 baseline 分别跑几种自进化方法。
+
+1. 在 Agent 设置页的 **Agent State** 区块，选择**复制 Agent**。
+2. **名称**预填为原名加“副本”，可以修改。为副本填写 **Agent id**，或按名称生成一个。
+3. 选择**复制**，随后打开副本的设置页。
+
+副本带有原 Agent 当前的配置、提示词、Skill、钩子、记忆、工作台、描述和 Agent State 版本，但不包括它的密钥保险柜、会话、Trace 和 API 密钥。工作台的版本历史保存在 Agent State 旁边，所以副本的工作台没有历史版本。被复制的 Agent 本身不受影响。Project 的任何成员都可以复制 Agent。在命令行中，`penguin agent create --agent-id <id> --from <agent-id>` 的效果相同（见 [penguin agent](/cli#penguin-agent)）。
+
+> [!NOTE]
+> 定时任务也会一起复制，并在副本上照常运行。不想让它们运行两遍的话，在副本的**定时任务**标签页删除即可。
+
 ## 删除 Agent
 
 只有 Project owner 能删除 Agent。内置的 `default_agent` 不能删除，组织的员工也不能：它们列在**公司模式员工**一节，在公司模式离任之后才能删除（见[员工就是 Agent](/company-mode#员工就是-agent)）。

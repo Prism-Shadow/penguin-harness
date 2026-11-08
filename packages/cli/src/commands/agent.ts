@@ -3,7 +3,8 @@
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
- *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *                        [--plugins <a,b> | --from <agent-id>] [--project-id <id>] [--json]
+ *                        [--server <url>]
  *   penguin agent api status  --agent-id <id> [--project-id <id>] [--json] [--server <url>]
  *   penguin agent api enable  --agent-id <id> [--open | --no-open] [--approve <mode>] …
  *   penguin agent api disable --agent-id <id> …
@@ -335,6 +336,7 @@ export function registerAgentCommand(program: Command, t: Messages): void {
     .option("--name <name>", t.agent.createName)
     .option("--description <text>", t.agent.createDescription)
     .option("--plugins <names>", t.agent.createPlugins)
+    .option("--from <agent-id>", t.agent.createFrom)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
@@ -356,13 +358,21 @@ export function registerAgentCommand(program: Command, t: Messages): void {
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
           ...(opts.description !== undefined ? { description: String(opts.description) } : {}),
           ...(plugins !== undefined && plugins.length > 0 ? { plugins } : {}),
+          // The server copies the source's current State; it refuses --from beside --plugins.
+          ...(opts.from !== undefined ? { copyFrom: String(opts.from) } : {}),
         },
       );
       if (opts.json === true) {
         process.stdout.write(`${JSON.stringify(res.agent)}\n`);
         return;
       }
-      process.stdout.write(`${t.agent.created(res.agent.agentId, projectId)}\n`);
+      process.stdout.write(
+        `${
+          opts.from !== undefined
+            ? t.agent.copied(res.agent.agentId, String(opts.from), projectId)
+            : t.agent.created(res.agent.agentId, projectId)
+        }\n`,
+      );
     });
 
   registerApiCommands(agent, t);
