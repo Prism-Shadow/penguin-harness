@@ -82,7 +82,10 @@ const NEWLINE = 0x0a;
 
 export interface HistoryLinesDeps {
   traces: Pick<Traces, "readHistoryWindow" | "historyTraceFiles">;
-  manager: Pick<Sessions, "statusOf" | "liveFragments" | "pendingInputs" | "pendingBootstrap">;
+  manager: Pick<
+    Sessions,
+    "statusOf" | "liveFragments" | "liveRun" | "pendingInputs" | "pendingBootstrap"
+  >;
   channels: Pick<Channels, "get">;
 }
 

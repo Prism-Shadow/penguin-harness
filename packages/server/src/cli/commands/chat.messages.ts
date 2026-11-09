@@ -77,6 +77,10 @@ export interface ChatText {
 
   /** One-line prompt shown after a successful resume, before rendering history. */
   resumedBanner(sessionId: string, messageCount: number): string;
+  chatFollowingResumed(): string;
+  chatRunOmitted(count: number): string;
+  chatServerTooOld(): string;
+  messageQueued(text: string): string;
 
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
@@ -148,6 +152,13 @@ export const chatEn: ChatText = {
 
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
+  chatFollowingResumed: () =>
+    "[running] This Session is still running; following it here. Type to steer it, press Ctrl-C to stop it, or /exit to leave it running.",
+  chatRunOmitted: (count) =>
+    `… ${count} earlier record${count === 1 ? "" : "s"} of this run not shown (penguin session log shows them all)`,
+  chatServerTooOld: () =>
+    "This server cannot hand over a run under way; upgrade it. Until then the chat shows the history and what streams from here on.",
+  messageQueued: (text) => `» queued (sent when the current run ends): ${text}`,
 
   resumeHint: (command) => `To continue this conversation: ${command}`,
 };
@@ -213,6 +224,13 @@ export const chatZh: ChatText = {
 
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
+  chatFollowingResumed: () =>
+    "[运行中] 该 Session 仍在运行，已在此接上：输入即插话，Ctrl-C 中断，/exit 离开（Task 继续运行）。",
+  chatRunOmitted: (count) =>
+    `… 此次运行更早的 ${count} 条记录未显示（penguin session log 可查看全部）`,
+  chatServerTooOld: () =>
+    "该服务端不支持接续正在进行的运行，请升级服务端；在此之前只显示历史与此后的实时输出。",
+  messageQueued: (text) => `» 已排队（当前运行结束后发出）：${text}`,
 
   resumeHint: (command) => `继续本次对话：${command}`,
 };
