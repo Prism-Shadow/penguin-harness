@@ -1,6 +1,8 @@
 import type { ModelGroupSort } from "@penguinharness/plugin-models/web";
 
 import type { StartPageSiteId } from "./browser-start-sites";
+import { EVOLUTION_DEMO } from "./evolution-demo";
+import type { SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -1548,13 +1550,17 @@ export const zh = {
       /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
       placeholder: (reason: string): string =>
         `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
+      /**
+       * Why the proposal fell through, keyed by the server's reason code: one phrase for every
+       * code the contract declares and no other, held by the `satisfies` (and the English
+       * dictionary by `Strings`).
+       */
       reasons: {
         no_default_model: "未配置默认模型",
         model_failed: "模型调用失败",
         unusable_answer: "模型回答不可用",
         no_ascii: "名称里没有可转写的英文",
-      },
+      } satisfies Record<SemanticIdSuggestReason, string>,
       /** A reason a newer server named and this build does not know. */
       reasonUnknown: "原因未知",
     },
@@ -3758,12 +3764,12 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
         prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
-- id：\`finite_choice_agent\`
+- id：\`${EVOLUTION_DEMO.agentId}\`
 - 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
 - installed_skills：\`[]\`
 
 Benchmark：
-- id：\`contextual-choice-adaptation\`
+- id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
@@ -3778,8 +3784,8 @@ Benchmark：
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
-- test_agent_id：\`finite_choice_agent\`
-- benchmark_id：\`contextual-choice-adaptation\`
+- test_agent_id：\`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
 - runs：\`3\`
 - desired_score：\`>=95\`
@@ -5389,8 +5395,7 @@ Benchmark：
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
       "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
-    askEvaluationDefault: "解释这次评估的结果。",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "解释这次评估的结果",
@@ -5447,8 +5452,7 @@ Benchmark：
     askCaseTitle: "问 AI：这道题",
     askCaseDescription:
       "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
-    askCaseDefault: "解释这道题考什么、怎样才算答好。",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "解释这道题考什么、怎样才算答好",

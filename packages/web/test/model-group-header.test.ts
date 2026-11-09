@@ -4,13 +4,11 @@
  * order they stand, the connection of a group whose key comes from an authorization flow, the
  * balance's menu, and the gear's menu.
  *
- * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, Penguin Go, DeepSeek)
- *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
- *   the three groups with a flow; Add model only where hand-added models are taken (custom,
- *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate, user-defined); Delete
- *   group only on a user-defined group; then the speed test and the gear on every group, the
- *   gear last. No group offers a separate "Enter key": the group key is set in the settings (or
- *   by Connect).
+ * - The matrix, per group kind: the balance where the catalog declares one and the group holds
+ *   a key (or the environment lends one, or it is pinned); the connection on a group with a
+ *   flow; Add model only where hand-added models are taken; Delete group only on a
+ *   user-defined group; then the speed test and the gear on every group, the gear last. No
+ *   group offers a separate "Enter key": the group key is set in the settings (or by Connect).
  * - A member keeps the two read-only parts and the gear, and nothing that writes.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
  * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
@@ -35,18 +33,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import {
   MODEL_PROVIDERS,
+  isAddableGroup,
   providerInfo,
+  type ModelProviderBalance,
   type ModelProviderInfo,
+  type ModelProviderOAuth,
 } from "@prismshadow/penguin-server/model-catalog";
-
 import {
   connectedMenuItems,
   connectionStatus,
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
-  hasConnectFlow,
 } from "../src/features/models/group-header";
+import type { GroupHeaderFacts } from "../src/features/models/group-header";
 import {
   ConnectionMenu,
   DisconnectConfirm,
@@ -66,10 +66,44 @@ import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const group = (id: string): ModelProviderInfo => providerInfo(id) ?? userProviderInfo(id);
-const owner = (id: string, keyStored = false, balancePinned = false) =>
-  groupHeaderActions(group(id), { isOwner: true, keyStored, balancePinned });
-const member = (id: string, keyStored = false, balancePinned = false) =>
-  groupHeaderActions(group(id), { isOwner: false, keyStored, balancePinned });
+
+/**
+ * Built-in groups by capability rather than by vendor, so no vendor's catalogue entry is
+ * restated here. Whether a group takes hand-added models is the catalogue's word on its id, so
+ * the two bases are found by it; balance and connect flow are read off the descriptor, so
+ * {@link builtIn} strips both and gives back only the ones a scenario names.
+ */
+const ADDABLE = MODEL_PROVIDERS.find((p) => isAddableGroup(p.id))!;
+const FIXED = MODEL_PROVIDERS.find((p) => !isAddableGroup(p.id))!;
+const BALANCE: ModelProviderBalance = { url: "https://vendor.example/balance", format: "deepseek" };
+const OAUTH: ModelProviderOAuth = {
+  authorizeUrl: "https://vendor.example/authorize",
+  exchangeUrl: "https://vendor.example/exchange",
+  keyName: "penguin",
+};
+
+function builtIn(
+  base: ModelProviderInfo,
+  caps: { balance?: boolean; flow?: "oauth" | "bridge" },
+): ModelProviderInfo {
+  const { balance: _balance, oauth: _oauth, bridgeAuth: _bridge, ...bare } = base;
+  return {
+    ...bare,
+    ...(caps.balance ? { balance: BALANCE } : {}),
+    ...(caps.flow === "oauth" ? { oauth: OAUTH } : {}),
+    ...(caps.flow === "bridge" ? { bridgeAuth: { flow: "modelscope" as const } } : {}),
+  };
+}
+
+const actionsOf = (provider: ModelProviderInfo, facts: Partial<GroupHeaderFacts> = {}) =>
+  groupHeaderActions(provider, {
+    isOwner: true,
+    keyStored: false,
+    balancePinned: false,
+    ...facts,
+  });
+const ownerOf = (provider: ModelProviderInfo, facts: Partial<GroupHeaderFacts> = {}) =>
+  actionsOf(provider, { ...facts, isOwner: true });
 
 /** A group holding a key of its own, and one whose table has none. */
 const keyedGroup = { apiKeyMasked: "sk-t…1234", createdAt: "2026-10-01T00:00:00.000Z" };
@@ -89,8 +123,9 @@ function renderedText(element: ReactElement): string {
 const noActions = { onConnect: () => {}, onSyncModels: () => {}, onDisconnect: () => {} };
 
 describe("the group header's actions, in order, by group kind", () => {
-  it("TokenDance: balance once a key is stored, the connection, Add model, speed test, settings", () => {
-    expect(owner("tokendance", true)).toEqual([
+  it("a group with a balance, a connect flow and hand-added models offers all three, the balance once a key is stored", () => {
+    const full = builtIn(ADDABLE, { balance: true, flow: "oauth" });
+    expect(ownerOf(full, { keyStored: true })).toEqual([
       "balance",
       "connect",
       "addModel",
@@ -98,14 +133,14 @@ describe("the group header's actions, in order, by group kind", () => {
       "settings",
     ]);
     // Without a key there is nothing to ask the vendor with.
-    expect(owner("tokendance", false)).toEqual(["connect", "addModel", "speedTest", "settings"]);
+    expect(ownerOf(full)).toEqual(["connect", "addModel", "speedTest", "settings"]);
   });
 
-  it("Penguin Go shows its balance with a group key; ModelScope only connects", () => {
-    for (const id of ["penguin-go", "modelscope"]) {
+  it("a connect flow, the App's own or a bridge's, puts the connection in the header with or without a key", () => {
+    for (const flow of ["oauth", "bridge"] as const) {
+      const connecting = builtIn(FIXED, { flow });
       for (const keyStored of [false, true]) {
-        expect(owner(id, keyStored), `${id} keyStored=${keyStored}`).toEqual([
-          ...(id === "penguin-go" && keyStored ? ["balance"] : []),
+        expect(ownerOf(connecting, { keyStored }), `${flow} keyStored=${keyStored}`).toEqual([
           "connect",
           "speedTest",
           "settings",
@@ -114,24 +149,33 @@ describe("the group header's actions, in order, by group kind", () => {
     }
   });
 
-  it("DeepSeek shows its balance and connects nowhere; the other vendors and gateways test and configure", () => {
-    expect(owner("deepseek", true)).toEqual(["balance", "speedTest", "settings"]);
-    for (const id of ["fireworks", "opencode-go", "anthropic", "openai", "google", "minimax"]) {
-      expect(owner(id, true), id).toEqual(["speedTest", "settings"]);
-    }
+  it("a balance alone shows once a key is stored; a group with nothing declared tests and configures", () => {
+    expect(ownerOf(builtIn(FIXED, { balance: true }), { keyStored: true })).toEqual([
+      "balance",
+      "speedTest",
+      "settings",
+    ]);
+    expect(ownerOf(builtIn(FIXED, {}), { keyStored: true })).toEqual(["speedTest", "settings"]);
   });
 
-  it("OpenRouter, SiliconFlow, vLLM and custom take hand-added models; only a user-defined group deletes", () => {
-    for (const id of ["openrouter", "siliconflow", "vllm", "custom"]) {
-      expect(owner(id, true), id).toEqual(["addModel", "speedTest", "settings"]);
-    }
-    expect(owner("my-own-group")).toEqual(["addModel", "deleteGroup", "speedTest", "settings"]);
+  it("a group taking hand-added models offers Add model; only a user-defined group deletes", () => {
+    expect(ownerOf(builtIn(ADDABLE, {}), { keyStored: true })).toEqual([
+      "addModel",
+      "speedTest",
+      "settings",
+    ]);
+    expect(ownerOf(userProviderInfo("my-own-group"))).toEqual([
+      "addModel",
+      "deleteGroup",
+      "speedTest",
+      "settings",
+    ]);
   });
 
   it("every group the owner sees ends on the speed test then the settings, and none offers a key field", () => {
     for (const id of [...MODEL_PROVIDERS.map((p) => p.id), "my-own-group"]) {
       for (const keyStored of [false, true]) {
-        const actions = owner(id, keyStored);
+        const actions = ownerOf(group(id), { keyStored });
         expect(actions.slice(-2), `${id} keyStored=${keyStored}`).toEqual([
           "speedTest",
           "settings",
@@ -141,47 +185,43 @@ describe("the group header's actions, in order, by group kind", () => {
     }
   });
 
-  it("Add model appears on exactly the built-in groups that take hand-added models", () => {
-    const adding = MODEL_PROVIDERS.filter((p) => owner(p.id, true).includes("addModel")).map(
-      (p) => p.id,
-    );
-    expect(adding.sort()).toEqual([
-      "atlascloud",
-      "custom",
-      "openrouter",
-      "runcrate",
-      "siliconflow",
-      "tokendance",
-      "vllm",
-    ]);
-  });
-
   it("a member keeps the balance, the connection status and the gear, and nothing that writes", () => {
     // The gear stays for its sort, a view preference; its menu offers a member nothing else.
-    expect(member("tokendance", true)).toEqual(["balance", "connect", "settings"]);
-    expect(member("penguin-go", true)).toEqual(["balance", "connect", "settings"]);
-    expect(member("deepseek", true)).toEqual(["balance", "settings"]);
-    expect(member("vllm")).toEqual(["settings"]);
-    expect(member("custom")).toEqual(["settings"]);
-    expect(member("my-own-group")).toEqual(["settings"]);
+    const member = { isOwner: false, keyStored: true };
+    expect(actionsOf(builtIn(ADDABLE, { balance: true, flow: "oauth" }), member)).toEqual([
+      "balance",
+      "connect",
+      "settings",
+    ]);
+    expect(actionsOf(builtIn(FIXED, { balance: true }), member)).toEqual(["balance", "settings"]);
+    expect(actionsOf(builtIn(ADDABLE, {}), member)).toEqual(["settings"]);
+    expect(actionsOf(userProviderInfo("my-own-group"), member)).toEqual(["settings"]);
   });
 
   it("a pinned balance stays in its header after the key is gone, so the pin can come off there", () => {
-    expect(owner("deepseek", false, true)).toEqual(["balance", "speedTest", "settings"]);
-    // Only where the catalog declares a balance at all.
-    expect(owner("openrouter", false, true)).toEqual(["addModel", "speedTest", "settings"]);
-  });
-});
-
-describe("a key lent by the server's environment", () => {
-  it("shows DeepSeek's balance, as a stored key does", () => {
-    const facts = { isOwner: true, keyStored: false, keyFromEnv: true, balancePinned: false };
-    expect(groupHeaderActions(group("deepseek"), facts)).toEqual([
+    expect(ownerOf(builtIn(FIXED, { balance: true }), { balancePinned: true })).toEqual([
       "balance",
       "speedTest",
       "settings",
     ]);
-    expect(groupHeaderActions(group("deepseek"), { ...facts, isOwner: false })).toEqual([
+    // Only where the catalog declares a balance at all.
+    expect(ownerOf(builtIn(ADDABLE, {}), { balancePinned: true })).toEqual([
+      "addModel",
+      "speedTest",
+      "settings",
+    ]);
+  });
+});
+
+describe("a key lent by the server's environment", () => {
+  it("shows the balance, as a stored key does", () => {
+    const withBalance = builtIn(FIXED, { balance: true });
+    expect(ownerOf(withBalance, { keyFromEnv: true })).toEqual([
+      "balance",
+      "speedTest",
+      "settings",
+    ]);
+    expect(actionsOf(withBalance, { isOwner: false, keyFromEnv: true })).toEqual([
       "balance",
       "settings",
     ]);
@@ -192,30 +232,25 @@ describe("a key lent by the server's environment", () => {
     expect(groupKeyFromEnv(envRows)).toBe(true);
     expect(groupKeyFromEnv([{}, {}])).toBe(false);
     expect(groupKeyFromEnv([])).toBe(false);
-    expect(connectionStatus(group("tokendance"), undefined)).toBe("notConnected");
+    expect(connectionStatus(builtIn(FIXED, { flow: "oauth" }), undefined)).toBe("notConnected");
   });
 });
 
 describe("the connection status", () => {
-  it("is exactly the three groups with an authorization flow", () => {
-    const connecting = MODEL_PROVIDERS.filter(hasConnectFlow).map((p) => p.id);
-    expect(connecting).toEqual(["tokendance", "penguin-go", "modelscope"]);
-  });
-
   it("reads connected once the group holds a key of its own, however it got there", () => {
     expect(groupKeyStored(keyedGroup)).toBe(true);
     expect(groupKeyStored(keylessGroup)).toBe(false);
     expect(groupKeyStored(undefined)).toBe(false);
-    expect(connectionStatus(group("tokendance"), keyedGroup)).toBe("connected");
+    expect(connectionStatus(builtIn(FIXED, { flow: "oauth" }), keyedGroup)).toBe("connected");
     // A group table with an endpoint but no key, or none at all: models keyed one by one do
     // not connect the group.
-    expect(connectionStatus(group("penguin-go"), keylessGroup)).toBe("notConnected");
-    expect(connectionStatus(group("modelscope"), undefined)).toBe("notConnected");
+    expect(connectionStatus(builtIn(FIXED, { flow: "bridge" }), keylessGroup)).toBe("notConnected");
+    expect(connectionStatus(builtIn(FIXED, { flow: "bridge" }), undefined)).toBe("notConnected");
   });
 
   it("is absent on a group that does not connect", () => {
-    expect(connectionStatus(group("deepseek"), keyedGroup)).toBeNull();
-    expect(connectionStatus(group("my-own-group"), keyedGroup)).toBeNull();
+    expect(connectionStatus(builtIn(FIXED, { balance: true }), keyedGroup)).toBeNull();
+    expect(connectionStatus(userProviderInfo("my-own-group"), keyedGroup)).toBeNull();
   });
 });
 
@@ -268,7 +303,7 @@ describe("the connection control", () => {
 
   it("connected: the owner gets one Connected trigger that opens a menu, and no Connect button", () => {
     const html = render("penguin-go", true, true);
-    expect(html).toContain(`aria-label="${S.models.connectedStatus} Penguin Go"`);
+    expect(html).toContain(`aria-label="${S.models.connectedStatus} ${group("penguin-go").label}"`);
     expect(html).toContain('aria-haspopup="menu"');
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).not.toContain(S.models.notConnectedStatus);
@@ -448,7 +483,9 @@ describe("Disconnect", () => {
   it("clears the group key and reads Not connected from the server's answer", async () => {
     const fetch = stubFetch(() => json(CLEARED));
     const host = page();
-    expect(connectionStatus(group("tokendance"), keyedGroup)).toBe("connected");
+    // The group connects by a flow of its own, whatever the catalogue gives it today.
+    const connecting = builtIn(group("tokendance"), { flow: "oauth" });
+    expect(connectionStatus(connecting, keyedGroup)).toBe("connected");
     confirm(host).props.onConfirm();
     await host.closed;
 
@@ -456,7 +493,7 @@ describe("Disconnect", () => {
       ["PUT", "/api/projects/p1/models/providers/tokendance", { clearApiKey: true }],
     ]);
     expect(host.adopted).toEqual([CLEARED]);
-    expect(connectionStatus(group("tokendance"), host.adopted[0]!.providers.tokendance)).toBe(
+    expect(connectionStatus(connecting, host.adopted[0]!.providers.tokendance)).toBe(
       "notConnected",
     );
     expect(host.busy).toEqual([true, false]);
@@ -477,7 +514,7 @@ describe("Disconnect", () => {
     const body = renderedText(
       (confirm(page()).props as unknown as { children: ReactElement }).children,
     );
-    expect(body).toContain("TokenDance");
+    expect(body).toContain(group("tokendance").label);
     expect(fetch.requests).toEqual([]);
   });
 });
