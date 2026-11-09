@@ -1411,6 +1411,19 @@ export interface Employment {
 
 export interface AgentsResponse {
   agents: AgentSummary[];
+  /**
+   * The Project's organizations whose `org_chart.yaml` is missing or does not parse; absent when
+   * none. Beyond its CEO, whom such an organization employs is unknown, so `employments` may miss
+   * it — and deleting another organization with its Agents keeps them all (`employment_unknown`).
+   */
+  unreadableCharts?: UnreadableChart[];
+}
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
 }
 
 export interface AgentCreateRequest {
@@ -6390,6 +6403,35 @@ export interface OrganizationSummary {
 
 export interface OrganizationsResponse {
   organizations: OrganizationSummary[];
+}
+
+/**
+ * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
+ * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
+ * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
+ * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
+ * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
+ * Project still employs it, or another organization's chart cannot be read. Every other
+ * employee is kept with its reason. Without the flag the three lists are empty.
+ */
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }
 
 export interface OrgEmployeeItem {
