@@ -4,12 +4,13 @@
  * Each entry names a module and the function in it that does the consequential thing — removes
  * a member, restores the default command rules, deletes a machine from the Project, stops a
  * machine's server, uninstalls the program from a machine or installs it there again, stops a
- * running process, runs a plugin's action, clears an organization draft, syncs the model
- * presets, revokes a paired Chrome, deletes an archived conversation from its stub or the
- * archive page. Every reference to that function must sit inside a `ConfirmModal`'s
- * `onConfirm`: directly, or in the body of a function that `onConfirm` names. A button wired
- * straight back to the action is one short line in a long element and reads fine in review, so
- * the JSX is parsed rather than remembered. */
+ * running process, runs a plugin's action, clears an organization draft, deletes an
+ * organization (and by default its Agents), syncs the model presets, revokes a paired Chrome,
+ * deletes an archived conversation from its stub or the archive page. Every reference to that
+ * function must sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a
+ * function that `onConfirm` names. A button wired straight back to the action is one short line
+ * in a long element and reads fine in review, so the JSX is parsed rather than remembered.
+ */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots";
@@ -32,6 +33,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
   ["features/settings/plugins-section.tsx", "runAction"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
+  ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
   ["features/settings/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],

@@ -6,8 +6,6 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_BROWSER_PARTITION,
-  GUEST_MENU_LABELS,
-  MAX_DATA_FAVICON_CHARS,
   MAX_FAVICON_URL_CHARS,
   clearDataPlan,
   focusGuestScript,
@@ -133,7 +131,6 @@ describe("navigation and popups", () => {
     const data = (n: number) => `data:image/png;base64,${"A".repeat(n)}`;
     expect(pickFavicon([data(3_000)])).toBe(data(3_000));
     expect(pickFavicon([data(5_000)])).toBeUndefined();
-    expect(MAX_DATA_FAVICON_CHARS).toBe(4 * 1024);
     const long = `https://a.test/${"p".repeat(MAX_FAVICON_URL_CHARS)}.ico`;
     expect(pickFavicon([long, "https://a.test/f.ico"])).toBe("https://a.test/f.ico");
   });
@@ -396,12 +393,17 @@ describe("guestContextMenu", () => {
     ]);
   });
 
-  it("speaks the Web App's language", () => {
+  it("speaks the Web App's language: the same entries, in other words", () => {
+    const en = guestContextMenu({ ...base, locale: "en" });
     const zh = guestContextMenu({ ...base, locale: "zh" });
-    expect(zh.find((item) => item.action === "inspect")?.label).toBe(GUEST_MENU_LABELS.zh.inspect);
-    for (const locale of ["en", "zh"] as const) {
-      for (const label of Object.values(GUEST_MENU_LABELS[locale])) expect(label).not.toBe("");
-    }
+    expect(zh.map((item) => item.action ?? item.type)).toEqual(
+      en.map((item) => item.action ?? item.type),
+    );
+    zh.forEach((item, i) => {
+      if (item.action === undefined) return;
+      expect(item.label, item.action).toBeTruthy();
+      expect(item.label, item.action).not.toBe(en[i]!.label);
+    });
   });
 });
 

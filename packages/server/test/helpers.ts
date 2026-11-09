@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
-import type { AmspRecord } from "@prismshadow/penguin-core";
+import type { AmspRecord, BuiltinBenchmark } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
@@ -313,7 +313,10 @@ export interface TestAppOptions {
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
   titles?: TitleNotifier;
-  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  /**
+   * Test double: update-check service with a stubbed fetch/clock. Absent, the app's lookup
+   * fails as unreachable without leaving the process: no test reaches GitHub's API.
+   */
   updateCheck?: UpdateCheckService;
   /** Test double: the Feishu connector's SDK (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
@@ -353,8 +356,9 @@ export interface TestAppOptions {
    * Write the shipped built-in Benchmarks into every Project the app creates, as production
    * does. Off by default: they are several hundred files and directories per Project — most
    * of what a boot or a provisioned user writes — and only the scenarios about them read them.
+   * A list stands in for the shipped catalog: the packages a scenario wrote itself.
    */
-  builtinBenchmarks?: boolean;
+  builtinBenchmarks?: boolean | readonly BuiltinBenchmark[];
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
@@ -368,6 +372,15 @@ export interface TestAppOptions {
    * {@link restartTestApp} can boot the next process on it.
    */
   durableDatabase?: boolean;
+}
+
+/** The update check a test app gets unless the test supplies one: every lookup is unreachable. */
+function offlineUpdateCheck(): UpdateCheckService {
+  return wire(UpdateCheckService, {
+    http: { fetch: () => Promise.reject(new TypeError("fetch failed: test apps have no network")) },
+    env: {},
+    clock: { now: () => new Date() },
+  });
 }
 
 /** The history sync of each replaced machines node, by data root, closed with its App. */
@@ -390,7 +403,9 @@ export function replacementsFor(
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
-  if (!o.builtinBenchmarks) out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: [] }]);
+  if (o.builtinBenchmarks !== true) {
+    out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: o.builtinBenchmarks || [] }]);
+  }
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
@@ -403,7 +418,7 @@ export function replacementsFor(
     const titles = o.titles;
     out.push([DefaultTitleGenerators, { create: () => titles }]);
   }
-  if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
+  out.push([UpdateCheckService, o.updateCheck ?? offlineUpdateCheck()]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
   if (o.pluginPackages) out.push([NpmPluginPackages, o.pluginPackages]);
   if (o.browserShellPort) {

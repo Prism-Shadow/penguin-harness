@@ -11,7 +11,6 @@
 import { describe, expect, it } from "vitest";
 import {
   MARKER_TAGS,
-  TITLE_NOISE_TAGS,
   buildContextSummaryText,
   buildHandoffMessage,
   buildModelSwitchMessage,
@@ -66,17 +65,6 @@ describe("marker block primitives", () => {
     expect(startsWithMarker("[context_summary]\nx", MARKER_TAGS.contextSummary)).toBe(true);
     expect(startsWithMarker("<context_summary>\nx", MARKER_TAGS.contextSummary)).toBe(true);
     expect(startsWithMarker("hi [context_summary]", MARKER_TAGS.contextSummary)).toBe(false);
-  });
-
-  it("the title-noise list is the message-prefix markers only (engine blocks are never title material)", () => {
-    expect(TITLE_NOISE_TAGS).toEqual([
-      MARKER_TAGS.useSkills,
-      MARKER_TAGS.handoffFrom,
-      MARKER_TAGS.scheduledTask,
-      MARKER_TAGS.orgTrigger,
-      MARKER_TAGS.modelSwitchFrom,
-      MARKER_TAGS.backgroundTaskDone,
-    ]);
   });
 });
 
