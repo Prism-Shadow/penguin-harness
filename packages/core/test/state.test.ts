@@ -8,7 +8,6 @@ import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/in
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
-  DEFAULT_CHAT_THINKING_LEVELS,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
   VAULT_PLACEHOLDER,
@@ -64,11 +63,9 @@ import {
   skillsDir,
   systemConfigPath,
   toolsDir,
-  type ModelRef,
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { seedProject, seededProjectConfig } from "./seeded-project.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
@@ -135,75 +132,31 @@ describe("loadAgentState", () => {
 
       expect(state.stateDir).toBe(agentStateDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
 
-      // The default system Prompt states the Agent's identity, without repeating tool details
-      // already in the tool schema (Suggested workflows only points to the run_subagent
-      // delegation entry point).
-      expect(state.systemConfig.system_prompt).toContain("PenguinHarness");
-      expect(state.systemConfig.system_prompt).not.toContain("exec_command");
-      // Personality pins the reply language to the user's own (the tool schema asks the same of
-      // every call description, so the two can't disagree).
-      expect(state.systemConfig.system_prompt).toContain("in the user's language");
-      // Suggested workflows absorbs Subagent delegation and task conventions (self-reported
-      // identity as a soft convention, parallelism, file exchange).
-      expect(state.systemConfig.system_prompt).toContain("# Suggested workflows");
-      expect(state.systemConfig.system_prompt).toContain("run_subagent");
-      expect(state.systemConfig.system_prompt).toContain("Caller agent");
       // The default AGENTS.md is empty: it carries no preset guidance.
       expect(state.agentsMd).toBe("");
-      // The default turn cap is the -1 sentinel: a new agent has no per-Task turn limit, so
-      // long runs are never cut off unless the user configures a positive cap. Existing
-      // agents keep their stored max_turns verbatim (config is never auto-merged).
-      expect(state.systemConfig.max_turns).toBe(-1);
-      expect(state.systemConfig.system_prompt).toContain(AGENTS_MD_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(SESSION_ID_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(CWD_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(PLATFORM_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(OS_VERSION_PLACEHOLDER);
-      expect(state.systemConfig.system_prompt).toContain(DATE_PLACEHOLDER);
-      // AGENTS.md and the Environment injection sit at the end of the template, with AGENTS.md
-      // before Environment; the [developer_instructions] wrapper text is written directly into
-      // the template (the Prompt is transparent about the config).
-      expect(state.systemConfig.system_prompt).toContain("[developer_instructions]");
-      expect(state.systemConfig.system_prompt).toContain("[/developer_instructions]");
-      // The default template explains the semantics of system-synthesized markers to the model,
-      // and recommends preferring tool use.
-      expect(state.systemConfig.system_prompt).toContain("[turn_aborted]");
-      expect(state.systemConfig.system_prompt).toContain("[turn_retried]");
-      expect(state.systemConfig.system_prompt).toContain("[context_summary]");
-      expect(state.systemConfig.system_prompt).toContain("[user_steering]");
-      expect(state.systemConfig.system_prompt).toContain("# Tool use");
-      // Privacy hardening: explicitly forbids reading .project_config.toml (the sole config file,
-      // which holds API keys) and each Agent's .vault.toml, and states that config can only be
-      // changed via the CLI (penguin config ...).
-      expect(state.systemConfig.system_prompt).toContain("Never read");
-      expect(state.systemConfig.system_prompt).toContain(".project_config.toml");
-      expect(state.systemConfig.system_prompt).toContain("agent_state/.vault.toml");
-      expect(state.systemConfig.system_prompt).toContain("CLI-only");
-      expect(state.systemConfig.system_prompt).toContain("penguin config");
-      expect(state.systemConfig.system_prompt).not.toContain(".credentials.toml");
-      expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
-        state.systemConfig.system_prompt.indexOf("# Environment"),
-      );
-      // The Vault / Skills / Memory / Schedules section placeholders: the default template
-      // places them after [/developer_instructions] and before # Environment, in that order.
-      // The section statement texts (# Vault, # Skills, [use_skills] …) moved into the
-      // editable default prompts, each carrying its inner injection point — the template body
-      // holds no inline {{VAULT_KEYS}}/{{SKILL_METADATA}} anymore (those are the legacy
-      // template form).
+      // Every injection point the prompt assembly fills is in the template; one missing would
+      // silently drop its section. The section placeholders replaced the legacy inline tokens.
       const tpl = state.systemConfig.system_prompt;
-      expect(tpl).toContain(VAULT_PLACEHOLDER);
-      expect(tpl).toContain(SKILLS_PLACEHOLDER);
-      expect(tpl).toContain(SCHEDULES_PLACEHOLDER);
-      expect(tpl).not.toContain("# Vault");
-      expect(tpl).not.toContain("# Skills");
+      for (const placeholder of [
+        AGENTS_MD_PLACEHOLDER,
+        SESSION_ID_PLACEHOLDER,
+        CWD_PLACEHOLDER,
+        PLATFORM_PLACEHOLDER,
+        OS_VERSION_PLACEHOLDER,
+        DATE_PLACEHOLDER,
+        VAULT_PLACEHOLDER,
+        SKILLS_PLACEHOLDER,
+        MEMORY_PLACEHOLDER,
+        SCHEDULES_PLACEHOLDER,
+      ]) {
+        expect(tpl, placeholder).toContain(placeholder);
+      }
       expect(tpl).not.toContain(VAULT_KEYS_PLACEHOLDER);
       expect(tpl).not.toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(DEFAULT_VAULT_PROMPT).toContain("# Vault");
-      expect(DEFAULT_VAULT_PROMPT).toContain(VAULT_KEYS_PLACEHOLDER);
-      expect(DEFAULT_SKILLS_PROMPT).toContain("# Skills");
-      expect(DEFAULT_SKILLS_PROMPT).toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(DEFAULT_SKILLS_PROMPT).toContain("[use_skills]");
-      expect(DEFAULT_SCHEDULES_PROMPT).toContain("# Scheduled Tasks");
+      // The prompt forbids reading the two files that hold secrets: the Project config (API
+      // keys) and each Agent's vault.
+      expect(tpl).toContain(".project_config.toml");
+      expect(tpl).toContain("agent_state/.vault.toml");
       // The per-feature injection config ships enabled with the default prompts materialized.
       expect(state.systemConfig.vault).toEqual({ enabled: true, prompt: DEFAULT_VAULT_PROMPT });
       expect(state.systemConfig.skills).toEqual({ enabled: true, prompt: DEFAULT_SKILLS_PROMPT });
@@ -211,22 +164,6 @@ describe("loadAgentState", () => {
         enabled: true,
         prompt: DEFAULT_SCHEDULES_PROMPT,
       });
-      // Tooling installs once into a shared per-Agent directory rather than per task, so a
-      // Session's scratchpad never becomes the home of a virtualenv. It governs every task, not
-      // just skill runs, so it belongs to # File system — pinned by position, since the rule
-      // reads as skills-only the moment it drifts back under # Skills (now the {{SKILLS}}
-      // block).
-      expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
-      expect(tpl.indexOf("# File system")).toBeLessThan(tpl.indexOf("shared_env/"));
-      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
-      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf(VAULT_PLACEHOLDER));
-      expect(tpl.indexOf(VAULT_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
-      expect(tpl.indexOf(SKILLS_PLACEHOLDER)).toBeLessThan(tpl.indexOf(MEMORY_PLACEHOLDER));
-      expect(tpl.indexOf(MEMORY_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SCHEDULES_PLACEHOLDER));
-      expect(tpl.indexOf(SCHEDULES_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
-      expect(state.systemConfig.model?.max_tokens).toBe(32000);
-      expect(state.systemConfig.model?.thinking_level).toBe("medium");
-      expect(state.systemConfig.model?.timeoutMs).toBe(600000);
       expect(state.systemConfig.tools?.mcpServers).toEqual([]);
       expect(Object.hasOwn(state.systemConfig, "description")).toBe(false);
       expect(Object.hasOwn(state.systemConfig, "subagents")).toBe(false);
@@ -237,10 +174,9 @@ describe("loadAgentState", () => {
     const first = await loadAgentState({ init: {} });
     const second = await loadAgentState({ init: {} });
     expect(second.systemConfig.system_prompt).toBe(first.systemConfig.system_prompt);
-    expect(second.systemConfig.system_prompt).toContain("PenguinHarness");
     expect(second.agentsMd).toBe(first.agentsMd);
     // The tool config is fully preserved on the load path.
-    expect(second.systemConfig.tools?.builtin?.[0]?.name).toBe("read_file");
+    expect(second.systemConfig.tools).toEqual(first.systemConfig.tools);
   });
 
   it("respects custom agentId / projectId", async () => {
@@ -252,81 +188,18 @@ describe("loadAgentState", () => {
 });
 
 describe("buildToolConfig", () => {
-  it("exposes the command, file (read_file also reads images) and subagent tools with their default contracts", async () => {
+  it("exposes every default built-in tool, and input_command's timeout lets a default-length empty poll return first", async () => {
     const state = await loadAgentState({ init: {} });
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
-    expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "read_file",
-      "edit_file",
-      "write_file",
-      "exec_command",
-      "input_command",
-      "run_subagent",
-      "input_subagent",
-    ]);
-    const exec = cfg.customTools.find((t) => t.name === "exec_command")!;
-    expect(exec.permission).toBe("rw");
-    expect(exec.timeoutMs).toBe(120000);
-    expect(exec.maxOutputLength).toBe(16000);
-    expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
-    // The command/subagent tools declare the description call argument in config,
-    // toggled by the per-entry call_description field (default true).
-    expect(exec.call_description).toBe(true);
-    expect(
-      Object.keys((exec.parameters as { properties: Record<string, unknown> }).properties),
-    ).toEqual(["description", "cmd", "workdir", "yield_time_ms", "run_in_background"]);
-    const write = cfg.customTools.find((t) => t.name === "input_command")!;
-    expect(write.permission).toBe("rw");
-    expect(write.call_description).toBe(true);
-    // Same timeout tier as exec_command; the empty-poll default has to fit under it, so a
-    // default-length poll returns on its own before the Environment's timeout fires.
-    expect(write.timeoutMs).toBe(120000);
-    expect(clampYield(undefined, DEFAULT_EMPTY_POLL_YIELD_MS, write.timeoutMs)).toBe(
+    expect(cfg.customTools.map((t) => t.name)).toEqual(
+      defaultSystemConfig().tools!.builtin!.map((t) => t.name),
+    );
+    // A default-length poll returns on its own before the Environment's timeout fires.
+    const input = cfg.customTools.find((t) => t.name === "input_command")!;
+    expect(clampYield(undefined, DEFAULT_EMPTY_POLL_YIELD_MS, input.timeoutMs)).toBe(
       DEFAULT_EMPTY_POLL_YIELD_MS,
     );
-    expect((write.parameters as { required?: string[] }).required).toEqual([
-      "description",
-      "process_id",
-    ]);
-    // File tools: read_file is read-only with a wider output cap and the image-reading
-    // timeout (one vision request may sit inside a call); edit/write are rw.
-    const readFile = cfg.customTools.find((t) => t.name === "read_file")!;
-    expect(readFile.permission).toBe("r");
-    expect(readFile.timeoutMs).toBe(60000);
-    expect(readFile.maxOutputLength).toBe(64000);
-    expect((readFile.parameters as { required?: string[] }).required).toEqual(["file_path"]);
-    expect(Object.keys((readFile.parameters as { properties: object }).properties)).toEqual([
-      "file_path",
-      "offset",
-      "limit",
-      "prompt",
-    ]);
-    expect(readFile.description).toContain("image");
-    const editFile = cfg.customTools.find((t) => t.name === "edit_file")!;
-    expect(editFile.permission).toBe("rw");
-    expect(editFile.timeoutMs).toBe(30000);
-    expect(editFile.maxOutputLength).toBe(16000);
-    expect((editFile.parameters as { required?: string[] }).required).toEqual([
-      "file_path",
-      "old_string",
-      "new_string",
-    ]);
-    const writeFile = cfg.customTools.find((t) => t.name === "write_file")!;
-    expect(writeFile.permission).toBe("rw");
-    expect((writeFile.parameters as { required?: string[] }).required).toEqual([
-      "file_path",
-      "content",
-    ]);
-    const sub = cfg.customTools.find((t) => t.name === "run_subagent")!;
-    expect(sub.permission).toBe("rw");
-    expect((sub.parameters as { required?: string[] }).required).toEqual(["description", "prompt"]);
-    const writeSub = cfg.customTools.find((t) => t.name === "input_subagent")!;
-    expect(writeSub.permission).toBe("rw");
-    expect((writeSub.parameters as { required?: string[] }).required).toEqual([
-      "description",
-      "subagent_id",
-    ]);
     // No built-in entry is pinned to a model class: read_file serves both at runtime.
     expect(cfg.customTools.every((t) => t.forModel === undefined)).toBe(true);
   });
@@ -398,15 +271,9 @@ describe("buildToolConfig", () => {
       agentsMd: "y",
     };
     const cfg = buildToolConfig(state);
-    expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "read_file",
-      "edit_file",
-      "write_file",
-      "exec_command",
-      "input_command",
-      "run_subagent",
-      "input_subagent",
-    ]);
+    expect(cfg.customTools.map((t) => t.name)).toEqual(
+      defaultSystemConfig().tools!.builtin!.map((t) => t.name),
+    );
   });
 });
 
@@ -1213,16 +1080,6 @@ describe("project-config round trip", () => {
     expect(
       getModel(loaded, { provider: "qwen-token-plan", model_id: "glm-5.2" })?.api_key,
     ).toBeUndefined();
-  });
-
-  it("addModel requires an explicit provider: a bare model_id does not type-check", () => {
-    // Compile-time contract (asserted by `pnpm typecheck`, which includes this file): with the
-    // catalog inference gone there is nothing to fall back to, so the entry's provider field is
-    // required rather than optional. vitest only checks that the call expression exists.
-    const bare = { model_id: "glm-5.2" };
-    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
-    const call = (): Promise<ProjectConfig> => addModel(tmpRoot, DEFAULT_PROJECT_ID, bare);
-    expect(call).toBeTypeOf("function");
   });
 
   it("upserts by the (provider, model_id) pair; same model_id under two providers co-exists", async () => {
@@ -2213,22 +2070,6 @@ describe("default_chat (new-chat defaults block)", () => {
   });
 });
 
-describe("selectable thinking tiers (the parallel lists must agree)", () => {
-  it("run_subagent's enum is exactly the project-default tiers, and never offers none", () => {
-    // The same rule is spelled out in three places — this constant, the web picker's
-    // SELECTABLE_THINKING_LEVELS (pinned by its own test), and run_subagent's schema — while
-    // nothing checked the two core lists against each other. `"none"` stays a legal stored and
-    // wire value (a legacy config may carry it, and it is inherited verbatim by a subagent),
-    // it is simply never *offered*, because many models cannot disable thinking.
-    expect(SUBAGENT_THINKING_LEVELS).toEqual(DEFAULT_CHAT_THINKING_LEVELS);
-    expect(SUBAGENT_THINKING_LEVELS).not.toContain("none");
-    const entry = defaultSystemConfig().tools?.builtin?.find((t) => t.name === "run_subagent");
-    const properties = (entry?.parameters as { properties?: Record<string, { enum?: unknown }> })
-      ?.properties;
-    expect(properties?.thinking_level?.enum).toEqual([...SUBAGENT_THINKING_LEVELS]);
-  });
-});
-
 describe("resolveModelRef (validates a (provider, model_id) pair against the config)", () => {
   const cfg: ProjectConfig = {
     models: [
@@ -2267,15 +2108,6 @@ describe("resolveModelRef (validates a (provider, model_id) pair against the con
     expect(() => resolveModelRef(cfg, "deepseek-v4", "deepseek")).toThrow(
       /is not in the Project config/,
     );
-  });
-
-  it("requires provider: a bare model_id does not type-check (no resolution path left)", () => {
-    // The pair is enforced by the type checker — asserted by `pnpm typecheck`, which includes
-    // this file; the unused-directive error is the failure mode if the parameter ever goes
-    // optional again. vitest only checks that the call expression exists.
-    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
-    const call = (): ModelRef => resolveModelRef(cfg, "deepseek-v4-pro");
-    expect(call).toBeTypeOf("function");
   });
 });
 

@@ -56,7 +56,6 @@ export function renderMainChatBody(scope: MainChatView) {
     chatDock,
     emptyChat,
     input,
-    coveredByWorkbench,
   } = scope;
   return (
     <>
@@ -65,7 +64,7 @@ export function renderMainChatBody(scope: MainChatView) {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
+        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview

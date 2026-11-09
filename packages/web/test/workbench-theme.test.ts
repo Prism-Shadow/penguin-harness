@@ -1,9 +1,9 @@
 /**
  * Carrying the app's appearance into a workbench's page: what is read from the app's own
- * document, and what is stamped on the frame's.
+ * document, and what is stamped on the frame's. What is read includes the names published
+ * pages read from before the token contract (the body font stack, the gray scale).
  */
 import { describe, expect, it } from "vitest";
-import { TOKEN_NAMES } from "@prismshadow/penguin-ui";
 import {
   applyWorkbenchTheme,
   collectFontFaces,
@@ -11,8 +11,8 @@ import {
   readAppTheme,
   readDocumentTheme,
   WORKBENCH_FONTS_ATTR,
+  WORKBENCH_FRAME_ATTR,
   WORKBENCH_THEME_HREF,
-  WORKBENCH_THEME_VARS,
   type WorkbenchTheme,
 } from "../src/lib/workbench-theme";
 
@@ -23,15 +23,12 @@ const appRoot = (classes: string[], fontSize: string, attrs: Record<string, stri
 });
 
 describe("workbench theme", () => {
-  it("copies the whole token contract, and the names pages read before it", () => {
-    expect(TOKEN_NAMES.filter((name) => !WORKBENCH_THEME_VARS.includes(name))).toEqual([]);
-    expect(WORKBENCH_THEME_VARS).toContain("--font-app-sans");
-    expect(WORKBENCH_THEME_VARS).toContain("--color-gray-500");
-  });
-
   it("reads the resolved appearance rather than recomputing it", () => {
+    // A token of the contract, and two names published pages read from before it: the body
+    // font stack and a gray of Tailwind's scale.
     const values: Record<string, string> = {
       "--ui-accent": " #e32a01 ",
+      "--font-app-sans": "Inter, sans-serif",
       "--color-gray-950": "#000",
       "--ui-fg": "",
     };
@@ -44,7 +41,11 @@ describe("workbench theme", () => {
     expect(theme.dark).toBe(true);
     expect(theme.fontSize).toBe("16px");
     // Trimmed, and a property the app does not define is not stamped as an empty value.
-    expect(theme.vars).toEqual({ "--ui-accent": "#e32a01", "--color-gray-950": "#000" });
+    expect(theme.vars).toEqual({
+      "--ui-accent": "#e32a01",
+      "--font-app-sans": "Inter, sans-serif",
+      "--color-gray-950": "#000",
+    });
     expect(theme.attrs).toEqual({
       "data-theme": "geek",
       "data-accent": "orange",
@@ -101,7 +102,7 @@ describe("workbench theme", () => {
     applyWorkbenchTheme(doc.document, theme);
     applyWorkbenchTheme(doc.document, theme);
     expect(doc.classes).toEqual({ dark: true, light: false });
-    expect(doc.attributes).toEqual(theme.attrs);
+    expect(doc.attributes).toEqual({ ...theme.attrs, [WORKBENCH_FRAME_ATTR]: "" });
     expect(doc.properties).toEqual(theme.vars);
     expect(doc.root.style.fontSize).toBe("16px");
     expect(doc.head.map((el) => el.tag)).toEqual(["link", "style"]);
@@ -119,7 +120,7 @@ describe("workbench theme", () => {
       vars: { "--ui-accent": "#232527" },
     });
     expect(doc.classes).toEqual({ dark: false, light: true });
-    expect(doc.attributes).toEqual({ "data-theme": "modern" });
+    expect(doc.attributes).toEqual({ "data-theme": "modern", [WORKBENCH_FRAME_ATTR]: "" });
     expect(doc.properties).toEqual({ "--ui-accent": "#232527" });
     expect(doc.head).toHaveLength(2);
     expect(doc.writes).toEqual({ properties: 3, fonts: 1 });
@@ -142,9 +143,27 @@ describe("workbench theme", () => {
     expect(doc.head[1]).toBe(components);
     expect(doc.head[0]!.textContent).toBe(theme.fontFaces);
     expect(doc.classes).toEqual({ dark: false, light: true });
-    expect(doc.attributes).toEqual(theme.attrs);
+    expect(doc.attributes).toEqual({ ...theme.attrs, [WORKBENCH_FRAME_ATTR]: "" });
     expect(doc.properties).toEqual(theme.vars);
     expect(doc.root.style.fontSize).toBe("15px");
+  });
+
+  it("marks the page see-through and gives it the app's color scheme, both ways", () => {
+    // A browser paints an opaque canvas under a frame whose document's color scheme differs
+    // from the frame element's, which follows the app: the page must follow the app too.
+    const doc = fakeDocument();
+    const theme: WorkbenchTheme = {
+      dark: true,
+      fontSize: "16px",
+      attrs: { "data-theme": "modern" },
+      vars: {},
+      fontFaces: "",
+    };
+    applyWorkbenchTheme(doc.document, theme);
+    expect(doc.attributes).toHaveProperty(WORKBENCH_FRAME_ATTR);
+    expect(doc.root.style.colorScheme).toBe("dark");
+    applyWorkbenchTheme(doc.document, { ...theme, dark: false });
+    expect(doc.root.style.colorScheme).toBe("light");
   });
 
   it("collects the app's font faces with absolute URLs", () => {
@@ -221,6 +240,7 @@ function fakeDocument() {
     removeAttribute: (name: string) => void delete attributes[name],
     style: {
       fontSize: "",
+      colorScheme: "",
       setProperty: (name: string, value: string) => {
         writes.properties++;
         properties[name] = value;

@@ -28,14 +28,22 @@
  */
 import { RELEASE_NOTES } from "./release-notes-data";
 
+/** One language's lines of a note: one to five, so an entry with none or six does not compile. */
+export type NoteLines =
+  | readonly [string]
+  | readonly [string, string]
+  | readonly [string, string, string]
+  | readonly [string, string, string, string]
+  | readonly [string, string, string, string, string];
+
 export interface ReleaseNote {
   /** Plain semver, no "v". */
   readonly version: string;
   /** The release line's date in CHANGELOG.md (yyyy-mm-dd); a tag-only version uses its tag date. */
-  readonly date: string;
+  readonly date: `${number}-${number}-${number}`;
   /** 1–5 short user-facing lines per language; zh and en mirror each other line for line. */
-  readonly zh: readonly string[];
-  readonly en: readonly string[];
+  readonly zh: NoteLines;
+  readonly en: NoteLines;
 }
 
 /** The numeric parts of a version's dotted core: `0.2.10-beta.1` → [0, 2, 10]. */

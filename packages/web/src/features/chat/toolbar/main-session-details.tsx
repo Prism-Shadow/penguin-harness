@@ -55,7 +55,8 @@ export function renderMainSessionDetails(scope: MainChatView) {
     <Dropdown
       open={infoOpen}
       setOpen={setInfoOpen}
-      menuClass="right-0 top-full mt-1 w-96 max-w-[calc(100vw-1.5rem)] origin-top-right"
+      portal={{ direction: "down", align: "right" }}
+      menuClass="w-96 max-w-[calc(100vw-1.5rem)]"
       button={
         <button
           type="button"
@@ -254,7 +255,12 @@ export function renderMainSessionDetails(scope: MainChatView) {
                     <button
                       type="button"
                       disabled={procBusy !== null}
-                      onClick={() => setProcToKill(p)}
+                      // The confirmation replaces the card: a portaled card would
+                      // otherwise stay over the dialog it opened.
+                      onClick={() => {
+                        setInfoOpen(false);
+                        setProcToKill(p);
+                      }}
                       className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                     >
                       {procBusy?.includes(p.processId) ? S.common.loading : S.chat.processStop}
