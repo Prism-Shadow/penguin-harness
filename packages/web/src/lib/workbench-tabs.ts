@@ -49,6 +49,17 @@ export interface WorkbenchUpdatedDetail {
   agentId: string;
 }
 
+/**
+ * Dispatched on `window` when the server starts loading a workbench's files (the watcher saw an
+ * edit, or a list or a reload asked for it). The App Center listens, to show the tile building;
+ * the end of the load is the WORKBENCH_UPDATED_EVENT above.
+ */
+export const WORKBENCH_BUILDING_EVENT = "penguin:workbench-building";
+
+export interface WorkbenchBuildingDetail extends WorkbenchUpdatedDetail {
+  workbenchId: string;
+}
+
 export function workbenchesBase(projectId: string, agentId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 }

@@ -123,9 +123,12 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       workbenchId: "support",
       path: "/app/default_project/penguin_support/support",
     });
+    // An image from the icon route, never the file under ui/ served as a page of this origin.
+    expect(tile!.iconUrl).toMatch(new RegExp(`^${BASE}/app-center/icon\\?rev=[0-9a-f]+$`));
     const icon = await admin.get(tile!.iconUrl!);
     expect(icon.status).toBe(200);
     expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(icon.headers.get("content-security-policy")).toContain("sandbox");
     expect(
       (await admin.delete("/api/projects/default_project/agents/penguin_support")).status,
     ).toBe(409);

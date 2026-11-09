@@ -1233,13 +1233,60 @@ export const zh = {
   },
   appCenter: {
     title: "应用中心",
-    description: "本 Project 各 Agent 的 Workbench 快捷入口，点开即进入应用。",
+    description: "本 Project 各 Agent 的 Workbench 快捷入口。点开即用；拖动图块可排序，叠放即成分组。",
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
       "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench 并打开「显示在应用中心」后，它就会出现在这里。",
-    /** A tile whose current files failed to load: it still opens, and the page says why. */
-    broken: "加载失败，打开查看原因",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "加载失败",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "构建中",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}，来自 ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。构建中，完成后即可打开`,
+    failedTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。加载失败，菜单中可查看错误`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
+    folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
+    folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
+    /** The name a folder is given when two tiles are dropped together. */
+    newFolder: "新建分组",
+    menu: {
+      open: "打开",
+      openFullScreen: "全屏打开",
+      moveTo: "移动到…",
+      moveForward: "向前移动",
+      moveBackward: "向后移动",
+      removeFromFolder: "移出分组",
+      removeFromAppCenter: "从应用中心移除",
+      viewInSettings: "在 Agent 设置中查看",
+      showError: "查看错误",
+      rename: "重命名",
+      dissolve: "解散分组",
+      restoreDefault: "恢复默认排列",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "返回",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "移入分组",
+      newFolderWith: "与其组成新分组",
+      noDestination: "没有可移入的分组或应用",
+    },
+    restoreTitle: "恢复默认排列",
+    restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",
+    restoreConfirm: "恢复默认",
+    renameTitle: "重命名分组",
+    folderNameLabel: "分组名称",
+    folderNameHint: "最多 40 个字符",
+    errorTitle: (title: string) => `${title} 加载失败`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
+    /** The windowed app's title bar. */
+    windowClose: "关闭，回到应用中心",
+    windowFullScreen: "全屏打开",
     /** Local Agents only: a machine's Agents keep their apps in their own settings. */
     machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
     aiCreateTitle: "用 AI 创建应用",

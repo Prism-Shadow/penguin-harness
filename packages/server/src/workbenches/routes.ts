@@ -8,6 +8,8 @@
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
+ *   GET    /:id/app-center/icon    the image its App Center declaration names, under the type its
+ *                                  bytes are (see app-center.ts); kept for good under its `?rev=`
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
@@ -20,10 +22,13 @@
  * Every route requires access to the Project; the UI and api routes are what the
  * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to.
  *
- * The App Center's list is Project-wide, mounted at /api/projects/:projectId/app-center:
+ * The App Center is Project-wide, mounted at /api/projects/:projectId/app-center:
  *
  *   GET    /                       every shown workbench of the Project's Agents on this server
- *                                  (manifests and load status only: nothing is compiled)
+ *                                  (manifests and load status only: nothing is compiled), and the
+ *                                  viewer's own arrangement of them
+ *   PUT    /layout {layout}        replace the viewer's arrangement; null restores the server's
+ *                                  order (see app-center-layout.ts)
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -32,6 +37,7 @@ import { Hono } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type {
+  AppCenterLayoutResponse,
   AppCenterResponse,
   WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallResponse,
@@ -42,13 +48,19 @@ import { HttpError } from "../http/errors.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { Access, Projects } from "../mechanisms/projects.js";
+import type { UiPrefsStore } from "../mechanisms/settings.js";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import type {
   WorkbenchRequest,
   WorkbenchResponse,
   Workbenches,
 } from "../mechanisms/workbenches.js";
+import {
+  parseAppCenterLayout,
+  readAppCenterLayout,
+  writeAppCenterLayout,
+} from "./app-center-layout.js";
 import {
   collectWorkbenchArchive,
   folderNameFor,
@@ -80,6 +92,16 @@ const MIME: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
+};
+
+/**
+ * What an App Center icon is served with: its bytes are never a document of this origin — no
+ * script, no fetch, no frame of the app — whatever an SVG among them says.
+ */
+const ICON_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  "cross-origin-resource-policy": "same-origin",
 };
 
 /** The largest request body a workbench's handler is handed. */
@@ -386,6 +408,21 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
   });
 
+  // The URL a shortcut carries names the bytes' revision, so under it the icon is kept for good
+  // (like an employee's avatar); any other `rev`, or none, is answered with what is there now.
+  app.get("/:id/app-center/icon", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const icon = await deps.workbenches.appCenterIcon(projectId, agentId, c.req.param("id"));
+    if (icon === null)
+      throw new HttpError(404, "not_found", "The workbench declares no App Center icon.");
+    const kept = c.req.query("rev") === icon.rev;
+    return c.body(new Uint8Array(icon.bytes), 200, {
+      ...ICON_HEADERS,
+      "content-type": icon.contentType,
+      "cache-control": kept ? "private, max-age=31536000, immutable" : "no-cache",
+    });
+  });
+
   app.delete("/:id", async (c) => {
     const { projectId, agentId } = scope(c);
     await deps.workbenches.remove(projectId, agentId, c.req.param("id")).catch(notFound);
@@ -483,15 +520,39 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   return app;
 }
 
-/** The Project's App Center: the shortcut list (mounted at /api/projects/:projectId/app-center). */
-export function appCenterRoutes(deps: Pick<WorkbenchRouteDeps, "access" | "workbenches">) {
+export interface AppCenterRouteDeps extends Pick<WorkbenchRouteDeps, "access" | "workbenches"> {
+  /** Where each viewer's arrangement is kept: their ui_prefs. */
+  prefs: UiPrefsStore;
+  projects: Pick<Projects, "findById">;
+}
+
+/**
+ * The Project's App Center: the shortcut list and the viewer's arrangement of it (mounted at
+ * /api/projects/:projectId/app-center). Arranging is anyone's who may open it, since it changes
+ * only what they see.
+ */
+export function appCenterRoutes(deps: AppCenterRouteDeps) {
   const app = new Hono<AppEnv>();
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { userId } = c.var.user;
+    deps.access.requireProjectAccess(userId, projectId);
     return c.json({
       shortcuts: await deps.workbenches.appCenter(projectId),
+      layout: readAppCenterLayout(deps.prefs, userId, projectId),
     } satisfies AppCenterResponse);
+  });
+  app.put("/layout", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const { userId } = c.var.user;
+    deps.access.requireProjectAccess(userId, projectId);
+    const body = await readJson(c);
+    if (body.layout === undefined)
+      throw badRequest("Request body must name layout (null restores the server's order).");
+    const layout = body.layout === null ? null : parseAppCenterLayout(body.layout);
+    const exists = (id: string) => deps.projects.findById(id) !== null;
+    writeAppCenterLayout(deps.prefs, userId, projectId, layout, exists);
+    return c.json({ layout } satisfies AppCenterLayoutResponse);
   });
   return app;
 }
@@ -519,6 +580,8 @@ export class WorkbenchRoutes {
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly paths!: Paths;
   @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly prefs!: UiPrefsStore;
+  @Use() private readonly projects!: Projects;
   @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
   @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
   setup() {
@@ -531,6 +594,8 @@ export class WorkbenchRoutes {
     this.appCenterRoutes = appCenterRoutes({
       access: this.access,
       workbenches: this.workbenches,
+      prefs: this.prefs,
+      projects: this.projects,
     });
   }
 }

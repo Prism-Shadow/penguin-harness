@@ -11,23 +11,16 @@
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
-import {
-  appPageTab,
-  WORKBENCH_UPDATED_EVENT,
-  workbenchTabsOf,
-  type WorkbenchTab,
-} from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
-import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import { isAppCenterPath } from "../../lib/app-center-path";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
-import { openUserEvents } from "../../api/sse";
+import { useAppPageTab } from "./use-app-page-tab";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
@@ -42,49 +35,18 @@ export function WorkbenchAppPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
-  const toAppCenter = returnTo === APP_CENTER_PATH;
-  const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
-  const [failure, setFailure] = useState<string | null>(null);
+  const toAppCenter = isAppCenterPath(returnTo);
+  const { tab, failure } = useAppPageTab({
+    projectId,
+    agentId,
+    workbenchId,
+    tabKey,
+    machineId,
+    // This route is outside the app shell, so it holds its own event stream open.
+    ownEvents: true,
+    enabled: !safe,
+  });
   const paletteShortcut = useShortcutLabel("palette.toggle");
-
-  useEffect(() => {
-    if (safe) {
-      setTab(null);
-      return;
-    }
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await api.getWorkbenches(projectId, agentId, machineId);
-        if (!alive) return;
-        setTab(appPageTab(workbenchTabsOf(res.workbenches, machineId), workbenchId, tabKey));
-        setFailure(null);
-      } catch (err) {
-        if (alive) setFailure(err instanceof Error ? err.message : String(err));
-      }
-    };
-    void load();
-    const onUpdated = (e: Event) => {
-      const d = (e as CustomEvent<{ projectId: string; agentId: string }>).detail;
-      if (d.projectId === projectId && d.agentId === agentId) void load();
-    };
-    window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-    // This route is outside the app shell, so the provider that usually holds the event
-    // stream open (and raises the event above) is not mounted: without a stream of its own,
-    // a page shown as the whole app would never notice its workbench being edited or removed.
-    const conn = openUserEvents({
-      onRecord: () => undefined,
-      onServerEvent: (ev) => {
-        if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
-        if (ev.projectId === projectId && ev.agentId === agentId) void load();
-      },
-    });
-    return () => {
-      alive = false;
-      window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-      conn.close();
-    };
-  }, [safe, projectId, agentId, workbenchId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -94,8 +56,8 @@ export function WorkbenchAppPage() {
         keywords: ["exit", "leave", "chat", "full page", "app"],
         run: () => {
           rememberSelection(projectId, agentId);
-          if (toAppCenter) {
-            void navigate(APP_CENTER_PATH);
+          if (isAppCenterPath(returnTo)) {
+            void navigate(returnTo);
             return;
           }
           const destination =

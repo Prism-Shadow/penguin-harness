@@ -9,6 +9,8 @@
  */
 import type {
   AgentApiSettings,
+  AppCenterResponse,
+  AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
@@ -194,6 +196,8 @@ export interface DemoFixtures {
   context: SessionContextResponse;
   usage: UsageDay[];
   usageErrors: UsageErrorItem[];
+  /** The App Center: a tile in each build state, and a folder in the viewer's arrangement. */
+  appCenter: AppCenterResponse;
 }
 
 /** One day of one Agent on one model, the grain the usage routes aggregate from. */
@@ -1809,6 +1813,57 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
   ];
 
+  const shortcut = (
+    agent: AgentSummary,
+    workbenchId: string,
+    title: string,
+    titleZh: string,
+    build: AppCenterShortcut["build"] = "ready",
+    error?: string,
+  ): AppCenterShortcut => ({
+    agentId: agent.agentId,
+    agentName: agent.name ?? agent.agentId,
+    workbenchId,
+    title,
+    titleZh,
+    path: `/app/${IDS.project}/${agent.agentId}/${workbenchId}`,
+    build,
+    ...(error !== undefined ? { error } : {}),
+  });
+  const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板"),
+      shortcut(
+        notesAgent,
+        "release-calendar",
+        "Release calendar",
+        "发布日历",
+        "failed",
+        "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
+      ),
+      shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
+      shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
+    ],
+    layout: {
+      v: 1,
+      items: [
+        { type: "app", app: `${docsAgent.agentId}/corpus-search` },
+        {
+          type: "folder",
+          id: "release",
+          name: L("发布", "Release"),
+          apps: [`${notesAgent.agentId}/changelog-board`, `${notesAgent.agentId}/release-calendar`],
+        },
+        { type: "app", app: `${docsAgent.agentId}/citation-check` },
+        { type: "app", app: `${generalAgent.agentId}/daily-todos` },
+        { type: "app", app: `${generalAgent.agentId}/expenses` },
+      ],
+    },
+  };
+
   return {
     lang,
     now,
@@ -1882,6 +1937,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     context,
     usage,
     usageErrors,
+    appCenter,
   };
 }
 

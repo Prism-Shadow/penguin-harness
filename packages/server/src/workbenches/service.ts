@@ -21,7 +21,7 @@
  * cache, and every successful load commits the folder to the Agent State repository
  * (./repo.ts) as a version the Agent (or the user) can roll back to. A watcher on the Agent
  * State's `workbenches/` folder reloads on change, debounced, and the users of the Project
- * hear `workbench_updated` on their event stream.
+ * hear `workbench_building` when a load starts and `workbench_updated` when it ends.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -47,6 +47,7 @@ import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
+  AppCenterIcon,
   AppCenterShortcut,
   WorkbenchInfo,
   WorkbenchInput,
@@ -64,13 +65,20 @@ import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler
 import {
   agentShortcuts,
   AppCenterManifestInvalid,
+  readAppCenterIcon,
   readAppCenterManifest,
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
-import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import {
+  BUILD_DIR,
+  compileWorkbench,
+  pruneBuilds,
+  readLoadStatus,
+  writeLoadStatus,
+} from "./compile.js";
 import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
@@ -381,6 +389,10 @@ export class WorkbenchService implements Workbenches {
    * a load's own reads of the folder), and reloading on those tore the tree down under the
    * request that had just written its state, or loaded the same folder twice over. The
    * revision is the content hash, so an edit always differs.
+   *
+   * A workbench this process has not loaded is compared with the revision its status file says
+   * last loaded: the App Center watches Agents whose workbenches it only reads, and its own
+   * reads would otherwise compile, on Windows, every workbench it lists.
    */
   private async reloadIfChanged(
     projectId: string,
@@ -391,7 +403,7 @@ export class WorkbenchService implements Workbenches {
     const k = key(projectId, agentId, workbenchId);
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
-      : this.loaded.get(k)?.folder.revision;
+      : (this.loaded.get(k)?.folder.revision ?? (await readLoadStatus(folder.dir))?.revision);
     if (current === folder.revision) return;
     await this.load(projectId, agentId, folder);
   }
@@ -524,16 +536,30 @@ export class WorkbenchService implements Workbenches {
         this.log.line(`[workbenches] ${projectId}/${agentId}: ${messageOf(err)}`);
         continue;
       }
+      // An edit made while the App Center is open loads, and the load is announced.
+      this.watch(projectId, agentId);
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
       out.push(
         ...(await agentShortcuts(
           projectId,
           { agentId, agentName },
           workbenchesDir(this.paths.root, projectId, agentId),
+          (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
         )),
       );
     }
     return out;
+  }
+
+  async appCenterIcon(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<AppCenterIcon | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    return readAppCenterIcon(dir, workbenchId);
   }
 
   async setAppCenter(
@@ -594,6 +620,16 @@ export class WorkbenchService implements Workbenches {
   }
 
   // ---- internals ------------------------------------------------------------------
+
+  /**
+   * A load of the workbench is under way or queued behind another. The watcher's settle window
+   * does not count: a change event there may turn out to change nothing (Windows reports one
+   * when a file is read), and then no load starts and no event follows to end it.
+   * `workbench_building` marks the start of every load that does run.
+   */
+  private building(k: string): boolean {
+    return this.loading.has(k);
+  }
 
   private async folder(
     projectId: string,
@@ -695,6 +731,13 @@ export class WorkbenchService implements Workbenches {
       });
     this.loading.set(k, run);
     this.loadingRevision.set(k, folder.revision);
+    // Once per run: a caller that shares the run above hears nothing new.
+    this.publish(projectId, {
+      type: "workbench_building",
+      projectId,
+      agentId,
+      workbenchId: folder.id,
+    });
     void run
       .finally(() => {
         if (this.loading.get(k) === run) {

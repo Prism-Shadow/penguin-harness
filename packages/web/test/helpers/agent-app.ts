@@ -51,6 +51,8 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
   AgentSummary,
+  AppCenterLayout,
+  AppCenterResponse,
   AppCenterShortcut,
   ChatDefaultsDto,
   MachineInfo,
@@ -229,6 +231,10 @@ export interface AgentServer {
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
   /** Adds a workbench to the Agent, or replaces the one with its id (an edit on disk, say). */
   putWorkbench(workbench: WorkbenchInfo): void;
+  /** Whether a workbench's files are being loaded now: the App Center lists it as building. */
+  setBuilding(workbenchId: string, building: boolean): void;
+  /** The viewer's App Center arrangement as the server holds it now (null: the default order). */
+  appCenterLayout(): AppCenterLayout | null;
 }
 
 export function agentServer(
@@ -247,6 +253,8 @@ export function agentServer(
     importedWorkbench?: WorkbenchInfo;
     /** What a workbench's zip download answers instead of the archive. */
     archiveRefusal?: { status: number; code: string };
+    /** The viewer's stored App Center arrangement (by default none). */
+    appCenterLayout?: AppCenterLayout;
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -276,6 +284,8 @@ export function agentServer(
   };
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
+  const building = new Set<string>();
+  let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -578,10 +588,19 @@ export function agentServer(
             title: w.appCenter?.title ?? first?.title ?? w.name,
             ...(titleZh !== undefined ? { titleZh } : {}),
             path: `/app/${PROJECT_ID}/${AGENT_ID}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
-            ...(w.error !== null ? { broken: true as const } : {}),
+            ...(w.appCenter?.tab !== undefined ? { tab: w.appCenter.tab } : {}),
+            ...(building.has(w.id)
+              ? { build: "building" as const }
+              : w.error !== null
+                ? { build: "failed" as const, error: w.error }
+                : { build: "ready" as const }),
           };
         });
-      return json({ shortcuts });
+      return json({ shortcuts, layout: appCenterLayout } satisfies AppCenterResponse);
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
+      appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;
+      return json({ layout: appCenterLayout });
     }
     if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
       const incoming = options.importedWorkbench;
@@ -828,6 +847,11 @@ export function agentServer(
     putWorkbench: (workbench) => {
       workbenches = [...workbenches.filter((item) => item.id !== workbench.id), workbench];
     },
+    setBuilding: (workbenchId, on) => {
+      if (on) building.add(workbenchId);
+      else building.delete(workbenchId);
+    },
+    appCenterLayout: () => appCenterLayout,
   };
 }
 

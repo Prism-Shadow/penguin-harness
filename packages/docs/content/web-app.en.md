@@ -145,9 +145,15 @@ The interface language (English / 中文 / System) and the theme (Light / Dark /
 
 ## The App Center
 
-The **App Center** is the Project's home screen: a grid of tiles, one for each workbench of the Project's agents that is set to show there. A workbench is a page an agent hosts beside the chat; see [Workbench plugins](/skills#workbench-plugins). Each tile shows the workbench's icon, or a coloured letter when it has none, with the agent's avatar in its corner, then the workbench's name and the agent's name. Tiles follow the order of the agent list, and are sorted by name within one agent.
+The **App Center** is the Project's home screen: a grid of tiles, one for each workbench of the Project's agents that is set to show there. A workbench is a page an agent hosts beside the chat; see [Workbench plugins](/skills#workbench-plugins). A tile is the workbench's icon, or a coloured letter when it has none, and its name, as on a phone. Hover a tile to see its full name and the agent it belongs to.
 
-Select a tile to open the workbench full page. Its **Exit full screen** button brings you back to the App Center. A tile whose current files failed to load is dimmed and marked with a warning icon; it still opens, and the full page says what went wrong.
+Select a tile to open the workbench in a window over the grid. The sidebar stays, and the window's close button brings you back to the grid. To open it full screen instead, right-click the tile and choose **Open full screen**; that page's **Exit full screen** button brings you back.
+
+While a workbench is still being built, its tile is dimmed under a turning ring, and it opens once the build is done; the tile turns live on its own. A tile whose last build failed is dimmed and marked with a warning icon. It still opens, and **Show error** in its menu shows what went wrong.
+
+You arrange the tiles yourself. Drag a tile between two others to move it, or drop it onto another tile to make a folder of the two, called **New folder** until you rename it; drop a tile onto a folder to add it. Select a folder to open it over the grid, and drag a tile out of it to take it out. Your arrangement is kept with your account, for each Project, so it follows you to other browsers; a workbench added later goes at the end, and a folder left with one app is undone.
+
+Every tile has a menu: right-click it, focus it and press Shift+F10 or the menu key, or press and hold it on a touch screen. Besides opening the workbench, it moves the tile forward or backward, moves it into a folder or into a new one with another app (**Move to…**), takes it out of its folder, removes it from the App Center, and opens the agent's settings on its Workbenches tab. A folder's menu opens, renames and ungroups it. **Restore default order**, in the menu of the grid's empty space, clears your arrangement after asking.
 
 A workbench appears here when its own `package.json` asks for it, which an agent does when it builds one for you. To add or take one off, use the **Show in the App Center** switch on its row in the agent's [Workbenches tab](/agents#workbenches-tab). With nothing to show yet, the page explains what a workbench is and offers **Create with AI**, which asks an agent to build one and put it here.
 

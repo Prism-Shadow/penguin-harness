@@ -2,23 +2,31 @@
 /**
  * The App Center page (/apps): the Project's home screen of workbench shortcuts.
  *
- * - Given shown workbenches, the page shows one tile each in the server's order, with the title
- *   and the Agent's name and no id; a tile opens the workbench's full page, carrying the way
- *   back to the App Center.
- * - Given a workbench whose current files do not load, its tile says so to a screen reader and
- *   on hover, and still opens.
- * - Given nothing shown, the page says what a workbench is, and its one button opens the
- *   "Create with AI" dialog, whose prompt asks for a workbench in the App Center.
- * - Given a workbench of the Project loads while the page is open, its tile appears without a
- *   reload; news about another Project reads nothing.
+ * - A tile is the app's icon and name only; its hint names the whole title and the Agent. The
+ *   tiles keep the server's order until the viewer arranges them.
+ * - A click opens the app windowed over the grid (`?app=`), whose close returns to the grid;
+ *   "Open full screen" in the tile's menu opens the full page with the way back to the App Center.
+ * - A building tile does not open, by click or by its menu, and turns live by itself when the
+ *   server says the workbench loaded; the news that a load started turns a tile to building.
+ * - A failed tile still opens, and its menu shows the recorded error.
+ * - Dragging a tile beside another reorders the grid, onto another makes a folder; the menu's
+ *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
+ *   write the server refuses puts the grid back to what is stored.
+ * - A folder is renamed and ungrouped from its menu; "Move to…" makes one from the keyboard; an
+ *   app dragged out of the open folder onto its backdrop leaves the folder.
+ * - Restoring the default order asks first, and only the confirmation clears the layout.
+ * - The menus open on right-click, Shift+F10 and the ContextMenu key; Esc closes one and hands
+ *   focus back to its tile. A right-click outside the App Center keeps the browser's own menu.
+ * - With nothing shown, the page says what a workbench is and offers to have one built.
  */
-import { createElement as h } from "react";
+import { act, createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
-import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import type { AppCenterLayout, WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
+import { WORKBENCH_BUILDING_EVENT, WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
+import { ThemeProvider } from "../src/state/theme";
 import {
   AGENT_ID,
   PROJECT_ID,
@@ -27,7 +35,7 @@ import {
   topDialog,
   whereIs,
 } from "./helpers/agent-app";
-import { button, click, run, settle, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, pressEscape, run, settle, type, unmountAll } from "./helpers/dom";
 
 const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo => ({
   id,
@@ -50,10 +58,19 @@ const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo
   ...over,
 });
 
-async function open(workbenches: WorkbenchInfo[]) {
+const key = (id: string) => `${AGENT_ID}/${id}`;
+
+async function open(
+  workbenches: WorkbenchInfo[],
+  options: { layout?: AppCenterLayout; building?: string[] } = {},
+) {
   setActiveStrings(en);
-  const server = agentServer(undefined, { workbenches });
-  const router = await mountAgentApp(h(AppCenterPage), {
+  const server = agentServer(undefined, {
+    workbenches,
+    ...(options.layout !== undefined ? { appCenterLayout: options.layout } : {}),
+  });
+  for (const id of options.building ?? []) server.setBuilding(id, true);
+  const router = await mountAgentApp(h(ThemeProvider, null, h(AppCenterPage)), {
     route: "/apps",
     at: "/apps",
     extra: [
@@ -64,89 +81,314 @@ async function open(workbenches: WorkbenchInfo[]) {
       },
     ],
   });
+  await until(() => grid() !== null || document.body.textContent?.includes(en.appCenter.emptyTitle) === true);
   return { server, router };
 }
 
-const tiles = () => [
-  ...document.querySelectorAll<HTMLAnchorElement>(`ul[aria-label="${en.appCenter.title}"] a`),
-];
+/** Settles, letting real time pass too (the page gathers workbench news for a moment). */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 60; i++) {
+    if (ready()) return;
+    await run(() => new Promise((resolve) => setTimeout(resolve, 10)));
+  }
+  throw new Error("the page never reached the awaited state");
+}
 
-/** What a screen reader reads of an element: its text outside `aria-hidden` subtrees. */
+/** What a reader reads of an element: its text outside `aria-hidden` subtrees (a letter tile). */
 function spoken(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
   if (node instanceof Element && node.getAttribute("aria-hidden") === "true") return "";
   return [...node.childNodes].map(spoken).join(" ").replace(/\s+/g, " ").trim();
 }
 
+const grid = () =>
+  document.querySelector<HTMLUListElement>(`ul[aria-label="${en.appCenter.title}"]`);
+/** The grid's items in order: an app by its key, a folder as `folder:<name>`. */
+const order = () =>
+  [...(grid()?.children ?? [])].map((li) => {
+    const el = li as HTMLElement;
+    return el.dataset["app"] ?? `folder:${spoken(el.querySelector("button")!)}`;
+  });
+const item = (id: string) => document.querySelector<HTMLLIElement>(`li[data-app="${id}"]`)!;
+const tileButton = (id: string) => item(id).querySelector("button")!;
+const folderButton = (name: string) =>
+  [...document.querySelectorAll<HTMLLIElement>("li[data-folder] > button")].find(
+    (b) => spoken(b) === name,
+  )!;
+
+const menu = () => document.querySelector<HTMLElement>('[role="menu"]');
+const menuItem = (label: string) => {
+  const found = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (row) => spoken(row) === label,
+  );
+  if (found === undefined) throw new Error(`no menu row ${JSON.stringify(label)}`);
+  return found;
+};
+
+async function rightClick(target: Element, x = 40, y = 60): Promise<boolean> {
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    clientX: x,
+    clientY: y,
+  });
+  await act(async () => {
+    target.dispatchEvent(event);
+  });
+  await settle();
+  return event.defaultPrevented;
+}
+
+async function press(target: HTMLElement, init: KeyboardEventInit): Promise<void> {
+  target.focus();
+  await act(async () => {
+    target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+  });
+  await settle();
+}
+
+/** A drag event: jsdom has no DragEvent, and React reads only the type, the point and the data. */
+function dragEvent(kind: string, clientX = 0): Event {
+  const event = new MouseEvent(kind, { bubbles: true, cancelable: true, clientX });
+  Object.defineProperty(event, "dataTransfer", {
+    value: { setData() {}, getData: () => "", effectAllowed: "", dropEffect: "" },
+  });
+  return event;
+}
+
+/** Drags `from` over `to` and drops it at `x`, on a tile 100 px wide starting at 0. */
+async function drag(from: Element, to: HTMLElement, x: number): Promise<void> {
+  to.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 100 }) as DOMRect;
+  await act(async () => {
+    from.dispatchEvent(dragEvent("dragstart"));
+  });
+  await act(async () => {
+    to.dispatchEvent(dragEvent("dragover", x));
+    to.dispatchEvent(dragEvent("drop", x));
+    from.dispatchEvent(dragEvent("dragend"));
+  });
+  await settle();
+}
+
+const news = (event: string) =>
+  run(() =>
+    window.dispatchEvent(
+      new CustomEvent(event, {
+        detail: { projectId: PROJECT_ID, agentId: AGENT_ID, workbenchId: "board" },
+      }),
+    ),
+  );
+
 afterEach(async () => {
   await unmountAll();
   setActiveStrings(zh);
 });
 
-it("shows one tile per shown workbench in the server's order, and a tile opens its full page with the way back", async () => {
-  const { router } = await open([
-    workbench("board", { appCenter: { show: true, tab: "main" } }),
-    workbench("notes"),
-    workbench("hidden", { appCenter: { show: false } }),
-  ]);
-  await waitFor(() => tiles().length === 2);
-  // The tile names the app and its Agent; the ids are the address, never the text.
-  expect(tiles().map(spoken)).toEqual(["Board Helper", "Notes Helper"]);
+it("shows each tile as its icon and name, in the server's order, with the Agent in its hint", async () => {
+  await open([workbench("board"), workbench("notes"), workbench("hidden", { appCenter: { show: false } })]);
+  expect(order()).toEqual([key("board"), key("notes")]);
+  // The ids are the address, never the text; the Agent is not written on the tile.
+  expect(spoken(tileButton(key("board")))).toBe("Board");
+  expect(tileButton(key("board")).getAttribute("data-tooltip")).toBe(
+    en.appCenter.tileTip("Board", "Helper"),
+  );
+});
 
-  await click(tiles()[0]!);
+it("opens an app windowed over the grid, and its close returns to the grid", async () => {
+  const { router } = await open([workbench("board")]);
+  await click(tileButton(key("board")));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(key("board"))}`);
+  await until(() => document.querySelector('section[aria-label="Board"]') !== null);
+  // The grid stays mounted underneath, out of reach.
+  expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(true);
+
+  await click(button(en.appCenter.windowClose));
+  expect(whereIs(router)).toBe("/apps");
+  expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(false);
+});
+
+it("opens an app full screen from its menu, carrying the way back to the App Center", async () => {
+  const { router } = await open([workbench("board", { appCenter: { show: true, tab: "main" } })]);
+  await rightClick(tileButton(key("board")));
+  await click(menuItem(en.appCenter.menu.openFullScreen));
   expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/board/main`);
   expect(router.state.location.state).toEqual({ returnTo: "/apps" });
 });
 
-it("marks a workbench that does not load, and still opens it", async () => {
-  const { router } = await open([workbench("board", { error: "index.ts:1:1 TS1005" })]);
-  await waitFor(() => tiles().length === 1);
-  const [tile] = tiles();
-  expect(spoken(tile!)).toBe(`Board Helper ${en.appCenter.broken}`);
-  expect(tile!.getAttribute("data-tooltip")).toBe(en.appCenter.broken);
-  await click(tile!);
-  expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/board`);
+it("does not open a building app, and turns it live when the server says it loaded", async () => {
+  const { server, router } = await open([workbench("board")], { building: ["board"] });
+  expect(item(key("board")).dataset["build"]).toBe("building");
+  expect(tileButton(key("board")).getAttribute("aria-disabled")).toBe("true");
+  await click(tileButton(key("board")));
+  expect(whereIs(router)).toBe("/apps");
+  await rightClick(tileButton(key("board")));
+  expect(menuItem(en.appCenter.menu.open).disabled).toBe(true);
+  expect(menuItem(en.appCenter.menu.openFullScreen).disabled).toBe(true);
+  await pressEscape();
+
+  server.setBuilding("board", false);
+  await news(WORKBENCH_UPDATED_EVENT);
+  await until(() => item(key("board")).dataset["build"] === "ready");
+  await click(tileButton(key("board")));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(key("board"))}`);
+});
+
+it("turns a tile to building when the server starts loading its workbench", async () => {
+  const { server } = await open([workbench("board")]);
+  expect(item(key("board")).dataset["build"]).toBe("ready");
+  server.setBuilding("board", true);
+  await news(WORKBENCH_BUILDING_EVENT);
+  await until(() => item(key("board")).dataset["build"] === "building");
+});
+
+it("still opens a failed app, and its menu shows the recorded error", async () => {
+  const { router } = await open([workbench("board", { error: "index.ts:1:1 TS1005 ';' expected" })]);
+  expect(tileButton(key("board")).getAttribute("aria-label")).toBe(
+    en.appCenter.tileName("Board", "Helper", en.appCenter.broken),
+  );
+  await rightClick(tileButton(key("board")));
+  await click(menuItem(en.appCenter.menu.showError));
+  expect(topDialog().textContent).toContain("index.ts:1:1 TS1005 ';' expected");
+  await click(button(en.common.close));
+  await click(tileButton(key("board")));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(key("board"))}`);
+});
+
+it("reorders by dragging a tile beside another, and stores the order as the viewer's", async () => {
+  const { server } = await open([workbench("board"), workbench("notes"), workbench("todo")]);
+  // The trailing quarter of the last tile: after it.
+  await drag(item(key("board")), item(key("todo")), 90);
+  expect(order()).toEqual([key("notes"), key("todo"), key("board")]);
+  expect(server.appCenterLayout()).toEqual({
+    v: 1,
+    items: [
+      { type: "app", app: key("notes") },
+      { type: "app", app: key("todo") },
+      { type: "app", app: key("board") },
+    ],
+  });
+});
+
+it("reorders from the menu, and a refused write puts the grid back to what is stored", async () => {
+  const { server } = await open([workbench("board"), workbench("notes")]);
+  await rightClick(tileButton(key("notes")));
+  // The first tile cannot go further forward.
+  await click(menuItem(en.appCenter.menu.moveForward));
+  expect(order()).toEqual([key("notes"), key("board")]);
+
+  server.refuseNext(500, "internal", "disk full");
+  await rightClick(tileButton(key("notes")));
+  await click(menuItem(en.appCenter.menu.moveBackward));
+  await until(() => order()[0] === key("notes"));
+  expect(server.appCenterLayout()?.items[0]).toEqual({ type: "app", app: key("notes") });
+});
+
+it("makes a folder by dropping a tile onto another, then renames and ungroups it", async () => {
+  const { server } = await open([workbench("board"), workbench("notes"), workbench("todo")]);
+  // The middle of a tile: into it.
+  await drag(item(key("todo")), item(key("board")), 50);
+  expect(order()).toEqual([`folder:${en.appCenter.newFolder}`, key("notes")]);
+
+  await rightClick(folderButton(en.appCenter.newFolder));
+  await click(menuItem(en.appCenter.menu.rename));
+  await type(topDialog().querySelector("input")!, "  Daily  ");
+  await click(button(en.common.save));
+  expect(order()).toEqual(["folder:Daily", key("notes")]);
+  expect(server.appCenterLayout()?.items[0]).toMatchObject({
+    type: "folder",
+    name: "Daily",
+    apps: [key("board"), key("todo")],
+  });
+
+  await rightClick(folderButton("Daily"));
+  await click(menuItem(en.appCenter.menu.dissolve));
+  expect(order()).toEqual([key("board"), key("todo"), key("notes")]);
+});
+
+it("makes a folder from the keyboard with Move to…, and opens it as a panel over the grid", async () => {
+  await open([workbench("board"), workbench("notes")]);
+  await press(tileButton(key("notes")), { key: "F10", shiftKey: true });
+  await click(menuItem(en.appCenter.menu.moveTo));
+  // The second page of the same menu: back, then the apps it can make a new folder with.
+  expect(spoken(document.activeElement!)).toBe(en.appCenter.menu.back);
+  await click(menuItem("Board"));
+  expect(order()).toEqual([`folder:${en.appCenter.newFolder}`]);
+
+  await click(folderButton(en.appCenter.newFolder));
+  const panel = topDialog();
+  // The dialog is named by its heading, the folder's name.
+  expect(document.getElementById(panel.getAttribute("aria-labelledby")!)?.textContent).toBe(
+    en.appCenter.newFolder,
+  );
+  expect([...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"])).toEqual([
+    key("board"),
+    key("notes"),
+  ]);
+
+  // Dragged out onto the backdrop, an app leaves the folder; a folder of one dissolves.
+  const scrim = document.querySelector(".ui-scrim")!;
+  await act(async () => {
+    panel.querySelector(`li[data-app="${key("notes")}"]`)!.dispatchEvent(dragEvent("dragstart"));
+  });
+  await act(async () => {
+    scrim.dispatchEvent(dragEvent("dragover", 5));
+    scrim.dispatchEvent(dragEvent("drop", 5));
+  });
+  await settle();
+  expect(order()).toEqual([key("board"), key("notes")]);
+  expect(document.querySelector(".ui-scrim")).toBeNull();
+});
+
+it("asks before restoring the default order, and only the confirmation clears the layout", async () => {
+  const layout: AppCenterLayout = {
+    v: 1,
+    items: [
+      { type: "app", app: key("notes") },
+      { type: "app", app: key("board") },
+    ],
+  };
+  const { server } = await open([workbench("board"), workbench("notes")], { layout });
+  expect(order()).toEqual([key("notes"), key("board")]);
+  // The grid's empty space has a menu of its own.
+  await rightClick(grid()!.parentElement!);
+  await click(menuItem(en.appCenter.menu.restoreDefault));
+  expect(topDialog().textContent).toContain(en.appCenter.restoreBody);
+  await click(button(en.common.cancel));
+  expect(server.appCenterLayout()).toEqual(layout);
+
+  await rightClick(grid()!.parentElement!);
+  await click(menuItem(en.appCenter.menu.restoreDefault));
+  await click(button(en.appCenter.restoreConfirm));
+  expect(server.appCenterLayout()).toBeNull();
+  expect(order()).toEqual([key("board"), key("notes")]);
+});
+
+it("opens a tile's menu on right-click, Shift+F10 and the ContextMenu key; Esc closes it and hands focus back", async () => {
+  await open([workbench("board")]);
+  const tile = tileButton(key("board"));
+  expect(await rightClick(tile, 120, 80)).toBe(true);
+  expect(menu()?.getAttribute("aria-label")).toBe("Board");
+  await pressEscape();
+  expect(menu()).toBeNull();
+  expect(document.activeElement).toBe(tile);
+
+  await press(tile, { key: "F10", shiftKey: true });
+  expect(menu()).not.toBeNull();
+  await pressEscape();
+  await press(tile, { key: "ContextMenu" });
+  expect(menu()).not.toBeNull();
+  await pressEscape();
+  expect(menu()).toBeNull();
+
+  // Outside the App Center the browser's own menu stays.
+  expect(await rightClick(document.body)).toBe(false);
 });
 
 it("with nothing shown, explains workbenches and offers to have one built for the App Center", async () => {
   await open([workbench("hidden", { appCenter: { show: false } })]);
-  await waitFor(() => document.body.textContent?.includes(en.appCenter.emptyTitle) === true);
   expect(document.body.textContent).toContain(en.appCenter.empty);
   await click(button(en.aiCreate.withAi));
   // The full prompt the dialog previews ends in the fixed request for an App Center workbench.
   expect(topDialog().textContent).toContain(en.appCenter.aiCreateTail);
-});
-
-it("reads the list again when a workbench of this Project loads, and not for another Project", async () => {
-  const { server } = await open([]);
-  await waitFor(() => document.body.textContent?.includes(en.appCenter.emptyTitle) === true);
-  // The Agent list arriving reads the list once more; that settles before the news below.
-  await waitFor(() =>
-    server.requests().some((r) => r.path === `/api/projects/${PROJECT_ID}/agents`),
-  );
-  for (let i = 0; i < 3; i++) await settle();
-  const reads = () =>
-    server.requests().filter((r) => r.path === `/api/projects/${PROJECT_ID}/app-center`).length;
-  const before = reads();
-
-  server.putWorkbench(workbench("board"));
-  await run(() =>
-    window.dispatchEvent(
-      new CustomEvent(WORKBENCH_UPDATED_EVENT, {
-        detail: { projectId: "elsewhere", agentId: AGENT_ID },
-      }),
-    ),
-  );
-  expect(reads()).toBe(before);
-  expect(tiles()).toEqual([]);
-
-  await run(() =>
-    window.dispatchEvent(
-      new CustomEvent(WORKBENCH_UPDATED_EVENT, {
-        detail: { projectId: PROJECT_ID, agentId: AGENT_ID },
-      }),
-    ),
-  );
-  await waitFor(() => tiles().length === 1);
-  expect(tiles()[0]!.textContent).toContain("Board");
 });

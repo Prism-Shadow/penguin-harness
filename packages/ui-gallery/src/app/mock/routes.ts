@@ -29,6 +29,8 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
   AppCenterResponse,
   ApprovalMode,
   ArchivedSessionGroup,
@@ -2724,8 +2726,17 @@ router
   .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
     notFound("Workbench"),
   )
-  // The demo's Agents keep no workbenches, so the App Center shows its empty state.
-  .get("/api/projects/:projectId/app-center", (): AppCenterResponse => ({ shortcuts: [] }))
+  // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
+  // Agents keep no workbench files, so a tile opened in a window finds no page to show.
+  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .put(
+    "/api/projects/:projectId/app-center/layout",
+    ({ store, body }): AppCenterLayoutResponse => {
+      const layout = (record(body).layout ?? null) as AppCenterLayout | null;
+      store.f.appCenter = { ...store.f.appCenter, layout };
+      return { layout };
+    },
+  )
   .get(
     "/api/projects/:projectId/plugins/installed",
     ({ store }): InstalledPluginsResponse => store.f.installedPlugins,

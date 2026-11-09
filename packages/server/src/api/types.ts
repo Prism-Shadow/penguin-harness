@@ -483,6 +483,12 @@ export interface UiPrefs {
    * image only when they differ.
    */
   backgroundImageId?: string | null;
+  /**
+   * The account's own arrangement of each Project's App Center, by Project id. Replaced only by
+   * PUT /api/projects/:projectId/app-center/layout (PUT /api/me/prefs refuses it), which checks
+   * the arrangement and lets go of those of Projects that no longer exist.
+   */
+  appCenterLayouts?: Record<string, AppCenterLayout>;
   [key: string]: unknown;
 }
 
@@ -3893,6 +3899,8 @@ export type ScheduleServerEvent =
     }
   /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
+  /** A load of a workbench's files has started (the watcher saw an edit, or a list or reload asked for it). */
+  | { type: "workbench_building"; projectId: string; agentId: string; workbenchId: string }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
 
@@ -5255,12 +5263,41 @@ export interface WorkbenchAppCenterResponse {
 }
 
 /**
+ * One viewer's arrangement of a Project's App Center: the grid in order, each item an app by its
+ * `<agentId>/<workbenchId>` key or a folder of apps. Kept per account in
+ * `ui_prefs.appCenterLayouts`, by Project id, and written only through
+ * PUT /api/projects/:projectId/app-center/layout.
+ */
+export interface AppCenterLayout {
+  v: 1;
+  items: AppCenterLayoutItem[];
+}
+export type AppCenterLayoutItem =
+  { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
+
+/**
  * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
  * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
- * from the manifests and load status only; nothing is compiled.
+ * from the manifests, load status and the loads under way; nothing is compiled.
  */
 export interface AppCenterResponse {
   shortcuts: AppCenterShortcut[];
+  /** The viewer's arrangement for this Project; null when they have none (the server's order). */
+  layout: AppCenterLayout | null;
+}
+
+/**
+ * PUT /api/projects/:p/app-center/layout: replaces the viewer's arrangement of the Project's App
+ * Center; `null` restores the server's order. 400 naming the rule a layout breaks, and nothing is
+ * stored: at most 500 items and 1000 app keys in all, each app key `<agentId>/<workbenchId>` (at
+ * most 200 characters) once, folder ids `[A-Za-z0-9_-]{1,32}` once each, folder names 1–40
+ * characters once trimmed (stored trimmed), 1–500 apps per folder.
+ */
+export interface AppCenterLayoutRequest {
+  layout: AppCenterLayout | null;
+}
+export interface AppCenterLayoutResponse {
+  layout: AppCenterLayout | null;
 }
 
 // ---------------------------------------------------------------------------

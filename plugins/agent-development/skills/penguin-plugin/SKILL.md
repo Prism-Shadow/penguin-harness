@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.11.04.2
+version: 2026.11.09.1
 ---
 
 # Agent Workbench with Penguin Plugins
@@ -361,7 +361,7 @@ A page can be shown as the whole app — no sidebar, no chat, no tab strip — a
 
 ## The App Center
 
-The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of shortcuts that open workbenches full page. A workbench is on it when its `package.json` says so, beside `penguin.version` and `penguin.modules`:
+The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of tiles, each a workbench's icon and name, that open the workbench in a window over the grid (or full screen from the tile's menu). The user arranges the tiles and folders themselves. A workbench is on it when its `package.json` says so, beside `penguin.version` and `penguin.modules`:
 
 ```json
 "penguin": {
@@ -372,7 +372,7 @@ The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of 
 
 - `show` is required when `appCenter` is there; `false`, or no `appCenter`, keeps the workbench off the App Center.
 - `title` and `titleZh` are optional, at most 60 characters each; without them the shortcut takes the first tab's titles, then the package name.
-- `icon` is optional: a `.svg`, `.png` or `.webp` file under `ui/`, at most 256 KB, shown at 56 px as an image. Draw it with its own colours (a filled rounded square with the glyph on it), since `currentColor` does not follow the app's theme inside an image. Without one the tile is a coloured letter.
+- `icon` is optional: an SVG, PNG, JPEG, WebP, GIF or AVIF file under `ui/`, at most 256 KB, shown at 56 px as an image (never put into the page as markup). The server checks the file's bytes, so its extension must match what it is (`.jpg` or `.jpeg` for JPEG). Draw it with its own colours (a filled rounded square with the glyph on it), since `currentColor` does not follow the app's theme inside an image. Without one the tile is a coloured letter.
 - `tab` is optional: the key of the tab the shortcut opens; the first tab without it.
 
-When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.
+When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. While the server is loading your files the tile shows a building ring and does not open; a failed load leaves it marked, and its menu shows the error from `.build/status.json`. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.

@@ -1101,13 +1101,64 @@ export const en: Strings = {
   },
   appCenter: {
     title: "App Center",
-    description: "Shortcuts to the workbenches of this Project's agents. Select one to open it.",
+    description:
+      "Shortcuts to the workbenches of this Project's agents. Open one here; drag tiles to reorder them, or onto each other to make a folder.",
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
       "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and turns on “Show in the App Center”, it appears here.",
-    /** A tile whose current files failed to load: it still opens, and the page says why. */
-    broken: "It failed to load. Open it to see why",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "Failed to load",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "Building",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Building; it opens once the build is done`,
+    failedTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    folderTip: (name: string, count: number) =>
+      `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
+    folderName: (name: string, count: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** The name a folder is given when two tiles are dropped together. */
+    newFolder: "New folder",
+    menu: {
+      open: "Open",
+      openFullScreen: "Open full screen",
+      moveTo: "Move to…",
+      moveForward: "Move forward",
+      moveBackward: "Move backward",
+      removeFromFolder: "Remove from folder",
+      removeFromAppCenter: "Remove from the App Center",
+      viewInSettings: "View in agent settings",
+      showError: "Show error",
+      rename: "Rename",
+      dissolve: "Ungroup",
+      restoreDefault: "Restore default order",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "Back",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "Into a folder",
+      newFolderWith: "Into a new folder with",
+      noDestination: "No folder or app to move it to",
+    },
+    restoreTitle: "Restore default order",
+    restoreBody:
+      "The App Center goes back to its default order: your order and folders are cleared. The apps themselves are not changed.",
+    restoreConfirm: "Restore default",
+    renameTitle: "Rename folder",
+    folderNameLabel: "Folder name",
+    folderNameHint: "Up to 40 characters",
+    errorTitle: (title: string) => `${title} failed to load`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "No error message was recorded. Open the app to see how it loads.",
+    /** The windowed app's title bar. */
+    windowClose: "Close, back to the App Center",
+    windowFullScreen: "Open full screen",
     /** Local Agents only: a machine's Agents keep their apps in their own settings. */
     machinesNote:
       "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",

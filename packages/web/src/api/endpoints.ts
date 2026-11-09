@@ -24,6 +24,8 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
   AppCenterResponse,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
@@ -2812,9 +2814,18 @@ export const setWorkbenchAppCenter = (
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/app-center`,
     { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
   );
-/** The Project's App Center: the shown workbenches of its Agents on this server (local only). */
+/**
+ * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
+ * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ */
 export const getAppCenter = (projectId: string) =>
   apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+/** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
+export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
+  apiFetch<AppCenterLayoutResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/app-center/layout`,
+    { method: "PUT", body: { layout } },
+  );
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**

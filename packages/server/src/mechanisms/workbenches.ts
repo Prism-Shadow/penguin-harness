@@ -170,7 +170,10 @@ export interface WorkbenchAppCenter {
   title?: string;
   /** At most 60 characters; the first tab's `titleZh` when absent. */
   titleZh?: string;
-  /** A file under `ui/` (`.svg`, `.png` or `.webp`, at most 256 KB); a letter tile when absent. */
+  /**
+   * An image file under `ui/`, at most 256 KB: SVG, PNG, JPEG, WebP, GIF or AVIF, its extension
+   * naming the format its bytes are. A letter tile when absent.
+   */
   icon?: string;
   /** The key of the tab the shortcut opens; the first tab when absent. */
   tab?: string;
@@ -183,12 +186,29 @@ export interface AppCenterShortcut {
   workbenchId: string;
   title: string;
   titleZh?: string;
-  /** Where the icon is served from: `/api/projects/:p/agents/:a/workbenches/:id/ui/<file>`. */
+  /** The icon route with its content revision (`…/app-center/icon?rev=<hash>`); absent without a declared icon. */
   iconUrl?: string;
-  /** The full-page route that opens it: `/app/:p/:a/:id[/:tab]`. */
+  /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
   path: string;
-  /** Set when the last load of its current files failed (`.build/status.json`). */
-  broken?: true;
+  /** The tab the shortcut opens when the declaration names one; else the workbench's first. */
+  tab?: string;
+  /**
+   * Where its build stands on this server: "building" while a load of its files is under way or
+   * queued, "failed" when the last load recorded in `.build/status.json` failed, else "ready"
+   * (a workbench this process has not loaded yet is ready: opening it loads it).
+   */
+  build: "ready" | "building" | "failed";
+  /** With build "failed": the load error `.build/status.json` records. */
+  error?: string;
+}
+
+/** A workbench's App Center icon as it is served: the bytes, the type they are, their revision. */
+export interface AppCenterIcon {
+  bytes: Uint8Array;
+  /** The content type the bytes are, never the one the file name claims. */
+  contentType: string;
+  /** A short hash of the bytes: the `rev` of the shortcut's `iconUrl`. */
+  rev: string;
 }
 
 export interface WorkbenchInfo {
@@ -298,9 +318,19 @@ export abstract class Workbenches {
   /**
    * The App Center of a Project: a shortcut for every workbench of its Agents on this server
    * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
-   * the manifests and each one's last load status only — nothing is loaded or compiled.
+   * the manifests, each one's last load status and the loads under way — nothing is loaded or
+   * compiled. From then on the Agents' folders are watched, so an edit loads and is announced.
    */
   abstract appCenter(projectId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * The icon a workbench's App Center declaration names, read and checked again; null when the
+   * workbench is unknown, its declaration does not hold up, or it names no icon.
+   */
+  abstract appCenterIcon(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<AppCenterIcon | null>;
   /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.
