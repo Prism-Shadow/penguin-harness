@@ -15,7 +15,6 @@ import type {
   AgentApiKeyInfo,
   AgentApiResponse,
   AgentApiSettings,
-  AgentArchivePreview,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentDeleteResponse,
@@ -29,7 +28,6 @@ import type {
   AgentSkillsConfigDto,
   AgentSkillsResponse,
   AgentsResponse,
-  AgentSummary,
   AgentVaultConfigDto,
   ApprovalMode,
   ArchivedSessionGroup,
@@ -49,6 +47,7 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
@@ -186,6 +185,13 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  agentTabs: [],
+  sessionTabs: [],
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
@@ -2429,73 +2435,16 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent archive (zip export / import)
+// Agent zip export / import
 // ---------------------------------------------------------------------------------------------
 
-/**
- * What an Agent's zip would hold, read off its card's counts: two files of a few kilobytes per
- * Skill, hook package, memory, workbench and schedule the parts query switches on, and the
- * Sessions the Trace selection names out of the Agent's count, one file each. An absent key takes
- * the export dialog's default, as the server's does.
- */
-function archivePreviewOf(agent: AgentSummary, query: URLSearchParams): AgentArchivePreview {
-  const on = (key: string, fallback: boolean) =>
-    query.has(key) ? query.get(key) === "1" : fallback;
-  const part = (selected: boolean, count: number) =>
-    selected ? { files: count * 2, bytes: count * 6_400 } : { files: 0, bytes: 0 };
-  const workbenches = on("workbenches", true);
-  const parts = {
-    skills: part(on("skills", true), agent.skillCount),
-    hooks: part(on("hooks", true), agent.hookCount),
-    memory: part(on("memory", true), agent.memoryCount),
-    workbenches: part(
-      workbenches,
-      (agent.workbenchCount ?? 0) * (on("workbenchData", true) ? 2 : 1),
-    ),
-    schedules: part(on("schedules", false), agent.scheduleCount),
-  };
-  const traces = query.get("traces") ?? "none";
-  const last = /^last:(\d+)$/.exec(traces);
-  const sessions =
-    traces === "none"
-      ? 0
-      : last
-        ? Math.min(Number(last[1]), agent.sessionCount)
-        : agent.sessionCount;
-  const traceBytes = sessions * 184_000;
-  return {
-    parts,
-    traces: {
-      sessions,
-      files: sessions,
-      bytes: traceBytes,
-      skipped: [],
-      newest: null,
-      oldest: null,
-    },
-    totalBytes: Object.values(parts).reduce((sum, p) => sum + p.bytes, 0) + traceBytes + 12_288,
-    // The parts' files, one per Session, and the config, the manifest and the sessions table.
-    entries: Object.values(parts).reduce((sum, p) => sum + p.files, 0) + sessions + 4,
-    vaultKeys: [],
-    redacted: [],
-    notes: [],
-  };
-}
-
-/** Today as the export names its file: `yyyymmdd`. */
-const exportStamp = (): string => new Date().toISOString().slice(0, 10).replace(/-/g, "");
-
 router
-  .get("/api/projects/:projectId/agents/:agentId/archive/preview", (ctx): AgentArchivePreview =>
-    archivePreviewOf(agentOf(ctx), ctx.query),
-  )
-  .get("/api/projects/:projectId/agents/:agentId/archive", (ctx) => {
-    const agent = agentOf(ctx);
-    return raw("PK\u0003\u0004 demo archive", {
+  .get("/api/projects/:projectId/agents/:agentId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
       "content-type": "application/zip",
-      "content-disposition": `attachment; filename="${agent.agentId}-${exportStamp()}.zip"`,
-    });
-  })
+      "content-disposition": `attachment; filename="${params.agentId}.zip"`,
+    }),
+  )
   .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
 
 // ---------------------------------------------------------------------------------------------
@@ -2615,7 +2564,7 @@ router
   .put("/api/desktop/tray", () => empty())
   .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
   // Host commands: a plain server's host offers none, so there is nothing to run.
-  .get("/api/command", (): HostCommandsResponse => ({ commands: [] }))
+  .get("/api/command", (): HostCommandsResponse => ({ commands: [], offers: [] }))
   .post("/api/command/:command", () => notFound("Host command"));
 
 // ---------------------------------------------------------------------------------------------

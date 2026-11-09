@@ -38,6 +38,13 @@
  * - readLibraryPackage reads a local directory the way the library will, refusing one without a
  *   release version, or one never built.
  *
+ * Reading, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin whose card sets `preinstall: false` stays in the library and out of the preinstalled
+ *   set.
+ * - A plugin is found by its name, a skill by its own name together with the plugin that ships
+ *   it; an unknown or illegal name finds nothing.
+ * - A hook package lists the manifest it installs, its points as declared, and every hooks/ file.
+ *
  * What kind a package is (libraryParts), by its table: a content package carries Skills, hooks,
  * MCP servers or workbenches and no server modules; a package whose table lists modules is a
  * server module only with a code entry; a card alone is neither; an unbuilt package is neither.
@@ -54,6 +61,7 @@ import {
   libraryParts,
   libraryPlugin,
   libraryPluginPackage,
+  librarySkill,
   loadLibraryPlugins,
   loadPluginGroups,
   loadPreinstalledPlugins,
@@ -243,6 +251,105 @@ describe("shipped packages, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => loadLibraryPlugins()).toThrow(/the MCP server "nowhere"/);
+  });
+});
+
+describe("the library's reading, on a fixture library", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  /** A host package holding `plugins` (unscoped name → what it declares, and its files); the library is pointed at it. */
+  async function library(
+    plugins: Record<string, { content: PluginContent; files: Record<string, string> }>,
+  ): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-library-"));
+    const packages = Object.entries(plugins).map(([name, { content, files }]) => [
+      `@penguinharness/${name}`,
+      {
+        ...pluginPackage(
+          { name: `@penguinharness/${name}`, description: `${name}.` },
+          {
+            ...content,
+            card: { shortDescription: "Short.", shortDescriptionZh: "短。", ...content.card },
+          },
+        ),
+        ...files,
+      },
+    ]);
+    await libraryHost(root, Object.fromEntries(packages));
+    usePushedPluginLibrary(root);
+  }
+
+  it("leaves a plugin whose card sets preinstall: false out of the preinstalled set, and keeps it in the library", async () => {
+    await library({
+      auto: {
+        content: { skills: ["auto"] },
+        files: { "skills/auto/SKILL.md": skillFile("auto", "2026.10.01.1") },
+      },
+      manual: {
+        content: { card: { preinstall: false }, skills: ["manual"] },
+        files: { "skills/manual/SKILL.md": skillFile("manual", "2026.10.01.1") },
+      },
+    });
+
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["auto", "manual"]);
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["auto"]);
+  });
+
+  it("finds a plugin, and a skill by its own name with the plugin that ships it; an unknown or illegal name finds nothing", async () => {
+    await library({
+      merged: {
+        content: { skills: ["first", "second"] },
+        files: {
+          "skills/first/SKILL.md": skillFile("first", "2026.10.01.1"),
+          "skills/second/SKILL.md": skillFile("second", "2026.10.01.1"),
+        },
+      },
+    });
+
+    expect(libraryPlugin("merged")?.skills.map((s) => s.name)).toEqual(["first", "second"]);
+    expect(librarySkill("second")?.plugin.name).toBe("merged");
+    // A plugin's name is not a skill's.
+    expect(librarySkill("merged")).toBeUndefined();
+    expect(libraryPlugin("does-not-exist")).toBeUndefined();
+    expect(libraryPlugin("../etc")).toBeUndefined();
+    expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("reads a hook package: the manifest it installs, with its points as declared, and every hooks/ file", async () => {
+    const hooks = {
+      version: "2026.10.04.1",
+      stop: [{ command: "stop.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+    };
+    await library({
+      looper: {
+        content: { card: { descriptionZh: "循环。" }, hooks },
+        files: {
+          "hooks/start.mjs": "export {};\n",
+          "hooks/stop.mjs": "export {};\n",
+          "hooks/lib.mjs": "export {};\n",
+        },
+      },
+    });
+
+    const looper = libraryPlugin("looper")!;
+    expect(looper.skills).toEqual([]);
+    expect(looper.hooks?.manifest).toMatchObject({
+      name: "looper",
+      description: "looper.",
+      description_zh: "循环。",
+      version: "2026.10.04.1",
+      stop: hooks.stop,
+      pre_tool_use: [],
+      user_prompt: hooks.user_prompt,
+    });
+    expect(Object.keys(looper.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
   });
 });
 

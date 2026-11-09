@@ -206,5 +206,3 @@ The approval mechanism itself is covered in [Tools & Approval](/tools).
 - **Import:** in [Settings](/settings#import-a-trace) → **General**, **Import Trace** adds a file to the Project and agent you choose, as a new conversation. Files can be up to 14 MB.
 
 An import whose session id already exists anywhere in this installation is rejected, so an imported file always becomes index 001 of a new Session.
-
-Whole conversations also travel inside an exported agent: the export dialog's conversation choice puts each selected Session in the zip with every one of its Trace files, its subagent conversations and the facts the conversation list shows (title, dates, archived or kept, approval mode). Importing the zip on another installation recreates them under the new agent, in their date directories. A Session whose id this installation already has is skipped and reported, never merged. See [Agents](/agents#import-a-file).

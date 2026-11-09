@@ -36,7 +36,7 @@
  * - The history route lists the imported versions, and rolling back to the oldest restores its files.
  * - A settled workbench written to the old place after the Agent's were listed is listed next time.
  * - An id taken in Agent State leaves the old folder in place, and the list still answers.
- * - An archive import on an un-migrated Agent moves its workbenches in first (they are in the
+ * - A snapshot import on an un-migrated Agent moves its workbenches in first (they are in the
  *   backup taken before the import), and the link still leads to the imported State's; after
  *   importing a State without workbenches, a write through the old place lands at once.
  * - Deleting a linked Agent removes every entry once: the purge does not walk the link.
@@ -551,18 +551,18 @@ describe(
       expect(await fs.readFile(oldPlace(dir, "demo", "state.json"), "utf8")).toBe(STATE);
     });
 
-    it("moves an un-migrated Agent's workbenches in before an archive import replaces its state", async () => {
+    it("moves an un-migrated Agent's workbenches in before a snapshot import replaces its state", async () => {
       const { agentId, dir, route } = await newAgent();
       await oldLayout(dir);
       const source = await newAgent();
       const pkg = path.join(agentStateDir(t.root, PROJECT, source.agentId), "workbenches", "pkg");
       await fs.mkdir(pkg, { recursive: true });
       await fs.writeFile(path.join(pkg, "package.json"), JSON.stringify({ name: "Pkg" }));
-      const importUrl = `/api/projects/${PROJECT}/agents/import?agentId=${agentId}&overwrite=1`;
+      const importPath = `/api/projects/${PROJECT}/agents/import?agentId=${agentId}&overwrite=1`;
       const archive = new Uint8Array(
         await (await owner.get(`${source.route}/archive`)).arrayBuffer(),
       );
-      const imported = await owner.upload(importUrl, archive);
+      const imported = await owner.upload(importPath, archive);
       expect(imported.status, await imported.text()).toBe(201);
       // What the Agent had is in the backup taken before its state was replaced.
       const snapshots = snapshotsDir(t.root, PROJECT, agentId);
@@ -580,7 +580,7 @@ describe(
       // A State without workbenches: a write through the old place right after still lands.
       const empty = await newAgent();
       const bare = new Uint8Array(await (await owner.get(`${empty.route}/archive`)).arrayBuffer());
-      const again = await owner.upload(importUrl, bare);
+      const again = await owner.upload(importPath, bare);
       expect(again.status, await again.text()).toBe(201);
       await fs.mkdir(oldPlace(dir, "after"), { recursive: true });
       await fs.writeFile(oldPlace(dir, "after", "package.json"), JSON.stringify({ name: "A" }));

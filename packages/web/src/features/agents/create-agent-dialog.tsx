@@ -3,9 +3,10 @@
  * the new Agent starts with — plugins from the library (each one's skills, hook package and MCP
  * servers), and Skills from a project directory's .agents/skills or .claude/skills — through
  * form-variant dropdowns over the shared multi-select panel, with select all / select none. A
- * plain new Agent otherwise starts with none. A picked plugin with a stdio MCP server asks before
- * the Agent is created, showing the command it runs on this server. An Agent from an exported
- * file is the Agents page's import, which the footer's line opens.
+ * plain new Agent otherwise starts with none; one from an exported file is the page's "Import
+ * agent", which the footer points to.
+ * A picked plugin with a stdio MCP server asks before the Agent is created, showing the command
+ * it runs on this server.
  *
  * A record dialog under the settings commit model: the dialog is one form, Create is live once
  * something is filled in and the id keeps the naming rule, and closing it with anything filled
@@ -20,6 +21,7 @@
  * and the directory picked for the old one, which would name things the new one may not have.
  */
 import { useEffect, useState } from "react";
+
 import type {
   AgentCreateRequest,
   PluginItem,
@@ -46,13 +48,17 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import { SemanticIdField } from "../semantic-id";
+import { WorkspaceSelect } from "../workspace";
+import {
+  SkillPickList,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+  type PickableItem,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
 
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
@@ -122,10 +128,10 @@ export interface CreateAgentDialogProps {
   /** The connected machines an Agent can be created on; empty (the field hidden) when none is. */
   machines?: readonly LocationChoice[];
   onClose: () => void;
+  /** The footer's way to "Import agent": the page closes this dialog and opens that one. */
+  onImport?: () => void;
   /** The Agent was created on `machineId` (null: this server): the page closes the dialog and goes to it. */
   onCreated: (agentId: string, machineId: string | null) => Promise<void>;
-  /** The footer's way to an Agent from a file: the page closes this dialog and opens its import. Absent, the footer has no such line. */
-  onImport?: () => void;
 }
 
 export function CreateAgentDialog(props: CreateAgentDialogProps) {
@@ -138,8 +144,8 @@ function CreateAgentForm({
   libraryError: libraryErrorHere,
   machines = [],
   onClose,
-  onCreated,
   onImport,
+  onCreated,
 }: CreateAgentDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeCreate });
   const {
@@ -188,8 +194,8 @@ function CreateAgentForm({
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
-  /** Over to the import, through the same guard: a filled-in form asks before it is dropped. */
-  const requestImport = useGuardedClose(onImport ?? (() => {}), form.scope, { locked: busy });
+  /** Over to the import dialog: what was filled in here goes nowhere with it, so it asks first. */
+  const requestImport = useGuardedClose(onImport ?? onClose, form.scope, { locked: busy });
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
@@ -297,11 +303,10 @@ function CreateAgentForm({
         onClose={requestClose}
         footer={
           <>
-            {/* An Agent from an exported file is the import's job; this line leads there. */}
             {onImport !== undefined && (
-              <p className="mr-auto flex flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
-                {S.agent.createFromFileHint}
-                <Button size="sm" variant="link" disabled={busy} onClick={requestImport}>
+              <p className="mr-auto flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+                <span>{S.agent.createFromFileHint}</span>
+                <Button size="sm" variant="link" onClick={requestImport}>
                   {S.agent.importAgent}
                 </Button>
               </p>
@@ -391,8 +396,8 @@ function CreateAgentForm({
             onChange={(e) => form.patch({ description: e.target.value })}
           />
           {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
-              model and workspace pickers) over the shared multi-select panel, so a dialog field
-              and the composer's dropdown offer one list with one set of row semantics. */}
+          model and workspace pickers) over the shared multi-select panel, so a dialog field
+          and the composer's dropdown offer one list with one set of row semantics. */}
           <div>
             <FieldLabel>{S.agent.createPlugins}</FieldLabel>
             <FormPicker
@@ -432,8 +437,8 @@ function CreateAgentForm({
             )}
           </div>
           {/* Skills a checkout already carries: pick the project directory, then pick from what
-              its .agents/skills / .claude/skills hold. Separate from the library field because a
-              directory Skill may share a library plugin's Skill name and still be the one installed. */}
+          its .agents/skills / .claude/skills hold. Separate from the library field because a
+          directory Skill may share a library plugin's Skill name and still be the one installed. */}
           <div>
             <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
             <WorkspaceSelect

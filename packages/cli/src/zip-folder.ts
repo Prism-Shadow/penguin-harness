@@ -1,61 +1,52 @@
 /**
- * A folder as a zip in memory, for `penguin agent import <folder>`: every regular file under the
- * folder, at its path relative to it, so the folder's `manifest.json` is the zip's root manifest.
- * Files are read and deflated one at a time through fflate's streaming `Zip`, so memory holds the
- * zip and one file's chunk, never the whole folder.
- *
- * `.git` directories are left out (an archive import drops them anyway), and so are symbolic links
- * and other special files, which never belong in an archive. Zipping stops as soon as the zip
- * grows past `maxBytes`: the server would refuse the upload, so nothing more is read.
+ * A folder as the zip a server's upload route reads: every regular file under one top-level
+ * `<rootName>/`, the `leftOut` names and links skipped. Shared by `penguin plugin install <dir>`
+ * and `penguin agent import <dir>`, each with the caps of the route it uploads to.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { Zip, ZipDeflate } from "fflate";
+import { zipSync } from "fflate";
 
-/** The folder `dir` as a zip, or null once the zip grows past `maxBytes`. */
-export async function zipFolder(dir: string, maxBytes: number): Promise<Uint8Array | null> {
-  const out = { chunks: [] as Uint8Array[], bytes: 0, failure: null as Error | null };
-  const zip = new Zip((err, chunk) => {
-    if (err !== null) {
-      out.failure = err;
-      return;
-    }
-    out.chunks.push(chunk);
-    out.bytes += chunk.byteLength;
-  });
-  const tooLarge = () => out.bytes > maxBytes;
+export interface ZipCaps {
+  files: number;
+  fileBytes: number;
+  totalBytes: number;
+  zipBytes: number;
+  /** Names never uploaded, at any depth. */
+  leftOut: ReadonlySet<string>;
+}
 
-  /** Adds every file under `abs` (zip path `rel`); false once the zip is too large. */
-  const walk = async (abs: string, rel: string): Promise<boolean> => {
-    const entries = await fs.promises.readdir(abs, { withFileTypes: true });
+/** The zip and its file count; null past `caps` — the upload would be refused anyway, so nothing is sent. */
+export function zipFolder(
+  dir: string,
+  rootName: string,
+  caps: ZipCaps,
+): { zip: Uint8Array; files: number } | null {
+  const out: Record<string, Uint8Array> = {};
+  let files = 0;
+  let total = 0;
+  const walk = (abs: string, rel: string): boolean => {
+    const entries = fs.readdirSync(abs, { withFileTypes: true });
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
-      if (entry.name === ".git") continue;
+      if (caps.leftOut.has(entry.name)) continue;
       const childAbs = path.join(abs, entry.name);
       const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
       if (entry.isDirectory()) {
-        if (!(await walk(childAbs, childRel))) return false;
-        continue;
+        if (!walk(childAbs, childRel)) return false;
+      } else if (entry.isFile()) {
+        // Sized before a byte is read: a file past the caps is never loaded (one over 2 GiB
+        // could not be read whole at all).
+        const size = fs.statSync(childAbs).size;
+        files += 1;
+        total += size;
+        if (files > caps.files || size > caps.fileBytes || total > caps.totalBytes) return false;
+        out[`${rootName}/${childRel}`] = new Uint8Array(fs.readFileSync(childAbs));
       }
-      if (!entry.isFile()) continue;
-      const file = new ZipDeflate(childRel, { level: 6 });
-      zip.add(file);
-      for await (const chunk of fs.createReadStream(childAbs)) {
-        file.push(chunk as Buffer);
-        if (tooLarge()) return false;
-      }
-      file.push(new Uint8Array(0), true);
-      if (tooLarge()) return false;
     }
     return true;
   };
-
-  if (!(await walk(dir, ""))) {
-    zip.terminate();
-    return null;
-  }
-  zip.end();
-  if (out.failure !== null) throw out.failure;
-  if (tooLarge()) return null;
-  return Buffer.concat(out.chunks);
+  if (!walk(dir, "")) return null;
+  const zip = zipSync(out);
+  return zip.byteLength > caps.zipBytes ? null : { zip, files };
 }

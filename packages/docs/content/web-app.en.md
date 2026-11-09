@@ -181,9 +181,9 @@ The owner alone can:
 - Rename or delete the Project, manage its members, and change **Defaults** and **Security policy**. Members see these pages read-only.
 - Change models, Vault, and scheduled tasks.
 - Create and delete Benchmarks, delete agents, clear Cost Center errors, and set up remote control.
-- Replace an agent's Agent State from a file, overwrite an agent from an import, and import memory and Traces.
+- Overwrite or replace an agent from a file, and import memory and Traces.
 
-Members can still create and import agents, create conversations, and delete conversations, Skills, hook packages, and memory files.
+Members can still create agents and conversations, and delete conversations, Skills, hook packages, and memory files.
 
 > [!NOTE]
 > `default_project` is shared with the CLI and cannot be deleted from the Web App. The last Project of an account cannot be deleted.
@@ -194,7 +194,7 @@ Many things the Web App creates from a form can also be described to an agent in
 
 | What you can create | Where |
 | --- | --- |
-| An agent | The Agents page |
+| An agent | The Agents page. Its **Import agent** dialog pairs the two paths for an agent from elsewhere: migrate another framework's agent in a conversation, or import an exported file |
 | A model group | The Models page |
 | A Benchmark | The Evaluation Center |
 | A vault secret | An agent's Vault tab |

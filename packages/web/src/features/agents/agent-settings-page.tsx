@@ -1,9 +1,9 @@
 /**
  * Agent settings page: eleven tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
- * family: Agent State — State version, the export dialog and replace-from-file, and the
- * copyable State path — and Kernel — the defaults generation with its update /
- * restore-defaults actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
+ * family: Agent State — State version, export / replace from file and the copyable State
+ * path — and Kernel — the defaults generation with its update / restore-defaults
+ * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Hooks (hooks-tab.tsx), Workbenches (workbenches-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
@@ -16,14 +16,15 @@
  * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
  * switch, Back, a sidebar link and the browser's back button are all navigations that the
  * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
- * tools table's `call_description` included. Replacing the Agent State from a file asks
- * before it happens.
+ * tools table's `call_description` included. A replace from file asks before it replaces the
+ * Agent State.
  *
  * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
  * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   AgentConfigDto,
@@ -59,8 +60,9 @@ import {
   UpdateDot,
   toastSuccess,
   useFormDraft,
+  type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
-import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -80,8 +82,10 @@ import {
   toolsErrors,
   toolsUpdateOf,
   withCallDescription,
+  type ToolNumberField,
+  type ToolRowDraft,
 } from "./tools-form";
-import type { ToolNumberField, ToolRowDraft } from "./tools-form";
+
 import { SkillsTab } from "./skills-tab";
 import { WorkbenchesTab } from "./workbenches-tab";
 import { HooksTab } from "./hooks-tab";
@@ -93,8 +97,7 @@ import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =
@@ -223,10 +226,7 @@ export function AgentSettingsPage() {
   /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
   const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
 
-  /**
-   * The State was replaced from a file: reload the whole config, since every tab's data may have
-   * changed. The import dialog has toasted what came in and read this server's Agent list again.
-   */
+  /** A replace from file landed (the dialog said so): it overwrote the entire Agent State, so every tab's data needs a refresh. */
   const onImported = useCallback(() => load(), [load]);
 
   /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
@@ -324,8 +324,7 @@ export function AgentSettingsPage() {
 
   return (
     /* relative: a scroller is its own containing block (see the invariant in styles.css) —
-       an absolutely positioned control inside it (a hidden file input) would otherwise grow the
-       document from below the fold. */
+       this page's snapshot-import control used to grow the document from below the fold. */
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
         title={data.config.name ?? agentId}
@@ -483,7 +482,6 @@ function OverviewTab({
   const machineId = useAgentLocation();
   const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
   const [saving, setSaving] = useState(false);
-  /** The export dialog, and the import dialog in replace mode: each mounted while open. */
   const [exportOpen, setExportOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -555,10 +553,11 @@ function OverviewTab({
       <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
-          boxes; the sections separate with a top rule and the values carry the visual
-          weight): title row with the two transfer actions on the right (export is any
-          member's; replacing the Agent State from a file is the owner's alone), labeled
-          value rows below — light text-xs labels over dark font-semibold values. */}
+          boxes; per user feedback the sections separate with a top rule and the values
+          carry the visual weight): title row with the transfer actions on the right (export
+          is available to any member; a replace overwrites the entire Agent State, so it is
+          visible only to owners), labeled value rows below — light
+          text-xs labels over dark font-semibold values. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -689,28 +688,22 @@ function OverviewTab({
         )}
       </section>
 
-      {projectId && (
+      {projectId && exportOpen && (
         <AgentExportDialog
-          open={exportOpen}
           projectId={projectId}
           agentId={agentId}
-          agentName={data.config.name ?? agentId}
+          agentName={data.config.name || agentId}
           machineId={machineId}
           onClose={() => setExportOpen(false)}
         />
       )}
-      {/* Replace from a file: the shared import dialog in replace mode, on the server the Agent
-          lives on; it asks once before the State is replaced. */}
-      {replaceOpen && projectId && (
+      {projectId && replaceOpen && (
         <AgentImportDialog
           projectId={projectId}
-          replace={{ agentId, name: data.config.name ?? agentId }}
+          replace={{ agentId, name: data.config.name || agentId }}
           machineId={machineId}
           onClose={() => setReplaceOpen(false)}
-          onImported={() => {
-            setReplaceOpen(false);
-            onImported();
-          }}
+          onImported={onImported}
         />
       )}
 

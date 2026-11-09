@@ -12,7 +12,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SOURCE = readFileSync(
-  new URL("../src/features/chat/draft-view.tsx", import.meta.url),
+  new URL("../src/features/chat/body/draft-view.tsx", import.meta.url),
   "utf8",
 );
 

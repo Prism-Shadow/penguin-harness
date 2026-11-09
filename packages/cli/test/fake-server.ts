@@ -2,29 +2,31 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch/delete, tasks/steer/compact/switch-model/abort, SSE stream,
- * messages, agents and their public API settings, an agent's archive (the zip export and the raw
- * import upload), projects, usage, schedules, the admin settings, organizations and their channels,
- * the plugins installed on the server, and — through the `builtinBrowser` handler a test sets — the
- * built-in browser). Connection resolution is pinned via PENGUIN_API_URL
+ * messages, agents, their packages and their public API settings, projects, usage, schedules, the admin settings,
+ * organizations and their channels, the plugins installed on the server, and — through
+ * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
  *
  * Credentials, as the server reads them: a request without one is let through (the token gate
  * above); a Bearer header is the local API token, which the agent API writes and the admin's
  * `agentApiEnabled` refuse with 403 `human_required`; a `penguin_session` cookie is a sign-in,
- * accepted only when it is one of `logins` (401 otherwise), and a Bearer in `staleTokens` is a
- * token a restart replaced (401). Each request records what it sent: a
- * JSON body parsed, any other body as the raw bytes received, with its content type.
+ * accepted only when it is one of `logins` (401 otherwise). Each request records what it sent.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
- * (default-event AmspRecord frames, `event: server_event` control frames, incrementing
+ * (default-event AmspRecord frames, `event: server_event` control frames, `<epoch>-<seq>`
  * ids). A task POST synchronously emits `task_state running`, the script's messages,
- * then `task_state idle` — enough for watchTask's full lifecycle.
+ * then `task_state idle` — enough for watchTask's full lifecycle. A Session that is not idle
+ * takes a task POST's input as steering when it asks `steerIfBusy` (queues it while
+ * compacting) and refuses it with 409 `task_in_progress` otherwise; GET /messages with
+ * `live=run` answers `history` (the transcript before the run under way) with the run form of
+ * the live tail (`liveRun` under the current cursor); a new subscriber gets
+ * `pendingApprovals` replayed after its `task_state` snapshot — all as the server does.
+ * `legacyServer` answers as a server from before `live=run` and `steerIfBusy`.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 type Json = Record<string, unknown>;
 
@@ -44,8 +46,10 @@ export interface FakeSessionState {
   lastActiveAt: string;
   /** Bodies of every POST /tasks, in order. */
   tasks: Json[];
-  /** Bodies of every POST /steer, in order. */
+  /** What the Session took as steering, in order: POST /steer bodies, and `{ text }` of a task POST it steered with (`steerIfBusy`). */
   steers: Json[];
+  /** Task POST bodies queued behind a compaction (`steerIfBusy`), in order. */
+  followUps: Json[];
   /** PATCH bodies, in order. */
   patches: Json[];
   aborts: number;
@@ -131,6 +135,9 @@ interface Subscriber {
 
 const encoder = new TextEncoder();
 
+/** The epoch half of every event id the fake assigns (`<epoch>-<seq>`, the server channel's shape). */
+const EVENT_EPOCH = "fake";
+
 /** The fake's fixed clock for company mode (the day file, the period, minted ids). */
 const ORG_NOW = "2026-09-02T10:00:00.000Z";
 const ORG_TODAY = "2026-09-02";
@@ -187,22 +194,6 @@ function mentionsOf(text: string): string[] {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
-/**
- * The Agent id an archive's `manifest.json` suggests — at the zip's root or inside its one
- * top-level directory, as the server reads it — or null when the body is no zip or names none.
- */
-function manifestAgentId(bytes: Uint8Array): string | null {
-  try {
-    const files = unzipSync(bytes, { filter: (f) => /^(?:[^/]+\/)?manifest\.json$/.test(f.name) });
-    const manifest = Object.values(files)[0];
-    if (manifest === undefined) return null;
-    const agentId = (JSON.parse(strFromU8(manifest)) as Json).agentId;
-    return isNonEmptyString(agentId) ? agentId : null;
-  } catch {
-    return null;
-  }
-}
-
 export class FakeServer {
   /**
    * Every request, in order: the path without its query, the query on its own, the parsed body,
@@ -213,18 +204,12 @@ export class FakeServer {
     path: string;
     search: string;
     body?: Json;
-    /** A body that is not JSON (an archive upload): the bytes as received and their content type. */
-    raw?: { contentType: string | null; bytes: Uint8Array };
     credential?: { authorization?: string; cookie?: string };
   }> = [];
   /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
   readonly logins = new Set<string>();
-  /**
-   * API tokens the server no longer takes, as after a restart that minted a new one: a Bearer
-   * listed here answers 401, once `onStaleToken` has run (where a test writes the new token file).
-   */
-  readonly staleTokens = new Set<string>();
-  onStaleToken: () => void = () => {};
+  /** When set, a request that carries no credential at all is a 401, as a server behind its token gate answers it. */
+  refuseAnonymous = false;
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -243,8 +228,25 @@ export class FakeServer {
   userId = "admin";
   /** Messages a task emits between running and idle (default: one assistant echo). */
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
-  /** Messages GET /messages returns. */
+  /** Messages GET /messages returns: with `live=run` while a run is under way, the transcript before it. */
   history: unknown[] = [];
+  /**
+   * The run under way, as the run form of the live tail carries it while a Session is not idle:
+   * its records as published, each streamed fragment's deltas folded into its `start`.
+   */
+  liveRun: unknown[] = [];
+  /** How many older records of the run the server no longer holds (the run form's `omitted`). */
+  liveRunOmitted = 0;
+  /**
+   * Answer as a server from before `live=run` and `steerIfBusy`: a running Session's live tail
+   * carries `liveRun` as its open fragments and no records, an idle one none, and a busy
+   * Session refuses every task POST.
+   */
+  legacyServer = false;
+  /** Runs at the start of GET /messages, before its cursor is taken: what a run publishes between a client's subscription and its history read. */
+  beforeHistoryRead: ((session: FakeSessionState) => void) | null = null;
+  /** The approval requests a running Session is waiting on: replayed to each new subscriber, after the snapshot. */
+  pendingApprovals: Json[] = [];
   /** POST /compact behavior: "reject" -> 409 nothing_to_compact; a function emits its messages like a task. */
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
   /**
@@ -322,6 +324,23 @@ export class FakeServer {
   readonly mintedSecrets: string[] = [];
   private nextKeyOrdinal = 1;
   /**
+   * The Agent package routes: the bytes GET …/agents/:a/archive serves, every raw body POST
+   * …/agents/import was sent, and how the import answers one (given its query).
+   */
+  agentArchive = {
+    exported: new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    uploads: [] as Uint8Array[],
+    answer: (query: URLSearchParams): { status?: number; body: unknown } => ({
+      body: {
+        agent: { agentId: query.get("agentId") ?? "imported", name: "Imported" },
+        mode: "created",
+        version: 1,
+        sessions: { imported: 0, skipped: [] },
+      },
+    }),
+  };
+
+  /**
    * The built-in browser (`/api/builtin-browser/*`): answers each request from its method, its
    * path below that prefix, its query and its body. The default is what a server outside the
    * desktop app answers.
@@ -368,104 +387,6 @@ export class FakeServer {
     }),
   };
 
-  /**
-   * An agent's archive. `previewed` answers GET …/agents/:a/archive/preview for its query: by
-   * default an export that leaves nothing out and that the server would make; a Response a test
-   * returns (an error) goes out as it is. `exported` answers
-   * GET …/agents/:a/archive for its query as sent: the zip's
-   * body — bytes, or a stream a test can break off — and the attachment filename the response names
-   * (none when absent). The default is a small zip of that agent named `<agentId>-20260902.zip`.
-   * `imported` answers POST …/agents/import for the raw body as received and its query. The default
-   * answers as the server does for an empty archive: the id from `agentId`, else from the zip's
-   * manifest; 409 `agent_exists` for a listed agent unless `overwrite=1`; otherwise the agent is
-   * created (listed from then on) or overwritten, with nothing imported.
-   */
-  agentArchive: {
-    previewed: (agentId: string, query: URLSearchParams) => Json | Response;
-    exported: (
-      agentId: string,
-      query: URLSearchParams,
-    ) => { body: Uint8Array | ReadableStream<Uint8Array>; fileName?: string };
-    imported: (bytes: Uint8Array, query: URLSearchParams) => { status?: number; body: unknown };
-  } = {
-    previewed: () => {
-      const none = { files: 0, bytes: 0 };
-      return {
-        parts: {
-          skills: none,
-          hooks: none,
-          memory: none,
-          workbenches: none,
-          schedules: none,
-        },
-        traces: { sessions: 0, files: 0, bytes: 0, skipped: [], newest: null, oldest: null },
-        totalBytes: 0,
-        entries: 1,
-        vaultKeys: [],
-        redacted: [],
-        notes: [],
-      };
-    },
-    exported: (agentId) => ({
-      body: zipSync({
-        [`${agentId}/manifest.json`]: strToU8(
-          JSON.stringify({ format: "penguin-agent-zip/1", agentId }),
-        ),
-      }),
-      fileName: `${agentId}-20260902.zip`,
-    }),
-    imported: (bytes, query) => {
-      const agentId = query.get("agentId") ?? manifestAgentId(bytes);
-      if (agentId === null) {
-        return {
-          status: 400,
-          body: { error: { code: "bad_request", message: "The archive names no Agent id." } },
-        };
-      }
-      const existing = this.agents.find((a) => a.agentId === agentId);
-      if (existing !== undefined && query.get("overwrite") !== "1") {
-        return {
-          status: 409,
-          body: {
-            error: {
-              code: "agent_exists",
-              message: `Agent ${agentId} already exists.`,
-              details: { agentId },
-            },
-          },
-        };
-      }
-      const agent = existing ?? {
-        agentId,
-        name: agentId,
-        description: "",
-        sessionCount: 0,
-        activeSessionCount: 0,
-        sessionActivity: [],
-      };
-      if (existing === undefined) this.agents.push(agent);
-      return {
-        status: 201,
-        body: {
-          agent,
-          mode: existing === undefined ? "created" : "overwritten",
-          version: 1,
-          imported: {
-            skills: 0,
-            hooks: 0,
-            memoryFiles: 0,
-            workbenches: 0,
-            schedules: 0,
-            traces: { sessions: 0, files: 0 },
-          },
-          skippedTraces: [],
-          toFill: [],
-          notes: [],
-        },
-      };
-    },
-  };
-
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
   private readonly subscribers = new Map<string, Subscriber[]>();
@@ -496,6 +417,7 @@ export class FakeServer {
       lastActiveAt: now,
       tasks: [],
       steers: [],
+      followUps: [],
       patches: [],
       aborts: 0,
       ...overrides,
@@ -573,9 +495,14 @@ export class FakeServer {
     };
   }
 
+  /** The id of the most recently assigned event: the live tail's cursor. */
+  get lastEventId(): string {
+    return `${EVENT_EPOCH}-${this.nextEventId - 1}`;
+  }
+
   /** Emits one SSE frame to every subscriber of the session. */
   emit(sessionId: string, data: unknown, event?: string): void {
-    const id = this.nextEventId++;
+    const id = `${EVENT_EPOCH}-${this.nextEventId++}`;
     const text =
       `id: ${id}\n` +
       (event !== undefined ? `event: ${event}\n` : "") +
@@ -1892,11 +1819,8 @@ export class FakeServer {
     const method = (init?.method ?? "GET").toUpperCase();
     const apiPath = url.pathname;
     let body: Json | undefined;
-    let raw: Uint8Array | undefined;
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
-    } else if (init?.body !== undefined && init.body !== null) {
-      raw = new Uint8Array(await new Response(init.body).arrayBuffer());
     }
     const headers = new Headers(init?.headers);
     const authorization = headers.get("authorization") ?? undefined;
@@ -1906,9 +1830,6 @@ export class FakeServer {
       path: apiPath,
       search: url.search,
       ...(body !== undefined ? { body } : {}),
-      ...(raw !== undefined
-        ? { raw: { contentType: headers.get("content-type"), bytes: raw } }
-        : {}),
       ...(authorization !== undefined || cookie !== undefined
         ? {
             credential: {
@@ -1918,18 +1839,15 @@ export class FakeServer {
           }
         : {}),
     });
+    if (this.refuseAnonymous && authorization === undefined && cookie === undefined) {
+      return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
     // The server reads a Bearer first; a cookie alone must be a sign-in it knows.
     if (authorization === undefined && cookie !== undefined) {
       const login = /(?:^|;\s*)penguin_session=([^;]+)/.exec(cookie)?.[1];
       if (login === undefined || !this.logins.has(login)) {
         return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
       }
-    }
-    const bearer =
-      authorization !== undefined ? /^Bearer (.+)$/.exec(authorization)?.[1] : undefined;
-    if (bearer !== undefined && this.staleTokens.has(bearer)) {
-      this.onStaleToken();
-      return this.error(401, "unauthorized", "Invalid API token.");
     }
     const viaToken = authorization !== undefined;
 
@@ -1942,37 +1860,6 @@ export class FakeServer {
       });
       const status = answer.status ?? 200;
       return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
-    }
-
-    const previewMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive\/preview$/.exec(
-      apiPath,
-    );
-    if (previewMatch && method === "GET") {
-      const answer = this.agentArchive.previewed(
-        decodeURIComponent(previewMatch[1]!),
-        url.searchParams,
-      );
-      return answer instanceof Response ? answer : this.json(answer);
-    }
-    const archiveMatch = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/archive$/.exec(apiPath);
-    if (archiveMatch && method === "GET") {
-      const answer = this.agentArchive.exported(
-        decodeURIComponent(archiveMatch[1]!),
-        url.searchParams,
-      );
-      return new Response(answer.body, {
-        status: 200,
-        headers: {
-          "content-type": "application/zip",
-          ...(answer.fileName !== undefined
-            ? { "content-disposition": `attachment; filename="${answer.fileName}"` }
-            : {}),
-        },
-      });
-    }
-    if (/^\/api\/projects\/[^/]+\/agents\/import$/.test(apiPath) && method === "POST") {
-      const answer = this.agentArchive.imported(raw ?? new Uint8Array(0), url.searchParams);
-      return this.json(answer.body, answer.status ?? 201);
     }
 
     if (apiPath === "/api/plugins" && method === "GET") {
@@ -2020,6 +1907,18 @@ export class FakeServer {
         ...(this.defaultModel !== null ? { defaultModel: this.defaultModel } : {}),
         models: [],
       });
+    }
+
+    m = /^\/api\/projects\/[^/]+\/agents\/(?:([^/]+)\/archive|import)$/.exec(apiPath);
+    if (m && method === "GET") {
+      return new Response(this.agentArchive.exported, {
+        headers: { "content-disposition": `attachment; filename="${m[1]}-20261109.zip"` },
+      });
+    }
+    if (m) {
+      this.agentArchive.uploads.push(init?.body as Uint8Array);
+      const answer = this.agentArchive.answer(url.searchParams);
+      return this.json(answer.body, answer.status ?? 201);
     }
 
     // Session create
@@ -2190,7 +2089,25 @@ export class FakeServer {
         if (typeof body?.title === "string") session.title = body.title;
         return this.json({ session: this.sessionInfo(session) });
       }
-      if (rest === "/messages" && method === "GET") return this.json({ messages: this.history });
+      if (rest === "/messages" && method === "GET") {
+        this.beforeHistoryRead?.(session);
+        const idle = session.status === "idle";
+        const runForm = url.searchParams.get("live") === "run" && !this.legacyServer;
+        const live = runForm
+          ? {
+              live: {
+                cursor: this.lastEventId,
+                status: session.status,
+                fragments: [],
+                records: idle ? [] : this.liveRun,
+                ...(this.liveRunOmitted > 0 ? { omitted: this.liveRunOmitted } : {}),
+              },
+            }
+          : idle
+            ? {}
+            : { live: { cursor: this.lastEventId, fragments: this.liveRun } };
+        return this.json({ messages: this.history, ...live });
+      }
       if (rest === "/stream" && method === "GET") {
         const subs = this.subscribers.get(sessionId) ?? [];
         this.subscribers.set(sessionId, subs);
@@ -2200,15 +2117,16 @@ export class FakeServer {
           start(controller) {
             const sub: Subscriber = { controller, closed: false };
             subs.push(sub);
-            const id = server.nextEventId++;
-            controller.enqueue(
-              encoder.encode(
-                `id: ${id}\nevent: server_event\ndata: ${JSON.stringify({
-                  type: "task_state",
-                  state: state.status,
-                })}\n\n`,
-              ),
-            );
+            const snapshot: Json[] = [
+              { type: "task_state", state: state.status },
+              ...(state.status === "idle" ? [] : server.pendingApprovals),
+            ];
+            for (const ev of snapshot) {
+              const id = `${EVENT_EPOCH}-${server.nextEventId++}`;
+              controller.enqueue(
+                encoder.encode(`id: ${id}\nevent: server_event\ndata: ${JSON.stringify(ev)}\n\n`),
+              );
+            }
           },
           cancel() {
             for (const sub of subs) sub.closed = true;
@@ -2222,6 +2140,22 @@ export class FakeServer {
       if (rest === "/tasks" && method === "POST") {
         const refusal = this.refuseTasks.shift();
         if (refusal !== undefined) return this.error(409, refusal, `Refused: ${refusal}.`);
+        if (session.status !== "idle") {
+          if (body?.steerIfBusy !== true || this.legacyServer) {
+            return this.error(
+              409,
+              "task_in_progress",
+              "This Session already has a Task in progress.",
+            );
+          }
+          if (session.status === "running" && this.steerMode === "accept") {
+            const text = (body.input as Array<{ text?: string }> | undefined)?.[0]?.text;
+            session.steers.push({ text });
+            return this.json({ sessionId: session.sessionId, queued: false, steered: true }, 202);
+          }
+          session.followUps.push(body);
+          return this.json({ sessionId: session.sessionId, queued: true }, 202);
+        }
         session.tasks.push(body ?? {});
         if (this.hangTasks) {
           session.status = "running";

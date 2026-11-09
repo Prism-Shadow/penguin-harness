@@ -1,13 +1,10 @@
 /**
- * `penguin agent` — list, create, export and import agents through the server, and manage an
- * agent's public API.
+ * `penguin agent` — list and create agents through the server, and manage an agent's public API.
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
  *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
- *   penguin agent export <agent-id> [--out <file|dir>] [--no-<part>…] [--schedules]
- *                        [--traces none|last:<N>|<from>..<to>] …
- *   penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] …
+ *   penguin agent export <agent-id> … / penguin agent import <source> …   (./agent-archive.ts)
  *   penguin agent api status  --agent-id <id> [--project-id <id>] [--json] [--server <url>]
  *   penguin agent api enable  --agent-id <id> [--open | --no-open] [--approve <mode>] …
  *   penguin agent api disable --agent-id <id> …
@@ -20,8 +17,6 @@
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
  * and library plugins to seed (comma-separated names; unknown names are rejected by the
  * server before anything is created).
- *
- * `export` and `import` move an agent as a zip, the Agents page's file (agent-archive.ts).
  *
  * `api` is the Agent page's API tab over /api/projects/:p/agents/:a/api: whether external
  * programs may talk to the agent, keyless access, the approval mode API conversations are
@@ -53,9 +48,9 @@ import type {
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
+import { registerAgentArchiveCommands } from "./agent-archive.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
-import { registerArchiveCommands } from "./agent-archive.js";
 
 const enc = encodeURIComponent;
 
@@ -372,6 +367,6 @@ export function registerAgentCommand(program: Command, t: Messages): void {
       process.stdout.write(`${t.agent.created(res.agent.agentId, projectId)}\n`);
     });
 
-  registerArchiveCommands(agent, t);
+  registerAgentArchiveCommands(agent, t);
   registerApiCommands(agent, t);
 }

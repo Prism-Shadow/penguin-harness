@@ -9,6 +9,7 @@
  */
 import fs from "node:fs/promises";
 import { parseDocument, parse as parseYaml } from "yaml";
+import type { Document } from "yaml";
 import {
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
@@ -85,102 +86,6 @@ export interface AgentConfigView {
   systemConfigYaml: string;
   config: AgentConfigDto;
   stateDir: string;
-}
-
-/**
- * `system_config.yaml` text with a config update applied, every field validated as `PUT …/config`
- * validates it (a 400 names the first bad one); comments and layout survive. Pure, so an update
- * can be applied to a staged copy as well as to an Agent's own file.
- */
-export function updatedConfigText(
-  text: string,
-  config: NonNullable<AgentConfigUpdateRequest["config"]>,
-): string {
-  const cfg = config as unknown as Record<string, unknown>;
-  const doc = parseDocument(text);
-
-  const setIfProvided = (path: string[], value: unknown): void => {
-    if (value !== undefined) doc.setIn(path, value);
-  };
-
-  setIfProvided(["name"], optionalString(cfg, "name", { maxLen: 100, label: "name" }));
-  setIfProvided(
-    ["description"],
-    optionalString(cfg, "description", { maxLen: 2000, label: "description" }),
-  );
-  setIfProvided(["system_prompt"], optionalString(cfg, "systemPrompt", { label: "systemPrompt" }));
-  setIfProvided(
-    ["max_turns"],
-    optionalNumber(cfg, "maxTurns", { integer: true, positiveOrMinusOne: true }),
-  );
-
-  if (cfg.model !== undefined) {
-    const model = asRecord(cfg.model);
-    setIfProvided(
-      ["model", "max_tokens"],
-      optionalNumber(model, "maxTokens", { integer: true, positiveOrMinusOne: true }),
-    );
-    setIfProvided(
-      ["model", "thinking_level"],
-      optionalEnum(model, "thinkingLevel", THINKING_LEVEL_NAMES),
-    );
-    setIfProvided(
-      ["model", "timeoutMs"],
-      optionalNumber(model, "timeoutMs", { integer: true, positiveOrMinusOne: true }),
-    );
-  }
-  if (cfg.compaction !== undefined) {
-    const compaction = asRecord(cfg.compaction);
-    setIfProvided(
-      ["compaction", "max_context_length"],
-      optionalNumber(compaction, "maxContextLength", { integer: true, positiveOrMinusOne: true }),
-    );
-    setIfProvided(
-      ["compaction", "max_session_turns"],
-      optionalNumber(compaction, "maxSessionTurns", { integer: true, positiveOrMinusOne: true }),
-    );
-    setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
-    setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
-  }
-  if (cfg.memory !== undefined) {
-    // The toggle only decides whether Memory reaches the context and whether Workspace
-    // directories are prepared; existing Memory files are never touched by it.
-    const memory = asRecord(cfg.memory);
-    setIfProvided(["memory", "enabled"], optionalBoolean(memory, "enabled"));
-    setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
-    setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
-  }
-  // The vault / skills / schedules toggles only decide whether the section reaches the
-  // context: vault values still enter subprocess environments, installed skills stay
-  // invocable, and the scheduler keeps firing tasks.
-  if (cfg.vault !== undefined) {
-    const vault = asRecord(cfg.vault);
-    setIfProvided(["vault", "enabled"], optionalBoolean(vault, "enabled"));
-    setIfProvided(["vault", "prompt"], optionalString(vault, "prompt"));
-  }
-  if (cfg.skills !== undefined) {
-    const skills = asRecord(cfg.skills);
-    setIfProvided(["skills", "enabled"], optionalBoolean(skills, "enabled"));
-    setIfProvided(["skills", "prompt"], optionalString(skills, "prompt"));
-  }
-  if (cfg.schedules !== undefined) {
-    const schedules = asRecord(cfg.schedules);
-    setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
-    setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
-  }
-  // The hook switch is the one section that governs behavior rather than the context: with
-  // it off a new Session assembles no hooks, while the packages stay installed on disk.
-  if (cfg.hooks !== undefined) {
-    setIfProvided(["hooks", "enabled"], optionalBoolean(asRecord(cfg.hooks), "enabled"));
-  }
-  if (cfg.toolsBuiltin !== undefined) {
-    doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
-  }
-  if (cfg.mcpServers !== undefined) {
-    doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
-  }
-
-  return doc.toString();
 }
 
 @Component()
@@ -405,8 +310,100 @@ export class AgentConfigService implements AgentConfig {
     config: NonNullable<AgentConfigUpdateRequest["config"]>,
   ): Promise<void> {
     const yamlPath = systemConfigPath(this.root, projectId, agentId);
-    const text = updatedConfigText(await fs.readFile(yamlPath, "utf8"), config);
-    await atomicWriteFile(yamlPath, text, { followSymlinks: true });
+    const doc = parseDocument(await fs.readFile(yamlPath, "utf8"));
+    AgentConfigService.applyConfigFields(doc, config);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+  }
+
+  /** A config write's checks and edits on `doc`: each provided key is checked (400) and set. */
+  static applyConfigFields(
+    doc: Document,
+    config: NonNullable<AgentConfigUpdateRequest["config"]>,
+  ): void {
+    const cfg = config as unknown as Record<string, unknown>;
+    const setIfProvided = (path: string[], value: unknown): void => {
+      if (value !== undefined) doc.setIn(path, value);
+    };
+
+    setIfProvided(["name"], optionalString(cfg, "name", { maxLen: 100, label: "name" }));
+    setIfProvided(
+      ["description"],
+      optionalString(cfg, "description", { maxLen: 2000, label: "description" }),
+    );
+    setIfProvided(
+      ["system_prompt"],
+      optionalString(cfg, "systemPrompt", { label: "systemPrompt" }),
+    );
+    setIfProvided(
+      ["max_turns"],
+      optionalNumber(cfg, "maxTurns", { integer: true, positiveOrMinusOne: true }),
+    );
+
+    if (cfg.model !== undefined) {
+      const model = asRecord(cfg.model);
+      setIfProvided(
+        ["model", "max_tokens"],
+        optionalNumber(model, "maxTokens", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(
+        ["model", "thinking_level"],
+        optionalEnum(model, "thinkingLevel", THINKING_LEVEL_NAMES),
+      );
+      setIfProvided(
+        ["model", "timeoutMs"],
+        optionalNumber(model, "timeoutMs", { integer: true, positiveOrMinusOne: true }),
+      );
+    }
+    if (cfg.compaction !== undefined) {
+      const compaction = asRecord(cfg.compaction);
+      setIfProvided(
+        ["compaction", "max_context_length"],
+        optionalNumber(compaction, "maxContextLength", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(
+        ["compaction", "max_session_turns"],
+        optionalNumber(compaction, "maxSessionTurns", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
+      setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
+    }
+    if (cfg.memory !== undefined) {
+      // The toggle only decides whether Memory reaches the context and whether Workspace
+      // directories are prepared; existing Memory files are never touched by it.
+      const memory = asRecord(cfg.memory);
+      setIfProvided(["memory", "enabled"], optionalBoolean(memory, "enabled"));
+      setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
+      setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
+    }
+    // The vault / skills / schedules toggles only decide whether the section reaches the
+    // context: vault values still enter subprocess environments, installed skills stay
+    // invocable, and the scheduler keeps firing tasks.
+    if (cfg.vault !== undefined) {
+      const vault = asRecord(cfg.vault);
+      setIfProvided(["vault", "enabled"], optionalBoolean(vault, "enabled"));
+      setIfProvided(["vault", "prompt"], optionalString(vault, "prompt"));
+    }
+    if (cfg.skills !== undefined) {
+      const skills = asRecord(cfg.skills);
+      setIfProvided(["skills", "enabled"], optionalBoolean(skills, "enabled"));
+      setIfProvided(["skills", "prompt"], optionalString(skills, "prompt"));
+    }
+    if (cfg.schedules !== undefined) {
+      const schedules = asRecord(cfg.schedules);
+      setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
+      setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
+    }
+    // The hook switch is the one section that governs behavior rather than the context: with
+    // it off a new Session assembles no hooks, while the packages stay installed on disk.
+    if (cfg.hooks !== undefined) {
+      setIfProvided(["hooks", "enabled"], optionalBoolean(asRecord(cfg.hooks), "enabled"));
+    }
+    if (cfg.toolsBuiltin !== undefined) {
+      doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
+    }
+    if (cfg.mcpServers !== undefined) {
+      doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
+    }
   }
 
   /**

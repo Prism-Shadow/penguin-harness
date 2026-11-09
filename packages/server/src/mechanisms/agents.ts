@@ -69,37 +69,23 @@ export abstract class AgentConfig {
   ): Promise<VaultResponse>;
 }
 
+/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
+export interface AgentPackage {
+  bytes: Buffer<ArrayBufferLike>;
+  /** Given the package's `traces/` once its State is in place, before the staging goes. */
+  landTraces?: (dir: string) => Promise<void>;
+}
+
 /** Snapshots: the mechanism SnapshotService implements. */
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  /** Packs the current State into a new `snapshots/import-backup-v<N>-…tar.gz`; answers `snapshots/<name>`. */
-  abstract backupBeforeImport(projectId: string, agentId: string): Promise<string>;
-  /**
-   * Replaces `agent_state/` with `incoming` in one rename swap, the current vault and the
-   * entries at the `carry` paths (relative to `agent_state/`) kept, rolled back on failure;
-   * `backup` is named by an error that leaves the Agent's parts in its marked staging folder.
-   */
-  abstract swapAgentState(
+  abstract importArchive(
     projectId: string,
     agentId: string,
-    incoming: string,
-    carry?: readonly string[],
-    backup?: string | null,
-  ): Promise<void>;
-  /** Puts back what interrupted swaps left (marked staging folders), for one Agent or all. */
-  abstract recoverStrandedSwaps(scope?: { projectId: string; agentId: string }): Promise<void>;
-}
-
-/**
- * AgentHolds: one import or delete at a time per Agent, keyed `<projectId>/<agentId>`; the
- * mechanism AgentHoldQueue implements (agent-archive/agent-hold.ts). The archive routes and the
- * Agent routes share it.
- */
-@Interface()
-export abstract class AgentHolds {
-  /** Runs `work` once every earlier holder of `key` is done. */
-  abstract hold<T>(key: string, work: () => Promise<T>): Promise<T>;
+    pkg: AgentPackage,
+    opts: { preSnapshot: boolean },
+  ): Promise<{ version: number; backup?: string }>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -202,6 +188,7 @@ export abstract class AgentLifecycle {
     description?: string,
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
+    archive?: AgentPackage,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

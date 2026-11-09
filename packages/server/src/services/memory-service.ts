@@ -118,26 +118,6 @@ export function isTopicFileName(name: string): boolean {
 }
 
 /**
- * How many memories a `memory/` directory holds: the topic files directly inside each scope
- * directory, neither index nor marker counted. The one count the Agent card and the archive
- * import report, so the two never disagree; 0 when there is no directory.
- */
-export async function countMemoryTopics(memoryRoot: string): Promise<number> {
-  const scopes = await fs.readdir(memoryRoot, { withFileTypes: true }).catch(() => []);
-  const counts = await Promise.all(
-    scopes
-      .filter((scope) => scope.isDirectory())
-      .map(async (scope) => {
-        const files = await fs
-          .readdir(path.join(memoryRoot, scope.name), { withFileTypes: true })
-          .catch(() => []);
-        return files.filter((file) => file.isFile() && isTopicFileName(file.name)).length;
-      }),
-  );
-  return counts.reduce((sum, n) => sum + n, 0);
-}
-
-/**
  * Orders topic file names identically on every host. `localeCompare` is deliberately not used
  * here: with no locale argument it follows the server's own locale, so the same scope listed its
  * files one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is what an

@@ -137,6 +137,7 @@ import {
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
 } from "./http/routes/desktop.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
@@ -150,8 +151,6 @@ import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import { AgentHoldQueue } from "./agent-archive/agent-hold.js";
-import { AgentArchiveRoutes } from "./agent-archive/routes.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {
   Access,
@@ -219,14 +218,8 @@ export class Startup {
   @Use() private readonly errors!: Errors;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly agents!: AgentLifecycle;
-  @Use() private readonly snapshots!: Snapshots;
 
   async setup() {
-    // An import a stopped process left part-way: the Agent's State and kept parts, moved aside
-    // into a marked folder, go back first, so the Agent lists again before anything reads it.
-    await this.snapshots.recoverStrandedSwaps().catch((err: unknown) => {
-      this.errors.record({ source: "process", err, code: "import_recovery_failed" });
-    });
     // Every Project's config through the server's read path once, before anything opens one:
     // its one-time migrations (core's, and the server's own that need the catalog) write back
     // there, and a Session the schedulers resume reads its file with core's loader, which runs
@@ -373,9 +366,7 @@ export class ProjectsModule {}
     CoreSessionLoaders,
     DefaultTitleGenerators,
     SessionsModule,
-    AgentHoldQueue,
     SessionApiRoutes,
-    AgentArchiveRoutes,
     SchedulerRoutes,
     EventsRoutes,
   ],
@@ -511,6 +502,7 @@ export class CompanyModule {}
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,

@@ -237,25 +237,28 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "ace-rsi-toolkit",
         "Run ACE (Agentic Context Engineering, Zhang et al. 2025) on an agent the sequential offline way - a Reflector reads each training Trace, a Curator adds the lessons to a playbook of rules the agent reads before every task, and the final playbook is measured on a published Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(apePkg, apeIcon, [
       skill(
         "ape-rsi-toolkit",
         "Reproduce APE (Large Language Models are Human-Level Prompt Engineers, Zhou et al. 2022) on an agent and a frozen Benchmark, or on the house-style brief demo task shipped with this Skill: induce instructions from input/output examples, measure each one, keep the best.",
-        "2026.10.31.1",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(awmPkg, awmIcon, [
       skill(
         "awm-rsi-toolkit",
         "Run AWM (Agent Workflow Memory, Wang et al. 2024) on an agent - induce reusable workflows from its successful trajectories, online over a training stream or offline from supplied experiences, then freeze the workflow memory and measure it on a published Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(defaultPkg, defaultIcon, [
       skill(
         "agent-optimization",
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(openskillPkg, openskillIcon, [
@@ -269,7 +272,7 @@ export function rsiToolkitPlugins(): PluginItem[] {
       skill(
         "opro-rsi-toolkit",
         "Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.",
-        "2026.10.31.1",
+        "2026.11.05.1",
       ),
     ]),
     libraryPlugin(skilladamPkg, skilladamIcon, [

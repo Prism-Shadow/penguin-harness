@@ -23,13 +23,7 @@ import {
   assertSafeEntryPath,
   unzipBounded,
 } from "../services/skill-import-limits.js";
-import {
-  CONTROL_CHARACTER,
-  assertDistinct,
-  folded,
-  isWindowsUnsafeSegment,
-  specialEntries,
-} from "../services/zip-entries.js";
+import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
 import { HARNESS_DIR } from "./harness-types.js";
 import { removeLeftovers } from "./leftovers.js";
 import { isGitName } from "./repo.js";
@@ -50,6 +44,18 @@ export interface WorkbenchArchive {
 
 const TO_DIRECTORY = "put the files under a directory named after the workbench";
 
+/** A name as a disk that ignores letter case and Unicode normal form (macOS, Windows) compares it. */
+export function folded(name: string): string {
+  return name.normalize("NFC").toLowerCase();
+}
+
+/** Windows reserves these device names, with or without an extension, in any letter case. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+/** Characters no Windows name holds. */
+const WINDOWS_FORBIDDEN = /[<>:"|?*]/;
+/** The longest name a disk keeps, in UTF-8 bytes. */
+const MAX_SEGMENT_BYTES = 255;
+
 /** Why a path is not workbench source, judged on every segment; null when it is. */
 function notSource(name: string): string | null {
   if (CONTROL_CHARACTER.test(name)) return "a control character";
@@ -60,7 +66,14 @@ function notSource(name: string): string | null {
     if (key === "node_modules") return "node_modules is never imported";
     if (isTempName(key)) return "a staging file of the server's";
     if (isGitName(segment)) return "a name git reserves";
-    if (isWindowsUnsafeSegment(segment)) return "a name Windows cannot hold";
+    if (
+      WINDOWS_FORBIDDEN.test(segment) ||
+      WINDOWS_RESERVED.test(segment) ||
+      /[. ]$/.test(segment) ||
+      Buffer.byteLength(segment) > MAX_SEGMENT_BYTES
+    ) {
+      return "a name Windows cannot hold";
+    }
   }
   return null;
 }
@@ -106,6 +119,35 @@ function idOfRootPackage(pkg: Record<string, unknown>): string {
     );
   }
   return name;
+}
+
+/**
+ * Every path the folder will hold, as a disk that folds names sees it: two entries it takes for
+ * one would land one over the other, and a file where another entry needs a directory would fail
+ * the write half-way.
+ */
+function assertDistinct(rels: Iterable<string>, prefix: string): void {
+  const claimed = new Map<string, { rel: string; directory: boolean }>();
+  const claim = (rel: string, directory: boolean): void => {
+    const key = folded(rel);
+    const prior = claimed.get(key);
+    if (prior === undefined) {
+      claimed.set(key, { rel, directory });
+    } else if (prior.directory !== directory) {
+      throw badRequest(
+        `Zip entry is both a file and a directory: ${prefix}${directory ? prior.rel : rel}`,
+      );
+    } else if (prior.rel !== rel) {
+      throw badRequest(
+        `Zip entry has the same name as ${prefix}${prior.rel} where letter case is ignored: ${prefix}${rel}`,
+      );
+    }
+  };
+  for (const rel of rels) {
+    const segments = rel.split("/");
+    for (let i = 1; i < segments.length; i++) claim(segments.slice(0, i).join("/"), true);
+    claim(rel, false);
+  }
 }
 
 /**

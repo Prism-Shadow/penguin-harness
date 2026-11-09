@@ -39,29 +39,3 @@ export async function readTraceHead(filePath: string): Promise<AmspRecord[]> {
   if (nl === -1) return readTraceTolerant(filePath);
   return parseTraceLines(text.slice(0, nl + 1));
 }
-
-/**
- * `readTraceHead` that never reads past the head window: null when the window holds no complete
- * line, where `readTraceHead` would fall back to reading the whole file. For files from outside
- * (an archive import), whose first line is not trusted to be a Trace's.
- */
-export async function readTraceHeadWithin(filePath: string): Promise<AmspRecord[] | null> {
-  const fh = await open(filePath, "r");
-  let text: string;
-  let truncated: boolean;
-  try {
-    const { buffer, bytesRead } = await fh.read(
-      Buffer.allocUnsafe(TRACE_HEAD_BYTES),
-      0,
-      TRACE_HEAD_BYTES,
-      0,
-    );
-    text = buffer.subarray(0, bytesRead).toString("utf8");
-    truncated = bytesRead === TRACE_HEAD_BYTES;
-  } finally {
-    await fh.close();
-  }
-  if (!truncated) return parseTraceLines(text);
-  const nl = text.lastIndexOf("\n");
-  return nl === -1 ? null : parseTraceLines(text.slice(0, nl + 1));
-}

@@ -20,8 +20,8 @@
  * conversation visible (found by walking the origin chain); the graph simply has no
  * highlighted node.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+
 import { useNavigate } from "react-router";
 import type {
   ApprovalMode,
@@ -46,8 +46,8 @@ import { ApiError } from "../../api/client";
 import { abortSubagent, messageSubagent, patchSession } from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/amsp/stream-model";
-import { ChatInput } from "./chat-input";
-import type { ComposerControl } from "./chat-input";
+import { ChatInput, type ComposerControl } from "./chat-input";
+
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { machineForSession } from "../../lib/session-machines";
@@ -59,11 +59,11 @@ import {
   modelAtOrigin,
   resolveAgentLabel,
   shortSessionId,
+  type TopologyNode,
 } from "./agent-topology";
-import type { TopologyNode } from "./agent-topology";
+
 import { AgentTopologyView } from "./agent-topology-view";
-import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
+import { MessageStream, type StreamRenderContext } from "./message-stream";
 import { useAgentSkills } from "./use-agent-skills";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { toastApiError } from "../../lib/toast-api-error";

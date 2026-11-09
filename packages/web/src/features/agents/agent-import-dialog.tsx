@@ -1,42 +1,14 @@
 /**
- * The Agent import dialog, shared by the Agents page (the header's "Import agent") and the
- * settings page ("Replace from file…", which opens it in replace mode). Two ruled sections, the
- * Skills and Hooks import dialogs' family:
- *
- * 1. **Migrate from another framework.** The framework, a path — its user directory while nothing
- *    is typed, required for "Other" — the full prompt in the fold, and "Open a new chat": the
- *    prompt lands in a new conversation with the Project's default agent (the AI bridge), where
- *    the `agent-porting` Skill does the mapping. Nothing is sent; sending stays the user's. While
- *    that agent lacks the Skill, the section says so and offers to install the plugin that ships
- *    it, and the chat waits (porting-skill-gate.ts). That install replaces whatever the Agent
- *    already has of the plugin, so then it asks first, with the Plugins page's update confirmation.
- * 2. **Import a file.** A zip export (or, until 1.0, an older `.tar.gz` package) no larger than an
- *    import takes — a larger one is refused before anything is sent — the Agent id its file name
- *    suggests (editable; empty takes the id a zip records, while a `.tar.gz`, which records none,
- *    needs one), and Import, which uploads the file as it is (archive-upload.ts). A taken id —
- *    409 `agent_exists` — shows in place, with "Use another id", which focuses the id, and for the
- *    Project owner "Overwrite the existing agent", which asks once (danger) and sends the file
- *    again with `overwrite`.
- *
- * Replace mode drops the first section and the id: the file replaces this Agent's State, and
- * the primary is "Replace", behind the same one confirmation. A landed import says what came in,
- * what was skipped and what is left to fill in, as a toast, and this server's Agent list is read
- * again.
- *
- * A record dialog under the settings commit model: what was typed or picked is its draft, so
- * closing with any of it asks first, and nothing closes it while an upload is in flight. Opening
- * the chat hands the migration's source over, so that part is forgotten before the page moves on;
- * a picked file goes nowhere with it, so the chat asks first while one is picked.
+ * "Import agent" (the Agents page) and, in replace mode, "Replace from file…" (the settings page):
+ * migrate another framework's agent through a chat with the default agent (giving it the
+ * agent-porting Skill first; an update over Skills it already has asks), or upload an exported
+ * file as it is. A taken id offers another id and, to the owner, an overwrite behind one danger
+ * confirmation. What was typed or picked is a draft: closing with it asks first.
  */
-import { useId, useState } from "react";
-import type { ChangeEvent } from "react";
-import { AGENT_ARCHIVE_MAX_UPLOAD_BYTES } from "@prismshadow/penguin-server/api";
-import type { AgentArchiveImportResponse } from "@prismshadow/penguin-server/api";
+import { useId, useState, type ChangeEvent } from "react";
 import {
   Button,
-  CloseIcon,
   ConfirmModal,
-  FieldError,
   FieldHint,
   HiddenFileInput,
   InfoPopover,
@@ -51,37 +23,33 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatBytes } from "../../lib/format";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { toneInk } from "../../lib/tone";
+import { toastApiError } from "../../lib/toast-api-error";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
+import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
 import {
-  ARCHIVE_ACCEPT,
-  ARCHIVE_BUTTON_CLASS,
-  agentIdFromArchiveName,
-  isTarPackage,
-} from "./archive-file";
-import { uploadArchive } from "./archive-upload";
-import { MIGRATION_SOURCES, SOURCE_HOME, migrationPrompt } from "./agent-migration";
-import type { MigrationSource } from "./agent-migration";
-import { importReportText } from "./import-report";
-import { PORTING_PLUGIN, usePortingSkill } from "./porting-skill-gate";
-import { ChangedPartRows } from "../plugins/changed-part-rows";
+  MIGRATION_SOURCES,
+  PORTING_PLUGIN,
+  installPorting,
+  migrationPrompt,
+  portingNeed,
+  sourceOf,
+  type MigrationSource,
+} from "./agent-migration";
 
 export interface AgentImportDialogProps {
   projectId: string;
-  /** Replace mode: the Agent whose State a file replaces. Absent, the dialog creates an Agent. */
+  /** Replace mode: the Agent whose State the file replaces. Absent, the dialog creates an Agent. */
   replace?: { agentId: string; name: string };
   /** The server the file goes to; null for this one. */
   machineId: string | null;
   onClose: () => void;
-  /** An import landed: the dialog has toasted what it did and read this server's Agent list again. */
-  onImported: (res: AgentArchiveImportResponse) => void;
+  /** An import landed: the dialog has said so and read this server's Agent list again. */
+  onImported?: () => void;
 }
 
-/** What the dialog holds: the migration's framework and path, and the picked file with its id. */
 interface ImportDraft {
   framework: MigrationSource;
   path: string;
@@ -89,400 +57,229 @@ interface ImportDraft {
   agentId: string;
 }
 
-const EMPTY: ImportDraft = { framework: "claude-code", path: "", file: null, agentId: "" };
-
 /** What the draft is compared by: the text trimmed, the file by what identifies it. */
-const normalizeImport = (draft: ImportDraft) => ({
-  ...draft,
-  path: draft.path.trim(),
-  agentId: draft.agentId.trim(),
-  file:
-    draft.file === null
-      ? null
-      : { name: draft.file.name, size: draft.file.size, lastModified: draft.file.lastModified },
+const normalize = (d: ImportDraft) => ({
+  ...d,
+  path: d.path.trim(),
+  agentId: d.agentId.trim(),
+  file: d.file && [d.file.name, d.file.size, d.file.lastModified],
 });
 
-export function AgentImportDialog({
-  projectId,
-  replace,
-  machineId,
-  onClose,
-  onImported,
-}: AgentImportDialogProps) {
+export function AgentImportDialog(props: AgentImportDialogProps) {
+  const { projectId, replace, machineId, onClose, onImported } = props;
   const { currentProject, agents, reloadAgents } = useProject();
-  const isOwner = currentProject?.role === "owner";
   const { openAiChat } = useAiBridge();
-  const form = useFormDraft<ImportDraft>(EMPTY, { normalize: normalizeImport });
+  const form = useFormDraft<ImportDraft>(
+    { framework: "claude-code", path: "", file: null, agentId: "" },
+    { normalize },
+  );
   const { framework, path, file, agentId } = form.draft;
-  const [uploading, setUploading] = useState(false);
-  /** Why the server refused the last upload, under the Import button. */
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   /** The id a 409 `agent_exists` named; cleared by the next edit of the id or the file. */
   const [taken, setTaken] = useState<string | null>(null);
-  /** The one confirmation before a State is replaced is open. */
   const [confirming, setConfirming] = useState(false);
-  /** The confirmation before the porting plugin's install rewrites what the Agent has of it. */
-  const [confirmingPorting, setConfirmingPorting] = useState(false);
-  const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
+  /** The plugin update the chat waits on, which overwrites the Agent's copies of its Skills. */
+  const [confirmingUpdate, setConfirmingUpdate] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const idFieldId = useId();
-
-  const id = agentId.trim();
-  /** A `.tar.gz` records no id: an import needs one named for it (a replace is this Agent's). */
-  const idRequired = replace === undefined && file !== null && isTarPackage(file.name);
-  const idValid = id === "" ? !idRequired : SEMANTIC_ID_PATTERN.test(id);
-  /** More than an import takes: refused here, before a byte of it is sent. */
-  const tooLarge = file !== null && file.size > AGENT_ARCHIVE_MAX_UPLOAD_BYTES;
-  const limit = formatBytes(AGENT_ARCHIVE_MAX_UPLOAD_BYTES);
-  /** Who the migration chat goes to; null in a Project with no Agent, which disables it. */
+  const id = replace?.agentId ?? agentId.trim();
   const chatAgent = pickDefaultAgent(agents);
-  /** Whether that Agent carries the Skill the prompt names (asked only where the section shows). */
-  const porting = usePortingSkill(
-    projectId,
-    replace === undefined ? (chatAgent?.agentId ?? null) : null,
-  );
   const prompt = migrationPrompt(framework, path, projectId);
-  const home = SOURCE_HOME[framework];
-  /** The Agent an overwrite replaces: this one in replace mode, else the one the 409 named. */
-  const target = replace?.agentId ?? taken;
+  const home = sourceOf(framework)?.home;
 
-  /** Over to the chat: the source goes with it, so nothing typed is left to lose. */
-  const goToChat = () => {
+  /** `updateConfirmed`: the update confirmation was answered. */
+  const openChat = async (updateConfirmed = false) => {
     if (prompt === null || chatAgent === null) return;
-    discardUnsaved(form.scope);
-    openAiChat({ agentId: chatAgent.agentId, text: prompt });
-    onClose();
-  };
-  /** The same, through the guard: a picked file does not go with the chat, so it asks first. */
-  const requestChat = useGuardedClose(goToChat, form.scope, { locked: uploading });
-  const openChat = () => (file !== null ? requestChat() : goToChat());
-
-  const installPorting = async () => {
-    if (chatAgent === null) return;
-    if (await porting.install()) {
-      toastSuccess(
-        `${S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent))}${S.agent.takesEffectSuffix}`,
-      );
+    setBusy(true);
+    try {
+      const need = updateConfirmed ? "update" : await portingNeed(projectId, chatAgent.agentId);
+      if (need === "update" && !updateConfirmed) {
+        setConfirmingUpdate(true);
+        setBusy(false);
+        return;
+      }
+      if (need !== "ready") {
+        await installPorting(projectId, chatAgent.agentId);
+        toastSuccess(S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent)));
+      }
+      discardUnsaved(form.scope);
+      openAiChat({ agentId: chatAgent.agentId, text: prompt });
+      onClose();
+    } catch (e) {
+      toastApiError(e);
+      setBusy(false);
     }
-    // The Agent's Skill count moved; its card reads the list.
-    void reloadAgents().catch(() => {});
-  };
-  /**
-   * The install's way in: straight on when it rewrites nothing the Agent has, else through the
-   * update confirmation, as on the Plugins page — it replaces those Skills whole.
-   */
-  const askPorting = () => {
-    if (porting.rewrites !== null && porting.rewrites.length === 0) void installPorting();
-    else setConfirmingPorting(true);
-  };
-  /** The confirmation's action: the install that rewrites the parts it names. */
-  const updatePorting = () => {
-    setConfirmingPorting(false);
-    void installPorting();
   };
 
-  /** A picked file suggests the id from its name (the export's `<id>-<yyyymmdd>.zip`). */
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0];
     e.target.value = "";
     if (!picked) return;
-    const derived = agentIdFromArchiveName(picked.name);
-    form.patch({ file: picked, agentId: SEMANTIC_ID_PATTERN.test(derived) ? derived : "" });
+    form.patch({ file: picked, agentId: agentIdFromArchiveName(picked.name) });
     setTaken(null);
-    setRefusal(null);
   };
 
-  /**
-   * Uploads the picked file under `as` (absent: the id the file records), replacing that Agent's
-   * State with `overwrite`. A taken id without it shows in place; any other refusal under the
-   * button. Landed, the dialog is done with: it says what came in and hands over.
-   */
-  const send = async (overwrite: boolean, as: string | null) => {
-    if (file === null || tooLarge || uploading) return;
-    setUploading(true);
-    setRefusal(null);
+  /** Uploads the file as Agent `id`; `overwrite` replaces that Agent's State. */
+  const send = async (overwrite: boolean) => {
+    if (file === null) return;
+    setBusy(true);
     try {
-      const res = await uploadArchive<AgentArchiveImportResponse>(
-        api.agentImportUrl(
-          projectId,
-          { ...(as !== null && as !== "" ? { agentId: as } : {}), overwrite },
-          machineId,
-        ),
+      const res = await api.importAgentArchive(
+        projectId,
         file,
+        { agentId: id, overwrite },
+        machineId,
       );
-      setConfirming(false);
+      const name = res.agent.name ?? res.agent.agentId;
+      const { imported, skipped } = res.sessions;
+      toastSuccess(S.agent.importDone(name, res.mode === "overwritten", imported, skipped.length));
       discardUnsaved(form.scope);
-      toastSuccess(importReportText(res, agentDisplayName(res.agent)));
-      // A machine's list is that machine's own: the caller reads it.
       if (machineId === null) void reloadAgents().catch(() => {});
-      onImported(res);
+      onImported?.();
+      onClose();
     } catch (e) {
+      if (!overwrite && e instanceof ApiError && e.code === "agent_exists") {
+        setTaken(e.details?.agentId ?? id);
+      } else toastApiError(e);
+      setBusy(false);
       setConfirming(false);
-      if (!overwrite && e instanceof ApiError && e.status === 409 && e.code === "agent_exists") {
-        setTaken(e.details?.agentId ?? as ?? "");
-      } else {
-        setRefusal(apiErrorText(e));
-      }
-    } finally {
-      setUploading(false);
     }
   };
-
-  /** The confirmation's action: the same file again, replacing the State of `target`. */
-  const overwriteFromFile = () => void send(true, target);
-
-  /** "Use another id": the id field, its text selected for typing over. */
-  const focusId = () => {
-    const field = document.getElementById(idFieldId);
-    if (field instanceof HTMLInputElement) {
-      field.focus();
-      field.select();
-    }
-  };
-
-  const pathLabel = framework === "other" ? S.agent.migratePathOther : S.agent.migratePath;
+  const updatePortingAndChat = () => void openChat(true);
+  /** The confirmation's action: the same file again, replacing the existing Agent's State. */
+  const overwriteFromFile = () => void send(true);
 
   return (
     <>
       <Modal
         open
-        title={replace === undefined ? S.agent.importAgent : S.agent.replaceTitle(replace.name)}
+        title={replace ? S.agent.replaceTitle(replace.name) : S.agent.importAgent}
         onClose={requestClose}
         widthClass="sm:max-w-lg"
       >
         <div className="space-y-4">
-          {replace === undefined && (
-            <section>
+          {!replace && (
+            <section className="space-y-3">
               <h3 className="flex items-center gap-1 text-sm font-medium">
                 {S.agent.migrateTitle}
                 <InfoPopover label={S.agent.migrateTitle}>{S.agent.migrateInfo}</InfoPopover>
               </h3>
-              <div className="mt-2.5 space-y-3">
-                <Select
-                  size="sm"
-                  label={S.agent.migrateFramework}
-                  value={framework}
-                  disabled={uploading}
-                  onChange={(e) => form.patch({ framework: e.target.value as MigrationSource })}
-                >
-                  {MIGRATION_SOURCES.map((source) => (
-                    <option key={source} value={source}>
-                      {S.agent.migrateFrameworks[source]}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  size="sm"
-                  label={pathLabel}
-                  required={home === null}
-                  value={path}
-                  placeholder={home ?? ""}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => form.patch({ path: e.target.value })}
-                />
-                <PromptFold
-                  text={prompt ?? S.agent.migratePrompt(null, S.agent.migratePathToken, projectId)}
-                />
-                {chatAgent !== null &&
-                  (porting.status === "missing" || porting.status === "installing") && (
-                    <div role="status" className="space-y-1 text-xs">
-                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className={toneInk.attention}>
-                          {S.agent.migrateSkillMissing(agentDisplayName(chatAgent))}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="link"
-                          disabled={porting.status === "installing"}
-                          aria-busy={porting.status === "installing"}
-                          onClick={askPorting}
-                        >
-                          {porting.status === "installing"
-                            ? S.agent.migrateSkillInstalling
-                            : S.agent.migrateSkillInstall}
-                        </Button>
-                      </p>
-                      {porting.installError !== null && (
-                        <p className={toneInk.danger}>{porting.installError}</p>
-                      )}
-                    </div>
-                  )}
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={
-                      prompt === null || chatAgent === null || porting.holdsChat || uploading
-                    }
-                    onClick={openChat}
-                  >
-                    {S.skills.importOpenChat}
-                  </Button>
-                </div>
-              </div>
+              <Select
+                size="sm"
+                label={S.agent.migrateFramework}
+                value={framework}
+                onChange={(e) => form.patch({ framework: e.target.value as MigrationSource })}
+              >
+                {MIGRATION_SOURCES.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.name}
+                  </option>
+                ))}
+                <option value="other">{S.agent.migrateOther}</option>
+              </Select>
+              <Input
+                size="sm"
+                label={home ? S.agent.migratePath : S.agent.migratePathOther}
+                required={!home}
+                value={path}
+                placeholder={home ?? ""}
+                onChange={(e) => form.patch({ path: e.target.value })}
+              />
+              <PromptFold text={prompt ?? S.agent.migratePrompt(null, "…", projectId)} />
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={prompt === null || chatAgent === null || busy}
+                onClick={() => void openChat()}
+              >
+                {S.skills.importOpenChat}
+              </Button>
             </section>
           )}
-
           <section
-            className={
-              replace === undefined ? "border-t border-gray-200 pt-4 dark:border-gray-800" : ""
-            }
+            className={`space-y-3 ${replace ? "" : "border-t border-gray-200 pt-4 dark:border-gray-800"}`}
           >
-            <h3 className="flex items-center gap-1 text-sm font-medium">
-              {S.agent.importFileTitle}
-              <InfoPopover label={S.agent.importFileTitle}>
-                {replace === undefined ? S.agent.importFileInfo : S.agent.replaceFileInfo}
-              </InfoPopover>
-            </h3>
-            <div className="mt-2.5 space-y-3">
-              <div>
-                {file === null ? (
-                  <label
-                    className={`${ARCHIVE_BUTTON_CLASS} ${uploading ? "pointer-events-none opacity-60" : ""}`}
-                  >
-                    <HiddenFileInput
-                      accept={ARCHIVE_ACCEPT}
-                      disabled={uploading}
-                      onChange={onPickFile}
-                    />
-                    {S.agent.importPick}
-                  </label>
-                ) : (
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
-                      {file.name}
-                    </span>
-                    <button
-                      type="button"
-                      data-tooltip={S.agent.importClearFile}
-                      aria-label={S.agent.importClearFile}
-                      disabled={uploading}
-                      onClick={() => {
-                        form.patch({ file: null, agentId: "" });
-                        setTaken(null);
-                        setRefusal(null);
-                      }}
-                      className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <CloseIcon size={12} />
-                    </button>
-                  </div>
-                )}
-                {tooLarge ? (
-                  <FieldError>{S.agent.importTooLarge(limit)}</FieldError>
-                ) : (
-                  <FieldHint>{S.agent.importFileHint(limit)}</FieldHint>
-                )}
+            <h3 className="text-sm font-medium">{S.agent.importFileTitle}</h3>
+            <div>
+              <div className="flex min-w-0 items-center gap-2">
+                <label className={`${ARCHIVE_BUTTON_CLASS} ${busy ? "pointer-events-none" : ""}`}>
+                  <HiddenFileInput accept={ARCHIVE_ACCEPT} disabled={busy} onChange={onPickFile} />
+                  {S.agent.importPick}
+                </label>
+                <span className="min-w-0 truncate font-mono text-xs">{file?.name}</span>
               </div>
-              {replace === undefined && file !== null && (
-                <div>
-                  <Input
-                    id={idFieldId}
-                    size="sm"
-                    label={S.agent.id}
-                    required={idRequired}
-                    value={agentId}
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={uploading}
-                    onChange={(e) => {
-                      form.patch({ agentId: e.target.value });
-                      setTaken(null);
-                    }}
-                    {...(idValid
-                      ? { hint: idRequired ? S.agent.importIdHintTar : S.agent.importIdHint }
-                      : { error: id === "" ? S.agent.importIdHintTar : S.agent.idHint })}
-                  />
-                  {taken !== null && (
-                    <p
-                      role="alert"
-                      className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-                    >
-                      <span className={toneInk.attention}>{S.agent.importExists(taken)}</span>
-                      <Button size="sm" variant="link" onClick={focusId}>
-                        {S.agent.importRename}
-                      </Button>
-                      {isOwner && (
-                        <Button size="sm" variant="link" onClick={() => setConfirming(true)}>
-                          {S.agent.importOverwrite}
-                        </Button>
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={file === null || tooLarge || !idValid || uploading}
-                  aria-busy={uploading}
-                  onClick={() =>
-                    replace === undefined ? void send(false, id) : setConfirming(true)
-                  }
-                >
-                  {uploading
-                    ? S.agent.importing
-                    : replace === undefined
-                      ? S.agent.importAction
-                      : S.agent.replaceAction}
-                </Button>
-              </div>
-              {refusal !== null && (
-                <p role="alert" className={`text-xs ${toneInk.danger}`}>
-                  {refusal}
-                </p>
-              )}
+              <FieldHint>{S.agent.importFileHint}</FieldHint>
             </div>
+            {!replace && file !== null && (
+              <div>
+                <Input
+                  id={idFieldId}
+                  size="sm"
+                  label={S.agent.id}
+                  required
+                  value={agentId}
+                  onChange={(e) => {
+                    form.patch({ agentId: e.target.value });
+                    setTaken(null);
+                  }}
+                  {...(SEMANTIC_ID_PATTERN.test(id)
+                    ? { hint: S.agent.idHint }
+                    : { error: S.agent.idHint })}
+                />
+                {taken !== null && (
+                  <p role="alert" className="mt-1.5 flex flex-wrap items-center gap-x-3 text-xs">
+                    <span className={toneInk.attention}>{S.agent.importExists(taken)}</span>
+                    <Button
+                      size="sm"
+                      variant="link"
+                      onClick={() => document.getElementById(idFieldId)?.focus()}
+                    >
+                      {S.agent.importRename}
+                    </Button>
+                    {currentProject?.role === "owner" && (
+                      <Button size="sm" variant="link" onClick={() => setConfirming(true)}>
+                        {S.agent.importOverwrite}
+                      </Button>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={file === null || !SEMANTIC_ID_PATTERN.test(id) || busy}
+              onClick={() => (replace ? setConfirming(true) : void send(false))}
+            >
+              {busy ? S.agent.importing : replace ? S.agent.replaceAction : S.agent.importAction}
+            </Button>
           </section>
         </div>
       </Modal>
-
-      {/* The one confirmation before a State is replaced: the dialog stays beneath, so Cancel
-          returns to it; confirming sends the same file with overwrite. */}
       <ConfirmModal
-        open={confirming && file !== null && target !== null}
+        open={confirmingUpdate}
+        title={S.plugins.updateConfirmTitle(PORTING_PLUGIN)}
+        tone="primary"
+        busy={busy}
+        confirmLabel={S.skills.updateAction}
+        cancelLabel={S.common.cancel}
+        onClose={() => setConfirmingUpdate(false)}
+        onConfirm={updatePortingAndChat}
+      >
+        <p className="text-sm text-fg-muted">{S.plugins.updateConfirmWarning(PORTING_PLUGIN)}</p>
+      </ConfirmModal>
+      <ConfirmModal
+        open={confirming && file !== null}
         title={S.agent.overwriteTitle}
         tone="danger"
-        busy={uploading}
-        confirmLabel={replace === undefined ? S.agent.importOverwrite : S.agent.replaceAction}
+        busy={busy}
+        confirmLabel={replace ? S.agent.replaceAction : S.agent.importOverwrite}
         cancelLabel={S.common.cancel}
         onClose={() => setConfirming(false)}
         onConfirm={overwriteFromFile}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {file !== null && target !== null ? S.agent.overwriteBody(target, file.name) : ""}
-        </p>
+        <p className="text-sm text-fg-muted">{S.agent.overwriteBody(id, file?.name ?? "")}</p>
       </ConfirmModal>
-
-      {/* The porting plugin's install over what the Agent already has of it: the Plugins page's
-          update confirmation, naming the parts the reinstall rewrites. */}
-      {confirmingPorting && chatAgent !== null && (
-        <ConfirmModal
-          open
-          title={S.plugins.updateConfirmTitle(PORTING_PLUGIN)}
-          tone="primary"
-          widthClass="sm:max-w-lg"
-          confirmLabel={S.skills.updateAction}
-          cancelLabel={S.common.cancel}
-          onClose={() => setConfirmingPorting(false)}
-          onConfirm={updatePorting}
-        >
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.plugins.updateConfirmWarning(PORTING_PLUGIN)}
-            </p>
-            {porting.rewrites !== null && porting.rewrites.length > 0 && (
-              <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                <li className="px-3 py-1.5 text-xs">
-                  <span className="block truncate">{agentDisplayName(chatAgent)}</span>
-                  <ChangedPartRows parts={porting.rewrites} />
-                </li>
-              </ul>
-            )}
-          </div>
-        </ConfirmModal>
-      )}
     </>
   );
 }

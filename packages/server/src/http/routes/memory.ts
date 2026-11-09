@@ -13,9 +13,9 @@
  * PUT …/agents/:a/config.
  *
  * Import is the one route here that is not a Project-member operation. It follows the Agent
- * archive's split, for the same reason: reading a scope is reading Agent State, which every
+ * import's split, for the same reason: reading a scope is reading Agent State, which every
  * member may do, while writing a whole scope at once can cost the Agent memories no member
- * agreed to lose, as replacing an Agent's State from a file can (../../agent-archive/routes.ts).
+ * agreed to lose (agent-archive.ts, where overwriting an Agent is the owner's).
  *
  * No route accepts an absolute path: a file is addressed by `agentId` + `scopeKey` + a name
  * inside that scope, and MemoryService re-checks that the resolved path stayed inside the

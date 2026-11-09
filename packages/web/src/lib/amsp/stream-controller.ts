@@ -40,8 +40,13 @@
  *   argument, a thinking block) as a preview; `loadBodies` fetches the whole of an
  *   item's folded values when the reader unfolds it and puts them in place.
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/amsp";
-import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp";
+import {
+  isEventMessage,
+  isPartialPayload,
+  type AmspRecord,
+  type ToolCallPayload,
+} from "@prismshadow/amsp";
+
 import type {
   GoalServerEvent,
   HistoryProgress,
@@ -71,8 +76,12 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  type BodyLoad,
+  type ChatItem,
+  type StreamModel,
+  type ThinkingItem,
+  type ToolCallItem,
 } from "./stream-model";
-import type { BodyLoad, ChatItem, StreamModel, ThinkingItem, ToolCallItem } from "./stream-model";
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */

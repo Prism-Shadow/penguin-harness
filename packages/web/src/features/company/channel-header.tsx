@@ -36,8 +36,9 @@ import {
   noAutofill,
   toastSuccess,
   usePortalPanel,
+  type AvatarStackItem,
 } from "@prismshadow/penguin-ui";
-import type { AvatarStackItem } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useProject } from "../../state/project";
@@ -45,8 +46,8 @@ import { Truncated } from "../../components/ui/truncated";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
-import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
-import type { InviteCandidate } from "./channel-list";
+import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
+
 import { parsePrincipal } from "./principals";
 import { toastApiError } from "../../lib/toast-api-error";
 
@@ -134,7 +135,7 @@ function MemberPopover({
               left: position.left,
               width: PANEL_WIDTH,
             }}
-            className={`${menuPanelClass} z-[60] max-h-[60vh]`}
+            className={`${menuPanelClass} z-popover max-h-[60vh]`}
           >
             {members.length === 0 ? (
               <p className="px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">

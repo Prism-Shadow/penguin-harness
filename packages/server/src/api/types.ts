@@ -1411,6 +1411,19 @@ export interface Employment {
 
 export interface AgentsResponse {
   agents: AgentSummary[];
+  /**
+   * The Project's organizations whose `org_chart.yaml` is missing or does not parse; absent when
+   * none. Beyond its CEO, whom such an organization employs is unknown, so `employments` may miss
+   * it — and deleting another organization with its Agents keeps them all (`employment_unknown`).
+   */
+  unreadableCharts?: UnreadableChart[];
+}
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
 }
 
 export interface AgentCreateRequest {
@@ -2461,10 +2474,33 @@ export interface SessionPatchRequest {
  * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
  * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
  * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
  */
 export interface MessagesLiveTail {
   cursor: string;
   fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
 }
 
 /**
@@ -2834,6 +2870,15 @@ export interface TaskCreateRequest {
    */
   interrupt?: boolean;
   /**
+   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
+   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
+   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
+   * apply), and the response carries `steered: true`; a compaction, which has no Task to
+   * steer, or a run already settling, which takes no more steering, queues it as
+   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
+   */
+  steerIfBusy?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2895,8 +2940,10 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy`, `interrupt` or `steerIfBusy` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+  /** True when `steerIfBusy` gave the input to the running Task as steering (no new Task). */
+  steered?: boolean;
 }
 
 /**
@@ -4711,202 +4758,49 @@ export interface ScheduleUpsertRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Agent archive (zip export/import)
-//
-//   GET  /api/projects/:projectId/agents/:agentId/archive?<parts>          the zip, streamed (member)
-//   GET  /api/projects/:projectId/agents/:agentId/archive/preview?<parts>  AgentArchivePreview (member)
-//   POST /api/projects/:projectId/agents/import[?agentId=<id>][&overwrite=1]
-//        body: the raw zip or an old `.tar.gz` Agent State package, `Content-Type:
-//        application/octet-stream` → 201 AgentArchiveImportResponse (member; owner with overwrite)
-//
-// `<parts>` is the query both GETs take: `skills`, `hooks`, `memory`, `workbenches`,
-// `workbenchData` and `schedules` are `0` or `1`, and `traces` is `none`, `last:<N>` (1–500) or
-// `<from>..<to>` (local dates, YYYY-MM-DD). An absent key takes the export dialog's default:
-// skills, hooks, memory, workbenches and workbenchData on; schedules off; traces none.
-//
-// Import errors: 400 `bad_request` for a malformed archive (nothing written), 409
-// `agent_exists` with `details.agentId` when the id is taken and `overwrite` is absent, 403 for
-// a member's `overwrite=1`, 413 `archive_too_large` past a cap.
+// Agent export and import: the zip is the Agent's directory
 // ---------------------------------------------------------------------------
+//   GET  /api/projects/:projectId/agents/:agentId/archive?<AgentArchiveQuery>
+//        → `<agentId>-<yyyymmdd>.zip` attachment (any member; 413 archive_too_large past the
+//        import caps)
+//   POST /api/projects/:projectId/agents/import?agentId=<id>&overwrite=1, the body the raw
+//        `.zip` (or a `.tar.gz` snapshot package exported before) sent as
+//        `application/octet-stream` → 201 AgentArchiveImportResponse (any member creates;
+//        a taken id is 409 `agent_exists` with `details.agentId`; overwrite is the owner's)
 
-/** The largest zip or `.tar.gz` the import takes, as uploaded (413 `archive_too_large` past it). */
-export const AGENT_ARCHIVE_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-
-/** The most Sessions `traces=last:<N>` selects. */
-export const AGENT_ARCHIVE_MAX_LAST_SESSIONS = 500;
-
-/** One selectable slice of an Agent; the config (`system_config.yaml`, `AGENTS.md`, `tools/`) always travels. */
-export type AgentArchivePart =
-  "skills" | "hooks" | "memory" | "workbenches" | "schedules" | "traces";
-
-/** Which Sessions an export carries. A Session travels whole: every `_NNN` file and its row facts. */
-export type TraceSelection =
-  | { kind: "none" }
-  /** The `count` most recently active top-level Sessions, 1–500. */
-  | { kind: "last"; count: number }
-  /** The Sessions whose Trace date directory lies in `from`..`to`: local dates YYYY-MM-DD, inclusive. */
-  | { kind: "range"; from: string; to: string };
-
-/** What an archive carries, beyond the config. */
-export interface AgentArchiveParts {
-  skills: boolean;
-  hooks: boolean;
-  memory: boolean;
-  workbenches: boolean;
-  /** Each workbench's `state.json`; means nothing when `workbenches` is false. */
-  workbenchData: boolean;
-  schedules: boolean;
-  traces: TraceSelection;
-}
-
-/** `manifest.json` at the top of the zip (inside its one top-level directory, or at the root). */
-export interface AgentArchiveManifest {
-  format: "penguin-agent-zip/1";
-  exportedAt: string;
-  exportedBy?: { penguinVersion: string };
-  /** Where it was exported from; absent in a hand-written zip. */
-  source?: { projectId: string; agentId: string; version: number };
-  /** The suggested Agent id, held to the create route's rule (`^[a-z][a-z0-9_]{1,63}$`); the import's `agentId` query overrides it. */
-  agentId: string;
-  name?: string;
-  description?: string;
-  /** What the zip carries. A part marked false is not imported from it, and an overwrite keeps the Agent's own. */
-  parts: AgentArchiveParts;
-  /** The vault's key names; values never travel. */
-  vaultKeys: string[];
+/**
+ * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
+ * its default: all carried but `schedules`, since an imported task runs on its schedule.
+ * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ */
+export interface AgentArchiveQuery {
+  skills?: "0" | "1";
+  hooks?: "0" | "1";
+  memory?: "0" | "1";
+  workbenches?: "0" | "1";
+  workbenchData?: "0" | "1";
+  schedules?: "0" | "1";
   /**
-   * What the export took out: each blanked MCP credential by place (`mcp:<server>:env:<NAME>`,
-   * `…:headers:<NAME>`, `…:oauth:<path>`, `…:url:password`, `…:url:query:<name>`,
-   * `…:args:--<flag>`, `…:args:<scheme>://<host>:password`, `…:args:<scheme>://<host>:query:<name>`;
-   * a URL or a connection string in any other value by that value's place: `…:env:<NAME>:password`,
-   * `…:env:<NAME>:query:<name>`, `…:env:<NAME>:conn:<key>`), and, for the Trace files,
-   * `traces:vault-values:<n>` and `traces:unparsed-lines:<n>` (lines that did not parse, their
-   * values replaced as plain text).
+   * Which Sessions' Traces travel, every file of each: none (the default); the last N by
+   * activity, 1–500, a subagent Session following its parent; or those whose date directory
+   * lies in the range, both ends included.
    */
-  redacted: string[];
-  /** Only when `agent_state/system_config.yaml` is absent: a hand-written Agent (the `agent-porting` Skill writes one). */
-  definition?: AgentArchiveDefinition;
-}
-
-/** A hand-written Agent, applied over a template Agent through the config service (which validates it). */
-export interface AgentArchiveDefinition {
-  /** Credential values empty: the import names them in `toFill`. */
-  mcpServers?: MCPServerConfig[];
-  model?: { thinkingLevel?: ThinkingLevelName; maxTokens?: number; timeoutMs?: number };
-  /** Names kept from the default toolset; a name this install does not ship is reported in `notes`. */
-  tools?: { builtin: string[] };
-}
-
-/** One row of `traces/sessions.json`: the sessions-table facts of a Session the zip carries. */
-export interface ArchivedSessionFacts {
-  sessionId: string;
-  /** How many `_NNN` files the Session has. */
-  files: number;
-  createdAt: string;
-  lastActiveAt: string;
-  title: string | null;
-  archivedAt: string | null;
-  keptAt: string | null;
-  approvalMode: ApprovalMode;
-  thinkingLevel: ThinkingLevelName | null;
-  client: string;
-  workspace: string;
-  provider: string;
-  modelId: string;
-  /** A subagent child that rode along with its parent. */
-  parentSessionId?: string;
-}
-
-/** One Session as the preview names it. */
-export interface AgentArchiveSessionRef {
-  sessionId: string;
-  title: string | null;
-  createdAt: string;
-}
-
-/** What an export with these parts would hold, before it is downloaded. */
-export interface AgentArchivePreview {
-  /**
-   * The zip entries of each selected part, and their bytes (an unselected one reads zero): every
-   * file the part puts in the zip, memory's indexes and markers included; workbenches count their
-   * data too when it is selected.
-   */
-  parts: Record<Exclude<AgentArchivePart, "traces">, { files: number; bytes: number }>;
-  traces: {
-    sessions: number;
-    files: number;
-    bytes: number;
-    /** Selected Sessions left out: one of their files is larger than an import accepts. */
-    skipped: Array<{ sessionId: string; reason: "too_large" }>;
-    newest: AgentArchiveSessionRef | null;
-    oldest: AgentArchiveSessionRef | null;
-  };
-  /**
-   * Uncompressed bytes of everything the zip would hold, config included. The upload cap
-   * (`AGENT_ARCHIVE_MAX_UPLOAD_BYTES`) applies to the compressed zip, which is smaller: compare
-   * against it as "uncompressed".
-   */
-  totalBytes: number;
-  /** How many entries the zip would hold. */
-  entries: number;
-  /**
-   * Why the export would be refused (413 `archive_too_large`), when it would: the selection is
-   * past what an import accepts — more entries than its entry cap (`entries`), more bytes than it
-   * inflates (`inflated`), or one file past its per-entry cap (`entry`, `subject` naming it).
-   * `limit` is the cap in entries or bytes.
-   */
-  refusal?: { reason: "entries" | "inflated" | "entry"; limit: number; subject?: string };
-  vaultKeys: string[];
-  redacted: string[];
-  /** What the export leaves out besides the rules, e.g. a part whose directory is a link. */
-  notes: AgentArchiveNote[];
-}
-
-/** What an archive note is about, for a client to say in its own language. */
-export type AgentArchiveNoteCode =
-  /** The definition named a built-in tool this install does not ship (`subject`: the tool). */
-  | "unknown_tool"
-  /** None of the definition's built-in tools exist here; the toolset was kept. */
-  | "no_known_tools"
-  /** A part's directory (or `tools/`) is a link, so the export leaves it out (`subject`: the directory). */
-  | "link_skipped"
-  /** The overwritten Agent's own config did not parse, so no blanked credential was filled from it. */
-  | "current_config_invalid";
-
-/** One note of a preview or an import: a code to localize, what it is about, and an English sentence. */
-export interface AgentArchiveNote {
-  code: AgentArchiveNoteCode;
-  subject?: string;
-  message: string;
+  traces?: "none" | `last:${number}` | `${string}..${string}`;
 }
 
 export interface AgentArchiveImportResponse {
-  agent: AgentSummary;
+  agent: Pick<AgentSummary, "agentId" | "name" | "description">;
   mode: "created" | "overwritten";
-  /** The Agent State version adopted from the file. */
+  /** The Agent State version the package carried. */
   version: number;
-  /** The version the Agent had before (overwrite only). */
-  previousVersion?: number;
-  /** The snapshot written before an overwrite: `snapshots/import-backup-v<N>-<time>-<rand>.tar.gz`. */
+  /** Overwrite only: the snapshot of the replaced State, a file name in the Agent's `snapshots/`. */
   backup?: string;
-  imported: {
-    skills: number;
-    hooks: number;
-    /** Memories as the Agent card's `memoryCount` counts them: topic files, not indexes or markers. */
-    memoryFiles: number;
-    workbenches: number;
-    schedules: number;
-    traces: { sessions: number; files: number };
+  sessions: {
+    /** Sessions whose Traces landed as Sessions of this Agent. */
+    imported: number;
+    /** The package's Sessions this install already has, by id: their Traces were not imported. */
+    skipped: string[];
   };
-  /**
-   * `exists`: a Session with that id (letter case aside) is already in this install; `invalid`:
-   * its files or its row do not hold up, or it could not be moved in (`detail` says which).
-   */
-  skippedTraces: Array<{ sessionId: string; reason: "exists" | "invalid"; detail?: string }>;
-  /** What the user must set: vault key names and blanked MCP values (as in `AgentArchiveManifest.redacted`). */
-  toFill: string[];
-  /** Anything else worth saying, e.g. a built-in tool the definition named that this install lacks. */
-  notes: AgentArchiveNote[];
 }
 
 // ---------------------------------------------------------------------------
@@ -4953,8 +4847,8 @@ export interface BenchmarkEvaluation {
   provider: string;
   /** Thinking level read from the unchanged Target Agent configuration. */
   thinkingLevel: string;
-  /** Agent State version number under test. */
-  version: number;
+  /** Agent State version under test: a build number, or a version label such as a semver string. */
+  version: number | string;
   /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
   /** Model-written average of known Case costs; null when every Case cost is unknown. */
@@ -5671,6 +5565,23 @@ export interface DesktopTrayCommandMessage {
 }
 
 /**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent**. Real session ids always start with `session-`, so there's
+ * no collision; nor with parked draft conversations, whose route ids start with `draft-`.
+ * Shared so the desktop tray's "New Session" opens the same draft route the Web App uses.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/**
+ * The session cookie's name as every non-browser client spells it (a browser's carries the
+ * server's port; auth/middleware.ts): the CLI, a server speaking to a machine it holds, and the
+ * desktop shell that mints its window's session. Shared so they all write the cookie the server
+ * reads.
+ */
+export const SESSION_COOKIE = "penguin_session";
+
+/**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
  * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
  * seam authenticates the cookie and the Origin there and hands the socket to the platform,
@@ -5760,25 +5671,74 @@ export interface DesktopOpenPrivacySettingsMessage {
  * A native action the host process can run on the page's behalf — what the desktop shell's
  * application menu used to offer, reached from the command palette instead (the menu bar
  * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ *
+ * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
+ * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
+ * someone reading a console error has to be told a key. Naming it here makes it findable.
+ * It stays a HOST command, run by the shell on its own window: the page is a plain browser
+ * environment with no bridge of its own, and adding one for this was rejected
+ * (packages/desktop/src/main.ts).
+ *
+ * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
+ * writes it. What this list holds is the ids this build has its OWN words for, so the page
+ * can show a better label than the host sent (translated, with search terms). An id absent
+ * here is still offered, still runnable, and shown in the host's words.
  */
-export const HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
 export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+
+/**
+ * One command the host offers, carrying the words to show for it.
+ *
+ * The words travel WITH the command because the three programs involved ship apart: the
+ * shell reaches users through an installer, the server and the page through a hot push. A
+ * page that could only render commands it already had words for made the offer list pointless
+ * — a host could never offer anything new — and reading words it did not have blanked it.
+ *
+ * `command` is opaque to both server and page: the host decides what it means and the host
+ * runs it. Neither side validates it against a list of its own; the only question either asks
+ * is whether the host offered it.
+ */
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
 
 /** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
 export interface HostCommandsMessage {
   type: "host-commands";
-  commands: HostCommand[];
+  commands: HostCommandOffer[];
 }
 
-/** `GET /api/command` (admin): the commands the host offers — empty under a plain server, or before the shell's push. */
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
 export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
   commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
 }
 
 /** Server → shell: run one. `POST /api/command/:command` sends it. */
 export interface HostCommandMessage {
   type: "host-command";
-  command: HostCommand;
+  command: string;
 }
 
 /**
@@ -5786,6 +5746,21 @@ export interface HostCommandMessage {
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+export const UPDATE_REFUSAL_MARKERS: readonly string[] = [
+  "runs from a source checkout", // sourceCheckout
+  "Cannot tell how this penguin was installed", // unknownInstall
+  "could not be identified", // npmUnknownManager
+  "does not run on Windows", // windowsUnsupported
+  "cannot run your package manager for you", // windowsGlobalInstall
+];
+
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
   /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
@@ -6483,6 +6458,35 @@ export interface OrganizationSummary {
 
 export interface OrganizationsResponse {
   organizations: OrganizationSummary[];
+}
+
+/**
+ * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
+ * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
+ * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
+ * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
+ * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
+ * Project still employs it, or another organization's chart cannot be read. Every other
+ * employee is kept with its reason. Without the flag the three lists are empty.
+ */
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }
 
 export interface OrgEmployeeItem {

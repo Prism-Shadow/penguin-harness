@@ -30,16 +30,10 @@
  * a loopback target, only for a sign-in made to a loopback server, and only outside a Session
  * (PENGUIN_SESSION_ID unset): inside one the command is an Agent's, and the refusal is the
  * point. Every other request goes exactly as above.
- *
- * An archive travels raw, never as base64 JSON: `download` streams a binary GET to disk and
- * `upload` sends bytes or a file stream as the body (`application/octet-stream`).
  */
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { readSession } from "./auth-session.js";
@@ -138,30 +132,6 @@ function readStoredSignIn(root: string): string | null {
   } catch {
     return null;
   }
-}
-
-/** Builds one attempt of a request: a retry builds it again, since a streamed body is spent by the first. */
-type Attempt = () => RequestInit;
-
-/** A raw request body (`upload`): bytes in memory, or a stream, opened once per attempt. */
-export type UploadBody = Uint8Array | (() => Readable);
-
-/**
- * The attachment filename a Content-Disposition header names — the RFC 5987 `filename*` first,
- * then the plain `filename` — or null when it names none. Only a name: the caller decides where it
- * goes, and must keep it from leaving the directory it chose.
- */
-export function attachmentName(disposition: string | null): string | null {
-  if (disposition === null) return null;
-  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
-  if (encoded !== undefined) {
-    try {
-      return decodeURIComponent(encoded.trim());
-    } catch {
-      // A malformed escape: fall back to the plain name.
-    }
-  }
-  return /filename="([^"]+)"/i.exec(disposition)?.[1] ?? null;
 }
 
 /** The error code of a JSON error body (`{error: {code}}`), or null for any other body. */
@@ -334,87 +304,11 @@ export class ServerClient {
    * carrying the server's code and message.
    */
   async request<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
-    const init: RequestInit = {
+    const res = await this.fetchAuthed(apiPath, {
       method,
       headers: this.headers(body !== undefined ? { "content-type": "application/json" } : {}),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    };
-    return this.parsed<T>(await this.fetchAuthed(apiPath, () => init));
-  }
-
-  /**
-   * One request whose body is raw bytes, not JSON — an archive upload — answered like `request`.
-   * A stream body is opened anew for every attempt, since a retried request (see fetchAuthed)
-   * needs its body again, and every stream opened is closed once the answer is in.
-   */
-  async upload<T>(
-    method: string,
-    apiPath: string,
-    body: UploadBody,
-    contentType = "application/octet-stream",
-  ): Promise<T> {
-    const opened: Readable[] = [];
-    try {
-      const res = await this.fetchAuthed(apiPath, () => {
-        const headers = this.headers({ "content-type": contentType });
-        if (typeof body !== "function") return { method, headers, body };
-        const stream = body();
-        opened.push(stream);
-        return { method, headers, body: Readable.toWeb(stream) as ReadableStream, duplex: "half" };
-      });
-      return await this.parsed<T>(res);
-    } finally {
-      for (const stream of opened) stream.destroy();
-    }
-  }
-
-  /**
-   * One binary GET streamed to disk. `target` picks the path from the attachment filename the
-   * server named in Content-Disposition (null when it named none), once the answer is known to be
-   * a success. The body goes to a temporary file beside that path, renamed into place when it is
-   * complete, so a download that breaks off leaves nothing behind. Answers the path and the bytes
-   * written; auth and errors as in `request`.
-   */
-  async download(
-    apiPath: string,
-    target: (fileName: string | null) => Promise<string>,
-  ): Promise<{ file: string; bytes: number }> {
-    const res = await this.fetchAuthed(apiPath, () => ({ headers: this.headers() }));
-    if (!res.ok) throw await this.toError(res);
-    let file: string;
-    try {
-      file = await target(attachmentName(res.headers.get("content-disposition")));
-    } catch (err) {
-      void res.body?.cancel();
-      throw err;
-    }
-    const partial = `${file}.${randomBytes(4).toString("hex")}.part`;
-    const sink = fs.createWriteStream(partial, { flags: "wx" });
-    let bytes = 0;
-    try {
-      const body = res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() });
-      await pipeline(
-        Readable.fromWeb(body as import("node:stream/web").ReadableStream<Uint8Array>),
-        async function* (source: AsyncIterable<Uint8Array>) {
-          for await (const chunk of source) {
-            bytes += chunk.byteLength;
-            yield chunk;
-          }
-        },
-        sink,
-      );
-      await fs.promises.rename(partial, file);
-    } catch (err) {
-      // Removed once closed: on Windows an open handle can keep the file on disk.
-      if (!sink.closed) await new Promise<void>((resolve) => sink.once("close", () => resolve()));
-      await fs.promises.rm(partial, { force: true });
-      throw err;
-    }
-    return { file, bytes };
-  }
-
-  /** A response as `request` answers it: the parsed JSON body, nothing for an empty one, an ApiError for a non-2xx. */
-  private async parsed<T>(res: Response): Promise<T> {
+    });
     if (!res.ok) throw await this.toError(res);
     if (res.status === 204 || res.headers.get("content-length") === "0") {
       void res.body?.cancel();
@@ -424,19 +318,29 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
+  /** A file upload or download: `request`'s credentials and errors, the body and answer raw. */
+  async raw(method: string, apiPath: string, body?: Uint8Array): Promise<Response> {
+    const res = await this.fetchAuthed(apiPath, {
+      method,
+      headers: this.headers(body ? { "content-type": "application/octet-stream" } : {}),
+      ...(body ? { body } : {}),
+    });
+    if (!res.ok) throw await this.toError(res);
+    return res;
+  }
+
   /**
    * The authenticated fetch: the one-shot 401 file-token refresh, then the one-shot retry of a
-   * 403 `human_required` as the person's stored sign-in. `attempt` builds the request each time it
-   * is sent, so a retry carries a body of its own.
+   * 403 `human_required` as the person's stored sign-in.
    */
-  private async fetchAuthed(apiPath: string, attempt: Attempt): Promise<Response> {
-    const res = await this.fetchWithToken(apiPath, attempt);
-    return res.status === 403 ? this.retryAsPerson(apiPath, attempt, res) : res;
+  private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await this.fetchWithToken(apiPath, init);
+    return res.status === 403 ? this.retryAsPerson(apiPath, init, res) : res;
   }
 
   /** The token's fetch, with the one-shot 401 file-token refresh. */
-  private async fetchWithToken(apiPath: string, attempt: Attempt): Promise<Response> {
-    const res = await fetch(`${this.conn.baseUrl}${apiPath}`, attempt());
+  private async fetchWithToken(apiPath: string, init: RequestInit): Promise<Response> {
+    const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);
     if (res.status !== 401) return res;
     if (this.tokenSource === "env" || !this.conn.loopback) return res;
     const fresh = readTokenFile(this.conn.root);
@@ -444,7 +348,6 @@ export class ServerClient {
     void res.body?.cancel();
     this.token = fresh;
     this.tokenSource = "file";
-    const init = attempt();
     const headers = { ...(init.headers as Record<string, string>), ...this.headers() };
     return fetch(`${this.conn.baseUrl}${apiPath}`, { ...init, headers });
   }
@@ -458,14 +361,13 @@ export class ServerClient {
    */
   private async retryAsPerson(
     apiPath: string,
-    attempt: Attempt,
+    init: RequestInit,
     refused: Response,
   ): Promise<Response> {
     if (!this.conn.loopback) return refused;
     const signIn = readStoredSignIn(this.conn.root);
     if (signIn === null) return refused;
     if ((await errorCodeOf(refused.clone())) !== HUMAN_REQUIRED) return refused;
-    const init = attempt();
     const headers: Record<string, string> = { cookie: `${SESSION_COOKIE}=${signIn}` };
     for (const [name, value] of Object.entries((init.headers ?? {}) as Record<string, string>)) {
       if (name.toLowerCase() !== "authorization") headers[name] = value;
@@ -514,14 +416,13 @@ export class ServerClient {
    * `signal` ends the generator quietly.
    */
   async *sse(apiPath: string, opts: { lastEventId?: string; signal?: AbortSignal } = {}) {
-    const init: RequestInit = {
+    const res = await this.fetchAuthed(apiPath, {
       headers: this.headers({
         accept: "text/event-stream",
         ...(opts.lastEventId !== undefined ? { "last-event-id": opts.lastEventId } : {}),
       }),
       ...(opts.signal ? { signal: opts.signal } : {}),
-    };
-    const res = await this.fetchAuthed(apiPath, () => init);
+    });
     if (!res.ok || res.body === null) throw await this.toError(res);
     yield* parseSseBody(res.body, opts.signal);
   }

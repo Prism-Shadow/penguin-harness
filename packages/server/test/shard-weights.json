@@ -10,6 +10,7 @@
   "test/agent-mcp-servers.test.ts": 2.3,
   "test/agent-state-handover.test.ts": 1.3,
   "test/agent-trace-detail.test.ts": 8.9,
+  "test/agent-transfer.test.ts": 13.4,
   "test/agents-delete-employed.test.ts": 3.5,
   "test/amsp-routes.test.ts": 5.4,
   "test/api-token.test.ts": 6.3,

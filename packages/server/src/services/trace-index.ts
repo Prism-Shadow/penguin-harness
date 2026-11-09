@@ -295,11 +295,9 @@ export class TraceIndexService implements TraceIndex {
   }
 
   /**
-   * Write-time registration for the Trace imports: the caller has the file's identity in hand,
-   * and for a Session's earliest file its parsed head records too, so the row (and, with the
-   * records, the Session's facts) are stored synchronously with zero additional IO. A later
-   * file of the Session comes without records and registers its row only: the facts are the
-   * earliest file's.
+   * Write-time registration for the Trace import route: the caller has the file's
+   * identity AND parsed records in hand, so the row and facts are stored synchronously
+   * with zero additional IO.
    */
   registerImportedFile(args: {
     projectId: string;
@@ -308,7 +306,7 @@ export class TraceIndexService implements TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    records?: AmspRecord[];
+    records: AmspRecord[];
   }): void {
     this.repo.upsertFile({
       projectId: args.projectId,
@@ -318,11 +316,9 @@ export class TraceIndexService implements TraceIndex {
       date: args.date,
       sizeBytes: args.sizeBytes,
     });
-    if (args.records !== undefined) {
-      const facts = factsFromRecords(args.projectId, args.agentId, args.sessionId, args.records);
-      this.repo.upsertSession(facts);
-      if (facts.metaRead) this.sources?.set(args.sessionId, facts.source);
-    }
+    const facts = factsFromRecords(args.projectId, args.agentId, args.sessionId, args.records);
+    this.repo.upsertSession(facts);
+    if (facts.metaRead) this.sources?.set(args.sessionId, facts.source);
     // The write moved the directory mtimes: drop the gate so the next reconcile re-syncs
     // (cheap — the import's own rows are already upserted; the pass just confirms).
     this.seen.delete(`${args.projectId}\0${args.agentId}`);

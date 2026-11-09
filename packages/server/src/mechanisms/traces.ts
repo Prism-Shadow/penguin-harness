@@ -44,11 +44,10 @@ import type {
 import type {
   ForkTraceResult,
   HistoryTraceFile,
+  ImportedSession,
   HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
-  StagedTraceImport,
-  StagedTraceSession,
 } from "../services/trace-service.js";
 import type { MessageCursor } from "../services/message-window.js";
 
@@ -115,8 +114,7 @@ export abstract class TraceIndex {
     fileIndex: number;
     date: string;
     sizeBytes: number;
-    /** The earliest file's head records; absent for a Session's later files. */
-    records?: AmspRecord[];
+    records: AmspRecord[];
   }): void;
   abstract removeSession(projectId: string, agentId: string, sessionId: string): void;
   abstract removeAgent(projectId: string, agentId: string): void;
@@ -222,14 +220,9 @@ export abstract class Traces {
     agentId: string,
     content: string,
   ): Promise<TraceImportResponse>;
-  /**
-   * Moves whole Sessions staged by an Agent archive import into the Agent's Trace directory and
-   * registers each as a Session with its recorded facts; one whose id the install already knows,
-   * or whose files do not hold up, is skipped and reported instead.
-   */
-  abstract importTraceFiles(
+  abstract importSessions(
     projectId: string,
     agentId: string,
-    sessions: readonly StagedTraceSession[],
-  ): Promise<StagedTraceImport>;
+    sessions: readonly ImportedSession[],
+  ): Promise<{ imported: number; skipped: string[] }>;
 }
