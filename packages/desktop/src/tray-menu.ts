@@ -12,6 +12,7 @@
  * on it. Six strings is the whole surface, and the type below makes a missing translation a
  * compile error rather than a menu that silently falls back to English.
  */
+import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 
 /** What a menu entry does when it is clicked. */
 export type TrayAction = "open" | "new-session" | "models" | "toggle-close-to-tray" | "quit";
@@ -28,12 +29,11 @@ export interface TrayMenuItem {
  *
  * "New Session" is the draft route and not `/chat`: the chat page with no session in the path
  * redirects to the most recent conversation, so a bare `/chat` reopens the last session rather
- * than starting one. `new` is the Web App's draft sentinel (`DRAFT_SESSION_ID` in
- * features/chat/draft-sessions.ts), repeated here because this package does not depend on the Web
- * App — the test pins the two together.
+ * than starting one. The draft sentinel is the one the Web App routes on (`DRAFT_SESSION_ID`,
+ * shared through the server's API contract).
  */
 export const TRAY_NAV_PATHS: Record<"new-session" | "models", string> = {
-  "new-session": "/chat/new",
+  "new-session": `/chat/${DRAFT_SESSION_ID}`,
   models: "/models",
 };
 

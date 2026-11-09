@@ -4,7 +4,7 @@ import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismsh
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { pillClass } from "../workspace";
-import { employeesLast, isEmployee } from "./agent-employment";
+import { employeesLast, isEmployee } from "../../lib/agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({

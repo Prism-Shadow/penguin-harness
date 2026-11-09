@@ -1,4 +1,15 @@
 import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
+
+/**
+ * The selectable thinking tiers as each language lists them, built from the list the flag and
+ * /thinking validate against, so the printed ladder is always the accepted one (#322).
+ */
+const listLevels = (separator: string, last: string): string =>
+  `${DEFAULT_CHAT_THINKING_LEVELS.slice(0, -1).join(separator)}${last}${DEFAULT_CHAT_THINKING_LEVELS.at(-1)}`;
+const EN_LEVELS = listLevels(", ", ", or ");
+const ZH_LEVELS = listLevels("、", " 或 ");
+const LEVEL_CHOICES = DEFAULT_CHAT_THINKING_LEVELS.join("|");
 
 /**
  * CLI text internationalization (i18n).
@@ -1225,8 +1236,7 @@ const en: Messages = {
     workspace: "Workspace directory; must already exist (defaults to the current directory)",
     approve:
       "Approval mode: allow-all (auto-approve, default), deny-all (auto-reject), read-only (auto-approve read-only tools, prompt for the rest), always-ask (prompt per tool)",
-    thinking:
-      "Thinking level for this session: low, medium, high, xhigh, or max (defaults to the Agent's configured level)",
+    thinking: `Thinking level for this session: ${EN_LEVELS} (defaults to the Agent's configured level)`,
     json: "Print raw JSON instead of the rendered output",
     server:
       "Server URL to connect to (defaults to PENGUIN_API_URL, then the local running server, then auto-start)",
@@ -2233,13 +2243,12 @@ const en: Messages = {
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
   goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
   thinkingCurrent: (level) =>
-    `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
+    `[thinking] level: ${level} (this Session's) — change with /thinking <${LEVEL_CHOICES}>`,
   thinkingSet: (level) =>
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingHeld: (level) =>
     `[thinking] the new conversation will be pinned to ${level} (the Agent config is unchanged)`,
-  thinkingInvalid: (value) =>
-    `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
+  thinkingInvalid: (value) => `Invalid thinking level "${value}". Use ${EN_LEVELS}.`,
   switchModelCurrent: (model) =>
     `[model switch] current model: ${model} — switch with /switch-model <provider> <model_id> (the context is compacted on the current model first)`,
   switchModelUsage: () =>
@@ -2385,7 +2394,7 @@ const zh: Messages = {
     workspace: "Workspace 目录，须为已存在目录（默认当前目录）",
     approve:
       "审批模式：allow-all（全部放行，缺省）、deny-all（全部拒绝）、read-only（自动放行只读工具，其余仍逐个询问）、always-ask（逐个询问）",
-    thinking: "本会话的思考等级：low、medium、high、xhigh 或 max（缺省用 Agent 配置的等级）",
+    thinking: `本会话的思考等级：${ZH_LEVELS}（缺省用 Agent 配置的等级）`,
     json: "输出原始 JSON，不做渲染",
     server: "要连接的服务器地址（缺省依次取 PENGUIN_API_URL、本机运行中的服务器、自动拉起）",
     timeout:
@@ -3323,11 +3332,11 @@ const zh: Messages = {
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
   goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
   thinkingCurrent: (level) =>
-    `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
+    `[思考] 当前等级：${level}（本 Session）——用 /thinking <${LEVEL_CHOICES}> 修改`,
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingHeld: (level) => `[思考] 新对话的等级将钉为 ${level}（不改动 Agent 配置）`,
-  thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
+  thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 ${ZH_LEVELS}。`,
   switchModelCurrent: (model) =>
     `[切换模型] 当前模型：${model}——用 /switch-model <provider> <model_id> 切换（会先用当前模型压缩上下文）`,
   switchModelUsage: () =>

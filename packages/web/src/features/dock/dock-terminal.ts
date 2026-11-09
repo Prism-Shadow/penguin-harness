@@ -40,6 +40,7 @@ import {
   togglePanelShown,
   type DockPosition,
 } from "./dock-state";
+import { revealDocks } from "./dock-reveal";
 
 /** The terminal panel's id in the registry and the dock store (and its stored tab key). */
 export const TERMINAL_PANEL = "terminal";
@@ -306,21 +307,29 @@ export function toggleTerminal(): boolean {
 // where the shortcut is silently dead — an effect runs after paint, and a keypress can land
 // in between. The store is page-global anyway; where no Session is on screen (a draft, the
 // login page, /terminal) the toggle declines unless it has tabs to flip. The chord itself is
-// the keymap's: the window dispatcher matches it and calls this handler.
-onCommand("terminal.toggle", toggleTerminal);
+// the keymap's: the window dispatcher matches it and calls this handler. Every dock command
+// that acts first brings back the window holding the docks (dock-reveal.ts): with a workbench tab
+// shown over Chat, the key switches to Chat and then does what it does there.
+onCommand("terminal.toggle", () => {
+  if (!toggleTerminal()) return false;
+  revealDocks();
+});
 // The other dock commands live here for the same reason: the store (dock-state.ts) stays
 // free of the dispatcher, and this module is evaluated wherever the docks can appear. Each
 // declines on a page without docks (the browser's own key then runs): a toggle there would
 // flip nothing visible. A new terminal also declines without a Session to own it (a draft).
 onCommand("terminal.new", () => {
   if (dockSessionId() === null) return false;
+  revealDocks();
   void createShell();
 });
 onCommand("dock.toggleRight", () => {
   if (!docksOnScreen()) return false;
+  revealDocks();
   toggleDock("right");
 });
 onCommand("dock.toggleBottom", () => {
   if (!docksOnScreen()) return false;
+  revealDocks();
   toggleDock("bottom");
 });
