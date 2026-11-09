@@ -108,6 +108,7 @@ describe("groupModelRows", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "zhipu",
       "moonshot",
       "minimax",

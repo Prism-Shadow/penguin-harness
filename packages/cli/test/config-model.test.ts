@@ -496,12 +496,19 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(direct).not.toContain("client_type=");
   });
 
-  it("OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate take a hand-added model, stored bare so it follows the group", async () => {
-    // The five gateways list a fraction of what they serve. A model added there stores only
+  it("OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate and Standard Compute take a hand-added model, stored bare so it follows the group", async () => {
+    // The six gateways list a fraction of what they serve. A model added there stores only
     // its pair: the endpoint and protocol come from the group's table, which a new Project's
     // file carries, so a later change to the group (a proxy, a protocol) reaches it like the
     // presets.
-    for (const provider of ["openrouter", "tokendance", "siliconflow", "atlascloud", "runcrate"]) {
+    for (const provider of [
+      "openrouter",
+      "tokendance",
+      "siliconflow",
+      "atlascloud",
+      "runcrate",
+      "standardcompute",
+    ]) {
       const added = await runModel([
         "add",
         "--model-id",
@@ -516,7 +523,14 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     const parsed = parseToml(
       await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
     ) as { models: Array<Record<string, unknown>> };
-    for (const provider of ["openrouter", "tokendance", "siliconflow", "atlascloud", "runcrate"]) {
+    for (const provider of [
+      "openrouter",
+      "tokendance",
+      "siliconflow",
+      "atlascloud",
+      "runcrate",
+      "standardcompute",
+    ]) {
       const row = parsed.models.find(
         (m) => m.provider === provider && m.model_id === "acme/some-model",
       );

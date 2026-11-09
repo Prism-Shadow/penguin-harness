@@ -79,6 +79,7 @@ describe("protocolPathForModel", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",

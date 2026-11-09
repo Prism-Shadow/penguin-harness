@@ -108,6 +108,7 @@ describe("model-catalog", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "zhipu",
       "moonshot",
       "minimax",
@@ -405,6 +406,10 @@ describe("model-catalog", () => {
       "deepseek-ai/DeepSeek-V4.1-Flash",
       "Qwen/Qwen3.8-27B",
       "Qwen/Qwen3.8-Flash-Next",
+      // Standard Compute bills by plan and its catalog API lists no per-token rate. Recording
+      // $0 would likewise badge a billed gateway "Free".
+      "deepseek/deepseek-v4-pro",
+      "StandardCompute",
     ]);
     for (const m of MODEL_CATALOG) {
       if (m.pricing === undefined) {
@@ -692,6 +697,7 @@ describe("model-catalog", () => {
       siliconflow: BOTH,
       atlascloud: BOTH,
       runcrate: BOTH,
+      standardcompute: BOTH,
       "qwen-pay-as-you-go": BOTH,
       "qwen-token-plan": BOTH,
       modelscope: BOTH,
@@ -938,6 +944,21 @@ describe("model-catalog", () => {
     expect(rcBilled("deepseek-ai/DeepSeek-V4.1-Flash")).toEqual([0.00441, 0.147, 0.441]);
     expect(rcBilled("Qwen/Qwen3.6-35B-A3B")).toEqual([0.01575, 0.105, 0.9975]);
     expect(rcBilled("zai-org/GLM-5.3")).toEqual([0.13125, 0.590625, 2.625]);
+    const sc = MODEL_CATALOG.filter((m) => m.provider === "standardcompute");
+    // Dictionary order by upstream id, case ignored, the ids exactly as the gateway's catalog
+    // API lists them: the routed `StandardCompute` id and one pinned id. Context windows from
+    // the same listing; the routed id lists no input modalities, so both rows are text only.
+    expect(sc.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek/deepseek-v4-pro", 1048576, false],
+      ["StandardCompute", 1000000, false],
+    ]);
+    for (const m of sc) {
+      expect(m.clientType).toBe("openai-chat");
+      expect(m.baseUrl).toBe("https://api.stdcmpt.com/v1");
+      expect(m.discount).toBeUndefined();
+      // The gateway bills by plan and lists no per-token price: unknown, not a $0 tier.
+      expect(m.pricing).toBeUndefined();
+    }
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
     expect(qtp.map((m) => m.modelId)).toEqual([
       "deepseek-v4.1-flash",
@@ -1235,6 +1256,7 @@ describe("model-catalog", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -1262,6 +1284,7 @@ describe("model-catalog", () => {
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
     expect(providerInfo("atlascloud")!.gatewayBaseUrl).toBe("https://api.atlascloud.ai/v1");
     expect(providerInfo("runcrate")!.gatewayBaseUrl).toBe("https://api.runcrate.ai/v1");
+    expect(providerInfo("standardcompute")!.gatewayBaseUrl).toBe("https://api.stdcmpt.com/v1");
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     expect(providerInfo("modelscope")!.gatewayBaseUrl).toBe(
       "https://api-inference.modelscope.cn/v1",
@@ -1272,6 +1295,7 @@ describe("model-catalog", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -1283,7 +1307,7 @@ describe("model-catalog", () => {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...ac, ...rc, ...td, ...qtp, ...qpayg, ...ms];
+    const gateway = [...or, ...fw, ...sf, ...ac, ...rc, ...sc, ...td, ...qtp, ...qpayg, ...ms];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
@@ -1877,7 +1901,7 @@ describe("MMSP's clients as the catalog reads them", () => {
     expect(isVendorGroup("my-own-group")).toBe(false);
   });
 
-  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate and user-defined groups take hand-added models, no other built-in group does", () => {
+  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate, Standard Compute and user-defined groups take hand-added models, no other built-in group does", () => {
     const open = [
       "custom",
       "vllm",
@@ -1886,6 +1910,7 @@ describe("MMSP's clients as the catalog reads them", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
     ];
     for (const id of [...open, "my-own-group"]) {
       expect(isAddableGroup(id), id).toBe(true);
@@ -1919,6 +1944,7 @@ describe("MMSP's clients as the catalog reads them", () => {
       "siliconflow",
       "atlascloud",
       "runcrate",
+      "standardcompute",
       "my-own-group",
     ]) {
       expect(unaddableModel(id, "someone/new-model"), id).toBe(false);
