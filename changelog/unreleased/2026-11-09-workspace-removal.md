@@ -3,6 +3,7 @@
 - **Date:** 2026-11-09
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1511](https://github.com/Prism-Shadow/penguin-harness/pull/1511)
 
 [中文版](2026-11-09-workspace-removal.zh.md)
 
