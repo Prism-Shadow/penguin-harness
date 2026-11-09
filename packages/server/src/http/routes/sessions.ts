@@ -1142,6 +1142,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     if (interrupt && (goal || body.queueIfBusy === true)) {
       throw badRequest("interrupt cannot be combined with queueIfBusy or goal.");
     }
+    // Steer-if-busy hands the input to the running Task, so it can neither stop that Task nor
+    // open a goal; with queueIfBusy it is redundant (a Session it cannot steer queues anyway).
+    const steerIfBusy = body.steerIfBusy === true;
+    if (steerIfBusy && (interrupt || goal)) {
+      throw badRequest("steerIfBusy cannot be combined with interrupt or goal.");
+    }
     // A person starting a run is who it acts for; the API token is an agent (or a tool) on
     // somebody's behalf, and leaves the Session's driver as it was.
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
@@ -1187,7 +1193,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // running, without queueIfBusy — never writes bytes it would then have to take back. The
     // authoritative check still runs under the Session lock inside startTask; this one is
     // lock-free and may pass on a race, which the cleanup below covers.
-    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt });
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy, interrupt, steerIfBusy });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
@@ -1201,17 +1207,27 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
+      // Steering starts no run, so a steered message leaves the driver as it was (as POST /steer
+      // does): with steerIfBusy the note waits for the outcome.
+      if (driver !== null && !steerIfBusy) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-      const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+      const { sessionId, queued, steered } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
         interrupt,
-        // Original content, kept while the input waits in the follow-up queue so a recall
-        // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
+        steerIfBusy,
+        // Original content, kept while the input waits in the follow-up queue (or as undelivered
+        // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
+        // unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
-      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
-      return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+      if (driver !== null && steered !== true) {
+        if (steerIfBusy) deps.drivers?.note(row.sessionId, driver);
+        if (sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
+      }
+      return c.json(
+        { sessionId, queued, ...(steered ? { steered } : {}) } satisfies TaskCreateResponse,
+        202,
+      );
     } catch (err) {
       // The Task never started, so nothing references these files and nothing will ever clean
       // them up — and the Web keeps the chips on failure, so the user's retry would otherwise

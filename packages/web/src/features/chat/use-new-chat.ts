@@ -9,7 +9,7 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
-import { DRAFT_SESSION_ID } from "./chat-page";
+import { DRAFT_SESSION_ID } from "./draft-sessions";
 import { prepareNewChatDraft } from "./new-chat";
 
 export function useNewChat(): () => void {

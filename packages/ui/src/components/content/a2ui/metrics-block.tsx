@@ -17,13 +17,8 @@
  * A snapshot: the head says when it was read. A reading out of a whole is a `meter` to assistive
  * technology, with its bounds and its value; a bare reading is text.
  */
-import {
-  formatDelta,
-  formatNumber,
-  metricDetail,
-  resolveMetric,
-} from "@prismshadow/penguin-core/a2ui";
-import type { A2uiLang, A2uiMetric, A2uiMetrics } from "@prismshadow/penguin-core/a2ui";
+import { formatDelta, formatNumber, metricDetail, resolveMetric } from "@prismshadow/a2ui";
+import type { A2uiLang, A2uiMetric, A2uiMetrics } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { ICON_SIZE } from "../../../icon-scale";

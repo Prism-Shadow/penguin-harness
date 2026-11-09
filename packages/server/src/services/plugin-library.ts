@@ -8,7 +8,7 @@
  * library types is withheld from the API until someone adds it here on purpose; skill bodies
  * and hook scripts never travel in a listing.
  */
-import { libraryPlugin, needsSignIn } from "@prismshadow/penguin-core";
+import { needsSignIn } from "@prismshadow/penguin-core";
 import type {
   HookManifest,
   InstalledMcpServer,
@@ -25,15 +25,19 @@ import type {
   SkillMetadataItem,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
+import type { PluginLibrary } from "../plugin/library-module.js";
 
 /**
  * Resolves library plugin names to their entries, in the order given. Throws 404
  * `unknown_plugin` on the first name the library does not carry — the caller is expected to
  * run this before it creates or writes anything.
  */
-export function resolveLibraryPlugins(names: readonly string[]): LibraryPlugin[] {
+export function resolveLibraryPlugins(
+  library: Pick<PluginLibrary, "get">,
+  names: readonly string[],
+): LibraryPlugin[] {
   return names.map((name) => {
-    const plugin = libraryPlugin(name);
+    const plugin = library.get(name);
     if (!plugin) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
     }

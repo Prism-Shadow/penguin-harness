@@ -64,8 +64,12 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       reason = `Shared or unclassified input changed: ${file}`;
     }
     if (file.startsWith("plugins/")) {
-      // These tests enumerate the on-disk library, including plugins not imported by core.
-      for (const name of ["core", "docs", "landing"]) add(`${prefix}${name}`);
+      // These tests read the on-disk plugins, including ones no package imports: the server's
+      // suite reads the shipped library (its package is the library's host), core's runs the
+      // plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them,
+      // and the A2UI grammar's suite reads the a2ui Skill and its bundled checker.
+      for (const name of ["core", "server", "docs", "landing"]) add(`${prefix}${name}`);
+      add("@prismshadow/a2ui");
     }
     if (file === "packages/web/index.html") add(`${prefix}ui`);
   }
@@ -235,8 +239,8 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     typecheck: types.length > 0,
     typecheck_build: typecheckBuild(types),
     typecheck_command: types.length ? command(types, "typecheck") : "",
-    // A selected core suite already includes the README check.
-    readme: !has("core") && files.some(isCatalogReadme),
+    // A selected server suite already includes the README check (test/plugin-library.test.ts).
+    readme: !has("server") && files.some(isCatalogReadme),
     plugins: full || files.some((file) => file.startsWith("plugins/") && !isCatalogReadme(file)),
     packaging:
       full ||

@@ -8,8 +8,8 @@
  * it counting.
  */
 import { useEffect, useMemo, useState } from "react";
-import { countdownParts, parseA2uiInstant } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiCountdown } from "@prismshadow/penguin-core/a2ui";
+import { countdownParts, parseA2uiInstant } from "@prismshadow/a2ui";
+import type { A2uiCountdown } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import { localMinute } from "./time-format";
 import { useNow } from "./use-now";

@@ -12,13 +12,14 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   benchmarksDir,
   libraryPlugin,
   loadPreinstalledPlugins,
   readBenchmarkManifest,
   readBuiltinBenchmarks,
+  type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
 import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, type TestApp } from "./helpers.js";
@@ -145,64 +146,6 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the shipped packages, keeping their metadata and statements", async () => {
-    // The one scenario that reads the shipped catalog whole, on an app that writes it as
-    // production does (createTestApp leaves the built-ins out unless asked).
-    const packages = await readBuiltinBenchmarks();
-    const shipped = await createTestApp({ builtinBenchmarks: true });
-    try {
-      const owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
-      const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
-      const created = (await (
-        await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
-      ).json()) as ProjectCreateResponse;
-      for (const projectId of [projects.projects[0]!.projectId, created.project.projectId]) {
-        const base = `/api/projects/${projectId}/benchmarks`;
-        const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
-        const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
-        const builtins = body.benchmarks.filter((b) => b.id !== "example-benchmark");
-        expect(builtins.map((b) => b.id).sort(), projectId).toEqual(
-          packages.map((b) => b.id).sort(),
-        );
-        expect(body.benchmarks.map((b) => b.id)).toEqual([
-          "example-benchmark",
-          ...builtins.map((b) => b.id),
-        ]);
-        expect(example.origin).toEqual({ kind: "builtin" });
-        expect(example.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-        for (const bench of builtins) {
-          const source = packages.find((p) => p.id === bench.id)!;
-          const manifest = (await readBenchmarkManifest(source.directory))!;
-          expect(bench.origin, bench.id).toEqual(manifest.origin);
-          expect(bench.version, bench.id).toBe(manifest.version);
-          expect(bench.status, bench.id).toBe(manifest.status);
-          expect(bench.runs, bench.id).toBe(manifest.runs);
-          // No baseline ships with a package.
-          expect(bench.evaluations).toEqual([]);
-          expect(bench.caseCount).toBeGreaterThan(0);
-          const cases = (await (
-            await owner.get(`${base}/${bench.id}/cases`)
-          ).json()) as BenchmarkCasesResponse;
-          expect(cases.cases).toHaveLength(bench.caseCount);
-          for (const c of cases.cases) {
-            // Listed under the title its statement opens with.
-            expect(c.title).not.toBe(c.id);
-            // The statement links the task's folder in the public repository and says how the
-            // case is run.
-            const statement = await (
-              await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
-            ).text();
-            expect(statement, c.id).toBe(
-              await fs.readFile(path.join(source.directory, c.id, "statement/README.md"), "utf8"),
-            );
-          }
-        }
-      }
-    } finally {
-      await shipped.cleanup();
-    }
-  });
-
   it("an existing default_project adopted at bootstrap keeps its own Benchmarks and is given only the missing ones", async () => {
     const packages = await readBuiltinBenchmarks();
     const mine = packages[0]!.id;
@@ -253,4 +196,79 @@ describe("built-in Agent provisioning", () => {
     const res = await owner.delete(`/api/projects/${projectId}/agents/agent_creator`);
     expect(res.status).toBe(202);
   });
+});
+
+describe("the shipped Benchmarks a new Project is written with", () => {
+  // The scenarios that read the shipped catalog whole, on an app that writes it as production
+  // does (createTestApp leaves the built-ins out unless asked). That app copies the whole catalog
+  // into every Project it creates, default_project at boot included, and the catalog grows with
+  // the benchmark repository the build fetches it from: the Projects are created once, here, and
+  // each scenario only reads its own back.
+  let shipped: TestApp | undefined;
+  let owner: ReturnType<typeof apiClient>;
+  let packages: BuiltinBenchmark[];
+  const projectIds = { initial: "", created: "" };
+
+  beforeAll(async () => {
+    packages = await readBuiltinBenchmarks();
+    shipped = await createTestApp({ builtinBenchmarks: true });
+    owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
+    const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+    projectIds.initial = projects.projects[0]!.projectId;
+    const created = (await (
+      await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
+    ).json()) as ProjectCreateResponse;
+    projectIds.created = created.project.projectId;
+  });
+  afterAll(async () => {
+    await shipped?.cleanup();
+  });
+
+  it.each([
+    ["the initial Project made at account setup", "initial"],
+    ["a Project created afterwards", "created"],
+  ] as const)(
+    "%s comes with the example and the shipped packages, keeping their metadata and statements",
+    async (_, kind) => {
+      const projectId = projectIds[kind];
+      const base = `/api/projects/${projectId}/benchmarks`;
+      const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+      const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
+      const builtins = body.benchmarks.filter((b) => b.id !== "example-benchmark");
+      expect(builtins.map((b) => b.id).sort(), projectId).toEqual(packages.map((b) => b.id).sort());
+      expect(body.benchmarks.map((b) => b.id)).toEqual([
+        "example-benchmark",
+        ...builtins.map((b) => b.id),
+      ]);
+      expect(example.origin).toEqual({ kind: "builtin" });
+      expect(example.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+      for (const bench of builtins) {
+        const source = packages.find((p) => p.id === bench.id)!;
+        const manifest = (await readBenchmarkManifest(source.directory))!;
+        expect(bench.origin, bench.id).toEqual(manifest.origin);
+        expect(bench.version, bench.id).toBe(manifest.version);
+        expect(bench.status, bench.id).toBe(manifest.status);
+        expect(bench.runs, bench.id).toBe(manifest.runs);
+        // No baseline ships with a package.
+        expect(bench.evaluations).toEqual([]);
+        expect(bench.caseCount).toBeGreaterThan(0);
+        const cases = (await (
+          await owner.get(`${base}/${bench.id}/cases`)
+        ).json()) as BenchmarkCasesResponse;
+        expect(cases.cases).toHaveLength(bench.caseCount);
+        for (const c of cases.cases) {
+          // Listed under the title its statement opens with.
+          expect(c.title).not.toBe(c.id);
+          // The statement links the task's folder in the public repository and says how the
+          // case is run.
+          const statement = await (
+            await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
+          ).text();
+          expect(statement, c.id).toBe(
+            await fs.readFile(path.join(source.directory, c.id, "statement/README.md"), "utf8"),
+          );
+        }
+      }
+    },
+  );
 });
