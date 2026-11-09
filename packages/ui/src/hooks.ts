@@ -234,8 +234,8 @@
  * `ui-avatar` (2026-11-04) is an Agent's default avatar, the penguin mascot, drawn once per
  * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, Frost
  * swaps in `soft` and Console `pixel`, and Primer — and any theme with no drawing of its own —
- * keeps `flat`. Every drawing paints the same colours, the Agent's palette slot, so only the
- * drawing changes with the theme.
+ * keeps `flat`. Every drawing paints the same two colours, the Agent's palette slot — a pale tile
+ * and the penguin in its ink — so only the drawing changes with the theme.
  */
 export const HOOKS = [
   "ui-glass",

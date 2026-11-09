@@ -9,7 +9,7 @@
  * - Given the theme changes while the page is open, the same avatars show the new theme's drawing
  *   at once, with no reload.
  * - Given a theme id no stylesheet draws an avatar for, the avatars show Primer's flat drawing.
- * - Given the same Agent, its head is painted the same colour in every theme.
+ * - Given the same Agent, its tile is painted the same colour in every theme.
  */
 import { test, expect } from "@playwright/test";
 
@@ -56,17 +56,17 @@ test("a theme switch redraws the open avatars, and an unknown theme falls back t
   page,
 }) => {
   await open(page, "github");
-  const head = (await fills(page))[0];
+  const tile = (await fills(page))[0];
   const setTheme = (id) =>
     page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), id);
 
   await setTheme("geek");
   expect(new Set(await shown(page))).toEqual(new Set(["pixel"]));
-  expect(await fills(page)).toContain(head);
+  expect(await fills(page)).toContain(tile);
 
   await setTheme("modern");
   expect(new Set(await shown(page))).toEqual(new Set(["soft"]));
-  expect(await fills(page)).toContain(head);
+  expect(await fills(page)).toContain(tile);
 
   await setTheme("no-such-theme");
   expect(new Set(await shown(page))).toEqual(new Set(["flat"]));

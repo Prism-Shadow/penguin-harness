@@ -1,17 +1,19 @@
 /**
- * The Agent mascot — one small penguin seen face on — drawn once per theme's visual language.
- * Every drawing has the same anatomy on the same 24-unit box, so the character is recognisably
- * one across themes: a head in the Agent's colour, a white face mask whose two lobes leave a V of
- * the head colour on the forehead, two upright capsule eyes and a small orange beak. No mouth,
- * no letter: at 16 px those are what crowd the eyes out.
+ * The Agent mascot — one small penguin, standing, seen from the front — drawn once per theme's
+ * visual language. Every drawing has the same anatomy on the same 24-unit box, so the character is
+ * recognisably one across themes: a pale tile in the Agent's hue, and on it the penguin in that
+ * hue's ink — head and body, its face and belly cut out of it to show the tile, two eye dots, a
+ * small beak and its feet. One colour family per avatar, as the letter tiles had: the whole body
+ * reads at 16 px where a face alone turned to noise, and the ink on a quiet tile keeps a column of
+ * Agents as calm as the text beside it. No letter is drawn.
  *
- * - `flat` (Primer): the head fills the tile edge to edge, flat fills, no outline.
- * - `soft` (Frost): a round head with no tile around it, a rounder face and a blush on the
- *   cheeks — flat fills still, no gradient and no glow, and no tint of its own colour behind it.
- * - `pixel` (Console): a 16x16 pixel drawing on crisp edges. From 16 px up the cells are laid
- *   out on whole CSS pixels (one, two, three to a cell) and centred on the head colour, which
- *   fills the whole tile; below 16 px no placement keeps sixteen cells whole, so the drawing
- *   scales to the box and is antialiased rather than lose an eye to rounding.
+ * - `flat` (Primer): the rounded-square tile, smooth shapes, flippers held out a little.
+ * - `soft` (Frost): a round tile and a rounder penguin with no flippers — flat fills still, no
+ *   gradient and no glow.
+ * - `pixel` (Console): a 16x16 pixel drawing on a square tile, on crisp edges. From 16 px up the
+ *   cells are laid out on whole CSS pixels (one, two, three to a cell) and centred; below 16 px no
+ *   placement keeps sixteen cells whole, so the drawing scales to the box and is antialiased
+ *   rather than lose an eye to rounding.
  *
  * A theme picks its drawing in CSS (the `ui-avatar` hook, see `AgentAvatar`); a theme that has
  * none shows `flat`. Adding a theme's drawing is one entry here and two rules in its theme file.
@@ -29,20 +31,25 @@ export interface AgentDrawingProps {
 function FlatPenguin({ colors }: AgentDrawingProps) {
   return (
     <>
-      <rect width="24" height="24" rx="5" style={{ fill: colors.body }} />
-      <g style={{ fill: colors.mask }}>
-        <circle cx="8.4" cy="12.4" r="4.6" />
-        <circle cx="15.6" cy="12.4" r="4.6" />
-        <ellipse cx="12" cy="16.3" rx="7.6" ry="5.3" />
+      <rect width="24" height="24" rx="5" style={{ fill: colors.tile }} />
+      <g style={{ fill: colors.ink }}>
+        <ellipse cx="5.9" cy="14.4" rx="1.35" ry="3.5" transform="rotate(18 5.9 14.4)" />
+        <ellipse cx="18.1" cy="14.4" rx="1.35" ry="3.5" transform="rotate(-18 18.1 14.4)" />
+        <circle cx="12" cy="8.3" r="5.1" />
+        <ellipse cx="12" cy="14.6" rx="6.3" ry="6.9" />
+        <ellipse cx="9.6" cy="21.3" rx="2" ry="0.95" />
+        <ellipse cx="14.4" cy="21.3" rx="2" ry="0.95" />
       </g>
-      <g style={{ fill: colors.eye }}>
-        <rect x="8.1" y="11.2" width="2.3" height="4" rx="1.15" />
-        <rect x="13.6" y="11.2" width="2.3" height="4" rx="1.15" />
+      <g style={{ fill: colors.tile }}>
+        <circle cx="10.1" cy="9.2" r="2.5" />
+        <circle cx="13.9" cy="9.2" r="2.5" />
+        <ellipse cx="12" cy="15.1" rx="4.5" ry="5.5" />
       </g>
-      <path
-        d="M10.2 15.9Q12 15.3 13.8 15.9L12.7 18Q12 18.8 11.3 18Z"
-        style={{ fill: colors.beak }}
-      />
+      <g style={{ fill: colors.ink }}>
+        <circle cx="10.4" cy="9.3" r="0.95" />
+        <circle cx="13.6" cy="9.3" r="0.95" />
+        <path d="M10.8 11.2H13.2L12 12.9Z" />
+      </g>
     </>
   );
 }
@@ -50,80 +57,81 @@ function FlatPenguin({ colors }: AgentDrawingProps) {
 function SoftPenguin({ colors }: AgentDrawingProps) {
   return (
     <>
-      <circle cx="12" cy="12" r="11.5" style={{ fill: colors.body }} />
-      <g style={{ fill: colors.mask }}>
-        <circle cx="8.6" cy="12.2" r="4.6" />
-        <circle cx="15.4" cy="12.2" r="4.6" />
-        <ellipse cx="12" cy="16" rx="7.2" ry="5.2" />
+      <circle cx="12" cy="12" r="12" style={{ fill: colors.tile }} />
+      <g style={{ fill: colors.ink }}>
+        <circle cx="12" cy="8.96" r="5.15" />
+        <ellipse cx="12" cy="14.67" rx="6.35" ry="5.98" />
+        <ellipse cx="9.79" cy="20.56" rx="1.84" ry="0.87" />
+        <ellipse cx="14.21" cy="20.56" rx="1.84" ry="0.87" />
       </g>
-      <g style={{ fill: colors.cheek }} opacity="0.6">
-        <ellipse cx="7.2" cy="16.4" rx="1.4" ry="0.9" />
-        <ellipse cx="16.8" cy="16.4" rx="1.4" ry="0.9" />
+      <g style={{ fill: colors.tile }}>
+        <circle cx="10.25" cy="9.88" r="2.3" />
+        <circle cx="13.75" cy="9.88" r="2.3" />
+        <ellipse cx="12" cy="15.13" rx="4.51" ry="4.78" />
       </g>
-      <g style={{ fill: colors.eye }}>
-        <rect x="8.4" y="11.2" width="2.4" height="3.6" rx="1.2" />
-        <rect x="13.2" y="11.2" width="2.4" height="3.6" rx="1.2" />
+      <g style={{ fill: colors.ink }}>
+        <circle cx="10.53" cy="9.98" r="0.87" />
+        <circle cx="13.47" cy="9.98" r="0.87" />
+        <path d="M10.9 11.63H13.1L12 13.2Z" />
       </g>
-      <path
-        d="M10.5 15.6Q12 15 13.5 15.6Q13.2 17.5 12 18Q10.8 17.5 10.5 15.6Z"
-        style={{ fill: colors.beak }}
-      />
     </>
   );
 }
 
 /**
- * The pixel face, 16 rows of 16 cells: `o` the mask, `e` an eye, `b` the beak, `.` the head
- * colour the tile already paints. Row 0 is the top.
+ * The pixel penguin, 16 rows of 16 cells: `#` the body, `e` an eye, `b` the beak and `f` a foot,
+ * all in ink; `o` the face and belly and `.` the ground, both the tile the drawing stands on.
+ * Row 0 is the top.
  */
-const PIXEL_FACE = [
+const PIXEL_PENGUIN = [
   "................",
-  "................",
-  "................",
-  "................",
-  "....ooo..ooo....",
-  "...oooooooooo...",
-  "...ooeooooeoo...",
-  "..oooeooooeooo..",
-  "..ooooobbooooo..",
-  "..oooooooooooo..",
-  "...oooooooooo...",
-  "....oooooooo....",
-  ".....oooooo.....",
-  "................",
-  "................",
+  "......####......",
+  "....########....",
+  "...##########...",
+  "...##oo##oo##...",
+  "..##oeooooeo##..",
+  "..##ooobbooo##..",
+  ".###oooooooo###.",
+  ".###oooooooo###.",
+  "..##oooooooo##..",
+  "..##oooooooo##..",
+  "..###oooooo###..",
+  "...###oooo###...",
+  "....########....",
+  "....ff....ff....",
   "................",
 ] as const;
 
-/** One part of the pixel face as path data in its 16-cell space: a rectangle per run of cells. */
-function cellRuns(part: string): string {
+/** The ink parts of the pixel penguin. */
+const PIXEL_INK = new Set(["#", "e", "b", "f"]);
+
+/** The ink cells as path data in their 16-cell space: a rectangle per run of cells. */
+function inkRuns(): string {
   let d = "";
-  PIXEL_FACE.forEach((row, y) => {
+  PIXEL_PENGUIN.forEach((row, y) => {
     for (let x = 0; x < row.length;) {
-      if (row[x] !== part) {
+      if (!PIXEL_INK.has(row[x]!)) {
         x += 1;
         continue;
       }
       const start = x;
-      while (x < row.length && row[x] === part) x += 1;
+      while (x < row.length && PIXEL_INK.has(row[x]!)) x += 1;
       d += `M${start} ${y}h${x - start}v1h-${x - start}z`;
     }
   });
   return d;
 }
 
-const PIXEL_MASK = cellRuns("o");
-const PIXEL_EYES = cellRuns("e");
-const PIXEL_BEAK = cellRuns("b");
+const PIXEL_INK_PATH = inkRuns();
 
 /** The cells a side. */
-const PIXEL_CELLS = PIXEL_FACE.length;
+const PIXEL_CELLS = PIXEL_PENGUIN.length;
 
 const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
 
 /**
- * Where the pixel face sits in the 24-unit box at `size` px: from 16 px up, whole CSS pixels to a
- * cell and centred on whole pixels; below, scaled to the box.
+ * Where the pixel penguin sits in the 24-unit box at `size` px: from 16 px up, whole CSS pixels
+ * to a cell and centred on whole pixels; below, scaled to the box.
  */
 function pixelPlacement(size: number): { transform: string; crisp: boolean } {
   if (size < PIXEL_CELLS) return { transform: `scale(${24 / PIXEL_CELLS})`, crisp: false };
@@ -137,11 +145,9 @@ function PixelPenguin({ colors, size }: AgentDrawingProps) {
   const { transform, crisp } = pixelPlacement(size);
   return (
     <>
-      <rect width="24" height="24" style={{ fill: colors.body }} />
+      <rect width="24" height="24" style={{ fill: colors.tile }} />
       <g transform={transform} shapeRendering={crisp ? "crispEdges" : undefined}>
-        <path d={PIXEL_MASK} style={{ fill: colors.mask }} />
-        <path d={PIXEL_EYES} style={{ fill: colors.eye }} />
-        <path d={PIXEL_BEAK} style={{ fill: colors.beak }} />
+        <path d={PIXEL_INK_PATH} style={{ fill: colors.ink }} />
       </g>
     </>
   );
