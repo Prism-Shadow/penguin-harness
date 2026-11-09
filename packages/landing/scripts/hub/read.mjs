@@ -4,7 +4,8 @@
  * (see source.mjs) — at build time, and hand the pages plain records; nothing is copied into
  * this package.
  *
- * File formats: plugins follow the plugin `package.json` (RFC-0003), benchmarks
+ * File formats: plugins follow the plugin package (RFC-0003: npm's `package.json`, and the
+ * contributions its built `ifaces.json` carries), benchmarks
  * `benchmark_config.toml` / `task_config.toml` with their statement and rubric, plus the optional
  * `data/<benchmark-id>/` folder (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
  * and `<phase>/attempt-<n>.yaml` (RFC-0002), and leaderboards one `leaderboard.yaml` (RFC-0005).
@@ -16,11 +17,14 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
+import { readLibraryEntries } from "./plugin-table.mjs";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
 export const BENCHMARK_SOURCE = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
 
 const ID = /^[A-Za-z0-9-]+$/;
+/** The points a hook package's commands run at, as its `hooks` contribution names them. */
+const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"];
 /** The most data files one task lists; the folder link shows the rest. */
 const MAX_TASK_FILES = 200;
 
@@ -79,7 +83,11 @@ function frontmatter(text) {
 
 const svgDataUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg.trim())}`;
 
-/** Every plugin package under `pluginsDir` (one directory per package, `package.json` its manifest). */
+/**
+ * Every plugin package under `pluginsDir` (one directory per package): its npm fields from
+ * `package.json`, and what it declares for the library — card, Skills, hook package, Workbenches —
+ * from its built `ifaces.json` (plugin-table.mjs).
+ */
 export function readPlugins(pluginsDir) {
   const plugins = [];
   for (const dirName of subdirs(pluginsDir)) {
@@ -87,54 +95,56 @@ export function readPlugins(pluginsDir) {
     const file = join(dir, "package.json");
     if (!existsSync(file)) continue;
     const pkg = JSON.parse(readText(file));
-    const penguin = pkg.penguin && typeof pkg.penguin === "object" ? pkg.penguin : {};
     const packageName = requireText(pkg, "name", file);
     const id = packageName.replace(/^@[^/]+\//, "");
     if (!ID.test(id)) fail(file, `plugin id "${id}" may hold only letters, digits and "-"`);
-    const description = optionalString(penguin.description) ?? optionalString(pkg.description);
+    const description = optionalString(pkg.description);
     if (description === undefined) fail(file, "a description is required");
-    const iconPath = optionalString(penguin.icon);
-    const quickStart = penguin.quick_start;
-    const hooks = penguin.hooks && typeof penguin.hooks === "object" ? penguin.hooks : {};
+    const { card = {}, skills, hooks = {}, workbenches } = readLibraryEntries(dir);
+    const iconPath = optionalString(card.icon) ?? "icon.svg";
+    const quickStart = card.quickStart;
     plugins.push({
       id,
       packageName,
-      title: optionalString(penguin.title) ?? id,
-      titleZh: optionalString(penguin.title_zh),
+      title: optionalString(card.title) ?? id,
+      titleZh: optionalString(card.titleZh),
       description,
-      descriptionZh: optionalString(penguin.description_zh),
-      short: optionalString(penguin.short_description) ?? description,
-      shortZh: optionalString(penguin.short_description_zh),
-      category: optionalString(penguin.category) ?? "other",
+      descriptionZh: optionalString(card.descriptionZh),
+      short: optionalString(card.shortDescription) ?? description,
+      shortZh: optionalString(card.shortDescriptionZh),
+      category: optionalString(card.category) ?? "other",
       version: requireText(pkg, "version", file),
       license: optionalString(pkg.license),
       author: readAuthor(pkg.author),
-      preinstall: penguin.preinstall !== false,
-      icon:
-        iconPath && existsSync(join(dir, iconPath))
-          ? svgDataUrl(readText(join(dir, iconPath)))
-          : undefined,
-      references: stringList(penguin.references),
+      preinstall: card.preinstall !== false,
+      icon: existsSync(join(dir, iconPath)) ? svgDataUrl(readText(join(dir, iconPath))) : undefined,
+      references: stringList(card.references),
       quickStart:
         quickStart && typeof quickStart.prompt === "string"
           ? {
               prompt: quickStart.prompt,
-              promptZh: optionalString(quickStart.prompt_zh),
+              promptZh: optionalString(quickStart.promptZh),
               skills: stringList(quickStart.skills),
             }
           : undefined,
-      skills: subdirs(join(dir, "skills"))
-        .filter((name) => existsSync(join(dir, "skills", name, "SKILL.md")))
-        .map((name) => {
-          const meta = frontmatter(readText(join(dir, "skills", name, "SKILL.md")));
+      skills: skills
+        .filter((skill) => typeof skill.path === "string")
+        .map((skill) => ({ name: skill.name, skillFile: join(dir, skill.path, "SKILL.md") }))
+        .filter(({ skillFile }) => existsSync(skillFile))
+        .map(({ name, skillFile }) => {
+          const meta = frontmatter(readText(skillFile));
           return {
             name: optionalString(meta.name) ?? name,
             description: optionalString(meta.short_description) ?? optionalString(meta.description),
             descriptionZh: optionalString(meta.short_description_zh),
           };
         }),
-      hooks: Object.keys(hooks).filter((key) => Array.isArray(hooks[key])),
-      workbenches: subdirs(join(dir, "workbenches")),
+      hooks: Object.keys(hooks).filter(
+        (key) => HOOK_POINTS.includes(key) && Array.isArray(hooks[key]),
+      ),
+      workbenches: workbenches
+        .map((workbench) => workbench.name)
+        .filter((name) => typeof name === "string"),
       readme: optionalText(join(dir, "README.md")),
       sourceUrl: `${PLUGINS_SOURCE}/${dirName}`,
     });

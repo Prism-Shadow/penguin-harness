@@ -19,8 +19,8 @@ import { useEffect } from "react";
 import * as api from "../api/endpoints";
 import { isDesktopShellWindow } from "../lib/account-menu";
 import { useAuth } from "./auth";
-import { useLocale } from "./locale";
-import type { Locale } from "./locale";
+import { useLocale, type Locale } from "./locale";
+
 import type { DesktopTrayLocale } from "@prismshadow/penguin-server/api";
 
 // The Web App's languages and the ones the tray route accepts are the same set, and a

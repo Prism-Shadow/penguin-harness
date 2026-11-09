@@ -2,8 +2,8 @@
 
 [English](PRFC-0014-workflow.md)
 
-> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0014-workflow.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.0.0（迁入主仓）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0014-workflow.md`——设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)（插件库的内容改为模块贡献）的修订，它先于本镜像落地于默认分支 `main`；上一版取自落地提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)。
+> **修订**：v1.1.0；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `workflow`
 - Start Date: 2026-09-18
@@ -197,7 +197,7 @@ abstract class WorkflowMain extends Interface<{
 
 **载体仍是 `ifaces.json`。** 它是每个包自带的、自包含的接口表（引用从不离开这张表），因此检查时不需要任何模块解析；槽的贡献数据按值校验、`create()` 之后按名核对，也继续用它。两份各有出处：
 
-- **消费者的一份是它自己带着的。** plugin 的 `ifaces.json` 在它构建时由 `gen-ifaces` 生成。Workflow 没有构建步骤，它的一份是 `.harness/ifaces.json`：
+- **消费者的一份是它自己带着的。** plugin 的 `ifaces.json` 在它构建时由 `gen-ifaces` 生成（生成器随 `@prismshadow/penguin-core` 以 `penguin-gen-ifaces` 命令发布，仓库外的 plugin 包同样以它构建，2026-11-04）。Workflow 没有构建步骤，它的一份是 `.harness/ifaces.json`：
 
   **`.harness/` 由平台写入，只写一次。** 加载一个没有 `.harness/` 的目录时，平台从**自己这一代**的表渲染出 `plugin.d.ts`——`WorkflowHost`、`WorkflowMain` 及其可达的类型，按导出名命名（`WorkflowHost` 而不是表里的键），外加默认导出的形状 `WorkflowPackage`——并把渲染所用的那一部分表写为 `ifaces.json`，来源与时间写在 `harness.json`。目录先在旁边写好再改名就位，半截的目录不会被当成已安装。**此后平台不再动它**：它是「这个 Workflow 写下时依据什么」的记录，换代之后拿来比较的正是它；每次加载都刷新它，比较就又退回「自己比自己」。要让 Workflow 改依据当前的 harness，删掉 `.harness/` 即可，随后编译器会报出需要改的地方。它是点目录：不计入修订与版本历史，监视器不理会，`npm install` 也不会把它当作多余的包清掉。
 
@@ -432,6 +432,10 @@ Workflow 页面是独立文档，应用的样式表与 `html.dark` 到不了它�
 - **发送侧预检。** 与 PRFC-0001 的同名问题一致：Agent 在写下文件之前，先拿宿主发布的接口表核对一遍。
 
 ## Changes
+
+### v1.1.0
+
+- 更新：「消费者的一份是它自己带着的」一条注明生成器随 `@prismshadow/penguin-core` 以 `penguin-gen-ifaces` 命令发布，仓库外的 plugin 包同样以它构建（设计 PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)）。
 
 ### v1.0.0
 

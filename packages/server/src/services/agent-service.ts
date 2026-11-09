@@ -35,8 +35,6 @@ import {
   skillsDir,
   systemConfigPath,
   comparePluginVersions,
-  libraryPlugin,
-  loadLibraryPlugins,
   parseSkillFrontmatter,
   pluginContentVersion,
   listInstalledWorkbenches,
@@ -48,6 +46,7 @@ import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
+import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -160,6 +159,7 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly snapshots!: Snapshots;
+  @Use() private readonly library!: PluginLibrary;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
   private readonly deletions = new Map<string, AgentDeletionInfo>();
@@ -206,7 +206,7 @@ export class AgentService implements AgentLifecycle {
     // The plugin library is read once for the whole list (every Agent is checked against the
     // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
     // preserves the sorted order).
-    const library = loadLibraryPlugins();
+    const library = this.library.list();
     // An index row is listed only while its folder is an Agent by the routes' own rule: a row
     // whose folder has lost its system_config.yaml would be a card that neither opens nor deletes.
     const present = await Promise.all(
@@ -420,7 +420,7 @@ export class AgentService implements AgentLifecycle {
     agentId: string,
     pluginName: string,
   ): Promise<{ installed: string | null; library: string | null }> {
-    const plugin = libraryPlugin(pluginName);
+    const plugin = this.library.get(pluginName);
     if (!plugin) return { installed: null, library: null };
     await this.migrateWorkbenches(projectId, agentId);
     const base = skillsDir(this.root, projectId, agentId);
@@ -469,7 +469,7 @@ export class AgentService implements AgentLifecycle {
    * Session is built, unlike skills, which are read from disk on demand.
    */
   async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
-    const plugins = resolveLibraryPlugins([pluginName]);
+    const plugins = resolveLibraryPlugins(this.library, [pluginName]);
     await this.migrateWorkbenches(projectId, agentId);
     for (const plugin of plugins) {
       await installPlugin(this.root, projectId, agentId, plugin);
@@ -720,7 +720,7 @@ export class AgentService implements AgentLifecycle {
     // installed after the library plugins and so win a name collision: the user picked that
     // directory for this Agent specifically, which is a narrower intent than "install the
     // built-in one".
-    const librarySeed = resolveLibraryPlugins(pluginNames ?? []);
+    const librarySeed = resolveLibraryPlugins(this.library, pluginNames ?? []);
     const directorySeed = directory
       ? await resolveDirectorySkills(directory.path, directory.names)
       : [];
@@ -776,7 +776,7 @@ export class AgentService implements AgentLifecycle {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const installed = await this.installedPlugins(projectId, agentId, loadLibraryPlugins());
+    const installed = await this.installedPlugins(projectId, agentId, this.library.list());
     return {
       agentId,
       name: cardName,

@@ -20,8 +20,7 @@
  * None of this is the boundary. The admin APIs answer a non-admin with 403 whatever the
  * browser chose to render.
  */
-import { offersChangePassword } from "./account-menu";
-import type { AccountMenuSession } from "./account-menu";
+import { offersChangePassword, type AccountMenuSession } from "./account-menu";
 
 /** A page of the Settings dialog. */
 export type SettingsSectionKey =
