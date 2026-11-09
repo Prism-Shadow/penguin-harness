@@ -95,9 +95,9 @@ export function SuperAgentArchitectureWidget() {
         router: "Router Agent",
         routerSub: "维护全局上下文，汇总结果",
         workers: [
-          { label: "Worker 1", note1: "静默复现", note2: "提交 PR" },
-          { label: "Worker 2", note1: "独立窗口", note2: "并发执行" },
-          { label: "Worker 3", note1: "独立窗口", note2: "并发执行" },
+          { label: "Worker 1", note1: "复现 Bug", note2: "提交 PR" },
+          { label: "Worker 2", note1: "前端", note2: "修改界面" },
+          { label: "Worker 3", note1: "后端", note2: "修改接口" },
         ],
         watchdog: "Watchdog Agent",
         watchdogCheck: "定期检查 Worker 进展",
@@ -115,9 +115,9 @@ export function SuperAgentArchitectureWidget() {
         router: "Router Agent",
         routerSub: "global context, collects results",
         workers: [
-          { label: "Worker 1", note1: "silent repro", note2: "opens PR" },
-          { label: "Worker 2", note1: "own window", note2: "in parallel" },
-          { label: "Worker 3", note1: "own window", note2: "in parallel" },
+          { label: "Worker 1", note1: "repros bug", note2: "opens PR" },
+          { label: "Worker 2", note1: "frontend", note2: "UI changes" },
+          { label: "Worker 3", note1: "backend", note2: "API changes" },
         ],
         watchdog: "Watchdog Agent",
         watchdogCheck: "checks Worker progress",
@@ -231,15 +231,29 @@ export function SuperAgentArchitectureWidget() {
           {copy.filterSub}
         </text>
 
-        {/* Noise leaves the flow here and never reaches the Router. */}
+        {/* Noise leaves the flow here and ends in a muted tag, not a component. */}
         <path
-          d="M70,174 L70,214"
+          d="M70,174 L70,220"
           fill="none"
           strokeWidth="1.5"
           className="stroke-gray-400 dark:stroke-gray-500"
           markerEnd="url(#sa-arch-arrow-gray)"
         />
-        <text x="80" y="198" className="fill-gray-500 text-xs dark:fill-gray-400">
+        <rect
+          x="16"
+          y="220"
+          width="108"
+          height="28"
+          rx="6"
+          strokeWidth="1"
+          className="fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
+        />
+        <text
+          x="70"
+          y="238"
+          textAnchor="middle"
+          className="fill-gray-500 text-xs dark:fill-gray-400"
+        >
           {copy.noise}
         </text>
 
