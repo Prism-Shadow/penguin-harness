@@ -242,9 +242,9 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
 
   return createPortal(
     <div
-      // z-50 like Modal's overlay: a portaled menu or tooltip (z-[60]) opened from inside still paints above it.
+      // The `modal` layer like Modal's overlay: a portaled menu or tooltip opened from inside still paints above it.
       // ui-scrim: the overlay is the dimmed layer, with the panel inside it.
-      className="ui-scrim anim-fade fixed inset-0 z-50 bg-black/45"
+      className="ui-scrim anim-fade fixed inset-0 z-modal bg-black/45"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

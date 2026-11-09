@@ -40,7 +40,7 @@ export function TimelineLane({
         data-timeline-label
         data-tooltip={label}
         data-tooltip-content="text"
-        className="sticky left-0 z-10 flex h-4 w-[5.5rem] shrink-0 items-center justify-end pr-2 text-fg-muted"
+        className="sticky left-0 z-sticky flex h-4 w-[5.5rem] shrink-0 items-center justify-end pr-2 text-fg-muted"
       >
         <span className="truncate font-mono text-xs">{label}</span>
       </span>
