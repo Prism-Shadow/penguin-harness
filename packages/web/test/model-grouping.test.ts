@@ -34,7 +34,7 @@ import {
   visibleChatModels,
   type ModelCredentialRowLike,
   type ModelRowLike,
-} from "../src/features/models/model-grouping";
+} from "../src/lib/model-grouping";
 
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";

@@ -99,7 +99,7 @@ describe("bottomDockMaxHeight", () => {
 describe("the chat page", () => {
   it("measures its composer box for the bottom dock", () => {
     const page = readFileSync(
-      new URL("../src/features/chat/chat-page.tsx", import.meta.url),
+      new URL("../src/features/chat/body/main-chat-body.tsx", import.meta.url),
       "utf8",
     );
     expect(page).toMatch(/<WallpaperSurface\s+ref=\{measureComposer\}/);

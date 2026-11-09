@@ -26,7 +26,7 @@ import {
 } from "@prismshadow/penguin-server/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
-import type { PeakWindows } from "../../lib/peak-windows";
+import type { PeakWindows } from "./peak-windows";
 
 /** Paired model reference (same shape as the server DTO's ModelRefDto; a model is always referenced as (provider, modelId)). */
 export interface ModelRefValue {
@@ -401,4 +401,4 @@ export function visibleChatModels<T extends ModelCredentialRowLike>(
   return keep.filter((m) => matchesQuery(m, query));
 }
 
-export type { PeakWindows } from "../../lib/peak-windows";
+export type { PeakWindows } from "./peak-windows";

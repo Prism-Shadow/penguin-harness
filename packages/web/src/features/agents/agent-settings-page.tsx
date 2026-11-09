@@ -98,8 +98,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =

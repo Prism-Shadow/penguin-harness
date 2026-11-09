@@ -12,7 +12,7 @@ import { useAiBridge } from "./ai-bridge";
 import { AiCreatePanel, type AiCreatePanelProps } from "./ai-create-panel";
 
 import { composeAiPrompt } from "./ai-create-prompt";
-import { pickDefaultAgent } from "./default-agent";
+import { pickDefaultAgent } from "../../lib/default-agent";
 
 export interface AiCreateModalProps extends Omit<
   AiCreatePanelProps,

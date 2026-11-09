@@ -153,13 +153,13 @@ import {
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "./model-grouping";
+} from "../../lib/model-grouping";
 import {
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "./model-group-order";
-import { TAG_TONE, modelTags } from "./model-tags";
+} from "../../lib/model-group-order";
+import { TAG_TONE, modelTags } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
