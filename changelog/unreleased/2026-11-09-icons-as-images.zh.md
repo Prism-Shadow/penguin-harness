@@ -3,6 +3,7 @@
 - **Date:** 2026-11-09
 - **Type:** fix
 - **Scope:** `core`, `server`, `web`, `ui`, `landing`
+- **PR:** [#1514](https://github.com/Prism-Shadow/penguin-harness/pull/1514)
 
 [English](2026-11-09-icons-as-images.md)
 
