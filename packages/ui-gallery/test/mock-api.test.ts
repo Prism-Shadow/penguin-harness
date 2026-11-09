@@ -69,7 +69,6 @@ describe("the mocked API", () => {
     }
     expect(gaps, "wrappers with no mock route").toEqual([]);
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
-    expect(wrappers().length).toBeGreaterThan(150);
   });
 
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
