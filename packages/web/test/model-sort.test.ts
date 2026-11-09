@@ -22,13 +22,11 @@
  * - A user-defined group named like an Object method keeps its own choice.
  */
 import { describe, expect, it } from "vitest";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import {
   groupModelRows,
   type ModelRowLike,
   type PricingBucketsLike,
 } from "../src/lib/model-grouping";
-
 import {
   MODEL_GROUP_SORTS_KEY,
   blendedPrice,
@@ -39,6 +37,7 @@ import {
   storeModelGroupSorts,
   withModelGroupSort,
 } from "../src/features/models/model-sort";
+import { listPriceRow, offPeakInstant, peakInstant, scheduledEntry } from "./helpers/off-peak";
 import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
 
 type Row = ModelRowLike & PricingBucketsLike;
@@ -174,37 +173,28 @@ describe("sorting a group's models", () => {
   });
 
   it("an off-peak hour moves a scheduled model ahead, and the peak hour puts it back", () => {
-    // DeepSeek's own row as a new Project stores it: its peak price, in USD though DeepSeek
-    // quotes CNY, so it compares with a USD-priced rival as it stands.
-    const pricing = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!;
-    const scheduled: Row = {
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-      cacheRead: String(pricing.cache_read),
-      cacheWrite: String(pricing.cache_write),
-      output: String(pricing.output),
-    };
-    // Three quarters of DeepSeek's peak rate: dearer than its off-peak half, cheaper than peak.
+    // A scheduled entry's own row as a new Project stores it: its peak (list) price.
+    const entry = scheduledEntry();
+    const scheduled: Row = listPriceRow(entry);
+    const { pricing, offPeakDiscount: schedule } = entry;
+    // Halfway between the entry's peak rate and its off-peak one: dearer than the tier, cheaper
+    // than peak, whatever the tier's rate.
+    const between = 1 - schedule.rate / 2;
     const rival = row(
       "rival",
       [
-        String(pricing.cache_read * 0.75),
-        String(pricing.cache_write * 0.75),
-        String(pricing.output * 0.75),
+        String(pricing.cache_read * between),
+        String(pricing.cache_write * between),
+        String(pricing.output * between),
       ],
-      { provider: "deepseek" },
+      { provider: entry.provider },
     );
-    // Beijing is UTC+8; 2026-08-31 is a Monday, so 09:30 there is peak and 13:00 off-peak.
-    const peak = new Date("2026-08-31T01:30:00Z");
-    const offPeak = new Date("2026-08-31T05:00:00Z");
-    expect(ids(sortGroupRows([scheduled, rival], "price-asc", peak, "en"))).toEqual([
-      "rival",
-      "deepseek-flash",
-    ]);
-    expect(ids(sortGroupRows([scheduled, rival], "price-asc", offPeak, "en"))).toEqual([
-      "deepseek-flash",
-      "rival",
-    ]);
+    expect(
+      ids(sortGroupRows([scheduled, rival], "price-asc", peakInstant(schedule), "en")),
+    ).toEqual(["rival", entry.modelId]);
+    expect(
+      ids(sortGroupRows([scheduled, rival], "price-asc", offPeakInstant(schedule), "en")),
+    ).toEqual([entry.modelId, "rival"]);
   });
 
   it("a search's matches keep their group's sort, and no group moves", () => {

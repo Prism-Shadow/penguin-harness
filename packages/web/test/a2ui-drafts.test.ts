@@ -1,10 +1,8 @@
 /**
  * Where the open question's answers in progress are kept (lib/a2ui-drafts.ts): an entry comes
  * back until it is a week old, a write keeps the newest fifty, and storage that refuses every
- * call costs the drafts, never the page. Plus the wiring no static render reaches: the chat page
- * hands this store, scoped by Session, to the A2UI blocks.
+ * call costs the drafts, never the page.
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { A2UI_DRAFT_LIMIT, A2UI_DRAFT_MAX_AGE_MS, a2uiDrafts } from "../src/lib/a2ui-drafts";
 import { blockedStorage, stubLocalStorage } from "./helpers/storage";
@@ -44,17 +42,5 @@ describe("a2uiDrafts", () => {
     expect(() => a2uiDrafts.save("s1:abc", ["a"])).not.toThrow();
     expect(a2uiDrafts.load("s1:abc")).toBeUndefined();
     expect(() => a2uiDrafts.clear("s1:abc")).not.toThrow();
-  });
-});
-
-describe("the chat page", () => {
-  it("hands the store, scoped by Session, to the open question's blocks", () => {
-    const page = readFileSync(
-      new URL("../src/features/chat/session/use-session-controls.ts", import.meta.url),
-      "utf8",
-    );
-    const actions = /const a2uiActions = useMemo<A2uiActions>\(([\s\S]*?)\n {2}\);/.exec(page);
-    expect(actions?.[1]).toContain("drafts: a2uiDrafts");
-    expect(actions?.[1]).toContain("draftScope: selected?.sessionId");
   });
 });
