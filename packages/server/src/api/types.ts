@@ -5542,6 +5542,23 @@ export interface DesktopTrayCommandMessage {
 }
 
 /**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent**. Real session ids always start with `session-`, so there's
+ * no collision; nor with parked draft conversations, whose route ids start with `draft-`.
+ * Shared so the desktop tray's "New Session" opens the same draft route the Web App uses.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/**
+ * The session cookie's name as every non-browser client spells it (a browser's carries the
+ * server's port; auth/middleware.ts): the CLI, a server speaking to a machine it holds, and the
+ * desktop shell that mints its window's session. Shared so they all write the cookie the server
+ * reads.
+ */
+export const SESSION_COOKIE = "penguin_session";
+
+/**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
  * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
  * seam authenticates the cookie and the Origin there and hands the socket to the platform,
@@ -5706,6 +5723,21 @@ export interface HostCommandMessage {
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+export const UPDATE_REFUSAL_MARKERS: readonly string[] = [
+  "runs from a source checkout", // sourceCheckout
+  "Cannot tell how this penguin was installed", // unknownInstall
+  "could not be identified", // npmUnknownManager
+  "does not run on Windows", // windowsUnsupported
+  "cannot run your package manager for you", // windowsGlobalInstall
+];
+
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
   /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */

@@ -14,6 +14,7 @@
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
  * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
+import { SESSION_COOKIE } from "@prismshadow/penguin-server/api";
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
@@ -22,8 +23,8 @@ import type { UserRow } from "../repos/users.js";
 import type { SessionVia } from "./service.js";
 import type { Auth } from "@prismshadow/penguin-server/internal";
 
-/** Session cookie name. */
-export const SESSION_COOKIE = "penguin_session";
+/** The session cookie's name as every non-browser client spells it (declared in the API contract). */
+export { SESSION_COOKIE };
 
 /** A request's Cookie header as a record: the websocket seam has no Hono context to ask. */
 export function parseCookieHeader(header: string | null | undefined): Record<string, string> {
