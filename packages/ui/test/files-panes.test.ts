@@ -115,7 +115,9 @@ describe("DropOverlay", () => {
     expect(veil).toMatch(/^<div aria-hidden="true" class="[^"]*pointer-events-none/);
     expect(veil).toContain(">Drop files to attach</p>");
     expect(veil).toContain(">Images and files are added to the message draft</p>");
-    expect(classTokens(veil)).toEqual(expect.arrayContaining(["border-dashed", "z-50"]));
+    expect(classTokens(veil)).toEqual(
+      expect.arrayContaining(["border-dashed", "z-window-overlay"]),
+    );
   });
 
   it("frames a panel with its label at the foot", () => {
@@ -124,7 +126,7 @@ describe("DropOverlay", () => {
     );
     expect(frame).toMatch(/^<div aria-hidden="true" class="[^"]*pointer-events-none/);
     expect(frame).toContain(">Drop into src</span>");
-    expect(classTokens(frame)).toEqual(expect.arrayContaining(["items-end", "z-20"]));
+    expect(classTokens(frame)).toEqual(expect.arrayContaining(["items-end", "z-raised"]));
     expect(frame).not.toMatch(/gray-|white|dark:|backdrop-blur/);
   });
 });

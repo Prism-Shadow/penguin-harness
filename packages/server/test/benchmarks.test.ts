@@ -461,6 +461,64 @@ describe("benchmarks api", () => {
     expect((await outsider.get(base)).status).toBe(404);
   });
 
+  it("lists evaluations whose version is a version label (a semver string), not only build numbers", async () => {
+    const dir = path.join(benchmarksDir(t.root, projectId), "semver-bench");
+    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
+    await writeRawManifest(dir, `title = "Semver bench"\n`);
+    await fs.writeFile(
+      path.join(dir, "scoreboard.yaml"),
+      [
+        "evaluations:",
+        // A build number, as on older scoreboards.
+        '  - time: "2026-07-16T10:00:00Z"',
+        '    agent_id: "default_agent"',
+        "    version: 3",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 72.35",
+        "    cost: 0.04",
+        "    duration_ms: 42500",
+        "    cases:",
+        '      - case: "CASE-001-excel-task"',
+        "        score: 80.2",
+        "        cost: 0.04",
+        "        duration_ms: 50000",
+        "        runs:",
+        "          - score: 80",
+        "            cost: 0.04",
+        "            duration_ms: 48000",
+        '            session_id: "session-run-1"',
+        // A version label, as the benchmark-design Skills write it for a versioned Agent State.
+        '  - time: "2026-07-17T10:00:00Z"',
+        '    agent_id: "default_agent"',
+        '    version: "0.09"',
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 98.57",
+        "    cost: 0.04",
+        "    duration_ms: 43000",
+        "    cases:",
+        '      - case: "CASE-001-excel-task"',
+        "        score: 98.6",
+        "        cost: 0.04",
+        "        duration_ms: 51000",
+        "        runs:",
+        "          - score: 100",
+        "            cost: 0.04",
+        "            duration_ms: 49000",
+        '            session_id: "session-run-2"',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    const bench = res.benchmarks.find((b) => b.id === "semver-bench")!;
+    // Both evaluations list: the build number and the semver label, each as written.
+    expect(bench.evaluations.map((e) => e.version)).toEqual([3, "0.09"]);
+  });
+
   it("lists a Benchmark that has never run, but not a directory without a manifest", async () => {
     const dir = benchmarksDir(t.root, projectId);
     // Deleted mid-evaluation: the run kept writing, so the directory is back with a case and

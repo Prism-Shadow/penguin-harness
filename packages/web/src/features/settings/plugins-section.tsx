@@ -33,7 +33,7 @@ import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { apiErrorText } from "../../lib/api-error";
 import { useSessions } from "../../state/sessions";
 import { useProject } from "../../state/project";
@@ -44,11 +44,11 @@ import {
   installInOrder,
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { MachinePicker } from "../machines/machine-picker";
+import { MachinePicker } from "../machines";
 import {
   usePluginsIncompatibleOnly,
   writePluginsIncompatibleOnly,
-} from "../plugins/incompatible-only";
+} from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";

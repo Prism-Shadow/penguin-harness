@@ -18,6 +18,8 @@
  * package is source-only), so those build before it. The server's build inlines hmr, so hmr
  * builds before it, and JavaScript only: nothing here reads the server's declarations
  * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts).
+ *
+ * packages/a2ui builds with core and amsp: the gallery imports the A2UI grammar from its dist.
  */
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -46,7 +48,9 @@ const run = (cmd, BASE_PATH, extra = {}) => {
   execSync(cmd, { cwd: root, stdio: "inherit", env: { ...process.env, ...vars } });
 };
 
-run("pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp build");
+run(
+  "pnpm --filter @prismshadow/penguin-core --filter @prismshadow/amsp --filter @prismshadow/a2ui build",
+);
 run('pnpm --filter "./plugins/**" build');
 run("pnpm --filter @prismshadow/penguin-landing build", base);
 run("pnpm --filter @prismshadow/penguin-docs build", `${base}docs/`);

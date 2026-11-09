@@ -20,8 +20,8 @@ import {
   cropRect,
   initialCrop,
   fitAvatarDataUrl,
+  type AvatarMimeType,
 } from "../src/lib/avatar-image";
-import type { AvatarMimeType } from "../src/lib/avatar-image";
 
 /** A data URL of exactly `length` characters in the given format. */
 function fakeDataUrl(type: AvatarMimeType, length: number): string {

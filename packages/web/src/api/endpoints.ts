@@ -1,9 +1,3 @@
-/**
- * API endpoint wrappers: one function per API.
- * DTO types come from @prismshadow/penguin-server/api (**type import only**, resolved via
- * tsconfig paths to the server contract file types.ts; must not be a value import — server
- * code must not enter the browser bundle).
- */
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -225,6 +219,8 @@ import type {
   UpdateProfileResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
+  HostCommand,
+  HostCommandsResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -272,8 +268,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam } from "../lib/session-grouping";
-import type { ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -2370,6 +2365,13 @@ export const restartServer = () =>
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
 
+/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
+export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
+
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). The id is the host's word — this build need not know it. */
+export const runHostCommand = (command: string) =>
+  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
+
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
 
@@ -2893,7 +2895,7 @@ export const registryPluginArchiveUrl = (name: string): string =>
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
-/** What the storage-clearing route takes (the shell's own clear-data command). */
+/** What the storage-clearing route takes (WebApp's own clear-data command). */
 export type BuiltinBrowserStorage = Extract<
   DesktopBrowserCommand,
   { op: "clear-data" }
@@ -3023,3 +3025,6 @@ export const clearBuiltinBrowserData = (
     body: { storages, ...scope },
     server: null,
   });
+
+/** The existing server contributions route, read by the single frame provider. */
+export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

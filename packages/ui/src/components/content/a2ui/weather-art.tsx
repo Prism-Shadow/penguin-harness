@@ -18,7 +18,7 @@
  */
 import { useId } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import type { A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiWeatherCondition } from "@prismshadow/a2ui";
 import "./a2ui-motion.css";
 
 // ---------------------------------------------------------------------------

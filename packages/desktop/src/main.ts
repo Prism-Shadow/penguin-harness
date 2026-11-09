@@ -7,7 +7,9 @@
  * through a new installer — so a capability that could instead be delivered
  * by a platform push must be. A rejected example: adding a preload bridge so
  * the web UI could open DevTools, when the shell's own View menu already
- * does it.
+ * does it. The page can still ask for DevTools — through the host-command
+ * relay every other shell action uses (`open-devtools`), which needs no
+ * bridge and no capability in the renderer.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
@@ -90,6 +92,7 @@ import { handleFolderAccessFrame } from "./folder-access.js";
 import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
+import { isDevToolsKey, isMenuBarKey } from "./shortcuts.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import { overlayColors, TITLE_BAR_FALLBACK_CSS, titleBarWindowOptions } from "./title-bar.js";
@@ -105,13 +108,20 @@ import {
   updateTrayPrefs,
 } from "./tray-prefs.js";
 import {
+  checkForUpdatesManually,
   getUpdaterStatus,
   handleUpdaterCommand,
   initUpdater,
   noteMainWindowShown,
   onUpdaterStatus,
+  updatesAvailableInThisForm,
 } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
+  parseUpdaterCommand,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   APP_WINDOW_OPTIONS,
   childGoneLine,
@@ -193,6 +203,55 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — macOS keeps its system menu bar — and F10 brings the
+ * bar up for the rare time it is wanted. The menu's own actions are offered from the page's
+ * command palette (see http/routes/command.ts).
+ *
+ * The menu's ACCELERATORS are not something to rely on here. Chromium offers a key to the
+ * page before it fires one, so anything the page consumes never reaches the menu — the
+ * terminal alone claims Ctrl+Shift+C, Ctrl+Shift+V and Shift+Insert — and with the bar
+ * hidden there is nothing on screen to reveal the binding either. A shortcut this shell
+ * means to guarantee is bound here instead, on `before-input-event`, which runs BEFORE the
+ * page sees the key.
+ */
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (isMenuBarKey(input)) {
+      target.setMenuBarVisibility(!target.isMenuBarVisible());
+      event.preventDefault();
+    } else if (isDevToolsKey(input)) {
+      toggleDevTools();
+      event.preventDefault();
+    }
+  });
+}
+
+/**
+ * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
+ * copied out to someone else, and a docked panel reflows the page under it while that happens.
+ *
+ * `openDevTools` is what the palette's command runs — it says "open", so an open window is
+ * focused rather than closed. A key that people press twice toggles.
+ */
+function openDevTools(): void {
+  if (win === null) return;
+  const contents = win.webContents;
+  if (contents.isDevToolsOpened()) contents.devToolsWebContents?.focus();
+  else contents.openDevTools({ mode: "detach" });
+}
+
+function toggleDevTools(): void {
+  if (win === null) return;
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+  else win.webContents.openDevTools({ mode: "detach" });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -261,6 +320,7 @@ function createWindow(url: string): void {
   // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
   // allowed here is one that HTML can open too — a hidden one, it could own outright.
   win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  hideMenuBar(win);
   win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
@@ -381,6 +441,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
 function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  hideMenuBar(child);
   child.center();
   child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
@@ -617,6 +678,20 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
+      return;
+    }
+    if (host === "open-devtools") {
+      openDevTools();
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -630,6 +705,14 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+      // Unconditional: every Electron build has DevTools, packaged ones included.
+      "open-devtools",
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */

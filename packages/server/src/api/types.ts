@@ -2468,10 +2468,33 @@ export interface SessionPatchRequest {
  * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
  * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
  * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
  */
 export interface MessagesLiveTail {
   cursor: string;
   fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
 }
 
 /**
@@ -2841,6 +2864,15 @@ export interface TaskCreateRequest {
    */
   interrupt?: boolean;
   /**
+   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
+   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
+   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
+   * apply), and the response carries `steered: true`; a compaction, which has no Task to
+   * steer, or a run already settling, which takes no more steering, queues it as
+   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
+   */
+  steerIfBusy?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2902,8 +2934,10 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy`, `interrupt` or `steerIfBusy` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+  /** True when `steerIfBusy` gave the input to the running Task as steering (no new Task). */
+  steered?: boolean;
 }
 
 /**
@@ -4777,8 +4811,8 @@ export interface BenchmarkEvaluation {
   provider: string;
   /** Thinking level read from the unchanged Target Agent configuration. */
   thinkingLevel: string;
-  /** Agent State version number under test. */
-  version: number;
+  /** Agent State version under test: a build number, or a version label such as a semver string. */
+  version: number | string;
   /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
   /** Model-written average of known Case costs; null when every Case cost is unknown. */
@@ -5603,6 +5637,80 @@ export type DesktopPrivacyPane = "files" | "fullDisk";
 export interface DesktopOpenPrivacySettingsMessage {
   type: "desktop-open-privacy-settings";
   pane: DesktopPrivacyPane;
+}
+
+/**
+ * A native action the host process can run on the page's behalf — what the desktop shell's
+ * application menu used to offer, reached from the command palette instead (the menu bar
+ * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ *
+ * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
+ * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
+ * someone reading a console error has to be told a key. Naming it here makes it findable.
+ * It stays a HOST command, run by the shell on its own window: the page is a plain browser
+ * environment with no bridge of its own, and adding one for this was rejected
+ * (packages/desktop/src/main.ts).
+ *
+ * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
+ * writes it. What this list holds is the ids this build has its OWN words for, so the page
+ * can show a better label than the host sent (translated, with search terms). An id absent
+ * here is still offered, still runnable, and shown in the host's words.
+ */
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+
+/**
+ * One command the host offers, carrying the words to show for it.
+ *
+ * The words travel WITH the command because the three programs involved ship apart: the
+ * shell reaches users through an installer, the server and the page through a hot push. A
+ * page that could only render commands it already had words for made the offer list pointless
+ * — a host could never offer anything new — and reading words it did not have blanked it.
+ *
+ * `command` is opaque to both server and page: the host decides what it means and the host
+ * runs it. Neither side validates it against a list of its own; the only question either asks
+ * is whether the host offered it.
+ */
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommandOffer[];
+}
+
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
+  commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: string;
 }
 
 /**

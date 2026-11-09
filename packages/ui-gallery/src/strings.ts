@@ -17,7 +17,7 @@ import type {
   ToneName,
 } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
@@ -324,14 +324,14 @@ export const zh = {
       secondary: "取消",
       input: "搜索会话",
       badge: "运行中",
-      menuTier: "z-[60] 菜单",
+      menuTier: "z-popover 菜单",
       menuItems: ["置顶", "重命名", "移动到…"] as readonly string[],
-      backdropTier: "z-50 对话框",
+      backdropTier: "z-modal 对话框",
       dialogTitle: "删除这个会话？",
       dialogBody: "对话记录与 Trace 文件会一并删除。",
       cancel: "取消",
       confirm: "删除",
-      toastTier: "z-[100] 通知",
+      toastTier: "z-toast 通知",
       toast: "已导出 Trace #001",
     },
     radius: "圆角",

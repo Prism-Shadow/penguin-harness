@@ -19,8 +19,12 @@ import {
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 import { zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
-import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
-import type { RowState } from "../src/features/models/models-page";
+import {
+  clientTypeAfterProviderChange,
+  rowToEntry,
+  type RowState,
+} from "../src/features/models/models-page";
+
 import {
   PROTOCOL_CLIENT_TYPES,
   detectableBaseUrl,

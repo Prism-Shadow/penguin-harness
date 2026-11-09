@@ -11,9 +11,9 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
-import type { PeakWindows } from "../features/models/model-grouping";
+import type { PeakWindows } from "./peak-windows";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
+import type { StartPageSiteId } from "./browser-start-sites";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -22,14 +22,13 @@ export const zh = {
     chat: "对话",
     newChat: "新建对话",
     agents: "智能体",
-    apps: "应用中心",
-    models: "模型库",
-    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
-    benchmark: "评估中心",
-    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    /** The work-mode switch above the switcher row, and its default option (the other options are the contributed modes' own). */
+    workMode: "工作模式",
+    modeDev: "开发",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the pages use their own titles, PageData.title).
     lastConversation: "最近一次对话",
     // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
     userSettings: "用户设置",
@@ -42,7 +41,7 @@ export const zh = {
     /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
     pinEntry: "收藏",
     unpinEntry: "取消收藏",
-    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
+    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "概览",
       chart: "组织图",
@@ -586,7 +585,6 @@ export const zh = {
 
   /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
-    /** The dock tab's name, also in the dock's menus and the launcher. */
     panelTitle: "浏览器",
     /** The browser's own tab strip (its accessible name). */
     tabs: "标签页",
@@ -1131,6 +1129,28 @@ export const zh = {
     hint: (toggle: string | null): string =>
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+    /** The desktop shell's native actions, offered here because its menu bar stays hidden. */
+    installCli: "安装 penguin 命令…",
+    checkUpdates: "检查桌面版更新…",
+    checkingUpdates: "正在检查更新…",
+    openDevTools: "打开开发者工具",
+    projectOnGitHub: "在 GitHub 上查看项目",
+  },
+  /** The rescue surface (src/rescue/): the panel a render error leaves, and safe mode. */
+  rescue: {
+    title: "界面出错了",
+    desc: "页面渲染时抛出错误，应用无法继续显示。可以重新加载，或跳过服务端贡献（插件提供的页面等）后重新加载；需要回退 harness 版本时，打开 Harness 历史。",
+    reload: "重新加载",
+    reloadSafe: "不加载贡献重新加载",
+    /** In place of reloadSafe when safe mode is already on. */
+    safeNote: "已在安全模式：服务端贡献均已跳过，这个错误来自应用本身。",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    paletteHint: (palette: string | null): string =>
+      palette === null ? "命令面板仍可使用。" : `按 ${palette} 仍可打开命令面板。`,
+    marker: "安全模式：未加载服务端贡献",
+    leave: "离开安全模式",
+    enterAction: "进入安全模式（不加载服务端贡献）",
+    leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */
@@ -3422,6 +3442,9 @@ export const zh = {
   },
 
   chat: {
+    workspacePanel: "文件浏览",
+    memoryViewTitle: "记忆",
+    openAgents: "智能体面板",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
@@ -4268,8 +4291,6 @@ Benchmark：
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openAgents: "智能体面板",
-    workspacePanel: "文件浏览",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -4281,7 +4302,6 @@ Benchmark：
     memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
     memoryOpWrite: "写入",
     memoryOpEdit: "编辑",
-    memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
     memoryRowOpen: "查看内容",
@@ -5430,7 +5450,7 @@ Benchmark：
       benchmarkId: string;
       time: string;
       label: string;
-      version: number;
+      version: number | string;
       provider: string;
       modelId: string;
       thinkingLevel: string;
@@ -5602,19 +5622,29 @@ Benchmark：
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-evaluation 插件（Agent Evaluation）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
-      "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
+      "这个会话运行所用的模型，缺省为 Project 默认模型；它负责派发、打分与记录，不是被测的模型",
+    testedModel: "被测智能体使用的模型",
+    testedModelHint:
+      "被测智能体每次测试都用这个模型，思考等级沿用它自己的配置；预设为它在这套 Benchmark 上最近一次评估所用的模型，没有时为 Project 默认模型",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
     /** The fixed tail: the `agent-evaluation` inputs, the label check and the single append. */
-    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+    evaluateTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider: string;
+      modelId: string;
+    }): string =>
       "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
-      `- runs：\`${p.runs}\`\n\n` +
+      `- runs：\`${p.runs}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n\n` +
       "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能。" +
-      "被测模型就是本会话自己的模型：在第一次 `run_subagent` 之前从你的 Environment 读出 `Provider` 与 `Model ID`，作为每个请求的 `provider` 与 `model_id`。" +
-      "智能体不保存模型，不要到被测智能体的文件、Project 配置或服务端去找；Environment 缺其中任何一行，就停下来问我。" +
+      "被测模型就是上面这组 provider 与模型，不一定是本会话自己的模型：把它们作为每个请求的 `provider` 与 `model_id`。" +
       "思考等级取被测智能体配置的等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
@@ -5627,8 +5657,7 @@ Benchmark：
       "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
-    sessionModelHint:
-      "做分析与改动的模型，缺省为 Project 默认模型；评测被测智能体时沿用基线记录的模型，不在这里改",
+    sessionModelHint: "运行方法、读结果并做改动的模型，缺省为 Project 默认模型；它不是被测的模型",
     optimizeRunsHint: "每个候选版本每道题跑几次取平均",
     roundLimitField: "最多轮数",
     roundLimitHint: "每轮一个改动；评测完整才算一轮",
@@ -5637,13 +5666,15 @@ Benchmark：
     focusField: "优化重点",
     focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
     noBaseline:
-      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」跑一次完整评测取得基线。",
+      "所选被测智能体在这套 Benchmark 上还没有这个模型的基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」用同一个模型跑一次完整评测取得基线。",
     baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
     /** The fixed tail: the `agent-optimization` inputs, the acceptance rule and the report. */
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
+      provider: string;
+      modelId: string;
       roundLimit: number;
       targetScore: number;
     }): string =>
@@ -5651,10 +5682,12 @@ Benchmark：
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n` +
       `- desired_score：\`>=${p.targetScore}\`\n` +
       `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
       "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 评测完整的 Case × runs 矩阵，每个子会话的 prompt 里都写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
+      "Reference 是被测智能体当前 Agent State 在上面这组 provider 与模型上的完整评估，每个候选都在同一组 provider、model_id 与 thinking_level 上评测；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
     // The Optimize tab's Method select, built from the plugin library (benchmark/rsi-methods.ts).
@@ -5670,45 +5703,42 @@ Benchmark：
     methodsFailed: "插件库读取失败，先按默认循环优化",
     methodsNone: "插件库里没有自进化算法工具包，按默认循环优化",
     /**
-     * Shown where the default's round limit and target score are: any other toolkit sets its own
-     * budget.
+     * Shown where the default's round limit and target score are: any other toolkit follows its
+     * own Skill for its data and budget.
      */
-    methodBudgetHint: "这个方法用它自己的预算：论文默认值降为冒烟档，除非在「优化重点」里另行指定",
+    methodBudgetHint:
+      "这个方法按它自己的技能运行：在哪些数据上训练和测试、预算多少，都由技能决定，除非在「优化重点」里另行指定",
+    /** Any other toolkit's count field: complete passes over its test set per reported State. */
+    testRepetitionsField: "测试集重复次数",
+    testRepetitionsHint: "报告的每个 State（基线与最终版本）在测试集上完整测几次",
     /** The optimizer field's hint under any other toolkit: the Skill that agent must carry. */
     methodOptimizerHint: (skill: string): string =>
       `运行该方法、修改被测智能体的一方；需要装有 ${skill} 技能`,
     methodMissingSkill: (plugin: string, skill: string): string =>
       `该智能体没有安装 ${skill} 技能，无法运行这个方法——先在插件库为它安装 ${plugin} 插件，或换用默认智能体。`,
     /**
-     * The tail for a toolkit other than the default: its own Skill, the three inputs every toolkit
-     * takes, and its paper's loop and budget. Given the baseline's provider and model, it pins the
-     * evaluations to them, as the default loop does, so they join the baseline's series.
+     * The tail for a toolkit other than the default: its own Skill, the tested agent, the
+     * Benchmark it starts from, the test-set repetitions and the tested model. How the method
+     * trains, tests, budgets and records is left to that Skill.
      */
     rsiOptimizeTail: (p: {
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
-      runs: number;
-      provider?: string;
-      modelId?: string;
-    }): string => {
-      const pinned =
-        p.provider && p.modelId
-          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
-          : "";
-      return (
-        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体运行它的方法。\n\n` +
-        `- test_agent_id：\`${p.targetAgentId}\`\n` +
-        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
-        `- runs：\`${p.runs}\`\n` +
-        pinned +
-        "\n" +
-        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
-        "按原论文的流程运行，预算用技能的冒烟档（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
-        "基线与每个候选都经技能自带的评测参考测量，固定被测智能体的运行时，每条完整评估都以同一标签记入 scoreboard.yaml；" +
-        "结束时报告基线分、最终分、保留的版本与方法改了什么。"
-      );
-    },
+      testRepetitions: number;
+      provider: string;
+      modelId: string;
+    }): string =>
+      `请使用 \`${p.skill}\` 技能，从这套 Benchmark 出发对被测智能体运行它的方法。\n\n` +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- test_repetitions：\`${p.testRepetitions}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n\n` +
+      "按技能的定义运行这个方法：在哪些数据上训练和测试、预算多少、怎样测量、记录什么，都以技能为准。" +
+      "被测智能体固定使用这组 provider 与模型，思考等级沿用它自己的配置。" +
+      "`test_repetitions` 是你报告的每个 State（基线与最终版本）在测试集上完整测试的次数。" +
+      "只问我方法必需而我没给的输入；结束时报告基线分、最终分、保留的版本与方法改了什么。",
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
@@ -5775,10 +5805,9 @@ Benchmark：
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */
   company: {
-    /** The mode switch (top-left of the sidebar, above the Project switcher) and its two options. */
-    workMode: "工作模式",
-    modeDev: "开发",
     modeCompany: "公司",
+    modeDev: "开发",
+    workMode: "工作模式",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
      * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch

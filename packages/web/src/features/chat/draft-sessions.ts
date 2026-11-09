@@ -24,8 +24,15 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
 import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
-import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
-import type { DraftCache, DraftStorage } from "./draft-cache";
+import {
+  clearDraft,
+  draftFromUnknown,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  type DraftCache,
+  type DraftStorage,
+} from "./draft-cache";
 
 export interface DraftSessionEntry {
   /** Route id (`draft-<8 hex>`). */
@@ -38,6 +45,19 @@ export interface DraftSessionEntry {
 /** Storage key for one user × Project's parked drafts (a JSON array of entries). */
 export const draftSessionsKey = (userId: string, projectId: string): string =>
   `penguin.chatDrafts.${userId}.${projectId}`;
+
+/**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent** (once created, the model is locked into its meta).
+ * Real session ids always start with `session-`, so there's no collision with this constant —
+ * nor with parked draft conversations, whose route ids start with `draft-`.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
+export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
+  routeSessionId !== null && routeSessionId.startsWith("draft-") ? routeSessionId : null;
 
 /** Newest-first cap: localStorage is shared budget, and fifty abandoned drafts is already hoarding. */
 const MAX_DRAFTS = 50;

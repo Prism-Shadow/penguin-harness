@@ -1,5 +1,9 @@
+/** @vitest-environment jsdom */
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createElement as h } from "react";
+import { MemoryRouter } from "react-router";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import {
   appPageTab,
@@ -9,6 +13,12 @@ import {
   workbenchTabsOf,
   workbenchUiUrl,
 } from "../src/lib/workbench-tabs";
+import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
+import { LocaleProvider } from "../src/state/locale";
+import { ThemeProvider } from "../src/state/theme";
+import { click, mount, run, settle, unmountAll } from "./helpers/dom";
+import { json, stubFetch } from "./helpers/fetch";
+import { S } from "../src/lib/strings";
 
 const UI = "/api/projects/p/agents/a/workbenches/demo/ui";
 const tab = (key: string, file: string) => ({
@@ -108,21 +118,107 @@ describe("workbenches with nothing to show", () => {
 });
 
 describe("the chat page under a workbench tab", () => {
-  it("does not paint what the page covers, so no dock layer shows through it", () => {
-    // The page lies over the chat at z-10 and the docks paint above that: the bottom dock's
-    // boundary handle (z-20) lit up across the page as a line that took the cursor and resized
-    // the hidden dock, and a fullscreen dock (z-40) lay over the page whole. So while the page
-    // is shown, what it covers stays mounted but hidden: the toolbar and the dock area.
-    const page = readFileSync(
-      new URL("../src/features/chat/chat-page.tsx", import.meta.url),
-      "utf8",
-    ).replace(/\s+/g, " ");
-    const shown = "workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null";
-    expect(page).toContain(
-      `{${shown} && ( <div className="absolute inset-x-0 bottom-0 top-9 z-10">`,
+  afterEach(async () => {
+    await unmountAll();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  /** jsdom's matchMedia: no query ever matches (the stub the mounted suites share). */
+  const unmatchedQuery = {
+    matches: false,
+    media: "",
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  } as unknown as MediaQueryList;
+
+  it("keeps the workbench page in one owner", () => {
+    // The contributed session tab owns the strip and the frame: one useWorkbenchTabs instance,
+    // so the strip and what covers the page can never disagree. No second workbench-state
+    // reader on the page: a second useWorkbenchTabs instance would keep its own active tab
+    // and desync from the strip.
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+    const tab = read("src/features/workbenches/session-tab.tsx").replace(/\s+/g, " ");
+    expect(tab).toContain("useWorkbenchTabs(");
+    expect(tab).toContain("<WorkbenchTabStrip");
+    expect(tab).toContain("<WorkbenchFrame");
+    const toolbar = read("src/features/chat/toolbar/main-chat-toolbar.tsx").replace(/\s+/g, " ");
+    expect(toolbar).not.toContain("workflowTabs");
+    const body = read("src/features/chat/body/main-chat-body.tsx").replace(/\s+/g, " ");
+    expect(body).not.toContain("workflowTabs");
+  });
+
+  it("shows its window beside Chat, and hands the page the way back to Chat", async () => {
+    stubFetch((request) =>
+      request.path === "/api/projects/p/agents/a/workbenches"
+        ? json({ workbenches: [info({})] })
+        : json({}),
     );
-    expect(page).toContain(`const coveredByWorkbench = ${shown} ? "invisible" : "";`);
-    expect(page).toMatch(/\{selected && \( <div className=\{`[^`]*\$\{coveredByWorkbench\}`\}/);
-    expect(page).toMatch(/<div data-dock-area className=\{`[^`]*\$\{coveredByWorkbench\}`\}>/);
+    vi.stubGlobal("matchMedia", () => unmatchedQuery);
+    /** The page's area under the strips, where a tab's window mounts beside Chat. */
+    const windows = document.createElement("div");
+    document.body.appendChild(windows);
+    /** Whether the tab reported its window shown, in order, and the last way back to Chat. */
+    const shown: boolean[] = [];
+    let showChat = null as (() => void) | null;
+    const page = await mount(
+      h(
+        MemoryRouter,
+        { initialEntries: ["/chat"] },
+        h(
+          LocaleProvider,
+          null,
+          h(
+            ThemeProvider,
+            null,
+            h(WorkbenchSessionTab, {
+              projectId: "p",
+              agentId: "a",
+              machineId: null,
+              windows,
+              onWindowShown: (back: (() => void) | null) => {
+                shown.push(back !== null);
+                showChat = back;
+              },
+            }),
+          ),
+        ),
+      ),
+    );
+    await settle();
+    // Chat is the window on screen while the tab strip is all the tab draws.
+    expect(shown).toEqual([false]);
+    expect(windows.childElementCount).toBe(0);
+
+    // Select the workbench: its window, holding the page's frame, mounts in the window area
+    // while the strip stays above it. (On a transition the leaving effect reports its null
+    // before the entering one reports — the page reads the last report.)
+    const tabs = () => [...page.container.querySelectorAll('button[role="tab"]')];
+    const selected = () => tabs().find((b) => b.getAttribute("aria-selected") === "true");
+    const board = tabs().find((b) => b.textContent === "board");
+    expect(board).toBeDefined();
+    await click(board!);
+    expect(shown.at(-1)).toBe(true);
+    expect(windows.querySelector('[data-window][data-shown="true"] iframe')).not.toBeNull();
+    expect(page.container.querySelector("iframe")).toBeNull();
+
+    // The way back the page was handed — what a dock shortcut calls first: Chat is selected
+    // and the workbench window leaves.
+    await run(() => showChat!());
+    expect(shown.at(-1)).toBe(false);
+    expect(selected()?.textContent).toBe(S.workbenches.chatTab);
+    expect(windows.childElementCount).toBe(0);
+
+    // Leaving the page takes the window with it, whatever was shown.
+    await click(board!);
+    expect(shown.at(-1)).toBe(true);
+    await page.unmount();
+    expect(shown.at(-1)).toBe(false);
+    expect(windows.childElementCount).toBe(0);
+    windows.remove();
   });
 });

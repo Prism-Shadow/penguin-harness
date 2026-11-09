@@ -52,7 +52,7 @@ describe("the default table per platform", () => {
     ).toBeNull();
   });
 
-  it("saves on ⌘S / Ctrl+S and opens the palette on ⌥⌘P / Ctrl+Alt+P, not on ⌘P / Ctrl+P", () => {
+  it("saves on ⌘S / Ctrl+S and opens the palette on ⇧⌘P / Ctrl+Shift+P, not on ⌘P / Ctrl+P or the old ⌥⌘P", () => {
     expect(matchShortcut(key({ code: "KeyS", metaKey: true }), defaults("mac"), ALL, "mac")).toBe(
       "editor.save",
     );
@@ -61,7 +61,7 @@ describe("the default table per platform", () => {
     ).toBe("editor.save");
     expect(
       matchShortcut(
-        key({ code: "KeyP", metaKey: true, altKey: true }),
+        key({ code: "KeyP", metaKey: true, shiftKey: true }),
         defaults("mac"),
         ALL,
         "mac",
@@ -69,12 +69,20 @@ describe("the default table per platform", () => {
     ).toBe("palette.toggle");
     expect(
       matchShortcut(
-        key({ code: "KeyP", ctrlKey: true, altKey: true }),
+        key({ code: "KeyP", ctrlKey: true, shiftKey: true }),
         defaults("windows"),
         ALL,
         "windows",
       ),
     ).toBe("palette.toggle");
+    expect(
+      matchShortcut(
+        key({ code: "KeyP", metaKey: true, altKey: true }),
+        defaults("mac"),
+        ALL,
+        "mac",
+      ),
+    ).toBeNull();
     expect(
       matchShortcut(key({ code: "KeyP", metaKey: true }), defaults("mac"), ALL, "mac"),
     ).toBeNull();

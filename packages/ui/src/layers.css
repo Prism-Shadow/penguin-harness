@@ -1,0 +1,71 @@
+/*
+ * The layer scale: the one place a z-index is a number. Everything else names a layer, as the
+ * `z-<layer>` utility (`z-sticky`, `z-modal`), as `var(--layer-<layer>)` in a stylesheet, or
+ * through `layer("<name>")` (layers.ts) in an inline style. The names are in paint order, low to
+ * high, and only this order is a contract; the numbers between them are spacing.
+ *
+ * Two kinds of layer, and where each applies:
+ *
+ * - Inside a box or a window (behind … dock-handle, and menu): a window — the Chat window, a
+ *   Workbench window, the full-page workbench — is its own stacking context (`AppWindow`,
+ *   `isolation: isolate`), so these only order things within that window. Nothing inside one can
+ *   rise over another window, the navigation column, or the overlays below.
+ * - Over the whole app (modal … drag-preview): rendered through a portal into `document.body`,
+ *   the one portal root, where these numbers order them against each other and against every
+ *   window, which sits at the root's zero.
+ *
+ * behind          a decoration under its own box's content (a wallpaper copy, a connector line)
+ * sticky          a row pinned to its scroller's edge (a tool row, a timeline label, a code gutter)
+ * sticky-head     a head pinned over the sticky rows it scrolls past (an activity group's head)
+ * raised          a mark or a control floating over a list or a scroller (a drop line, the jump
+ *                 to the newest message, a chart readout, the conversation outline)
+ * handle          a resize handle straddling the edge it resizes
+ * window-overlay  what floats over a window's content and belongs to it (the dock launcher, a
+ *                 drop veil, the full-page workbench's exit, a site's header)
+ * dock            a dock surface lifted to fullscreen over its row or area
+ * dock-handle     the resize handle on a lifted surface's leading edge
+ * menu            an in-place menu and a floating panel a dialog must cover (the find bar)
+ * modal           a dialog, a drawer, a sheet, the lightbox and the command palette with their scrim
+ * popover         a portaled menu, select, picker or popover — above a dialog it was opened from
+ * toast           the toasts and progress cards
+ * tooltip         the hover hint, over everything it can describe
+ * drag-preview    what follows the pointer through a drag (a dock's drop targets, a ticket card)
+ *
+ * The order is not a theme's to change, so the properties sit outside the `--ui-*` token
+ * contract. Imported by theme.css (the app, the gallery, the published sheet) and site.css
+ * (landing and docs), so every Tailwind entry gets the utilities and every page the properties.
+ */
+:root {
+  --layer-behind: -1;
+  --layer-sticky: 10;
+  --layer-sticky-head: 20;
+  --layer-raised: 30;
+  --layer-handle: 40;
+  --layer-window-overlay: 50;
+  --layer-dock: 60;
+  --layer-dock-handle: 70;
+  --layer-menu: 80;
+  --layer-modal: 90;
+  --layer-popover: 100;
+  --layer-toast: 110;
+  --layer-tooltip: 120;
+  --layer-drag-preview: 130;
+}
+
+/* `z-<layer>` utilities, each reading its custom property directly (`inline`). */
+@theme inline {
+  --z-index-behind: var(--layer-behind);
+  --z-index-sticky: var(--layer-sticky);
+  --z-index-sticky-head: var(--layer-sticky-head);
+  --z-index-raised: var(--layer-raised);
+  --z-index-handle: var(--layer-handle);
+  --z-index-window-overlay: var(--layer-window-overlay);
+  --z-index-dock: var(--layer-dock);
+  --z-index-dock-handle: var(--layer-dock-handle);
+  --z-index-menu: var(--layer-menu);
+  --z-index-modal: var(--layer-modal);
+  --z-index-popover: var(--layer-popover);
+  --z-index-toast: var(--layer-toast);
+  --z-index-tooltip: var(--layer-tooltip);
+  --z-index-drag-preview: var(--layer-drag-preview);
+}

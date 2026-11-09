@@ -12,8 +12,8 @@
  * `ui-notice` hook and the strip's tone colours, and a theme that restyles notices restyles toasts
  * with them. An error toast may carry a problem report (`toastError(text, { report })`, for an
  * error that is a defect rather than the person's to fix): it then holds two presses, its words
- * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached. The stack is portaled to the body above dialogs and drawers (`z-[100]` over their
- * `z-50`), so a toast raised inside a dialog is still seen; the stack lets the pointer through and
+ * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached. The stack is portaled to the body on the `toast` layer, above dialogs and
+ * drawers (`modal`) and their menus (`popover`), so a toast raised inside a dialog is still seen; the stack lets the pointer through and
  * only the toasts take it.
  *
  * The stack is a polite live region, and it stays mounted while empty: a region inserted together
@@ -124,7 +124,7 @@ export function ToastStack({
       aria-label={strings.notifications}
       aria-live="polite"
       aria-relevant="additions text"
-      className="pointer-events-none fixed inset-x-0 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-[100] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-toast flex flex-col items-center gap-2 px-4"
     >
       <span id={hint} hidden>
         {strings.dismiss}

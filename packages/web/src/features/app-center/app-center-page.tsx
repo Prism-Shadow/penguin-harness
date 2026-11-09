@@ -28,6 +28,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../../lib/workbench-tabs";
@@ -36,11 +37,8 @@ import { useMachines } from "../../state/machines";
 import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
-import { localizedText } from "../chat/skill-use";
-import { skillTileColor } from "../skills/skill-icon-view";
-
-/** Where the full page's exit returns to (the route's own path, in module.json). */
-export const APP_CENTER_PATH = "/apps";
+import { localizedText } from "../../lib/skill-use";
+import { skillTileColor } from "../skills";
 
 /** The Skills a "Create with AI" conversation opens with: the visual language, then the workbench's own. */
 const APP_SKILLS = ["web-design", "penguin-plugin"];

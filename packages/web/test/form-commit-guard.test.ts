@@ -33,15 +33,14 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceFile } from "./helpers/roots";
+import { expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
 
 const SCAN = scanSources([".tsx", ".ts"]);
 
 /** Modules under packages/web/src whose forms follow the model; check 3 runs on each. */
 const FORM_MODULES: readonly string[] = [
   "components/account/change-password-dialog.tsx",
-  "components/layout/project-dialogs.tsx",
+  "features/projects/project-dialogs/project-settings-dialog.tsx",
   "features/admin/admin-users-page.tsx",
   "features/agents/agent-settings-page.tsx",
   "features/agents/api-tab.tsx",
@@ -121,9 +120,7 @@ const COMMITS = /^(?:save|persist|write|submit|put|post|send|commit|onSave|onSub
 
 /** The files check 1 and 2 read: everything under features/, and the project dialogs. */
 const inReach = (file: SourceFile) =>
-  file.root === "web" &&
-  file.rel.endsWith(".tsx") &&
-  (file.rel.startsWith("features/") || file.rel === "components/layout/project-dialogs.tsx");
+  file.root === "web" && file.rel.endsWith(".tsx") && file.rel.startsWith("features/");
 
 /** Each file is parsed once, however many checks read it. */
 const parsed = new WeakMap<SourceFile, ts.SourceFile>();

@@ -895,7 +895,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`，`live=run` 则要求它的运行接续形式；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /history-lines` 是本服务端读取已连接机器上 Session 所用的接口（经 API 套接字调用；每个服务端都为自己的 Session 应答）。它恰好接受 `tailLimit=n`、`before=<游标>&limit=n`、`full=1`、`body=<ref>`、`fill=only[&file=<键>]` 之一，另可带 `budget=<字节>`（窗口的字节预算，按图片引用、正文折叠后的形态计，窗口展开的子 Agent 会话记录一并计入）、`fill=1`（交付窗口后继续发送该 Session 的其余各行）与 `have=`（base64url 编码的 JSON：每个 Trace 文件的 inode 与设备号（十进制字符串）、创建时间、调用方持有的每一段 `[lo, hi)` 及其首尾的散列，以及只持有一部分的行）。流在读取任何内容之前就开始并发出节拍。随后依次为 `window`（`/messages` 随记录附带的信封、该 Session 及其子 Agent 会话的 Trace 文件、窗口在其上的布局、重记录的折叠形态与各阶段总量；超过一帧时改为若干 `window-part`，各段文本拼接即其 JSON）、`lines` 与 `part`（只发整行，最新的段在前，超过一帧的单行拆成若干片，每片注明所属行的起点）、`ready`、只持有一部分的行的余下部分（只有窗口自身的轻行才在 `ready` 之前发）、重行与补齐部分，最后是 `done`。每个事件至多 32 KiB 文本。inode 相同、且双方都知道创建时间时创建时间也相同，才是调用方复制的那个文件（设备号从不比较，创建时间等于变更时间的视为未知）；不是同一文件，或大小、区段边界、序号、锚点不符时，标为 `reset` 并从头重发；只持有一部分的行若不符，只把该行整行重发。流开始后才发现无法应答的（`body` 的 ref 不指向该 Session 的行）以 `error` 事件结束。早于这条路由的服务端在套接字上答 `421` `not_on_socket`。无权读取该 Session 的管理员（本服务端读取机器所用的身份）在这里与 `trace-body` 上得到 `403` `session_forbidden`，拒绝因此不会被当成删除；其他无权读取的用户与所有 Session 路由一样得到 `404` `session_not_found`。
 - `GET /trace-body?ref=` 以流的形式取回历史窗口折叠掉的一个值（超过 16 KiB 的工具输出、图片、工具调用参数中的长字符串或思考文本，由 `elided` 条目的 `ref` 指明），事件为 `progress`、`part`（`{windowId, offset, text, last}`）与 `done`。ref 本身不授权任何读取：只有其 Agent 与 Session 都是合法 id，且其 Session 就是该 Session 或其历史展开所及的子 Agent 会话时才应答，行从该 Session 自身索引定位到的文件中读取；其余一律 404 `trace_body_not_found`。
@@ -926,6 +926,29 @@ interface MessagesResponse {
 
 `cursor` 和 `fragments` 在 Trace 读取开始之前一并原子捕获。先连接事件流的客户端（见[推荐的客户端模式](#推荐的客户端模式)）在历史之后应用它们：游标的 epoch 与已缓冲 SSE 事件的 epoch 一致时，丢弃所有 seq 不高于游标的缓冲 partial 事件，因为 `fragments` 已经包含那些内容。接着客户端把 `fragments` 送入正常的 reducer，再重放缓冲中剩下的部分。游标从不丢弃缓冲中的完整消息；那些交给常规的重叠去重处理。Session 空闲时不返回 `live`。
 
+#### 运行接续：`live=run`
+
+要把一次进行中的运行按流式的原样接着显示下去的客户端（如 CLI 的 `chat`），在完整读取或尾窗读取上加 `live=run`。此时不论 Session 是否在运行都附带 `live`，并多出两个与 `cursor` 在同一 tick 内捕获的字段：
+
+```ts
+interface RunFormLive {
+  cursor: string;
+  fragments: AmspRecord[];
+  // The Session's status at the cursor.
+  status: "idle" | "running" | "compacting";
+  // The current run's records (one Task with the Tasks a stop hook or a goal loop continues
+  // it with, or one compaction outside a Task) in publish order: each streamed fragment's
+  // deltas folded into its `partial_* start`, its `stop` and complete message as published.
+  // Empty while idle.
+  records: AmspRecord[];
+  // How many of the run's oldest records the server no longer holds (it keeps 8 MiB per run);
+  // absent when none.
+  omitted?: number;
+}
+```
+
+`messages` 随之截至当前运行的首条记录之前，这次运行只在 `records` 里出现一次；从运行中途开始的窗口不含它的任何记录。运行进行中不再追加暂存输入，因为运行的记录已经带着它。读取期间才开始的运行同样在其首条记录处截断，它的记录从事件流上到达。客户端先订阅、后读取，依次渲染 `messages`、`records` 与事件流上的事件：同一 epoch 下 seq 不高于游标的记录事件与 `task_state` 一律跳过，因为 `messages`、`records` 与 `status` 已经包含它们的内容；其余服务端事件（含审批请求）照常处理，无需重叠去重。`before` 页忽略 `live=run`；早于运行接续的服务端在响应中不带 `status`。
+
 ### 分叉
 
 `tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
@@ -936,7 +959,7 @@ interface MessagesResponse {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -951,8 +974,9 @@ interface MessagesResponse {
 | POST | `/compact` | 开始上下文压缩：202 |
 | POST | `/switch-model` | 在本 Session 内切换模型：202；从未运行过的 Session 返回 200 与更新后的 Session |
 
-- `POST /tasks` 响应 `{sessionId, queued?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
+- `POST /tasks` 响应 `{sessionId, queued?, steered?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
+- `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。

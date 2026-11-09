@@ -185,12 +185,12 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in amsp core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp a2ui core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
       - name: Pack the publishable packages
         run: |
-          for p in amsp core server cli; do
+          for p in amsp a2ui core server cli; do
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done
