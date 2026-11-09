@@ -54,6 +54,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
+    "@penguinharness/use-keenable": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",

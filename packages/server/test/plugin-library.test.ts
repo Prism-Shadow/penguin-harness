@@ -275,7 +275,13 @@ describe("the shipped library", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
+    for (const manual of [
+      "agent-company",
+      "continual-learning",
+      "humanizer",
+      "use-claude-code",
+      "use-keenable",
+    ]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -310,6 +316,7 @@ describe("the shipped library", () => {
       "penguin-support",
       "use-bento-slides",
       "use-firecrawl",
+      "use-keenable",
     ]);
     expect(names("ai-app-development")).toEqual([
       "agent-development",
