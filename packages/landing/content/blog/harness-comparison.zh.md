@@ -1,5 +1,5 @@
 ---
-title: "用 PenguinHarness 组织四种 Harness 的对比实验"
+title: "用 PenguinHarness 在 50 项真实任务上测出四款主流 Harness 的差距"
 date: 2026-11-05
 category: practice
 author: "Zhihao Liu (Prism Shadow AI)"
@@ -104,7 +104,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1570" alt="图 3｜单道题目的容器内执行与独立判分流程" /><figcaption>图 3｜单道题目的容器内执行与独立判分流程</figcaption></figure>
 
-举个实际的例子。Sec E 的第 8 题 [embedding-drift-monitor](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/penguinharness-benchmark-sec-e/tasks/embedding-drift-monitor) 是一道修 Bug 题：容器里提前放好了一套有缺陷的监测程序，里面存在多处逻辑和计算 Bug。四种 Harness 都要在 25 分钟、200 次请求内自己读代码找出并修好这些问题，交卷后再由判卷脚本跑 pytest 验收。结果很有意思：Codex 三轮都觉得自己改完了、主动交卷，但改出来的代码没跑过 pytest，三轮全拿 0 分；而 DSH 和 PenguinHarness 三轮改出的代码全部通过测试，稳稳拿到三个 100 分。
+举个实际的例子。Sec E 的第 8 题 [embedding-drift-monitor](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/penguinharness-benchmark-sec-e/tasks/embedding-drift-monitor) 是一道修 Bug 题：容器里提前放好了一套有缺陷的监测程序，里面藏着三处逻辑和计算 Bug。四种 Harness 都要在 25 分钟、200 次请求内自己读代码找出并修好这些问题，交卷后再由判卷脚本跑 pytest 验收。结果很有意思：Codex 三轮都觉得自己改完了、主动交卷，但改出来的代码没跑过 pytest，三轮全拿 0 分；而 DSH 和 PenguinHarness 三轮改出的代码全部通过测试，稳稳拿到三个 100 分。
 
 ## 4. 得分与消耗怎么算？
 
@@ -169,13 +169,5 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 2. **在 Sec D 科学计算题上，大量运行时间耗在了超时退出上**：这 10 道题耗掉了各家整轮 34% 到 53% 的运行时间，单轮就要跑上 4 到 5 个多小时，最后四家得分却全在 10 分及以下。在保留了逐题耗时的 DSH 和 Codex 记录里，30 次尝试分别有 10 次和 12 次运行超过 35 分钟——其中 21 次最终拿了 0 分，但也有 1 次例外：Codex 在小行星定轨题上跑了 38.8 分钟，最终拿到了 100 分。这说明长耗时并不等于全在白跑，关键要看 Agent 在这段时间里究竟是在推进解题，还是卡在死胡同里原地打转。
 
 **说到底，“多花 Token 能不能换来高分”，很大程度上取决于任务环境有没有明确的反馈信号。**像修 Bug 这类能随时跑测试、看报错的任务，让 Agent 多试几轮更容易越改越对；但像科学计算这类中间拿不到对错反馈的长任务，单纯地放宽步数和时长往往只会让 Agent 在死胡同里白跑——这时候及时发现它卡在哪一步、督促它换思路或停下，远比硬堆 Token 管用。
-
-## 6. 接下来我们做什么？
-
-跑完这 600 次测试，这 50 道题就成了我们后续迭代 Harness 的固定基线。接下来每次改提示词、调工具链，我们都会在这条基线上重点推进三件事：
-
-1. **把“三轮过两轮”的题目推上“三轮全过”**：重点排查 PenguinHarness 那 12 道“三轮过两轮”的题是怎么挂掉的，让 Agent 在交卷前多跑一步自检，解决发挥不稳定的问题。
-2. **每次评测逐题比对，不光看总分**：每次改版跑满三轮后，直接对比 50 道题每一题的通过情况，防止被“修好 A 题、弄坏 B 题”的同分假象骗过去。
-3. **给长耗时任务加上超时提醒，卡住时及时换思路**：重点盯着 Sec D 科学计算题，当 Agent 卡在同一条死胡同里长时间没进展时，及时提醒它换个做法或停下，别再白跑到超时。
 
 **实验数据快照**：本文全部数据对应 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2) 仓库快照 6ad65ea054fe8035c1c48724dbb5626d699f6cb2。相关文档：[横评归档目录](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/experiments/harness-comparison) · [仓库运行说明 README.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/README.zh.md) · [50 题筛选说明 SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md) · [评测集数据说明 data/README.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/README.md) · [PenguinAgent 适配器说明](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/agents/README.md) · [评估数据与提交流程规范](https://club.penguin.ooo/zh/workflow/evaluation/)
