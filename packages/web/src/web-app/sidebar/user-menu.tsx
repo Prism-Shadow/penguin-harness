@@ -29,7 +29,7 @@ import {
 
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
-import { AppInfoRow } from "../account/app-info-row";
+import { AppInfoRow } from "../../components/account/app-info-row";
 import { openAppInfo } from "../../lib/use-update-flow";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { onSettingsRequest } from "../../features/settings/settings-request";
