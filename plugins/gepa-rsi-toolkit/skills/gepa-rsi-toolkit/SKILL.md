@@ -1,7 +1,7 @@
 ---
 name: gepa-rsi-toolkit
 description: Run GEPA (Reflective Prompt Evolution Can Outperform Reinforcement Learning, Agrawal et al. 2025) on an agent and a frozen Benchmark - reflect on a minibatch of its Traces and scores to rewrite the instruction, keep a child that beats its parent, draw parents from the per-case Pareto front, keep the best average.
-version: 2026.10.22.1
+version: 2026.11.09.1
 ---
 
 # GEPA
@@ -15,7 +15,7 @@ This Skill is the experiment's controller and needs `run_subagent`; if that tool
 - `test_agent_id`: the Target, an existing Agent of this Project, or `create: <id>` for a fresh one. Never the Agent running this Skill: its workers are this Agent.
 - `benchmark_id`: a published Benchmark of this Project; its cases are GEPA's feedback set (the paper's D_feedback, the source's `trainset`), the only cases whose executions the reflection model reads. Without one, list the published Benchmarks and ask; this Skill never builds one.
 - `pareto_benchmark_id`: the Pareto set (D_pareto, the source's `valset`), on which every pool member is measured and the winner is selected. The paper uses a separate validation split (Appendix E.1). Without one, the Pareto set is the feedback set, as `optimize` does when no `valset` is given; say so in the report. The test half of a train/test pair, such as GDPevo's, never serves as either set.
-- `feedback_case_ids` and `pareto_case_ids`: every case of their Benchmark unless the user names a subset; two subsets of one Benchmark stay disjoint. `runs`: Runs per Case on the Pareto set, 1 unless given. A minibatch case runs once, as the source evaluates every example once.
+- `feedback_case_ids` and `pareto_case_ids`: every case of their Benchmark unless the user names a subset; two subsets of one Benchmark stay disjoint. `runs`: Runs per Case on the Pareto set, 1 unless given. A request's `test_repetitions` (the Evaluation Center sends one) gives this count: R runs per case are R complete passes over the Pareto set, and over `test_benchmark_id` when one is given. A minibatch case runs once, as the source evaluates every example once.
 - `test_benchmark_id` (optional): a held-out published Benchmark, measured only after selection, for the seed and the winner.
 - The seed instruction: the user's declared one, else empty (`references/initialization.md`).
 - The Target's runtime, fixed as `references/evaluation.md` says. The reflection model is this Session's model.

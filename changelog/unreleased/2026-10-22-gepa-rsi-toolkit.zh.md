@@ -2,12 +2,12 @@
 
 - **Date:** 2026-10-22
 - **Type:** feature
-- **Scope:** `plugins`, `core`, `docs`, `landing`, `ui-gallery`
+- **Scope:** `plugins`, `server`, `docs`, `landing`, `ui-gallery`
 - **PR:** [#1277](https://github.com/Prism-Shadow/penguin-harness/pull/1277)
 
 [English](2026-10-22-gepa-rsi-toolkit.md)
 
-插件库新增 RSI 工具包 `gepa-rsi-toolkit`（GEPA RSI Toolkit，分类 `rsi`，预装）。它唯一的 Skill `gepa-rsi-toolkit`（`2026.10.22.1`）对照 `gepa-ai/gepa` 的 `8f287de942f41a6d1e0e7e5b2d576247c4bedee9` 运行 GEPA（[Agrawal 等，2025](https://arxiv.org/abs/2507.19457)），在只有一条指令的系统上采用 `optimize` 的默认设置：父代从逐题 Pareto 前沿抽取，每次取 3 道反馈题组成小批量，反思模型阅读父代的 Trace 与分数并写出新指令，子代只有在小批量总分严格更高时才被接纳，每个被接纳的子代都做一次完整测量，最后保留平均分最高者。Web App 无需改动，「优化」标签页的**方法**字段即可选到它，因为这份列表读自插件库的 `rsi` 分类。
+插件库新增 RSI 工具包 `gepa-rsi-toolkit`（GEPA RSI Toolkit，分类 `rsi`，预装）。它唯一的 Skill `gepa-rsi-toolkit`（`2026.11.09.1`）对照 `gepa-ai/gepa` 的 `8f287de942f41a6d1e0e7e5b2d576247c4bedee9` 运行 GEPA（[Agrawal 等，2025](https://arxiv.org/abs/2507.19457)），在只有一条指令的系统上采用 `optimize` 的默认设置：父代从逐题 Pareto 前沿抽取，每次取 3 道反馈题组成小批量，反思模型阅读父代的 Trace 与分数并写出新指令，子代只有在小批量总分严格更高时才被接纳，每个被接纳的子代都做一次完整测量，最后保留平均分最高者。Web App 无需改动，「优化」标签页的**方法**字段即可选到它，因为这份列表读自插件库的 `rsi` 分类。
 
 ## 细节
 
@@ -18,4 +18,6 @@
 - **预算。** Target 的每次执行都计入 `max_metric_calls`，并像源码一样在每轮开始前检查。冒烟默认值是种子的一次测量，加上四轮未接纳任何子代的迭代。
 - **声明的改动。** 由于 Rubric 不公开，反馈只有 Rubric 分数；反思模型按路径阅读每次执行的 Trace 与 Workspace；分数取 `0..100`，因此 `perfect_score` 为 100；Merge 不运行，因为只有一条指令时它只会复现某个父代。
 - **评测。** 该工具包附带的 `references/evaluation.md` 与其他算法工具包逐字节相同；插件自带的 `test/skills.test.ts` 检查它的 `SKILL.md` 能被解析，与插件库里其他带 Skill 的插件一致。
-- **包。** `core`、`cli` 与 `desktop` 依赖 `@penguinharness/gepa-rsi-toolkit`。落地页的算法一行、README 表格、技能与插件、自我进化、评估中心、组件库的插件库与 Web App 的技能端到端测试都列入了它。
+- **声明。** 插件在 `src/index.ts` 中以 `PluginLibraryModule.cards` 与 `PluginLibraryModule.skills` 两项贡献声明它的卡片（中英文标题、中文描述、简短描述、分类 `rsi`、图标、快速开始、论文链接）和唯一的 Skill，由 `build` 写入 `ifaces.json`，与插件库里其他插件的写法一致。
+- **重复次数。** Skill 把请求里的 `test_repetitions`（评估中心「优化」标签页会发送）当作 `runs`：在 Pareto 集上完整跑 R 遍；给出 `test_benchmark_id` 时，在它上面也跑 R 遍。
+- **包。** `server`、`landing`、`cli` 与 `desktop` 依赖 `@penguinharness/gepa-rsi-toolkit`。落地页的算法一行、README 表格、技能与插件、自我进化、评估中心、组件库的插件库与 Web App 的技能端到端测试都列入了它。

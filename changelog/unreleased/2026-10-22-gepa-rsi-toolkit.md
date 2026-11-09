@@ -2,12 +2,12 @@
 
 - **Date:** 2026-10-22
 - **Type:** feature
-- **Scope:** `plugins`, `core`, `docs`, `landing`, `ui-gallery`
+- **Scope:** `plugins`, `server`, `docs`, `landing`, `ui-gallery`
 - **PR:** [#1277](https://github.com/Prism-Shadow/penguin-harness/pull/1277)
 
 [中文版](2026-10-22-gepa-rsi-toolkit.zh.md)
 
-A new RSI toolkit, `gepa-rsi-toolkit` (GEPA RSI Toolkit, category `rsi`, preinstalled), joined the plugin library. Its one Skill, `gepa-rsi-toolkit` (`2026.10.22.1`), ran GEPA ([Agrawal et al., 2025](https://arxiv.org/abs/2507.19457)) against `gepa-ai/gepa` at `8f287de942f41a6d1e0e7e5b2d576247c4bedee9`, with `optimize`'s defaults on a system of one instruction: a parent drawn from the per-case Pareto front, a minibatch of 3 feedback cases, a reflection model that read the parent's Traces and scores and wrote a new instruction, admission only on a strictly higher minibatch total, a full measurement of every admitted child, and the best average kept. The Optimize tab's **Method** field offered it with no Web App change, since that list is read from the library's `rsi` category.
+A new RSI toolkit, `gepa-rsi-toolkit` (GEPA RSI Toolkit, category `rsi`, preinstalled), joined the plugin library. Its one Skill, `gepa-rsi-toolkit` (`2026.11.09.1`), ran GEPA ([Agrawal et al., 2025](https://arxiv.org/abs/2507.19457)) against `gepa-ai/gepa` at `8f287de942f41a6d1e0e7e5b2d576247c4bedee9`, with `optimize`'s defaults on a system of one instruction: a parent drawn from the per-case Pareto front, a minibatch of 3 feedback cases, a reflection model that read the parent's Traces and scores and wrote a new instruction, admission only on a strictly higher minibatch total, a full measurement of every admitted child, and the best average kept. The Optimize tab's **Method** field offered it with no Web App change, since that list is read from the library's `rsi` category.
 
 ## Details
 
@@ -18,4 +18,6 @@ A new RSI toolkit, `gepa-rsi-toolkit` (GEPA RSI Toolkit, category `rsi`, preinst
 - **Budget.** Every Target execution counted toward `max_metric_calls`, checked before each iteration as the source checks it. The smoke default was the seed's measurement plus four iterations that admit nothing.
 - **Declared adaptations.** The feedback was the Rubric score alone, since the Rubric is private; the reflection model read each execution's Trace and Workspace by path; scores were on `0..100`, so `perfect_score` was 100; Merge did not run, since with one instruction it reproduces a parent.
 - **Evaluation.** The toolkit carried the same byte-identical `references/evaluation.md` as the other algorithm toolkits, and the plugin's `test/skills.test.ts` checked that its `SKILL.md` parses, as the library's other skill plugins do.
-- **Packages.** `core`, `cli` and `desktop` depended on `@penguinharness/gepa-rsi-toolkit`. The landing page's algorithm row, the README tables, Skills & Plugins, Self-Improvement, Evaluation Center, the component gallery's plugin library and the Web App's skills end-to-end test listed it.
+- **Declaration.** The plugin declared its card (titles, Chinese description, short descriptions, category `rsi`, icon, quick start, paper link) and its one Skill in `src/index.ts` as `PluginLibraryModule.cards` and `PluginLibraryModule.skills` contributions, which `build` writes to `ifaces.json`, the way the library's other plugins do.
+- **Repetitions.** The Skill read a request's `test_repetitions`, which the Evaluation Center's Optimize tab sends, as its `runs`: R complete passes over the Pareto set, and over `test_benchmark_id` when one was given.
+- **Packages.** `server`, `landing`, `cli` and `desktop` depended on `@penguinharness/gepa-rsi-toolkit`. The landing page's algorithm row, the README tables, Skills & Plugins, Self-Improvement, Evaluation Center, the component gallery's plugin library and the Web App's skills end-to-end test listed it.
