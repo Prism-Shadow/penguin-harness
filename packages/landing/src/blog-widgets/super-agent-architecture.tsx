@@ -1,10 +1,13 @@
 /**
- * Button-free 3-Stage Spotlight Diagram for the Super-agent blog post (`data-widget="super-agent-architecture"`).
+ * Topology diagram for the Super-agent blog post (`data-widget="super-agent-architecture"`).
  *
- * Minimalist three-column architecture diagram with a gentle automatic spotlight across the three parts:
- *   1. 事件驱动 (Event-Driven): 群聊 / GitHub -> 两级过滤与复现
- *   2. 双层架构 (Two-Tier Architecture): Router Agent -> Worker 1 / Worker 2 / Worker 3
- *   3. Watchdog 巡检 (Watchdog Loop): 定时触发 -> Watchdog Agent (inspects Worker layer)
+ * Three connected mechanisms share one drawing, each lit in turn by a gentle automatic spotlight:
+ *   1. 事件驱动: 群聊 / GitHub 进入两级过滤，闲聊丢弃，有效事件交给 Router
+ *   2. 双层架构: Router Agent 向三个并发 Worker 派发任务
+ *   3. Watchdog 巡检: 主系统外的 Watchdog Agent 定时巡检 Worker 层
+ *
+ * A reader with reduced motion, or one who has not scrolled the figure into view, sees all three
+ * parts lit at once: they are concurrent mechanisms, not three steps in a sequence.
  */
 import { useEffect, useState } from "react";
 import { S, zh } from "../lib/strings";
@@ -13,23 +16,53 @@ import { useVisibleActivity } from "../lib/visible-activity";
 
 const TOTAL_STAGES = 3;
 
+/** The Router/Worker core holds the spotlight longest; the intake and the loop pass quicker. */
 function stageDelayMs(stage: number): number {
-  if (stage === 2) return 2500;
-  return 1500;
+  if (stage === 1) return 2600;
+  if (stage === 2) return 2200;
+  return 1800;
 }
 
+/** Worker boxes, centred under the Router at x = 236 / 334 / 432. */
 const WORKERS = [
-  { id: "W1", label: "Worker 1", x: 272 },
-  { id: "W2", label: "Worker 2", x: 334 },
-  { id: "W3", label: "Worker 3", x: 396 },
+  { cx: 236, x: 192 },
+  { cx: 334, x: 290 },
+  { cx: 432, x: 388 },
 ] as const;
+
+const TRANSITION = "transition-colors duration-500";
+
+/** An agent that owns a decision: the Router and the Watchdog. */
+function primarySurface(lit: boolean): string {
+  return lit
+    ? `${TRANSITION} fill-brand-100 stroke-brand-600 dark:fill-brand-900/70 dark:stroke-brand-400`
+    : `${TRANSITION} fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700`;
+}
+
+/** A component or a worker: it runs its job, the decision is made elsewhere. */
+function softSurface(lit: boolean): string {
+  return lit
+    ? `${TRANSITION} fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400`
+    : `${TRANSITION} fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700`;
+}
+
+function arrowStroke(lit: boolean): string {
+  return `${TRANSITION} ${
+    lit ? "stroke-brand-500 dark:stroke-brand-400" : "stroke-gray-400 dark:stroke-gray-500"
+  }`;
+}
+
+function arrowMarker(lit: boolean): string {
+  return lit ? "url(#sa-arch-arrow-brand)" : "url(#sa-arch-arrow-gray)";
+}
 
 export function SuperAgentArchitectureWidget() {
   const isZh = S === zh;
   const reduced = usePrefersReducedMotion();
   const { ref, active } = useVisibleActivity<HTMLDivElement>();
 
-  const [stage, setStage] = useState<number>(2);
+  // -1 is the still frame: every part lit, which is the whole architecture at once.
+  const [stage, setStage] = useState<number>(-1);
   const [hasStarted, setHasStarted] = useState<boolean>(false);
 
   const running = active && !reduced;
@@ -42,7 +75,7 @@ export function SuperAgentArchitectureWidget() {
   }, [running, hasStarted]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!running || stage < 0) return;
     const timer = window.setTimeout(() => {
       setStage((prev) => (prev + 1) % TOTAL_STAGES);
     }, stageDelayMs(stage));
@@ -51,36 +84,55 @@ export function SuperAgentArchitectureWidget() {
 
   const copy = isZh
     ? {
-        aria: "Super-agent 三部分架构设计：事件驱动、双层架构与 Watchdog 巡检",
-        col1: "一、事件驱动",
-        col2: "二、双层架构",
-        col3: "三、Watchdog 巡检",
+        aria: "Super-agent 架构：群聊与 GitHub 事件经代码规则和模型两级过滤，Router 把任务派发给并发 Worker，主系统外的 Watchdog Agent 定时巡检并介入修复",
+        part1: "① 事件驱动",
+        part2: "② 双层架构",
+        part3: "③ Watchdog 巡检",
         events: "群聊 / GitHub",
-        filterRepro: "两级过滤与复现",
+        filter: "两级过滤",
+        filterSub: "代码规则 + 模型",
+        noise: "闲聊丢弃",
         router: "Router Agent",
-        timer: "定时触发",
+        routerSub: "维护全局上下文，汇总结果",
+        workers: [
+          { label: "Worker 1", note1: "静默复现", note2: "提交 PR" },
+          { label: "Worker 2", note1: "独立窗口", note2: "并发执行" },
+          { label: "Worker 3", note1: "独立窗口", note2: "并发执行" },
+        ],
         watchdog: "Watchdog Agent",
+        watchdogCheck: "定期检查 Worker 进展",
+        watchdogFix: "识别跑偏并介入修复",
       }
     : {
-        aria: "Super-agent three-part architecture: Event-Driven, Two-Tier Architecture, and Watchdog Loop",
-        col1: "1. Event-Driven",
-        col2: "2. Two-Tier",
-        col3: "3. Watchdog",
+        aria: "Super-agent architecture: chat and GitHub events pass a code-rule and model two-tier filter, the Router dispatches tasks to concurrent Workers, and a Watchdog Agent outside the main system inspects them on a timer",
+        part1: "1. Event-Driven",
+        part2: "2. Two-Tier",
+        part3: "3. Watchdog",
         events: "Chat / GitHub",
-        filterRepro: "Filter & Silent Repro",
+        filter: "Two-Tier Filter",
+        filterSub: "code rules + model",
+        noise: "chatter dropped",
         router: "Router Agent",
-        timer: "Timer Trigger",
+        routerSub: "global context, collects results",
+        workers: [
+          { label: "Worker 1", note1: "silent repro", note2: "opens PR" },
+          { label: "Worker 2", note1: "own window", note2: "in parallel" },
+          { label: "Worker 3", note1: "own window", note2: "in parallel" },
+        ],
         watchdog: "Watchdog Agent",
+        watchdogCheck: "checks Worker progress",
+        watchdogFix: "fixes loops and drift",
       };
 
-  const isS0 = stage === 0;
-  const isS1 = stage === 1;
-  const isS2 = stage === 2;
+  const allLit = stage === -1;
+  const lit0 = allLit || stage === 0;
+  const lit1 = allLit || stage === 1;
+  const lit2 = allLit || stage === 2;
 
   return (
     <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
       <svg
-        viewBox="0 0 720 184"
+        viewBox="0 0 720 302"
         className="block w-full select-none overflow-visible"
         role="img"
         aria-label={copy.aria}
@@ -110,271 +162,233 @@ export function SuperAgentArchitectureWidget() {
           </marker>
         </defs>
 
-        {/* ==================== COL 1: EVENT-DRIVEN (x=8..216) ==================== */}
-        <g style={{ opacity: isS0 ? 1 : 0.45 }} className="transition-opacity duration-500">
-          <rect
-            x="8"
-            y="8"
-            width="208"
-            height="168"
-            rx="10"
-            strokeWidth={isS0 ? "2" : "1.5"}
-            className={
-              isS0
-                ? "fill-white stroke-brand-600 dark:fill-gray-900 dark:stroke-brand-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-            }
-          />
-          <text
-            x="112"
-            y="32"
-            textAnchor="middle"
-            className={
-              isS0
-                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
-                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
-            }
-          >
-            {copy.col1}
-          </text>
+        {/* ==================== PART 1: EVENT-DRIVEN INTAKE ==================== */}
+        <text
+          x="70"
+          y="18"
+          textAnchor="middle"
+          className="fill-gray-500 text-xs font-medium dark:fill-gray-400"
+        >
+          {copy.part1}
+        </text>
 
-          {/* Upper: Chat / GitHub */}
-          <rect
-            x="24"
-            y="46"
-            width="176"
-            height="46"
-            rx="8"
-            strokeWidth="1.5"
-            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
-          />
-          <text
-            x="112"
-            y="74"
-            textAnchor="middle"
-            className="fill-gray-800 text-sm font-semibold dark:fill-gray-200"
-          >
-            {copy.events}
-          </text>
-
-          {/* Connector Down */}
-          <path
-            d="M112,92 L112,111"
-            fill="none"
-            strokeWidth="1.5"
-            className={
-              isS0
-                ? "stroke-brand-500 dark:stroke-brand-400"
-                : "stroke-gray-400 dark:stroke-gray-500"
-            }
-            markerEnd={isS0 ? "url(#sa-arch-arrow-brand)" : "url(#sa-arch-arrow-gray)"}
-          />
-
-          {/* Lower: Two-Tier Filter & Silent Repro */}
-          <rect
-            x="24"
-            y="114"
-            width="176"
-            height="46"
-            rx="8"
-            strokeWidth="1.5"
-            className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
-          />
-          <text
-            x="112"
-            y="142"
-            textAnchor="middle"
-            className="fill-brand-700 text-sm font-semibold dark:fill-brand-300"
-          >
-            {copy.filterRepro}
-          </text>
-        </g>
-
-        {/* Arrow Col 1 -> Col 2 */}
-        <path
-          d="M222,92 L248,92"
-          fill="none"
-          strokeWidth={isS1 ? "2" : "1.5"}
-          style={{ opacity: isS1 ? 1 : 0.45 }}
-          className={`transition-opacity duration-500 ${
-            isS1 ? "stroke-brand-500 dark:stroke-brand-400" : "stroke-gray-400 dark:stroke-gray-500"
+        {/* The streams the system listens to. */}
+        <rect
+          x="8"
+          y="44"
+          width="124"
+          height="44"
+          rx="8"
+          strokeWidth="1.5"
+          className={`${TRANSITION} ${
+            lit0
+              ? "fill-gray-100 stroke-brand-500 dark:fill-gray-800 dark:stroke-brand-400"
+              : "fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
           }`}
-          markerEnd={isS1 ? "url(#sa-arch-arrow-brand)" : "url(#sa-arch-arrow-gray)"}
+        />
+        <text
+          x="70"
+          y="71"
+          textAnchor="middle"
+          className="fill-gray-900 text-sm font-medium dark:fill-gray-100"
+        >
+          {copy.events}
+        </text>
+
+        {/* Trigger -> intake filter. */}
+        <path
+          d="M70,88 L70,110"
+          fill="none"
+          strokeWidth="1.5"
+          className={arrowStroke(lit0)}
+          markerEnd={arrowMarker(lit0)}
         />
 
-        {/* ==================== COL 2: TWO-TIER ARCHITECTURE (x=256..464) ==================== */}
-        <g style={{ opacity: isS1 ? 1 : 0.45 }} className="transition-opacity duration-500">
-          <rect
-            x="256"
-            y="8"
-            width="208"
-            height="168"
-            rx="10"
-            strokeWidth={isS1 ? "2" : "1.5"}
-            className={
-              isS1
-                ? "fill-white stroke-brand-600 dark:fill-gray-900 dark:stroke-brand-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-            }
-          />
-          <text
-            x="360"
-            y="32"
-            textAnchor="middle"
-            className={
-              isS1
-                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
-                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
-            }
-          >
-            {copy.col2}
-          </text>
+        {/* Program rules first, then the model: the two-tier filter. */}
+        <rect
+          x="8"
+          y="110"
+          width="124"
+          height="64"
+          rx="8"
+          strokeWidth="1.5"
+          className={softSurface(lit0)}
+        />
+        <text
+          x="70"
+          y="137"
+          textAnchor="middle"
+          className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
+        >
+          {copy.filter}
+        </text>
+        <text
+          x="70"
+          y="157"
+          textAnchor="middle"
+          className="fill-gray-600 text-xs dark:fill-gray-400"
+        >
+          {copy.filterSub}
+        </text>
 
-          {/* Upper: Router Agent */}
-          <rect
-            x="272"
-            y="46"
-            width="176"
-            height="46"
-            rx="8"
-            strokeWidth="1.5"
-            className="fill-brand-100 stroke-brand-600 dark:fill-brand-900/70 dark:stroke-brand-400"
-          />
-          <text
-            x="360"
-            y="74"
-            textAnchor="middle"
-            className="fill-brand-800 text-sm font-semibold dark:fill-brand-200"
-          >
-            {copy.router}
-          </text>
-
-          {/* Lower: 3 Parallel Workers */}
-          {WORKERS.map((w) => {
-            const cx = w.x + 26;
-            return (
-              <g key={w.id}>
-                <path
-                  d={`M${cx},92 L${cx},111`}
-                  fill="none"
-                  strokeWidth="1.5"
-                  className="stroke-brand-500 dark:stroke-brand-400"
-                  markerEnd="url(#sa-arch-arrow-brand)"
-                />
-                <rect
-                  x={w.x}
-                  y="114"
-                  width="52"
-                  height="46"
-                  rx="7"
-                  strokeWidth="1.5"
-                  className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
-                />
-                <text
-                  x={cx}
-                  y="141"
-                  textAnchor="middle"
-                  className="fill-brand-700 text-xs font-semibold dark:fill-brand-300"
-                >
-                  {w.label}
-                </text>
-              </g>
-            );
-          })}
-        </g>
-
-        {/* Inspection Arrow Col 3 -> Col 2 Worker Layer */}
+        {/* Noise leaves the flow here and never reaches the Router. */}
         <path
-          d="M498,137 L470,137"
+          d="M70,174 L70,214"
           fill="none"
-          strokeWidth={isS2 ? "2" : "1.5"}
+          strokeWidth="1.5"
+          className="stroke-gray-400 dark:stroke-gray-500"
+          markerEnd="url(#sa-arch-arrow-gray)"
+        />
+        <text x="80" y="198" className="fill-gray-500 text-xs dark:fill-gray-400">
+          {copy.noise}
+        </text>
+
+        {/* Valid events leave the filter and join the Router's row. */}
+        <path
+          d="M132,142 H196"
+          fill="none"
+          strokeWidth="1.5"
+          className={arrowStroke(lit0)}
+          markerEnd={arrowMarker(lit0)}
+        />
+
+        {/* ==================== PART 2: TWO-TIER ROUTER / WORKERS ==================== */}
+        <text
+          x="334"
+          y="18"
+          textAnchor="middle"
+          className="fill-gray-500 text-xs font-medium dark:fill-gray-400"
+        >
+          {copy.part2}
+        </text>
+
+        {/* The always-on Router keeps the global context and hands tasks down. */}
+        <rect
+          x="196"
+          y="110"
+          width="276"
+          height="64"
+          rx="10"
+          strokeWidth="1.5"
+          className={primarySurface(lit1)}
+        />
+        <text
+          x="334"
+          y="136"
+          textAnchor="middle"
+          className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
+        >
+          {copy.router}
+        </text>
+        <text
+          x="334"
+          y="158"
+          textAnchor="middle"
+          className="fill-gray-600 text-xs dark:fill-gray-400"
+        >
+          {copy.routerSub}
+        </text>
+
+        {/* Router -> one isolated Worker per task. */}
+        {WORKERS.map((w, i) => (
+          <g key={w.x}>
+            <path
+              d={`M${w.cx},174 L${w.cx},214`}
+              fill="none"
+              strokeWidth="1.5"
+              className={arrowStroke(lit1)}
+              markerEnd={arrowMarker(lit1)}
+            />
+            <rect
+              x={w.x}
+              y="214"
+              width="88"
+              height="80"
+              rx="8"
+              strokeWidth="1.5"
+              className={softSurface(lit1)}
+            />
+            <text
+              x={w.cx}
+              y="237"
+              textAnchor="middle"
+              className="fill-gray-900 text-xs font-semibold dark:fill-gray-100"
+            >
+              {copy.workers[i]?.label}
+            </text>
+            <text
+              x={w.cx}
+              y="258"
+              textAnchor="middle"
+              className="fill-gray-600 text-xs dark:fill-gray-400"
+            >
+              {copy.workers[i]?.note1}
+            </text>
+            <text
+              x={w.cx}
+              y="276"
+              textAnchor="middle"
+              className="fill-gray-600 text-xs dark:fill-gray-400"
+            >
+              {copy.workers[i]?.note2}
+            </text>
+          </g>
+        ))}
+
+        {/* ==================== PART 3: WATCHDOG SIDECAR ==================== */}
+        <text
+          x="616"
+          y="18"
+          textAnchor="middle"
+          className="fill-gray-500 text-xs font-medium dark:fill-gray-400"
+        >
+          {copy.part3}
+        </text>
+
+        {/* The Watchdog runs outside the main system. */}
+        <rect
+          x="520"
+          y="110"
+          width="192"
+          height="84"
+          rx="10"
+          strokeWidth="1.5"
+          className={primarySurface(lit2)}
+        />
+        <text
+          x="616"
+          y="138"
+          textAnchor="middle"
+          className="fill-gray-900 text-sm font-semibold dark:fill-gray-100"
+        >
+          {copy.watchdog}
+        </text>
+        <text
+          x="616"
+          y="160"
+          textAnchor="middle"
+          className="fill-gray-600 text-xs dark:fill-gray-400"
+        >
+          {copy.watchdogCheck}
+        </text>
+        <text
+          x="616"
+          y="180"
+          textAnchor="middle"
+          className="fill-gray-600 text-xs dark:fill-gray-400"
+        >
+          {copy.watchdogFix}
+        </text>
+
+        {/* The timer-driven inspection loop onto the Worker layer. */}
+        <path
+          d="M616,194 V254 H480"
+          fill="none"
+          strokeWidth="1.5"
           strokeDasharray="4 3"
-          style={{ opacity: isS2 ? 1 : 0.45 }}
-          className={`transition-opacity duration-500 ${
-            isS2 ? "stroke-brand-500 dark:stroke-brand-400" : "stroke-gray-400 dark:stroke-gray-500"
-          }`}
-          markerEnd={isS2 ? "url(#sa-arch-arrow-brand)" : "url(#sa-arch-arrow-gray)"}
+          className={arrowStroke(lit2)}
+          markerEnd={arrowMarker(lit2)}
         />
-
-        {/* ==================== COL 3: WATCHDOG AGENT (x=504..712) ==================== */}
-        <g style={{ opacity: isS2 ? 1 : 0.45 }} className="transition-opacity duration-500">
-          <rect
-            x="504"
-            y="8"
-            width="208"
-            height="168"
-            rx="10"
-            strokeWidth={isS2 ? "2" : "1.5"}
-            className={
-              isS2
-                ? "fill-white stroke-brand-600 dark:fill-gray-900 dark:stroke-brand-400"
-                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
-            }
-          />
-          <text
-            x="608"
-            y="32"
-            textAnchor="middle"
-            className={
-              isS2
-                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
-                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
-            }
-          >
-            {copy.col3}
-          </text>
-
-          {/* Upper: Timer Trigger */}
-          <rect
-            x="520"
-            y="46"
-            width="176"
-            height="46"
-            rx="8"
-            strokeWidth="1.5"
-            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
-          />
-          <text
-            x="608"
-            y="74"
-            textAnchor="middle"
-            className="fill-gray-800 text-sm font-semibold dark:fill-gray-200"
-          >
-            {copy.timer}
-          </text>
-
-          {/* Connector Down */}
-          <path
-            d="M608,92 L608,111"
-            fill="none"
-            strokeWidth="1.5"
-            className={
-              isS2
-                ? "stroke-brand-500 dark:stroke-brand-400"
-                : "stroke-gray-400 dark:stroke-gray-500"
-            }
-            markerEnd={isS2 ? "url(#sa-arch-arrow-brand)" : "url(#sa-arch-arrow-gray)"}
-          />
-
-          {/* Lower: Watchdog Agent */}
-          <rect
-            x="520"
-            y="114"
-            width="176"
-            height="46"
-            rx="8"
-            strokeWidth="1.5"
-            className="fill-brand-100 stroke-brand-600 dark:fill-brand-900/70 dark:stroke-brand-400"
-          />
-          <text
-            x="608"
-            y="142"
-            textAnchor="middle"
-            className="fill-brand-800 text-sm font-semibold dark:fill-brand-200"
-          >
-            {copy.watchdog}
-          </text>
-        </g>
       </svg>
     </div>
   );
