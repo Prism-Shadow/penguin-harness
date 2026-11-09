@@ -42,6 +42,7 @@ const FORM_MODULES: readonly string[] = [
   "components/account/change-password-dialog.tsx",
   "features/projects/project-dialogs/project-settings-dialog.tsx",
   "features/admin/admin-users-page.tsx",
+  "features/agents/agent-import-dialog.tsx",
   "features/agents/agent-settings-page.tsx",
   "features/agents/api-tab.tsx",
   "features/agents/create-agent-dialog.tsx",

@@ -1657,13 +1657,7 @@ export const en: Strings = {
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
     createDirSkillsClear: "Don't import from a directory",
-    createSnapshot: "Initialize from a snapshot",
-    createSnapshotPick: "Choose a snapshot package",
-    createSnapshotHint:
-      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
-    createSnapshotSkillsOff:
-      "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
-    createSnapshotClear: "Remove the selected package",
+    createFromFileHint: "Creating an agent from an exported file?",
     aiCreateTitle: "Create an agent with AI",
     aiCreateIntro:
       "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
@@ -1925,17 +1919,60 @@ export const en: Strings = {
     stateTitle: "Agent State",
     stateVersion: "Agent State version",
     transferDesc:
-      "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
-    exportSnapshot: "Export snapshot",
-    importSnapshot: "Import snapshot",
+      "Export… packs the agent into a zip. Replace from file… replaces its Agent State from an exported file; its conversations, vault and API keys stay, and a backup snapshot is written first.",
+    exportOpen: "Export…",
+    replaceOpen: "Replace from file…",
+    exportAgent: "Export agent",
+    importAgent: "Import agent",
+    exportTitle: (name: string): string => `Export agent: ${name}`,
+    exportInclude: "Include",
+    exportWorkbenchData: "With their data",
+    exportSchedulesHint: "They run on their schedule once imported",
+    exportTraces: "Conversations",
+    exportTracesNone: "None",
+    exportTracesLast: "Latest N",
+    exportTracesRange: "Date range",
+    exportTracesCount: "Number of conversations",
+    exportTracesFrom: "From",
+    exportTracesTo: "To",
+    exportVaultNote:
+      "The vault never goes into the zip; a value written into the config itself travels as it is.",
+    exportAction: "Export",
+    exporting: "Exporting…",
+    replaceTitle: (name: string): string => `Replace from file: ${name}`,
+    migrateTitle: "Migrate from another framework",
+    migrateInfo:
+      "The Project's default agent reads the source in a new conversation with the agent-porting skill, creates the new agent, and says what it could not move. The prompt only lands in the message box; sending it is up to you.",
+    migrateFramework: "Source framework",
+    migrateOther: "Other",
+    migratePath: "Path",
+    migratePathOther: "Path or description",
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `Migrate this source into a new PenguinHarness agent: ${source}`
+          : `Migrate the ${framework} setup into a new PenguinHarness agent. Source: ${source}`,
+        "Use the agent-porting skill:",
+        "- Read the source in full: instruction files, skills, commands, MCP servers, hooks, subagents and memory. Read only; change nothing in the source.",
+        "- Never copy the value of a key, token or password; note only the names that need filling in.",
+        "- Write the new agent in a scratch folder, in the agent zip layout the skill describes.",
+        `- Import it with \`penguin agent import <that folder> --project-id ${projectId}\`; if the id is taken, pick another with --agent-id.`,
+        "- Finally tell me the new agent's id, what was mapped, what was not and why, and the vault keys to fill in.",
+      ].join("\n"),
+    importFileTitle: "Import a file",
+    importFileHint: ".zip, or an older .tar.gz package until 1.0",
+    importPick: "Choose a file",
+    importAction: "Import",
     importing: "Importing…",
-    importDone: (v: number): string => `Import finished, Agent State version v${v}`,
-    importConflictTitle: "Version conflict",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `Replace the whole Agent State with ${file}? Everything in it is replaced by the snapshot (the Vault is kept); the current version is snapshotted first.`,
-    importConflictBody:
-      "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
+    importExists: (id: string): string => `The id ${id} is taken`,
+    importRename: "Use another id",
+    importOverwrite: "Overwrite the existing agent",
+    replaceAction: "Replace",
+    overwriteTitle: "Replace the Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `Replace the Agent State of ${agentId} from ${file}? Its conversations, vault and API keys stay. A backup snapshot is written first.`,
+    importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
+      `${overwritten ? "Overwrote" : "Imported"} the agent ${name}; conversations: ${imported} imported, ${skipped} already here and skipped`,
     resetConfigTitle: "Restore default configuration",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
