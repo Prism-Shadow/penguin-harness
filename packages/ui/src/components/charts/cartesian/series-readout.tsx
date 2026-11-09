@@ -122,7 +122,7 @@ export function SegmentBubble({
     <span
       aria-hidden
       data-bubble=""
-      className={`pointer-events-none absolute z-10 block rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm ${below ? "top-full mt-1" : "bottom-full mb-1"}`}
+      className={`pointer-events-none absolute z-raised block rounded border border-line bg-overlay px-2 py-1 text-xs whitespace-nowrap shadow-sm ${below ? "top-full mt-1" : "bottom-full mb-1"}`}
       style={style}
     >
       <span className="block text-fg-muted">{title}</span>

@@ -208,6 +208,8 @@ export class FakeServer {
   }> = [];
   /** Sign-in tokens a `penguin_session` cookie is accepted with; any other cookie is a 401. */
   readonly logins = new Set<string>();
+  /** When set, a request that carries no credential at all is a 401, as a server behind its token gate answers it. */
+  refuseAnonymous = false;
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -1820,6 +1822,9 @@ export class FakeServer {
           }
         : {}),
     });
+    if (this.refuseAnonymous && authorization === undefined && cookie === undefined) {
+      return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
     // The server reads a Bearer first; a cookie alone must be a sign-in it knows.
     if (authorization === undefined && cookie !== undefined) {
       const login = /(?:^|;\s*)penguin_session=([^;]+)/.exec(cookie)?.[1];

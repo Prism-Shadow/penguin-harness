@@ -1072,7 +1072,7 @@ export function WorkspaceFinder({
   const sidebar = (
     <aside
       className={`${
-        sidebarOpen ? "absolute inset-y-0 left-0 z-10 flex w-64 shadow-xl" : "hidden"
+        sidebarOpen ? "absolute inset-y-0 left-0 z-raised flex w-64 shadow-xl" : "hidden"
       } shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-muted px-2 py-3 sm:static sm:flex sm:w-48 sm:shadow-none`}
     >
       {/* Quick access stays up, even emptied, while there is a folder on screen to add back. */}

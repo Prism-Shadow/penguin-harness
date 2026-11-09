@@ -160,7 +160,7 @@ export function PreviewPane({
   className = "",
 }: PreviewPaneProps) {
   const pill = given(actions) && (
-    <div className="absolute right-4 top-2.5 z-10 flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-sm">
+    <div className="absolute right-4 top-2.5 z-raised flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-sm">
       {actions}
     </div>
   );
