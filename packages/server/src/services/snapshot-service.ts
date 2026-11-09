@@ -34,7 +34,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { AgentPackage, Snapshots } from "../mechanisms/agents.js";
 import { isGitName } from "../workbenches/repo.js";
-import { isTempName } from "../workbenches/store.js";
+import { isTempName, STATE_FILE } from "../workbenches/store.js";
 import { isZip, unpackAgentZip } from "./agent-zip.js";
 import { overTemplate } from "./partial-config.js";
 
@@ -68,6 +68,35 @@ export function isLeftOut(entryPath: string): boolean {
     child === "workbenches" &&
     rest.slice(1).some((s) => s === ".build" || s === "node_modules")
   );
+}
+
+/** The State folders an export may leave out (see agent-export.ts). */
+const PART_FOLDERS = ["skills", "hooks", "memory", "workbenches", "schedule"];
+
+/**
+ * An overwrite replaces the parts a package carries, not the ones it left out: a part folder the
+ * package has none of (an export without memory, say) is copied over from the current State, as is
+ * a workbench's data the package left out. The backup holds everything the swap replaces.
+ */
+async function keepAbsentParts(current: string, incoming: string): Promise<void> {
+  const exists = (p: string) =>
+    fs.lstat(p).then(
+      () => true,
+      () => false,
+    );
+  for (const part of PART_FOLDERS) {
+    const from = path.join(current, part);
+    const to = path.join(incoming, part);
+    if (!(await exists(to)) && (await exists(from))) {
+      await fs.cp(from, to, { recursive: true, verbatimSymlinks: true });
+    }
+  }
+  const workbenches = path.join(incoming, "workbenches");
+  for (const id of await fs.readdir(workbenches).catch((): string[] => [])) {
+    const from = path.join(current, "workbenches", id, STATE_FILE);
+    const to = path.join(workbenches, id, STATE_FILE);
+    if (!(await exists(to)) && (await exists(from))) await fs.copyFile(from, to);
+  }
 }
 
 /** An entry inside a git directory, under any spelling git itself treats as `.git`. */
@@ -264,6 +293,7 @@ export class SnapshotService implements Snapshots {
       // is nothing to keep — any other read failure stops the import, because the swap would
       // otherwise discard the only copy.
       const stateDir = agentStateDir(this.root, projectId, agentId);
+      if (opts.preSnapshot) await keepAbsentParts(stateDir, incomingState);
       let vault: Buffer | null = null;
       try {
         vault = await fs.readFile(agentVaultPath(this.root, projectId, agentId));

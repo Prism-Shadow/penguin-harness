@@ -92,7 +92,7 @@ The agent follows the `agent-porting` Skill of the `skill-porting` plugin. It re
 2. Check **Agent id**. It is filled in from the file name without its `-<yyyymmdd>` or `-v<n>` ending.
 3. Select **Import**. A message says whether the agent was created or overwritten, and how many conversations were imported and skipped. The new agent appears in the list.
 
-Any Project member can import a new agent. When the id is taken, the dialog says so. Select **Use another id** to change it, or, as the Project owner, **Overwrite the existing agent** and confirm. Overwriting replaces that agent's Agent State; its conversations, vault and API keys stay, and a backup snapshot is written first.
+Any Project member can import a new agent. When the id is taken, the dialog says so. Select **Use another id** to change it, or, as the Project owner, **Overwrite the existing agent** and confirm. Overwriting replaces the parts of that agent's Agent State the file carries; its conversations, vault and API keys stay, and a backup snapshot is written first.
 
 ## Delete an agent
 
@@ -161,7 +161,7 @@ The **Agent State** section shows the agent's **Agent State version** and its **
 An agent travels as a zip of its directory: `<agentId>/agent_state/…` and, for the Sessions you choose, `<agentId>/traces/…`. There is no manifest; the name, description and version are in `system_config.yaml`. The configuration always travels. Skills, hooks, memory and workbenches, with or without their data, travel unless you leave them out; scheduled tasks only when you take them, since an imported task runs on its schedule. The vault never travels, and a vault value found in a Trace is replaced by `[vault:<KEY>]`. A value written literally into the configuration travels as it is, so reference credentials as `${KEY}`.
 
 - Importing under an id no agent has creates the agent from the package, with its State, name, description and version. Any member can.
-- Overwriting an agent is for the Project owner. The current Agent State is first packed into a backup of its own, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, then replaced whole; parts the package leaves out stay only in the backup. The agent's conversations, vault, API keys and employments stay. The workbench version history sits beside the Agent State, so an import leaves it as it is.
+- Overwriting an agent is for the Project owner. The current Agent State is first packed into a backup of its own, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, then replaced by what the package carries: a part the package leaves out (an export without memory, say) keeps the agent's own, and so does a workbench's data the package left out. The agent's conversations, vault, API keys and employments stay. The workbench version history sits beside the Agent State, so an import leaves it as it is.
 - Sessions the package carries land as conversations of the agent, titled from their first message. A Session this server already has, as when you import an export from the same server, is skipped and reported.
 - A package whose `system_config.yaml` has no `system_prompt` is laid over the default configuration, and the files it leaves out come from the defaults, so a hand-written package needs only the keys it changes.
 
