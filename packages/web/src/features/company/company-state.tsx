@@ -64,6 +64,7 @@ import * as api from "../../api/endpoints";
 import { isCurrentProject } from "../../lib/project-scope";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
+import { machineIdOf } from "../../lib/workspace-machines";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
 import { channelBadgeCounts } from "./channel-list";
 import { homePath, orgKey, parseOrgKey, type WorkMode } from "../../lib/company-nav";
@@ -825,6 +826,32 @@ import {
   type CompanyVersions,
   type TicketDialogTarget,
 } from "../../lib/company-context";
+
+/** A machine of a Project this server holds a connection to: its id and the ssh alias people read. */
+export interface HeldMachine {
+  machineId: string;
+  alias: string;
+}
+
+/**
+ * The machines of a Project this server holds a connection to — the ones whose API can be
+ * asked right now. The machine list is admin-only, and a reader who cannot see it has no
+ * machine to ask either: the listing is then this server's alone, as it was before
+ * organizations could live anywhere else.
+ */
+export async function heldMachines(projectId: string): Promise<HeldMachine[]> {
+  try {
+    const res = await api.getMachines(projectId);
+    return res.machines
+      .filter((m) => !m.local && m.installed !== null && m.connection !== null)
+      .flatMap((m) => {
+        const machineId = machineIdOf(m);
+        return machineId === null ? [] : [{ machineId, alias: m.alias }];
+      });
+  } catch {
+    return [];
+  }
+}
 
 export { useCompany } from "../../lib/company-context";
 export type { CompanyVersions, TicketDialogTarget } from "../../lib/company-context";
