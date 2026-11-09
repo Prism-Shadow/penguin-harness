@@ -10,7 +10,7 @@ import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
 import { DockPanel, DockLauncher, measureComposer } from "../../dock";
-import { ChatDockProvider } from "../chat-dock-context";
+import { ChatDockProvider } from "../session/main-dock-context";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
@@ -36,8 +36,6 @@ export function renderMainChatBody(scope: MainChatView) {
     archivedRow,
     stream,
     allItems,
-    pageAgentId,
-    workflowTabs,
     failureShown,
     setFailureShown,
     activeModelRef,
@@ -58,11 +56,8 @@ export function renderMainChatBody(scope: MainChatView) {
     chatDock,
     emptyChat,
     input,
+    coveredByWorkbench,
   } = scope;
-  const coveredByWorkbench =
-    workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
   return (
     <>
       <ChatDockProvider value={chatDock}>

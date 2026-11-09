@@ -38,9 +38,6 @@ export function renderMainChatToolbar(scope: MainChatView) {
     stream,
     outline,
     streamScrollRef,
-    workflowTabs,
-    projectId,
-    pageAgentId,
     railFit,
     machineNameOf,
     onRemoveProcess,
@@ -52,11 +49,8 @@ export function renderMainChatToolbar(scope: MainChatView) {
     sessionAgentName,
     headerActivity,
     backgroundCount,
+    coveredByWorkbench,
   } = scope;
-  const coveredByWorkbench =
-    workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
   return (
     <>
       {archivedRow && (
