@@ -1,11 +1,11 @@
 /**
- * The dock's close guards (features/dock/close-guard.ts): a tab body holding unsaved work
+ * The dock's close guards (lib/dock-close-guard.ts): a tab body holding unsaved work
  * registers a veto under its tab key, asked when that tab's × would unmount it. A close of
  * several tabs stops at the first veto — a user who keeps one panel open is not asked about
  * the next.
  */
 import { describe, expect, it, vi } from "vitest";
-import { confirmClose, setCloseGuard } from "../src/features/dock/close-guard";
+import { confirmClose, setCloseGuard } from "../src/lib/dock-close-guard";
 
 describe("confirmClose", () => {
   it("closes unguarded tabs at once", async () => {

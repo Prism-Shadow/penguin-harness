@@ -31,13 +31,18 @@ import {
   reconcileInstallScope,
   scopeOfKey,
   syncInstallScope,
+  type InstallScopeStorage,
 } from "../src/lib/install-scope";
-import type { InstallScopeStorage } from "../src/lib/install-scope";
+
 import { apiError, json, stubFetch } from "./helpers/fetch";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceScan } from "./helpers/roots";
-import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
-import type { MemoryStorage } from "./helpers/storage";
+import { expectEveryRootScanned, scanSources, type SourceScan } from "./helpers/roots";
+
+import {
+  blockedStorage,
+  memoryStorage,
+  stubLocalStorage,
+  type MemoryStorage,
+} from "./helpers/storage";
 
 /** State that names the data root's Projects, Sessions, Workspaces and terminals. */
 const INSTALL_STATE: Record<string, string> = {
@@ -125,6 +130,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
   "penguin.installId": "the marker itself — it is what the comparison reads, never swept",
   "penguin.chatRouteApplied.":
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
+  "penguin.safeMode":
+    "sessionStorage: scoped to one tab's safe mode, so it cannot outlive a data root",
 };
 
 /**

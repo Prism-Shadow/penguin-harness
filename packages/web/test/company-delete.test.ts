@@ -42,7 +42,7 @@ import {
 import { HireDialog } from "../src/features/company/employee-dialogs";
 import { OrgChartPage } from "../src/features/company/org-chart-page";
 import { OrgContext } from "../src/features/company/org-layout";
-import { CompanyProvider } from "../src/state/company";
+import { CompanyProvider } from "../src/features/company/company-state";
 import { ThemeProvider } from "../src/state/theme";
 import {
   PROJECT_ID,

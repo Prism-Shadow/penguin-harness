@@ -21,8 +21,9 @@ import {
   tempSessionsKey,
   withDismissed,
   withOpened,
+  type TempSessionEntry,
 } from "../src/features/company/temp-session";
-import type { TempSessionEntry } from "../src/features/company/temp-session";
+
 import { memoryStorage } from "./helpers/storage";
 
 function entry(n: number | string, over: Partial<TempSessionEntry> = {}): TempSessionEntry {

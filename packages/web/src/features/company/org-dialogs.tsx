@@ -77,16 +77,16 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { sameModelRef } from "../models/model-grouping";
+import { ModelCatalogSelect, modelLabel } from "../model-picker";
+import { WorkspaceSelect } from "../workspace";
+import { sameModelRef } from "../models";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
-import { orgCreatedTarget } from "./company-nav";
+import { orgCreatedTarget } from "../../lib/company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
-import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { SemanticIdField } from "../semantic-id";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
@@ -97,7 +97,7 @@ import {
 } from "./org-draft";
 import { toastApiError } from "../../lib/toast-api-error";
 import { failedList } from "../../lib/bulk-update";
-import { followAgentDeletion } from "../agents/agent-deletion-progress";
+import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import { orgDeletePlan } from "./org-delete-plan";
 import type { OrgDeletePlan } from "./org-delete-plan";
 

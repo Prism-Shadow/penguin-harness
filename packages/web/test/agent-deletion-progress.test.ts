@@ -1,6 +1,6 @@
 /**
  * Following a delete's background removal on a progress card
- * (src/features/agents/agent-deletion-progress.ts), against the real endpoints and the UI
+ * (src/lib/agent-deletion-progress.ts), against the real endpoints and the UI
  * package's real card store, with the package's one fetch fake.
  *
  * - Given a removal that takes a while, the card follows the server's readings — a count with no
@@ -13,10 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentDeletionInfo } from "@prismshadow/penguin-server/api";
 import { closeProgress, PROGRESS_REVEAL_MS, progressStore } from "@prismshadow/penguin-ui";
-import {
-  DELETION_POLL_MS,
-  followAgentDeletion,
-} from "../src/features/agents/agent-deletion-progress";
+import { DELETION_POLL_MS, followAgentDeletion } from "../src/lib/agent-deletion-progress";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const START: AgentDeletionInfo = {

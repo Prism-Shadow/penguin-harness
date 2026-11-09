@@ -7,7 +7,7 @@
  * package's (`ChoiceGroup`, `Segmented`, `RadioGroup`, `Checkbox`).
  */
 import type { ReactNode } from "react";
-import type { A2uiOption } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiOption } from "@prismshadow/a2ui";
 import { ICONS } from "../../icons/icons";
 import { Pill } from "../../feedback/pill/pill";
 import { Notice } from "../../feedback/notice/notice";
