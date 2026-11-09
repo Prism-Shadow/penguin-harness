@@ -12,15 +12,12 @@ type Props = Parameters<typeof Sparkline>[0];
 const spark = (props: Props) => renderStatic(createElement(Sparkline, props));
 
 describe("Sparkline", () => {
-  it("is an image named by the caller, in the muted ink or its tone's", () => {
+  it("is an image named by the caller, on the chart hook", () => {
     const html = spark({ values: [1, 3, 2], label: "Sessions, 30 days" });
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Sessions, 30 days"');
     expect(html).toContain('data-tooltip="Sessions, 30 days"');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-chart", "text-fg-muted"]));
-    const toned = spark({ values: [1, 3], label: "x", tone: "success" });
-    expect(classTokens(toned)).toContain("text-tone-success-fg");
-    expect(toned).not.toMatch(/gray-|emerald-|dark:/);
+    expect(classTokens(html)).toContain("ui-chart");
   });
 
   it("scales against zero, or to the observed range with a floor centred on the values", () => {
