@@ -875,6 +875,7 @@ export class MachinesService {
   #remote(id: string, kind: string, name: string, unavailable: string | null): MachineInfo {
     const row = this.repo.get(id);
     const session = this.#liveSession(id);
+    const reconnect = this.#reconnects.get(id);
     return {
       id,
       alias: name,
@@ -884,6 +885,7 @@ export class MachinesService {
       kind,
       ...(unavailable === null ? {} : { unavailable }),
       connection: session === null ? null : { pid: session.pid },
+      ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
       ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
       socket: row?.machineId == null ? null : (this.#effects.socketFact(row.machineId) ?? null),
       api: this.#apiSeen.get(id) ?? null,
@@ -1553,7 +1555,22 @@ export class MachinesService {
     const answer = await this.#effects.runOn(target, ":");
     const refused =
       answer.code === 0 ? null : sshRefusal(answer.stdout, target.name, { password: false });
-    return refused === null ? null : { ok: false, step: "check", message: refused };
+    return refused === null
+      ? null
+      : { ok: false, step: "check", message: refused, ...this.#sshCause(target, refused) };
+  }
+
+  /**
+   * What ssh itself said in a failure's words, for the result: the reason names the door ssh
+   * stopped at (ssh-failure.ts), and `canReplaceProgram: false` says an install would stop
+   * there too, so the page does not offer one.
+   */
+  #sshCause(
+    target: RemoteTarget,
+    message: string,
+  ): { canReplaceProgram?: false; sshReason?: MachineSshFailure } {
+    const failure = explainSshFailure(message, target.name, { password: false });
+    return failure === null ? {} : { canReplaceProgram: false, sshReason: failure.reason };
   }
 
   /**
@@ -1867,6 +1884,7 @@ export class MachinesService {
         ok: false,
         step: outcome.step,
         message: outcome.detail,
+        ...this.#sshCause(target, outcome.detail),
       };
     }
     if (outcome.kind === "already-installed") say(`Already on ${outcome.version}.`, "check");
@@ -3043,7 +3061,12 @@ export class MachinesService {
     // config, or never recorded — is dropped: nothing will ever read it again. An ssh config
     // that cannot be read says nothing about the list, so then nothing is dropped.
     if (this.#effects.historyCache !== null) {
-      const known = new Set(this.#allMachines().map((entry) => entry.id));
+      const known = new Set(
+        [...this.#allMachines()].flatMap((entry) => {
+          const mid = this.repo.get(entry.id)?.machineId;
+          return mid === undefined || mid === null ? [] : [mid];
+        }),
+      );
       await this.#effects.historyCache.dropUnknown(known).catch(() => undefined);
     }
     // Every machine kept connected is on its way back from the moment this server is up, and
