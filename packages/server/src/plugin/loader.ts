@@ -30,7 +30,6 @@ import {
   IFACES_FILE,
   parsePluginTables,
   projectConfigPath,
-  type PluginTable,
   type PluginTables,
   readPluginTable,
 } from "@prismshadow/penguin-core";
@@ -160,7 +159,7 @@ async function readProjectPluginTable(
   root: string,
   projectId: string,
   machineId: string | null,
-): Promise<PluginTable> {
+) {
   const tables = await readProjectPluginTables(root, projectId);
   return tables === undefined ? {} : effectivePluginTable(tables, machineId);
 }
