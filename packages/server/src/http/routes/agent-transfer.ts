@@ -6,7 +6,6 @@
 import fs from "node:fs/promises";
 import { Hono } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
-import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
@@ -84,8 +83,7 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
       await ensureWorkbenchLinkTarget(agentDir(deps.root, projectId, agentId));
       return imported;
     });
-    const res: AgentImportResponse = { version };
-    return c.json(res);
+    return c.json({ version });
   });
 
   return app;
