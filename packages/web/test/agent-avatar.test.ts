@@ -98,7 +98,9 @@ const fieldAvatar = () => drawnBy(avatarField()?.querySelector(".ui-avatar") ?? 
 
 /** What the page's header draws: the one avatar outside the field, at the head of the page. */
 const headerAvatar = () =>
-  drawnBy([...document.querySelectorAll(".ui-avatar")].find((el) => !el.closest("fieldset")) ?? null);
+  drawnBy(
+    [...document.querySelectorAll(".ui-avatar")].find((el) => !el.closest("fieldset")) ?? null,
+  );
 
 const fileInput = () => avatarField()!.querySelector<HTMLInputElement>('input[type="file"]')!;
 const restoreButton = () => button(en.profile.restoreDefaultOf(en.profile.avatar));
