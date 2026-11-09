@@ -143,6 +143,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -316,6 +319,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -506,6 +512,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -638,6 +647,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/gepa-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -1105,6 +1117,18 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/gepa-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/goal:
     devDependencies:
@@ -2264,6 +2288,9 @@ packages:
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
 
+  '@penguinharness/gepa-rsi-toolkit@file:plugins/gepa-rsi-toolkit':
+    resolution: {directory: plugins/gepa-rsi-toolkit, type: directory}
+
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
 
@@ -2549,7 +2576,9 @@ packages:
   '@smithy/core@3.24.7':
     resolution: {integrity: sha512-KoUi4M1f3BG6kzN1FnCwL7oyFptTbyBJKjR6yhSib+JHRdUmM1o+VwsFtJ66NZCkCzVfJMWRHJNo0R0jznp0Pg==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.3.9':
     resolution: {integrity: sha512-ZlfJ/4Fa3jYb+3eaohPfG9utX9HmdhFNcFtpoGAhUhdynAOmGXtmigbi7eEiONKM+ykHw8RwKuDEb85Lx7t7fA==}
@@ -6929,6 +6958,8 @@ snapshots:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
+  '@penguinharness/gepa-rsi-toolkit@file:plugins/gepa-rsi-toolkit': {}
+
   '@penguinharness/goal@file:plugins/goal': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
@@ -7024,6 +7055,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7070,6 +7102,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7176,6 +7209,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7232,6 +7266,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7288,6 +7323,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/gepa-rsi-toolkit': file:plugins/gepa-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development

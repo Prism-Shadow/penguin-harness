@@ -22,6 +22,8 @@ import awmIcon from "../../../../../plugins/awm-rsi-toolkit/icon.svg?raw";
 import awmPkg from "../../../../../plugins/awm-rsi-toolkit/package.json";
 import defaultIcon from "../../../../../plugins/default-rsi-toolkit/icon.svg?raw";
 import defaultPkg from "../../../../../plugins/default-rsi-toolkit/package.json";
+import gepaIcon from "../../../../../plugins/gepa-rsi-toolkit/icon.svg?raw";
+import gepaPkg from "../../../../../plugins/gepa-rsi-toolkit/package.json";
 import openskillIcon from "../../../../../plugins/openskill-rsi-toolkit/icon.svg?raw";
 import openskillPkg from "../../../../../plugins/openskill-rsi-toolkit/package.json";
 import oproIcon from "../../../../../plugins/opro-rsi-toolkit/icon.svg?raw";
@@ -110,6 +112,21 @@ const CARDS: Record<string, Card> = {
       promptZh:
         "列出本 Project 的 Benchmark 和各自最近的分数，再建议用哪个 Benchmark 优化哪个 Agent、跑几轮。等我确认后再开始。",
       skills: ["agent-optimization"],
+    },
+  },
+  "gepa-rsi-toolkit": {
+    title: "GEPA RSI Toolkit",
+    titleZh: "GEPA 自进化工具包",
+    descriptionZh:
+      "GEPA RSI 工具包：按论文《Reflective Prompt Evolution Can Outperform Reinforcement Learning》（Agrawal 等，2025，https://arxiv.org/abs/2507.19457）的流程运行——反思模型阅读 Target 在一个小批量上的轨迹与分数并改写指令，在该小批量上胜过父代的子代进入候选池、在冻结的 Benchmark 上测量，父代按逐题 Pareto 前沿抽取，保留平均分最高者。自成一体：自行创建 Target 的指令槽、自行评测每个单元、写入评估中心的记分板。",
+    shortDescription: "GEPA RSI Toolkit: evolve an instruction by reflection.",
+    shortDescriptionZh: "GEPA RSI 工具包：经反思进化指令。",
+    quickStart: {
+      prompt:
+        "Use the `gepa-rsi-toolkit` Skill to run GEPA on an agent of this Project: ask me for the Test Agent and the published Benchmark to optimize on, initialize the instruction slot, run the smoke budget, and report the seed and best scores.",
+      promptZh:
+        "使用 `gepa-rsi-toolkit` 技能在本 Project 的一个智能体上运行 GEPA：先问我被测智能体与用于优化的已发布 Benchmark，初始化指令槽，以冒烟预算运行，报告种子分与最佳分。",
+      skills: ["gepa-rsi-toolkit"],
     },
   },
   "openskill-rsi-toolkit": {
@@ -259,6 +276,13 @@ export function rsiToolkitPlugins(): PluginItem[] {
         "agent-optimization",
         "Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.",
         "2026.11.05.1",
+      ),
+    ]),
+    libraryPlugin(gepaPkg, gepaIcon, [
+      skill(
+        "gepa-rsi-toolkit",
+        "Run GEPA (Reflective Prompt Evolution Can Outperform Reinforcement Learning, Agrawal et al. 2025) on an agent and a frozen Benchmark - reflect on a minibatch of its Traces and scores to rewrite the instruction, keep a child that beats its parent, draw parents from the per-case Pareto front, keep the best average.",
+        "2026.11.09.1",
       ),
     ]),
     libraryPlugin(openskillPkg, openskillIcon, [
