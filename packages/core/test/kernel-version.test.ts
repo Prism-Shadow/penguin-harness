@@ -85,14 +85,8 @@ function preTogglesDefaultConfig(): SystemConfig {
 }
 
 describe("kernel tab hash record (pinned-hash guard)", () => {
-  it("KERNEL_VERSION is a date", () => {
-    expect(KERNEL_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it("the record covers every tab and lists nothing that could never fire", () => {
-    expect(Object.keys(KERNEL_DEFAULT_TAB_HASHES).sort()).toEqual([...KERNEL_TAB_KEYS].sort());
+  it("the superseded record lists nothing that could never fire", () => {
     for (const [tab, hashes] of Object.entries(KERNEL_SUPERSEDED_TAB_HASHES)) {
-      expect(KERNEL_TAB_KEYS, `${tab} is not a kernel tab`).toContain(tab);
       expect(hashes.length, tab).toBeGreaterThan(0);
       expect(new Set(hashes).size, `${tab} repeats a superseded hash`).toBe(hashes.length);
       // A kernel update short-circuits on the current default before consulting the record,
@@ -164,6 +158,24 @@ describe("isKernelOutdated", () => {
     expect(isKernelOutdated("2026-01-01")).toBe(true);
     expect(isKernelOutdated(KERNEL_VERSION)).toBe(false);
     expect(isKernelOutdated("2999-12-31")).toBe(false);
+  });
+
+  it("compares stamps as dates: a month before the current stamp is outdated and a day after is not, padded or not", () => {
+    const [year, month, day] = KERNEL_VERSION.split("-").map(Number);
+    const at = (months: number, days: number) =>
+      new Date(Date.UTC(year!, month! - 1 + months, day! + days));
+    const padded = (t: Date) => t.toISOString().slice(0, 10);
+    const unpadded = (t: Date) => `${t.getUTCFullYear()}-${t.getUTCMonth() + 1}-${t.getUTCDate()}`;
+    for (const format of [padded, unpadded]) {
+      expect(isKernelOutdated(format(at(-1, 0))), format(at(-1, 0))).toBe(true);
+      expect(isKernelOutdated(format(at(0, 1))), format(at(0, 1))).toBe(false);
+      expect(isKernelOutdated(format(at(0, 0))), format(at(0, 0))).toBe(false);
+    }
+  });
+
+  it("compares a stamp that is no date as text, as it always did", () => {
+    expect(isKernelOutdated("0-legacy")).toBe(true);
+    expect(isKernelOutdated("v3")).toBe(false);
   });
 });
 

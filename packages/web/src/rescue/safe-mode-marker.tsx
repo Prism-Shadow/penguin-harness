@@ -11,10 +11,10 @@ export function SafeModeMarker() {
   const safe = useSafeMode();
   if (!safe) return null;
   return (
-    // z-40 with the menus: above the page, below a dialog's overlay.
+    // On the `menu` layer: above the page, below a dialog's overlay.
     <div
       role="status"
-      className={`fixed bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 px-3 py-1 text-xs shadow-sm dark:border-amber-900 ${toneSurface.attention}`}
+      className={`fixed bottom-3 left-1/2 z-menu flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 px-3 py-1 text-xs shadow-sm dark:border-amber-900 ${toneSurface.attention}`}
     >
       <span>{S.rescue.marker}</span>
       <button

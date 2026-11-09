@@ -33,12 +33,12 @@ export const RESIZE_STEP_PX = 16;
 /** The overlay placements: which edge of the positioned parent the bar straddles, by axis. */
 const EDGE_CLASS = {
   x: {
-    start: "absolute inset-y-0 -left-[3px] z-20 w-1.5",
-    end: "absolute inset-y-0 -right-[3px] z-20 w-1.5",
+    start: "absolute inset-y-0 -left-[3px] z-handle w-1.5",
+    end: "absolute inset-y-0 -right-[3px] z-handle w-1.5",
   },
   y: {
-    start: "absolute inset-x-0 -top-[3px] z-20 h-1.5",
-    end: "absolute inset-x-0 -bottom-[3px] z-20 h-1.5",
+    start: "absolute inset-x-0 -top-[3px] z-handle h-1.5",
+    end: "absolute inset-x-0 -bottom-[3px] z-handle h-1.5",
   },
 } as const;
 
