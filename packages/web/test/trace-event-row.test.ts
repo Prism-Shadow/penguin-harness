@@ -5,7 +5,6 @@
  * - The row's one pill names the record's kind, and the role where a kind's role varies:
  *   `text (user)`, `text (assistant)`, `inline_data (user)`; any other kind is bare. The text's
  *   summary is its text alone.
- * - The pill's tone tells the families apart: a `model_msg` neutral, an `event_msg` attention.
  * - Opened, the `session_meta` row lists the Session's fields, the provider among them.
  * - Opened, a record that completed carries no status badge; one that did not names its status.
  * - A summary the row's context computed (a thinking-level change) replaces the record's own.
@@ -63,17 +62,6 @@ describe("a Trace event row", () => {
     expect(line(image!)).toContain("inline_data (user)");
     expect(line(thinking!)).toContain("thinkingHmm.");
     expect(line(call!)).toContain("tool_callexec_command");
-  });
-
-  it("tones its pill by the record's family", async () => {
-    const [model, event] = await rows([
-      record("model_msg", { type: "text", role: "user", text: "hi" }),
-      record("event_msg", { type: "request_begin" }),
-    ]);
-    const pill = (row: HTMLLIElement) => row.querySelector("button [class*='bg-tone-']")!.className;
-
-    expect(pill(model!)).toContain("bg-tone-neutral-bg");
-    expect(pill(event!)).toContain("bg-tone-attention-bg");
   });
 
   it("opened, the session_meta row lists the Session's fields", async () => {

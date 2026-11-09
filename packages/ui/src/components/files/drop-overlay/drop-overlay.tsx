@@ -36,7 +36,7 @@ export function DropOverlay({ variant = "veil", title, description, glyph }: Dro
     return (
       <div
         aria-hidden
-        className="anim-fade pointer-events-none absolute inset-0 z-20 flex items-end justify-center p-3"
+        className="anim-fade pointer-events-none absolute inset-0 z-raised flex items-end justify-center p-3"
       >
         <div className="absolute inset-1 rounded-lg border-2 border-dashed border-fg-subtle bg-canvas/40" />
         <div className="relative flex items-center gap-2 rounded-md border border-line-emphasis bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-sm">
@@ -49,7 +49,7 @@ export function DropOverlay({ variant = "veil", title, description, glyph }: Dro
   return (
     <div
       aria-hidden
-      className="anim-fade pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-canvas/70 p-6"
+      className="anim-fade pointer-events-none absolute inset-0 z-window-overlay flex items-center justify-center bg-canvas/70 p-6"
     >
       <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-fg-subtle bg-surface/80 px-10 py-8 text-center">
         <GlyphIcon d={glyph} size={VEIL_GLYPH_PX} className="text-fg-subtle" />

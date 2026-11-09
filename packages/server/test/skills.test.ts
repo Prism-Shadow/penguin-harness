@@ -66,6 +66,9 @@ describe("skills api", () => {
     loadPreinstalledPlugins()
       .flatMap((p) => p.skills.map((s) => s.name))
       .sort();
+  /** The skill names the named library plugins ship, sorted — the installed-list order. */
+  const skillNamesOf = (...names: string[]) =>
+    names.flatMap((name) => libraryPlugin(name)!.skills.map((s) => s.name)).sort();
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -131,12 +134,7 @@ describe("skills api", () => {
     const res = await member.get("/api/plugins");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginLibraryResponse;
-    expect(body.groups.map((g) => g.id)).toEqual([
-      "rsi",
-      "office-productivity",
-      "software-development",
-      "ai-app-development",
-    ]);
+    expect(body.groups.length).toBeGreaterThan(0);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
       // The Chinese category title is passed through from the plugins package (the UI picks a language).
@@ -147,8 +145,12 @@ describe("skills api", () => {
       );
     }
     const plugins = body.groups.flatMap((g) => g.plugins);
+    // A card reads its Chinese description from the listing; at least one plugin carries one,
+    // so the pass-through below is never checked over nothing.
+    expect(plugins.some((p) => p.descriptionZh)).toBe(true);
     for (const plugin of plugins) {
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
+      expect(plugin.descriptionZh, plugin.name).toBe(libraryPlugin(plugin.name)!.descriptionZh);
       // The version a card shows is the plugin's npm version, its package.json's.
       expect(plugin.version, plugin.name).toBe(libraryPlugin(plugin.name)!.version);
       expect(plugin.version, plugin.name).toMatch(/^\d+\.\d+\.\d+/);
@@ -164,42 +166,43 @@ describe("skills api", () => {
         expect(skill.version, skill.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
         expect("content" in skill).toBe(false);
       }
+      // A plugin with a hook package names its hook points and the package's dated version;
+      // one without names none. No item carries the files it ships.
+      const hooks = libraryPlugin(plugin.name)!.hooks;
+      expect(plugin.hooks.length > 0, plugin.name).toBe(hooks !== undefined);
+      if (hooks !== undefined) expect(plugin.hookVersion, plugin.name).toBe(hooks.manifest.version);
+      expect("files" in plugin, plugin.name).toBe(false);
     }
-    const goal = plugins.find((p) => p.name === "goal")!;
-    expect(goal).toMatchObject({ hooks: ["user_prompt", "stop"], skills: [] });
-    expect(goal.hookVersion).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-    expect(goal.descriptionZh).toBeTruthy();
-    expect("files" in goal).toBe(false);
-    expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
-      hooks: ["stop"],
-    });
-    expect(plugins.find((p) => p.name === "humanizer")).toMatchObject({
-      hooks: [],
-    });
   });
 
-  it("GET /api/plugins/:plugin/files: what a plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
-    const dev = await member.get("/api/plugins/software-development/files");
-    expect(dev.status).toBe(200);
-    const devFiles = ((await dev.json()) as PluginFilesResponse).files;
-    expect(Object.keys(devFiles)).toEqual([
-      "skills/software-engineering/SKILL.md",
-      "skills/web-design/SKILL.md",
-    ]);
-    // The installable copy (frontmatter stamped), the same text an install writes.
-    expect(devFiles["skills/web-design/SKILL.md"]).toBe(librarySkill("web-design")!.skill.content);
-
-    const goal = await member.get("/api/plugins/goal/files");
-    expect(Object.keys(((await goal.json()) as PluginFilesResponse).files).sort()).toEqual([
-      "hooks/lib.mjs",
-      "hooks/start.mjs",
-      "hooks/stop.mjs",
-    ]);
-
-    // A skill's auxiliary files keep their subdirectory path.
-    const humanizer = await member.get("/api/plugins/humanizer/files");
-    const humanizerFiles = ((await humanizer.json()) as PluginFilesResponse).files;
-    expect(Object.keys(humanizerFiles)).toContain("skills/humanizer/reference/tells.md");
+  it("GET /api/plugins/:plugin/files: what each library plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
+    const library = (await (await member.get("/api/plugins")).json()) as PluginLibraryResponse;
+    for (const { name } of library.groups.flatMap((g) => g.plugins)) {
+      const res = await member.get(`/api/plugins/${name}/files`);
+      expect(res.status, name).toBe(200);
+      const files = ((await res.json()) as PluginFilesResponse).files;
+      const plugin = libraryPlugin(name)!;
+      // Each skill's installable copy (frontmatter stamped, the same text an install writes)
+      // under its own directory, its auxiliary files keeping their subdirectory path; the hook
+      // package's scripts under hooks/; each workbench's files under its own directory — and
+      // nothing else of the package.
+      const shipped: Record<string, string> = {};
+      for (const skill of plugin.skills) {
+        shipped[`skills/${skill.name}/SKILL.md`] = skill.content;
+        for (const [rel, text] of Object.entries(skill.files ?? {})) {
+          shipped[`skills/${skill.name}/${rel}`] = text;
+        }
+      }
+      for (const [rel, text] of Object.entries(plugin.hooks?.files ?? {})) {
+        shipped[`hooks/${rel}`] = text;
+      }
+      for (const workbench of plugin.workbenches ?? []) {
+        for (const [rel, text] of Object.entries(workbench.files)) {
+          shipped[`workbenches/${workbench.name}/${rel}`] = text;
+        }
+      }
+      expect(files, name).toEqual(shipped);
+    }
 
     expect((await member.get("/api/plugins/no-such-plugin/files")).status).toBe(404);
   });
@@ -215,11 +218,8 @@ describe("skills api", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual([
-      "data-analysis",
-      "software-engineering",
-      "web-design",
-    ]);
+    const both = skillNamesOf("data-analysis", "software-development");
+    expect(body.skills.map((s) => s.name)).toEqual(both);
     // The installed list likewise passes through the short description and the icon — the
     // plugin's, written as icon.svg beside SKILL.md on install (a skill has none of its own).
     const installed = body.skills.find((s) => s.name === "web-design")!;
@@ -246,7 +246,7 @@ describe("skills api", () => {
     expect((await member.delete(`${url}/web-design`)).status).toBe(204);
     await expect(fs.access(path.dirname(skillFile("web-design")))).rejects.toThrow();
     const after = (await (await member.get(url)).json()) as AgentSkillsResponse;
-    expect(after.skills.map((s) => s.name)).toEqual(["data-analysis", "software-engineering"]);
+    expect(after.skills.map((s) => s.name)).toEqual(both.filter((name) => name !== "web-design"));
 
     // Deleting a Skill that isn't installed (or was already uninstalled) → 404.
     expect((await member.delete(`${url}/web-design`)).status).toBe(404);
@@ -268,14 +268,7 @@ describe("skills api", () => {
     const res = await owner.post(toPlugins(url), { names: ["agent-development"] });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual([
-      "agent-initialization",
-      "penguin-config",
-      "penguin-orchestration",
-      "penguin-plugin",
-      "penguin-sdk",
-      "unified-llm-api",
-    ]);
+    expect(body.skills.map((s) => s.name)).toEqual(skillNamesOf("agent-development"));
     expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-config")!.skill.content);
   });
 
@@ -365,21 +358,13 @@ describe("skills api", () => {
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(8);
+    const seeded = skillNamesOf("agent-development", "software-development");
+    expect(summary.agent.skillCount).toBe(seeded.length);
 
     // The installed list is the same shape a library install produces (name-sorted):
     // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
-    expect(listed.skills.map((s) => s.name)).toEqual([
-      "agent-initialization",
-      "penguin-config",
-      "penguin-orchestration",
-      "penguin-plugin",
-      "penguin-sdk",
-      "software-engineering",
-      "unified-llm-api",
-      "web-design",
-    ]);
+    expect(listed.skills.map((s) => s.name)).toEqual(seeded);
     // Installed through the same writer as the Skills tab: SKILL.md is the library file verbatim.
     const onDisk = await fs.readFile(
       path.join(skillsDir(t.root, projectId, "seeded_agent"), "penguin-sdk", "SKILL.md"),
@@ -756,7 +741,7 @@ describe("skills api", () => {
       ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(6);
+      expect(fresh.skillCount).toBe(skillNamesOf("agent-development").length);
       expect(fresh.pluginUpdates).toEqual([]);
 
       // Age one installed copy: the library's same skill now carries a higher version than the

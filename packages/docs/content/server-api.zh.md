@@ -696,12 +696,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ## 组织（公司模式）
 
-以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写。没有任何路由会删除组织：`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
+以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写；只有 Project 的所有者可以删除组织。暂停（`status: paused`）让组织停下来，同时保留它的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/` | 列出组织 / 创建组织 |
-| GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
+| GET / PATCH / DELETE | `/:orgId` | 组织概览 / 修改组织设置 / 删除组织（仅所有者） |
 | GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
 | POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | 修改员工 / 将员工移出组织 |
@@ -739,6 +739,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
 - `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
+- `DELETE /:orgId` 仅限所有者（成员得到 403）。它把组织目录移入 Project 的回收目录 `organizations/.trash/<orgId>-<时间>/`，移回原处即可恢复。带 `?deleteAgents=1&agentIds=a,b` 时（`agentIds` 是调用方确认框列出的待删 Agent），随后把列出的每名员工的 Agent（包括 CEO 的）永久删除，与 `DELETE /api/projects/:projectId/agents/:agentId` 删除单个 Agent 完全一样。带 `deleteAgents=1` 却没有 `agentIds` 时返回 400，什么都不删除。返回 200 `{orgId, deletedAgents: [{agentId, deletion}], keptAgents: [{agentId, reason}], failedAgents: [{agentId, code, message}]}`。没有删除的员工都保留并注明 `reason`：`builtin`；本 Project 另一个组织也雇用它时为 `employed_elsewhere`；另一个组织的 `org_chart.yaml` 无法读取期间，所有员工都为 `employment_unknown`，这些组织列在响应的 `unreadableCharts` 中（`GET /agents` 在列表旁也带同一字段）；不在 `agentIds` 里时为 `not_confirmed`，例如确认框显示之后才招募的员工。`agentIds` 中不是本组织员工的 id 会被忽略。删除被拒绝的 Agent（文件夹被其他程序占用，或期间又被招募）连同错误列在 `failedAgents` 中，其余 Agent 照常删除。不带这个参数时三个列表都为空，员工全部保留为 Agent。
 
 组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
 

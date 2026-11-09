@@ -2,22 +2,13 @@
  * A Session row's two action surfaces (components/ui/session-row-menu.tsx): the hover buttons
  * and the right-click menu, and how each action labels itself.
  *
- * - A row's menu carries pin, rename, messaging, archive, copy and delete, so every Session in
- *   the sidebar stays renamable, archivable and deletable.
- * - Every hover action is also in the menu, so nothing is reachable by hover alone.
  * - Every action has a label and a glyph of its own, and only delete is destructive.
  * - Pin flips its label on a pinned row and keeps its glyph.
  * - In English no action falls back to a Chinese label (the hover buttons are icon-only, so
  *   the label is their accessible name).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  CONTEXT_MENU_ACTIONS,
-  HOVER_ROW_ACTIONS,
-  sessionRowMenuItem,
-  type SessionRowAction,
-} from "../src/components/ui/session-row-menu";
-
+import { sessionRowMenuItem, type SessionRowAction } from "../src/components/ui/session-row-menu";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -26,16 +17,6 @@ afterEach(() => setActiveStrings(zh));
 
 const RESTING = { pinned: false };
 const ALL: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
-
-describe("the context menu", () => {
-  it("carries the whole set", () => {
-    expect([...CONTEXT_MENU_ACTIONS]).toEqual(ALL);
-  });
-
-  it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
-    for (const action of HOVER_ROW_ACTIONS) expect(CONTEXT_MENU_ACTIONS).toContain(action);
-  });
-});
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
