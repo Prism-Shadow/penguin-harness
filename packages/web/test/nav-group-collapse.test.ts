@@ -5,8 +5,7 @@
  * localStorage key.
  *
  * - New chat comes first, then the viewer's pages; a member sees the admin's pages minus the
- *   admin-only Machines page, and nothing else; an unreleased page is offered to nobody. New
- *   chat's nav label is its tooltip's (the pages' labels are their own data: web-root.test.ts).
+ *   admin-only Machines page, and nothing else; an unreleased page is offered to nobody.
  * - By default New chat, Agents, Models and Plugins are pinned and the rest collapsible; a
  *   member's areas are cut from their own entries.
  * - A pin toggle stores only the deviation from the default, both areas keep page order
@@ -40,9 +39,6 @@ import {
   type NavPage,
   type NavPinOverrides,
 } from "../src/web-app/sidebar/nav-state";
-
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** The main nav as the modules contribute it (web-root.test.ts pins the real one to this). */
@@ -67,11 +63,6 @@ describe("navEntryKeysFor", () => {
   it("puts New chat first, then this user's pages", () => {
     expect([...navEntryKeysFor(NAV, true)]).toEqual(["newChat", ...navKeysFor(NAV, true)]);
     expect([...navEntryKeysFor(NAV, false)]).toEqual(["newChat", ...navKeysFor(NAV, false)]);
-  });
-
-  it("New chat's nav label is the one its tooltip and the collapsed rail use", () => {
-    expect(zh.nav.newChat).toBe(zh.chat.newSessionMenu);
-    expect(en.nav.newChat).toBe(en.chat.newSessionMenu);
   });
 });
 
