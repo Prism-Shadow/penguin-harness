@@ -26,8 +26,8 @@
  * The overlay is the UI package's `DropOverlay` veil, pure feedback: `pointer-events-none` (so
  * it never becomes the drag target itself and the hit test keeps seeing the real element
  * underneath), `aria-hidden` — it exists only during a pointer drag, and the accessible entry
- * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the overlay z
- * tier (z-50).
+ * point stays the "+" menu — and `absolute inset-0` portaled into the region, on the
+ * `window-overlay` layer.
  *
  * Interplay with the app-shell guard (see lib/file-drop.ts): over the chat area this
  * component claims the drag — preventDefault on dragover plus a copy cursor — so the guard's
