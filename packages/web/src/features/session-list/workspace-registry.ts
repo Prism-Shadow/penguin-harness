@@ -1,30 +1,10 @@
-/**
- * Manually-added Workspaces of the sidebar (pure decisions, unit tested): the header's
- * new-workspace button lets the user browse to a directory, and the picked path must show
- * up as a workspace group IMMEDIATELY — even with zero Sessions. There is no Workspace
- * entity on the server (groups are otherwise derived purely from Session paths), so the
- * picked paths persist frontend-side per Project (`penguin.…` key naming, injectable
- * storage — the model-group-expansion.ts convention) and merge into the grouping as
- * empty groups.
- *
- * An entry is `{ path, machineId?, alias? }`, and the first two together are its identity:
- * one directory on one machine. The alias is a display name set via the group's rename
- * action (it replaces the basename as the group label — for session-backed groups too —
- * while the full path stays in the tooltip; an empty alias reverts to the basename). Loads
- * stay tolerant of the branch's earlier string-only stored shape.
- *
- * Lifecycle: an entry stays until the group's remove action unregisters it (sidebar-only —
- * disk and Sessions are never touched; with Sessions present the group simply persists as
- * session-derived). Once Sessions exist the entry mostly dedups away at merge, but it
- * still carries the alias and keeps the group visible after those Sessions are gone.
- */
 import {
   isTempWorkspace,
   workspaceGroupKey,
   workspaceGroupPath,
   workspaceLabel,
   type WorkspaceGroup,
-} from "./session-grouping";
+} from "../../lib/session-grouping";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */
 export interface WorkspaceEntry {

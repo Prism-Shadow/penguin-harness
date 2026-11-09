@@ -1,5 +1,5 @@
 /**
- * Adding a rule on the Project settings security page (components/layout/project-dialogs.tsx).
+ * Adding a rule on the Project settings security page (features/projects/project-dialogs/security-policy-section.tsx).
  *
  * - The rule editor puts the caret in its first field (the rule's name) and nowhere else, so
  *   opening the form is never silent.
@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleEditor } from "../src/components/layout/project-dialogs";
+import { RuleEditor } from "../src/features/projects/project-dialogs/security-policy-section";
 
 describe("command policy: adding a rule", () => {
   it("puts the caret in the first field, so the form is not silently opened", () => {

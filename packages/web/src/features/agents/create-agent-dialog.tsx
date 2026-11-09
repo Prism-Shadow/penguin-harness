@@ -53,14 +53,13 @@ import { SemanticIdField } from "../semantic-id";
 import { WorkspaceSelect } from "../chat";
 import {
   SkillPickList,
-  type PickableItem,
   addSkillNames,
   removeSkillNames,
   toggleSkillName,
+  type PickableItem,
 } from "../skills";
 
 import { StdioDisclosure, stdioServers } from "../plugins";
-
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,

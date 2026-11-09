@@ -22,10 +22,10 @@ import {
   isFreeModel,
   sameModelRef,
   visibleChatModels,
+  modelTags,
   type ModelCredentialRowLike,
   type ModelRefValue,
   type ModelRowLike,
-  modelTags,
   type ModelTag,
 } from "../models";
 

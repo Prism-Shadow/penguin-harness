@@ -68,14 +68,13 @@ import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import {
   SkillPickList,
-  type PickableItem,
   addSkillNames,
   removeSkillNames,
   toggleSkillName,
+  type PickableItem,
 } from "../skills";
 
 import { StdioDisclosure, stdioServers } from "../plugins";
-
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
