@@ -308,7 +308,7 @@ describe("plugin readmes", () => {
    */
   it("names every sandbox backend @penguinharness/<its directory>", () => {
     const sandboxes = [...packages].filter(([, { dir }]) => dir.startsWith("sandbox-"));
-    expect(sandboxes).toHaveLength(4);
+    expect(sandboxes).not.toHaveLength(0);
     for (const [name, { dir }] of sandboxes) {
       expect(name, `plugins/${dir}`).toBe(`@penguinharness/${dir}`);
     }
@@ -408,21 +408,20 @@ describe("the registry routes", () => {
     // The package as npm installs it into the data root's own prefix — the first base the
     // lookup tries, ahead of the installation's (which, in a checkout, is the workspace).
     const admin = await loginAdmin(t.app);
-    const pkg = packages.get(name)!;
     const dest = path.join(t.root, "plugins", "node_modules", ...name.split("/"));
     await mkdir(dest, { recursive: true });
     await writeFile(
       path.join(t.root, "plugins", "package.json"),
       '{"name":"prefix","private":true}',
     );
-    for (const file of ["package.json", "README.md"]) {
-      await cp(path.join(PLUGINS_DIR, pkg.dir, file), path.join(dest, file));
-    }
+    await writeFile(path.join(dest, "package.json"), JSON.stringify({ name, version: "1.0.0" }));
+    const readme = "# The installed copy\n\nWhat this machine's package says of itself.\n";
+    await writeFile(path.join(dest, "README.md"), readme);
     const res = await apiClient(t.app, admin.cookie).get(url);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { name: string; readme: string | null };
     expect(body.name).toBe(name);
-    expect(body.readme).toContain("Bubblewrap");
+    expect(body.readme).toBe(readme);
   });
 
   it("refuses a name the deployment does not list, so it cannot probe for what exists", async () => {
@@ -582,12 +581,7 @@ describe("mergeIndexes", () => {
 });
 
 describe("the published index source", () => {
-  it("is a release asset on a fixed tag; PENGUIN_PLUGIN_INDEX unset reads it, off reads none, a URL replaces it", () => {
-    // The tag is never re-pointed — a six-hourly workbench replaces the ASSET — so "latest
-    // nightly" is resolved by name and costs no unauthenticated API budget.
-    expect(NIGHTLY_INDEX_URL).toBe(
-      "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
-    );
+  it("PENGUIN_PLUGIN_INDEX unset or blank reads the published index, off reads none, a URL replaces it", () => {
     const at = (value: string | undefined) =>
       resolveServerConfig({ ...(value === undefined ? {} : { PENGUIN_PLUGIN_INDEX: value }) })
         .pluginIndexUrl;

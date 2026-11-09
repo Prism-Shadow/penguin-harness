@@ -13,21 +13,9 @@ import {
 } from "@prismshadow/penguin-server/model-catalog";
 import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
+import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "../../lib/protocol-client-types";
 
-/**
- * The protocols the in-field protocol menu offers, in its order: five of MMSP's compatible
- * clients. The first three are the ones the /models/detect probes try, in the same order; the
- * Google GenAI (generateContent) and MMSP clients after them are picked by hand only, since a
- * probe could not tell them apart from an OpenAI-compatible endpoint cheaply and safely.
- */
-export const PROTOCOL_CLIENT_TYPES = [
-  "openai-responses",
-  "ant-messages",
-  "openai-chat",
-  "google-genai",
-  "mmsp",
-] as const;
-export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
+export { PROTOCOL_CLIENT_TYPES, type ProtocolClientType };
 
 /**
  * Older spellings MMSP still routes, each read as the protocol it names: the bare `openai`

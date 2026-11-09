@@ -122,15 +122,20 @@ describe("Notice", () => {
 });
 
 describe("TodoNotice", () => {
-  const todo = (withAction: boolean) =>
-    renderStatic(
-      createElement(TodoNotice, {
-        text: "3 skills can be updated",
-        dismissLabel: "Mark as read",
-        onDismiss: noop,
-        ...(withAction ? { actionLabel: "Update all", onAction: noop } : {}),
-      }),
+  const todo = (withAction: boolean) => {
+    const notice = {
+      text: "3 skills can be updated",
+      dismissLabel: "Mark as read",
+      onDismiss: noop,
+    };
+    // The action comes whole or not at all (its label and its handler together).
+    return renderStatic(
+      createElement(
+        TodoNotice,
+        withAction ? { ...notice, actionLabel: "Update all", onAction: noop } : notice,
+      ),
     );
+  };
 
   it("is an attention callout whose buttons fold the sentence into their names", () => {
     const html = todo(true);
