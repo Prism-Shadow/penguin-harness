@@ -9,9 +9,11 @@
     "directory": "plugins/agent-company-proposals"
   },
   "files": [
+    "LICENSE",
+    "dist",
     "icon.svg",
-    "skills",
-    "LICENSE"
+    "ifaces.json",
+    "skills"
   ],
   "publishConfig": {
     "access": "public"
@@ -30,5 +32,11 @@
       ]
     },
     "icon": "icon.svg"
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }
