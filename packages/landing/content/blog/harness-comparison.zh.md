@@ -104,7 +104,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1570" alt="图 3｜单道题目的容器内执行与独立判分流程" /><figcaption>图 3｜单道题目的容器内执行与独立判分流程</figcaption></figure>
 
-举个实际的例子。Sec E 的第 8 题 [embedding-drift-monitor](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/penguinharness-benchmark-sec-e/tasks/embedding-drift-monitor) 是一道修 Bug 题：容器里提前放好了一套有缺陷的监测程序，里面藏着三处逻辑和计算 Bug。四种 Harness 都要在 25 分钟、200 次请求内自己读代码找出并修好这些问题，交卷后再由判卷脚本跑 pytest 验收。结果很有意思：Codex 三轮都觉得自己改完了、主动交卷，但改出来的代码没跑过 pytest，三轮全拿 0 分；而 DSH 和 PenguinHarness 三轮改出的代码全部通过测试，三轮都是 100 分。
+举个实际的例子。Sec E 的第 8 题 [embedding-drift-monitor](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/penguinharness-benchmark-sec-e/tasks/embedding-drift-monitor) 是一道修 Bug 题：容器里提前放好了一套有缺陷的监测程序，里面藏着多处逻辑和计算 Bug。四种 Harness 都要在 25 分钟、200 次请求内自己读代码找出并修好这些问题，交卷后再由判卷脚本跑 pytest 验收。结果很有意思：Codex 三轮都觉得自己改完了、主动交卷，但改出来的代码没跑过 pytest，三轮全拿 0 分；而 DSH 和 PenguinHarness 三轮改出的代码全部通过测试，三轮都是 100 分。
 
 ## 4. 得分与消耗怎么算？
 
