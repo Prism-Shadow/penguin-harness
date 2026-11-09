@@ -1,20 +1,21 @@
 /**
  * The account menu, shared by both avatars that open one: the pinned sidebar's user row and
  * the collapsed rail's avatar. One component rather than a copy per anchor — the rows
- * (Settings, the dashboard, App info, sign out) and the dialog behind the first of them must
+ * (Settings, App info, sign out) and the dialog behind the first of them must
  * stay the same menu from either side, and a second copy is how two menus drift apart.
  *
  * Only the trigger differs, so the trigger is the caller's: it is handed the menu's own open
  * state, which is what keeps "what opening means" here rather than in two places.
  *
- * The settings dialog is mounted OUTSIDE the panel: the panel's children unmount the moment
- * the menu closes, and the settings row closes the menu as it opens the dialog.
+ * The settings row asks for the Settings dialog (lib/settings-request.ts) rather than mounting
+ * it: the dialog is the settings module's layer, mounted once beside every page, so it outlives
+ * the menu that closes as it opens it, and the collapsed rail it may swap with.
  *
  * The panel heads itself with the account it belongs to — avatar, nickname, and the id under
  * it once a nickname stands in for it. Both anchors are avatars, and the rail's is nothing but
  * an avatar, so without the header the menu never says whose account its rows act on.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useNavigate } from "react-router";
 import {
@@ -31,10 +32,7 @@ import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 import { AppInfoRow } from "../../components/account/app-info-row";
 import { openAppInfo } from "../../lib/use-update-flow";
-import { SettingsDialog } from "../../features/settings/settings-dialog";
-import { onSettingsRequest } from "../../features/settings/settings-request";
-import type { SettingsSectionKey } from "../../lib/settings-sections";
-import { meAvatarUrl } from "../../api/endpoints";
+import { requestSettings } from "../../lib/settings-request";
 
 export function UserMenu({
   trigger,
@@ -60,21 +58,7 @@ export function UserMenu({
   const navigate = useNavigate();
   const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  /** The page a request asked for; the menu's own row asks for none (the viewer's first). */
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey | undefined>(undefined);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
-
-  // Settings can be asked for from outside this menu (see settings-request.ts): the request
-  // opens the same dialog, on the page it names.
-  useEffect(
-    () =>
-      onSettingsRequest(({ section }) => {
-        setSettingsSection(section);
-        setSettingsOpen(true);
-      }),
-    [],
-  );
 
   return (
     <>
@@ -100,7 +84,7 @@ export function UserMenu({
               <UserAvatar
                 userId={user.userId}
                 {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
-                {...(user.avatarRev !== undefined ? { avatar: meAvatarUrl(user.avatarRev) } : {})}
+                {...(user.avatar !== undefined ? { avatar: user.avatar } : {})}
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{user.displayName ?? user.userId}</p>
@@ -119,18 +103,8 @@ export function UserMenu({
               label={S.settings.title}
               onSelect={() => {
                 setOpen(false);
-                setSettingsSection(undefined);
-                setSettingsOpen(true);
-              }}
-            />
-            {/* The dashboard: a phone-sized overview of where Sessions run and where one waits
-                on a person. A row under the settings entry rather than a nav group — it is
-                opened deliberately, on a phone, not lived in. */}
-            <MenuItem
-              label={S.settings.dashboard}
-              onSelect={() => {
-                setOpen(false);
-                navigate("/dashboard");
+                // No page named: the dialog opens on the viewer's first.
+                requestSettings();
               }}
             />
             {/* App info entry: version, links, release notes, licences, and the update flow for
@@ -163,14 +137,9 @@ export function UserMenu({
           </Menu>
         </div>
       </Dropdown>
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        {...(settingsSection !== undefined ? { section: settingsSection } : {})}
-      />
       {/* Signing out is confirmed first: the row sits in a menu of harmless entries, and a
-          slip would end the session and land on the login page. Mounted beside the settings
-          dialog, outside the dropdown, so it outlives the menu that opened it. */}
+          slip would end the session and land on the login page. Mounted outside the dropdown,
+          so it outlives the menu that opened it. */}
       <ConfirmModal
         open={confirmingLogout}
         title={S.auth.logoutConfirmTitle}
