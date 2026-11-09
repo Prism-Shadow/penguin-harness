@@ -43,7 +43,7 @@ import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../../components/ui/truncated";
 import { useOrgPages } from "./use-org-pages";
 import { useAuth } from "../../state/auth";
-import { useCompany, useCompanyEvents } from "../../state/company";
+import { useCompany, useCompanyEvents } from "../../features/company/company-state";
 import { badgeNote, RowBadges, type RowCounts } from "./channel-sidebar";
 import { orgChannelPath, orgContributedPagePath } from "./company-nav";
 import {

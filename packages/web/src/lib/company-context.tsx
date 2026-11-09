@@ -83,3 +83,8 @@ export function useCompany(): CompanyContextValue {
   if (!ctx) throw new Error("useCompany must be used within a CompanyProvider");
   return ctx;
 }
+
+/** The company context where there is one, null where there is not — for a Markdown element that may render outside the app's tree. */
+export function useCompanyOptional(): CompanyContextValue | null {
+  return useContext(CompanyContext);
+}

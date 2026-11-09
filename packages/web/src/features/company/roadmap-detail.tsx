@@ -28,7 +28,7 @@ import type { OrgRoadmapApproval, OrgRoadmapDetail } from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../features/company/company-state";
 import { useLocale } from "../../state/locale";
 import {
   Badge,

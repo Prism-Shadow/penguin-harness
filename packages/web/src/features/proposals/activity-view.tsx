@@ -15,7 +15,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../features/company/company-state";
 import { useLocale } from "../../state/locale";
 import { OrgPage, useOrg } from "../company/org-layout";
 import { ErrorLine, PrincipalChip } from "../company/shared";

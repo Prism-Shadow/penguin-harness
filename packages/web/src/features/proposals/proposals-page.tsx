@@ -88,7 +88,7 @@ import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../features/company/company-state";
 import { useLocale } from "../../state/locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
