@@ -7,7 +7,7 @@
 
 [English](2026-11-05-harness-comparison-blog.md)
 
-新增了中文实验博客及英文初稿，对比 PenguinHarness、DSH、Pi 和 Codex 在五个任务子集上的三轮运行结果。
+新增了中英文实验博客，对比 PenguinHarness、DSH、Pi 和 Codex 在五个任务子集上的三轮运行结果。
 
 ## 细节
 
@@ -18,3 +18,4 @@
 - 将中英文博客署名设为 Zhihao Liu (Prism Shadow AI)。
 - 数据来源段落使用普通字形，并保留全部来源链接。
 - 按飞书主稿同步精简后的中文加粗格式。
+- 按中文 revision 700 更新英文标题、正文、完整实验 Prompt、图注和替代文本，保留相同的五节结构及十四张配图。

@@ -7,7 +7,7 @@
 
 [中文版](2026-11-05-harness-comparison-blog.zh.md)
 
-Added a Chinese experiment blog post and its English draft comparing PenguinHarness, DSH, Pi and Codex across five task subsets and three repeated runs.
+Added Chinese and English experiment blog posts comparing PenguinHarness, DSH, Pi and Codex across five task subsets and three repeated runs.
 
 ## Details
 
@@ -18,3 +18,4 @@ Added a Chinese experiment blog post and its English draft comparing PenguinHarn
 - Set the Chinese and English article bylines to Zhihao Liu (Prism Shadow AI).
 - Kept the source-reference paragraphs in regular text and retained all source links.
 - Synchronized the Chinese article’s reduced bold formatting with the edited Feishu manuscript.
+- Updated the English title, article, complete experiment prompt, captions and alt text from Chinese revision 700, matching its five sections and fourteen figures.
