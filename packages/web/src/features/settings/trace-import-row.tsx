@@ -16,8 +16,8 @@
  * list holds. Export is deliberately not here: a Trace is downloaded from the conversation
  * it belongs to, in the chat's Trace panel.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import {
   HiddenFileInput,

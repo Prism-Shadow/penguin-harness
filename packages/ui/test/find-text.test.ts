@@ -20,8 +20,8 @@ import {
   matchAll,
   matchSnippet,
   stepMatchIndex,
+  type FindQuery,
 } from "../src/components/content/find/find-text";
-import type { FindQuery } from "../src/components/content/find/find-text";
 
 /** A case-insensitive query, the default the find bar opens with. */
 const q = (text: string, caseSensitive = false): FindQuery => ({ text, caseSensitive });

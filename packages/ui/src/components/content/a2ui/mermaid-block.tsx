@@ -19,7 +19,7 @@
  * While the reply streams the block is the quiet placeholder; it draws once, on the settle.
  */
 import { useEffect, useMemo, useState } from "react";
-import { checkMermaid } from "@prismshadow/penguin-core/a2ui";
+import { checkMermaid } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
 import { CodeBlock } from "../code-block/code-block";

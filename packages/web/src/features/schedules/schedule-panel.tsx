@@ -47,7 +47,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateButtons } from "../ai-create";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";
@@ -56,8 +56,9 @@ import {
   filterSchedules,
   scheduleGlyph,
   sessionSchedules,
+  type ScheduleFilter,
 } from "./schedule-panel-state";
-import type { ScheduleFilter } from "./schedule-panel-state";
+
 import { refreshSchedules, useProjectSchedules } from "./schedule-store";
 import { ScheduleSuggestions } from "./schedule-suggestions";
 import { toggleBody } from "./schedule-upsert";

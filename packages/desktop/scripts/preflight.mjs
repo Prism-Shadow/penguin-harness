@@ -26,10 +26,15 @@ for (const [what, rel] of [
   // The plugin packages are this package's dependencies, linked by `pnpm install`; the
   // bundled server's loader resolves them from here and refuses to start with a declared
   // one missing. Every declared package is checked, so one added to `dependencies` without
-  // a `pnpm install` fails here rather than at the first library read.
+  // a `pnpm install` fails here rather than at the first library read — and so is its
+  // generated ifaces.json, which the library reads what a plugin carries from (a plugin's
+  // `build` writes it, and pnpm refreshes this copy after that build).
   ...Object.keys(pkg.dependencies)
     .filter((dep) => dep.startsWith("@penguinharness/"))
-    .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/package.json`]),
+    .flatMap((dep) => [
+      [`the plugin package ${dep}`, `node_modules/${dep}/package.json`],
+      [`the built plugin package ${dep}`, `node_modules/${dep}/ifaces.json`],
+    ]),
   ["the builtin plugins", "plugins"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {

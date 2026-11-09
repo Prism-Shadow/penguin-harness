@@ -113,7 +113,7 @@ jobs:
           ./actionlint -shellcheck=
 
   # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
-  # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
+  # `version`, or the `version` of the hooks contribution in src/index.ts: installed copies
   # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
   plugin-versions:
@@ -165,12 +165,12 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in amsp core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp a2ui core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
       - name: Pack the publishable packages
         run: |
-          for p in amsp core server cli; do
+          for p in amsp a2ui core server cli; do
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done

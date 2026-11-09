@@ -294,7 +294,9 @@ export interface Messages {
     unchanged(name: string, version: string | null): string;
     /** A package directory the plugin library would refuse, with the reader's reason; nothing was sent. */
     dirRefused(dir: string, reason: string): string;
-    /** A package directory with neither skills/, hooks/, MCP servers nor ifaces.json; nothing was sent. */
+    /** A package directory without an ifaces.json: it was never built; nothing was sent. */
+    dirNotBuilt(dir: string): string;
+    /** A built package directory whose ifaces.json contributes nothing for an Agent and lists no server modules; nothing was sent. */
     dirNotPlugin(dir: string): string;
     /** A package directory past the server's upload caps; nothing was sent. */
     dirTooLarge(dir: string): string;
@@ -1114,6 +1116,14 @@ export interface Messages {
   resumeNoSession(): string;
   /** One-line prompt shown after a successful resume, before rendering history. */
   resumedBanner(sessionId: string, messageCount: number): string;
+  /** Dim line after a resumed Session's history when it is still running: the chat follows the run before its first prompt, and says what typing, Ctrl-C and /exit do meanwhile. */
+  chatFollowingResumed(): string;
+  /** Dim line where a run joined under way had more records than the server still holds: how many are not shown. */
+  chatRunOmitted(count: number): string;
+  /** Dim line when the server cannot hand over a run under way (an older server or machine): upgrade it. */
+  chatServerTooOld(): string;
+  /** Acknowledgment when a message sent while the Session compacts is queued to start after it (echoes the text). */
+  messageQueued(text: string): string;
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
   langInvalid(value: string): string;
@@ -1456,8 +1466,10 @@ const en: Messages = {
       `${name}${version === null ? "" : ` ${version}`} is already installed on the server; nothing changed.`,
     dirRefused: (dir, reason) =>
       `${dir} is not a package the plugin library can read, so nothing was sent: ${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} has no ifaces.json, so it is not a built plugin package: build it first (npm install, then npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json). Nothing was sent.`,
     dirNotPlugin: (dir) =>
-      `${dir} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (penguin.mcp_servers) nor the ifaces.json of server modules. Nothing was sent.`,
+      `${dir} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry. Nothing was sent.`,
     dirTooLarge: (dir) =>
       `${dir} exceeds what a plugin package may hold (2000 files, 5MB per file, 50MB in all, a 14MB zip). Nothing was sent.`,
     uploading: (name, version, files) => `Uploading ${name} ${version} (${files} files)…`,
@@ -2271,6 +2283,13 @@ const en: Messages = {
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
+  chatFollowingResumed: () =>
+    "[running] This Session is still running; following it here. Type to steer it, press Ctrl-C to stop it, or /exit to leave it running.",
+  chatRunOmitted: (count) =>
+    `… ${count} earlier record${count === 1 ? "" : "s"} of this run not shown (penguin session log shows them all)`,
+  chatServerTooOld: () =>
+    "This server cannot hand over a run under way; upgrade it. Until then the chat shows the history and what streams from here on.",
+  messageQueued: (text) => `» queued (sent when the current run ends): ${text}`,
   resumeHint: (command) => `To continue this conversation: ${command}`,
   langInvalid: (value) => `Invalid language "${value}". Use en or zh.`,
   langWindowsUnsupported: (lang) =>
@@ -2588,8 +2607,10 @@ const zh: Messages = {
     unchanged: (name, version) =>
       `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，没有任何改动。`,
     dirRefused: (dir, reason) => `插件库无法读取 ${dir} 中的包，未发送任何内容：${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} 没有 ifaces.json，不是构建过的插件包：请先构建（npm install，然后 npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json）。未发送任何内容。`,
     dirNotPlugin: (dir) =>
-      `${dir} 不是 PenguinHarness 插件：既没有 skills/、hooks/ 与 MCP Server（penguin.mcp_servers），也没有服务端模块的 ifaces.json。未发送任何内容。`,
+      `${dir} 不是 PenguinHarness 插件：它的 ifaces.json 既没有贡献 Skill、钩子包、MCP Server 或 Workbench，也没有列出带代码入口的服务端模块。未发送任何内容。`,
     dirTooLarge: (dir) =>
       `${dir} 超出插件包的上限（2000 个文件、单个文件 5MB、合计 50MB、zip 14MB）。未发送任何内容。`,
     uploading: (name, version, files) => `正在上传 ${name} ${version}（${files} 个文件）…`,
@@ -3344,6 +3365,13 @@ const zh: Messages = {
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
+  chatFollowingResumed: () =>
+    "[运行中] 该 Session 仍在运行，已在此接上：输入即插话，Ctrl-C 中断，/exit 离开（Task 继续运行）。",
+  chatRunOmitted: (count) =>
+    `… 此次运行更早的 ${count} 条记录未显示（penguin session log 可查看全部）`,
+  chatServerTooOld: () =>
+    "该服务端不支持接续正在进行的运行，请升级服务端；在此之前只显示历史与此后的实时输出。",
+  messageQueued: (text) => `» 已排队（当前运行结束后发出）：${text}`,
   resumeHint: (command) => `继续本次对话：${command}`,
   langInvalid: (value) => `无效的语言 "${value}"。请使用 en 或 zh。`,
   langWindowsUnsupported: (lang) =>
