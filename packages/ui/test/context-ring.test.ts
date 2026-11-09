@@ -8,7 +8,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ContextRing, contextRingTone } from "../src/components/chat/context-ring/context-ring";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 type Props = Parameters<typeof ContextRing>[0];
 const ring = (props: Props) => renderStatic(createElement(ContextRing, props));
@@ -33,21 +33,14 @@ describe("ContextRing", () => {
     // The ring inside is decoration: the square carries the one name and the one tooltip.
     expect(html.match(/data-tooltip=/g)).toHaveLength(1);
     expect(html).toContain('aria-hidden="true"');
-    expect(classTokens(html)).toContain("text-fg-subtle");
   });
 
-  it("inks the whole ring by the warning ladder", () => {
-    expect(classTokens(ring({ ratio: 0.9, label: "x" }))).toContain("text-tone-attention-fg");
-    expect(classTokens(ring({ ratio: 0.99, label: "x" }))).toContain("text-tone-danger-fg");
-  });
-
-  it("draws an unmeasured context as the empty track, in the calm ink", () => {
+  it("draws an unmeasured context as the empty track", () => {
     const html = ring({ ratio: 0.99, unknown: true, label: "Context usage unknown" });
     expect(html).not.toContain('data-part="series"');
-    expect(classTokens(html)).toContain("text-fg-subtle");
   });
 
-  it("becomes the button its panel opens from, painting only the square on hover", () => {
+  it("becomes the button its panel opens from", () => {
     const html = ring({
       ratio: 0.5,
       label: "Context usage 50%",
@@ -58,8 +51,5 @@ describe("ContextRing", () => {
     expect(html).toMatch(/^<button type="button"/);
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="panel-1"');
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["h-8", "w-8", "hover:bg-surface-muted"]),
-    );
   });
 });

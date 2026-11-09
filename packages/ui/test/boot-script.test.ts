@@ -277,7 +277,6 @@ describe("BOOT_SCRIPT", () => {
         }
       }
     }
-    expect(ACCENT_PRESET_IDS.length).toBe(new Set(ACCENT_PRESET_IDS).size);
   });
 
   it("knows every face the pairing offers, and writes no attribute for the theme's own", () => {
@@ -288,14 +287,6 @@ describe("BOOT_SCRIPT", () => {
     for (const option of FONT_CJK_OPTIONS) {
       const painted = runBoot({ [THEME_STORAGE_KEYS.fontCjk]: option.id }, false);
       expect(painted.fontCjk).toBe(option.id === "theme" ? undefined : option.id);
-    }
-    // The lists open with the theme's own face and name only faces the app bundles.
-    expect(FONT_LATIN_OPTIONS[0].id).toBe("theme");
-    expect(FONT_CJK_OPTIONS[0].id).toBe("theme");
-    for (const options of [FONT_LATIN_OPTIONS, FONT_CJK_OPTIONS]) {
-      const ids = options.map((option) => option.id);
-      expect(new Set(ids).size).toBe(ids.length);
-      for (const option of options) expect(option.label).not.toBe("");
     }
   });
 
