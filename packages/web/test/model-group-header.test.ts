@@ -7,7 +7,8 @@
  * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, Penguin Go, DeepSeek)
  *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
  *   the three groups with a flow; Add model only where hand-added models are taken (custom,
- *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate, user-defined); Delete
+ *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate, Standard Compute,
+ *   user-defined); Delete
  *   group only on a user-defined group; then the speed test and the gear on every group, the
  *   gear last. No group offers a separate "Enter key": the group key is set in the settings (or
  *   by Connect).
@@ -151,6 +152,7 @@ describe("the group header's actions, in order, by group kind", () => {
       "openrouter",
       "runcrate",
       "siliconflow",
+      "standardcompute",
       "tokendance",
       "vllm",
     ]);

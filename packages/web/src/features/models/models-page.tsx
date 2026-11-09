@@ -18,7 +18,7 @@
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
- * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
+ * Runcrate, Standard Compute, user-defined), the speed test, and the gear last on every group: a menu with the
  * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
  *
  * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
@@ -3513,7 +3513,7 @@ function ModelDialog({
           }}
         >
           {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
-              TokenDance, SiliconFlow, Atlas Cloud, Runcrate), and the group the row was loaded
+              TokenDance, SiliconFlow, Atlas Cloud, Runcrate, Standard Compute), and the group the row was loaded
               in — a row already in another gateway or a vendor group may stay there, but no
               other row may be moved into one (the server refuses that as an addition,
               model_not_addable). The current value stays listed so it is valid. */}
