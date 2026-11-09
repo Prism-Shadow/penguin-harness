@@ -13,7 +13,7 @@ excerpt: "从 DeepSeek 的 Super-agent 架构看 Agent 系统的演进方向：�
 
 Super-agent 走的就是第二条路：**直接在干活的 Agent 上面再加一层系统**，把原本由人来做的接收信息、分配任务和异常排查全部接管过来。具体来说，我觉得它有三部分比较好的设计，下面我们逐个分析一下：
 
-<figure class="post-figure" data-widget="super-agent-architecture"><ol class="fig-steps"><li>事件驱动：监听群聊与 GitHub 消息，通过代码规则 + 模型两级过滤，后台静默复现 Bug 并提交 PR</li><li>双层架构：上层常驻 Router 维护全局记忆并分派任务，下层隔离的 Worker 并发执行具体任务</li><li>Watchdog 巡检：外部独立定时控制回路，由模型检查各 Worker 实质进展，识别死循环或方向跑偏并介入修复</li></ol><figcaption>Super-agent 的三层核心设计：用事件驱动、双层 Router/Worker 架构和 Watchdog 接管运行阶段原本由人负责的环节。</figcaption></figure>
+<figure class="post-figure" data-widget="super-agent-architecture"><ol class="fig-steps"><li>事件驱动：监听群聊与 GitHub 消息，通过代码规则 + 模型两级过滤，后台静默复现 Bug 并提交 PR</li><li>双层架构：上层常驻 Router 维护全局上下文并分派任务，下层隔离的 Worker 并发执行具体任务</li><li>Watchdog 巡检：外部独立定时控制回路，由模型检查各 Worker 实质进展，识别死循环或方向跑偏并介入修复</li></ol><figcaption>Super-agent 的三部分核心设计：用事件驱动、双层 Router/Worker 架构和 Watchdog 接管运行阶段原本由人负责的环节。</figcaption></figure>
 
 ## 一、 事件驱动：替代原本由产品和测试负责的反馈跟进
 
