@@ -14,8 +14,8 @@
  * left it, a slider's figure, a date or a time as its native input emits it. The gate checks an
  * answer; it never rewrites one.
  */
-import { fieldProblem, initialAnswer } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiForm, A2uiFormAnswer, A2uiFormAnswers } from "@prismshadow/penguin-core/a2ui";
+import { fieldProblem, initialAnswer } from "@prismshadow/a2ui";
+import type { A2uiForm, A2uiFormAnswer, A2uiFormAnswers } from "@prismshadow/a2ui";
 
 /** Every field's answer as it stands, by field id; a field with none is absent. */
 export type A2uiFormState = Readonly<Record<string, A2uiFormAnswer | undefined>>;
@@ -118,7 +118,7 @@ export function restoreAnswers(spec: A2uiForm, saved: unknown): A2uiFormState {
 }
 
 /**
- * What an answered form shows: the answers read back out of the message that answered it (core's
+ * What an answered form shows: the answers read back out of the message that answered it (A2UI's
  * `parseFormFill`), and a field with none unanswered — an empty box, nothing picked. A slider and
  * a switch cannot show no answer (a slider always stands somewhere, a switch off reads as "No"),
  * so one with none stands at its starting answer, the form as asked; the fill text always holds

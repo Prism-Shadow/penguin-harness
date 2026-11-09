@@ -15,7 +15,8 @@
  * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
  *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
  *    with TS2322; the rolled-up declarations themselves check, and none names a package the
- *    build bundles (`@prismshadow/penguin-core`, `@prismshadow/chat-markdown`).
+ *    build bundles (`@prismshadow/a2ui`, `@prismshadow/chat-markdown`, both devDependencies) or
+ *    `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
  *    map does not resolve, every module its declarations import is in its types tree, and those
@@ -238,14 +239,15 @@ try {
     },
     declarations,
   );
-  // The packages the build bundles are devDependencies: a declaration that named one would send
-  // a consumer's compiler to a package the tarball does not depend on.
-  const bundled = ["@prismshadow/penguin-core", "@prismshadow/chat-markdown"];
+  // The packages the build bundles are devDependencies, and core is no dependency at all: a
+  // declaration that named one would send a consumer's compiler to a package the tarball does
+  // not depend on.
+  const foreign = ["@prismshadow/a2ui", "@prismshadow/chat-markdown", "@prismshadow/penguin-core"];
   check(4, "a project's tsc accepts a valid prop and refuses a wrong one", [
     ...verdict(npmResult),
     ...declarations.flatMap((file) => {
       const text = readFileSync(file, "utf8");
-      return bundled
+      return foreign
         .filter((name) => text.includes(name))
         .map((name) => `${relative(installed, file)} names ${name}`);
     }),

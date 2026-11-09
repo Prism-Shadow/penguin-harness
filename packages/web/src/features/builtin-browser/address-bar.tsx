@@ -10,8 +10,15 @@
  * The list is portaled at viewport coordinates, above the page it hangs over — a `<webview>`
  * is a layer of its own, and an in-flow list would be drawn under it.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, Ref } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type Ref,
+} from "react";
+
 import { createPortal } from "react-dom";
 import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
 import { noAutofill, sizeTextClass } from "@prismshadow/penguin-ui";

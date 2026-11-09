@@ -35,8 +35,8 @@
  * Agent has left every list; its files are removed in the background, on a progress card that
  * appears when that takes a while (agent-deletion-progress.ts).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { Link, useLocation, useNavigate } from "react-router";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import {
@@ -69,17 +69,20 @@ import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import {
+  useUpdateBadges,
+  dismissTodo,
+  bulkOutcome,
+  failedList,
+  firstFailure,
+  noticeCounts,
+} from "../todos";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { agentKey, agentSettingsPath } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
