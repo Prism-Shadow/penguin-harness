@@ -2468,10 +2468,33 @@ export interface SessionPatchRequest {
  * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
  * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
  * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
  */
 export interface MessagesLiveTail {
   cursor: string;
   fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
 }
 
 /**
@@ -2841,6 +2864,15 @@ export interface TaskCreateRequest {
    */
   interrupt?: boolean;
   /**
+   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
+   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
+   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
+   * apply), and the response carries `steered: true`; a compaction, which has no Task to
+   * steer, or a run already settling, which takes no more steering, queues it as
+   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
+   */
+  steerIfBusy?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2902,8 +2934,10 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy`, `interrupt` or `steerIfBusy` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+  /** True when `steerIfBusy` gave the input to the running Task as steering (no new Task). */
+  steered?: boolean;
 }
 
 /**

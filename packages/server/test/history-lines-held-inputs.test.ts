@@ -87,6 +87,7 @@ describe("a running Task's held inputs on the machine leg", () => {
         manager: {
           statusOf: () => "running",
           liveFragments: () => [],
+          liveRun: () => null,
           pendingInputs: () => [prompt, image, unwritten],
           pendingBootstrap: () => [],
         },
