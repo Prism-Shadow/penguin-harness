@@ -28,8 +28,14 @@ import { toastApiError } from "../../lib/toast-api-error";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
-import { MIGRATION_SOURCES, PORTING_PLUGIN, ensurePortingSkill } from "./agent-migration";
-import { migrationPrompt, sourceOf, type MigrationSource } from "./agent-migration";
+import {
+  MIGRATION_SOURCES,
+  PORTING_PLUGIN,
+  ensurePortingSkill,
+  migrationPrompt,
+  sourceOf,
+  type MigrationSource,
+} from "./agent-migration";
 
 export interface AgentImportDialogProps {
   projectId: string;
