@@ -95,6 +95,7 @@ import type {
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
   OrganizationCreateRequest,
+  OrganizationDeleteResponse,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -2210,11 +2211,24 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
- * employees' Agents and its desk and ticket Sessions are left as they are.
+ * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
+ * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
+ * well, as far as they still qualify (not built in, employed nowhere else), and the answer
+ * reports every employee; without it the Agents and their Sessions are left as they are.
  */
-export const deleteOrganization = (projectId: string, orgId: string) =>
-  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+export const deleteOrganization = (
+  projectId: string,
+  orgId: string,
+  opts: { agentIds?: readonly string[] } = {},
+) =>
+  apiFetch<OrganizationDeleteResponse>(
+    `${orgBase(projectId, orgId)}${
+      opts.agentIds === undefined
+        ? ""
+        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
+    }`,
+    { method: "DELETE" },
+  );
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);

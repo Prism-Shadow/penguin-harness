@@ -15,9 +15,19 @@
 import type { AgentDeletionInfo } from "@prismshadow/penguin-server/api";
 import { startProgress } from "@prismshadow/penguin-ui";
 import type { ProgressHandle, ProgressPatch } from "@prismshadow/penguin-ui";
+<<<<<<<< HEAD:plugins/agents/src/web/agents/agent-deletion-progress.ts
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
+|||||||| parent of ef798db2d5 (fix(company): deleting a company can delete its Agents, and the Agents page sees the change at once (#1481)):packages/web/src/features/agents/agent-deletion-progress.ts
+import { ApiError } from "../../api/client";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+========
+import { ApiError } from "../api/client";
+import * as api from "../api/endpoints";
+import { S } from "./strings";
+>>>>>>>> ef798db2d5 (fix(company): deleting a company can delete its Agents, and the Agents page sees the change at once (#1481)):packages/web/src/lib/agent-deletion-progress.ts
 
 /** How often the removal is read, ms. */
 export const DELETION_POLL_MS = 500;
