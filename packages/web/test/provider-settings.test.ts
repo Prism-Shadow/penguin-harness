@@ -71,7 +71,7 @@ import {
   probeGroupProtocol,
   saveGroupSettings,
 } from "../src/features/models/provider-settings-dialog";
-import { userProviderInfo } from "../src/features/models/model-grouping";
+import { userProviderInfo } from "../src/lib/model-grouping";
 import { ProtocolSuffixMenu } from "../src/features/models/protocol-suffix";
 import { S } from "../src/lib/strings";
 import { json, stubFetch } from "./helpers/fetch";

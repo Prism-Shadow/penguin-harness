@@ -22,12 +22,11 @@ import {
   isFreeModel,
   sameModelRef,
   visibleChatModels,
-  modelTags,
   type ModelCredentialRowLike,
   type ModelRefValue,
   type ModelRowLike,
-  type ModelTag,
-} from "../models";
+} from "../../lib/model-grouping";
+import { modelTags, type ModelTag } from "../../lib/model-tags";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is

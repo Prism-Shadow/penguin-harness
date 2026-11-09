@@ -98,9 +98,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
-import { PublishAgentDialog } from "./publish-dialog";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =
@@ -498,7 +496,6 @@ function OverviewTab({
   const [pendingImport, setPendingImport] = useState<{ name: string; dataBase64: string } | null>(
     null,
   );
-  const [publishOpen, setPublishOpen] = useState(false);
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
@@ -626,23 +623,6 @@ function OverviewTab({
               >
                 {S.agent.exportSnapshot}
               </a>
-            )}
-            {isOwner && projectId && (
-              <>
-                <button
-                  type="button"
-                  className={SNAPSHOT_BUTTON_CLASS}
-                  onClick={() => setPublishOpen(true)}
-                >
-                  {S.agent.publishToGist}
-                </button>
-                <PublishAgentDialog
-                  open={publishOpen}
-                  onClose={() => setPublishOpen(false)}
-                  projectId={projectId}
-                  agentId={agentId}
-                />
-              </>
             )}
             {isOwner && (
               <label

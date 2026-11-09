@@ -29,7 +29,7 @@ import {
   type ModelRowLike,
   type PricingBucketsLike,
   type ProviderGroup,
-} from "./model-grouping";
+} from "../../lib/model-grouping";
 
 /** How one group orders its models. */
 export type ModelGroupSort = "price-asc" | "price-desc" | "name";

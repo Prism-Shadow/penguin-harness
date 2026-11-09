@@ -15,7 +15,7 @@
  * the tone only sorts them at a glance, and never alone says which mark this is.
  */
 import type { ToneName } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "./strings";
 import type { DiscountedPrice } from "./model-grouping";
 
 /** Each group's tone, for the `Badge` a mark renders as. */

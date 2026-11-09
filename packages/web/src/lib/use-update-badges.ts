@@ -1,10 +1,11 @@
 /**
  * The live badges, read by every anchor on the five trails: the mobile menu button, the
  * sidebar avatar and its collapsed-rail twin, and the Agents / Plugins / Models / Cost Center
- * nav entries in both the pinned sidebar and the rail.
+ * nav entries in both the pinned sidebar and the rail (badges-context.tsx hands them one
+ * answer), and the pages that clear each trail.
  *
- * One owner activates the fetches. `AppLayout` calls this with `eager` on, which is what makes
- * a badge appear on a fresh load at all — the anchors below it stay passive and read the shared
+ * One owner activates the fetches. `UpdateBadgesProvider` (badges-context.tsx) calls this with
+ * `eager` on, which is what makes a badge appear on a fresh load at all — the pages stay passive and read the shared
  * caches (`use-version-info.ts`, `use-desktop-update.ts`, `use-project-todos.ts`, and the
  * dismissal markers in `todo-dismissals.ts`), which push every consumer when a result lands.
  * All of them are module level, so "eager" still costs one request per browser session per

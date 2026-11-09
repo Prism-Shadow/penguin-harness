@@ -41,7 +41,7 @@ import {
   readStringArray,
   writeStringArray,
   type SessionOrderStorage,
-} from "../../lib/session-order";
+} from "./session-order";
 
 /** Minimal storage interface, shared with session-order.ts; tests inject an in-memory implementation. */
 export type ModelGroupOrderStorage = SessionOrderStorage;

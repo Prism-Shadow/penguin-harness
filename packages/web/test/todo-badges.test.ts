@@ -15,9 +15,10 @@ import {
   presetUpdateTodo,
   raisedTodo,
   unexpectedErrorTodo,
-} from "../src/features/todos/todo-badges";
-import type { Todo } from "../src/features/todos/todo-badges";
-import { parseTodoDismissMap, withDismissal } from "../src/features/todos/todo-dismissals";
+  type Todo,
+} from "../src/lib/todo-badges";
+
+import { parseTodoDismissMap, withDismissal } from "../src/lib/todo-dismissals";
 
 /** Just the field the plugins gate reads (the gate takes a Pick, so the fixture can be one too). */
 function agent(
@@ -36,16 +37,9 @@ function errorPage(total: number, ...timestamps: string[]): UsageErrorsPage {
       code: "boom",
       kind: "unexpected",
       message: "boom",
-      agentId: null,
-      sessionId: null,
-      taskId: null,
-      requestId: null,
-      status: null,
-      stack: null,
       count: 1,
       firstTs: ts,
     })),
-    suppressed: [],
   };
 }
 
