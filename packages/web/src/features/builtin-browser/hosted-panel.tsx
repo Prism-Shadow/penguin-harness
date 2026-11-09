@@ -25,7 +25,7 @@ import { Button, EmptyState, Spinner, toastError } from "@prismshadow/penguin-ui
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { requestSettings } from "../settings/settings-request";
+import { requestSettings } from "../../lib/settings-request";
 import { BackendMenuRows, backendRowsShown } from "./backend-menu";
 import {
   activateBrowserTab,
