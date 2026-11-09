@@ -62,7 +62,7 @@ In the past, designing an agent meant designing a tool to assist a human — bec
 
 Looking ahead, a practical mental model for designing more advanced agent systems is simple: **look at what parts of the existing workflow still require a human, and ask yourself — can the step a person still does by hand today be absorbed by adding another agent layer above it?**
 
-<figure class="post-figure" data-widget="agent-takeover-evolution"><ol class="fig-steps"><li>Stage 1 (Manual Workbench): the agent only writes code and runs tests for a single task, while humans still handle triage, multi-window dispatch, babysitting, and tuning</li><li>Stage 2 (Super-agent Runtime Takeover): event-driven triggers, the two-tier Router, and the Watchdog Agent take over runtime prompting, window routing, and anomaly recovery</li><li>Stage 3 (PenguinHarness Self-Evolution): agents further take over running benchmarks, diagnosing traces, and refining prompts and Skills to close the self-evolution loop</li></ol><figcaption>From single-task tools to runtime takeover and autonomous evaluation/tuning: each generation absorbs the layer that previously required human hands.</figcaption></figure>
+<figure class="post-figure" data-widget="agent-takeover-evolution"><ol class="fig-steps"><li>Stage 1: Human-Led</li><li>Stage 2: Human-Led, Agent-Assisted</li><li>Stage 3: Agent-Led, Agent-Assisted</li></ol><figcaption>From Human-Led, to Human-Led and Agent-Assisted, to Agent-Led and Agent-Assisted.</figcaption></figure>
 
 Take that thought one step further: Super-agent replaces the human who issues prompts, manages windows, and babysits anomalies during the **runtime phase**, yet in the **evaluation and tuning phase**, teams previously still relied on people doing the work by hand.
 

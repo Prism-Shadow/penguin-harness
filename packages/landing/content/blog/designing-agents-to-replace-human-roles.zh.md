@@ -62,7 +62,7 @@ Super-agent 走的就是第二条路：**直接在干活的 Agent 上面再加�
 
 所以往后看，要设计更先进的 Agent，一个很实用的思路就是：**去原有的工作流里看看人还剩哪些部分，然后多问自己一句——现在还要人亲手做的那一步，能不能再加一层 Agent 把它吃掉？**
 
-<figure class="post-figure" data-widget="agent-takeover-evolution"><ol class="fig-steps"><li>阶段一（传统单任务 Agent）：Agent 只负责单任务写代码与跑测试，反馈筛选、多窗口分派、异常排查与评测调优仍由人完成</li><li>阶段二（Super-agent 运行接管）：事件驱动、双层 Router 与 Watchdog 接管运行期发指令、管窗口与盯异常</li><li>阶段三（PenguinHarness 自进化）：进一步接管评测、看日志找问题、修改提示词和 Skill，实现 Agent 自进化</li></ol><figcaption>从单任务工具到运行期接管，再到评测与调优阶段的自进化：每一代系统都在把上一代还要人亲手做的环节交给 Agent。</figcaption></figure>
+<figure class="post-figure" data-widget="agent-takeover-evolution"><ol class="fig-steps"><li>阶段一：人主导</li><li>阶段二：人主导，Agent 辅助</li><li>阶段三：Agent 主导，Agent 辅助</li></ol><figcaption>从人主导，到人主导、Agent 辅助，再到 Agent 主导、Agent 辅助。</figcaption></figure>
 
 如果沿着这个思路再往前想一步：Super-agent 替掉的是运行阶段发指令、管窗口和盯异常的人，但在 Agent 的评测与调优阶段，以前依然需要人来手动去做。
 
