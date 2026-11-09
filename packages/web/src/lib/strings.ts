@@ -11,7 +11,10 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
@@ -1120,7 +1123,7 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
-    } as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -2345,7 +2348,7 @@ export const zh = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
     /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
@@ -3418,7 +3421,7 @@ export const zh = {
       high: "高",
       xhigh: "极高",
       max: "最高",
-    } as Readonly<Record<string, string>>,
+    } satisfies Record<ThinkingLevelName, string> as Readonly<Record<string, string>>,
     /** Dropdown-row variant of the name above: choosing is where the wire value earns its place, so a menu row annotates the Chinese name with the value the pick will send. Only the composer's own dropdown uses it — a native `<select>` renders the picked option's text on the collapsed control too, which would put the annotation straight back onto a trigger. */
     thinkingLevelMenuName: (name: string, level: string): string => `${name} (${level})`,
     /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
