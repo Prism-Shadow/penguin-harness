@@ -9,11 +9,14 @@
  *   the theme's duration and curve.
  * - Reduced motion, by the root's switch and by the media query, still silences the layout
  *   motion (so a fold closes at once), the reveal, and the activity family's animations.
+ * - The activity marks (the running hourglass, the compacting squeeze) only transform, so with
+ *   animation off the glyph stands upright and visible, and both stop under the gallery's switch
+ *   and the system preference.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseCssRules, selectorList } from "../src/testing";
+import { parseCssRules, selectorList, stripCssComments } from "../src/testing";
 import type { CssStyleRule } from "../src/testing";
 import { SRC_DIR } from "./helpers/paths";
 
@@ -91,5 +94,40 @@ describe("reduced motion", () => {
       ),
     ).toBe(true);
     expect(has(`${root}:is(.ui-activity, .ui-activity *) { animation: none }`)).toBe(true);
+  });
+});
+
+describe("the activity marks", () => {
+  const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
+
+  /** A keyframes block's body, braces balanced, or "" when the sheet has none by that name. */
+  const keyframes = (name: string) => {
+    const start = sheet.indexOf(`@keyframes ${name}`);
+    if (start < 0) return "";
+    const open = sheet.indexOf("{", start);
+    let depth = 0;
+    for (let i = open; i < sheet.length; i++) {
+      if (sheet[i] === "{") depth++;
+      else if (sheet[i] === "}" && --depth === 0) return sheet.slice(open + 1, i);
+    }
+    return "";
+  };
+
+  it("only transforms, so with animation off the glyph stands upright, still visible", () => {
+    for (const name of ["hourglass-turn", "compact-squeeze"]) {
+      const body = keyframes(name);
+      expect(body, name).not.toBe("");
+      const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
+      expect(new Set(properties), name).toEqual(new Set(["transform"]));
+    }
+    expect(keyframes("hourglass-turn")).toMatch(/rotate\(180deg\)/); // A turn, not a spin.
+  });
+
+  it("stops under the gallery's switch and the system preference", () => {
+    expect(sheet).toMatch(
+      /:root\[data-motion="reduced"\]\s*:is\(\.hourglass-turn,\s*\.compact-squeeze\)\s*\{\s*animation:\s*none;/,
+    );
+    const media = sheet.slice(sheet.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(media).toMatch(/:is\(\.hourglass-turn,\s*\.compact-squeeze\)\s*\{\s*animation:\s*none;/);
   });
 });

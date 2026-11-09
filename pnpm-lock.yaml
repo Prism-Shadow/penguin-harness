@@ -845,6 +845,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
+      jsdom:
+        specifier: ^30.1.2
+        version: 30.1.2(@noble/hashes@1.8.0)
       react:
         specifier: ^19.1.0
         version: 19.2.7

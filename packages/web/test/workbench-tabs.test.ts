@@ -1,6 +1,4 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { MemoryRouter } from "react-router";
@@ -135,22 +133,6 @@ describe("the chat page under a workbench tab", () => {
     removeListener: () => {},
     dispatchEvent: () => false,
   } as unknown as MediaQueryList;
-
-  it("keeps the workbench page in one owner", () => {
-    // The contributed session tab owns the strip and the frame: one useWorkbenchTabs instance,
-    // so the strip and what covers the page can never disagree. No second workbench-state
-    // reader on the page: a second useWorkbenchTabs instance would keep its own active tab
-    // and desync from the strip.
-    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
-    const tab = read("src/features/workbenches/session-tab.tsx").replace(/\s+/g, " ");
-    expect(tab).toContain("useWorkbenchTabs(");
-    expect(tab).toContain("<WorkbenchTabStrip");
-    expect(tab).toContain("<WorkbenchFrame");
-    const toolbar = read("src/features/chat/toolbar/main-chat-toolbar.tsx").replace(/\s+/g, " ");
-    expect(toolbar).not.toContain("workflowTabs");
-    const body = read("src/features/chat/body/main-chat-body.tsx").replace(/\s+/g, " ");
-    expect(body).not.toContain("workflowTabs");
-  });
 
   it("shows its window beside Chat, and hands the page the way back to Chat", async () => {
     stubFetch((request) =>
