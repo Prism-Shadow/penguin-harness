@@ -36,8 +36,8 @@ import {
   Spinner,
   StatChip,
 } from "@prismshadow/penguin-ui";
-import { formatTaskStats } from "../../lib/amsp/task-stats";
-import type { TaskStats } from "../../lib/amsp/task-stats";
+import { formatTaskStats, type TaskStats } from "../../lib/amsp/task-stats";
+
 import {
   formatMessageTime,
   formatMoney,

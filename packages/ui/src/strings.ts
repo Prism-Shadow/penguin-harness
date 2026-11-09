@@ -22,7 +22,7 @@
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
-import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiChartKind, A2uiWeatherCondition } from "@prismshadow/a2ui";
 
 /** The words around the A2UI blocks a reply may hold (components/content/a2ui). */
 export interface A2uiStrings {

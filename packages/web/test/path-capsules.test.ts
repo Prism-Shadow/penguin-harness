@@ -14,8 +14,9 @@ import {
   pathLabel,
   spellAsWritten,
   splitPaths,
+  type PathPiece,
 } from "../src/features/company/path-capsules";
-import type { PathPiece } from "../src/features/company/path-capsules";
+
 import { PathMarkdown, PathText } from "../src/features/company/path-capsule";
 import { S } from "../src/lib/strings";
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Adding a rule on the Project settings security page (components/layout/project-dialogs.tsx).
+ * Adding a rule on the Project settings security page (features/projects/project-dialogs/security-policy-section.tsx).
  *
  * - The rule editor puts the caret in its first field (the rule's name) and nowhere else, so
  *   opening the form is never silent.
@@ -11,7 +11,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ProjectSettingsDialog, RuleEditor } from "../src/components/layout/project-dialogs";
+import { ProjectSettingsDialog } from "../src/features/projects/project-dialogs/project-settings-dialog";
+import { RuleEditor } from "../src/features/projects/project-dialogs/security-policy-section";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
