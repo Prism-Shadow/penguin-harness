@@ -1,15 +1,48 @@
 /**
- * Static 3-Stage Evolution Diagram for the Super-agent blog post (`data-widget="agent-takeover-evolution"`).
+ * Button-free 3-Stage Spotlight Diagram for the Super-agent blog post (`data-widget="agent-takeover-evolution"`).
  *
- * Minimalist three-column progression showing how Agent systems progressively absorb the human role:
- *   Stage 1: 人主导 (Human-Led)
- *   Stage 2: 人主导 + Agent 辅助 (Human-Led, Agent-Assisted)
- *   Stage 3: Agent 主导 + Agent 辅助 (Agent-Led, Agent-Assisted)
+ * Plan A: Three columns stay fixed in structure, while a gentle automatic spotlight sweeps across:
+ *   Stage 1 (1.5s): 人主导 (Human-Led)
+ *   Stage 2 (1.5s): 人主导 + Agent 辅助 (Human-Led, Agent-Assisted)
+ *   Stage 3 (2.5s): Agent 主导 + Agent 辅助 (Agent-Led, Agent-Assisted)
  */
+import { useEffect, useState } from "react";
 import { S, zh } from "../lib/strings";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
+import { useVisibleActivity } from "../lib/visible-activity";
+
+const TOTAL_STAGES = 3;
+
+function stageDelayMs(stage: number): number {
+  if (stage === 2) return 2500;
+  return 1500;
+}
 
 export function AgentTakeoverEvolutionWidget() {
   const isZh = S === zh;
+  const reduced = usePrefersReducedMotion();
+  const { ref, active } = useVisibleActivity<HTMLDivElement>();
+
+  // Default to Stage 3 (index 2) for SSR and reduced-motion readers.
+  const [stage, setStage] = useState<number>(2);
+  const [hasStarted, setHasStarted] = useState<boolean>(false);
+
+  const running = active && !reduced;
+
+  useEffect(() => {
+    if (running && !hasStarted) {
+      setHasStarted(true);
+      setStage(0);
+    }
+  }, [running, hasStarted]);
+
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setTimeout(() => {
+      setStage((prev) => (prev + 1) % TOTAL_STAGES);
+    }, stageDelayMs(stage));
+    return () => window.clearTimeout(timer);
+  }, [running, stage]);
 
   const copy = isZh
     ? {
@@ -31,8 +64,12 @@ export function AgentTakeoverEvolutionWidget() {
         agentLed: "Agent-Led",
       };
 
+  const isS0 = stage === 0;
+  const isS1 = stage === 1;
+  const isS2 = stage === 2;
+
   return (
-    <div className="my-4 text-gray-900 dark:text-gray-100">
+    <div ref={ref} className="my-4 text-gray-900 dark:text-gray-100">
       <svg
         viewBox="0 0 720 184"
         className="block w-full select-none overflow-visible"
@@ -65,21 +102,29 @@ export function AgentTakeoverEvolutionWidget() {
         </defs>
 
         {/* ==================== STAGE 1: HUMAN-LED (x=8..216) ==================== */}
-        <g>
+        <g style={{ opacity: isS0 ? 1 : 0.45 }} className="transition-opacity duration-500">
           <rect
             x="8"
             y="8"
             width="208"
             height="168"
             rx="10"
-            strokeWidth="1.5"
-            className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            strokeWidth={isS0 ? "2" : "1.5"}
+            className={
+              isS0
+                ? "fill-gray-50/70 stroke-gray-500 dark:fill-gray-800/40 dark:stroke-gray-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
           />
           <text
             x="112"
             y="32"
             textAnchor="middle"
-            className="fill-gray-500 text-xs font-medium dark:fill-gray-400"
+            className={
+              isS0
+                ? "fill-gray-800 text-xs font-semibold dark:fill-gray-200"
+                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
+            }
           >
             {copy.s1}
           </text>
@@ -106,27 +151,38 @@ export function AgentTakeoverEvolutionWidget() {
         <path
           d="M222,92 L248,92"
           fill="none"
-          strokeWidth="1.5"
-          className="stroke-gray-400 dark:stroke-gray-500"
-          markerEnd="url(#sa-evo-arrow-gray)"
+          strokeWidth={isS1 ? "2" : "1.5"}
+          style={{ opacity: isS1 ? 1 : 0.45 }}
+          className={`transition-opacity duration-500 ${
+            isS1 ? "stroke-brand-500 dark:stroke-brand-400" : "stroke-gray-400 dark:stroke-gray-500"
+          }`}
+          markerEnd={isS1 ? "url(#sa-evo-arrow-brand)" : "url(#sa-evo-arrow-gray)"}
         />
 
         {/* ==================== STAGE 2: HUMAN-LED + AGENT-ASSISTED (x=256..464) ==================== */}
-        <g>
+        <g style={{ opacity: isS1 ? 1 : 0.45 }} className="transition-opacity duration-500">
           <rect
             x="256"
             y="8"
             width="208"
             height="168"
             rx="10"
-            strokeWidth="1.5"
-            className="fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            strokeWidth={isS1 ? "2" : "1.5"}
+            className={
+              isS1
+                ? "fill-brand-50/30 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
           />
           <text
             x="360"
             y="32"
             textAnchor="middle"
-            className="fill-gray-500 text-xs font-medium dark:fill-gray-400"
+            className={
+              isS1
+                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
+            }
           >
             {copy.s2}
           </text>
@@ -183,27 +239,38 @@ export function AgentTakeoverEvolutionWidget() {
         <path
           d="M470,92 L496,92"
           fill="none"
-          strokeWidth="1.5"
-          className="stroke-brand-500 dark:stroke-brand-400"
-          markerEnd="url(#sa-evo-arrow-brand)"
+          strokeWidth={isS2 ? "2" : "1.5"}
+          style={{ opacity: isS2 ? 1 : 0.45 }}
+          className={`transition-opacity duration-500 ${
+            isS2 ? "stroke-brand-500 dark:stroke-brand-400" : "stroke-gray-400 dark:stroke-gray-500"
+          }`}
+          markerEnd={isS2 ? "url(#sa-evo-arrow-brand)" : "url(#sa-evo-arrow-gray)"}
         />
 
         {/* ==================== STAGE 3: AGENT-LED + AGENT-ASSISTED (x=504..712) ==================== */}
-        <g>
+        <g style={{ opacity: isS2 ? 1 : 0.45 }} className="transition-opacity duration-500">
           <rect
             x="504"
             y="8"
             width="208"
             height="168"
             rx="10"
-            strokeWidth="1.75"
-            className="fill-brand-50/30 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
+            strokeWidth={isS2 ? "2" : "1.5"}
+            className={
+              isS2
+                ? "fill-brand-50/30 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
+                : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
+            }
           />
           <text
             x="608"
             y="32"
             textAnchor="middle"
-            className="fill-brand-700 text-xs font-semibold dark:fill-brand-300"
+            className={
+              isS2
+                ? "fill-brand-700 text-xs font-semibold dark:fill-brand-300"
+                : "fill-gray-500 text-xs font-medium dark:fill-gray-400"
+            }
           >
             {copy.s3}
           </text>
