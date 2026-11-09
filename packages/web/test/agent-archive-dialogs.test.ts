@@ -13,8 +13,10 @@
  * - Replace from file, on the settings page, holds only the file; Replace sends it as this Agent
  *   with `overwrite`, after the same confirmation and not before.
  * - Migrate: "Open a new chat" opens a conversation with the default agent holding the prompt the
- *   fold shows; an agent without the agent-porting Skill gets its plugin installed first, and
- *   one that has it is left alone.
+ *   fold shows; an agent without the porting plugin gets it installed first, and one that has the
+ *   agent-porting Skill is left alone. One with the plugin's other Skills but not that one is
+ *   asked before the update overwrites them: cancelling installs nothing and opens no chat,
+ *   confirming updates the plugin and opens it.
  */
 import { createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -220,5 +222,25 @@ describe("the Agent export and import dialogs", () => {
     await click(buttonIn(topDialog(), en.skills.importOpenChat));
     await waitFor(() => whereIs(router) === "/chat/new");
     expect(server.writes(PLUGINS)).toHaveLength(1);
+  });
+
+  it("asks before updating the plugin over the default agent's own copies of its Skills", async () => {
+    const skills = ["plugin-porting", "skill-porting"];
+    const { server, router } = await openList({ library: [PORTING], skills });
+    await openImport();
+    await click(buttonIn(topDialog(), en.skills.importOpenChat));
+    await waitFor(() => dialogs().length === 2);
+    await click(buttonIn(topDialog(), en.common.cancel));
+    await waitFor(() => dialogs().length === 1);
+    expect(whereIs(router)).toBe("/list");
+    expect(server.writes(PLUGINS)).toEqual([]);
+
+    await click(buttonIn(topDialog(), en.skills.importOpenChat));
+    await waitFor(() => dialogs().length === 2);
+    await click(buttonIn(topDialog(), en.skills.updateAction));
+    await waitFor(() => whereIs(router) === "/chat/new");
+    expect(server.writes(PLUGINS).map((write) => write.body)).toEqual([
+      { names: ["skill-porting"] },
+    ]);
   });
 });

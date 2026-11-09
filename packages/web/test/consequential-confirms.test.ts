@@ -2,7 +2,8 @@
  * Guard: a consequential action is reached only through its confirmation.
  *
  * Each entry names a module and the function in it that does the consequential thing — removes
- * a member, restores the default command rules, replaces an Agent State from a file, deletes
+ * a member, restores the default command rules, replaces an Agent State from a file, updates the
+ * porting plugin over an Agent's own copies of its Skills, deletes
  * a machine from the Project, stops a machine's server, uninstalls the program from a machine or
  * installs it there again, stops a running process, restores a workbench revision, runs a plugin's action,
  * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
@@ -23,6 +24,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/projects/project-dialogs/members-section.tsx", "doRemove"],
   ["features/projects/project-dialogs/security-policy-section.tsx", "restoreDefaults"],
   ["features/agents/agent-import-dialog.tsx", "overwriteFromFile"],
+  ["features/agents/agent-import-dialog.tsx", "updatePortingAndChat"],
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],

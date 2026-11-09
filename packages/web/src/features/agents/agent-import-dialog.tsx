@@ -1,6 +1,7 @@
 /**
  * "Import agent" (the Agents page) and, in replace mode, "Replace from file…" (the settings page):
- * migrate another framework's agent through a chat with the default agent, or upload an exported
+ * migrate another framework's agent through a chat with the default agent (giving it the
+ * agent-porting Skill first; an update over Skills it already has asks), or upload an exported
  * file as it is. A taken id offers another id and, to the owner, an overwrite behind one danger
  * confirmation. What was typed or picked is a draft: closing with it asks first.
  */
@@ -31,8 +32,9 @@ import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./
 import {
   MIGRATION_SOURCES,
   PORTING_PLUGIN,
-  ensurePortingSkill,
+  installPorting,
   migrationPrompt,
+  portingNeed,
   sourceOf,
   type MigrationSource,
 } from "./agent-migration";
@@ -76,6 +78,8 @@ export function AgentImportDialog(props: AgentImportDialogProps) {
   /** The id a 409 `agent_exists` named; cleared by the next edit of the id or the file. */
   const [taken, setTaken] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  /** The plugin update the chat waits on, which overwrites the Agent's copies of its Skills. */
+  const [confirmingUpdate, setConfirmingUpdate] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const idFieldId = useId();
   const id = replace?.agentId ?? agentId.trim();
@@ -83,11 +87,19 @@ export function AgentImportDialog(props: AgentImportDialogProps) {
   const prompt = migrationPrompt(framework, path, projectId);
   const home = sourceOf(framework)?.home;
 
-  const openChat = async () => {
+  /** `updateConfirmed`: the update confirmation was answered. */
+  const openChat = async (updateConfirmed = false) => {
     if (prompt === null || chatAgent === null) return;
     setBusy(true);
     try {
-      if (await ensurePortingSkill(projectId, chatAgent.agentId)) {
+      const need = updateConfirmed ? "update" : await portingNeed(projectId, chatAgent.agentId);
+      if (need === "update" && !updateConfirmed) {
+        setConfirmingUpdate(true);
+        setBusy(false);
+        return;
+      }
+      if (need !== "ready") {
+        await installPorting(projectId, chatAgent.agentId);
         toastSuccess(S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent)));
       }
       discardUnsaved(form.scope);
@@ -133,6 +145,7 @@ export function AgentImportDialog(props: AgentImportDialogProps) {
       setConfirming(false);
     }
   };
+  const updatePortingAndChat = () => void openChat(true);
   /** The confirmation's action: the same file again, replacing the existing Agent's State. */
   const overwriteFromFile = () => void send(true);
 
@@ -243,6 +256,18 @@ export function AgentImportDialog(props: AgentImportDialogProps) {
           </section>
         </div>
       </Modal>
+      <ConfirmModal
+        open={confirmingUpdate}
+        title={S.plugins.updateConfirmTitle(PORTING_PLUGIN)}
+        tone="primary"
+        busy={busy}
+        confirmLabel={S.skills.updateAction}
+        cancelLabel={S.common.cancel}
+        onClose={() => setConfirmingUpdate(false)}
+        onConfirm={updatePortingAndChat}
+      >
+        <p className="text-sm text-fg-muted">{S.plugins.updateConfirmWarning(PORTING_PLUGIN)}</p>
+      </ConfirmModal>
       <ConfirmModal
         open={confirming && file !== null}
         title={S.agent.overwriteTitle}

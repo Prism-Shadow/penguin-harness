@@ -256,11 +256,15 @@ export function agentServer(
     accountHolders?: MessagingAccountHoldersResponse;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
+    /** The Skills this server's Agent already has installed (by default none). */
+    skills?: string[];
   } = {},
 ): AgentServer {
-  /** Installed Skill names by `<machine or "">/<agent>`. */
-  const installs = new Map<string, string[]>();
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  /** Installed Skill names by `<machine or "">/<agent>`. */
+  const installs = new Map<string, string[]>(
+    options.skills ? [[installKey(null, AGENT_ID), options.skills]] : [],
+  );
   const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,

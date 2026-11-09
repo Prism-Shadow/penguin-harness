@@ -4,7 +4,7 @@
  * itself is the `agent-porting` Skill's, so a framework that changes its layout needs a Skill
  * edit, not a release of this page.
  */
-import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
+import { getAgentPlugins, getPluginLibrary, installAgentPlugins } from "../../api/endpoints";
 import { S } from "../../lib/strings";
 
 /** The frameworks the dialog offers, in its order, each with the user directory it keeps its setup in. */
@@ -32,13 +32,23 @@ export function migrationPrompt(id: MigrationSource, typed: string, projectId: s
 export const PORTING_PLUGIN = "skill-porting";
 
 /**
- * Gives this server's `agentId` the `agent-porting` Skill when it lacks it (an Agent set up before
- * the Skill shipped has the plugin without it) by installing the plugin again, which updates it.
- * Whether it installed.
+ * What giving this server's `agentId` the `agent-porting` Skill takes: nothing, an install, or an
+ * update — an Agent set up before the Skill shipped has the plugin's other Skills, and installing
+ * the plugin again overwrites those copies, local edits included.
  */
-export async function ensurePortingSkill(projectId: string, agentId: string): Promise<boolean> {
-  const { skills } = await getAgentPlugins(projectId, agentId, null);
-  if (skills.some((skill) => skill.name === "agent-porting")) return false;
-  await installAgentPlugins(projectId, agentId, [PORTING_PLUGIN], null);
-  return true;
+export async function portingNeed(
+  projectId: string,
+  agentId: string,
+): Promise<"ready" | "install" | "update"> {
+  const [{ skills }, library] = await Promise.all([
+    getAgentPlugins(projectId, agentId, null),
+    getPluginLibrary(null),
+  ]);
+  const has = new Set(skills.map((skill) => skill.name));
+  if (has.has("agent-porting")) return "ready";
+  const plugin = library.groups.flatMap((g) => g.plugins).find((p) => p.name === PORTING_PLUGIN);
+  return plugin?.skills.some((skill) => has.has(skill.name)) ? "update" : "install";
 }
+
+export const installPorting = (projectId: string, agentId: string) =>
+  installAgentPlugins(projectId, agentId, [PORTING_PLUGIN], null);
