@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-09
 - **Type:** feature
-- **Scope:** `server`, `cli`, `docs`
+- **Scope:** `server`, `cli`, `web`, `ui-gallery`, `skills`, `docs`
 - **PR:** [#594](https://github.com/Prism-Shadow/penguin-harness/pull/594)
 - **Breaking:** yes — `GET`/`POST …/agents/:agentId/export|import` and the create request's `dataBase64` are removed
 
@@ -22,9 +22,22 @@ An Agent was exported and imported as a zip of its directory on disk: `<agentId>
 
 - `penguin agent export <agent-id>` and `penguin agent import <file|directory>` were added. A directory is zipped under its own name with the zipper `penguin plugin install <dir>` uses, which moved to `zip-folder.ts`.
 
+## Web App
+
+- An Agent card gained an export icon and the settings Overview an **Export…** button. Both opened one export dialog: checkboxes for Skills, Hooks, Memory, Workbenches (with their data) and Schedules (off), the conversations as **None**, **Latest N** (20) or a **Date range**, and a line saying the vault never travels. **Export** saved the zip through the fetch-then-save download helper.
+- The Agents page header gained **Import agent**. Its dialog had two ruled sections. **Migrate from another framework** took the framework (Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code, WorkBuddy or Other) and a path, folded the full prompt with copy, and **Open a new chat** put the prompt in a new conversation with the Project's default agent through the bridge **Create with AI** uses; it installed the `skill-porting` plugin on that agent first when the agent lacked the `agent-porting` Skill. **Import a file** took a `.zip` (or an older `.tar.gz`), prefilled the id from the file name, and uploaded the file as it is. A 409 `agent_exists` offered **Use another id** and, to the owner only, **Overwrite the existing agent** behind a danger confirmation. A landed import said what it did in a toast and read the Agent list again.
+- The settings Overview's **Replace from file…** (owner only) opened the import dialog with the file section alone and **Replace**, behind the same confirmation. It replaced **Export snapshot** and **Import snapshot**, and the version-conflict prompt went with them.
+- The create dialog lost **Initialize from a snapshot**; its footer pointed to **Import agent**.
+- The ui-gallery's demo API answered the new archive download and import upload.
+
+## Skill
+
+- The `skill-porting` plugin gained `agent-porting`, instructions only. It said where Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code and WorkBuddy keep their instructions, Skills, commands, MCP servers, hooks, subagents and memory, and how each maps into the zip layout: instructions into `AGENTS.md`, Skills and commands into `skills/`, MCP servers into a `system_config.yaml` holding only the keys it changes with credentials as `${KEY}`, `command` hooks on `Stop`, `PreToolUse` and `UserPromptSubmit` into a hook package of wrapper scripts, and auto-memory into `memory/user/`. It read the source only, never copied a secret's value, searched its output for secrets before `penguin agent import <dir> --project-id <p>`, and reported the id, what mapped, what did not and why, and the vault keys to set.
+
 ## Docs
 
 - The Server API, Agents, Self-Improvement and CLI pages describe the archive and import routes and the two commands.
+- The Agents page describes the two dialogs and the migration, the Web App page the owner's part and the import dialog's two paths, and the Skills page's library table the `agent-porting` Skill.
 
 ## Compatibility
 
