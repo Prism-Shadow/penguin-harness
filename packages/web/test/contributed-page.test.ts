@@ -1,60 +1,53 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { ContributedPage } from "../src/web-app/contributed-page";
-import type { PageEntry } from "../src/web-app/page-table";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { contributedPagesOf } from "../src/web-app/contributions";
+import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 
-const page: PageEntry = {
+const page = {
   id: "plugin.reports",
+  from: "plugin",
   key: "reports",
-  path: "reports/:number?",
-  nav: "org",
-  admin: false,
-  released: true,
+  path: "/reports",
   renderer: { builtin: "ReportsPage" },
 };
+const answer = (pages: ContributionsResponse["pages"]): ContributionsResponse => ({
+  pages,
+  agentTabs: [],
+  sessionTabs: [],
+});
 
-const message =
-  'Missing builtin renderer "ReportsPage" for contributed page "reports" (reports/:number?)';
+afterEach(() => vi.restoreAllMocks());
 
-describe("ContributedPage", () => {
-  it("throws a diagnostic instead of silently navigating when a builtin is missing", () => {
-    // No router mock: the missing renderer must fail at the page, not in Navigate's context.
-    expect(() => renderToStaticMarkup(createElement(ContributedPage, { page }))).toThrow(message);
-  });
-
-  it("also reports a missing name in an explicitly supplied registry", () => {
-    expect(() =>
-      renderToStaticMarkup(
-        createElement(ContributedPage, {
-          page,
-          builtins: { OtherPage: () => createElement("p", null, "other") },
-        }),
-      ),
-    ).toThrow(message);
-  });
-
-  it("renders a registered builtin without needing a router", () => {
-    expect(
-      renderToStaticMarkup(
-        createElement(ContributedPage, {
-          page,
-          builtins: { ReportsPage: () => createElement("p", null, "reports") },
-        }),
-      ),
-    ).toBe("<p>reports</p>");
-  });
-
-  it("renders an iframe without a builtin registry", () => {
-    const html = renderToStaticMarkup(
-      createElement(ContributedPage, {
-        page: {
-          ...page,
-          renderer: { iframe: { src: "/workflow/reports/", namespace: "reports" } },
-        },
-      }),
+describe("contributed page renderer diagnostics", () => {
+  it("reports an unavailable builtin without silently dropping it", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(contributedPagesOf([], answer([page]), new Map())).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Missing builtin renderer "ReportsPage" for contributed page "reports" (/reports); skipping page',
     );
-    expect(html).toContain('<iframe title="reports" src="/workflow/reports/"');
-    expect(html).toContain('class="h-full w-full border-0"');
+  });
+
+  it("keeps registered builtin rendering without a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const Component = () => createElement("p", null, "reports");
+    const pages = contributedPagesOf([], answer([page]), new Map([["ReportsPage", Component]]));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]!.Component).toBe(Component);
+    expect(renderToStaticMarkup(createElement(pages[0]!.Component))).toBe("<p>reports</p>");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps iframe pages without looking up a builtin or warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const pages = contributedPagesOf(
+      [],
+      answer([{ ...page, renderer: { iframe: { src: "/reports/", namespace: "reports" } } }]),
+      new Map(),
+    );
+    expect(pages).toHaveLength(1);
+    expect(pages[0]!.renderer).toEqual({ iframe: { src: "/reports/", namespace: "reports" } });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

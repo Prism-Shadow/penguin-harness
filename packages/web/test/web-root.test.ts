@@ -1,3 +1,15 @@
+import { mainPanelDefinition as mainAgents } from "../src/features/chat/main-agents-panel";
+import { mainPanelDefinition as mainMemory } from "../src/features/chat/main-memory-panel";
+import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/main-dock-panel";
+import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
+import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
+import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
+import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { TerminalModule } from "../src/features/terminal/module";
+import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
+
+const mainTerminal = new TerminalModule().panel.mainDefinitions[0]!;
+
 const OrgProposalsPage = () => null;
 /**
  * The booted page table: the real composition root (web-root.ts) boots under vitest, and the
@@ -13,14 +25,17 @@ const OrgProposalsPage = () => null;
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
- * - Beside the booted table, a contributed page whose key the app owns is ignored, and the
- *   company-mode proposals page passes the renderers company mode carries.
+ * - The proposals page is the one page renderer, under the name its plugin's page names.
+ * - Folded into the booted table, a contributed page whose key the app owns is ignored, and the
+ *   company-mode proposals page is drawn by the proposals page, inside company mode and from
+ *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
  *   session, the six layers in their mount order, and the user event handlers of company, the
  *   built-in browser and schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
- *   balance on their anchors, and company's unread count on the contributed proposals page's row;
+ *   balance on their anchors, and company's unread count on the contributed proposals page's row
+ *   (anchored by the renderer's name);
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
  * - The dock receives the eight panels in their menu order — agents and memory from chat, the
@@ -29,7 +44,7 @@ const OrgProposalsPage = () => null;
  *   module registers in its panel registry at boot.
  * - The chat page receives the workflow tab strip beside the conversation.
  */
-import type { ReactElement } from "react";
+import type { ComponentType, ReactElement } from "react";
 import {
   bootModules,
   moduleDefOf,
@@ -46,7 +61,9 @@ import { bootWeb, WebRoot } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
 import { navPagesOf, type WebAppPage } from "../src/web-app";
 
-import { contributedPages, orgPagesOf, pageTableOf } from "../src/web-app/page-table";
+import { pageTableOf } from "../src/web-app/page-table";
+import { contributedPagesOf } from "../src/web-app/contributions";
+import { orgPagesOf } from "../src/features/company/use-org-pages";
 import { navKeysFor } from "../src/web-app/sidebar/nav-state";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
@@ -57,10 +74,10 @@ import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
 import { AgentsPage } from "../src/features/agents/agents-page";
-import { TerminalPage, TerminalDockRuntime, TerminalPanel } from "../src/features/terminal";
+import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
 import { HomeRedirect } from "../src/features/company/home-redirect";
-import { ORG_PAGE_RENDERERS } from "../src/features/company/company-nav";
+import { ChatPage } from "../src/features/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
@@ -82,19 +99,12 @@ import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
 import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
 import { DockModule } from "../src/features/dock/module";
-import { mainPanelDefinition as agentsPanelMain } from "../src/features/chat/main-agents-panel";
-import { mainPanelDefinition as memoryPanelMain } from "../src/features/chat/main-memory-panel";
-import { mainPanelDefinition as workspacePanelMain } from "../src/features/workspace/main-dock-panel";
-import { mainPanelDefinition as tracePanelMain } from "../src/features/traces/main-dock-panel";
-import { mainPanelDefinition as messagingPanelMain } from "../src/features/messaging/main-dock-panel";
-import { mainPanelDefinition as schedulesPanelMain } from "../src/features/schedules/main-dock-panel";
-import { mainPanelDefinition as browserPanelMain } from "../src/features/builtin-browser/main-dock-panel";
-import type { DockPanelData } from "../src/features/dock/iface";
 import { ChatModule } from "../src/features/chat/module";
 import { sessionTabsOf } from "../src/features/chat/deps";
 import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
 
 let pages: readonly WebAppPage[] = [];
+let pageRenderers: readonly Contributed[] = [];
 let sessionProviders: readonly Contributed[] = [];
 let layers: readonly Contributed[] = [];
 let userEvents: readonly UserEventHandler[] = [];
@@ -117,6 +127,7 @@ beforeAll(async () => {
   const webApp = Object.assign(new WebAppModule(), {
     setup({ contributions }: ClassCtx) {
       pages = pageTableOf(contributions.pages ?? []);
+      pageRenderers = contributions.pageRenderers ?? [];
       sessionProviders = contributions.sessionProviders ?? [];
       layers = contributions.layers ?? [];
       userEvents = webApp.userEventHandlers.all();
@@ -144,7 +155,7 @@ beforeAll(async () => {
   const dock = Object.assign(new DockModule(), {
     setup({ contributions }: ClassCtx) {
       dockPanels = contributions.panels ?? [];
-      dock.dock = {};
+      DockModule.prototype.setup.call(dock, { contributions } as ClassCtx);
     },
   });
   const chat = Object.assign(new ChatModule(), {
@@ -233,11 +244,13 @@ describe("the booted page table", () => {
     expect(member).not.toContain("machines");
     expect(member.every((key) => admin.includes(key))).toBe(true);
   });
-  it("routes chat without restoring the retired machine ports owner", () => {
-    // The page mounts under the chat module's deps root: the sessionTabs it draws are
-    // contributions read through the module's deps, so the bound component wraps ChatPage.
-    expect(pages.find((p) => p.key === "chat")?.Component?.name).toBe("ModuleRoot");
-    expect(pages.some((p) => p.key === "machine-ports")).toBe(false);
+
+  it("routes chat, the dashboard and one machine's ports through their modules", () => {
+    const page = (key: string) => pages.find((p) => p.key === key);
+    // Chat binds its page under its deps' provider (lib/module-deps.tsx), wrapping the route.
+    const chatRoot = page("chat")?.Component as
+      ((props: object) => ReactElement<{ children: ReactElement }>) | undefined;
+    expect(chatRoot?.({}).props.children.type).toBe(ChatPage);
   });
 
   it("leads home through company mode's page, inside the shell and off the nav", () => {
@@ -249,22 +262,49 @@ describe("the booted page table", () => {
       Component: HomeRedirect,
     });
   });
+  it("keeps builtin renderer registration pluggable without restoring a retired owner", () => {
+    expect(pageRenderers).toEqual([]);
+  });
 
-  it("lets a contributed page in beside the table only under a key the app does not own", () => {
+  it("folds a contributed page in only under a key the app does not own, drawn by its module's renderer", () => {
     const remote = [
-      { key: "agents", path: "/elsewhere", renderer: { iframe: { src: "/x", namespace: "x" } } },
       {
+        id: "x.agents",
+        from: "X",
+        key: "agents",
+        path: "/elsewhere",
+        renderer: { iframe: { src: "/x", namespace: "x" } },
+      },
+      {
+        id: "proposals.page",
+        from: "CompanyProposals",
         key: "org-proposals",
         path: "proposals/:number?",
         nav: "org",
         renderer: { builtin: "OrgProposalsPage" },
       },
     ];
-    const orgRenderers = new Set(["OrgProposalsPage"]);
-    expect(orgPagesOf(contributedPages(pages, remote, orgRenderers)).map((p) => p.key)).toEqual([
-      "org-proposals",
+    const renderers = new Map(
+      pageRenderers.map((c) => [c.data.name as string, c.code as ComponentType]),
+    );
+    const answer = {
+      pages: remote,
+      agentTabs: [],
+      sessionTabs: [],
+      quickStarts: [],
+      sessionSurfaces: [],
+    };
+    renderers.set("OrgProposalsPage", OrgProposalsPage);
+    const merged = contributedPagesOf(pages, answer, renderers);
+    expect(merged.slice(0, pages.length)).toEqual(pages);
+    // One table: the router mounts the page from the root, company mode under the organization.
+    expect(merged.slice(pages.length)).toMatchObject([
+      { key: "org-proposals", path: "proposals/:number?", frame: "shell", nav: "org" },
     ]);
-    expect(contributedPages(pages, remote, new Set())).toEqual([]);
+    expect(orgPagesOf(merged).map((p) => [p.key, p.Component])).toEqual([
+      ["org-proposals", OrgProposalsPage],
+    ]);
+    expect(contributedPagesOf(pages, answer, new Map())).toEqual(pages);
   });
 });
 
@@ -317,15 +357,15 @@ describe("the booted sidebar slots", () => {
   it("binds main badge hooks and balance without restoring the retired todos provider", () => {
     const badges = badgesOf(sidebarSlots.navBadges ?? []);
     for (const anchor of ["agents", "models", "plugins", "usage", "menu", "account"]) {
-      const on = badges.filter((b) => b.anchor === anchor && b.badge.useNote !== undefined);
+      const on = badges.filter((b) => b.anchor === anchor && typeof b.badge.useNote === "function");
       expect(on).toHaveLength(1);
       expect(typeof on[0]!.badge.useNote).toBe("function");
     }
     expect(marksFor(badges, "account").map((m) => m.Mark)).toEqual([PinnedBalanceBadge]);
   });
-  it("does not register a retired proposal badge", () => {
+  it("does not register a retired proposal badge without its renderer owner", () => {
     expect(
-      badgesOf(sidebarSlots.navBadges ?? []).filter((b) => b.anchor === "org-proposals"),
+      badgesOf(sidebarSlots.navBadges ?? []).filter((b) => b.anchor === "OrgProposalsPage"),
     ).toEqual([]);
   });
 
@@ -337,79 +377,39 @@ describe("the booted sidebar slots", () => {
 });
 
 describe("the booted dock slot", () => {
-  it("the dock receives the eight panels, in their order, each from its module", () => {
-    // In contributed order, as the dock registers them (dock/module.ts).
-    const panels = [...dockPanels]
-      .map((c) => {
-        // A module binds its panels as the definitions the registry registers (dock/module.ts);
-        // the data half keeps the kind, the names and the menu order.
-        const def = (c.code as { mainDefinitions?: readonly { Body: unknown }[] })
-          .mainDefinitions?.[0];
-        return { ...(c.data as unknown as DockPanelData), Body: def ? def.Body : c.code };
-      })
+  it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
+    const definitions = dockPanels
+      .flatMap(
+        (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,
+      )
       .sort((a, b) => a.order - b.order);
-    expect(
-      panels.map(({ kind, title, titleZh, icon, Body }) => ({ kind, title, titleZh, icon, Body })),
-    ).toEqual([
-      {
-        kind: "agents",
-        title: "Agents panel",
-        titleZh: "智能体面板",
-        icon: "robotPair",
-        Body: agentsPanelMain.Body,
-      },
-      {
-        kind: "terminal",
-        title: "Command-line terminal",
-        titleZh: "命令行终端",
-        icon: "terminalWindow",
-        Body: TerminalPanel,
-      },
-      {
-        kind: "workspace",
-        title: "Files",
-        titleZh: "文件浏览",
-        icon: "folder",
-        Body: workspacePanelMain.Body,
-      },
-      {
-        kind: "memory",
-        title: "Memory",
-        titleZh: "记忆",
-        icon: "brain",
-        Body: memoryPanelMain.Body,
-      },
-      {
-        kind: "trace",
-        title: en.nav.traces,
-        titleZh: zh.nav.traces,
-        icon: "eye",
-        Body: tracePanelMain.Body,
-      },
-      {
-        kind: "messaging",
-        title: "Remote control",
-        titleZh: "远程控制",
-        icon: "paperPlane",
-        Body: messagingPanelMain.Body,
-      },
-      {
-        kind: "schedules",
-        title: en.schedule.panelTitle,
-        titleZh: zh.schedule.panelTitle,
-        icon: "alarmClock",
-        Body: schedulesPanelMain.Body,
-      },
-      {
-        kind: "builtin-browser",
-        title: "Browser",
-        titleZh: "浏览器",
-        icon: "globe",
-        // A wrapper around BuiltinBrowserPanel that carries where the browser is offered.
-        Body: browserPanelMain.Body,
-      },
+    const expected = [
+      mainAgents,
+      mainTerminal,
+      mainWorkspace,
+      mainMemory,
+      mainTrace,
+      mainMessaging,
+      mainSchedules,
+      mainBrowser,
+    ];
+    expect(definitions).toEqual(expected);
+    expect(definitions.map((d) => d.id)).toEqual([
+      "agents",
+      "terminal",
+      "workspace",
+      "memory",
+      "trace",
+      "messaging",
+      "schedules",
+      "builtin-browser",
     ]);
-    for (const panel of panels) expect(glyphOf(panel.icon)).not.toBe("");
+    for (const definition of expected) {
+      expect(dockPanelDefinition(definition.id)).toBe(definition);
+      expect(typeof definition.Body).toBe("function");
+      expect(definition.glyph).not.toBe("");
+      expect(definition.label()).not.toBe("");
+    }
     expect(Object.fromEntries(dockPanels.map((c) => [c.data.kind as string, c.from]))).toEqual({
       agents: "ChatModule",
       memory: "ChatModule",
@@ -420,6 +420,7 @@ describe("the booted dock slot", () => {
       "builtin-browser": "BuiltinBrowserModule",
       terminal: "TerminalModule",
     });
+    expect(dockPanelDefinition("ports")).toBeUndefined();
   });
 });
 
