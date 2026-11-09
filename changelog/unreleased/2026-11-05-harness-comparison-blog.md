@@ -14,9 +14,9 @@ Added Chinese and English experiment blog posts comparing PenguinHarness, DSH, P
 - Added ten diagrams and four interface screenshots covering experiment design, reproduction, execution, statistics, scores, task stability and resource use.
 - Added the article to the practice-post index and synchronized the figures with the reviewed source assets.
 - Updated the Chinese article from Feishu revision 279 and corrected the Sec E command paths and task link against the pinned benchmark snapshot.
-- Synchronized the Chinese title, manuscript, captions and selected figures from Feishu revision 748; section 6 and appendix C are excluded from the published article.
+- Synchronized the Chinese title, manuscript, captions and selected figures from Feishu revision 755; section 6 and appendix C are excluded from the published article.
 - Set the Chinese and English article bylines to Zhihao Liu (Prism Shadow AI).
-- Kept the source-reference paragraphs in regular text and retained all source links.
 - Synchronized the Chinese article’s reduced bold formatting with the edited Feishu manuscript.
-- Updated the English title, article, complete experiment prompt, captions and alt text from Chinese revision 748, matching its five sections and fourteen figures.
+- Updated the English title, article, complete experiment prompt, captions and alt text from Chinese revision 755, matching its five sections and fourteen figures.
 - Simplified the introduction, pass-frequency discussion and equal-score examples to match the edited manuscript in both languages.
+- Matched the manuscript’s paragraph joins and removal of the final source-reference paragraph in both languages.

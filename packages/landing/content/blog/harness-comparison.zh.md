@@ -124,13 +124,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 **现象一：PenguinHarness 最擅长解决软件工程题**
 
-把总分拆到 A 至 E 五个子集后，可以明显的看出来四款 Harness 各自擅长什么题型：
+把总分拆到 A 至 E 五个子集后，可以明显地看出来四款 Harness 各自擅长什么题型：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜四种 Harness 在五个子集上的得分对比" /><figcaption>图 6｜四种 Harness 在五个子集上的得分对比</figcaption></figure>
 
-如图 6 所示，PenguinHarness 在断网修 Bug 的 Sec B 软件工程子集上优势最为突出，拿到全场最高的 70.00 分；并与 DSH 在 Sec A 数据分析上同拿 70.00 分并列第一，DSH 在 Sec C 自动化流程上领先，Pi 则在 Sec E 终端排障上领先——同一颗模型，换一套 Harness，擅长的题型就变了。更有意思的是，把四家三轮的成绩合在一起看，这 50 道题里其实有 31 道题这颗模型是会做的，占了 62%，只有 19 道题四家全都没做出来。但在这 31 道会做的题里，四家都能拿下的只有 17 道。剩下的 14 道题全看你用哪套 Harness：有 9 道题只有两三家能做出来，更有 5 道题只有唯一一家能跑通。
-
-当你的 Agent 搞不定一个任务时，未必是底层模型真不会做，接下来很值得顺着执行轨迹去深挖：究竟是哪一步的工具设计或上下文反馈，限制了模型原本具备的能力。
+如图 6 所示，PenguinHarness 在断网修 Bug 的 Sec B 软件工程子集上优势最为突出，拿到全场最高的 70.00 分；并与 DSH 在 Sec A 数据分析上同拿 70.00 分并列第一，DSH 在 Sec C 自动化流程上领先，Pi 则在 Sec E 终端排障上领先——同一颗模型，换一套 Harness，擅长的题型就变了。更有意思的是，把四家三轮的成绩合在一起看，这 50 道题里其实有 31 道题这颗模型是会做的，占了 62%，只有 19 道题四家全都没做出来。但在这 31 道会做的题里，四家都能拿下的只有 17 道。剩下的 14 道题全看你用哪套 Harness：有 9 道题只有两三家能做出来，更有 5 道题只有唯一一家能跑通。当你的 Agent 搞不定一个任务时，未必是底层模型真不会做，接下来很值得顺着执行轨迹去深挖：究竟是哪一步的工具设计或上下文反馈，限制了模型原本具备的能力。
 
 **现象二：看 Pass@3，PenguinHarness 与 DSH 并列第一，拉低总分的原因是发挥不稳定**
 
@@ -146,9 +144,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1560" alt="图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录" /><figcaption>图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录</figcaption></figure>
 
-如图 8 所示，虽然每轮都拿 20 分，但真正三轮全做对的只有 CASE-008 一道题；另外 10 分，第 1 轮拿在 CASE-010 上，第 2、3 轮却拿在了 CASE-004 上。再去查另外三组“三轮同分”的实验，只有 DSH 在 Sec A 的 70 分是实打实的同 7 道题三轮全过，剩下两组也都是靠“这轮做对 A 题、下轮做对 B 题”刚好凑出了同样的总分。Codex 在科学计算上的表现更极端：三轮都是 10 分，却没有一道题三轮全过。
-
-因此在日常迭代 Agent 时，如果每次改完提示词或工具链只跑一轮、或者只盯着总分涨跌，根本分不清一次改动到底是真提分，还是“修好了 A 题、弄坏了 B 题”，很容易把随机波动当成优化成果。
+如图 8 所示，虽然每轮都拿 20 分，但真正三轮全做对的只有 CASE-008 一道题；另外 10 分，第 1 轮拿在 CASE-010 上，第 2、3 轮却拿在了 CASE-004 上。再去查另外三组“三轮同分”的实验，只有 DSH 在 Sec A 的 70 分是实打实的同 7 道题三轮全过，剩下两组也都是靠“这轮做对 A 题、下轮做对 B 题”刚好凑出了同样的总分。Codex 在科学计算上的表现更极端：三轮都是 10 分，却没有一道题三轮全过。因此在日常迭代 Agent 时，如果每次改完提示词或工具链只跑一轮、或者只盯着总分涨跌，根本分不清一次改动到底是真提分，还是“修好了 A 题、弄坏了 B 题”，很容易把随机波动当成优化成果。
 
 **现象四：多花 Token 不一定能提分——修 Bug** **的题越跑分越高，科学计算题却在超时白跑**
 
@@ -164,5 +160,3 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 2. **在 Sec D 科学计算题上，大量运行时间耗在了超时退出上**：这 10 道题耗掉了各家整轮 34% 到 53% 的运行时间，单轮就要跑上 4 到 5 个多小时，最后四家得分却全在 10 分及以下。在保留了逐题耗时的 DSH 和 Codex 记录里，30 次尝试分别有 10 次和 12 次运行超过 35 分钟——其中 21 次最终拿了 0 分，但也有 1 次例外：Codex 在小行星定轨题上跑了 38.8 分钟，最终拿到了 100 分。这说明长耗时并不等于全在白跑，关键要看 Agent 在这段时间里究竟是在推进解题，还是卡在死胡同里原地打转。
 
 所以多花 Token 能不能换来高分，很大程度上取决于任务环境有没有明确的反馈信号。像修 Bug 这类能随时跑测试、看报错的任务，让 Agent 多试几轮更容易越改越对；但像科学计算这类中间拿不到对错反馈的长任务，单纯放宽步数和时长往往只会增加无效尝试——及时发现它卡在哪一步、督促它换思路或停下，远比硬堆 Token 管用。
-
-实验数据快照：本文全部数据对应 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2) 仓库快照 6ad65ea054fe8035c1c48724dbb5626d699f6cb2。相关文档：[横评归档目录](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/experiments/harness-comparison) · [仓库运行说明 README.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/README.zh.md) · [50 题筛选说明 SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md) · [评测集数据说明 data/README.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/README.md) · [PenguinAgent 适配器说明](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/agents/README.md) · [评估数据与提交流程规范](https://club.penguin.ooo/zh/workflow/evaluation/)
