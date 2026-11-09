@@ -83,7 +83,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../chat/thinking-level";
+} from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */

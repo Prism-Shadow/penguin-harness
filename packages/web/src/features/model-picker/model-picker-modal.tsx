@@ -58,7 +58,8 @@ import {
   navRowClass,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { hasConfiguredKey, sameModelRef, loadModelGroupOrder } from "../models";
+import { hasConfiguredKey, sameModelRef } from "../../lib/model-grouping";
+import { loadModelGroupOrder } from "../../lib/model-group-order";
 import { useProject } from "../../state/project";
 import {
   entryRow,

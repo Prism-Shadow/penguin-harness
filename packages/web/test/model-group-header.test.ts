@@ -61,7 +61,7 @@ import {
   GroupSettingsMenu,
 } from "../src/features/models/group-settings-menu";
 import type { ModelGroupSort } from "../src/features/models/model-sort";
-import { userProviderInfo } from "../src/features/models/model-grouping";
+import { userProviderInfo } from "../src/lib/model-grouping";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

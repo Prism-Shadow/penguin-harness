@@ -22,7 +22,7 @@ import {
   type ExpansionStorage,
 } from "../src/features/models/model-group-expansion";
 
-import { groupModelRows, type ModelRowLike } from "../src/features/models/model-grouping";
+import { groupModelRows, type ModelRowLike } from "../src/lib/model-grouping";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
 function memStorage(): ExpansionStorage & { map: Map<string, string> } {

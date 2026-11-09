@@ -67,3 +67,4 @@ export { subscribeLauncherHidden } from "./dock-launcher-state";
 export { writeLauncherHidden } from "./dock-launcher-state";
 
 export { setDockScope } from "./dock-state";
+export { measureComposer } from "./composer-height";

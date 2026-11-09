@@ -50,7 +50,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { SemanticIdField } from "../semantic-id";
-import { WorkspaceSelect } from "../chat";
+import { WorkspaceSelect } from "../workspace";
 import {
   SkillPickList,
   addSkillNames,

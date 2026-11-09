@@ -27,7 +27,7 @@ import {
   groupModelRows,
   type ModelRowLike,
   type PricingBucketsLike,
-} from "../src/features/models/model-grouping";
+} from "../src/lib/model-grouping";
 
 import {
   MODEL_GROUP_SORTS_KEY,
