@@ -3,7 +3,7 @@
  * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
  * is invisible to it, so these rules are held here, over every file under `src/`:
  *
- * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`,
+ * 1. A library — anything outside `features/` and `web-app/` (`lib/`, `api/`, `state/`, `rescue/`,
  *    `components/`, the root files) — imports nothing under `features/`. The one exception is the
  *    composition root, `web-root.ts`, which imports each feature's `module.ts` to list it in the
  *    tree.

@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 /**
  * The server's contributions folded into WebApp's page table (web-app/contributions.tsx).
  *
@@ -14,18 +15,27 @@
  *   these pages from the table.
  * - A merged iframe page is routed at its path and draws a sandboxed frame of its src.
  */
-import { createElement, type ComponentType } from "react";
+import { createElement as h, type ComponentType } from "react";
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mount, unmountAll } from "./helpers/dom";
 import { contributedPagesOf, createContributionsStore } from "../src/web-app/contributions";
+import { PagesContext, type WebAppPagesValue } from "../src/lib/web-app-pages";
+import { OrgRoutes } from "../src/features/company/org-routes";
+import { ShellRoutes } from "../src/web-app/router";
 import type { WebAppPage } from "../src/web-app";
 import { ThemeProvider } from "../src/state/theme";
 import { orgPagesOf } from "../src/features/company/use-org-pages";
 
 const Blank: ComponentType = () => null;
+
+afterEach(async () => {
+  await unmountAll();
+  vi.unstubAllGlobals();
+});
 
 const COMPILED: WebAppPage[] = [
   {
@@ -281,17 +291,17 @@ describe("contributedPagesOf", () => {
       NONE,
     );
     const html = renderToStaticMarkup(
-      createElement(
+      h(
         ThemeProvider,
         null,
-        createElement(
+        h(
           MemoryRouter,
           { initialEntries: ["/hello"] },
-          createElement(
+          h(
             Routes,
             null,
             merged.map(({ id, path, Component }) =>
-              createElement(Route, { key: id, path, element: createElement(Component) }),
+              h(Route, { key: id, path, element: h(Component) }),
             ),
           ),
         ),
@@ -316,5 +326,122 @@ describe("orgPagesOf", () => {
     );
     expect(orgPagesOf(merged).map((p) => p.id)).toEqual(["b", "c"]);
     expect(orgPagesOf(COMPILED)).toEqual([]);
+  });
+});
+
+/** OrgRoutes with the page table injected; the rest of the tree is the real thing. */
+function OrgRoutesStub({ pages }: { pages: readonly WebAppPage[] }) {
+  const value: WebAppPagesValue = {
+    pages,
+    pending: false,
+    quickStarts: [],
+    refresh: async () => null,
+  };
+  return (
+    <PagesContext.Provider value={value}>
+      <OrgRoutes />
+    </PagesContext.Provider>
+  );
+}
+
+/** ShellRoutes with the page table injected. */
+function ShellRoutesStub({ pages }: { pages: readonly WebAppPage[] }) {
+  const value: WebAppPagesValue = {
+    pages,
+    pending: false,
+    quickStarts: [],
+    refresh: async () => null,
+  };
+  return (
+    <PagesContext.Provider value={value}>
+      <ShellRoutes />
+    </PagesContext.Provider>
+  );
+}
+
+describe("the org pages' consumption chain", () => {
+  /** jsdom needs the theme's stored preference reads stubbed before any mount. */
+  vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => undefined });
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+
+  const orgAnswer = () =>
+    answer([
+      {
+        id: "roadmaps.page",
+        from: "RoadmapsModule",
+        key: "roadmaps",
+        path: "roadmaps/:number?",
+        nav: "org",
+        renderer: { builtin: "Roadmaps" },
+      },
+      {
+        id: "notes.page",
+        from: "NotesModule",
+        key: "notes",
+        path: "notes",
+        nav: "org",
+        renderer: frame("/plugins/notes/index.html"),
+      },
+    ]);
+  const table = (builtins: ReadonlyMap<string, ComponentType>) =>
+    contributedPagesOf(COMPILED, orgAnswer(), builtins);
+
+  const Roadmaps: ComponentType = () => <div data-testid="roadmarks">roadmaps body</div>;
+
+  it("mounts a registered builtin org page's resolved component under the organization layout", async () => {
+    const pages = table(new Map([["Roadmaps", Roadmaps]]));
+    const page = await mount(
+      h(
+        ThemeProvider,
+        null,
+        h(
+          MemoryRouter,
+          { initialEntries: ["/org/p/o/roadmaps"] },
+          h(Routes, null, h(Route, { path: "/org/*", element: h(OrgRoutesStub, { pages }) })),
+        ),
+      ),
+    );
+    await settle();
+    expect(page.container.querySelector('[data-testid="roadmarks"]')).not.toBeNull();
+    await page.unmount();
+  });
+
+  it("mounts an iframe org page as the shell's sandboxed frame, not the legacy bare iframe", async () => {
+    const pages = table(NONE);
+    const page = await mount(
+      h(
+        ThemeProvider,
+        null,
+        h(
+          MemoryRouter,
+          { initialEntries: ["/org/p/o/notes"] },
+          h(Routes, null, h(Route, { path: "/org/*", element: h(OrgRoutesStub, { pages }) })),
+        ),
+      ),
+    );
+    await settle();
+    const frame = page.container.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    expect(frame!.getAttribute("src")).toBe("/plugins/notes/index.html");
+    expect(frame!.getAttribute("sandbox")).toContain("allow-scripts");
+    await page.unmount();
+  });
+
+  it("mounts a company-mode page from the root, its rooted path, as the table documents", async () => {
+    const pages = table(new Map([["Roadmaps", Roadmaps]]));
+    const page = await mount(
+      h(
+        ThemeProvider,
+        null,
+        h(
+          MemoryRouter,
+          { initialEntries: ["/roadmaps/7"] },
+          h(Routes, null, h(Route, { path: "/*", element: h(ShellRoutesStub, { pages }) })),
+        ),
+      ),
+    );
+    await settle();
+    expect(page.container.querySelector('[data-testid="roadmarks"]')).not.toBeNull();
+    await page.unmount();
   });
 });

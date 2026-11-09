@@ -43,4 +43,3 @@ features/traces/trace-file-view.tsx -> features/chat/history-loading.tsx
 lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
 lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts
 lib/strings.ts -> features/models/model-sort.ts
-rescue/rescue-panel.tsx -> features/harness/harness-history-overlay.tsx

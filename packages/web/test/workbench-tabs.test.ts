@@ -333,4 +333,25 @@ describe("the chat page under a workbench tab", () => {
     expect(page.container.contains(row!)).toBe(true);
     expect(page.container.contains(area!)).toBe(true);
   });
+  it("does not paint what the page covers, so no dock layer shows through it", () => {
+    // Source-shape auxiliary to the behavioral tests above: the wiring the cover rides on.
+    // The tab owns the cover: it draws the strip and the frame that lies over the page.
+    // session-tab names its tab store `workflowTabs` (chat-page calls the same one `workbenchTabs`).
+    const read = (rel: string) =>
+      readFileSync(join(process.cwd(), "src", rel), "utf8").replace(/\s+/g, " ");
+    expect(read("features/workbenches/session-tab.tsx")).toContain(
+      `{workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && ( <div className="absolute inset-x-0 bottom-0 top-9 z-10">`,
+    );
+    // The page collects the tabs' reports into the one hiding class...
+    expect(read("features/chat/chat-page.tsx")).toContain(
+      `const coveredByWorkbench = coveredTabs.size > 0 ? "invisible" : "";`,
+    );
+    // ...and paints it on what the cover hides.
+    expect(read("features/chat/toolbar/main-chat-toolbar.tsx")).toMatch(
+      /\{selected && \( <div className=\{`[^`]*\$\{coveredByWorkbench\}`\}/,
+    );
+    expect(read("features/chat/body/main-chat-body.tsx")).toMatch(
+      /<div data-dock-area className=\{`[^`]*\$\{coveredByWorkbench\}`\}>/,
+    );
+  });
 });

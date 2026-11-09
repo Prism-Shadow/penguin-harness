@@ -53,6 +53,7 @@ vi.mock("../src/lib/use-update-badges", () => ({
 vi.mock("../src/features/schedules", () => ({
   useProjectSchedules: () => ({ items: null }),
   pendingScheduleSessions: () => new Set(),
+  useSchedulesAcross: () => null,
 }));
 vi.mock("../src/features/workspace", () => ({ WorkspaceSelect: () => null }));
 vi.mock("../src/web-app/sidebar/user-menu", () => ({ UserMenu: () => null }));

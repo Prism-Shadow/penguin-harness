@@ -1136,6 +1136,7 @@ export const zh = {
     openDevTools: "打开开发者工具",
     projectOnGitHub: "在 GitHub 上查看项目",
   },
+  /** The rescue surface (src/rescue/): the panel a render error leaves, and safe mode. */
   rescue: {
     title: "界面出错了",
     desc: "页面渲染时抛出错误，应用无法继续显示。可以重新加载，或跳过服务端贡献（插件提供的页面等）后重新加载；需要回退 harness 版本时，打开 Harness 历史。",
