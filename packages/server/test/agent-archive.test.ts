@@ -11,8 +11,9 @@
  *   overwrite is 403; the owner's backs the State up, replaces it, and keeps the vault, the Traces
  *   and the API keys.
  * - A zip that leaves its folder, holds a link, unpacks past the cap or has no config is a 400 that
- *   writes nothing, and its id stays free.
- * - A config without `system_prompt` is laid over the template's.
+ *   writes nothing, and its id stays free; an upload past the package cap is a 413 unread.
+ * - A config without `system_prompt` is laid over the template's, and refused as a config write
+ *   would be.
  * - A tar.gz snapshot package imports as a new Agent and over one.
  */
 import fs from "node:fs/promises";
@@ -37,6 +38,7 @@ import type {
   ProjectCreateResponse,
   SessionsResponse,
 } from "../src/api/types.js";
+import { MAX_PACKAGE_BYTES } from "../src/services/agent-zip.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -97,6 +99,7 @@ describe("Agent zip export and import", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let member: ReturnType<typeof apiClient>;
+  let memberCookie: string;
   let P: string;
   let agents: string;
 
@@ -113,7 +116,8 @@ describe("Agent zip export and import", () => {
   beforeAll(async () => {
     t = await createTestApp();
     owner = apiClient(t.app, (await provisionUser(t.app, "owner_z")).cookie);
-    member = apiClient(t.app, (await provisionUser(t.app, "member_z")).cookie);
+    memberCookie = (await provisionUser(t.app, "member_z")).cookie;
+    member = apiClient(t.app, memberCookie);
     const created = (await (
       await owner.post("/api/projects", { projectId: "owner_z-zip", name: "Zip" })
     ).json()) as ProjectCreateResponse;
@@ -300,6 +304,19 @@ describe("Agent zip export and import", () => {
     await expect(fs.access(agentDir(t.root, P, "broken"))).rejects.toThrow();
   });
 
+  it("an upload past the package cap is refused before it is read", async () => {
+    const res = await t.app.request(`${agents}/import`, {
+      method: "POST",
+      headers: {
+        cookie: memberCookie,
+        "content-type": "application/octet-stream",
+        "content-length": String(MAX_PACKAGE_BYTES + 1),
+      },
+      body: zip({ "big/agent_state/system_config.yaml": CONFIG }),
+    });
+    expect(res.status).toBe(413);
+  });
+
   it("the id a refused package named stays free", async () => {
     const res = await importAs(member, zip({ "broken/agent_state/system_config.yaml": CONFIG }));
     expect(await res.json()).toMatchObject({ agent: { agentId: "broken" }, mode: "created" });
@@ -318,6 +335,8 @@ describe("Agent zip export and import", () => {
     expect(config).toMatchObject({ name: "Ported", mcpServers: servers });
     expect(config.systemPrompt).toBe(defaultSystemConfig().system_prompt);
     expect(config.toolsBuiltin).toEqual(defaultSystemConfig().tools?.builtin);
+    const refused = zip({ "refused/agent_state/system_config.yaml": "max_turns: 0\n" });
+    expect((await importAs(member, refused)).status).toBe(400);
   });
 
   it("a tar.gz snapshot package imports as a new Agent, and over one", async () => {
