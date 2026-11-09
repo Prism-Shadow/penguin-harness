@@ -23,11 +23,13 @@ import {
   type WorkbenchTab,
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
-import { AppPalette } from "../palette/app-palette";
+import { useSafeMode } from "../../rescue/safe-mode";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
+  const safe = useSafeMode();
   const params = useParams();
   const projectId = params["projectId"] ?? "";
   const agentId = params["agentId"] ?? "";
@@ -43,6 +45,10 @@ export function WorkbenchAppPage() {
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
   useEffect(() => {
+    if (safe) {
+      setTab(null);
+      return;
+    }
     let alive = true;
     const load = async () => {
       try {
@@ -75,7 +81,7 @@ export function WorkbenchAppPage() {
       window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
       conn.close();
     };
-  }, [projectId, agentId, workbenchId, tabKey, machineId]);
+  }, [safe, projectId, agentId, workbenchId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -106,6 +112,10 @@ export function WorkbenchAppPage() {
     ],
     [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
   );
+
+  usePaletteActions(exit);
+
+  if (safe) return <div role="status">{S.rescue.marker}</div>;
 
   return (
     // A window of its own (`isolate`): its layers order only among themselves, under the
@@ -146,7 +156,6 @@ export function WorkbenchAppPage() {
           {S.workbenches.exitFullPageButton}
         </Button>
       </div>
-      <AppPalette extra={exit} />
     </div>
   );
 }

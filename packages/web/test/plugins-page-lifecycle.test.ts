@@ -39,7 +39,9 @@ vi.mock("../src/state/locale", () => ({ useLocale: () => ({ locale: "en" }) }));
 vi.mock("../src/state/sessions", () => ({
   useSessions: () => ({ machineIds: context.machines, machineLabels: new Map() }),
 }));
-vi.mock("../src/lib/use-update-badges", () => ({ useUpdateBadges: () => ({ todos: {} }) }));
+vi.mock("../src/lib/use-update-badges", () => ({
+  useUpdateBadges: () => ({ todos: {} }),
+}));
 vi.mock("../src/features/plugins/plugin-repair", () => ({
   usePluginRepair: () => ({ repair: vi.fn(), modal: null }),
 }));
