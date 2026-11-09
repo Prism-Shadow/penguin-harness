@@ -76,12 +76,11 @@ describe("registry defaults", () => {
   });
 
   it("names every default that shares a chord with a browser function", () => {
-    // Find and save take the browser's find and Save Page on purpose; on macOS Chrome binds ⌥⌘P
-    // to Page Setup and ⌥⌘N to split view, and Firefox ⇧⌘F to full screen.
+    // The palette takes Firefox's private-window chord; find/save keep the main defaults.
     const expected: Record<Platform, CommandId[]> = {
       mac: ["palette.toggle", "chat.new", "find.open", "find.all", "editor.save"],
-      windows: ["find.open", "editor.save"],
-      linux: ["find.open", "editor.save"],
+      windows: ["palette.toggle", "find.open", "editor.save"],
+      linux: ["palette.toggle", "find.open", "editor.save"],
     };
     for (const platform of PLATFORMS) {
       const common = SHORTCUT_COMMANDS.filter((cmd) => {

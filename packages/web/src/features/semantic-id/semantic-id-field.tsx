@@ -24,8 +24,8 @@
  * is drawn as `lockedPrefix` in front of the box, and a proposal (which the server returns whole)
  * fills in the part after it.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
 import {
   Button,

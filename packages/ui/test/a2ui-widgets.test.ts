@@ -9,12 +9,7 @@
  */
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  A2uiClock,
-  A2uiCountdown,
-  A2uiMetric,
-  A2uiWeather,
-} from "@prismshadow/penguin-core/a2ui";
+import type { A2uiClock, A2uiCountdown, A2uiMetric, A2uiWeather } from "@prismshadow/a2ui";
 import { ChartBlock } from "../src/components/content/a2ui/chart-block";
 import { ClockBlock } from "../src/components/content/a2ui/clock-block";
 import { CountdownBlock } from "../src/components/content/a2ui/countdown-block";
