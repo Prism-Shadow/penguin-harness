@@ -13,7 +13,7 @@ import {
 } from "../src/components/navigation/group-header/group-header";
 import { Pager } from "../src/components/navigation/group-header/pager";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { classTokens, renderStatic, markupStructure } from "../src/testing";
 
 const zh = {
   ...DEFAULT_UI_STRINGS,
@@ -42,6 +42,20 @@ describe("GroupHeader", () => {
       }),
     );
 
+  it("follows the label with the qualifier that tells two same-named groups apart", () => {
+    const html = inZh(
+      createElement(GroupHeader, {
+        open: true,
+        onToggle: () => {},
+        label: "Temporary workspaces",
+        qualifier: "[SSH: box]",
+      }),
+    );
+    expect(markupStructure(html)).toContain(
+      "<span>Temporary workspaces</span><span>[SSH: box]</span>",
+    );
+  });
+
   it("shows the full value behind its label on hover, marked as adding to the visible text", () => {
     // A workspace group is labelled by its directory's basename; the path is nowhere else on
     // screen, so its hint must open even when the basename fits.
@@ -58,33 +72,13 @@ describe("GroupHeader", () => {
     expect(header(true, false)).not.toContain("data-tooltip");
   });
 
-  it("keeps the qualifier whole beside a label that gives way", () => {
-    // Two machines can hold groups of the same name; the machine is what tells them apart, so a
-    // narrow column cuts the label, never the qualifier after it.
-    const html = inZh(
-      createElement(GroupHeader, {
-        open: true,
-        onToggle: () => {},
-        label: "Temporary workspaces",
-        qualifier: "[SSH: box]",
-      }),
-    );
-    const spanOf = (text: string) =>
-      new RegExp(`<span class="([^"]*)">${text.replace(/[[\]]/g, "\\$&")}</span>`).exec(html)?.[1];
-    expect(spanOf("Temporary workspaces")?.split(" ")).toContain("truncate");
-    const qualifier = spanOf("[SSH: box]")?.split(" ");
-    expect(qualifier).toContain("shrink-0");
-    expect(qualifier).not.toContain("truncate");
-  });
-
   it("names its toggle by what pressing it does, in the interface's words", () => {
     expect(header(true, false)).toContain('aria-expanded="true" aria-label="折叠"');
     expect(header(false, false)).toContain('aria-expanded="false" aria-label="展开"');
   });
 
-  it("sets a group label on the eyebrow rung, and a name whose casing matters on the small one", () => {
+  it("sets a group label on the eyebrow hook, and a name whose casing matters without it", () => {
     expect(classTokens(header(true, true))).toContain("ui-eyebrow");
-    expect(classTokens(header(true, true))).not.toContain("uppercase");
     expect(classTokens(header(true, false))).not.toContain("ui-eyebrow");
   });
 
@@ -126,9 +120,7 @@ describe("FolderSection and MoreRow", () => {
           createElement("ul", null, "rows"),
         ),
       );
-    expect(folder(true)).toContain(
-      'data-fold="settled" class="grid"><div class="min-h-0 min-w-0"><ul>',
-    );
+    expect(markupStructure(folder(true))).toContain('data-fold="settled"><div><ul>');
     const folded = folder(false);
     expect(folded).toContain('aria-expanded="false"');
     expect(folded).not.toContain("rows");

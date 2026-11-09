@@ -71,6 +71,7 @@ import type {
   MessagingChannel,
   MessagingChannelState,
   PluginItem,
+  AgentApiKeyInfo,
   AgentApiSettings,
   ModelsResponse,
   DirListResponse,
@@ -293,6 +294,8 @@ export function agentServer(
     role?: "owner" | "member";
     /** The Skills this server's Agent already has installed (by default none). */
     skills?: string[];
+    /** The keys the Agent's API holds; a DELETE of one removes it. */
+    apiKeys?: AgentApiKeyInfo[];
     /** This server's organizations (by default none); their employees join its Agents. */
     organizations?: FakeOrganization[];
   } = {},
@@ -307,7 +310,7 @@ export function agentServer(
     enabled: true,
     open: false,
     approvalMode: "read-only",
-    keys: [],
+    keys: [...(options.apiKeys ?? [])],
     model: null,
     thinkingLevel: null,
     maxConcurrentRuns: 4,
@@ -877,6 +880,13 @@ export function agentServer(
     }
     if (path === `/api/projects/${PROJECT_ID}/dirs` && options.directory)
       return json(options.directory);
+    if (path.startsWith(`${AGENT_PATH}/api/keys/`) && method === "DELETE") {
+      const keyId = decodeURIComponent(path.slice(`${AGENT_PATH}/api/keys/`.length));
+      apiSettings = { ...apiSettings, keys: apiSettings.keys.filter((k) => k.keyId !== keyId) };
+      return new Response(null, { status: 204 });
+    }
+    // An Agent State package lands whole; its version is the package's own.
+    if (path === `${AGENT_PATH}/import` && method === "POST") return json({ version: 2 });
     if (path === `${AGENT_PATH}/api`) {
       if (method === "PUT")
         apiSettings = { ...apiSettings, ...(request.body as Partial<AgentApiSettings>) };

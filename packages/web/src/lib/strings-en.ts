@@ -9,6 +9,7 @@ import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
+import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -3598,12 +3599,12 @@ When done, open index.html in a browser and self-test once.`,
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
-- id: \`finite_choice_agent\`
+- id: \`${EVOLUTION_DEMO.agentId}\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
 - installed_skills: \`[]\`
 
 Benchmark:
-- id: \`contextual-choice-adaptation\`
+- id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
@@ -3618,8 +3619,8 @@ Scenarios:
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
-- test_agent_id: \`finite_choice_agent\`
-- benchmark_id: \`contextual-choice-adaptation\`
+- test_agent_id: \`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
 - runs: \`3\`
 - desired_score: \`>=95\`
@@ -5177,8 +5178,7 @@ Scenarios:
     askEvaluationTitle: "Ask AI about this evaluation",
     askEvaluationDescription:
       "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
-    askEvaluationDefault: "Explain this evaluation's result.",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "Explain this evaluation's result",
@@ -5239,8 +5239,7 @@ Scenarios:
     askCaseTitle: "Ask AI about this case",
     askCaseDescription:
       "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
-    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "Explain what this case tests and what a strong answer looks like",

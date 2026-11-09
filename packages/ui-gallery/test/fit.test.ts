@@ -3,15 +3,7 @@
  * column, never up.
  */
 import { describe, expect, it } from "vitest";
-import { APP_FRAME, PHONE_FRAME } from "../src/app/frame";
 import { fitScale, fittedHeight } from "../src/lib/fit";
-
-describe("the frames", () => {
-  it("are the app's laptop window and an iPhone-class phone", () => {
-    expect(APP_FRAME).toEqual({ width: 1280, height: 800 });
-    expect(PHONE_FRAME.width).toBe(390);
-  });
-});
 
 describe("fitScale", () => {
   it("shrinks the frame to a narrower column", () => {

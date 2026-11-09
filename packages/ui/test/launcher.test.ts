@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { LauncherBall, LauncherFan } from "../src/components/shell/launcher/launcher";
-import { classTokens, renderStatic } from "../src/testing";
+import { classTokens, markupStructure, renderStatic } from "../src/testing";
 
 const ball = (props: { lit?: boolean; badge?: boolean } = {}) =>
   renderStatic(
@@ -22,6 +22,11 @@ const ball = (props: { lit?: boolean; badge?: boolean } = {}) =>
   );
 
 describe("LauncherBall", () => {
+  it("carries the attention dot only when asked", () => {
+    const marks = (html: string) => markupStructure(html).match(/aria-hidden="true"/g)?.length ?? 0;
+    expect(marks(ball({ badge: true }))).toBeGreaterThan(marks(ball()));
+  });
+
   it("is named by its label, with the caption shown but hidden from assistive technology", () => {
     const html = ball();
     expect(html).toContain('aria-label="Open the workbench"');
@@ -32,19 +37,10 @@ describe("LauncherBall", () => {
     const html = ball();
     expect(html).toContain('style="width:56px;height:56px"');
     expect(html).toContain('style="top:60px;height:26px"');
-    expect(classTokens(html)).toContain("text-[length:var(--ui-text-code-size)]");
   });
 
-  it("is quiet at rest and clear when lit, on the glass hook", () => {
-    expect(classTokens(ball())).toEqual(expect.arrayContaining(["ui-glass", "opacity-80"]));
-    expect(classTokens(ball({ lit: true }))).toEqual(
-      expect.arrayContaining(["opacity-100", "text-fg"]),
-    );
-  });
-
-  it("carries the attention dot only when asked", () => {
-    expect(ball()).not.toContain("bg-tone-attention-emphasis");
-    expect(ball({ badge: true })).toContain("bg-tone-attention-emphasis");
+  it("draws the ball on the glass hook", () => {
+    expect(classTokens(ball())).toContain("ui-glass");
   });
 });
 

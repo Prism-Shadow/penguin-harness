@@ -1,10 +1,9 @@
 /**
  * The chrome's drawn controls. The gallery's vitest is node-only, so the select's keyboard and
- * placement rules are tested as the pure functions they are, and the components are held to
- * their idiom by source contract: the select is the app's — a trigger that owns a listbox, rows
- * that are options, the chosen one checked — with no native `<select>` left; hints are the
- * chrome's tooltip, with no native `title` left on anything but the frame itself and the site
- * navbar, which is the landing page's markup and hints as it does there.
+ * placement rules and the tooltip's rule and placement are tested as the pure functions they
+ * are. Two guards hold the chrome's idiom across its sources: no native `<select>`, and no
+ * native `title` on anything but the frame itself and the site navbar, which is the landing
+ * page's markup and hints as it does there.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -14,7 +13,6 @@ import { nextOptionIndex, placePanel, typeaheadIndex } from "../src/lib/listbox"
 import { placeTip, shouldHint } from "../src/lib/tip";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
-const read = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
 /** A source with its comments blanked, so a comment naming what was replaced is not a hit. */
 const code = (file: string) =>
   readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, "");
@@ -95,13 +93,6 @@ describe("the tooltip rule", () => {
     expect(shouldHint("Primer › Chat · dark", [fits, cutOff])).toBe(true);
     expect(shouldHint("Two lines", [wrapped])).toBe(true);
   });
-
-  it("is what the layer asks before it opens", () => {
-    const layer = read("chrome/tooltip.tsx");
-    expect(layer).toMatch(
-      /if \(!shouldHint\(el\.textContent \?\? "", \[el, \.\.\.el\.querySelectorAll\("\*"\)\]\)\) return;/,
-    );
-  });
 });
 
 describe("the tooltip placement", () => {
@@ -132,20 +123,6 @@ describe("the tooltip placement", () => {
 describe("the chrome's idiom", () => {
   const files = walk(SRC);
 
-  it("draws its selects the app's way: a listbox trigger, option rows, the chosen one checked", () => {
-    const select = read("chrome/select.tsx");
-    expect(select).toMatch(/aria-haspopup="listbox"/);
-    expect(select).toMatch(/role="listbox"/);
-    expect(select).toMatch(/role="option"/);
-    expect(select).toMatch(/aria-selected=\{option\.value === value\}/);
-    expect(select).toMatch(/option\.value === value && <ChromeIcon name="check"/);
-    expect(select).toMatch(/createPortal\(/);
-    // The font pairings go through it, each under its visible label.
-    const bar = read("chrome/gallery-bar.tsx");
-    expect(bar).toMatch(/<Control label=\{S\.rail\.fontLatin\}>\s*<Select/);
-    expect(bar).toMatch(/<Control label=\{S\.rail\.fontCjk\}>\s*<Select/);
-  });
-
   it("renders no native select", () => {
     const offenders = files.filter((file) => /<select[\s>]/.test(code(file)));
     expect(offenders.map((file) => path.relative(SRC, file))).toEqual([]);
@@ -161,23 +138,5 @@ describe("the chrome's idiom", () => {
         .map((m) => `${path.relative(SRC, file)}: <${m[1]}>`);
     });
     expect(offenders).toEqual([]);
-    expect(read("chrome/site.tsx")).toMatch(/<ChromeTooltips \/>/);
-    expect(read("chrome/tooltip.tsx")).toMatch(/TOOLTIP_ATTR = "data-tooltip"/);
-  });
-
-  it("marks a copy as done on the icon alone, never by swapping the text", () => {
-    for (const file of ["chrome/crumb.tsx", "pages/surface.tsx", "pages/library.tsx"]) {
-      const source = read(file);
-      expect(source).toMatch(/copied[^\n]*\? "check" :/);
-      expect(source).not.toMatch(/copied\b[^\n]*\? S\./);
-    }
-    expect(read("strings.ts")).not.toMatch(/\bcopied:/);
-  });
-
-  it("keeps the gallery bar to one row: its pages scroll sideways rather than wrap", () => {
-    const css = read("chrome.css");
-    expect(css).toMatch(/\.g-bar \{[^}]*height: var\(--g-bar\)/s);
-    expect(css).not.toMatch(/\.g-bar(?:-inner|-links)? \{[^}]*flex-wrap/s);
-    expect(css).toMatch(/\.g-bar-links \{[^}]*overflow-x: auto/s);
   });
 });

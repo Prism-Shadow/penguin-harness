@@ -8,8 +8,7 @@
  * Each card and each Skill's metadata is spelled here (the card as the plugin's src/index.ts
  * declares it; the Skill as its SKILL.md names, describes and versions it): the gallery does not
  * build the plugins' tables, and the SKILL.md bodies are too large to bundle into every frame for
- * one line each. test/library-plugins.test.ts holds the toolkits, and every plugin's Skills, to
- * the plugins directory and core's category manifest.
+ * one line each.
  */
 import type { PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "../../../../../plugins/ace-rsi-toolkit/icon.svg?raw";

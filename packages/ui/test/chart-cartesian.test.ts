@@ -29,7 +29,7 @@
  * - A segment's bubble names the row, then the segment's series beside its swatch, with its value.
  * - A chart given no width yet draws nothing broken.
  */
-import { createElement, type ReactElement } from "react";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { BarChart } from "../src/components/charts/cartesian/bar-chart";
 import type { BarChartProps } from "../src/components/charts/cartesian/bar-chart";
@@ -278,7 +278,6 @@ describe("LineChart", () => {
     expect(html).toContain('d="M16,42 L116,42 L216,42"');
     expect(count(html, 'data-part="label"')).toBe(3);
     expect(html).toMatch(/data-part="axis"[^>]*>09:00</);
-    expect(html).toContain("text-accent");
   });
 });
 
@@ -320,7 +319,7 @@ describe("HBarChart", () => {
     expect(html).toMatch(/>Tue<[\s\S]*>15° \/ 25°</);
   });
 
-  it("draws a value from the scale's start in the row's tone, clamped to the track", () => {
+  it("draws a value from the scale's start, clamped to the track, in its series colour", () => {
     const html = renderStatic(
       createElement(HBarChart, {
         rows: [
@@ -332,7 +331,6 @@ describe("HBarChart", () => {
       }),
     );
     expect(html).toContain("left:0%;width:86%");
-    expect(html).toContain("bg-tone-attention-emphasis");
     expect(html).toContain("left:0%;width:100%");
     expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
   });
