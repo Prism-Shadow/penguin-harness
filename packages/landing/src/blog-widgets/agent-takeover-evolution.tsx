@@ -112,7 +112,7 @@ export function AgentTakeoverEvolutionWidget() {
             strokeWidth={isS0 ? "2" : "1.5"}
             className={
               isS0
-                ? "fill-gray-50/70 stroke-gray-500 dark:fill-gray-800/40 dark:stroke-gray-400"
+                ? "fill-white stroke-gray-500 dark:fill-gray-900 dark:stroke-gray-400"
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
           />
@@ -135,7 +135,7 @@ export function AgentTakeoverEvolutionWidget() {
             height="114"
             rx="8"
             strokeWidth="1.5"
-            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800/80 dark:stroke-gray-700"
+            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
           />
           <text
             x="112"
@@ -170,7 +170,7 @@ export function AgentTakeoverEvolutionWidget() {
             strokeWidth={isS1 ? "2" : "1.5"}
             className={
               isS1
-                ? "fill-brand-50/30 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
+                ? "fill-white stroke-brand-600 dark:fill-gray-900 dark:stroke-brand-400"
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
           />
@@ -195,7 +195,7 @@ export function AgentTakeoverEvolutionWidget() {
             height="46"
             rx="8"
             strokeWidth="1.5"
-            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800/80 dark:stroke-gray-700"
+            className="fill-gray-100 stroke-gray-300 dark:fill-gray-800 dark:stroke-gray-700"
           />
           <text
             x="360"
@@ -223,7 +223,7 @@ export function AgentTakeoverEvolutionWidget() {
             height="46"
             rx="8"
             strokeWidth="1.5"
-            className="fill-brand-50 stroke-brand-500 dark:fill-brand-950/60 dark:stroke-brand-400"
+            className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
           />
           <text
             x="360"
@@ -258,7 +258,7 @@ export function AgentTakeoverEvolutionWidget() {
             strokeWidth={isS2 ? "2" : "1.5"}
             className={
               isS2
-                ? "fill-brand-50/30 stroke-brand-600 dark:fill-brand-950/25 dark:stroke-brand-400"
+                ? "fill-white stroke-brand-600 dark:fill-gray-900 dark:stroke-brand-400"
                 : "fill-white stroke-gray-300 dark:fill-gray-900 dark:stroke-gray-700"
             }
           />
@@ -282,13 +282,14 @@ export function AgentTakeoverEvolutionWidget() {
             width="176"
             height="46"
             rx="8"
-            className="fill-brand-600 dark:fill-brand-500"
+            strokeWidth="1.5"
+            className="fill-brand-100 stroke-brand-600 dark:fill-brand-900/70 dark:stroke-brand-400"
           />
           <text
             x="608"
             y="74"
             textAnchor="middle"
-            className="fill-white text-sm font-semibold dark:fill-gray-950"
+            className="fill-brand-800 text-sm font-semibold dark:fill-brand-200"
           >
             {copy.agentLed}
           </text>
@@ -310,7 +311,7 @@ export function AgentTakeoverEvolutionWidget() {
             height="46"
             rx="8"
             strokeWidth="1.5"
-            className="fill-brand-50 stroke-brand-500 dark:fill-brand-950/60 dark:stroke-brand-400"
+            className="fill-brand-50 stroke-brand-500 dark:fill-brand-950 dark:stroke-brand-400"
           />
           <text
             x="608"
