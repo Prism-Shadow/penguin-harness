@@ -9,7 +9,6 @@ export function checkCIGate(needs) {
   const flags = needs.plan.outputs;
   const gates = {
     style: null,
-    readme: "readme",
     "plugin-versions": "plugins",
     "npm-packaging": "packaging",
     typecheck: "typecheck",

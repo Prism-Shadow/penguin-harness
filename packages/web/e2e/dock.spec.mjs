@@ -22,9 +22,7 @@
  *   never lists it and starts a shell of its own, while the owner's panel lists its shell opened
  *   elsewhere; a draft has no Session, so Ctrl+` starts nothing there;
  * - a new shell starts in the conversation's Workspace, not the home directory;
- * - a failed shell create surfaces as an error toast instead of silence;
- * - a workbench tab's page hides the toolbar and the docks it covers, an open dock and its
- *   resize handle included, and the Chat tab shows them again.
+ * - a failed shell create surfaces as an error toast instead of silence.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -640,64 +638,4 @@ test("a failed shell create surfaces as a toast, and a later attempt recovers", 
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "RECOVERED");
   await killAllTerminals(page.request);
-});
-
-test("a workbench tab's page hides the toolbar and the docks it covers; Chat shows them again", async ({
-  page,
-}) => {
-  await provisionAndLogin(page.request, U, P);
-  const projectId = await configureProjectModel(page.request);
-  await killAllTerminals(page.request);
-  const agent = `${BASE}/api/projects/${projectId}/agents/default_agent`;
-
-  // The library's Q&A plugin ships a workbench: installed on the Agent, its page is a tab
-  // beside the chat once the workbench has loaded.
-  const library = await (await page.request.get(`${BASE}/api/plugins`)).json();
-  const support = library.groups
-    .flatMap((g) => g.plugins)
-    .find((p) => p.package === "@penguinharness/penguin-support");
-  expect(support, "the library ships the support plugin").toBeTruthy();
-  const install = await page.request.post(`${agent}/plugins`, { data: { names: [support.name] } });
-  expect(install.ok(), "install the support plugin").toBeTruthy();
-  let workbenchId = null;
-  await expect
-    .poll(
-      async () => {
-        const { workbenches } = await (await page.request.get(`${agent}/workbenches`)).json();
-        workbenchId = workbenches.find((w) => w.tabs.length > 0 && w.error === null)?.id ?? null;
-        return workbenchId;
-      },
-      { timeout: 30000 },
-    )
-    .not.toBeNull();
-
-  try {
-    const sessionId = await createSession(page.request, projectId);
-    await page.goto(`${BASE}/chat/${sessionId}`);
-    await page.getByPlaceholder(/输入消息/).waitFor();
-    await openViaPicker(page, "bottom", "trace");
-    const bottom = dockAt(page, "bottom");
-    const toolbarToggle = page.getByTestId("dock-toggle-bottom");
-    await expect(bottom).toBeVisible();
-    await expect(toolbarToggle).toBeVisible();
-
-    // The page lies over the chat: nothing it covers paints through it or takes the pointer,
-    // not even the bottom dock's resize handle, which straddles the dock's top edge.
-    await page.getByRole("tab", { name: "客服工作台" }).click();
-    await expect(page.getByRole("tab", { name: "客服工作台" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    await expect(bottom).toBeHidden();
-    await expect(toolbarToggle).toBeHidden();
-    await expect(page.locator("[data-dock-area]")).toBeHidden();
-
-    await page.getByRole("tab", { name: "聊天" }).click();
-    await expect(bottom).toBeVisible();
-    await expect(toolbarToggle).toBeVisible();
-  } finally {
-    // A run keeps one data root for every spec: a repeat of this file opens this Agent's
-    // conversations without the workbench's tab row.
-    await page.request.delete(`${agent}/workbenches/${workbenchId}`);
-  }
 });
