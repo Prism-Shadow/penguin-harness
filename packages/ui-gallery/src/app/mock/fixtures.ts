@@ -67,7 +67,7 @@ import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchm
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import { agentEvaluationPlugin, rsiToolkitPlugins, shippedIcon } from "./library-plugins";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -1004,7 +1004,9 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
   // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`;
+    shippedIcon(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z" />${inner}</svg>`,
+    );
   const pluginIndex: PluginIndexResponse = {
     plugins: [
       {

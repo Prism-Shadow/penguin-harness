@@ -106,6 +106,7 @@ import type {
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
   OrganizationCreateRequest,
+  OrganizationDeleteResponse,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -265,9 +266,12 @@ import type {
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
   DesktopBrowserCommand,
+  HookItem,
+  SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
+import { iconsOn } from "./machine-icons";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
@@ -989,7 +993,7 @@ export const listDirectorySkills = (projectId: string, path: string, machineId: 
   apiFetch<DirectorySkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
     { server: machineId },
-  );
+  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
 
 /**
  * Creates a Session on the machine that owns its workspace.
@@ -1884,7 +1888,16 @@ export const deleteSchedule = (
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
 export const getPluginLibrary = (machineId: string | null) =>
-  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId });
+  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId }).then((r) => ({
+    ...r,
+    groups: r.groups.map((g) => ({ ...g, plugins: iconsOn(g.plugins, machineId) })),
+  }));
+
+/** An Agent's installed lists from `machineId`, their icons re-rooted onto it (api/machine-icons.ts). */
+const installedOn = <T extends { skills: SkillMetadataItem[]; hooks: HookItem[] }>(
+  r: T,
+  machineId: string | null,
+): T => ({ ...r, skills: iconsOn(r.skills, machineId), hooks: iconsOn(r.hooks, machineId) });
 
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
@@ -1903,7 +1916,7 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
     { server: machineId },
-  );
+  ).then((r) => installedOn(r, machineId));
 
 /** With `machineId`, installs from THAT machine's library onto its Agent. */
 export const installAgentPlugins = (
@@ -1915,7 +1928,7 @@ export const installAgentPlugins = (
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
     { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
-  );
+  ).then((r) => installedOn(r, machineId));
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
@@ -1931,13 +1944,13 @@ export const getAgentSkills = (projectId: string, agentId: string, machineId: st
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { server: machineId },
-  );
+  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
 
 export const getAgentHooks = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
     { server: machineId },
-  );
+  ).then((r) => ({ ...r, hooks: iconsOn(r.hooks, machineId) }));
 
 /** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
 export const getAgentMcpServers = (projectId: string, agentId: string, machineId: string | null) =>
@@ -1983,7 +1996,7 @@ export const installAgentHookArchive = (
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/archive`,
     { method: "POST", body, server: machineId },
-  );
+  ).then((r) => ({ ...r, hooks: iconsOn(r.hooks, machineId) }));
 
 /** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
 export const agentHookArchiveUrl = (
@@ -2009,7 +2022,7 @@ export const installAgentSkillArchive = (
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/archive`,
     { method: "POST", body, server: machineId },
-  );
+  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
 
 /** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
 export const agentSkillArchiveUrl = (
@@ -2420,11 +2433,24 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
- * employees' Agents and its desk and ticket Sessions are left as they are.
+ * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
+ * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
+ * well, as far as they still qualify (not built in, employed nowhere else), and the answer
+ * reports every employee; without it the Agents and their Sessions are left as they are.
  */
-export const deleteOrganization = (projectId: string, orgId: string) =>
-  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+export const deleteOrganization = (
+  projectId: string,
+  orgId: string,
+  opts: { agentIds?: readonly string[] } = {},
+) =>
+  apiFetch<OrganizationDeleteResponse>(
+    `${orgBase(projectId, orgId)}${
+      opts.agentIds === undefined
+        ? ""
+        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
+    }`,
+    { method: "DELETE" },
+  );
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
