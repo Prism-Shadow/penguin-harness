@@ -50,6 +50,7 @@ const INSTALL_STATE: Record<string, string> = {
   "penguin.chatDraft.session.admin.session-1": '{"text":"half a sentence"}',
   "penguin.chatDrafts.admin.default_project": '[{"id":"draft-abcd1234"}]',
   "penguin.sidebarWorkspaces.default_project": '[{"path":"/srv/app"}]',
+  "penguin.sidebarHiddenWorkspaces.default_project": '["/srv/removed"]',
   "penguin.pinnedSessions.default_project": '["session-1"]',
   "penguin.sessionOrder.default_project.workspace": '["session-1"]',
   "penguin.sessionSeen.default_project": '{"session-1":"2026-08-26T00:00:00Z"}',

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
+import { loadHiddenWorkspaces } from "./workspace-visibility";
 import { loadSessionOrder } from "../../lib/session-order";
 import { loadGroupOrder } from "./group-order";
 import { useDraftSessions, type DraftSessionEntry } from "../chat";
@@ -23,6 +24,7 @@ export function useMainSidebarCanDrag(scope: ReturnType<typeof useMainSidebarSea
     setSessionOrder,
     setGroupOrder,
     setRegisteredWorkspaces,
+    setHiddenWorkspaces,
   } = scope;
 
   /**
@@ -61,6 +63,7 @@ export function useMainSidebarCanDrag(scope: ReturnType<typeof useMainSidebarSea
     setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
     setGroupOrder(loadGroupOrder(currentProjectId, groupMode));
     setRegisteredWorkspaces(loadWorkspaceRegistry(currentProjectId));
+    setHiddenWorkspaces(loadHiddenWorkspaces(currentProjectId));
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());

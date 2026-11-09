@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useArrived } from "@prismshadow/penguin-ui";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry, type WorkspaceEntry } from "./workspace-registry";
+import { loadHiddenWorkspaces } from "./workspace-visibility";
 
 import {
   initialSessionSortMode,
@@ -55,13 +56,16 @@ export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarN
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
   );
+  const [hiddenWorkspaces, setHiddenWorkspaces] = useState(() =>
+    loadHiddenWorkspaces(currentProjectId),
+  );
   /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. The machine is half of which directory this is. */
   const [renamingWorkspace, setRenamingWorkspace] = useState<{
     path: string;
     machineId: string | null;
   } | null>(null);
   const [workspaceAliasText, setWorkspaceAliasText] = useState("");
-  /** Registered Workspace pending removal confirmation (null = none); label = the group's displayed name for the confirm copy. */
+  /** Workspace pending removal confirmation (null = none); label = the group's displayed name for the confirm copy. */
   const [deletingWorkspace, setDeletingWorkspace] = useState<{
     path: string;
     machineId: string | null;
@@ -86,6 +90,8 @@ export function useMainSidebarGroupMode(scope: ReturnType<typeof useMainSidebarN
     setGroupOrder,
     registeredWorkspaces,
     setRegisteredWorkspaces,
+    hiddenWorkspaces,
+    setHiddenWorkspaces,
     renamingWorkspace,
     setRenamingWorkspace,
     workspaceAliasText,

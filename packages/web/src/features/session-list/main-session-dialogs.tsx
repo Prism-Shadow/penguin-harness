@@ -205,9 +205,8 @@ export function renderMainSessionDialogs(scope: MainSidebarState) {
         </p>
       </ConfirmModal>
 
-      {/* Remove-workspace confirmation (shared ConfirmModal, same stop as the other
-          destructive-looking actions): the copy is honest about the scope — sidebar
-          registry entry only, disk and Sessions untouched, re-addable anytime. */}
+      {/* Removing a Workspace hides its sidebar group; its conversations and directory
+          remain available when the user adds it again. */}
       <ConfirmModal
         open={deletingWorkspace !== null}
         title={S.chat.deleteWorkspace}

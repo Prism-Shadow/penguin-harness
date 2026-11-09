@@ -317,6 +317,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.sidebarHiddenWorkspaces.",
+    scope: "install",
+    why: "Removed Workspace groups per Project and machine; a new root must not inherit their visibility.",
+  },
+  {
+    kind: "family",
     key: "penguin.finderQuickAccess.",
     scope: "install",
     why: "Folders added to and removed from the Workspace finder's Quick access, keyed by machine id and holding paths on the machines of this root — the same kind of state as the registered Workspace paths.",

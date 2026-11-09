@@ -7,6 +7,7 @@ import {
 } from "../../lib/session-grouping";
 import { machineForSession } from "../../lib/session-machines";
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
+import { visibleWorkspaceGroups } from "./workspace-visibility";
 import { orderGroups } from "./group-order";
 import { dropsEmployeeGroup } from "../agents";
 import type { useMainSidebarSetGroupMode } from "./main-sidebar-set-group-mode";
@@ -26,6 +27,7 @@ export function useMainSidebarWorkspaceGroupCounts(
     pinnedGroups,
     groupOrder,
     registeredWorkspaces,
+    hiddenWorkspaces,
   } = scope;
 
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
@@ -51,19 +53,20 @@ export function useMainSidebarWorkspaceGroupCounts(
    * Workspaces), by recency with the temp group last, plus the manually-added Workspaces
    * as empty groups behind them (newest registration first).
    */
-  const workspaceGroups = useMemo(
+  const sessionWorkspaceGroups = useMemo(
     () =>
-      mergeRegisteredWorkspaces(
-        completeWorkspaceGroups(
-          // A Workspace is a directory on a machine: rows from two machines that share a path
-          // string are two groups, and the "+" of each opens a chat on its own machine.
-          groupSessionsByWorkspace(sessions, (s) => machineForSession(s.sessionId)),
-          workspaceGroupCounts,
-          workspaceGroupLatest,
-        ),
-        registeredWorkspaces,
+      completeWorkspaceGroups(
+        // A Workspace is a directory on a machine: rows from two machines that share a path
+        // string are two groups, and the "+" of each opens a chat on its own machine.
+        groupSessionsByWorkspace(sessions, (s) => machineForSession(s.sessionId)),
+        workspaceGroupCounts,
+        workspaceGroupLatest,
       ),
-    [sessions, workspaceGroupCounts, workspaceGroupLatest, registeredWorkspaces],
+    [sessions, workspaceGroupCounts, workspaceGroupLatest],
+  );
+  const workspaceGroups = useMemo(
+    () => mergeRegisteredWorkspaces(sessionWorkspaceGroups, registeredWorkspaces),
+    [sessionWorkspaceGroups, registeredWorkspaces],
   );
 
   /**
@@ -106,11 +109,11 @@ export function useMainSidebarWorkspaceGroupCounts(
   );
   const orderedWorkspaceGroups = useMemo(
     () =>
-      orderGroups(workspaceGroups, (g) => g.key, {
+      orderGroups(visibleWorkspaceGroups(workspaceGroups, hiddenWorkspaces), (g) => g.key, {
         pinned: pinnedGroups,
         order: groupMode === "workspace" ? groupOrder : [],
       }),
-    [workspaceGroups, pinnedGroups, groupOrder, groupMode],
+    [workspaceGroups, hiddenWorkspaces, pinnedGroups, groupOrder, groupMode],
   );
 
   // The FULL displayed group sequences a drop commits — every group of the mode, not the
@@ -124,6 +127,7 @@ export function useMainSidebarWorkspaceGroupCounts(
     ...scope,
     workspaceGroupCounts,
     workspaceGroupLatest,
+    sessionWorkspaceGroups,
     workspaceGroups,
     groupAgents,
     orderedAgents,

@@ -98,24 +98,22 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
                 >
                   <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                 </button>
-                {/* A group that is one directory (not the merged temporary group):
-                              the overflow right of the "+" — browse its files, and, for a
-                              manually-added (registry-backed) Workspace, rename the alias or
-                              remove it from the sidebar (session-derived groups have no
-                              registry entry for those two to act on). */}
+                {/* Every directory group can be hidden, including one whose registration was
+                    already removed. Only registered groups have an alias to rename. */}
                 {fullPath !== null && (
                   <GroupOverflowMenu
                     target={{ path: fullPath, machineId: group.machineId }}
                     host={{ newChat, ...(onNavigate ? { onNavigate } : {}) }}
+                    onDelete={() =>
+                      setDeletingWorkspace({
+                        path: fullPath,
+                        machineId: group.machineId,
+                        label: group.label,
+                      })
+                    }
                     {...(registeredKeys.has(group.key)
                       ? {
                           onRename: () => openRenameWorkspace(fullPath, group.machineId),
-                          onDelete: () =>
-                            setDeletingWorkspace({
-                              path: fullPath,
-                              machineId: group.machineId,
-                              label: group.label,
-                            }),
                         }
                       : {})}
                   />

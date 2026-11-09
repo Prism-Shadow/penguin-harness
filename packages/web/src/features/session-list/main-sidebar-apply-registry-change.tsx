@@ -1,12 +1,20 @@
 import { useMemo } from "react";
 import { groupPageOf, workspaceGroupKey } from "../../lib/session-grouping";
 import {
+  mergeRegisteredWorkspaces,
+  normalizeWorkspacePath,
   registerWorkspace,
   saveWorkspaceRegistry,
   setWorkspaceAlias,
   unregisterWorkspace,
   type WorkspaceEntry,
 } from "./workspace-registry";
+import { orderGroups } from "./group-order";
+import {
+  saveHiddenWorkspaces,
+  setWorkspaceHidden,
+  visibleWorkspaceGroups,
+} from "./workspace-visibility";
 
 import type { useMainSidebarNewEntity } from "./main-sidebar-new-entity";
 
@@ -19,6 +27,8 @@ export function useMainSidebarApplyRegistryChange(
     currentProjectId,
     registeredWorkspaces,
     setRegisteredWorkspaces,
+    hiddenWorkspaces,
+    setHiddenWorkspaces,
     renamingWorkspace,
     setRenamingWorkspace,
     workspaceAliasText,
@@ -26,7 +36,10 @@ export function useMainSidebarApplyRegistryChange(
     deletingWorkspace,
     setDeletingWorkspace,
     setGroupPage,
-    orderedWorkspaceGroups,
+    sessionWorkspaceGroups,
+    pinnedGroups,
+    groupOrder,
+    groupMode,
   } = scope;
 
   /** Persist-if-changed for every registry mutation (register / alias / unregister share the same-reference fast exit). */
@@ -36,20 +49,30 @@ export function useMainSidebarApplyRegistryChange(
     saveWorkspaceRegistry(currentProjectId, next);
   };
 
+  const applyHiddenChange = (next: ReadonlySet<string>) => {
+    if (next === hiddenWorkspaces) return;
+    setHiddenWorkspaces(next);
+    saveHiddenWorkspaces(currentProjectId, next);
+  };
+
   /**
-   * 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions
-   * or not. An empty registered group is appended and nothing pins or orders it yet, so it
-   * lands last — turn to the page that now holds it, or to the page of the group that was
-   * already there. Otherwise, past ten groups, the freshly added Workspace would sit on a
-   * page the user is not looking at and the click would read as a no-op.
+   * Register or restore the directory and reveal its page. A restored group with conversations
+   * keeps their recency, pins and manual order, so its page may differ from an empty new group's.
    */
   const addWorkspace = (path: string, machineId?: string | null) => {
     const next = registerWorkspace(registeredWorkspaces, path, machineId ?? undefined);
-    if (next === registeredWorkspaces) return;
+    const nextHidden = setWorkspaceHidden(hiddenWorkspaces, path, machineId ?? null, false);
+    if (next === registeredWorkspaces && nextHidden === hiddenWorkspaces) return;
     applyRegistryChange(next);
-    const key = workspaceGroupKey(path, machineId ?? null);
-    const existing = orderedWorkspaceGroups.findIndex((g) => g.key === key);
-    setGroupPage(groupPageOf(existing >= 0 ? existing : orderedWorkspaceGroups.length));
+    applyHiddenChange(nextHidden);
+    const key = workspaceGroupKey(normalizeWorkspacePath(path), machineId ?? null);
+    const groups = orderGroups(
+      visibleWorkspaceGroups(mergeRegisteredWorkspaces(sessionWorkspaceGroups, next), nextHidden),
+      (g) => g.key,
+      { pinned: pinnedGroups, order: groupMode === "workspace" ? groupOrder : [] },
+    );
+    const index = groups.findIndex((g) => g.key === key);
+    setGroupPage(groupPageOf(Math.max(0, index)));
   };
 
   /**
@@ -60,7 +83,7 @@ export function useMainSidebarApplyRegistryChange(
   const machineNameOf = (machineId: string | null): string | null =>
     machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
 
-  /** Registered Workspaces by GROUP key — only their groups offer the rename/remove overflow. */
+  /** Only registered Workspaces carry an editable alias; every directory group can be removed. */
   const registeredKeys = useMemo(
     () => new Set(registeredWorkspaces.map((e) => workspaceGroupKey(e.path, e.machineId ?? null))),
     [registeredWorkspaces],
@@ -90,10 +113,9 @@ export function useMainSidebarApplyRegistryChange(
   };
 
   /**
-   * 删除工作区 (confirmed via the shared ConfirmModal, like every destructive-looking
-   * action): drops the sidebar registry entry only — disk and Sessions are never
-   * touched, the confirm copy says exactly that, and re-adding restores it. A group
-   * that still has Sessions simply persists as session-derived.
+   * Hide the group as well as dropping its registration: otherwise its conversations recreate
+   * it immediately. The removal stays local to this Project and machine; disk and conversations
+   * are untouched, and adding the directory again restores the group.
    */
   const confirmDeleteWorkspace = () => {
     if (!deletingWorkspace) return;
@@ -102,6 +124,14 @@ export function useMainSidebarApplyRegistryChange(
         registeredWorkspaces,
         deletingWorkspace.path,
         deletingWorkspace.machineId,
+      ),
+    );
+    applyHiddenChange(
+      setWorkspaceHidden(
+        hiddenWorkspaces,
+        deletingWorkspace.path,
+        deletingWorkspace.machineId,
+        true,
       ),
     );
     setDeletingWorkspace(null);
