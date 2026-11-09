@@ -124,7 +124,7 @@ export function Select({
           <div
             ref={panelRef}
             role="listbox"
-            className={`ui-glass ${menuPanelClass} fixed z-[60] max-h-60`}
+            className={`ui-glass ${menuPanelClass} fixed z-popover max-h-60`}
             style={{
               left: position.left,
               width: position.triggerWidth,

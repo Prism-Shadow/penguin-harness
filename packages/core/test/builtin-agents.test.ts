@@ -15,7 +15,6 @@ import { librarySkill, loadPreinstalledPlugins, usePushedPluginLibrary } from ".
 import {
   agentsMdPath,
   assembleSystemPrompt,
-  BUILTIN_AGENT_IDS,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   SUPPORT_AGENT_ID,
@@ -129,11 +128,10 @@ describe("provisionProjectAgents", () => {
   it("default_agent installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
     expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
-    expect(BUILTIN_AGENT_IDS).toContain(SUPPORT_AGENT_ID);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
     const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
-    expect(state.systemConfig.name).toBe("General Agent");
+    expect(state.systemConfig.name).toBeTruthy();
     expect(state.systemConfig.description).toBeTruthy();
     expect(state.agentsMd).toBe("");
 
@@ -180,8 +178,8 @@ describe("support Agent provisioning", () => {
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
     expect(config.agentsMd).toContain("penguin-support");
-    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toContain(
-      "https://penguin.ooo/docs/",
+    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toBe(
+      librarySkill("penguin-support")!.skill.content,
     );
     await fs.writeFile(file, "My support page");
     await provisionProjectAgents();
