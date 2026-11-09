@@ -40,6 +40,7 @@ describe("history-lines while it plans", () => {
       manager: {
         statusOf: () => "idle",
         liveFragments: () => [],
+        liveRun: () => null,
         pendingInputs: () => [],
         pendingBootstrap: () => [],
       },

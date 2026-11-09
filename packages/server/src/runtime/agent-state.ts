@@ -29,7 +29,7 @@ export class AgentStateStore implements AgentState {
   readonly deletingSessions = new Set<string>();
   /** Per-Agent config generation (key = agentKey). */
   readonly agentGenerations = new Map<string, number>();
-  /** Open streaming fragments of running sessions. */
+  /** Open streaming fragments of running sessions, and their current run's records. */
   readonly liveTail: LiveTail = new LiveTailTracker();
   /** The generation working on this state right now (see AgentState.current). */
   current: RunStarter | null = null;

@@ -9,12 +9,12 @@
  * on the list. Back always returns to the list.
  */
 import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
-import type {
-  MemoryChangeOp,
-  MemoryChangeRow,
-  MemoryLocateTarget,
+import {
+  type MemoryChangeOp,
+  type MemoryChangeRow,
+  type MemoryLocateTarget,
+  memoryRowKey,
 } from "../../lib/amsp/memory-changes";
-import { memoryRowKey } from "../../lib/amsp/memory-changes";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

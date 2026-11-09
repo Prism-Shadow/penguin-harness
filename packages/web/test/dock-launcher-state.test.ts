@@ -40,8 +40,10 @@ import {
   subscribeLauncherHidden,
   writeLauncherHidden,
   writeLauncherRatio,
+  type FanSlot,
+  type LauncherVisibility,
 } from "../src/features/dock/dock-launcher-state";
-import type { FanSlot, LauncherVisibility } from "../src/features/dock/dock-launcher-state";
+
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const BODY = 600;

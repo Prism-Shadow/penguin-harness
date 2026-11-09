@@ -18,7 +18,8 @@ import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { parseChord } from "../src/lib/shortcuts/chord";
 import { setHostForTests, setPlatformForTests } from "../src/lib/shortcuts/platform";
-import { SHORTCUT_COMMANDS } from "../src/lib/shortcuts/registry";
+import { SHORTCUT_COMMANDS, defaultChord } from "../src/lib/shortcuts/registry";
+import { browserCommon } from "../src/lib/shortcuts/reserved";
 import {
   KEYBINDINGS_KEY,
   configureKeybindingsStoreForTests,
@@ -66,7 +67,7 @@ describe("ShortcutsSection", () => {
     setPlatformForTests("mac");
     configureKeybindingsStoreForTests({});
     const mac = render();
-    expect(mac).toContain("⌥⌘P");
+    expect(mac).toContain("⇧⌘P");
     expect(mac).toContain("⌃⌥`");
     expect(mac).toContain("⌘S");
     expect(mac).not.toContain("Ctrl");
@@ -100,11 +101,15 @@ describe("ShortcutsSection", () => {
   });
 
   it("notes a chord the browser also uses, and names the desktop menu's claim first in the desktop app", () => {
-    // Whatever defaults already share a chord with the browser, a binding onto its Reload adds
-    // one note.
+    // Whatever defaults already share a chord with the browser, binding a command whose default
+    // shares none onto the browser's Reload adds one note.
     const atDefaults = count(render(), S.shortcuts.browserCommon);
+    const quiet = SHORTCUT_COMMANDS.find((cmd) => {
+      const chord = defaultChord(cmd, "linux");
+      return cmd.scope === "global" && chord !== null && !browserCommon(chord, "linux");
+    })!;
     configureKeybindingsStoreForTests({
-      storage: keybindings({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
+      storage: keybindings({ v: 1, linux: { [quiet.id]: "Mod+KeyR" } }),
     });
     expect(count(render(), S.shortcuts.browserCommon)).toBe(atDefaults + 1);
     setHostForTests("desktop");

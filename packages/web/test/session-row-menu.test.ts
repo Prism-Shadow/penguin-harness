@@ -8,8 +8,7 @@
  *   the label is their accessible name).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { sessionRowMenuItem } from "../src/components/ui/session-row-menu";
-import type { SessionRowAction } from "../src/components/ui/session-row-menu";
+import { sessionRowMenuItem, type SessionRowAction } from "../src/components/ui/session-row-menu";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

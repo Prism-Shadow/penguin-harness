@@ -20,8 +20,8 @@ import {
   AddNewModelsButton,
   AddNewModelsConfirm,
   RestoreDefaultsConfirm,
+  type PresetSyncHost,
 } from "../src/features/models/preset-sync";
-import type { PresetSyncHost } from "../src/features/models/preset-sync";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ANSWER: PresetSyncResponse = {

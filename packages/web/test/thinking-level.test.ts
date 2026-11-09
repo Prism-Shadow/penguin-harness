@@ -1,5 +1,5 @@
 /**
- * The thinking-level pickers (features/chat/thinking-level.ts).
+ * The thinking-level pickers (features/model-picker/thinking-level.ts).
  *
  * - A non-level ("" for no override, a legacy "default", an unknown value, nothing) has no
  *   label; a level missing from the name table shows its raw value.
@@ -24,8 +24,8 @@ import {
   prefixCacheAtRisk,
   sessionThinkingLevel,
   thinkingLevelLabel,
-} from "../src/features/chat/thinking-level";
-import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
+} from "../src/features/model-picker/thinking-level";
+import type { ThinkingSwitchItem } from "../src/features/model-picker/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {

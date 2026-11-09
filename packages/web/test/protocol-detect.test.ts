@@ -16,8 +16,11 @@ import {
   presetProviderTable,
 } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
-import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
-import type { RowState } from "../src/features/models/models-page";
+import {
+  clientTypeAfterProviderChange,
+  rowToEntry,
+  type RowState,
+} from "../src/features/models/models-page";
 import {
   detectableBaseUrl,
   displayWidthCh,
