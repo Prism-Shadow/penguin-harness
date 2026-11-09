@@ -40,7 +40,7 @@ import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-ta
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";

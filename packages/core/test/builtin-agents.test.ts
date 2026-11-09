@@ -1,16 +1,17 @@
 /**
- * Built-in agent provisioning and skill library install policy: the general agent
- * default_agent comes pre-installed with the library's preinstalled skill set (skills marked
- * `preinstall: false` stay manual-install), an ordinary newly created agent starts with zero
- * skills, and the default AGENTS.md is an empty file; provisionProjectAgents is idempotent and
+ * Built-in agent provisioning and skill library install policy, on a fixture library: the general
+ * agent default_agent comes pre-installed with the library's preinstalled skill set (plugins whose
+ * card says `preinstall: false` stay manual-install), an ordinary newly created agent starts with
+ * zero skills, and the default AGENTS.md is an empty file; provisionProjectAgents is idempotent and
  * never overwrites existing config. The default Project gets a support Agent with its workbench;
- * other Projects do not, and reprovisioning preserves user edits to the support files.
+ * other Projects do not, and reprovisioning preserves user edits to the support files. The shipped
+ * library's own preinstalled set is the server suite's (builtin-agents.test.ts there).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "../src/index.js";
+import { librarySkill, loadPreinstalledPlugins, usePushedPluginLibrary } from "../src/index.js";
 import {
   agentsMdPath,
   assembleSystemPrompt,
@@ -23,6 +24,8 @@ import {
   provisionProjectAgents,
   skillsDir,
 } from "../src/state/index.js";
+import { libraryHost, pluginPackage, skillFile } from "./helpers/plugin-packages.js";
+
 /** The skill names the preinstalled plugins ship, sorted — what default_agent's skills/ holds after initialization. */
 function preinstalledSkillNames(): string[] {
   return loadPreinstalledPlugins()
@@ -33,13 +36,56 @@ function preinstalledSkillNames(): string[] {
 let tmpRoot: string;
 let prevHome: string | undefined;
 
+/**
+ * A library of three plugins: `kit` (preinstalled), `manual` (its card opts out) and
+ * `penguin-support` (the support Agent's Skill and workbench).
+ */
+async function fixtureLibrary(dir: string): Promise<string> {
+  const plugin = (name: string, files: Record<string, string>, card = {}, workbench = false) => ({
+    ...pluginPackage(
+      { name: `@penguinharness/${name}`, description: `The ${name} plugin.` },
+      { card, skills: [name], ...(workbench ? { workbenches: ["support"] } : {}) },
+    ),
+    ...files,
+  });
+  return libraryHost(dir, {
+    "@penguinharness/kit": plugin("kit", {
+      "skills/kit/SKILL.md": skillFile("kit", "2026.10.01.1"),
+    }),
+    "@penguinharness/manual": plugin(
+      "manual",
+      { "skills/manual/SKILL.md": skillFile("manual", "2026.10.01.1") },
+      { preinstall: false },
+    ),
+    "@penguinharness/penguin-support": plugin(
+      "penguin-support",
+      {
+        "skills/penguin-support/SKILL.md": skillFile(
+          "penguin-support",
+          "2026.10.01.1",
+          "Answer from https://penguin.ooo/docs/.\n",
+        ),
+        "workbenches/support/package.json": JSON.stringify({
+          name: "support",
+          penguin: { version: "2026.10.01.1", modules: [{ name: "Workbench" }] },
+        }),
+        "workbenches/support/ui/index.html": "<!doctype html><p>Support</p>\n",
+      },
+      { preinstall: false },
+      true,
+    ),
+  });
+}
+
 beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-builtin-"));
   process.env.PENGUIN_HOME = tmpRoot;
+  usePushedPluginLibrary(await fixtureLibrary(path.join(tmpRoot, ".library")));
 });
 
 afterEach(async () => {
+  usePushedPluginLibrary(null);
   if (prevHome === undefined) {
     delete process.env.PENGUIN_HOME;
   } else {
@@ -73,14 +119,9 @@ describe("Skill installation policy", () => {
       (s) => s.name,
     );
     expect(names).toEqual(preinstalledSkillNames());
+    expect(names).toEqual(["kit"]);
     // Skills of `preinstall: false` plugins stay out of the preinstalled set (manual install only).
-    for (const [plugin, skill] of [
-      ["use-claude-code", "remote-claude-code"],
-      ["humanizer", "humanizer"],
-    ]) {
-      expect(libraryPlugin(plugin!)?.preinstall, plugin).toBe(false);
-      expect(names, skill).not.toContain(skill);
-    }
+    expect(names).not.toContain("manual");
   });
 });
 
@@ -99,8 +140,8 @@ describe("provisionProjectAgents", () => {
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     expect(installed.map((s) => s.name).sort()).toEqual(preinstalledSkillNames());
     // On-disk content matches the library's SKILL.md verbatim (install copies the full text).
-    const sdkMd = await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, "penguin-sdk"), "utf8");
-    expect(sdkMd).toBe(librarySkill("penguin-sdk")!.skill.content);
+    const kitMd = await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, "kit"), "utf8");
+    expect(kitMd).toBe(librarySkill("kit")!.skill.content);
   });
 
   it("provision is idempotent: running it again does not change the result", async () => {

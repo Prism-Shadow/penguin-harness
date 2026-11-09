@@ -32,9 +32,7 @@
  * plugin/registry.ts for the three rules.
  */
 import { Hono } from "hono";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
 import {
   agentDir,
   McpServerNameTakenError,
@@ -46,14 +44,11 @@ import {
   listInstalledHooks,
   listInstalledMcpServers,
   listInstalledSkills,
-  libraryPlugin,
-  libraryPluginPackage,
-  libraryPluginReadme,
-  loadPluginGroups,
-  parsePluginPackage,
+  libraryParts,
+  readPackageJson,
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
-import type { PluginPackageManifest } from "@prismshadow/penguin-core";
+import type { NpmPackage } from "@prismshadow/penguin-core";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
@@ -92,6 +87,7 @@ import {
   zipPluginPackage,
 } from "../../services/plugin-archive.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
+import type { PluginLibrary } from "../../plugin/library-module.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -99,6 +95,7 @@ export interface PluginsRouteDeps {
   access: Access;
   agentConfigService: AgentConfig;
   manager: ManagerIface;
+  library: PluginLibrary;
 }
 import { HttpError } from "../errors.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
@@ -126,9 +123,9 @@ async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {
 }
 
 /** Library listing: the files are the source of truth — read fresh on every request (small files, infrequent requests, no caching). */
-function libraryResponse(): PluginLibraryResponse {
+function libraryResponse(library: PluginLibrary): PluginLibraryResponse {
   return {
-    groups: loadPluginGroups().map((group) => ({
+    groups: library.groups().map((group) => ({
       id: group.id,
       title: group.title,
       ...(group.titleZh !== undefined ? { titleZh: group.titleZh } : {}),
@@ -138,14 +135,14 @@ function libraryResponse(): PluginLibraryResponse {
 }
 
 /** GET /api/plugins (any logged-in user; no Project check). */
-export function pluginLibraryRoutes(): Hono<AppEnv> {
+export function pluginLibraryRoutes(library: PluginLibrary): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  app.get("/", (c) => c.json(libraryResponse()));
+  app.get("/", (c) => c.json(libraryResponse(library)));
   // Everything one plugin ships, as text keyed by path, for the library detail view's file
   // browser (the listing never carries bodies or scripts).
   app.get("/:plugin/files", (c) => {
     const pluginName = c.req.param("plugin");
-    const plugin = libraryPlugin(pluginName);
+    const plugin = library.get(pluginName);
     if (!plugin) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
@@ -156,7 +153,7 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
   // install writes into an Agent; a readme is about the package, and none of it is installed.
   app.get("/:plugin/readme", (c) => {
     const pluginName = c.req.param("plugin");
-    const readme = libraryPluginReadme(pluginName);
+    const readme = library.readme(pluginName);
     if (readme === undefined) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
@@ -169,7 +166,7 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
   // server's admin imports as it is. Any member: it is what the library already shows.
   app.get("/:plugin/archive", async (c) => {
     const pluginName = c.req.param("plugin");
-    const pkg = libraryPluginPackage(pluginName);
+    const pkg = library.packageOf(pluginName);
     if (pkg === undefined) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
     }
@@ -214,7 +211,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // Verify every name up front before writing anything: an unknown name, or an MCP server
     // name the Agent already has from someone else, rejects the whole request rather than
     // leaving a half-installed state.
-    const plugins = resolveLibraryPlugins(names);
+    const plugins = resolveLibraryPlugins(deps.library, names);
     const root = deps.config.root;
     // Before the install: one that wrote a workbench into Agent State ahead of the move would
     // take its id, and the Agent's existing folder, data included, would stay in the old place.
@@ -310,6 +307,7 @@ export class PluginRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly manager!: ManagerIface;
+  @Use() private readonly library!: PluginLibrary;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -320,8 +318,9 @@ export class PluginRoutes {
       access: this.access,
       agentConfigService: this.agentConfig,
       manager: this.manager,
+      library: this.library,
     };
-    this.libraryRoutes = pluginLibraryRoutes();
+    this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);
     this.hookRoutes = agentHooksRoutes(deps);
     this.mcpServerRoutes = agentMcpServersRoutes(deps);
@@ -348,11 +347,11 @@ export interface PluginRoutesOptions {
 }
 
 /**
- * The server modules an admin installed from a link or a zip: packages of the prefix carrying
- * an `ifaces.json` that no index lists. Their row is their own package.json's npm fields, read
- * by core's manifest reader; the listing then lets the package describe itself further (its
- * `penguin` block and its icon), as it does every package on this machine. A package.json that
- * will not read lists no row.
+ * The server modules an admin installed from a link or a zip: packages of the prefix that no
+ * index lists and that core's kinds rule reads as server modules (a code entry, and modules its
+ * table lists). Their row is their own package.json's npm fields, read by core's reader; the
+ * listing then lets the package describe itself further (its card and its icon), as it does every
+ * package on this machine. A package.json that will not read lists no row.
  */
 async function prefixEntries(
   prefix: string | null,
@@ -363,11 +362,10 @@ async function prefixEntries(
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
-    if (!existsSync(path.join(dir, "ifaces.json"))) continue;
-    const file = path.join(dir, "package.json");
-    let manifest: PluginPackageManifest;
+    if (!libraryParts(dir).modules) continue;
+    let manifest: NpmPackage;
     try {
-      manifest = parsePluginPackage(JSON.parse(await fs.readFile(file, "utf8")), file).manifest;
+      manifest = readPackageJson(dir).manifest;
     } catch {
       continue;
     }
@@ -408,8 +406,8 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
 
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
-    // A package on this machine describes itself: its own package.json `penguin` block and icon
-    // win over what an index row says, so an installed package's card shows its icon and both
+    // A package on this machine describes itself: its own card and icon win over what an index
+    // row says, so an installed package's card shows its icon and both
     // languages even where its index row carries neither.
     const here = bases();
     const plugins = await Promise.all(
