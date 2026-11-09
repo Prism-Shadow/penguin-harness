@@ -293,12 +293,12 @@ export function ConversationOutline({
 
   return (
     // Hit-transparent overlay (pointer events only on the tick buttons): the wheel keeps
-    // scrolling the stream everywhere in the gutter. z level with the back-to-bottom
-    // overlay (z-10), below dropdowns (z-40).
+    // scrolling the stream everywhere in the gutter. On the `raised` layer with the
+    // back-to-bottom control, below the menus.
     <nav
       ref={navRef}
       aria-label={S.chat.outlineTitle}
-      className="pointer-events-none absolute inset-y-0 left-0 z-10 flex flex-col items-start justify-center"
+      className="pointer-events-none absolute inset-y-0 left-0 z-raised flex flex-col items-start justify-center"
     >
       {/* max-h + clip is a safety net only: the height-adaptive window keeps the stack
           inside the rail by construction, and this guarantees a mismeasure still can't
@@ -417,7 +417,10 @@ export function OutlineMenuButton({
     <Dropdown
       open={open}
       setOpen={setOpenComputing}
-      menuClass="right-0 top-full mt-1 w-72 max-w-[calc(100vw-1.5rem)] origin-top-right"
+      // Portaled: it drops over the docks, and nothing in the Chat window or laid over it may
+      // cover it.
+      portal={{ direction: "down", align: "right" }}
+      menuClass="w-72 max-w-[calc(100vw-1.5rem)]"
       button={
         <button
           type="button"

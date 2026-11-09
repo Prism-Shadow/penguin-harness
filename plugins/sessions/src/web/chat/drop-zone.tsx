@@ -8,6 +8,7 @@ import {
 
 import { S } from "@prismshadow/penguin-web/internal";
 import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */

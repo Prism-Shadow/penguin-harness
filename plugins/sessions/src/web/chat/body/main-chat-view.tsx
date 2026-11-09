@@ -17,8 +17,6 @@ export function createMainChatView(
   scope: ReturnType<typeof useChatController> & {
     projectId: string;
     pageAgentId: string | null;
-    /** The class hiding what a shown session tab covers, or "" (see chat-page). */
-    coveredByWorkbench: string;
   },
 ) {
   const {

@@ -311,7 +311,11 @@ export function ConfigTable({
                   // Lifted while dragged: it follows the pointer by transform, above the rest.
                   style={
                     dragging
-                      ? { transform: `translateY(${dy}px)`, position: "relative", zIndex: 1 }
+                      ? {
+                          transform: `translateY(${dy}px)`,
+                          position: "relative",
+                          zIndex: layer("raised"),
+                        }
                       : undefined
                   }
                   className={`border-t border-line-muted ${dragging ? "bg-surface shadow-lg" : "transition-colors duration-150 hover:bg-surface-muted/60"} ${lineAbove ? "[&>td]:border-t-2 [&>td]:border-t-accent" : ""} ${lineBelow ? "[&>td]:border-b-2 [&>td]:border-b-accent" : ""}`}

@@ -28,6 +28,7 @@ import {
   unownedTerminals,
   type DockPosition,
 } from "./dock-state";
+import { revealDocks } from "./dock-reveal";
 
 /** Where a new shell starts when no Workspace is known: the user's home directory. */
 const HOME_CWD = "~";
@@ -198,9 +199,12 @@ export { showTerminal };
 // where the shortcut is silently dead — an effect runs after paint, and a keypress can land
 // in between. The store is page-global anyway; on routes without the docks (login,
 // /terminal) the toggle just flips hidden state. The chord itself is the keymap's: the
-// window dispatcher matches it and calls this handler.
+// window dispatcher matches it and calls this handler. Every dock command
+// that acts first brings back the window holding the docks (dock-reveal.ts): with a workbench tab
+// shown over Chat, the key switches to Chat and then does what it does there.
 onCommand("terminal.toggle", () => {
-  toggleTerminal();
+  if (!toggleTerminal()) return false;
+  revealDocks();
 });
 // The other dock commands live here for the same reason: the store (dock-state.ts) stays
 // free of the dispatcher, and this module is evaluated wherever the docks can appear. Each
@@ -209,13 +213,16 @@ onCommand("terminal.toggle", () => {
 // arrangement the next conversation inherits.
 onCommand("terminal.new", () => {
   if (!docksOnScreen()) return false;
+  revealDocks();
   void createShellInDock();
 });
 onCommand("dock.toggleRight", () => {
   if (!docksOnScreen()) return false;
+  revealDocks();
   toggleDock("right");
 });
 onCommand("dock.toggleBottom", () => {
   if (!docksOnScreen()) return false;
+  revealDocks();
   toggleDock("bottom");
 });

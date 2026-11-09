@@ -104,7 +104,9 @@ export function renderMainChatToolbar(scope: MainChatView) {
               viewports show the live chips (Token / cost / elapsed, plus the running-services
               count while any process is alive) and clicking them opens the details card; narrow
               viewports collapse the whole thing to the single info icon. There is no separate
-              info icon while the chips are visible. */}
+              info icon while the chips are visible. The card drops over the docks: portaled,
+              so a dock lifted to fullscreen or the built-in browser's page, which is laid over
+              the Chat window from outside it, never covers it. */}
           {renderMainSessionDetails(scope)}
         </div>
       )}

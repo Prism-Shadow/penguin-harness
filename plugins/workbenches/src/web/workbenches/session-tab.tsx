@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "react-router";
+import { AppWindow } from "@prismshadow/penguin-ui";
 import { WorkbenchFrame, WorkbenchTabStrip, useWorkbenchTabs } from "./workbench-tabs";
 import type { SessionTabProps } from "@prismshadow/penguin-web/internal";
 
@@ -8,7 +10,8 @@ export function WorkbenchSessionTab({
   projectId,
   agentId: pageAgentId,
   machineId,
-  onCoveredChange,
+  windows,
+  onWindowShown,
 }: SessionTabProps) {
   const location = useLocation();
   const returnWorkbench = (
@@ -27,12 +30,13 @@ export function WorkbenchSessionTab({
       ? returnWorkbench.tabId
       : null,
   );
-  /** A shown workbench frame covers the page below the strip; the page hides what is covered. */
-  const coversPage = workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null;
+  /** A shown workbench tab is the window on screen, and the page hides the Chat window under it. */
+  const shown = workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null;
+  const showChat = workflowTabs.setActive;
   useEffect(() => {
-    onCoveredChange?.(coversPage);
-    return () => onCoveredChange?.(false);
-  }, [coversPage, onCoveredChange]);
+    onWindowShown?.(shown ? () => showChat(null) : null);
+    return () => onWindowShown?.(null);
+  }, [shown, showChat, onWindowShown]);
   return (
     <>
       <WorkbenchTabStrip
@@ -41,23 +45,29 @@ export function WorkbenchSessionTab({
         active={workflowTabs.active}
         onSelect={workflowTabs.setActive}
       />
-      {workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
-        <div className="absolute inset-x-0 bottom-0 top-9 z-10">
-          <WorkbenchFrame
-            // Per tab: the frame keeps this workflow's history fold, its error and its
-            // armed Remove, and none of that belongs to the next tab.
-            key={workflowTabs.activeTab.tabId}
-            projectId={projectId}
-            agentId={pageAgentId}
-            tab={workflowTabs.activeTab}
-            onChanged={() => void workflowTabs.refresh()}
-            onRemoved={() => {
-              workflowTabs.setActive(null);
-              void workflowTabs.refresh();
-            }}
-          />
-        </div>
-      )}
+      {/* The workbench window: beside Chat in the area under the strip, which it takes whole. */}
+      {workflowTabs.activeTab !== null &&
+        projectId !== null &&
+        pageAgentId !== null &&
+        windows !== null &&
+        createPortal(
+          <AppWindow shown>
+            <WorkbenchFrame
+              // Per tab: the frame keeps this workflow's history fold, its error and its
+              // armed Remove, and none of that belongs to the next tab.
+              key={workflowTabs.activeTab.tabId}
+              projectId={projectId}
+              agentId={pageAgentId}
+              tab={workflowTabs.activeTab}
+              onChanged={() => void workflowTabs.refresh()}
+              onRemoved={() => {
+                workflowTabs.setActive(null);
+                void workflowTabs.refresh();
+              }}
+            />
+          </AppWindow>,
+          windows,
+        )}
     </>
   );
 }

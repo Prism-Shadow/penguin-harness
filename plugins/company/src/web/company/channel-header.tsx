@@ -135,7 +135,7 @@ function MemberPopover({
               left: position.left,
               width: PANEL_WIDTH,
             }}
-            className={`${menuPanelClass} z-[60] max-h-[60vh]`}
+            className={`${menuPanelClass} z-popover max-h-[60vh]`}
           >
             {members.length === 0 ? (
               <p className="px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">

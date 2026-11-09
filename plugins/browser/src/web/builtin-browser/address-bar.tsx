@@ -202,7 +202,7 @@ export function AddressBar({
               left: anchor.left,
               width: anchor.width,
             }}
-            className="anim-pop z-[60] max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             {suggestions.map((entry, index) => (
               <li
