@@ -117,7 +117,7 @@ interface AppCenterShortcut {
   workbenchId: string;
   title: string;
   titleZh?: string;
-  iconUrl?: string; // /api/projects/:p/agents/:a/workbenches/:id/app-center/icon?rev=<content digest>
+  icon?: IconRef;   // { url: /api/projects/:p/agents/:a/workbenches/:id/app-center/icon?rev=<content digest>, tint }
   path: string;     // /app/:p/:a/:id[/:tab]
   tab?: string;     // the declared tab
   build: "ready" | "building" | "failed";
@@ -129,7 +129,7 @@ It reads only each app's manifest and `.build/status.json`, without compiling or
 
 `build` is where the app's build stands on this server: `building` while a load of it is under way in this process or queued behind one (the watcher's settle window does not count: the event behind it may change nothing, and then no event follows); otherwise `failed` when `.build/status.json` records a failure, with its error; else `ready`, which includes an app this process has not loaded yet (opening it loads it). Whenever a new load starts (a caller sharing a load of the same revision in flight does not count), the server sends the Project's users `{ type: "workbench_building", projectId, agentId, workbenchId }`, and `workbench_updated` when it ends, as before. The page reads the list again on those two, on `workbench_removed` and when the Agent list changes, gathering a burst of them into one read.
 
-The icon route `GET /:id/app-center/icon` reads and checks the declared icon again on every request and serves it with the `Content-Type` its bytes say, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `Cross-Origin-Resource-Policy: same-origin`; `rev` is a digest of the bytes, so a new icon is a new address. The Web App draws it with `<img>` only and never puts SVG markup into the page. Telling the formats apart is a module of the server for now, to be replaced by the shared icon-format module once that lands.
+The icon follows the plugin icons' rules and modules: core's `iconImage` checks it (one of six formats told by its bytes and agreeing with its extension, at most 256 KB, an SVG past the deny-list, and `tint` for a monochrome SVG whose every paint is `currentColor` or `none`), and the list names it as `IconRef { url, tint }`. The icon route `GET /:id/app-center/icon` reads and checks the declared icon again on every request and answers with the server's shared icon response: the `Content-Type` its bytes say, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `Cross-Origin-Resource-Policy: same-origin`; `rev` is a digest of the bytes, so a new icon is a new address. The Web App draws it with the UI package's `ImageIcon` (a mask in the text colour when `tint`, else an `<img>`) and never puts SVG markup into the page.
 
 The viewer's arrangement of the App Center (its order and folders) belongs to their account, per Project, in `ui_prefs.appCenterLayouts[projectId]`:
 
@@ -202,7 +202,7 @@ Other reusable Agent apps can be distributed under the same plugin convention; n
 
 ### v1.2.0
 
-- Changed: `AppCenterShortcut` carries `build` (`ready` / `building` / `failed`), `error` and `tab` in place of `broken`, and its `iconUrl` names the new icon route with a content revision.
+- Changed: `AppCenterShortcut` carries `build` (`ready` / `building` / `failed`), `error` and `tab` in place of `broken`, and `icon: IconRef` (`{ url, tint }`, the new icon route with a content revision) in place of `iconUrl`.
 - Added: the `workbench_building` event, the App Center's watchers, the icon route `GET /:id/app-center/icon` with its headers, and the icon formats told apart by their bytes.
 - Added: `AppCenterLayout`, kept per account and Project in `ui_prefs.appCenterLayouts`, and `PUT /api/projects/:projectId/app-center/layout`; the list answers `layout` beside `shortcuts`.
 - Added: a Status note for 2026-11-09.

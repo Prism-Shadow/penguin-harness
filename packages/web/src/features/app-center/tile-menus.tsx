@@ -62,15 +62,7 @@ function act(close: () => void, run: () => void): () => void {
   };
 }
 
-function StepRows({
-  id,
-  actions,
-  close,
-}: {
-  id: string;
-  actions: GridActions;
-  close: () => void;
-}) {
+function StepRows({ id, actions, close }: { id: string; actions: GridActions; close: () => void }) {
   const { grid } = actions;
   return (
     <>

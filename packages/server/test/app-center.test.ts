@@ -25,14 +25,15 @@
  * Icons (GET …/workbenches/:id/app-center/icon):
  * - Given an icon in each format (PNG, JPEG as .jpg or .jpeg, GIF, WebP, AVIF by its major or a
  *   compatible brand, SVG after a byte-order mark, XML declaration and comment), its shortcut's
- *   URL serves its bytes under the type they are, with nosniff, a sandboxing CSP and same-origin
- *   CORP, kept for good.
- * - Given an icon whose bytes are not the format its name claims, or one over 256 KB, the
- *   workbench has no shortcut and its load hints name the problem.
- * - Given an icon's bytes change, its URL changes, and the old URL answers the new bytes, to be
- *   revalidated.
- * - Given a workbench without an icon, an unknown workbench, or a user outside the Project, the
- *   icon is not found.
+ *   icon URL serves its bytes under the type they are, with nosniff, a sandboxing CSP and
+ *   same-origin CORP, kept for good; it is tinted only when it is a monochrome SVG, never when
+ *   it is a coloured SVG or a raster.
+ * - Given an icon whose bytes are not the format its name claims, an SVG holding script, or one
+ *   over 256 KB, the workbench has no shortcut, its load hints name the problem, and its icon is
+ *   not found.
+ * - Given an icon's bytes change, its URL changes, and the new URL serves the new bytes.
+ * - Given a workbench without an icon, or an unknown workbench, the icon is not found; a user
+ *   outside the Project gets the access error.
  *
  * The viewer's arrangement (PUT /api/projects/:p/app-center/layout):
  * - Given a layout is stored, the App Center answers it to that viewer as stored (known fields
@@ -194,33 +195,48 @@ function ftyp(major: string, compatible: string[]): Buffer {
   return Buffer.concat([size, Buffer.from("ftyp"), brands, Buffer.from("mdat")]);
 }
 
-/** One icon per format, each in a folder of its own on the gallery Agent, and the type it is. */
-const ICONS: Array<[string, string, Buffer | string, string]> = [
-  ["png", "ui/icon.png", PNG, "image/png"],
-  ["jpeg", "ui/icon.jpeg", JPEG, "image/jpeg"],
-  ["jpg", "ui/icon.jpg", JPEG, "image/jpeg"],
-  ["gif", "ui/icon.gif", GIF, "image/gif"],
-  ["webp", "ui/icon.webp", WEBP, "image/webp"],
-  ["avif", "ui/icon.avif", ftyp("avif", ["mif1", "miaf"]), "image/avif"],
-  ["avif-sequence", "ui/icon.avif", ftyp("mif1", ["miaf", "avis"]), "image/avif"],
+/** A line icon in the text colour: every paint `currentColor` or `none`. */
+const MONOCHROME =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 12h16" fill="none" stroke="currentColor"/></svg>';
+
+/**
+ * One icon per format, each in a folder of its own on the gallery Agent: the type it is served
+ * as, and whether it is drawn in the text colour.
+ */
+const ICONS: Array<[string, string, Buffer | string, string, boolean]> = [
+  ["png", "ui/icon.png", PNG, "image/png", false],
+  ["jpeg", "ui/icon.jpeg", JPEG, "image/jpeg", false],
+  ["jpg", "ui/icon.jpg", JPEG, "image/jpeg", false],
+  ["gif", "ui/icon.gif", GIF, "image/gif", false],
+  ["webp", "ui/icon.webp", WEBP, "image/webp", false],
+  ["avif", "ui/icon.avif", ftyp("avif", ["mif1", "miaf"]), "image/avif", false],
+  ["avif-sequence", "ui/icon.avif", ftyp("mif1", ["miaf", "avis"]), "image/avif", false],
   [
     "svg",
     "ui/icon.svg",
-    `﻿<?xml version="1.0" encoding="UTF-8"?>\n<!-- drawn by hand -->\n${ICON}`,
+    `\uFEFF<?xml version="1.0" encoding="UTF-8"?>\n<!-- drawn by hand -->\n${ICON}`,
     "image/svg+xml",
+    false,
   ],
+  ["svg-monochrome", "ui/icon.svg", MONOCHROME, "image/svg+xml", true],
 ];
 
 /** Icons that do not hold up, each in a folder of its own, and what the hint says of them. */
 const BAD_ICONS_CASES: Array<[string, string, Buffer | string, string]> = [
-  ["svg-named-png", "ui/icon.png", ICON, "ui/icon.png, whose bytes are SVG, not PNG"],
-  ["png-named-svg", "ui/icon.svg", PNG, "ui/icon.svg, whose bytes are PNG, not SVG"],
-  ["text-named-webp", "ui/icon.webp", "hello", "ui/icon.webp, whose bytes are not a WebP image"],
+  ["svg-named-png", "ui/icon.png", ICON, "ui/icon.png is named as PNG but its bytes are SVG"],
+  ["png-named-svg", "ui/icon.svg", PNG, "ui/icon.svg is named as SVG but its bytes are PNG"],
+  ["text-named-webp", "ui/icon.webp", "hello", "ui/icon.webp is not a WEBP image"],
+  [
+    "svg-with-script",
+    "ui/icon.svg",
+    ICON.replace("</svg>", "<script>alert(1)</script></svg>"),
+    "ui/icon.svg is not a plain SVG",
+  ],
   [
     "over-256-kb",
     "ui/big.png",
     Buffer.concat([PNG, Buffer.alloc(256 * 1024)]),
-    `ui/big.png is ${PNG.length + 256 * 1024} bytes`,
+    `ui/big.png is larger than 256 KB (${PNG.length + 256 * 1024} bytes)`,
   ],
 ];
 
@@ -452,6 +468,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
     (await shortcuts()).find((s) => s.agentId === agentId && s.workbenchId === workbenchId);
   const iconRoute = (agentId: string, workbenchId: string) =>
     `/api/projects/${PROJECT}/agents/${agentId}/workbenches/${workbenchId}/app-center/icon`;
+  /** The error code of a 404. */
+  const notFound = async (client: ReturnType<typeof apiClient>, route: string) => {
+    const res = await client.get(route);
+    expect(res.status).toBe(404);
+    return ((await res.json()) as { error: { code: string } }).error.code;
+  };
 
   it("lists one shortcut per shown workbench, Agents in list order and titles in order within one, and compiles nothing to do it", async () => {
     const listed = (await shortcuts()).filter((s) => s.agentId === AGENT || s.agentId === LATER);
@@ -473,7 +495,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         workbenchId: "board",
         title: "Board",
         titleZh: "看板",
-        iconUrl: expect.stringMatching(boardIcon),
+        icon: { url: expect.stringMatching(boardIcon), tint: false },
         path: `/app/${PROJECT}/${AGENT}/board/stats`,
         tab: "stats",
         build: "ready",
@@ -574,12 +596,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
     }
   });
 
-  it.each(ICONS.map(([id, , bytes, type]) => [id, bytes, type] as const))(
+  it.each(ICONS.map(([id, , bytes, type, tint]) => [id, bytes, type, tint] as const))(
     "serves a %s icon from its shortcut's URL, as the image its bytes are, kept for good",
-    async (id, bytes, type) => {
+    async (id, bytes, type, tint) => {
       const shortcut = await shortcutOf(GALLERY, id);
-      expect(shortcut?.iconUrl).toMatch(/\?rev=[0-9a-f]{12}$/);
-      const res = await owner.get(shortcut!.iconUrl!);
+      expect(shortcut?.icon).toEqual({ url: expect.stringMatching(/\?rev=[0-9a-f]{12}$/), tint });
+      const res = await owner.get(shortcut!.icon!.url);
       expect(res.status).toBe(200);
       expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from(bytes));
       expect(Object.fromEntries(res.headers)).toMatchObject({
@@ -611,31 +633,28 @@ describe("the App Center", { timeout: 30_000 }, () => {
         ]);
         expect(info!.hints[0]).toContain(named);
         expect(await ids()).not.toContain(`${BAD_ICONS}/${id}`);
-        expect((await owner.get(iconRoute(BAD_ICONS, id))).status).toBe(404);
+        expect(await notFound(owner, iconRoute(BAD_ICONS, id))).toBe("icon_not_found");
       },
     );
   });
 
-  it("gives an icon whose bytes change a new URL, and answers the old one with the new bytes to revalidate", async () => {
-    const before = (await shortcutOf(GALLERY, "changing"))!.iconUrl!;
+  it("gives an icon whose bytes change a new URL, which serves the new bytes", async () => {
+    const before = (await shortcutOf(GALLERY, "changing"))!.icon!.url;
     const redrawn = Buffer.concat([PNG, Buffer.from("redrawn")]);
     const dir = path.join(agentStateDir(t.root, PROJECT, GALLERY), "workbenches", "changing");
     await fs.writeFile(path.join(dir, "ui", "icon.png"), redrawn);
 
-    const after = (await shortcutOf(GALLERY, "changing"))!.iconUrl!;
+    const after = (await shortcutOf(GALLERY, "changing"))!.icon!.url;
     expect(after).not.toBe(before);
-    const stale = await owner.get(before);
-    expect(stale.status).toBe(200);
-    expect(stale.headers.get("cache-control")).toBe("no-cache");
-    expect(Buffer.from(await stale.arrayBuffer())).toEqual(redrawn);
     const fresh = await owner.get(after);
-    expect(fresh.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    expect(fresh.status).toBe(200);
+    expect(Buffer.from(await fresh.arrayBuffer())).toEqual(redrawn);
   });
 
-  it("finds no icon for a workbench without one, an unknown workbench, or a user outside the Project", async () => {
-    expect((await owner.get(iconRoute(AGENT, "crm"))).status).toBe(404);
-    expect((await owner.get(iconRoute(AGENT, "nowhere"))).status).toBe(404);
-    expect((await stranger.get(iconRoute(GALLERY, "png"))).status).toBe(404);
+  it("finds no icon for a workbench without one or an unknown workbench, and refuses a user outside the Project", async () => {
+    expect(await notFound(owner, iconRoute(AGENT, "crm"))).toBe("icon_not_found");
+    expect(await notFound(owner, iconRoute(AGENT, "nowhere"))).toBe("icon_not_found");
+    expect(await notFound(stranger, iconRoute(GALLERY, "png"))).toBe("project_not_found");
   });
 
   describe("the viewer's arrangement", () => {

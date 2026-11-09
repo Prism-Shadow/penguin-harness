@@ -8,8 +8,9 @@
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
- *   GET    /:id/app-center/icon    the image its App Center declaration names, under the type its
- *                                  bytes are (see app-center.ts); kept for good under its `?rev=`
+ *   GET    /:id/app-center/icon    the image its App Center declaration names, re-checked and
+ *                                  served as icons are (../http/icon-response.ts); 404
+ *                                  `icon_not_found` when it names none that reads clean
  *   DELETE /:id                    remove the folder and its state; its history is no longer listed
  *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name), or
  *                                  the `.js` a TSX page compiled to (see compile-ui.ts)
@@ -45,6 +46,7 @@ import type {
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
+import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
@@ -92,16 +94,6 @@ const MIME: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
-};
-
-/**
- * What an App Center icon is served with: its bytes are never a document of this origin — no
- * script, no fetch, no frame of the app — whatever an SVG among them says.
- */
-const ICON_HEADERS = {
-  "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-  "cross-origin-resource-policy": "same-origin",
 };
 
 /** The largest request body a workbench's handler is handed. */
@@ -408,19 +400,11 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
   });
 
-  // The URL a shortcut carries names the bytes' revision, so under it the icon is kept for good
-  // (like an employee's avatar); any other `rev`, or none, is answered with what is there now.
+  // The URL a shortcut carries names the image's revision (`?rev=`): the answer is kept for good.
   app.get("/:id/app-center/icon", async (c) => {
     const { projectId, agentId } = scope(c);
     const icon = await deps.workbenches.appCenterIcon(projectId, agentId, c.req.param("id"));
-    if (icon === null)
-      throw new HttpError(404, "not_found", "The workbench declares no App Center icon.");
-    const kept = c.req.query("rev") === icon.rev;
-    return c.body(new Uint8Array(icon.bytes), 200, {
-      ...ICON_HEADERS,
-      "content-type": icon.contentType,
-      "cache-control": kept ? "private, max-age=31536000, immutable" : "no-cache",
-    });
+    return iconResponse(icon ?? undefined);
   });
 
   app.delete("/:id", async (c) => {

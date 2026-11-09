@@ -18,6 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import type { IconRef } from "../src/api/types.js";
 import { WorkbenchService } from "../src/workbenches/service.js";
 import { apiClient, createTestApp, loginAdmin, writeTraceFile, type TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
@@ -116,7 +117,7 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect((await admin.get(`${BASE}/ui/index.html`)).status).toBe(200);
     // It is on the default Project's App Center from the start, with an icon that is served.
     const center = (await (await admin.get("/api/projects/default_project/app-center")).json()) as {
-      shortcuts: Array<{ agentId: string; workbenchId: string; iconUrl?: string; path: string }>;
+      shortcuts: Array<{ agentId: string; workbenchId: string; icon?: IconRef; path: string }>;
     };
     const tile = center.shortcuts.find((s) => s.agentId === "penguin_support");
     expect(tile).toMatchObject({
@@ -124,8 +125,8 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       path: "/app/default_project/penguin_support/support",
     });
     // An image from the icon route, never the file under ui/ served as a page of this origin.
-    expect(tile!.iconUrl).toMatch(new RegExp(`^${BASE}/app-center/icon\\?rev=[0-9a-f]+$`));
-    const icon = await admin.get(tile!.iconUrl!);
+    expect(tile!.icon!.url).toMatch(new RegExp(`^${BASE}/app-center/icon\\?rev=[0-9a-f]+$`));
+    const icon = await admin.get(tile!.icon!.url);
     expect(icon.status).toBe(200);
     expect(icon.headers.get("content-type")).toBe("image/svg+xml");
     expect(icon.headers.get("content-security-policy")).toContain("sandbox");

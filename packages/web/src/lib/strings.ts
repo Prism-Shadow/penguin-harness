@@ -1238,7 +1238,8 @@ export const zh = {
   },
   appCenter: {
     title: "应用中心",
-    description: "本 Project 各 Agent 的 Workbench 快捷入口。点开即用；拖动图块可排序，叠放即成分组。",
+    description:
+      "本 Project 各 Agent 的 Workbench 快捷入口。点开即用；拖动图块可排序，叠放即成分组。",
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:

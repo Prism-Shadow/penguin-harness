@@ -117,7 +117,7 @@ interface AppCenterShortcut {
   workbenchId: string;
   title: string;
   titleZh?: string;
-  iconUrl?: string; // /api/projects/:p/agents/:a/workbenches/:id/app-center/icon?rev=<内容摘要>
+  icon?: IconRef;   // { url: /api/projects/:p/agents/:a/workbenches/:id/app-center/icon?rev=<内容摘要>, tint }
   path: string;     // /app/:p/:a/:id[/:tab]
   tab?: string;     // 声明的 tab
   build: "ready" | "building" | "failed";
@@ -129,7 +129,7 @@ interface AppCenterShortcut {
 
 `build` 是该应用在本服务端的构建状态：本进程内有该应用的加载正在进行或排在进行中的加载之后为 `building`（监视器的防抖等待不算：那次事件可能什么也没改，之后不会再有事件）；否则 `.build/status.json` 记为失败即 `failed`，附其错误；其余为 `ready`——含本进程尚未加载过的应用，打开即加载。每当一次新的加载开始（共用进行中的同一修订的调用方不算），服务端向 Project 的用户推送 `{ type: "workbench_building", projectId, agentId, workbenchId }`，加载结束照旧推送 `workbench_updated`；页面在这两个事件、`workbench_removed` 与 Agent 列表变化时重新读取，一阵事件合并为一次读取。
 
-图标路由 `GET /:id/app-center/icon` 每次重新读取并检查清单声明的图标，按文件头识别出的格式给出 `Content-Type`，并带 `X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` 与 `Cross-Origin-Resource-Policy: same-origin`；`rev` 为字节的摘要，图标一变地址即变。Web App 只以 `<img>` 绘制它，从不把 SVG 标记放进页面。格式识别目前是服务端的局部模块，待共享的图标格式模块落地后改用之。
+图标沿用插件图标的同一套规则与模块：检查用 core 的 `iconImage`（按文件头识别六种格式、与扩展名相符、≤ 256 KB、SVG 过拒绝清单，单色 SVG——所有着色都是 `currentColor` 或 `none`——标 `tint`），列表以 `IconRef { url, tint }` 给出。图标路由 `GET /:id/app-center/icon` 每次重新读取并检查清单声明的图标，以服务端共用的图标应答返回：按文件头给出 `Content-Type`，并带 `X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` 与 `Cross-Origin-Resource-Policy: same-origin`；`rev` 为字节的摘要，图标一变地址即变。Web App 以共享 UI 包的 `ImageIcon` 绘制它（`tint` 时为文字颜色的蒙版，否则为 `<img>`），从不把 SVG 标记放进页面。
 
 查看者对应用中心的排列（顺序与分组）属于其账号，按 Project 存于 `ui_prefs.appCenterLayouts[projectId]`：
 
@@ -202,7 +202,7 @@ PR [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595) 的设计不
 
 ### v1.2.0
 
-- 改动：`AppCenterShortcut` 以 `build`（`ready` / `building` / `failed`）、`error` 与 `tab` 取代 `broken`，`iconUrl` 改指带内容版本的新图标路由。
+- 改动：`AppCenterShortcut` 以 `build`（`ready` / `building` / `failed`）、`error` 与 `tab` 取代 `broken`，以 `icon: IconRef`（`{ url, tint }`，指向带内容版本的新图标路由）取代 `iconUrl`。
 - 新增：`workbench_building` 事件、应用中心启动的监视、图标路由 `GET /:id/app-center/icon` 及其响应头，以及按文件头识别的图标格式。
 - 新增：按账号与 Project 存于 `ui_prefs.appCenterLayouts` 的 `AppCenterLayout` 与 `PUT /api/projects/:projectId/app-center/layout`；列表在 `shortcuts` 之外应答 `layout`。
 - 新增：2026-11-09 的 Status 补记。

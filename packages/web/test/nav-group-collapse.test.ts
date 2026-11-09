@@ -79,7 +79,14 @@ describe("navKeysFor", () => {
 
   it("offers an unreleased page to nobody, and keeps the rest in page order", () => {
     const nav = NAV.map((p) => (p.key === "usage" ? { ...p, released: false } : p));
-    expect(navKeysFor(nav, true)).toEqual(["agents", "apps", "models", "plugins", "machines", "benchmark"]);
+    expect(navKeysFor(nav, true)).toEqual([
+      "agents",
+      "apps",
+      "models",
+      "plugins",
+      "machines",
+      "benchmark",
+    ]);
     expect(navKeysFor(nav, false)).toEqual(["agents", "apps", "models", "plugins", "benchmark"]);
   });
 });
@@ -176,7 +183,13 @@ describe("visibleNavKeys", () => {
     expect(visibleNavKeys(NAV, false)).toEqual(navEntryKeysFor(NAV, true));
     expect(visibleNavKeys(NAV, true)).toEqual(["newChat", "agents", "apps", "models", "plugins"]);
     expect(visibleNavKeys(NAV, false, false)).toEqual(navEntryKeysFor(NAV, false));
-    expect(visibleNavKeys(NAV, true, false)).toEqual(["newChat", "agents", "apps", "models", "plugins"]);
+    expect(visibleNavKeys(NAV, true, false)).toEqual([
+      "newChat",
+      "agents",
+      "apps",
+      "models",
+      "plugins",
+    ]);
   });
 
   it("renders the pinned area first, then the collapsible one", () => {
@@ -191,7 +204,12 @@ describe("visibleNavKeys", () => {
       "usage",
       "benchmark",
     ]);
-    expect(visibleNavKeys(NAV, true, true, overrides)).toEqual(["newChat", "agents", "apps", "plugins"]);
+    expect(visibleNavKeys(NAV, true, true, overrides)).toEqual([
+      "newChat",
+      "agents",
+      "apps",
+      "plugins",
+    ]);
   });
 });
 

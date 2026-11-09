@@ -36,6 +36,7 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { agentDir, userText } from "@prismshadow/penguin-core";
+import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -47,7 +48,6 @@ import type { Traces } from "../mechanisms/traces.js";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
-  AppCenterIcon,
   AppCenterShortcut,
   WorkbenchInfo,
   WorkbenchInput,
@@ -555,7 +555,7 @@ export class WorkbenchService implements Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
-  ): Promise<AppCenterIcon | null> {
+  ): Promise<IconImage | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);

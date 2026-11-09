@@ -67,7 +67,10 @@ export function AppCenterWindow({
             onRemoved={onClose}
           />
         ) : (
-          <p role="status" className="flex h-full items-center justify-center px-6 text-sm text-fg-muted">
+          <p
+            role="status"
+            className="flex h-full items-center justify-center px-6 text-sm text-fg-muted"
+          >
             {tab === undefined && failure === null
               ? S.workbenches.loadingPage
               : (failure ?? S.workbenches.noSuchPage)}

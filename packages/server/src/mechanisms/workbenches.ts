@@ -16,7 +16,9 @@
  * every successful load commits to the Agent State repository — which is what makes an
  * Agent's own edits to its workbench reversible.
  */
+import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { IconRef } from "../api/types.js";
 
 /** A request the workbench's handler receives (the HTTP shape, minus the transport). */
 export interface WorkbenchRequest {
@@ -172,7 +174,8 @@ export interface WorkbenchAppCenter {
   titleZh?: string;
   /**
    * An image file under `ui/`, at most 256 KB: SVG, PNG, JPEG, WebP, GIF or AVIF, its extension
-   * naming the format its bytes are. A letter tile when absent.
+   * naming the format its bytes are, and an SVG holding no script, handler or outside reference.
+   * A letter tile when absent.
    */
   icon?: string;
   /** The key of the tab the shortcut opens; the first tab when absent. */
@@ -186,8 +189,12 @@ export interface AppCenterShortcut {
   workbenchId: string;
   title: string;
   titleZh?: string;
-  /** The icon route with its content revision (`…/app-center/icon?rev=<hash>`); absent without a declared icon. */
-  iconUrl?: string;
+  /**
+   * The declared icon: `url` is its route under the workbench with the image's content revision
+   * (`…/app-center/icon?rev=<hash>`), so a changed icon is a new URL, and `tint` says whether it
+   * is a monochrome SVG drawn in the text colour. Absent without a declared icon that reads clean.
+   */
+  icon?: IconRef;
   /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
   path: string;
   /** The tab the shortcut opens when the declaration names one; else the workbench's first. */
@@ -200,15 +207,6 @@ export interface AppCenterShortcut {
   build: "ready" | "building" | "failed";
   /** With build "failed": the load error `.build/status.json` records. */
   error?: string;
-}
-
-/** A workbench's App Center icon as it is served: the bytes, the type they are, their revision. */
-export interface AppCenterIcon {
-  bytes: Uint8Array;
-  /** The content type the bytes are, never the one the file name claims. */
-  contentType: string;
-  /** A short hash of the bytes: the `rev` of the shortcut's `iconUrl`. */
-  rev: string;
 }
 
 export interface WorkbenchInfo {
@@ -330,7 +328,7 @@ export abstract class Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
-  ): Promise<AppCenterIcon | null>;
+  ): Promise<IconImage | null>;
   /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.

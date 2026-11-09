@@ -14,16 +14,18 @@
  * A state never changes a tile's box: the ring and the marks are laid over the icon's square,
  * which is the same 56 px in every state.
  *
- * Icons are images: `<img>` of the URL the server serves with a sandboxing policy, never markup
- * put into the page. An icon that fails to load falls back to the letter tile.
+ * Icons are images (`ImageIcon`) from the URL the server serves them at under a sandboxing
+ * policy, never markup put into the page. An icon that fails to load falls back to the letter
+ * tile.
  */
-import { useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
   ContextMenu,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  ImageIcon,
   InstallRing,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -57,23 +59,11 @@ export interface TileDragProps {
   onDrop: (e: ReactDragEvent<HTMLElement>) => void;
 }
 
-function IconImage({ url, size, onFail }: { url: string; size: number; onFail: () => void }) {
-  return (
-    <img
-      src={url}
-      alt=""
-      width={size}
-      height={size}
-      // The tile drags, not the picture inside it.
-      draggable={false}
-      onError={onFail}
-      style={{ width: size, height: size }}
-      className="block rounded-xl object-contain"
-    />
-  );
-}
-
-/** The app's own icon, else a square in the id's colour with the title's first letter. */
+/**
+ * The app's own icon — an image from the URL the server serves it at (`ImageIcon`: an `<img>`, or
+ * a mask in the text colour for a monochrome SVG) — else, and whenever that image fails to load,
+ * a square in the id's colour with the title's first letter.
+ */
 export function TileIcon({
   shortcut,
   title,
@@ -83,23 +73,19 @@ export function TileIcon({
   title: string;
   size?: number;
 }) {
-  /** The URL that failed to load, so a new icon (a new URL) is tried again. */
-  const [failed, setFailed] = useState<string | null>(null);
-  const url = shortcut.iconUrl;
-  if (url !== undefined && failed !== url) {
-    return <IconImage key={url} url={url} size={size} onFail={() => setFailed(url)} />;
-  }
-  return (
+  const round = size >= ICON_PX ? "rounded-xl" : "rounded-md";
+  const letter = (
     <span
       aria-hidden
       style={{ width: size, height: size }}
-      className={`flex items-center justify-center font-semibold ${
-        size >= ICON_PX ? "rounded-xl text-2xl" : "rounded-md text-xs"
+      className={`flex shrink-0 items-center justify-center font-semibold ${round} ${
+        size >= ICON_PX ? "text-2xl" : "text-xs"
       } ${skillTileColor(shortcut.workbenchId)}`}
     >
       {[...title][0]?.toUpperCase() ?? "?"}
     </span>
   );
+  return <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} className={round} />;
 }
 
 /** The line in the gap beside a tile, where the dragged one would land. */

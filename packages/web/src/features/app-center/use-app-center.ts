@@ -94,7 +94,9 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
       if (projectId === null) return;
       // A read already under way answers with the arrangement from before this one.
       ++asked.current;
-      setLoaded((prev) => (prev !== null && prev.projectId === projectId ? { ...prev, layout } : prev));
+      setLoaded((prev) =>
+        prev !== null && prev.projectId === projectId ? { ...prev, layout } : prev,
+      );
       void api.putAppCenterLayout(projectId, layout).catch((err: unknown) => {
         toastApiError(err);
         void load();

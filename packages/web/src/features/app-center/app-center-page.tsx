@@ -223,8 +223,9 @@ export function AppCenterPage() {
   const openFolder =
     openFolderId === null || grid === null
       ? null
-      : (grid.find((item): item is GridFolder => item.type === "folder" && item.id === openFolderId) ??
-        null);
+      : (grid.find(
+          (item): item is GridFolder => item.type === "folder" && item.id === openFolderId,
+        ) ?? null);
 
   const create = <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} />;
 
@@ -295,7 +296,9 @@ export function AppCenterPage() {
                             mark={markOf(drag.pending, item.id)}
                             lifted={drag.dragged?.id === item.id}
                             menuItems={(close) =>
-                              actions && <FolderMenu folder={item} actions={actions} close={close} />
+                              actions && (
+                                <FolderMenu folder={item} actions={actions} close={close} />
+                              )
                             }
                             onOpen={() => setOpenFolderId(item.id)}
                           />

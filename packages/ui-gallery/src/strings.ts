@@ -693,7 +693,8 @@ export const zh = {
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
       contextMenu: "右键菜单",
-      contextMenuHint: "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
       contextMenuTarget: "右键这里",
       contextOpen: "打开",
       contextFullScreen: "全屏打开",

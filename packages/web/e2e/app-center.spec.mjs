@@ -138,9 +138,11 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
   const names = () =>
-    grid.locator(":scope > li").evaluateAll((items) =>
-      items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
-    );
+    grid
+      .locator(":scope > li")
+      .evaluateAll((items) =>
+        items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
+      );
   for (const name of APPS) {
     await expect(tile(name)).not.toHaveAttribute("aria-disabled", "true", { timeout: 30_000 });
   }

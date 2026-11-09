@@ -11,30 +11,22 @@
  * in the file; the load that follows records the edit as a version like any other.
  *
  * The icon is an image the browser fetches from a route of its own, never markup put into the
- * page: a file under `ui/` whose bytes are the format its name claims (./icon-format.ts), at most
- * 256 KB, re-checked each time it is served.
+ * page: a file under `ui/` that reads clean as an icon (core's `iconImage`: the format its name
+ * claims, by its bytes, at most 256 KB, and an SVG with nothing the deny-list names), re-checked
+ * each time it is served.
  *
- * A declaration that does not hold up (a wrong type, an icon outside `ui/`, too large or not the
- * image its name says, a tab the manifest does not contribute) is not a load error: the workbench
- * loads as before, has no shortcut, and its load hints name the fix.
+ * A declaration that does not hold up (a wrong type, an icon outside `ui/`, missing, too large or
+ * not a clean image of the format its name says, a tab the manifest does not contribute) is not a
+ * load error: the workbench loads as before, has no shortcut, and its load hints name the fix.
  */
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  AppCenterIcon,
-  AppCenterShortcut,
-  WorkbenchAppCenter,
-} from "../mechanisms/workbenches.js";
+import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
+import type { IconImage } from "@prismshadow/penguin-core";
+import type { IconRef } from "../api/types.js";
+import { iconRev } from "../http/icon-response.js";
+import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
 import { readLoadStatus } from "./compile.js";
-import {
-  ICON_CONTENT_TYPES,
-  ICON_EXTENSIONS_TEXT,
-  ICON_FORMAT_NAMES,
-  ICON_MAX_BYTES,
-  iconFormatOfName,
-  sniffIconFormat,
-} from "./icon-format.js";
 import { isSafeRelPath, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
 
 const TITLE_MAX = 60;
@@ -54,8 +46,11 @@ export interface AppCenterManifest {
   tabs: ManifestTab[];
   /** The declaration, when there is one and it holds up. */
   appCenter?: WorkbenchAppCenter;
-  /** The declared icon's content revision, when the declaration holds up and names one. */
-  iconRev?: string;
+  /**
+   * The declared icon's content revision and whether it takes the text colour, when the
+   * declaration holds up and names one; never its bytes, which the icon route reads again.
+   */
+  icon?: { rev: string; tint: boolean };
   /** Why a declaration that is there is not used, with the fix; null otherwise. */
   hint: string | null;
 }
@@ -90,43 +85,29 @@ function titleProblem(name: string, value: unknown): string | null {
   return null;
 }
 
-/** A short hash of the icon's bytes: its URL carries it, so a new icon is a new URL. */
-const revisionOf = (bytes: Uint8Array): string =>
-  createHash("sha256").update(bytes).digest("hex").slice(0, 12);
-
-/** Reads and checks the declared icon: its bytes as served, or what is wrong with it. */
+/** Reads and checks the declared icon: the image it is, or what is wrong with it. */
 async function readIcon(
   dir: string,
   icon: unknown,
-): Promise<{ icon: AppCenterIcon } | { problem: string }> {
-  const rule = `"icon" must name a ${ICON_EXTENSIONS_TEXT} image under ${UI_DIR}/ of at most 256 KB`;
+): Promise<{ icon: IconImage } | { problem: string }> {
   if (typeof icon !== "string" || !isSafeRelPath(icon) || !icon.startsWith(`${UI_DIR}/`))
-    return { problem: rule };
-  const claimed = iconFormatOfName(icon);
-  if (claimed === null) return { problem: rule };
+    return { problem: `"icon" must name a file under ${UI_DIR}/` };
   const file = path.join(dir, icon);
   const stat = await fs.stat(file).catch(() => null);
   const size = stat?.isFile() === true ? stat.size : null;
   // Measured before it is read: a file of any size can be named.
-  if (size !== null && size > ICON_MAX_BYTES)
-    return { problem: `${rule} (${icon} is ${size} bytes)` };
+  if (size !== null && size > MAX_ICON_BYTES) {
+    const cap = `${MAX_ICON_BYTES / 1024} KB`;
+    return { problem: `"icon": ${icon} is larger than ${cap} (${size} bytes)` };
+  }
   const bytes = size !== null ? await fs.readFile(file).catch(() => null) : null;
   if (bytes === null) return { problem: `"icon" names ${icon}, which is not a file` };
-  const format = sniffIconFormat(bytes);
-  if (format !== claimed) {
-    const named = ICON_FORMAT_NAMES[claimed];
-    return {
-      problem:
-        format === null
-          ? `"icon" names ${icon}, whose bytes are not a ${named} image`
-          : `"icon" names ${icon}, whose bytes are ${ICON_FORMAT_NAMES[format]}, not ${named}: give the file the extension of the format it holds`,
-    };
-  }
-  return { icon: { bytes, contentType: ICON_CONTENT_TYPES[format], rev: revisionOf(bytes) } };
+  const checked = iconImage(bytes, icon);
+  return "problem" in checked ? { problem: `"icon": ${icon} ${checked.problem}` } : checked;
 }
 
 /** A declaration that holds up, with the icon it names as read for the check; or its problem. */
-type Checked = { appCenter: WorkbenchAppCenter; icon: AppCenterIcon | null } | { problem: string };
+type Checked = { appCenter: WorkbenchAppCenter; icon: IconImage | null } | { problem: string };
 
 /** Checks `penguin.appCenter`. */
 async function checkDeclaration(
@@ -139,7 +120,7 @@ async function checkDeclaration(
   if (typeof show !== "boolean") return { problem: '"show" must be true or false' };
   const titled = titleProblem("title", title) ?? titleProblem("titleZh", titleZh);
   if (titled !== null) return { problem: titled };
-  let file: AppCenterIcon | null = null;
+  let file: IconImage | null = null;
   if (icon !== undefined) {
     const read = await readIcon(dir, icon);
     if ("problem" in read) return read;
@@ -170,7 +151,7 @@ async function checkDeclaration(
 async function readDeclaration(
   dir: string,
   id: string,
-): Promise<{ manifest: AppCenterManifest; icon: AppCenterIcon | null }> {
+): Promise<{ manifest: AppCenterManifest; icon: IconImage | null }> {
   let pkg: unknown = null;
   try {
     pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as unknown;
@@ -197,7 +178,7 @@ async function readDeclaration(
       name,
       tabs,
       appCenter,
-      ...(icon !== null ? { iconRev: icon.rev } : {}),
+      ...(icon !== null ? { icon: { rev: iconRev(icon), tint: icon.tint } } : {}),
       hint: null,
     },
     icon,
@@ -213,7 +194,7 @@ export async function readAppCenterManifest(dir: string, id: string): Promise<Ap
  * The icon a workbench's declaration names, read and checked again: null when the declaration
  * does not hold up or names none.
  */
-export async function readAppCenterIcon(dir: string, id: string): Promise<AppCenterIcon | null> {
+export async function readAppCenterIcon(dir: string, id: string): Promise<IconImage | null> {
   return (await readDeclaration(dir, id)).icon;
 }
 
@@ -232,6 +213,12 @@ async function buildOf(
 }
 
 const segment = encodeURIComponent;
+
+/** A shortcut's icon: the workbench's icon route with the image's revision, and how to draw it. */
+const iconOf = (base: string, icon: { rev: string; tint: boolean }): IconRef => ({
+  url: `${base}/app-center/icon?rev=${icon.rev}`,
+  tint: icon.tint,
+});
 
 /** The shortcut a shown declaration makes: its titles, icon URL, the page it opens, its build. */
 function shortcutOf(
@@ -253,9 +240,7 @@ function shortcutOf(
     workbenchId,
     title: appCenter.title ?? first?.title ?? manifest.name,
     ...(titleZh !== undefined ? { titleZh } : {}),
-    ...(manifest.iconRev !== undefined
-      ? { iconUrl: `${base}/app-center/icon?rev=${manifest.iconRev}` }
-      : {}),
+    ...(manifest.icon !== undefined ? { icon: iconOf(base, manifest.icon) } : {}),
     path: appCenter.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
     ...(tab !== undefined ? { tab } : {}),
     ...build,

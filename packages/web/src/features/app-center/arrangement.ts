@@ -79,11 +79,10 @@ function folded(id: string, name: string, apps: GridApp[]): GridItem[] {
 export function layoutOf(grid: readonly GridItem[]): AppCenterLayout {
   return {
     v: 1,
-    items: grid.map(
-      (item): AppCenterLayoutItem =>
-        item.type === "app"
-          ? { type: "app", app: item.id }
-          : { type: "folder", id: item.id, name: item.name, apps: item.apps.map((app) => app.id) },
+    items: grid.map((item): AppCenterLayoutItem =>
+      item.type === "app"
+        ? { type: "app", app: item.id }
+        : { type: "folder", id: item.id, name: item.name, apps: item.apps.map((app) => app.id) },
     ),
   };
 }
@@ -121,7 +120,10 @@ function normalize(grid: readonly GridItem[]): GridItem[] {
 }
 
 /** The grid without the item, and the item; folders are left as they are (normalize after). */
-function detach(grid: readonly GridItem[], id: string): { rest: GridItem[]; item: GridItem | null } {
+function detach(
+  grid: readonly GridItem[],
+  id: string,
+): { rest: GridItem[]; item: GridItem | null } {
   let item: GridItem | null = null;
   const rest: GridItem[] = [];
   for (const entry of grid) {
@@ -250,10 +252,16 @@ export function stepItem(grid: readonly GridItem[], id: string, delta: -1 | 1): 
   };
   const folder = folderOf(grid, id);
   if (folder === null) return swap(grid);
-  return grid.map((entry) => (entry.id === folder.id ? { ...folder, apps: swap(folder.apps) } : entry));
+  return grid.map((entry) =>
+    entry.id === folder.id ? { ...folder, apps: swap(folder.apps) } : entry,
+  );
 }
 
-export function renameFolder(grid: readonly GridItem[], folderId: string, name: string): GridItem[] {
+export function renameFolder(
+  grid: readonly GridItem[],
+  folderId: string,
+  name: string,
+): GridItem[] {
   return grid.map((entry) =>
     entry.type === "folder" && entry.id === folderId ? { ...entry, name } : entry,
   );

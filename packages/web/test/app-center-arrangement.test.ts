@@ -205,8 +205,9 @@ describe("moves", () => {
     const grid = withFolder();
     let calls = 0;
     // The first draw repeats an id the grid has; the next is taken.
-    const id = newFolderId([...grid, { type: "folder", id: "f00000000", name: "x", apps: [] }], () =>
-      calls++ === 0 ? 0 : 0.5,
+    const id = newFolderId(
+      [...grid, { type: "folder", id: "f00000000", name: "x", apps: [] }],
+      () => (calls++ === 0 ? 0 : 0.5),
     );
     expect(id).not.toBe("f00000000");
     expect(id).toMatch(/^[A-Za-z0-9_-]{1,32}$/);

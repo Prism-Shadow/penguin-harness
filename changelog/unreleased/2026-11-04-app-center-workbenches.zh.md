@@ -12,9 +12,9 @@
 ## 细节
 
 - 工作台清单新增 `penguin.appCenter { show, title?, titleZh?, icon?, tab? }`。标题缺省取首个标签页的标题，再缺省取包名；`icon` 为 `ui/` 下不超过 256 KB 的 SVG、PNG、JPEG、WebP、GIF 或 AVIF 文件，文件头须与扩展名相符；`tab` 指定快捷入口打开的标签页。声明不合规不会让加载失败：该工作台不出现在应用中心，加载提示与 `.build/status.json` 写明如何修正。`WorkbenchInfo.appCenter` 给出解析后的声明。
-- `GET /api/projects/:projectId/app-center` 应答 `{ shortcuts, layout }`。每个 `AppCenterShortcut` 带标题、图标地址、整页路径、`tab` 与 `build`：加载进行中或已排队为 `building`，上次加载失败为 `failed` 并附记录的 `error`，其余为 `ready`。列表只读清单与加载状态，不编译任何东西；它为所列 Agent 启动文件监视，只列本服务端的 Agent。
+- `GET /api/projects/:projectId/app-center` 应答 `{ shortcuts, layout }`。每个 `AppCenterShortcut` 带标题、以 `{ url, tint }` 给出的 `icon`、整页路径、`tab` 与 `build`：加载进行中或已排队为 `building`，上次加载失败为 `failed` 并附记录的 `error`，其余为 `ready`。列表只读清单与加载状态，不编译任何东西；它为所列 Agent 启动文件监视，只列本服务端的 Agent。
 - 一次加载开始时，用户事件流推送 `workbench_building { projectId, agentId, workbenchId }`，结束时照旧推送 `workbench_updated`。构建中的图块不能打开，构建完成后自动恢复。
-- `GET /api/projects/:projectId/agents/:agentId/workbenches/:id/app-center/icon` 以图片提供声明的图标：内容类型按文件头给出，带 `X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` 与 `Cross-Origin-Resource-Policy: same-origin`，地址中的 `rev` 随字节变化。Web App 只以 `<img>` 绘制，从不作为标记插入。
+- 图标沿用插件图标的规则（[#1514](https://github.com/Prism-Shadow/penguin-harness/pull/1514)）：由 core 的 `iconImage` 检查，`GET /api/projects/:projectId/agents/:agentId/workbenches/:id/app-center/icon` 以服务端共用的图标应答返回——内容类型按文件头给出，带 `X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` 与 `Cross-Origin-Resource-Policy: same-origin`——地址中的 `rev` 随字节变化。Web App 以 `ImageIcon` 绘制，单色 SVG 取文字颜色，从不作为标记插入。
 - 查看者的顺序与分组按账号与 Project 存于 `ui_prefs.appCenterLayouts`，形如 `AppCenterLayout { v: 1, items }`，经 `PUT /api/projects/:projectId/app-center/layout { layout | null }` 写入（`null` 恢复默认排列）。服务端校验形状，不合规整体拒绝；`PUT /api/me/prefs` 拒绝该键。新应用追加在末尾，消失的应用移出，只剩一个应用的分组自动解散。
 - 把图块拖到两个图块之间即移动，拖到另一图块上合成名为**新建分组**的分组（可重命名），拖到分组上即加入；打开的分组是网格上方的面板，把图块拖出即移出分组。松手之前图块不移动。
 - 每个图块、分组与网格空白处都有右键菜单：打开、全屏打开、移动到…、向前 / 向后移动、移出分组、查看错误、在 Agent 设置中查看、从应用中心移除；分组另有重命名与解散分组；**恢复默认排列**先确认。键盘与触屏经这些菜单整理网格。

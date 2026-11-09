@@ -70,14 +70,18 @@ export interface TileDrag {
    */
   dropNow: (drop: Drop) => void;
   /** On a region that takes a drop of its own: the grid's empty space. */
-  areaProps: (drop: Drop, accepts: (dragged: Dragged) => boolean) => {
+  areaProps: (
+    drop: Drop,
+    accepts: (dragged: Dragged) => boolean,
+  ) => {
     onDragOver: (e: ReactDragEvent<HTMLElement>) => void;
     onDragLeave: (e: ReactDragEvent<HTMLElement>) => void;
     onDrop: (e: ReactDragEvent<HTMLElement>) => void;
   };
 }
 
-const sameDrop = (a: Drop | null, b: Drop | null): boolean => JSON.stringify(a) === JSON.stringify(b);
+const sameDrop = (a: Drop | null, b: Drop | null): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 export function useTileDrag(onDrop: (dragged: Dragged, drop: Drop) => void): TileDrag {
   const [dragged, setDragged] = useState<Dragged | null>(null);
@@ -141,7 +145,11 @@ export function useTileDrag(onDrop: (dragged: Dragged, drop: Drop) => void): Til
           e.clientX,
           canTakeInto && !item.folder,
         );
-        show(zone === "into" ? { kind: "into", targetId: id } : { kind: "beside", targetId: id, ...zone });
+        show(
+          zone === "into"
+            ? { kind: "into", targetId: id }
+            : { kind: "beside", targetId: id, ...zone },
+        );
       },
       onDrop: (e) => {
         const item = current.current;
@@ -154,7 +162,12 @@ export function useTileDrag(onDrop: (dragged: Dragged, drop: Drop) => void): Til
           e.clientX,
           canTakeInto && !item.folder,
         );
-        take(e, zone === "into" ? { kind: "into", targetId: id } : { kind: "beside", targetId: id, ...zone });
+        take(
+          e,
+          zone === "into"
+            ? { kind: "into", targetId: id }
+            : { kind: "beside", targetId: id, ...zone },
+        );
       },
     }),
     areaProps: (drop, accepts) => ({

@@ -81,7 +81,9 @@ async function open(
       },
     ],
   });
-  await until(() => grid() !== null || document.body.textContent?.includes(en.appCenter.emptyTitle) === true);
+  await until(
+    () => grid() !== null || document.body.textContent?.includes(en.appCenter.emptyTitle) === true,
+  );
   return { server, router };
 }
 
@@ -143,7 +145,9 @@ async function rightClick(target: Element, x = 40, y = 60): Promise<boolean> {
 async function press(target: HTMLElement, init: KeyboardEventInit): Promise<void> {
   target.focus();
   await act(async () => {
-    target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }),
+    );
   });
   await settle();
 }
@@ -186,7 +190,11 @@ afterEach(async () => {
 });
 
 it("shows each tile as its icon and name, in the server's order, with the Agent in its hint", async () => {
-  await open([workbench("board"), workbench("notes"), workbench("hidden", { appCenter: { show: false } })]);
+  await open([
+    workbench("board"),
+    workbench("notes"),
+    workbench("hidden", { appCenter: { show: false } }),
+  ]);
   expect(order()).toEqual([key("board"), key("notes")]);
   // The ids are the address, never the text; the Agent is not written on the tile.
   expect(spoken(tileButton(key("board")))).toBe("Board");
@@ -243,7 +251,9 @@ it("turns a tile to building when the server starts loading its workbench", asyn
 });
 
 it("still opens a failed app, and its menu shows the recorded error", async () => {
-  const { router } = await open([workbench("board", { error: "index.ts:1:1 TS1005 ';' expected" })]);
+  const { router } = await open([
+    workbench("board", { error: "index.ts:1:1 TS1005 ';' expected" }),
+  ]);
   expect(tileButton(key("board")).getAttribute("aria-label")).toBe(
     en.appCenter.tileName("Board", "Helper", en.appCenter.broken),
   );
@@ -321,10 +331,9 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
   expect(document.getElementById(panel.getAttribute("aria-labelledby")!)?.textContent).toBe(
     en.appCenter.newFolder,
   );
-  expect([...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"])).toEqual([
-    key("board"),
-    key("notes"),
-  ]);
+  expect(
+    [...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"]),
+  ).toEqual([key("board"), key("notes")]);
 
   // Dragged out onto the backdrop, an app leaves the folder; a folder of one dissolves.
   const scrim = document.querySelector(".ui-scrim")!;

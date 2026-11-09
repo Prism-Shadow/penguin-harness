@@ -1124,8 +1124,7 @@ export const en: Strings = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
-    folderTip: (name: string, count: number) =>
-      `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
+    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
     folderName: (name: string, count: number) =>
       `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
     /** The name a folder is given when two tiles are dropped together. */
