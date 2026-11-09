@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../../lib/strings";
-import { useWorkbenchTabs } from "../../workbenches";
 import { useDocumentTitle } from "../../../lib/use-document-title";
 import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
@@ -17,7 +16,7 @@ import { setDockConversation, dockVersion, openPanel, panelDock, subscribeDock }
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
-/** Exact consecutive main ChatPage statements 25..60; called once, in original order. */
+/** Exact consecutive main ChatPage statements 26..61; called once, in original order. */
 export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) {
   const { location, params, projectId, agentId, sessions, isSessionDeleted } = scope;
 
@@ -212,15 +211,11 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by
   // it listed the wrong Agent's workflows (or none) for every Session on a machine.
-  const workflowTabs = useWorkbenchTabs(
-    projectId,
-    pageAgentId,
-    draft
-      ? (resolvedDraftOwner?.machineId ?? null)
-      : selected === null
-        ? null
-        : machineForSession(selected.sessionId),
-  );
+  const workflowMachineId = draft
+    ? (resolvedDraftOwner?.machineId ?? null)
+    : selected === null
+      ? null
+      : machineForSession(selected.sessionId);
   // The docks' terminals belong to this conversation: they are created under its Session id,
   // start in its Workspace — its files are what a terminal opened here is for — on the machine
   // it runs on, and only its own are listed. While drafting there is no Session and DraftView
@@ -280,7 +275,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     pageAgentId,
     pageMachineId,
     models,
-    workflowTabs,
+    workflowMachineId,
     activeModelRef,
   };
 }

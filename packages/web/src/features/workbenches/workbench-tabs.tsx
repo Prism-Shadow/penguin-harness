@@ -37,7 +37,7 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
-import { localizedText } from "../../lib/skill-use";
+import { localizedText } from "../chat";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(

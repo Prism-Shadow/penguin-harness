@@ -7,9 +7,10 @@
  * Why a registry rather than a list of kinds: the dock is meant to take panels from plugins, and
  * a plugin's panel must be able to arrive without the dock knowing it by name. Everything the
  * dock used to do per kind through switches — a label here, a glyph there, a body in the chat
- * page — is a field of the definition now, and the built-ins register through the same door the
- * plugins will use (features/chat/builtin-dock-panels.tsx). Loading plugins is not here; this is
- * the seam they will plug into.
+ * page — is a field of the definition now. The built-ins arrive as their modules' contributions
+ * to `DockModule.panels`, which the dock module registers here at boot (module.ts) — the same
+ * door a plugin's panel will use. Loading plugins is not here; this is the seam they will plug
+ * into.
  *
  * An id doubles as the tab's stored key, so a stored tab whose definition is not registered (a
  * plugin's panel before the plugin loads, or after it was removed) still has a name and a mark

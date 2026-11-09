@@ -13,7 +13,7 @@ import type { ComposerControl } from "../chat-input";
 import type { ComposerReference } from "../../../lib/workspace-tree";
 import type { useMainChatSends } from "./main-chat-sends";
 
-/** Exact consecutive main ChatPage statements 135..146; called once, in original order. */
+/** Exact consecutive main ChatPage statements 136..147; called once, in original order. */
 export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) {
   const {
     replace,
