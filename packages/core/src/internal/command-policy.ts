@@ -4,10 +4,12 @@
  * A rule list the Session applies to the **injected approval callback**: `Session.run` wraps
  * `RunOptions.approve` with `withCommandPolicy`, and each rule says what a hit does. A `deny`
  * hit answers "forbidden" without the human being consulted; an `ask` hit is handed to
- * `RunOptions.askHuman`, the host's route to a person, instead of to `approve`. Either way the
- * policy outranks every approval mode, allow-all included. Nothing about it reaches
- * `context_engine`, which keeps doing what it always did — ask the approval boundary, record
- * the decision, feed a denied call its terminal output — and never reads `askHuman`.
+ * `approve` with a policy reason (`{ reason: { kind: "policy", rule } }`), which the host
+ * answers by putting the call to a person whatever its approval mode. Either way the policy
+ * outranks every approval mode, allow-all included. Nothing about it reaches
+ * `context_engine`, which keeps doing what it always did — ask the approval boundary with the
+ * call alone, record the decision, feed a denied call its terminal output — and never reads
+ * the policy or the reason.
  *
  * A `deny` hit outranks an `ask` hit wherever the two sit in the list: the settings page puts a
  * new rule at the head of the list and offers no reordering, so letting list order decide
@@ -15,11 +17,11 @@
  * Within one action the first match in list order is the rule a decision names.
  *
  * A child Session wraps the callback it was forwarded the same way, and that callback is the
- * parent's own wrapper: an `ask` hit in the child that the child hands to `approve` (a child
- * is given no `askHuman` of its own) reaches the parent's wrapper, which matches it again and
- * hands it to the parent's `askHuman`. The host's session-lifetime fallback sink for child
- * approvals is wrapped too (Session.setSubagentApprovalFallback), so a call routed there
- * cannot walk past an `ask` rule either.
+ * parent's own wrapper: the child's `ask` hit travels with its reason through the child's
+ * approval queue to the parent's wrapper, which matches it again (or, matching nothing, passes
+ * the reason on untouched) and hands it to the host's callback. The host's session-lifetime
+ * fallback sink for child approvals is wrapped too (Session.setSubagentApprovalFallback), so a
+ * call routed there cannot walk past an `ask` rule either.
  *
  * Both tools that reach a shell are checked: `exec_command`'s `cmd` (the launch, read through
  * the tool's own argument list so its `command` alias is screened the same) and
@@ -61,7 +63,6 @@
  */
 import type {
   ApproveFn,
-  AskHumanFn,
   CommandPolicyAction,
   CommandPolicyConfig,
   CommandPolicyRule,
@@ -192,19 +193,17 @@ export type CommandPolicySource = () => CommandPolicyConfig | undefined;
  * implementation — can let it through. `"forbidden"` is the decision's own third value: the
  * engine renders it as the fixed aborted line "Tool call denied by policy." (a person's denial
  * reads "by user."), and the `approval_decision` event carries it — the model's text and the
- * Trace both name the decider. A call an `ask` rule matches goes to `askHuman` with the rule's
- * name, and `approve` is not consulted, so an approval mode that answers by itself (allow-all)
- * does not get a say; without `askHuman` it goes to `approve`, which then decides as for any
- * call. The `source` getter is consulted at every decision (no source, or a source yielding
- * nothing, applies the factory rule set); a source that cannot be read fails toward the
- * factory rules rather than waving the call through.
+ * Trace both name the decider. A call an `ask` rule matches goes to `approve` with
+ * `{ reason: { kind: "policy", rule } }`, which tells the host the mode alone may not answer
+ * it (allow-all would wave it through); a host callback that reads no second argument decides
+ * it as for any call. Any other call goes to `approve` with the context it came with, so a
+ * reason a child's wrapper attached survives the parent's. The `source` getter is consulted
+ * at every decision (no source, or a source yielding nothing, applies the factory rule set); a
+ * source that cannot be read fails toward the factory rules rather than waving the call
+ * through.
  */
-export function withCommandPolicy(
-  approve: ApproveFn,
-  source?: CommandPolicySource,
-  askHuman?: AskHumanFn,
-): ApproveFn {
-  return async (toolCall) => {
+export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySource): ApproveFn {
+  return async (toolCall, context) => {
     let policy: CommandPolicyConfig | undefined;
     try {
       policy = source?.();
@@ -213,7 +212,10 @@ export function withCommandPolicy(
     }
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
     if (veto?.action === "deny") return "forbidden";
-    if (veto?.action === "ask" && askHuman) return askHuman(toolCall, { rule: veto.rule });
-    return approve(toolCall);
+    if (veto?.action === "ask") {
+      return approve(toolCall, { reason: { kind: "policy", rule: veto.rule } });
+    }
+    // Forwarded as it came: an ordinary call still reaches `approve` with the call alone.
+    return context === undefined ? approve(toolCall) : approve(toolCall, context);
   };
 }

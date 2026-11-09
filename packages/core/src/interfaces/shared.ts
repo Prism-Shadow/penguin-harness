@@ -47,28 +47,38 @@ export interface RunCutoff {
 }
 
 /**
- * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
- * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
- * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
- * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
- * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
- * and a call a `deny` rule matches answers `"forbidden"` without the wrapped callback being
- * consulted.
- * Docs: /docs/interfaces § "ApproveFn".
+ * Why a call is put to the host beyond its approval mode — today one kind: a command-policy
+ * `ask` rule matched it (`rule` is that rule's name). A host that receives one must not answer
+ * by mode alone (allow-all would wave the call through): it puts the call to a person, or
+ * denies it when it cannot.
  */
-export type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+export interface ApprovalReason {
+  kind: "policy";
+  rule: string;
+}
+
+/** What `Session` tells an {@link ApproveFn} besides the call itself; empty means an ordinary call, decided by the approval mode. */
+export interface ApprovalContext {
+  /** Present when the Project's security policy asks for a person (see {@link ApprovalReason}). */
+  reason?: ApprovalReason;
+}
 
 /**
- * The host's route to a person, for a call a command-policy `ask` rule matched
- * (`RunOptions.askHuman`): consulted whatever the approval mode, so it must not auto-allow.
- * Shaped like {@link ApproveFn}, plus the rule that asked, so the host can say why it asks
- * (any `ApproveFn` is also an `AskHumanFn`). It answers `"allow"` or `"deny"`; the engine
- * records the answer like any other decision.
- * Docs: /docs/tools § "Approval".
+ * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
+ * `context_engine` calls it once per tool call within a turn, with the call alone. Subagents
+ * forward the parent's approval callback, so the child Agent **inherits the parent Agent's
+ * approval mode**. The third decision, `"forbidden"`, is never a host's answer: `Session.run`
+ * wraps the injected callback with the project sandbox command policy (see
+ * {@link CommandPolicyConfig}). A call a `deny` rule matches answers `"forbidden"` without the
+ * wrapped callback being consulted; a call an `ask` rule matches reaches it with
+ * `context.reason`, which the host answers by asking a person whatever its approval mode. The
+ * context is optional, so a one-argument callback still fits — it then decides an `ask` hit
+ * like any other call.
+ * Docs: /docs/interfaces § "ApproveFn".
  */
-export type AskHumanFn = (
+export type ApproveFn = (
   toolCall: AmspRecord<ToolCallPayload>,
-  hit: { rule: string },
+  context?: ApprovalContext,
 ) => Promise<ApprovalDecision>;
 
 /**
@@ -124,7 +134,8 @@ export type UserPromptFn = (
 
 /**
  * What a command-policy hit does: `deny` refuses the call as `"forbidden"` without asking
- * anyone; `ask` hands it to a person (`RunOptions.askHuman`) whatever the approval mode.
+ * anyone; `ask` hands it to the host's {@link ApproveFn} with a policy reason, which puts it to
+ * a person whatever the approval mode.
  */
 export type CommandPolicyAction = "deny" | "ask";
 

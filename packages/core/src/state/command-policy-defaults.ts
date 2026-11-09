@@ -138,8 +138,8 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   // The five below ask instead of refusing: each acts beyond this machine and is hard to take
   // back, but is also routine work a person may well want done. A `deny` hit outranks them
   // wherever they sit (see internal/command-policy.ts). Text matching only: the same action
-  // through an alias, a script or an API call walks past, and the default prompt's
-  // # Authorization section covers what they cannot see.
+  // through an alias, a script or an API call walks past, and the go-ahead rule in the default
+  // prompt's # Tool use covers what they cannot see.
   {
     name: "gh-pr-merge-close",
     pattern: `${CMD_START}gh\\s+pr\\s+(?:merge|close)(?![a-zA-Z0-9-])`,

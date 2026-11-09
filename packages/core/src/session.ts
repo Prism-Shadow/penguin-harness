@@ -48,7 +48,6 @@ import type { UserPromptHook, UserPromptHookResult } from "./hooks/prompt-hook.j
 import { pumpOpener } from "./internal/merge-queue.js";
 import type {
   ApproveFn,
-  AskHumanFn,
   RunCutoff,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
@@ -621,17 +620,14 @@ export class Session {
   ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
     // injected callback is wrapped so a `deny` hit is refused before the host is ever asked
-    // and an `ask` hit goes to the host's route to a person (`askHuman`) rather than to the
-    // approval mode — which is what makes the policy outrank every approval mode. Wrapped
-    // once for every Task of this call. A child Session wraps its own forwarded callback
-    // again: that callback is this wrapper, so an `ask` hit the child hands back to it is
-    // matched here once more and reaches `askHuman` (see internal/command-policy.ts). With no
+    // and an `ask` hit reaches the host with a policy reason, which the host puts to a person
+    // whatever its approval mode — which is what makes the policy outrank every approval
+    // mode. Wrapped once for every Task of this call. A child Session wraps its own forwarded
+    // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
+    // with its reason and is matched once more (see internal/command-policy.ts). With no
     // callback at all the engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
-      opts = {
-        ...opts,
-        approve: withCommandPolicy(opts.approve, this.commandPolicy, opts.askHuman),
-      };
+      opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
     // Pre-tool-use hooks ride the engine's consult seam (RunOptions.preToolUse): the
     // engine records their events in stream order and applies the first decision before
@@ -1344,12 +1340,10 @@ export class Session {
    * EnvironmentInterface.setSubagentApprovalFallback), wrapped with this Session's command
    * policy as `run` wraps its callback: a child's call can reach this sink with no parent run
    * whose wrapper would match it, and the host's callback alone would let allow-all wave an
-   * `ask` hit through. `askHuman` is the host's route to a person for such a hit.
+   * `ask` hit through: wrapped, that hit reaches the host's callback with its policy reason.
    */
-  setSubagentApprovalFallback(approve: ApproveFn, askHuman?: AskHumanFn): void {
-    this.environment.setSubagentApprovalFallback?.(
-      withCommandPolicy(approve, this.commandPolicy, askHuman),
-    );
+  setSubagentApprovalFallback(approve: ApproveFn): void {
+    this.environment.setSubagentApprovalFallback?.(withCommandPolicy(approve, this.commandPolicy));
   }
 
   /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */

@@ -1,4 +1,4 @@
-# 有风险的动作要等人同意：提示词新增 `# Authorization` 小节，命令策略新增 `ask` 规则
+# 有风险的动作要等人同意：提示词的 `# Tool use` 新增征得同意的规则，命令策略新增 `ask` 规则
 
 - **Date:** 2026-11-04
 - **Type:** feature
@@ -7,18 +7,17 @@
 
 [English](2026-11-04-agent-authorization.md)
 
-Agent 不再自作主张地合并 PR、发布包或强推。这由两层共同承担：每个 Agent 都会读到的一段默认系统提示词，以及即使在 `allow-all` 下也能拦住其中最常见命令的命令策略规则。
+Agent 不再自作主张地合并 PR、发布包或强推。这由两层共同承担：每个 Agent 都会读到的一条默认系统提示词规则，以及即使在 `allow-all` 下也能拦住其中最常见命令的命令策略规则。
 
-## 提示词的 `# Authorization` 小节
+## `# Tool use` 中征得同意的规则
 
-默认系统提示词在 `# Constraints` 与 `# Output` 之间新增 `# Authorization`，要求模型做到四点：
+默认系统提示词的 `# Tool use` 小节新增一条规则：
 
-- 难以撤销或作用到本机之外的动作，先在本对话中得到用户的明示同意，用户已持久授权的除外（写在 `AGENTS.md`、记忆或任务本身中）。小节列出了这一类动作：合并、关闭或批准 PR；推送默认或受保护分支、强推、删除分支或标签；删改 Workspace 与 scratchpad 之外的内容；发布、创建 Release、部署；向外部服务发消息；花钱；修改权限或凭据。
-- 同意只对给出时的那一步有效。此前、其他对话、相似步骤中给出的同意，或只记在压缩摘要里的同意，都不算数。
-- 销毁或覆盖之前先查看目标，并说明会失去什么。
-- 如实汇报每个在 Workspace 之外生效的动作，包括失败与只完成一部分的。
+- 难以撤销或作用到本机之外的动作（合并或关闭 PR、推送默认分支或强推、发布 Release、发布包、删除用户的东西），要先在本对话中得到用户同意，用户已在 `AGENTS.md`、记忆或任务本身中持久授权的除外。
+- 同意只对给出时的那一步有效，来自其他对话或压缩摘要的同意不会延续。
+- 销毁任何东西之前先查看。
 
-内核版本升至 `2026-11-04`（提示词页签）。已有 Agent 在 Agents 页经内核更新采纳这一小节；更新后，每个运行中的对话会在下一次轮换时重新读取一次提示词前缀。
+内核版本升至 `2026-11-09`（提示词页签）。已有 Agent 在 Agents 页经内核更新采纳这条规则；更新后，每个运行中的对话会在下一次轮换时重新读取一次提示词前缀。
 
 ## 命令策略的 `ask` 规则
 
@@ -40,4 +39,4 @@ Agent 不再自作主张地合并 PR、发布包或强推。这由两层共同�
 
 ## SDK
 
-`RunOptions.askHuman`（类型 `AskHumanFn`，即另外收到规则名的 `ApproveFn`）是宿主为 `ask` 命中提供的、通向人的审批路径；不提供时由 `approve` 决定。`Session.setSubagentApprovalFallback(approve, askHuman?)` 现在会用命令策略包住兜底审批出口。服务端为这样的调用推送的 `approval_request` 事件附带 `reason: { kind: "policy", rule }`，`approval_decision` 记录不变。
+`ApproveFn` 新增可选的第二个参数 `context?: { reason?: ApprovalReason }`。`Session.run` 的策略包装在 `ask` 命中时以 `{ reason: { kind: "policy", rule } }` 调用宿主的回调，其余调用只传调用本身；引擎从不读取这个原因。收到原因的宿主无论审批模式都把调用交给人决定。按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。Subagent 的原因经由它继承的回调传递，`Session.setSubagentApprovalFallback` 现在也会用命令策略包住兜底审批出口。服务端为这样的调用推送的 `approval_request` 事件附带同一个 `reason`，`approval_decision` 记录不变。

@@ -138,7 +138,8 @@ describe("sse-stream", () => {
         async *run(_input: AmspRecord[], opts: RunOpts) {
           const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-ask" });
           yield tc;
-          yield approvalDecision(await opts.askHuman(tc, { rule: "package-publish" }), "tc-ask");
+          const reason = { kind: "policy", rule: "package-publish" } as const;
+          yield approvalDecision(await opts.approve(tc, { reason }), "tc-ask");
         },
       }),
     );

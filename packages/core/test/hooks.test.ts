@@ -803,10 +803,12 @@ describe("Session pre-tool-use hooks", () => {
       rules: [{ name: "ask-merge", pattern: "^gh pr merge", action: "ask" }],
     });
     const stream: AmspRecord[] = [];
+    // The host stands for allow-all: it says yes to an ordinary call, and asks a person
+    // (who says no) when the policy gives a reason.
     for await (const msg of s.run([userText("go")], {
-      approve: async () => "allow",
-      askHuman: async (_tc, hit) => {
-        asked.push(hit.rule);
+      approve: async (_tc, context) => {
+        if (context?.reason === undefined) return "allow";
+        asked.push(context.reason.rule);
         return "deny";
       },
     })) {

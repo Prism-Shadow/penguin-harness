@@ -261,11 +261,11 @@ enabled = false
 ### 生效方式
 
 - **检查范围：** 两个会触达 shell 的工具：`exec_command` 的 `cmd`（启动的命令）和 `input_command` 的 `chars`（往运行中的命令键入的内容）。
-- **生效时机：** `Session.run` 会用策略包住注入的审批回调，在任何审批模式下（`allow-all` 也不例外）都生效。命中 `deny` 规则，在询问宿主之前直接拒绝；命中 `ask` 规则，交给宿主通向人的审批路径（`askHuman`，见[工具与审批](/tools#审批)），不经审批模式，审批卡片会写明是哪条规则要求确认。
+- **生效时机：** `Session.run` 会用策略包住注入的审批回调，在任何审批模式下（`allow-all` 也不例外）都生效。命中 `deny` 规则，在询问宿主之前直接拒绝；命中 `ask` 规则，带着策略原因交给宿主的审批回调，由它交给人决定而不按审批模式作答（见[工具与审批](/tools#审批)），审批卡片会写明是哪条规则要求确认。
 - **以哪条为准：** 无论两者在列表里的先后，`deny` 命中都优先于 `ask` 命中，所以新增一条 `ask` 规则不会把原本的拒绝变成询问。同一种规则之间，以列表中第一条命中的规则命名这次决定。
 - **模型看到什么：** 命中 `deny` 时，是一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法；命中 `ask` 时，是人的决定，与其他审批一样记录。
 - **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。无论已安装的钩子给出什么答复，命中 `deny` 规则的调用都保持禁止，命中 `ask` 规则的调用仍交人决定。
-- **Subagent：** 子 Session 对继承来的审批回调施加同一套策略，而这个回调带着父 Session 通向人的审批路径，所以 Subagent 里的 `ask` 命中会交给同一个人。
+- **Subagent：** 子 Session 对继承来的审批回调施加同一套策略，而这个回调就是父 Session 的，所以 Subagent 里的 `ask` 命中会带着原因交给同一个人。
 - **无人值守的 Session：** 组织的工位与工单 Session 无人可问，`ask` 命中当场拒绝；`deny-all` 下同样拒绝。
 - **存放位置：** 策略存放在 Project 配置里，而不是 Agent State 里，所以 Agent 通过自身设置修改配置时碰不到它。
 - **修改何时生效：** 策略属于严格层级的运行时参数，只在模型上下文开启时读取一次。改动要等运行中的 Session 下一次轮换（压缩）才生效，新对话则立即生效。
@@ -301,7 +301,7 @@ enabled = false
 | `git-push-default-branch` | 推到 `main` 或 `master` 的 `git push`，作为目标或 refspec 的目的端。不写目标的 `git push` 无从判别，留给 Agent 的提示词 |
 | `package-publish` | `npm publish`、`pnpm publish`、`yarn publish` |
 
-与所有规则一样，它们只匹配文本：`gh pr merge --help` 和 `npm publish --dry-run` 也会要求确认（点一下即可），而经别名、脚本或 API 调用做同一件事则会绕过。默认系统提示词的 `# Authorization` 小节要求 Agent 在做这些动作以及同一类动作之前先征得同意。
+与所有规则一样，它们只匹配文本：`gh pr merge --help` 和 `npm publish --dry-run` 也会要求确认（点一下即可），而经别名、脚本或 API 调用做同一件事则会绕过。默认系统提示词的 `# Tool use` 小节要求 Agent 在做这些动作以及同一类动作之前先征得同意。
 
 ### 匹配规则
 

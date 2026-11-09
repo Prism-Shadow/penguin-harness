@@ -68,7 +68,6 @@ for await (const output of session.run([userText("Clean up the CSV files under d
 interface RunOptions {
   signal?: AbortSignal;       // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;        // per-tool approval; denies everything when omitted (conservative default)
-  askHuman?: AskHumanFn;      // route to a person for a command-policy `ask` hit, whatever the mode; approve decides when omitted
   preToolUse?: PreToolUseFn;  // pre-tool-use hook consult, called before approve for each complete tool_call
   userPrompt?: UserPromptFn;  // user-prompt hook consult, called once with the Prompt before the first request
 }

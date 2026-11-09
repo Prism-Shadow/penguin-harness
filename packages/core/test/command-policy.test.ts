@@ -9,14 +9,22 @@ import {
 } from "../src/internal/command-policy.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { Session } from "../src/session.js";
-import { assistantText, toolCall, userText } from "@prismshadow/amsp/records";
-import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
+import { Environment } from "../src/environment/index.js";
+import { assistantText, toolCall, userText, withOrigin } from "@prismshadow/amsp/records";
 import type {
+  AmspRecord,
+  ApprovalDecision,
+  SessionMetaPayload,
+  ToolCallPayload,
+} from "@prismshadow/amsp/records";
+import type {
+  ApprovalContext,
   ApproveFn,
   CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
+  SubagentRunner,
 } from "../src/interfaces/index.js";
 
 /** Shorthand: the matched rule name, or null. */
@@ -478,55 +486,46 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
     expect(await failing(call("rm -rf /") as never)).toBe("forbidden");
   });
 
-  it("hands an ask hit to askHuman with the rule's name, and approve is not consulted", async () => {
-    let approved = 0;
-    const asked: string[] = [];
-    const guarded = withCommandPolicy(
-      async () => {
-        approved += 1;
-        return "allow";
-      },
-      undefined,
-      async (_tc, hit) => {
-        asked.push(hit.rule);
-        return "deny";
-      },
-    );
+  it("hands an ask hit to the callback with the policy reason, and an ordinary call with none", async () => {
+    const seen: (ApprovalContext | undefined)[] = [];
+    // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
+    const guarded = withCommandPolicy(async (_tc, context) => {
+      seen.push(context);
+      return context?.reason === undefined ? "allow" : "deny";
+    });
 
-    // allow-all stands for the host here: it would have said yes.
     expect(await guarded(call("gh pr merge 12") as never)).toBe("deny");
-    expect(asked).toEqual(["gh-pr-merge-close"]);
-    expect(approved).toBe(0);
-    // A call no rule matches still goes to the approval mode, and askHuman is not bothered.
     expect(await guarded(call("gh pr view 12") as never)).toBe("allow");
-    expect(asked).toHaveLength(1);
+    expect(seen).toEqual([{ reason: { kind: "policy", rule: "gh-pr-merge-close" } }, undefined]);
   });
 
-  it("without askHuman, the approval callback decides an ask hit", async () => {
-    const guarded = withCommandPolicy(async () => "allow");
+  it("a callback written for the one-argument signature still fits, and decides an ask hit like any other call", async () => {
+    const asked: string[] = [];
+    // The shape every host had before the reason existed.
+    const legacy = async (tc: AmspRecord<ToolCallPayload>): Promise<ApprovalDecision> => {
+      asked.push(tc.payload.tool_call_id);
+      return "allow";
+    };
+    const guarded = withCommandPolicy(legacy);
+
     expect(await guarded(call("gh pr merge 12") as never)).toBe("allow");
+    expect(asked).toEqual(["c1"]);
   });
 
-  it("a child wrapping the parent's wrapper hands an ask hit to the parent's askHuman, once", async () => {
-    let hostApproved = 0;
-    let asked = 0;
-    const parent = withCommandPolicy(
-      async () => {
-        hostApproved += 1;
-        return "allow";
-      },
-      undefined,
-      async () => {
-        asked += 1;
-        return "allow";
-      },
-    );
-    // A child Session wraps the callback it was forwarded, with no askHuman of its own.
-    const child = withCommandPolicy(parent);
-
+  it("a child wrapping the parent's wrapper brings an ask hit to the host once, with its reason", async () => {
+    const reasons: (string | undefined)[] = [];
+    const host: ApproveFn = async (_tc, context) => {
+      reasons.push(context?.reason?.rule);
+      return "allow";
+    };
+    // A child Session wraps the callback it was forwarded, which is the parent's wrapper.
+    const child = withCommandPolicy(withCommandPolicy(host));
     expect(await child(call("git push --force origin feat") as never)).toBe("allow");
-    expect(asked).toBe(1);
-    expect(hostApproved).toBe(0);
+    // A parent whose own rules match nothing passes the child's reason on untouched.
+    const underQuietParent = withCommandPolicy(withCommandPolicy(host, () => ({ rules: [] })));
+    expect(await underQuietParent(call("npm publish") as never)).toBe("allow");
+
+    expect(reasons).toEqual(["git-push-force", "package-publish"]);
   });
 });
 
@@ -666,7 +665,7 @@ describe("Session applies the policy at the approval boundary", () => {
     expect(executedCmd).toBe("rm -rf ./build");
   });
 
-  it("under allow-all, an ask hit waits for askHuman, whose answer is the recorded decision", async () => {
+  it("under allow-all, an ask hit reaches the host with the policy reason, and the person's answer is the recorded decision", async () => {
     let approveCalls = 0;
     let executed = 0;
     const asked: string[] = [];
@@ -705,13 +704,14 @@ describe("Session applies the policy at the approval boundary", () => {
 
     const all: AmspRecord[] = [];
     for await (const msg of session.run([userText("merge it")], {
-      approve: async () => {
+      // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
+      approve: async (_tc, context) => {
+        if (context?.reason !== undefined) {
+          asked.push(context.reason.rule);
+          return "deny";
+        }
         approveCalls += 1;
         return "allow";
-      },
-      askHuman: async (_tc, hit) => {
-        asked.push(hit.rule);
-        return "deny";
       },
     })) {
       all.push(msg);
@@ -727,7 +727,7 @@ describe("Session applies the policy at the approval boundary", () => {
     expect((decision.payload as { decision?: string }).decision).toBe("deny");
   });
 
-  it("wraps the host's fallback sink for child approvals, so a child's ask hit reaches askHuman", async () => {
+  it("wraps the host's fallback sink for child approvals, so a child's ask hit arrives with its reason", async () => {
     let fallback: ApproveFn | undefined;
     const environment: EnvironmentInterface = {
       listTools: async () => [],
@@ -747,18 +747,11 @@ describe("Session applies the policy at the approval boundary", () => {
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
     });
-    const asked: string[] = [];
-    let hostApproved = 0;
-    session.setSubagentApprovalFallback(
-      async () => {
-        hostApproved += 1;
-        return "allow";
-      },
-      async (_tc, hit) => {
-        asked.push(hit.rule);
-        return "allow";
-      },
-    );
+    const reasons: (string | undefined)[] = [];
+    session.setSubagentApprovalFallback(async (_tc, context) => {
+      reasons.push(context?.reason?.rule);
+      return "allow";
+    });
     const childCall = (cmd: string): AmspRecord =>
       ({
         ...toolCall({ name: "exec_command", arguments: JSON.stringify({ cmd }), toolCallId: "c" }),
@@ -766,9 +759,121 @@ describe("Session applies the policy at the approval boundary", () => {
       }) as AmspRecord;
 
     expect(await fallback!(childCall("npm publish") as never)).toBe("allow");
-    expect(asked).toEqual(["package-publish"]);
     expect(await fallback!(childCall("rm -rf /") as never)).toBe("forbidden");
     expect(await fallback!(childCall("ls") as never)).toBe("allow");
-    expect(hostApproved).toBe(1);
+    // The host heard of the ask hit with its reason and of the plain call without one; the
+    // deny hit never reached it.
+    expect(reasons).toEqual(["package-publish", undefined]);
+  });
+
+  it("a subagent's ask hit reaches the host through the approve it inherits, with its reason", async () => {
+    // The child: a real Session whose model asks to merge, then stops when refused.
+    let childTurn = 0;
+    let childExecuted = 0;
+    const childLlm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+        if (childTurn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "gh pr merge 7 --squash" }),
+            toolCallId: "child_merge",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("Not merged.");
+        return { status: "completed" };
+      },
+    };
+    const childEnvironment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        childExecuted += 1;
+        throw new Error("a call the person refused must never be executed");
+      },
+      toolPermission: () => undefined,
+    };
+    const runner: SubagentRunner = {
+      async spawn() {
+        const child = new Session({
+          meta: { ...meta(), session_id: "session-child" },
+          bootstrap: async () => ({ llm: childLlm }),
+          environment: childEnvironment,
+          imagesDir: path.join(tmp, "child-images"),
+          modelHasVision: true,
+        });
+        return {
+          sessionId: "session-child",
+          async *run({ messages, signal, approve }) {
+            const gen = child.run(messages, {
+              ...(approve ? { approve } : {}),
+              ...(signal ? { signal } : {}),
+            });
+            for (;;) {
+              const next = await gen.next();
+              if (next.done) return next.value;
+              yield withOrigin(next.value, "session-child");
+            }
+          },
+          dispose() {},
+        };
+      },
+    };
+    // The parent: delegates once through the real run_subagent tool, then wraps up.
+    let parentTurn = 0;
+    const parentLlm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<AmspRecord, LLMOutcome> {
+        if (parentTurn++ === 0) {
+          yield toolCall({
+            name: "run_subagent",
+            arguments: JSON.stringify({ prompt: "merge PR 7" }),
+            toolCallId: "call_delegate",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("The merge was refused.");
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [{ name: "run_subagent", description: "delegate", permission: "rw" }],
+        mcpServers: [],
+      },
+      services: { subagentRunner: runner },
+    });
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ llm: parentLlm }),
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+    });
+
+    const reasons: string[] = [];
+    let approvedByMode = 0;
+    try {
+      for await (const _ of session.run([userText("delegate the merge")], {
+        // The host stands for allow-all: yes by mode, but a person (who says no) when told why.
+        approve: async (_tc, context) => {
+          if (context?.reason === undefined) {
+            approvedByMode += 1;
+            return "allow";
+          }
+          reasons.push(context.reason.rule);
+          return "deny";
+        },
+      })) {
+        // consume
+      }
+    } finally {
+      environment.dispose();
+    }
+
+    // The delegation itself went by mode; the child's merge went to a person, once.
+    expect(approvedByMode).toBe(1);
+    expect(reasons).toEqual(["gh-pr-merge-close"]);
+    expect(childExecuted).toBe(0);
   });
 });

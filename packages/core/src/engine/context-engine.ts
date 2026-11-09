@@ -79,7 +79,6 @@ import type {
 import type {
   RunCutoff,
   ApproveFn,
-  AskHumanFn,
   PreToolUseFn,
   PreToolUseOutcome,
   UserPromptFn,
@@ -176,8 +175,6 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
-  /** The host's route to a person for a call a command-policy `ask` rule matched, consulted whatever the approval mode; absent, `approve` decides. Read by `Session.run`'s policy wrapper only — the engine never reads it. */
-  askHuman?: AskHumanFn;
   /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
   preToolUse?: PreToolUseFn;
   /** User-prompt hook consult, called once with this call's Prompt after it is written and before the first request — never for a call with no new input, which has no Prompt; its records follow the Prompt on the stream and in the Trace, and the user texts among them join the request input (see {@link UserPromptFn}). */

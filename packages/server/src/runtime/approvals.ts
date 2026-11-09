@@ -13,9 +13,10 @@
  * An unattended Session takes that one route differently: there is no frontend to ask, so
  * the call is denied on the spot instead of suspending forever (see `unattended` below).
  *
- * A call a command-policy `ask` rule matched never reaches the mode: core hands it to
- * `askHuman` instead, which takes the same manual route under every mode but deny-all (still
- * a denial) — with the rule's name on the pending entry, so the card can say why it asks.
+ * A call a command-policy `ask` rule matched never reaches the mode: core hands it to the
+ * same callback with a policy reason (`context.reason`), and the callback takes the manual
+ * route under every mode but deny-all (still a denial) — with the reason on the pending
+ * entry, so the card can say why it asks.
  *
  * Every approval decision re-reads the current approval_mode (`getMode` reads the DB),
  * so mode changes take effect immediately.
@@ -25,7 +26,6 @@ import type { ApprovalMode, ApprovalReason } from "../api/types.js";
 import type {
   ApprovalDecision,
   ApproveFn,
-  AskHumanFn,
   AmspRecord,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
@@ -147,13 +147,13 @@ export class ApprovalRegistry implements Approvals {
 }
 
 /**
- * Build the two approval callbacks of a Session runtime. `approve` re-reads the approval mode
- * on every call; when routed to manual approval, registers a pending entry and suspends after
- * pushing an `approval_request` server event via `publishRequest` — unless the Session is
- * unattended, in which case that one route answers deny immediately. `askHuman` is core's
- * route to a person for a call a command-policy `ask` rule matched (`RunOptions.askHuman`):
- * the same manual route under every mode — allow-all and read-only included — except
- * deny-all, which still denies, with the rule on the request as its `reason`.
+ * Build the approve callback: re-reads the approval mode on every call; when routed to
+ * manual approval, registers a pending entry and suspends after pushing an
+ * `approval_request` server event via `publishRequest` — unless the Session is unattended,
+ * in which case that one route answers deny immediately. A call core hands over with a
+ * policy reason (a command-policy `ask` rule matched it) takes the manual route under every
+ * mode — allow-all and read-only included — except deny-all, which still denies; the reason
+ * rides on the request.
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
@@ -173,7 +173,7 @@ export function makeApprove(args: {
    * Absent (development mode) keeps the suspending behaviour.
    */
   unattended?: () => boolean;
-}): { approve: ApproveFn; askHuman: AskHumanFn } {
+}): ApproveFn {
   const { getMode, toolPermission, registry, publishRequest, unattended } = args;
   const manual = (
     toolCall: AmspRecord<ToolCallPayload>,
@@ -188,12 +188,13 @@ export function makeApprove(args: {
     });
     return promise;
   };
-  const askHuman: AskHumanFn = async (toolCall, hit) => {
-    if (getMode() === "deny-all") return "deny";
-    return manual(toolCall, { kind: "policy", rule: hit.rule });
-  };
-  const approve: ApproveFn = async (toolCall) => {
-    switch (getMode()) {
+  return async (toolCall, context) => {
+    const mode = getMode();
+    // The Project's security policy wants a person: the mode's automatic yes does not apply.
+    if (context?.reason !== undefined) {
+      return mode === "deny-all" ? "deny" : manual(toolCall, context.reason);
+    }
+    switch (mode) {
       case "allow-all":
         return "allow";
       case "deny-all":
@@ -207,5 +208,4 @@ export function makeApprove(args: {
         return manual(toolCall);
     }
   };
-  return { approve, askHuman };
 }

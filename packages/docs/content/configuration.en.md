@@ -260,11 +260,11 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 ### Enforcement
 
 - **What it checks:** both tools that reach a shell: `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into a running command).
-- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's route to a person (`askHuman`, see [Tools & Approval](/tools#approval)) instead of to the approval mode. The approval card then says which rule asked.
+- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's approval callback with a policy reason, which puts it to a person instead of answering by approval mode (see [Tools & Approval](/tools#approval)). The approval card then says which rule asked.
 - **Which rule wins:** a `deny` hit outranks an `ask` hit wherever the two sit in the list, so adding an `ask` rule never turns a refusal into a question. Among rules with the same action, the first match in list order is the one a decision names.
 - **What the model sees:** for a `deny` hit, the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course. For an `ask` hit, the person's answer, recorded like any other approval.
 - **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A call a `deny` rule matches stays forbidden, and a call an `ask` rule matches still goes to a person, whatever an installed hook answers.
-- **Subagents:** a child Session applies the same policy to the callback it inherits, and that callback carries the parent's route to a person, so an `ask` hit inside a subagent is put to the same person.
+- **Subagents:** a child Session applies the same policy to the callback it inherits, which is the parent's, so an `ask` hit inside a subagent reaches the same person with its reason.
 - **Unattended Sessions:** an organization's desk and ticket Sessions have nobody to ask, so an `ask` hit there is denied at once. `deny-all` denies it too.
 - **Where it lives:** in the Project config, not in Agent State, so an agent that edits its own configuration through its settings cannot reach it.
 - **When edits apply:** the policy is a strict-tier runtime parameter, read once when a model context opens. An edit reaches a running Session at its next rotation (compaction) and new conversations at once.
@@ -300,7 +300,7 @@ Five `ask` rules follow them. Each covers a command that acts beyond this machin
 | `git-push-default-branch` | `git push` to `main` or `master`, as a target or a refspec's destination. A bare `git push` names no target, so it cannot be told apart and is left to the agent's prompt |
 | `package-publish` | `npm publish`, `pnpm publish`, `yarn publish` |
 
-They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Authorization` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
+They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Tool use` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
 
 ### Matching
 

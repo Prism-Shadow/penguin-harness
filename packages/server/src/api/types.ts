@@ -15,6 +15,7 @@
  */
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
+  ApprovalReason as CoreApprovalReason,
   ElidedBody,
   MCPServerConfig,
   ThinkingLevelName,
@@ -1312,12 +1313,12 @@ export interface CommandPolicyDto {
   defaultRules: CommandPolicyRuleDto[];
 }
 
-/** Why an `approval_request` asks when its approval mode did not send it: a command-policy `ask` rule matched the call. */
-export interface ApprovalReason {
-  kind: "policy";
-  /** The matched rule's name. */
-  rule: string;
-}
+/**
+ * Why an `approval_request` asks when its approval mode did not send it: a command-policy
+ * `ask` rule matched the call (`rule` is its name). Core's own type, the reason its policy
+ * wrapper hands the approve callback, carried to the card as it is.
+ */
+export type ApprovalReason = CoreApprovalReason;
 
 // ---------------------------------------------------------------------------
 // Vault environment variables (Agent-level: agent_state/.vault.toml)

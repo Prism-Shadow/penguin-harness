@@ -1,4 +1,4 @@
-# Risky actions wait for a person's go-ahead: an `# Authorization` prompt section and `ask` rules in the command policy
+# Risky actions wait for a person's go-ahead: a go-ahead rule in the prompt's `# Tool use` and `ask` rules in the command policy
 
 - **Date:** 2026-11-04
 - **Type:** feature
@@ -7,18 +7,17 @@
 
 [中文版](2026-11-04-agent-authorization.zh.md)
 
-An agent no longer merges a pull request, publishes a package or force-pushes on its own. Two layers carry this: a section of the default system prompt that every Agent reads, and command-policy rules that stop the commonest of those commands even under `allow-all`.
+An agent no longer merges a pull request, publishes a package or force-pushes on its own. Two layers carry this: a rule in the default system prompt that every Agent reads, and command-policy rules that stop the commonest of those commands even under `allow-all`.
 
-## The `# Authorization` prompt section
+## The go-ahead rule in `# Tool use`
 
-The default system prompt gains `# Authorization` between `# Constraints` and `# Output`. It asks the model for four things:
+The default system prompt's `# Tool use` section gains one rule:
 
-- Get the user's explicit go-ahead in this conversation before an action that is hard to undo or reaches beyond the machine, unless the user authorized it durably (in `AGENTS.md`, a memory, or the task itself). The section names the class: merging, closing or approving pull requests; pushing to a default or protected branch, force-pushing, deleting branches or tags; deleting or overwriting outside the Workspace and the scratchpad; publishing, releasing, deploying; messaging external services; spending money; changing permissions or credentials.
-- Treat consent as covering the step it was given for. Consent from earlier, from another conversation, for a similar step, or recorded only in a compaction summary does not count.
-- Look before destroying or overwriting, and say what will be lost.
-- Report every action with an effect outside the Workspace, failed and partial ones included.
+- An action that is hard to undo or reaches beyond the machine (merging or closing a pull request, pushing to the default branch or force-pushing, releasing, publishing a package, deleting what the user owns) needs the user's go-ahead in this conversation, unless the user authorized it durably in `AGENTS.md`, a memory, or the task itself.
+- A yes covers only the step it was given for. One from another conversation or a compaction summary does not carry over.
+- The model looks before it destroys anything.
 
-The kernel moves to `2026-11-04` (the prompt tab). An existing Agent adopts the section through the kernel update on the Agents page. The update re-reads every running conversation's prompt prefix once, at its next rotation.
+The kernel moves to `2026-11-09` (the prompt tab). An existing Agent adopts the rule through the kernel update on the Agents page. The update re-reads every running conversation's prompt prefix once, at its next rotation.
 
 ## `ask` rules in the command policy
 
@@ -40,4 +39,4 @@ The rule editor gains a Deny / Ask choice, and an `ask` rule's row carries an "A
 
 ## SDK
 
-`RunOptions.askHuman` (type `AskHumanFn`, an `ApproveFn` that is also told the rule) is the host's route to a person for an `ask` hit. Without it, `approve` decides. `Session.setSubagentApprovalFallback(approve, askHuman?)` now wraps the fallback sink with the command policy. The server's `approval_request` event carries `reason: { kind: "policy", rule }` for such a call, and the `approval_decision` record is unchanged.
+`ApproveFn` takes an optional second argument, `context?: { reason?: ApprovalReason }`. `Session.run`'s policy wrapper calls the host's callback with `{ reason: { kind: "policy", rule } }` for an `ask` hit, and with the call alone otherwise. The engine never reads the reason. A host that sees a reason puts the call to a person whatever its approval mode. A callback written for the one-argument signature still compiles, and decides an `ask` hit like any other call. A subagent's reason travels through the callback it inherits, and `Session.setSubagentApprovalFallback` now wraps the fallback sink with the command policy. The server's `approval_request` event carries the same `reason` for such a call, and the `approval_decision` record is unchanged.
