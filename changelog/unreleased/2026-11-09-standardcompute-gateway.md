@@ -3,6 +3,7 @@
 - **Date:** 2026-11-09
 - **Type:** feature
 - **Scope:** `model-catalog`, `web`, `cli`, `docs`, `plugins`
+- **PR:** [#1512](https://github.com/Prism-Shadow/penguin-harness/pull/1512)
 
 [中文版](2026-11-09-standardcompute-gateway.zh.md)
 
@@ -12,7 +13,7 @@
 
 Ids, context windows and input modalities were read from the gateway's public catalog API (`GET https://api.stdcmpt.com/v1/models`, no credential) on 2026-11-09. The gateway bills by plan and the API lists no per-token prices, so the rows carry no `pricing`: the cost center treats them as uncosted rather than free.
 
-- `StandardCompute` (**Standard Compute (routed)**), the gateway's routed id: each request goes to the cheapest enabled model that can handle it, with automatic fallback. 1,000,000-token context window, text only (the listing gives the routed id no input modalities).
+- `StandardCompute` (**Standard Compute (routed)**), the gateway's routed id: the router picks from the models enabled on the account using its quality preference. 1,000,000-token context window, text only (the listing gives the routed id no input modalities).
 - `deepseek/deepseek-v4-pro` (**DeepSeek V4 Pro**), a pinned id from the same listing, 1,048,576-token context window, text only.
 
 ## Existing Projects

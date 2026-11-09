@@ -3,6 +3,7 @@
 - **Date:** 2026-11-09
 - **Type:** feature
 - **Scope:** `model-catalog`, `web`, `cli`, `docs`, `plugins`
+- **PR:** [#1512](https://github.com/Prism-Shadow/penguin-harness/pull/1512)
 
 [English](2026-11-09-standardcompute-gateway.md)
 
@@ -12,7 +13,7 @@
 
 模型 id、上下文窗口与输入模态于 2026-11-09 读自该网关的公开目录 API（`GET https://api.stdcmpt.com/v1/models`，无需凭证）。该网关按套餐计费，API 不列每 Token 价格，因此条目不带 `pricing`：成本中心将其视为未计价，而非免费。
 
-- `StandardCompute`（**Standard Compute (routed)**），该网关的路由 id：每个请求发往能处理它的最便宜的已启用模型，并自动回退。上下文窗口 1,000,000 Token，纯文本（列表未给出该路由 id 的输入模态）。
+- `StandardCompute`（**Standard Compute (routed)**），该网关的路由 id：路由器根据账户的质量偏好，从账户已启用的模型中选择。上下文窗口 1,000,000 Token，纯文本（列表未给出该路由 id 的输入模态）。
 - `deepseek/deepseek-v4-pro`（**DeepSeek V4 Pro**），同一列表中的固定 id，上下文窗口 1,048,576 Token，纯文本。
 
 ## 既有 Project
