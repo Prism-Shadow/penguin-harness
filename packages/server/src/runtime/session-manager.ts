@@ -89,7 +89,7 @@ import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { AgentStateStore } from "./agent-state.js";
-import type { LiveTail } from "./live-tail.js";
+import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
@@ -829,7 +829,7 @@ export class SessionManager {
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
-  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  /** Open streaming fragments and the current run's records (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
@@ -977,6 +977,16 @@ export class SessionManager {
    */
   liveFragments(sessionId: string): AmspRecord[] {
     return this.liveTail.fragments(sessionId);
+  }
+
+  /**
+   * The current run's records (one drive: a Task, a goal loop, a compaction or a model switch)
+   * in publish order, each streamed fragment's deltas folded into its start, with the records
+   * the run starts at; null when no run is under way (see live-tail.ts). The run form of
+   * GET /messages attaches the records and cuts its history read before the run.
+   */
+  liveRun(sessionId: string): LiveRun | null {
+    return this.liveTail.run(sessionId);
   }
 
   /**
@@ -1159,13 +1169,15 @@ export class SessionManager {
    */
   assertCanAcceptTask(
     sessionId: string,
-    opts?: { queueIfBusy?: boolean; interrupt?: boolean },
+    opts?: { queueIfBusy?: boolean; interrupt?: boolean; steerIfBusy?: boolean },
   ): void {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy && !opts?.interrupt) this.assertIdle(entry);
+    if (entry && !opts?.queueIfBusy && !opts?.interrupt && !opts?.steerIfBusy) {
+      this.assertIdle(entry);
+    }
   }
 
   /**
@@ -1201,12 +1213,23 @@ export class SessionManager {
    * With `interrupt`, a busy session aborts its run and the input waits at the head of the
    * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
    * so that the interrupt cannot overtake an earlier one still waiting to start.
+   *
+   * With `steerIfBusy`, a running Task takes the input as steering, exactly as `steer` gives it
+   * (`steered: true`; `recall` is then the steering message's content). A compaction has no
+   * Task to steer, and a run already settling no longer takes steering (core refuses it): both
+   * queue the input as `queueIfBusy` does. Decided here, under the lock, so one request does
+   * whatever the Session's state calls for.
    */
   async startTask(
     sessionId: string,
     input: AmspRecord[],
-    opts?: { queueIfBusy?: boolean; interrupt?: boolean; recall?: RecallStore },
-  ): Promise<{ sessionId: string; queued: boolean }> {
+    opts?: {
+      queueIfBusy?: boolean;
+      interrupt?: boolean;
+      steerIfBusy?: boolean;
+      recall?: RecallStore;
+    },
+  ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
@@ -1214,6 +1237,13 @@ export class SessionManager {
       const entry = await this.ensureEntry(sessionId);
       // Neither started nor queued on a runtime stranded on a model it cannot reach.
       assertNotStranded(entry);
+      if (
+        opts?.steerIfBusy &&
+        entry.status === "running" &&
+        this.steerRunning(entry, input, opts.recall ?? recallStoreOf(input))
+      ) {
+        return { sessionId: entry.sessionId, queued: false, steered: true };
+      }
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
@@ -1226,7 +1256,7 @@ export class SessionManager {
         });
         return { sessionId: entry.sessionId, queued: true };
       }
-      if (entry.status !== "idle" && opts?.queueIfBusy) {
+      if (entry.status !== "idle" && (opts?.queueIfBusy || opts?.steerIfBusy)) {
         this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
@@ -1729,13 +1759,22 @@ export class SessionManager {
    */
   steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
+    if (!entry || !this.steerRunning(entry, input, recall)) {
       throw new HttpError(
         409,
         "not_running",
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
+  }
+
+  /**
+   * Hands `input` to the entry's running Task as steering and mirrors it (see `steer`); false,
+   * with nothing changed, when there is no Task to take it — the Session is not running one, or
+   * core refuses (no engine yet, or the run is settling).
+   */
+  private steerRunning(entry: RuntimeEntry, input: AmspRecord[], recall: RecallStore): boolean {
+    if (entry.status !== "running" || !entry.session.steer(input)) return false;
     entry.pendingSteering.push({
       info: {
         id: randomUUID(),
@@ -1748,6 +1787,7 @@ export class SessionManager {
     });
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
+    return true;
   }
 
   /**
@@ -2436,6 +2476,10 @@ export class SessionManager {
     gen: AsyncGenerator<AmspRecord>,
     titleSource?: { userExcerpt: string; echo?: readonly AmspRecord[] },
   ): Promise<void> {
+    // The run's log opens before anything of it is published: the input echo included, which
+    // is the run's as much as what the generator yields. Every caller flips the status in the
+    // same synchronous tick, so a history capture that reads the Session busy finds this log.
+    this.liveTail.begin(entry.sessionId);
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -2496,12 +2540,15 @@ export class SessionManager {
     // exist) — the latter is cleaned up when the parent-level tool_call_output settles;
     // if the call is still in the queue at that point, it never produced a session_meta.
     const subagentPrompts = new Map<string, string>();
-    // Re-fetches the channel per publish, like the loop below (see the comment there).
-    // Read before the run's first step: the generator has not started, so this is the state
-    // the run opens on.
+    // Re-fetches the channel per publish, like the loop below (see the comment there), and
+    // logs the echo in the run's records in the same tick. Read before the run's first step:
+    // the generator has not started, so this is the state the run opens on.
     const echo = new InputEcho(
       titleSource?.echo ?? [],
-      (m) => this.deps.channels.get(entry.sessionId).publish(m),
+      (m) => {
+        const published = this.deps.channels.get(entry.sessionId).publish(m);
+        this.liveTail.observe(entry.sessionId, m, published);
+      },
       entry.session.contextOpenPending?.() === true,
     );
     try {
@@ -2598,14 +2645,14 @@ export class SessionManager {
             entry.pendingBootstrap = [];
           }
         }
-        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
-        // messages endpoint captures "channel cursor + open fragments" between two
-        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
-        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
-        this.deps.channels.get(entry.sessionId).publish(msg);
+        const published = this.deps.channels.get(entry.sessionId).publish(msg);
+        // Live-tail bookkeeping in the same synchronous tick as the publish: the messages
+        // endpoint captures "channel cursor + open fragments + the run's records" between
+        // two publishes, so the capture is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg, published);
         echo.after(msg);
         watcher?.observe(msg);
         try {
@@ -2627,8 +2674,9 @@ export class SessionManager {
       echo.flush();
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
-      // The run is over: no fragment will ever continue, so drop the live tail before the
-      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      // The run is over: no fragment will ever continue, so drop the live tail — the run's
+      // log with it — before the idle flip (GET /messages stops attaching the open fragments,
+      // and the run form's records read empty, the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
       // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
@@ -2910,6 +2958,7 @@ export abstract class Sessions extends Interface<
     | "abortSubagentRun"
     | "pendingFollowUpsOf"
     | "liveFragments"
+    | "liveRun"
     | "pendingInputs"
     | "pendingBootstrap"
     | "activeCountForAgent"

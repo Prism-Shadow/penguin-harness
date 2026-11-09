@@ -13,15 +13,15 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   benchmarksDir,
   loadPreinstalledPlugins,
   readBenchmarkManifest,
   readBuiltinBenchmarks,
+  type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
-import type { BuiltinBenchmark } from "@prismshadow/penguin-core";
-import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
+import type { BenchmarksResponse } from "../src/api/types.js";
 import {
   apiClient,
   createTestApp,
@@ -189,80 +189,6 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the shipped packages, copied unchanged with their metadata and statements", async () => {
-    // Two packages of the test's own stand in for the catalog: one with nested and binary
-    // files, one carrying a scoreboard of its own that a Project must not inherit.
-    const catalog = await makeTempRoot();
-    const packages = [
-      await writePackage(catalog, "shipped-one", "Shipped one", { manifest: true }),
-      await writePackage(catalog, "shipped-two", "Shipped two", { manifest: true }),
-    ];
-    await fs.mkdir(path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets"));
-    await fs.writeFile(
-      path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets", "table.bin"),
-      Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
-    );
-    await fs.writeFile(
-      path.join(packages[1]!.directory, SCOREBOARD),
-      "evaluations:\n  - agent_id: default_agent\n",
-    );
-    const shipped = await createTestApp({ builtinBenchmarks: packages });
-    try {
-      const owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
-      const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
-      const created = (await (
-        await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
-      ).json()) as ProjectCreateResponse;
-      for (const projectId of [projects.projects[0]!.projectId, created.project.projectId]) {
-        const base = `/api/projects/${projectId}/benchmarks`;
-        const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
-        const ids = body.benchmarks.map((b) => b.id);
-        expect(ids[0], projectId).toBe("example-benchmark");
-        expect(ids.slice(1).sort(), projectId).toEqual(packages.map((p) => p.id).sort());
-        expect(body.benchmarks[0]!.origin).toEqual({ kind: "builtin" });
-        for (const source of packages) {
-          const bench = body.benchmarks.find((b) => b.id === source.id)!;
-          const manifest = (await readBenchmarkManifest(source.directory))!;
-          expect(bench, source.id).toMatchObject({
-            title: manifest.title,
-            origin: manifest.origin,
-            version: manifest.version,
-            status: manifest.status,
-            runs: manifest.runs,
-            caseCount: 1,
-            // No baseline comes with a package, whatever its directory holds.
-            evaluations: [],
-          });
-          // The case's statement is served as the package wrote it.
-          const statement = await (
-            await owner.get(`${base}/${source.id}/cases/CASE-001-task/files/content?path=README.md`)
-          ).text();
-          expect(statement, source.id).toBe(
-            await fs.readFile(
-              path.join(source.directory, "CASE-001-task", "statement", "README.md"),
-              "utf8",
-            ),
-          );
-          // Every file the package ships is the Project's, byte for byte; only the scoreboard
-          // is the Project's own.
-          const copy = await filesUnder(
-            path.join(benchmarksDir(shipped.root, projectId), source.id),
-          );
-          const shippedFiles = await filesUnder(source.directory);
-          shippedFiles.delete(SCOREBOARD);
-          expect([...copy.keys()].filter((f) => f !== SCOREBOARD).sort(), source.id).toEqual(
-            [...shippedFiles.keys()].sort(),
-          );
-          for (const [file, bytes] of shippedFiles) {
-            expect(copy.get(file)?.equals(bytes), `${source.id}/${file}`).toBe(true);
-          }
-        }
-      }
-    } finally {
-      await shipped.cleanup();
-    }
-  });
-
   it("the shipped catalog reaches a Project whole: default_project lists the example and every package the build fetched", async () => {
     // The one scenario on the real catalog, on an app that writes it as production does
     // (createTestApp leaves the built-ins out unless asked). Only what holds for any catalog
@@ -342,4 +268,96 @@ describe("built-in Agent provisioning", () => {
     const res = await owner.delete(`/api/projects/${projectId}/agents/agent_creator`);
     expect(res.status).toBe(202);
   });
+});
+
+describe("the shipped Benchmarks a new Project is written with", () => {
+  // Two packages of the test's own stand in for the catalog: one with nested and binary files,
+  // one carrying a scoreboard of its own that a Project must not inherit. The app writes them into
+  // every Project it creates, as production writes the catalog: the Projects are created once,
+  // here, and each scenario only reads its own back.
+  let shipped: TestApp | undefined;
+  let owner: ReturnType<typeof apiClient>;
+  let packages: BuiltinBenchmark[];
+  const projectIds = { initial: "", created: "" };
+
+  beforeAll(async () => {
+    const catalog = await makeTempRoot();
+    packages = [
+      await writePackage(catalog, "shipped-one", "Shipped one", { manifest: true }),
+      await writePackage(catalog, "shipped-two", "Shipped two", { manifest: true }),
+    ];
+    await fs.mkdir(path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets"));
+    await fs.writeFile(
+      path.join(packages[0]!.directory, "CASE-001-task", "statement", "assets", "table.bin"),
+      Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+    );
+    await fs.writeFile(
+      path.join(packages[1]!.directory, SCOREBOARD),
+      "evaluations:\n  - agent_id: default_agent\n",
+    );
+    shipped = await createTestApp({ builtinBenchmarks: packages });
+    owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
+    const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+    projectIds.initial = projects.projects[0]!.projectId;
+    const created = (await (
+      await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
+    ).json()) as ProjectCreateResponse;
+    projectIds.created = created.project.projectId;
+  });
+  afterAll(async () => {
+    await shipped?.cleanup();
+  });
+
+  it.each([
+    ["the initial Project made at account setup", "initial"],
+    ["a Project created afterwards", "created"],
+  ] as const)(
+    "%s comes with the example and the shipped packages, copied unchanged with their metadata and statements",
+    async (_, kind) => {
+      const projectId = projectIds[kind];
+      const base = `/api/projects/${projectId}/benchmarks`;
+      const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+      const ids = body.benchmarks.map((b) => b.id);
+      expect(ids[0], projectId).toBe("example-benchmark");
+      expect(ids.slice(1).sort(), projectId).toEqual(packages.map((p) => p.id).sort());
+      expect(body.benchmarks[0]!.origin).toEqual({ kind: "builtin" });
+      for (const source of packages) {
+        const bench = body.benchmarks.find((b) => b.id === source.id)!;
+        const manifest = (await readBenchmarkManifest(source.directory))!;
+        expect(bench, source.id).toMatchObject({
+          title: manifest.title,
+          origin: manifest.origin,
+          version: manifest.version,
+          status: manifest.status,
+          runs: manifest.runs,
+          caseCount: 1,
+          // No baseline comes with a package, whatever its directory holds.
+          evaluations: [],
+        });
+        // The case's statement is served as the package wrote it.
+        const statement = await (
+          await owner.get(`${base}/${source.id}/cases/CASE-001-task/files/content?path=README.md`)
+        ).text();
+        expect(statement, source.id).toBe(
+          await fs.readFile(
+            path.join(source.directory, "CASE-001-task", "statement", "README.md"),
+            "utf8",
+          ),
+        );
+        // Every file the package ships is the Project's, byte for byte; only the scoreboard
+        // is the Project's own.
+        const copy = await filesUnder(
+          path.join(benchmarksDir(shipped!.root, projectId), source.id),
+        );
+        const shippedFiles = await filesUnder(source.directory);
+        shippedFiles.delete(SCOREBOARD);
+        expect([...copy.keys()].filter((f) => f !== SCOREBOARD).sort(), source.id).toEqual(
+          [...shippedFiles.keys()].sort(),
+        );
+        for (const [file, bytes] of shippedFiles) {
+          expect(copy.get(file)?.equals(bytes), `${source.id}/${file}`).toBe(true);
+        }
+      }
+    },
+  );
 });

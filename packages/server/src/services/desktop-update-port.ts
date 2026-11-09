@@ -10,8 +10,11 @@
  * Under a plain `penguin server|web` run the port does not exist and this module wires
  * nothing; those routes then answer 503 `shell_unreachable`.
  *
- * Wire shapes live in api/types.ts (the updater, tray and folder-access messages) so the
- * shell imports the same contract.
+ * The same port carries the host commands the page's command palette offers: one
+ * `host-commands` push saying what this host can do, and `host-command` frames back.
+ *
+ * Wire shapes live in api/types.ts (the updater, tray and folder-access messages, and
+ * HostCommandsMessage / HostCommandMessage) so the shell imports the same contract.
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -25,8 +28,12 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
+  HostCommandMessage,
+  HostCommandOffer,
+  HostCommandsMessage,
 } from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
+import type { ShellFrames } from "../hmr/capabilities.js";
 
 /**
  * How long the shell may take to answer a folder-access request. Generous: its read holds
@@ -62,6 +69,46 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   if (typeof status.state !== "string" || !UPDATE_STATES.has(status.state)) return null;
   if (status.seq !== undefined && typeof status.seq !== "number") return null;
   return status as DesktopUpdateStatus;
+}
+
+/** What a host may announce at once, and how long an id and a label may be. Bounds, not policy: the frame comes from the process that spawned this one. */
+const MAX_OFFERS = 32;
+const MAX_ID = 64;
+const MAX_LABEL = 120;
+
+/**
+ * Validates the shell's once-per-wiring push of what it offers.
+ *
+ * Nothing is checked against a list of known commands: the host decides what it can do, and
+ * a server that dropped what it had not heard of would make a newer shell's commands
+ * unreachable through an older server — which is the whole reason the words travel with the
+ * command now. What is checked is the shape and some bounds.
+ *
+ * A bare string is accepted as an id with no words: that is what a shell older than
+ * `HostCommandOffer` sends, and the page has its own words for everything such a shell can
+ * offer.
+ */
+export function parseHostCommandsMessage(data: unknown): HostCommandOffer[] | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<HostCommandsMessage>;
+  if (msg.type !== "host-commands" || !Array.isArray(msg.commands)) return null;
+  const offers: HostCommandOffer[] = [];
+  for (const entry of (msg.commands as unknown[]).slice(0, MAX_OFFERS)) {
+    if (typeof entry === "string") {
+      if (entry !== "" && entry.length <= MAX_ID) {
+        offers.push({ command: entry, label: "", labelZh: "" });
+      }
+      continue;
+    }
+    if (typeof entry !== "object" || entry === null) continue;
+    const offer = entry as Partial<HostCommandOffer>;
+    if (typeof offer.command !== "string" || offer.command === "") continue;
+    if (offer.command.length > MAX_ID) continue;
+    const label = typeof offer.label === "string" ? offer.label.slice(0, MAX_LABEL) : "";
+    const labelZh = typeof offer.labelZh === "string" ? offer.labelZh.slice(0, MAX_LABEL) : "";
+    offers.push({ command: offer.command, label, labelZh });
+  }
+  return offers;
 }
 
 /** Reads Electron's injected port off `process`, absent under plain Node. */
@@ -105,11 +152,23 @@ export function parseFolderAccessResultMessage(
 
 /**
  * Connects the port to the service: stores validated status pushes, registers the command
- * senders, and pairs each folder-access reply with the request it answers. A frame that fails
- * to apply is logged and dropped: an exception escaping a port listener is uncaught, and an
- * uncaught exception ends the server (index.ts).
+ * senders, pairs each folder-access reply with the request it answers, and keeps the host's
+ * raw frames where the PLATFORM can read them. A frame that fails to apply is logged and
+ * dropped: an exception escaping a port listener is uncaught, and an uncaught exception ends
+ * the server (index.ts).
+ *
+ * The frames holder is the whole point of the split. What a `host-commands` frame means is
+ * policy — which commands exist, what they are called, who may run one — and policy ships by
+ * push, so this function stores the frame unread and the platform interprets it (see
+ * http/routes/command.ts). Parsing it here as well is a shim for platforms older than the
+ * holder, which still ask the service for a parsed list; it goes when they do.
  */
-export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): void {
+export function wireShellUpdatePort(
+  desktop: DesktopService,
+  port: ShellPort,
+  frames: ShellFrames | null = null,
+): void {
+  if (frames !== null) frames.post = (frame) => port.postMessage(frame);
   /** Folder-access requests still waiting for the shell, by id. */
   const awaiting = new Map<string, (reply: DesktopFolderAccessResultMessage) => void>();
   port.on("message", (e) => {
@@ -126,7 +185,15 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
       }
       // A reply nobody waits for any more (its request timed out) is dropped.
       const access = parseFolderAccessResultMessage(e.data);
-      if (access !== null) awaiting.get(access.id)?.(access);
+      if (access !== null) {
+        awaiting.get(access.id)?.(access);
+        return;
+      }
+      const offers = parseHostCommandsMessage(e.data);
+      if (offers !== null) {
+        if (frames !== null) frames.hostCommands = e.data;
+        desktop.setCommands(offers);
+      }
     } catch (err) {
       console.error(`[server] dropped a frame from the desktop shell: ${String(err)}`);
     }
@@ -170,5 +237,8 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
       type: "desktop-open-privacy-settings",
       pane,
     } satisfies DesktopOpenPrivacySettingsMessage);
+  });
+  desktop.onCommand((command) => {
+    port.postMessage({ type: "host-command", command } satisfies HostCommandMessage);
   });
 }

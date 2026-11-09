@@ -20,7 +20,7 @@ import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { MessagingPanel } from "../src/features/messaging/messaging-panel";
 import { MessagingBindingModal } from "../src/features/messaging/messaging-binding-modal";
 import { ProjectProvider } from "../src/state/project";
-import { confirmClose } from "../src/features/dock/close-guard";
+import { confirmClose } from "../src/lib/dock-close-guard";
 import { tabKey } from "../src/features/dock/dock-state";
 import { json, stubFetch } from "./helpers/fetch";
 import {

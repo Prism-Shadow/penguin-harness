@@ -1,7 +1,7 @@
 /**
  * GET /api/contributions — the web slots' contributions, as data. What a pushed platform
  * or an installed plugin adds to the web app arrives here; the app merges it with its
- * own module.json and renders what it has a renderer for.
+ * own pages and renders what it has a renderer for.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";

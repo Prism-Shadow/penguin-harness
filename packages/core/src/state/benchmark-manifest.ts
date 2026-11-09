@@ -39,11 +39,8 @@ import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml, TomlError } from "smol-toml";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { formatLocalDate } from "../internal/dates.js";
-import {
-  PLUGIN_VERSION_PATTERN,
-  comparePluginVersions,
-  parsePluginVersion,
-} from "../plugins/index.js";
+import { PLUGIN_VERSION_PATTERN } from "../plugin/package-json.js";
+import { comparePluginVersions, parsePluginVersion } from "../plugin/versions.js";
 import { isValidId } from "./agent-state.js";
 
 /** The manifest's file name, at the root of a Benchmark's directory. */
