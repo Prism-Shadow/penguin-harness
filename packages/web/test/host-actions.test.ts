@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { HostCommandOffer } from "@prismshadow/penguin-server/api";
 import { HOST_COMMANDS } from "@prismshadow/penguin-server/api";
-import { hostCommandActions } from "../src/features/palette/app-palette";
+import { hostCommandActions } from "../src/rescue/palette";
 import { S } from "../src/lib/strings";
 
 const offer = (command: string, label = "", labelZh = ""): HostCommandOffer => ({

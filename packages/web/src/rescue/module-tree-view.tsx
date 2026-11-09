@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge, NoticeStrip, Skeleton, type BadgeStyle } from "@prismshadow/penguin-ui";
 
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import * as api from "../api/endpoints";
+import { S } from "../lib/strings";
 
 interface Manifest {
   name: string;

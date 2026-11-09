@@ -16,16 +16,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HostCommand, HostCommandOffer } from "@prismshadow/penguin-server/api";
 import { CommandPalette, toastError, toastInfo, type PaletteAction } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { setSafeMode, useSafeMode } from "../../rescue/safe-mode";
-import { useAddedPaletteActions } from "../../lib/palette-actions";
-import { onCommand } from "../../lib/shortcuts/dispatcher";
-import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
-import { S } from "../../lib/strings";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { HarnessHistoryOverlay } from "../harness";
+import * as api from "../api/endpoints";
+import { apiErrorText } from "../lib/api-error";
+import { setSafeMode, useSafeMode } from "./safe-mode";
+import { useAddedPaletteActions } from "../lib/palette-actions";
+import { onCommand } from "../lib/shortcuts/dispatcher";
+import { useShortcutLabel } from "../lib/shortcuts/use-keymap";
+import { S } from "../lib/strings";
+import { useAuth } from "../state/auth";
+import { useLocale } from "../state/locale";
+import { HarnessHistoryOverlay } from "./harness-history-overlay";
 
 /** A mount point with nothing to add shares one empty list, so the action memo stays put. */
 const NO_EXTRA: readonly PaletteAction[] = [];
@@ -203,4 +203,11 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
       <HarnessHistoryOverlay open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
   );
+}
+
+/** Recovery mounts beside the module tree; reuse main's palette and history unchanged — the
+ * palette reads the registered actions and adds the safe-mode toggle itself, so the wrapper is
+ * the palette as it is, without re-feeding it the same lists. */
+export function RescuePalette() {
+  return <AppPalette />;
 }

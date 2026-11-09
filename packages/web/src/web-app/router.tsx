@@ -110,15 +110,17 @@ function RootFrame() {
   );
 }
 
-/** Dynamic server pages stay below the one data router and its leave guard.
- * Keep the router/history identity stable; a pending URL must not redirect before its page arrives. */
-function ShellRoutes() {
+/** Every shell page, the company-mode ones included: a contributed page mounts both under the
+ * organization (org-routes.tsx) and from the root, its rooted path (contributions.tsx). They stay
+ * below the one data router and its leave guard; keep the router/history identity stable, so a
+ * pending URL does not redirect before its page arrives. */
+export function ShellRoutes() {
   const pages = useWebAppPages();
   const pending = useWebAppPagesPending();
   return (
     <Routes>
       {pages
-        .filter((page) => page.frame === "shell" && page.nav !== "org")
+        .filter((page) => page.frame === "shell")
         .map(({ id, path, Component }) => (
           <Route key={id} path={path} element={path === "*" && pending ? null : <Component />} />
         ))}

@@ -24,8 +24,7 @@ export type ShortcutScope = "global" | "terminal" | "editor";
 export type ShortcutGroup = "general" | "panels" | "terminal" | "editor";
 
 /**
- * The rebindable commands. `palette.toggle` is owned by the command palette; its id and default
- * are reserved here so the settings page lists it before the palette lands.
+ * The rebindable commands. `palette.toggle` is owned by the command palette (src/rescue/palette.tsx).
  */
 export type CommandId =
   | "palette.toggle"
