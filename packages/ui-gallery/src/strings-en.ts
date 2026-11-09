@@ -383,7 +383,7 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one penguin, flat (Primer), soft (Frost) or pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one penguin inked on a pale tile, a rounded square (Primer), a circle (Frost) or pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],

@@ -1087,7 +1087,7 @@
     letter-spacing: -0.02em;
   }
 
-  /* An Agent's avatar is the soft drawing: a round head with no tile around it. */
+  /* An Agent's avatar is the soft drawing: a rounder penguin on a round tile. */
   :root[data-theme="modern"] .ui-avatar > [data-variant="flat"] {
     display: none;
   }

@@ -1,8 +1,8 @@
 /**
  * An Agent's avatar: its own picture when it has one (`src`), else its default avatar — the
- * Agent mascot, a small penguin seen face on, in the Agent's colour (agent-avatar-variants.tsx,
- * agent-palette.ts). The default is what an Agent is drawn as wherever it has no picture of its
- * own, and wherever its picture fails to load.
+ * Agent mascot, a small standing penguin in the Agent's ink on a pale tile of its hue
+ * (agent-avatar-variants.tsx, agent-palette.ts). The default is what an Agent is drawn as wherever
+ * it has no picture of its own, and wherever its picture fails to load.
  *
  * The default is drawn in every theme's style at once and carries the `ui-avatar` hook: each
  * drawing is a direct child `<g data-variant="…">`, the foundation shows the `flat` one, and a
@@ -18,7 +18,7 @@
  * The colour hashes the Agent's id — never its display name — so it survives renames, and every
  * drawing paints the same colours, so it survives theme switches too. No initial is drawn: every
  * place an avatar sits shows the Agent's name beside it or on hover, and at the 14–18 px most
- * avatars are drawn at, a letter and a face do not both fit.
+ * avatars are drawn at, a letter and a penguin do not both fit.
  */
 import { useState } from "react";
 import { AGENT_AVATAR_VARIANTS, AGENT_AVATAR_VARIANT_NAMES } from "./agent-avatar-variants";

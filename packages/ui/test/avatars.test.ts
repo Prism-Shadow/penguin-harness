@@ -2,10 +2,11 @@
  * The avatars' markup.
  *
  * - Given an Agent, its avatar draws the mascot once per theme's drawing under the avatar hook, so
- *   the theme's CSS picks one; every drawing paints the head in the Agent's colour, the same
- *   colour in every theme; no letter is drawn and no dark-mode class is needed.
+ *   the theme's CSS picks one; every drawing paints in the Agent's two colours and nothing else —
+ *   its pale tile and its ink — the same two in every theme; no letter is drawn and no dark-mode
+ *   class is needed.
  * - Given a pinned drawing, only that drawing is drawn, outside the hook, so no theme hides it.
- * - Given two Agents in different palette slots, their heads differ.
+ * - Given two Agents in different palette slots, their penguins are inked differently.
  * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
  *   scales to the box, antialiased.
  * - Given a picture of the Agent's own, it is drawn instead of the mascot, in the Agent's
@@ -32,19 +33,21 @@ function drawings(html: string): Map<string, string> {
   return found;
 }
 
-/** The fill of a drawing's first shape: the head (or the ground under it, in `soft`). */
-const headFills = (markup: string) =>
-  [...markup.matchAll(/style="fill:([^"]+)"/g)].map((m) => m[1]!).slice(0, 2);
+/** Every colour a drawing paints with. */
+const fillsOf = (markup: string) =>
+  new Set([...markup.matchAll(/style="fill:([^"]+)"/g)].map((m) => m[1]!));
 
 describe("AgentAvatar", () => {
-  it("draws every theme's drawing under the avatar hook, each in the Agent's own colour", () => {
+  it("draws every theme's drawing under the avatar hook, each in the Agent's own two colours", () => {
     const html = renderStatic(createElement(AgentAvatar, { id: "docs-expert" }));
-    const { body } = agentColors("docs-expert");
+    const { tile, ink } = agentColors("docs-expert");
     expect(classTokens(html)).toContain("ui-avatar");
     const drawn = drawings(html);
     expect([...drawn.keys()]).toEqual(["flat", "soft", "pixel"]);
     for (const [name, markup] of drawn) {
-      expect(headFills(markup), `${name} paints the head in the Agent's colour`).toContain(body);
+      expect(fillsOf(markup), `${name} paints the Agent's tile and ink alone`).toEqual(
+        new Set([tile, ink]),
+      );
     }
     expect(html).not.toContain("<text");
     expect(html).not.toContain("dark:");
@@ -57,13 +60,13 @@ describe("AgentAvatar", () => {
     expect([...drawings(html).keys()]).toEqual(["pixel"]);
   });
 
-  it("gives two Agents in different slots different heads", () => {
+  it("inks two Agents in different slots differently", () => {
     const [a, b] = ["agent-0", "agent-1", "agent-2", "agent-3"].filter(
       (id, i, all) => all.findIndex((other) => agentSlot(other) === agentSlot(id)) === i,
     );
-    const head = (id: string) =>
-      headFills(drawings(renderStatic(createElement(AgentAvatar, { id }))).get("flat")!)[0];
-    expect(head(a!)).not.toBe(head(b!));
+    const fills = (id: string) =>
+      fillsOf(drawings(renderStatic(createElement(AgentAvatar, { id }))).get("flat")!);
+    expect(fills(a!)).not.toEqual(fills(b!));
   });
 
   it("draws the Agent's own picture in its rounded tile, under the hook, instead of the mascot", () => {
@@ -79,7 +82,7 @@ describe("AgentAvatar", () => {
     expect(drawings(html).size).toBe(0);
   });
 
-  it("lays the pixel face on whole pixels from 16px up, and scales it into a smaller box", () => {
+  it("lays the pixel penguin on whole pixels from 16px up, and scales it into a smaller box", () => {
     const pixel = (size: number) =>
       drawings(renderStatic(createElement(AgentAvatar, { id: "qa", size, variant: "pixel" }))).get(
         "pixel",
@@ -87,7 +90,7 @@ describe("AgentAvatar", () => {
     // 18px: one pixel a cell, centred one pixel in — 24/18 user units to a pixel.
     expect(pixel(18)).toContain('transform="translate(1.3333 1.3333) scale(1.3333)"');
     expect(pixel(18)).toContain('shape-rendering="crispEdges"');
-    // 40px: two pixels a cell, the 32px face four pixels in.
+    // 40px: two pixels a cell, the 32px drawing four pixels in.
     expect(pixel(40)).toContain('transform="translate(2.4 2.4) scale(1.2)"');
     // 14px: no whole-pixel layout fits sixteen cells; scaled and left antialiased.
     expect(pixel(14)).toContain('transform="scale(1.5)"');

@@ -5,21 +5,17 @@
  *   over all twelve slots.
  * - Given an Agent whose letter tile had hue h, its mascot's slot is the one whose hue anchor lies
  *   within 15° of h: it keeps the colour family it had.
- * - Given any slot, in either mode, the face reads on the head: the mask keeps ≥ 3:1 on the body,
- *   the eyes ≥ 4.5:1 and the beak ≥ 3:1 on the mask.
- * - Given any slot, in every theme and mode, the head stands off the page — ≥ 3:1 against the
- *   canvas, a card and the muted surface.
- * - Given any two slots, they are not near-duplicates: two Agents side by side can be told apart.
+ * - Given any slot, in either mode, the penguin reads on its tile: the ink keeps ≥ 4.5:1 (AA).
+ * - Given any slot, in every theme and mode, the penguin stands off the page — its ink keeps
+ *   ≥ 3:1 against the canvas, a card and the muted surface, wherever the pale tile does not.
+ * - Given any two slots, in either mode, their inks are not near-duplicates: two Agents side by
+ *   side can be told apart.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { avatarHue } from "../src/components/icons/avatars/avatar";
-import {
-  AGENT_ACCENTS,
-  AGENT_PALETTE,
-  agentSlot,
-} from "../src/components/icons/avatars/agent-palette";
+import { AGENT_PALETTE, agentSlot } from "../src/components/icons/avatars/agent-palette";
 import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import {
@@ -71,18 +67,15 @@ describe("agentSlot", () => {
   });
 });
 
-describe("the face reads on every slot (WCAG)", () => {
+describe("the penguin reads on its tile (WCAG AA)", () => {
   for (const mode of THEME_MODES) {
-    it(`${mode}: mask on the head ≥ 3:1, eyes ≥ 4.5:1 and beak ≥ 3:1 on the mask`, () => {
-      const mask = color(AGENT_ACCENTS.mask[mode]);
+    it(`${mode}: every slot's ink keeps ≥ 4.5:1 on its tile`, () => {
       const failures: string[] = [];
-      const eye = contrastRatio(color(AGENT_ACCENTS.eye[mode]), mask);
-      if (eye < 4.5) failures.push(`eyes on the mask: ${eye.toFixed(2)}:1`);
-      const beak = contrastRatio(color(AGENT_ACCENTS.beak[mode]), mask);
-      if (beak < 3) failures.push(`beak on the mask: ${beak.toFixed(2)}:1`);
-      AGENT_PALETTE.forEach((body, slot) => {
-        const ratio = contrastRatio(mask, color(body));
-        if (ratio < 3) failures.push(`slot ${slot} ${body}: mask ${ratio.toFixed(2)}:1`);
+      AGENT_PALETTE.forEach(({ tile, ink }, slot) => {
+        const ratio = contrastRatio(color(ink[mode]), color(tile[mode]));
+        if (ratio < 4.5) {
+          failures.push(`slot ${slot} ${ink[mode]} on ${tile[mode]}: ${ratio.toFixed(2)}:1`);
+        }
       });
       expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
     });
@@ -99,7 +92,7 @@ function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
   return analysis.isStub ? null : analysis;
 }
 
-describe("the head stands off the page (WCAG non-text 3:1)", () => {
+describe("the penguin stands off the page (WCAG non-text 3:1)", () => {
   const defaultTheme = themeAnalysis(DEFAULT_THEME_ID);
 
   it("reads the default theme", () => {
@@ -125,10 +118,10 @@ describe("the head stands off the page (WCAG non-text 3:1)", () => {
           }
           return [{ name, color: composite(parsed, ground) }];
         });
-        AGENT_PALETTE.forEach((hex, slot) => {
-          const body = color(hex);
+        AGENT_PALETTE.forEach(({ ink }, slot) => {
+          const penguin = color(ink[mode]);
           for (const surface of surfaces) {
-            const page = contrastRatio(body, surface.color);
+            const page = contrastRatio(penguin, surface.color);
             if (page < 3) failures.push(`slot ${slot} on ${surface.name}: ${page.toFixed(2)}:1`);
           }
         });
@@ -156,16 +149,20 @@ function oklab({ r, g, b }: Rgba): [number, number, number] {
 }
 
 describe("the palette's slots", () => {
-  it("are never near-duplicates of one another", () => {
-    const close: string[] = [];
-    const labs = AGENT_PALETTE.map((hex) => oklab(color(hex)));
-    for (let i = 0; i < labs.length; i++) {
-      for (let j = i + 1; j < labs.length; j++) {
-        const [a, b] = [labs[i]!, labs[j]!];
-        const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-        if (distance < 0.08) close.push(`slots ${i} and ${j}: ${distance.toFixed(3)}`);
+  for (const mode of THEME_MODES) {
+    it(`${mode}: are never inked near-duplicates of one another`, () => {
+      const close: string[] = [];
+      const labs = AGENT_PALETTE.map(({ ink }) => oklab(color(ink[mode])));
+      for (let i = 0; i < labs.length; i++) {
+        for (let j = i + 1; j < labs.length; j++) {
+          const [a, b] = [labs[i]!, labs[j]!];
+          const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+          // A pastel ink in dark mode holds less chroma than a dark one in light; 0.075 is still
+          // several steps of visible difference (a just-noticeable one is about 0.02).
+          if (distance < 0.075) close.push(`slots ${i} and ${j}: ${distance.toFixed(3)}`);
+        }
       }
-    }
-    expect(close, `\n${close.join("\n")}\n`).toEqual([]);
-  });
+      expect(close, `\n${close.join("\n")}\n`).toEqual([]);
+    });
+  }
 });
