@@ -1547,7 +1547,7 @@ export function ModelsPage() {
         {drag.dropEdge !== null && (
           <div
             aria-hidden
-            className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
+            className={`pointer-events-none absolute inset-x-0 z-raised h-0.5 rounded-full bg-accent ${
               drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
             }`}
           />
@@ -3038,7 +3038,7 @@ function ModelDialog({
    *
    * Outcomes are announced with a toast, like the connectivity test in this same dialog:
    * transient and non-blocking, nothing to dismiss before carrying on. The Toaster portals
-   * to document.body at z-[100] against the Modal's z-50, so a toast raised from inside
+   * to document.body on the `toast` layer, above a Modal's `modal`, so a toast raised from inside
    * this dialog renders above it rather than behind or clipped by it.
    *
    * Every failure — unreachable, timeout, gateway junk, nothing matched, an invalid URL

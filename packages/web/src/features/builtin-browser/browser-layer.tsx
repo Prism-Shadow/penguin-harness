@@ -11,10 +11,14 @@
  * page parks off-screen at a real size, so a page an agent works in while the dock is closed
  * keeps a desktop layout. While a browser panel is on screen a frame loop follows its slot,
  * because the dock resizes, slides and moves with the layout around it and nothing announces
- * all of those. The pages have no stacking order of their own, except while the slot sits in a
- * dock surface gone fullscreen: that surface paints on a layer above the page, so the page on
- * screen (and the agent ring over it) steps up one layer with it — for as long as the surface is
- * lifted, its enter and exit animations included — and back down once it is back in the flow.
+ * all of those. The pages have no stacking order of their own: the Chat window is its own
+ * stacking context and this layer comes after it in the tree, so the page on screen (and the
+ * agent ring over it) paints over everything in that window — a dock surface lifted to
+ * fullscreen with the slot inside it included — and under every overlay in the portal root. A
+ * surface of the OTHER dock lifted over the slot (the bottom dock climbing over the right one)
+ * covers the page by geometry instead: the part it covers is cut from the page's frame, frame by
+ * frame through its enter and exit animations. A slot whose window is not on screen (a workbench
+ * tab shown over the Chat window) is not a visible slot at all, so its page parks.
  *
  * It also runs the lifecycle the server asks for over the user channel: `builtin_browser_open`
  * creates a page; as soon as the page's element knows its webContents id, the id claims the
@@ -50,7 +54,7 @@ import {
 } from "react";
 
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
-import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
+import { toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "../../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../dock";
 import { isBlankUrl } from "./address";
@@ -120,8 +124,6 @@ interface PageHost {
   view: WebviewElement | null;
   /** What was last written to the two boxes; a frame that computes the same writes nothing. */
   applied: Placement | undefined;
-  /** Whether the frame was last written onto the layer above a fullscreen dock surface. */
-  lifted: boolean;
   /** The size it parks at: the size it was last shown at, or the default. */
   parkSize: Size;
 }
@@ -136,7 +138,6 @@ function hostFor(key: string): PageHost {
       frame: null,
       view: null,
       applied: undefined,
-      lifted: false,
       parkSize: DEFAULT_PARK_SIZE,
     };
     hosts.set(key, host);
@@ -144,9 +145,18 @@ function hostFor(key: string): PageHost {
   return host;
 }
 
-/** The layer a page or the ring paints on: the step above a fullscreen dock surface, or none. */
-function layerFor(lifted: boolean): string {
-  return lifted ? String(DOCK_FULLSCREEN_Z + 1) : "";
+/**
+ * The boxes of dock surfaces lifted to fullscreen that do not hold the slot: what such a surface
+ * covers of the slot is not on screen, whatever the page's own paint order.
+ */
+function coversOf(slot: HTMLElement): Rect[] {
+  const covers: Rect[] = [];
+  for (const box of document.querySelectorAll<HTMLElement>(
+    "[data-fullscreen] > [data-dock-content]",
+  )) {
+    if (!box.contains(slot)) covers.push(toRect(box.getBoundingClientRect()));
+  }
+  return covers;
 }
 
 function toRect(box: DOMRect): Rect {
@@ -164,9 +174,7 @@ function writeRect(style: CSSStyleDeclaration, rect: Rect): void {
  * Lays every hosted page out for this frame: the active tab over the visible slot, unless its
  * page is blank or crashed (the panel's own surface shows then: the blank state, or the crash
  * with its Reload), and everything else parked. The ring, when mounted, frames the visible slot.
- * A page shown over a slot inside a fullscreen dock surface steps up to the layer above that
- * surface, and so does the ring; a parked page, or one over an ordinary slot, has no layer of its
- * own (a fullscreen surface covering the OTHER dock then covers it, as it should). The server
+ * What a fullscreen surface of the other dock covers is cut away (coversOf). The server
  * hears which tab is on screen, none while the window is hidden: that tab runs at full speed, and
  * the parked ones may be throttled.
  */
@@ -181,6 +189,7 @@ function placePages(ring: HTMLDivElement | null): void {
           toRect(slot.element.getBoundingClientRect()),
           slot.clips.map((clip) => toRect(clip.getBoundingClientRect())),
           DEFAULT_PARK_SIZE,
+          coversOf(slot.element),
         );
   const showPage =
     onScreen !== null &&
@@ -188,7 +197,6 @@ function placePages(ring: HTMLDivElement | null): void {
     tab !== null &&
     tab.crashed === undefined &&
     !(isBlankUrl(tab.url) && !tab.loading);
-  const lifted = showPage && slot !== null && slot.lifted;
   reportOnScreenTab(
     showPage && tab !== null && document.visibilityState !== "hidden" ? tab.id : null,
   );
@@ -197,10 +205,6 @@ function placePages(ring: HTMLDivElement | null): void {
     if (host === undefined || host.frame === null || host.view === null) continue;
     const shown = showPage && onScreen !== null && guest.tabId !== null && guest.tabId === tab?.id;
     const placement = shown ? onScreen : parkedPlacement(host.parkSize);
-    if ((shown && lifted) !== host.lifted) {
-      host.lifted = shown && lifted;
-      host.frame.style.zIndex = layerFor(host.lifted);
-    }
     host.parkSize = shownSize(placement) ?? host.parkSize;
     if (samePlacement(host.applied, placement)) continue;
     writeRect(host.frame.style, placement.frame);
@@ -210,7 +214,6 @@ function placePages(ring: HTMLDivElement | null): void {
   if (ring !== null) {
     if (onScreen !== null && onScreen.shown) {
       ring.style.display = "";
-      ring.style.zIndex = layerFor(lifted);
       writeRect(ring.style, onScreen.frame);
     } else {
       ring.style.display = "none";
@@ -374,9 +377,9 @@ function LayerHost() {
   }, [available]);
 
   // A dock surface lifting off to cover the page, or returning, is the one change to the boxes
-  // around a slot while it stays mounted: the dock's content box becomes fixed (its placeholder
-  // stops clipping it) and the page must step above the surface's layer. Both are cached per slot
-  // (slot-registry.ts), and the dock drops the caches itself at each step of its fullscreen phase,
+  // around a slot while it stays mounted: the dock's content box becomes fixed and its
+  // placeholder stops clipping it. The clips are cached per slot (slot-registry.ts), and the dock
+  // drops the caches itself at each step of its fullscreen phase,
   // once the step is in the DOM — not the store's flag, which flips before the exit animation has
   // run and says nothing when it ends; the frame loop below reads them afresh on its next tick.
 

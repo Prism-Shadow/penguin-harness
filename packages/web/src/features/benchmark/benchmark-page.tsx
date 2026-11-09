@@ -319,7 +319,7 @@ export function BenchmarkCard({
             title={S.benchmark.deleteBenchmark}
             aria-label={S.benchmark.deleteBenchmark}
             onClick={onDelete}
-            className={masked ? "relative z-10" : undefined}
+            className={masked ? "relative z-raised" : undefined}
           >
             <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
           </Button>
