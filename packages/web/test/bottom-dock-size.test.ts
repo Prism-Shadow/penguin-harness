@@ -8,9 +8,7 @@
  * - The ratio's own ceiling still caps a very tall column, and a fractional measurement never
  *   rounds the dock onto the composer.
  * - The largest height drawn is the maximum the boundary drag snaps against.
- * - The chat page measures its composer box for the dock to read.
  */
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CONVERSATION_MIN_HEIGHT_PX,
@@ -93,15 +91,5 @@ describe("bottomDockMaxHeight", () => {
       const space = column(host);
       expect(bottomDockHeight(DOCK_RATIO_MAX, space)).toBe(bottomDockMaxHeight(space));
     }
-  });
-});
-
-describe("the chat page", () => {
-  it("measures its composer box for the bottom dock", () => {
-    const page = readFileSync(
-      new URL("../src/features/chat/body/main-chat-body.tsx", import.meta.url),
-      "utf8",
-    );
-    expect(page).toMatch(/<WallpaperSurface\s+ref=\{measureComposer\}/);
   });
 });

@@ -97,6 +97,11 @@ const MARKS: Record<MarkName, true> = {
 describe("icon sets", () => {
   const keys = [...Object.keys(ICONS), ...Object.keys(MARKS)] as GlyphKey[];
 
+  it("draw each glyph of the shared registry once: no two names share a path", () => {
+    const paths = Object.values(ICONS);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
   it("draw every glyph and every mark: an Octicon path and a 16x16 pixel grid each", () => {
     for (const key of keys) {
       expect(OCTICONS[key], key).toMatch(PATH_DATA);

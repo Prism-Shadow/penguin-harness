@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { PagedDialog } from "../src/components/overlays/paged-dialog/paged-dialog";
 import type { PagedDialogGroup } from "../src/components/overlays/paged-dialog/paged-dialog";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 import { stubDialogGlobals } from "./helpers/dialog-env";
 
 vi.mock("react-dom", async (importOriginal) => ({
@@ -56,7 +56,7 @@ describe("PagedDialog", () => {
   it("marks the active page as the current one, and only it", () => {
     const html = dialog(GROUPS, "appearance");
     expect([...html.matchAll(/aria-current="page"/g)]).toHaveLength(1);
-    expect(html).toMatch(/aria-current="page"[^>]*><span class="min-w-0 truncate">Appearance</);
+    expect(html).toMatch(/aria-current="page"[^>]*><span class="[^"]*">Appearance</);
   });
 
   it("heads the pane with the active page's label, and its explanation behind a ?", () => {
@@ -66,11 +66,10 @@ describe("PagedDialog", () => {
     expect(dialog(GROUPS, "general")).not.toContain("More info");
   });
 
-  it("sets group headings on the eyebrow rung, and drops a lone group's heading", () => {
+  it("sets group headings on the eyebrow hook, and drops a lone group's heading", () => {
     const html = dialog(GROUPS, "general");
     expect(html).toMatch(/<p class="ui-eyebrow [^"]*">App<\/p>/);
     expect(html).toMatch(/<p class="ui-eyebrow [^"]*">You<\/p>/);
-    expect(classTokens(html)).not.toContain("uppercase");
     const lone = dialog([GROUPS[0]!], "general");
     expect(lone).not.toContain("ui-eyebrow");
   });

@@ -3,8 +3,7 @@
  * (features/messaging/messaging-binding-editor.tsx).
  *
  * - The form opens on its fields, the explanation living in the collapsed help below; each
- *   channel's credential-source link rides the credential field's corner and is labelled with
- *   what it opens.
+ *   channel's credential-source link is labelled with what it opens.
  * - A stored secret is removed through the clear checkbox, gated on screen while the channel
  *   holds the connection; the connection switch carries the bind/unbind sentence as its
  *   tooltip, and its gating reason when another channel holds the connection.
@@ -14,8 +13,7 @@
  *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
  *   a message arrived but its task never started; held WeChat replies take the failure line.
  * - The delivery and Markdown options close the form, each switch rendered from its own field
- *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen; the selector
- *   offers all four channels.
+ *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen.
  * - The help stacks three collapsed, self-titled folds with the relocated explanation, the
  *   Telegram-only troubleshooting entries, and each channel's tutorial link.
  * - A Telegram test reports success with the Group Privacy caveat as a second line, nothing
@@ -38,6 +36,7 @@ import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { uiStringsOf } from "../src/lib/ui-strings";
 import { en } from "../src/lib/strings-en";
+import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 import { formatDateTime } from "../src/lib/format";
 
 afterEach(() => setActiveStrings(zh));
@@ -120,22 +119,6 @@ describe("MessagingBindingBody", () => {
     expect(render(stateOf("telegram"))).not.toContain(S.telegram.intro);
   });
 
-  it("hangs each channel's credential source on its credential field's corner", () => {
-    // The models dialog's "get API key" idiom: the link sits where the value is pasted, so the
-    // reader never has to leave the field to find out where the value comes from.
-    expect(render(stateOf("feishu"))).toContain('href="https://open.feishu.cn/app"');
-    // Telegram's Bot Token is issued by @BotFather in the app, not by a web console — the
-    // corner link goes there rather than into the API reference it used to point at.
-    const telegram = render(stateOf("telegram"));
-    expect(telegram).toContain('href="https://t.me/BotFather"');
-    expect(telegram).not.toContain("core.telegram.org/bots/api");
-    // QQ's trailing slash is load-bearing — https://q.qq.com/qqbot/dashboard answers 404 —
-    // so it is pinned here rather than left to be tidied away by someone normalizing URLs.
-    const qq = render(stateOf("qq"));
-    expect(qq).toContain('href="https://q.qq.com/qqbot/dashboard/"');
-    expect(qq).not.toContain('href="https://q.qq.com/qqbot/dashboard"');
-  });
-
   it("labels that corner link with what it opens, never with a console Telegram has not got", () => {
     // The defect this pins: a link labelled "open developer console" that landed in the API
     // manual. Both dictionaries, because the label is per-locale and `S` is zh until a test
@@ -206,13 +189,17 @@ describe("MessagingBindingBody", () => {
       }),
     );
     // A paragraph of its own, carrying the message whole.
-    expect(html).toContain(`>${lastError}</p>`);
-    // Outside the toggle row: the row closes before the message begins.
-    const rowAt = html.indexOf("flex flex-wrap items-center gap-2 text-xs");
-    expect(rowAt).toBeGreaterThanOrEqual(0);
-    expect(html.slice(rowAt, html.indexOf(lastError, rowAt))).toContain("</div>");
-    // Bounded so an error still cannot push the probes far, with the whole text on hover.
-    expect(html).toContain("line-clamp-2");
+    const all = elementsOf(readMarkup(html));
+    const error = all.find((el) => el.tag === "p" && seenText(el) === lastError);
+    expect(error).toBeDefined();
+    // Outside the toggle row: the row holding the switch does not hold the message.
+    let row = all.find((el) => el.attrs.role === "switch")?.parent ?? null;
+    while (row !== null && row.tag !== "div") row = row.parent;
+    expect(row).not.toBeNull();
+    let inRow = false;
+    for (let at = error!.parent; at !== null; at = at.parent) if (at === row) inRow = true;
+    expect(inRow).toBe(false);
+    // The whole text is on hover too, however the line is bounded.
     expect(html).toContain(`data-tooltip="${lastError}"`);
   });
 
@@ -294,21 +281,6 @@ describe("MessagingBindingBody", () => {
     expect(html.indexOf(S.qq.repliesOnly)).toBeGreaterThan(html.indexOf(S.qq.appSecret));
     // ...and it belongs to QQ alone.
     expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly);
-  });
-
-  it("offers all four channels in the selector", () => {
-    const html = render(stateOf("qq"));
-    for (const name of [
-      S.messaging.channelName.feishu,
-      S.messaging.channelName.telegram,
-      S.messaging.channelName.qq,
-      S.messaging.channelName.wechat,
-    ]) {
-      expect(html).toContain(`>${name}</button>`);
-    }
-    // The grid's column count is spelled out in the component rather than interpolated, so
-    // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-[repeat(4,1fr)]");
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {

@@ -80,6 +80,8 @@ it("manages a handler-only workbench, retries failed reload and restores a recor
   await click(button(`${en.workbenches.history} Support`));
   expect(topDialog().textContent).toContain("previous");
   await click(buttonIn(topDialog(), en.workbenches.restore));
+  // Restore asks first: nothing is rolled back until the question is answered.
+  expect(server.writes().filter((request) => request.path.endsWith("/rollback"))).toEqual([]);
   await click(buttonIn(topDialog(), en.workbenches.restore));
   expect(server.writes().find((request) => request.path.endsWith("/rollback"))?.body).toEqual({
     revision: "previous",

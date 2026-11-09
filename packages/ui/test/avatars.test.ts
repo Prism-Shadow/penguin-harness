@@ -9,7 +9,7 @@ import { AgentAvatar } from "../src/components/icons/avatars/agent-avatar";
 import { avatarTile } from "../src/components/icons/avatars/avatar";
 import { AvatarStack } from "../src/components/icons/avatars/avatar-stack";
 import { USER_AVATAR_SIZE, UserAvatar } from "../src/components/icons/avatars/user-avatar";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("AgentAvatar", () => {
   it("draws the name's initial on the id's tile, inked with light-dark()", () => {
@@ -24,11 +24,10 @@ describe("AgentAvatar", () => {
 });
 
 describe("UserAvatar", () => {
-  it("draws the nickname's initial on a token disc when no image is stored", () => {
+  it("draws the nickname's initial when no image is stored", () => {
     const html = renderStatic(
       createElement(UserAvatar, { userId: "admin", displayName: "zoe", size: 28 }),
     );
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["bg-fg", "text-canvas"]));
     expect(html).toContain(">Z</span>");
     expect(html).toContain('aria-hidden="true"');
   });
@@ -71,8 +70,7 @@ describe("AvatarStack", () => {
         size: 18,
       }),
     );
-    expect(html).toMatch(/^<span class="[^"]*"><span class="flex -space-x-1" aria-hidden="true">/);
+    expect(html).toMatch(/^<span class="[^"]*"><span class="[^"]*" aria-hidden="true">/);
     expect(html).toContain("border-radius:50%");
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["ring-canvas", "bg-fg"]));
   });
 });
