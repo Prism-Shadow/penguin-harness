@@ -92,7 +92,7 @@ interface KeyRuleScope {
  * fails on any this table does not cover.
  *
  * Two `penguin.*` strings in the source are NOT here on purpose:
- *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
+ *   - `penguin.chatRouteApplied.<field>` (features/chat/body/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
  *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's

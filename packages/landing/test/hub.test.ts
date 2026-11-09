@@ -2,9 +2,12 @@
  * The hub's build-time readers (scripts/hub/) and the list pages' filtering (src/lib/hub/filter.ts).
  *
  * Scenarios:
- * - Given a plugin package with skills, hooks and an icon but no penguin.title or
- *   penguin.description, when the hub is read, then it is shown by its id, described by its npm
- *   description, and lists what it ships.
+ * - Given a plugin package whose built table carries a card with no title, when the hub is read,
+ *   then it is shown by its id and described by its npm description; given one whose table
+ *   declares Skills, a hook package and an icon, then it lists exactly what it declares — not a
+ *   Skill folder no entry names, nor what a module its default export leaves out contributes.
+ * - Given a plugin package that was never built (no ifaces.json), when the hub is read, then the
+ *   build fails naming that file.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
  *   naming that file (nothing is silently dropped).
  * - Given a draft benchmark and a draft leaderboard, when the hub is read, then both are left
@@ -49,15 +52,31 @@ function tree(files: Record<string, string>): string {
   return root;
 }
 
-const plugin = (name: string, penguin: object = {}, extra: object = {}) =>
+/** A plugin's package.json: npm's fields only. */
+const plugin = (name: string) =>
   JSON.stringify({
     name: `@penguinharness/${name}`,
     version: "1.0.0",
     description: `${name} does things.`,
     license: "Apache-2.0",
     author: { name: "Prism-Shadow", url: "https://github.com/Prism-Shadow" },
-    penguin: { category: "rsi", ...penguin },
-    ...extra,
+  });
+
+/**
+ * A plugin's built table as `gen-ifaces` writes it: the modules with what each contributes, and
+ * the ones the default export names (`listed`).
+ */
+const table = (modules: Record<string, Record<string, object[]>>, listed = ["Plugin"]) =>
+  JSON.stringify({
+    ifaces: {},
+    types: {},
+    modules: Object.fromEntries(
+      Object.entries(modules).map(([name, contributes]) => [
+        name,
+        { name, kind: "component", requires: {}, provides: {}, contributes, children: [] },
+      ]),
+    ),
+    plugin: { modules: listed, replaces: [] },
   });
 
 const benchmark = (id: string, status = "published") =>
@@ -164,22 +183,42 @@ function repo(extra: Record<string, string> = {}) {
 
 function plugins() {
   return tree({
-    "toolkit/package.json": plugin("toolkit", {
-      title: "Toolkit",
-      hooks: { version: "1", stop: [{ command: "stop.mjs" }] },
-      icon: "icon.svg",
+    "toolkit/package.json": plugin("toolkit"),
+    "toolkit/ifaces.json": table({
+      Plugin: {
+        "PluginLibraryModule.cards": [
+          { id: "toolkit.card", title: "Toolkit", category: "rsi", icon: "icon.svg" },
+        ],
+        "PluginLibraryModule.skills": [
+          { id: "toolkit.skill.learn", name: "learn", path: "skills/learn" },
+        ],
+        "PluginLibraryModule.hooks": [
+          { id: "toolkit.hooks", version: "1", path: "hooks", stop: [{ command: "stop.mjs" }] },
+        ],
+      },
+      // A module the default export does not name: what it contributes is not the plugin's.
+      Spare: {
+        "PluginLibraryModule.skills": [
+          { id: "toolkit.skill.spare", name: "spare", path: "skills/spare" },
+        ],
+      },
     }),
     "toolkit/icon.svg": '<svg viewBox="0 0 24 24"><path d="M1 1h2"/></svg>',
     "toolkit/skills/learn/SKILL.md":
       "---\nname: learn\ndescription: Learn from scores.\n---\n# Learn",
+    "toolkit/skills/spare/SKILL.md": "---\nname: spare\ndescription: Spare.\n---\n# Spare",
+    "toolkit/skills/draft/SKILL.md": "---\nname: draft\ndescription: Undeclared.\n---\n# Draft",
     "plain/package.json": plugin("plain"),
+    "plain/ifaces.json": table({
+      Plugin: { "PluginLibraryModule.cards": [{ id: "plain.card", category: "rsi" }] },
+    }),
   });
 }
 
 const mean2 = `  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-2")}`;
 
 describe("the hub readers", () => {
-  it("shows a plugin by its id and npm description when it names neither, with what it ships", () => {
+  it("shows a plugin by its id and npm description when its card names neither, and lists exactly what it declares", () => {
     const hub = loadHub({ repo: repo(), pluginsDir: plugins() });
     const plain = hub.details.plugin["plain"]!;
     expect(plain.title).toBe("plain");
@@ -196,6 +235,13 @@ describe("the hub readers", () => {
       skillCount: 1,
       hookCount: 1,
     });
+  });
+
+  it("fails the build on a plugin package that was never built", () => {
+    const unbuilt = tree({ "fresh/package.json": plugin("fresh") });
+    expect(() => loadHub({ repo: repo(), pluginsDir: unbuilt })).toThrow(
+      /fresh[/\\]ifaces\.json: missing; build the plugins first/,
+    );
   });
 
   it("fails the build on a benchmark whose id differs from its folder", () => {

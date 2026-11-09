@@ -21,17 +21,6 @@
  *
  * The first folder is the one open on arrival: building an AI app from one sentence.
  */
-
-/**
- * The demo Agent and Benchmark the "build" example creates and the "optimize" example then
- * improves. Both prompts, in both dictionaries, read their ids from here, so the second always
- * names what the first made.
- */
-export const EVOLUTION_DEMO = {
-  agentId: "finite_choice_agent",
-  benchmarkId: "contextual-choice-adaptation",
-} as const;
-
 export const EXAMPLE_FOLDERS = [
   {
     id: "apps",

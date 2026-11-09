@@ -26,8 +26,8 @@
  *   dialog. A member's menu holds the sort alone; a busy page holds Group settings… back but
  *   never the sort, nor the gear itself.
  */
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
@@ -35,11 +35,9 @@ import {
   MODEL_PROVIDERS,
   isAddableGroup,
   providerInfo,
-} from "@prismshadow/penguin-server/model-catalog";
-import type {
-  ModelProviderBalance,
-  ModelProviderInfo,
-  ModelProviderOAuth,
+  type ModelProviderBalance,
+  type ModelProviderInfo,
+  type ModelProviderOAuth,
 } from "@prismshadow/penguin-server/model-catalog";
 import {
   connectedMenuItems,
@@ -54,15 +52,16 @@ import {
   DisconnectConfirm,
   GroupConnection,
   NotConnectedButton,
+  type DisconnectHost,
 } from "../src/features/models/group-connection";
-import type { DisconnectHost } from "../src/features/models/group-connection";
+
 import { BalanceMenu, balanceView } from "../src/features/models/group-balance";
 import {
   GroupSettingsControl,
   GroupSettingsMenu,
 } from "../src/features/models/group-settings-menu";
 import type { ModelGroupSort } from "../src/features/models/model-sort";
-import { userProviderInfo } from "../src/features/models/model-grouping";
+import { userProviderInfo } from "../src/lib/model-grouping";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 

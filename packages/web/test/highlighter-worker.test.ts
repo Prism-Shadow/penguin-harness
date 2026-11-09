@@ -38,6 +38,6 @@ describe("the highlighting engine", () => {
         /^import\s(?!type\s)[^;]*from "@prismshadow\/penguin-ui\/highlighter"/m.test(src),
       )
       .map(([path]) => path);
-    expect(importers).toEqual(["features/chat/highlighter.worker.ts"]);
+    expect(importers).toEqual(["lib/highlight/highlighter.worker.ts"]);
   });
 });

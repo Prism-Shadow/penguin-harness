@@ -22,8 +22,11 @@
  * - A user-defined group named like an Object method keeps its own choice.
  */
 import { describe, expect, it } from "vitest";
-import { groupModelRows } from "../src/features/models/model-grouping";
-import type { ModelRowLike, PricingBucketsLike } from "../src/features/models/model-grouping";
+import {
+  groupModelRows,
+  type ModelRowLike,
+  type PricingBucketsLike,
+} from "../src/lib/model-grouping";
 import {
   MODEL_GROUP_SORTS_KEY,
   blendedPrice,
