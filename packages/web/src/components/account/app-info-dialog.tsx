@@ -26,8 +26,8 @@
  *
  * The flow and the actions live in `use-update-flow.ts`; this file only renders.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import {
   Button,
   Chevron,

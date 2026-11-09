@@ -3,7 +3,7 @@
  * Builds what the package publishes, and the Workbench runtime the Web App carries:
  *
  *   dist/index.js, dist/highlighter.js, dist/chunks/   ES modules for a bundler: React and every npm
- *                                                     dependency stay imports, penguin-core/a2ui is
+ *                                                     dependency stay imports, @prismshadow/a2ui is
  *                                                     bundled, and no module imports CSS
  *   dist/index.d.ts, dist/highlighter.d.ts             one declaration file per entry, the a2ui
  *                                                     types inlined
@@ -85,8 +85,8 @@ const REACT_SPECIFIERS = Object.keys(RUNTIME_IMPORTS).filter(
 const RUNTIME_TYPE_PACKAGES = ["@types/react", "@types/react-dom", "csstype"];
 
 const isBare = (spec) => !spec.startsWith(".") && !isAbsolute(spec) && !spec.startsWith("\0");
-/** Bundled into the published JS: the browser half of penguin-core, which the package must not depend on. */
-const isBundled = (spec) => spec.startsWith("@prismshadow/penguin-core/");
+/** Bundled into the published JS: the A2UI grammar, a devDependency the tarball never imports. */
+const isBundled = (spec) => spec === "@prismshadow/a2ui" || spec.startsWith("@prismshadow/a2ui/");
 
 /** Keeps every npm dependency an import of the published modules. */
 const externalDependencies = {
@@ -174,7 +174,7 @@ async function buildModules() {
   });
 }
 
-/** One declaration file per entry: rolled up so a2ui's types are inlined and core is never named. */
+/** One declaration file per entry: rolled up so a2ui's types are inlined, never imported. */
 async function buildDeclarations() {
   for (const [name, input] of Object.entries(ENTRIES)) {
     const bundle = await rollup({

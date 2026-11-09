@@ -5,12 +5,7 @@
  * sample answers back in full; the demo file tree flattens as the file tree reads it.
  */
 import { describe, expect, it } from "vitest";
-import {
-  choiceFillText,
-  formFillText,
-  parseChoicePick,
-  parseFormFill,
-} from "@prismshadow/penguin-core/a2ui";
+import { choiceFillText, formFillText, parseChoicePick, parseFormFill } from "@prismshadow/a2ui";
 import { SEEDED_KEYS } from "../src/app/frame";
 import {
   CHART_GEOMETRY_TOKENS,

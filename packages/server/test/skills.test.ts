@@ -47,6 +47,7 @@ import type {
   ProjectCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { contentTable } from "./plugin-fixtures.js";
 import type { TestApp } from "./helpers.js";
 import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
 
@@ -829,7 +830,7 @@ describe("skills api", () => {
    *
    * - Right after the upgrade, an Agent whose copy the previous release wrote — every part
    *   stamped with the plugin's one date version — is current: nothing is offered.
-   * - A newer version of one skill, or of the hook package (`penguin.hooks.version`), is an
+   * - A newer version of one skill, or of the hook package (its hooks contribution's `version`), is an
    *   update for that plugin, named once; a new npm version alone is not. Reinstalling clears it.
    * - The org runtime's per-plugin answer pairs the part that is behind with its library side.
    * - The listing shows the npm version beside each part's dated version.
@@ -844,17 +845,25 @@ describe("skills api", () => {
     };
     const skillMd = (name: string, version: string) =>
       `---\nname: ${name}\ndescription: Do ${name}.\nversion: ${version}\n---\n\n## Before you start\n`;
-    /** The sample plugin's package.json: its npm version and its hook package's dated version. */
-    const manifest = (version: string, hooksVersion: string) =>
-      JSON.stringify({
-        name: "@penguinharness/sample",
-        version,
-        description: "A sample plugin.",
-        penguin: {
-          category: "office-productivity",
+    /** The sample plugin's package.json (its npm version) and its table (its hook package's dated version). */
+    const declare = async (version: string, hooksVersion: string) => {
+      await write(
+        "package.json",
+        JSON.stringify({
+          name: "@penguinharness/sample",
+          version,
+          description: "A sample plugin.",
+        }),
+      );
+      await write(
+        "ifaces.json",
+        contentTable("@penguinharness/sample", {
+          card: { category: "office-productivity" },
+          skills: ["one", "two"],
           hooks: { version: hooksVersion, stop: [{ command: "stop.mjs" }] },
-        },
-      });
+        }),
+      );
+    };
     const updatesOf = async (agentId: string) =>
       (
         (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as AgentsResponse
@@ -866,7 +875,7 @@ describe("skills api", () => {
         path.join(host, "package.json"),
         JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
       );
-      await write("package.json", manifest("1.0.0", "2026.10.04.1"));
+      await declare("1.0.0", "2026.10.04.1");
       await write("skills/one/SKILL.md", skillMd("one", "2026.10.04.1"));
       await write("skills/two/SKILL.md", skillMd("two", "2026.10.04.1"));
       await write("hooks/stop.mjs", "export {};\n");
@@ -895,10 +904,10 @@ describe("skills api", () => {
     it("names the plugin when its hook package moves on, and never for a new npm version alone", async () => {
       await createPlainAgent("parts_hook");
       expect((await owner.post(plugins("parts_hook"), { names: ["sample"] })).status).toBe(201);
-      await write("package.json", manifest("2.0.0", "2026.10.04.1"));
+      await declare("2.0.0", "2026.10.04.1");
       expect(await updatesOf("parts_hook")).toEqual([]);
 
-      await write("package.json", manifest("2.0.0", "2026.10.09.2"));
+      await declare("2.0.0", "2026.10.09.2");
       expect(await updatesOf("parts_hook")).toEqual([{ name: "sample", version: "2026.10.09.2" }]);
       const hooksJson = JSON.parse(
         await fs.readFile(
