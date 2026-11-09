@@ -1,5 +1,5 @@
 ---
-title: "用 PenguinHarness 在 50 项真实任务上测出四款主流 Harness 的差距"
+title: "用 PenguinHarness 跑完 50 项真实任务：看清四款主流 Harness 都栽在了哪些坑里"
 date: 2026-11-05
 category: practice
 author: "Zhihao Liu (Prism Shadow AI)"

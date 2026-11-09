@@ -1,5 +1,5 @@
 ---
-title: "Comparing Four Popular Harnesses on 50 Real-World Tasks with PenguinHarness"
+title: "Running 50 Real-World Tasks with PenguinHarness: Where Four Popular Harnesses Fall Short"
 date: 2026-11-05
 category: practice
 author: "Zhihao Liu (Prism Shadow AI)"
