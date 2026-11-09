@@ -485,6 +485,9 @@ importers:
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
+      '@penguinharness/agent-company-proposals':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company-proposals
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -566,6 +569,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@prismshadow/penguin-plugin-company-proposals':
+        specifier: workspace:*
+        version: link:../../plugins/company-proposals
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
