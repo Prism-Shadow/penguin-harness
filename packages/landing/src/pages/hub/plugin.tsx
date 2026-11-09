@@ -44,7 +44,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
   return (
     <HubDetail
       lead={
-        <HubTile tone={categoryTone(plugin.category)} src={plugin.icon} glyph="puzzle" size="lg" />
+        <HubTile tone={categoryTone(plugin.category)} icon={plugin.icon} glyph="puzzle" size="lg" />
       }
       title={title}
       subtitle={short}

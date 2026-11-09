@@ -11,7 +11,7 @@
  * one line each. test/library-plugins.test.ts holds the toolkits, and every plugin's Skills, to
  * the plugins directory and core's category manifest.
  */
-import type { PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import type { IconRef, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import aceIcon from "../../../../../plugins/ace-rsi-toolkit/icon.svg?raw";
 import acePkg from "../../../../../plugins/ace-rsi-toolkit/package.json";
 import evaluationIcon from "../../../../../plugins/agent-evaluation/icon.svg?raw";
@@ -202,8 +202,17 @@ const CARDS: Record<string, Card> = {
   },
 };
 
+/**
+ * A shipped icon as a listing names it. The server names a route serving the file; the gallery
+ * has no server, so the file's own text is the image, as a data URL. Every shipped icon is
+ * monochrome line art in currentColor, which the server marks to take the text colour.
+ */
+export function shippedIcon(svg: string): IconRef {
+  return { url: `data:image/svg+xml,${encodeURIComponent(svg.trim())}`, tint: true };
+}
+
 /** A library plugin as GET /api/plugins lists one this build ships. */
-function libraryPlugin(manifest: Manifest, icon: string, skills: SkillMetadataItem[]): PluginItem {
+function libraryPlugin(manifest: Manifest, svg: string, skills: SkillMetadataItem[]): PluginItem {
   const name = manifest.name.replace(/^@[^/]+\//, "");
   return {
     name,
@@ -216,7 +225,7 @@ function libraryPlugin(manifest: Manifest, icon: string, skills: SkillMetadataIt
     repository: "https://github.com/Prism-Shadow/penguin-harness",
     skills,
     hooks: [],
-    icon,
+    icon: shippedIcon(svg),
     mcpServers: [],
   };
 }

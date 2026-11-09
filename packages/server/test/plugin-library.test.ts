@@ -8,7 +8,8 @@
  *   a description, a dated version on every part, and at least one part.
  * - Every shipped package reads clean — the loader throws at any warning for a shipped package —
  *   and its card describes it for the Plugins page in both languages, under a known category,
- *   with a safe icon; no package.json escapes its Chinese, and no plugin.json is left anywhere.
+ *   with an `icon.svg` that is monochrome line art, so the page draws it in the text colour; no
+ *   package.json escapes its Chinese, and no plugin.json is left anywhere.
  * - Every plugin declares a quick start in both languages naming only its own Skills, and goal's
  *   is a goal.
  * - The loader stamps each Skill with its plugin's short descriptions and icon and keeps its own
@@ -81,7 +82,7 @@ describe("the shipped library", () => {
     }
   });
 
-  it("every shipped package reads clean and its card describes it in both languages, under a known category, with a safe icon; no plugin.json anywhere", async () => {
+  it("every shipped package reads clean and its card describes it in both languages, under a known category, with a monochrome SVG icon; no plugin.json anywhere", async () => {
     expect(shipped.length).toBeGreaterThan(0);
     for (const packageName of shipped) {
       const dir = packageName.slice("@penguinharness/".length);
@@ -102,7 +103,7 @@ describe("the shipped library", () => {
         PLUGIN_CATEGORIES.map((c) => c.id),
         dir,
       ).toContain(card.category);
-      expect(icon, `${dir} icon`).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
+      expect(icon, `${dir} icon`).toMatchObject({ format: "svg", tint: true });
       expect(raw.files ?? [], dir).toContain("ifaces.json");
       expect(raw.files ?? [], dir).not.toContain("plugin.json");
       expect(existsSync(path.join(pluginsRoot, dir, "plugin.json")), dir).toBe(false);
@@ -184,7 +185,7 @@ describe("the shipped library", () => {
     expect(owner.size).toBeGreaterThan(0);
   });
 
-  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", () => {
+  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and the icon", () => {
     const humanizer = librarySkill("humanizer");
     expect(humanizer).toBeDefined();
     const files = humanizer!.skill.files ?? {};

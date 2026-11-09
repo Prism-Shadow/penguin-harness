@@ -17,6 +17,7 @@ export * from "./icon-scale";
 // spinner, logos and avatars.
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
+export * from "./components/icons/image-icon/image-icon";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";

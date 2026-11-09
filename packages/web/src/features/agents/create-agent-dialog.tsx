@@ -72,8 +72,8 @@ export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh"
 
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
- * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
- * puzzle piece rather than the book.
+ * already carries (name, descriptions, icon, version); a plugin without an icon draws the puzzle
+ * piece rather than the book.
  */
 export function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
   return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));

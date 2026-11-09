@@ -88,9 +88,8 @@ describe("built-in Agent provisioning", () => {
           "goal",
           "icon.svg",
         ),
-        "utf8",
       ),
-    ).toBe(libraryPlugin("goal")!.icon);
+    ).toEqual(Buffer.from(libraryPlugin("goal")!.icon!.bytes));
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workbenches section).
