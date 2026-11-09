@@ -12,7 +12,7 @@
  * - A zip of Skills whose package.json has only a name and a version installs, and lists with
  *   no description, category, icon or quick start — nothing invented; an unversioned skill
  *   reads as unversioned.
- * - A package of MCP servers alone (`penguin.mcp_servers`) is a plugin: from a zip and from a
+ * - A package of MCP servers alone (its mcpServers contributions) is a plugin: from a zip and from a
  *   link alike it installs and lists in the library with its servers — transport, target, the
  *   vault keys they reference and whether they need a sign-in.
  * - A member is refused every install path; the local API token an Agent's `penguin plugin
@@ -21,8 +21,9 @@
  *   version is left as it is.
  * - A malicious or malformed zip is refused before anything is installed: a path leaving the
  *   package, node_modules, a .npmrc (npm would read it while packing), no package.json at the
- *   top, a name that is not a package name, a package that is not a plugin or that the library
- *   would not read, and an archive past the caps, read before it inflates.
+ *   top, a name that is not a package name, a package never built (no ifaces.json), one whose
+ *   table declares nothing a plugin carries, one the library would not read, and an archive past
+ *   the caps, read before it inflates.
  * - Nothing replaces a module the build ships: a zip under its name is refused before it
  *   installs, a link that turns out to be one is taken back; so is a link to a package that is no
  *   plugin, and both refusals say its install scripts have already run.
@@ -55,7 +56,7 @@ import {
   PluginInstallError,
   type InstalledPackage,
 } from "../src/plugin/install.js";
-import { writeClassPackage } from "./plugin-fixtures.js";
+import { contentTable, writeClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
@@ -73,13 +74,12 @@ const zip = (files: Files) =>
 const skill = (name: string, version = "2026.10.01.1") =>
   `---\nname: ${name}\ndescription: Do ${name}.\nversion: ${version}\n---\n\nBody.\n`;
 
-/** A plugin of Skills, `@acme/notes` at `version`, as files of its package directory. */
+/** A plugin of Skills, `@acme/notes` at `version`, as files of its built package directory. */
 const notesPackage = (version = "1.0.0"): Files => ({
-  "package.json": JSON.stringify({
-    name: "@acme/notes",
-    version,
-    description: "Take notes.",
-    penguin: { title: "Notes", category: "office-productivity" },
+  "package.json": JSON.stringify({ name: "@acme/notes", version, description: "Take notes." }),
+  "ifaces.json": contentTable("@acme/notes", {
+    card: { title: "Notes", category: "office-productivity" },
+    skills: ["notes"],
   }),
   "icon.svg": "<svg viewBox='0 0 24 24'/>\n",
   "skills/notes/SKILL.md": skill("notes"),
@@ -95,13 +95,16 @@ async function modulePackage(): Promise<Files> {
     ) as object;
     await fs.writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({
-        ...manifest,
-        version: "0.3.0",
-        description: "A sandbox.",
-        penguin: { short_description: "Sandbox X.", category: "sandbox" },
-      }),
+      JSON.stringify({ ...manifest, version: "0.3.0", description: "A sandbox." }),
     );
+    // Its card, beside its code: what the Plugins page shows of it.
+    const table = JSON.parse(await fs.readFile(path.join(dir, "ifaces.json"), "utf8")) as {
+      modules: Record<string, { contributes: Record<string, unknown[]> }>;
+    };
+    table.modules.SandboxX!.contributes["PluginLibraryModule.cards"] = [
+      { id: "sandbox-x.card", shortDescription: "Sandbox X.", category: "sandbox" },
+    ];
+    await fs.writeFile(path.join(dir, "ifaces.json"), JSON.stringify(table));
     const files: Files = {};
     for (const name of await fs.readdir(dir)) files[name] = await fs.readFile(path.join(dir, name));
     return files;
@@ -204,6 +207,7 @@ describe("plugin import and export", () => {
     const admin = await boot();
     const result = await importZip(admin, {
       "package.json": JSON.stringify({ name: "@acme/desk", version: "1.0.0" }),
+      "ifaces.json": contentTable("@acme/desk", { workbenches: ["desk"] }),
       "workbenches/desk/package.json": JSON.stringify({
         name: "desk",
         version: "1.0.0",
@@ -272,8 +276,8 @@ describe("plugin import and export", () => {
       }),
     ]);
     expect(await projectConfig()).toContain(`[plugins.${body.machineId}]\n"@acme/sandbox-x"`);
-    // The registry lists it from its own package — its npm fields, then its `penguin` block — so
-    // its card and its export have a row.
+    // The registry lists it from its own package — its npm fields, then its card — so its card
+    // and its export have a row.
     const index = (await (await admin.get("/api/plugins/registry")).json()) as PluginIndexResponse;
     expect(index.plugins.find((e) => e.name === "@acme/sandbox-x")).toMatchObject({
       version: "0.3.0",
@@ -286,6 +290,7 @@ describe("plugin import and export", () => {
     const admin = await boot();
     const res = await importZip(admin, {
       "package.json": JSON.stringify({ name: "bare-skills", version: "0.1.0" }),
+      "ifaces.json": contentTable("bare-skills", { skills: ["bare"] }),
       // Ported as it was found: no dated version on the skill, which reads as unversioned.
       "skills/bare/SKILL.md": "---\nname: bare\ndescription: Do bare things.\n---\n\nBody.\n",
     });
@@ -307,22 +312,18 @@ describe("plugin import and export", () => {
   it("installs a package of MCP servers alone, from a zip and from a link, and lists its servers", async () => {
     const admin = await boot();
     const mail = (name: string): Files => ({
-      "package.json": JSON.stringify({
-        name,
-        version: "0.1.9",
-        description: "Mail.",
-        penguin: {
-          mcp_servers: [
-            {
-              name: "mail",
-              config: {
-                url: "https://mail.example.com/mcp",
-                oauth: { client_id: "${MAIL_CLIENT_ID}" },
-              },
-              setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }],
+      "package.json": JSON.stringify({ name, version: "0.1.9", description: "Mail." }),
+      "ifaces.json": contentTable(name, {
+        mcpServers: [
+          {
+            name: "mail",
+            config: {
+              url: "https://mail.example.com/mcp",
+              oauth: { client_id: "${MAIL_CLIENT_ID}" },
             },
-          ],
-        },
+            setup: [{ key: "MAIL_CLIENT_ID", label: "OAuth client ID" }],
+          },
+        ],
       }),
       "README.md": "# Mail\n",
     });
@@ -460,6 +461,15 @@ describe("plugin import and export", () => {
     );
     await refused(
       { "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }), "index.js": "" },
+      400,
+      "plugin_archive_invalid",
+      /no ifaces\.json: build it first \(its build runs penguin-gen-ifaces\)/,
+    );
+    await refused(
+      {
+        "package.json": JSON.stringify({ name: "left-pad", version: "1.0.0" }),
+        "ifaces.json": contentTable("left-pad", {}),
+      },
       400,
       "plugin_archive_invalid",
       /Not a PenguinHarness plugin: .*MCP servers/,
@@ -601,6 +611,7 @@ describe("plugin import and export", () => {
     const exported = new Uint8Array(await res.arrayBuffer());
     expect(Object.keys(unzipSync(exported)).sort()).toEqual([
       "notes/icon.svg",
+      "notes/ifaces.json",
       "notes/package.json",
       "notes/skills/notes/SKILL.md",
     ]);

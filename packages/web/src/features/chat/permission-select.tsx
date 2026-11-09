@@ -59,12 +59,15 @@ import {
   presetPick,
   presetsOf,
   sandboxSwitchOff,
+  type PermissionLevel,
+  type PermissionPick,
+  type PresetBlock,
 } from "../../lib/permission-level";
-import type { PermissionLevel, PermissionPick, PresetBlock } from "../../lib/permission-level";
+
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import { localizedText } from "./skill-use";
-import { SettingsDialog } from "../settings/settings-dialog";
+import { localizedText } from "../../lib/skill-use";
+import { SettingsDialog } from "../settings";
 
 /**
  * A level's shield in the level's tone: the button's mark, and the mark ahead of each row's name.

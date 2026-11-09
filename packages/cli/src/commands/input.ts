@@ -29,7 +29,7 @@
  */
 import type { Command } from "commander";
 import { isModelMessage, type AmspRecord } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { promptApproval } from "../approval.js";

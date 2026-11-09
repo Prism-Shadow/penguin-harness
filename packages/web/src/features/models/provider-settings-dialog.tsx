@@ -56,8 +56,9 @@ import {
   fixedClientType,
   providerCalledKeyless,
   providerEnvFallbackKey,
+  type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
@@ -70,8 +71,9 @@ import {
   isCustomLikeGroup,
   isGenericProtocolClientType,
   protocolSelectorValue,
+  type ProtocolClientType,
 } from "./protocol-types";
-import type { ProtocolClientType } from "./protocol-types";
+
 import type { RowState } from "./models-page";
 import { toastApiError } from "../../lib/toast-api-error";
 
