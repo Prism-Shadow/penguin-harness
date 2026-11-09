@@ -125,7 +125,6 @@ export function ProfileSection() {
                 await send({ avatar });
               }}
               onError={setError}
-              confirmRestore
             />
           </div>
         </PrefRow>

@@ -758,9 +758,10 @@ export function EmployeeEditDialog({
  * and the picture in the organization's `avatars/`. Both are the organization's, not the
  * Agent's — the same Agent may be someone else elsewhere. The picture is written as it is
  * picked (the picker re-encodes it to fit, like a person's own): direct manipulation, with
- * nothing to review first. The name is typed, so it waits for Save, live only while the trimmed
- * name differs from the stored one; closing with an unsaved name asks first, and nothing closes
- * the dialog while a write is in flight.
+ * nothing to review first. Restore default asks first, since it deletes the picture. The name
+ * is typed, so it waits for Save, live only while the trimmed name differs from the stored one;
+ * closing with an unsaved name asks first, and nothing closes the dialog while a write is in
+ * flight.
  */
 interface EmployeeProfileDialogProps {
   open: boolean;

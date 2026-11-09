@@ -1,7 +1,8 @@
 /**
  * The two controls every avatar's settings have, in the order a person's profile row set them:
  * Change avatar — a picked file is decoded, its square chosen in the crop dialog, and the crop
- * encoded and stored on confirm — then Restore default, which removes the picture. One picker for
+ * encoded and stored on confirm — then Restore default, which removes the picture once it is
+ * confirmed: it deletes the uploaded picture, and only a fresh upload brings it back. One picker for
  * a person's own avatar, an employee's and an Agent's own, since all three are stored by the same
  * rule (lib/avatar-image.ts encodes for it). The caller draws the preview beside it.
  *
@@ -11,9 +12,6 @@
  * runs inside that window as well as the request — it redraws the image, which for a phone
  * photograph is long enough to click twice through — and the crop dialog stays open, held still,
  * until the write answers. Nothing is applied optimistically: the preview shows what is stored.
- *
- * `confirmRestore`: Restore default asks first, because it deletes the uploaded picture and only
- * a fresh upload brings it back. Left off, it acts at once.
  */
 import { useState, type ChangeEvent } from "react";
 
@@ -52,18 +50,9 @@ export interface AvatarPickerProps {
    * and `null` as a new file is picked, clearing what was said before.
    */
   onError: (message: string | null) => void;
-  /** Restore default asks first. */
-  confirmRestore?: boolean;
 }
 
-export function AvatarPicker({
-  hasPicture,
-  busy,
-  run,
-  save,
-  onError,
-  confirmRestore = false,
-}: AvatarPickerProps) {
+export function AvatarPicker({ hasPicture, busy, run, save, onError }: AvatarPickerProps) {
   /** The picked image, decoded and waiting for its crop to be chosen. */
   const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -113,26 +102,24 @@ export function AvatarPicker({
         className="shrink-0"
         aria-label={restoreLabel}
         disabled={busy || !hasPicture}
-        onClick={() => (confirmRestore ? setConfirming(true) : restore())}
+        onClick={() => setConfirming(true)}
       >
         {S.profile.restoreDefault}
       </Button>
       <AvatarCropDialog image={cropping} busy={busy} onCancel={endCrop} onConfirm={onCropped} />
-      {confirmRestore && (
-        <ConfirmModal
-          open={confirming}
-          title={restoreLabel}
-          onClose={() => setConfirming(false)}
-          onConfirm={() => {
-            setConfirming(false);
-            restore();
-          }}
-          confirmLabel={S.profile.restoreDefault}
-          cancelLabel={S.common.cancel}
-        >
-          <p className="text-sm text-gray-600 dark:text-gray-300">{S.profile.avatarResetConfirm}</p>
-        </ConfirmModal>
-      )}
+      <ConfirmModal
+        open={confirming}
+        title={restoreLabel}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          restore();
+        }}
+        confirmLabel={S.profile.restoreDefault}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.profile.avatarResetConfirm}</p>
+      </ConfirmModal>
     </>
   );
 }
