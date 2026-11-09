@@ -11,9 +11,9 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
-import type { PeakWindows } from "../features/models/model-grouping";
+import type { PeakWindows } from "./peak-windows";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
+import type { StartPageSiteId } from "./browser-start-sites";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -22,13 +22,13 @@ export const zh = {
     chat: "对话",
     newChat: "新建对话",
     agents: "智能体",
-    models: "模型库",
-    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
-    benchmark: "评估中心",
-    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    /** The work-mode switch above the switcher row, and its default option (the other options are the contributed modes' own). */
+    workMode: "工作模式",
+    modeDev: "开发",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the pages use their own titles, PageData.title).
     lastConversation: "最近一次对话",
     // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
     userSettings: "用户设置",
@@ -41,7 +41,7 @@ export const zh = {
     /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
     pinEntry: "收藏",
     unpinEntry: "取消收藏",
-    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
+    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "概览",
       chart: "组织图",
@@ -346,12 +346,10 @@ export const zh = {
       gaveUp: (m: number) => `${m} 次重连均失败`,
       /** A person stopped retrying. */
       cancelled: "已放弃重试",
-      /** ssh refused in a way no retry mends; the "?" says the fix. */
+      /** ssh refused in a way no retry mends; the reason after it says the fix. */
       stoppedSsh: "重连失败，需先解决 ssh 问题",
       /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
       stoppedPassword: "登录被拒，已停止重连",
-      /** The title over the last attempt's failure behind the "?". */
-      lastFailure: "上次失败",
       retryNow: "立即重试",
       stop: "放弃重试",
       retry: "重试",
@@ -1132,6 +1130,27 @@ export const zh = {
     hint: (toggle: string | null): string =>
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+    /** The desktop shell's native actions, offered here because its menu bar stays hidden. */
+    installCli: "安装 penguin 命令…",
+    checkUpdates: "检查桌面版更新…",
+    checkingUpdates: "正在检查更新…",
+    openDevTools: "打开开发者工具",
+    projectOnGitHub: "在 GitHub 上查看项目",
+  },
+  rescue: {
+    title: "界面出错了",
+    desc: "页面渲染时抛出错误，应用无法继续显示。可以重新加载，或跳过服务端贡献（插件提供的页面等）后重新加载；需要回退 harness 版本时，打开 Harness 历史。",
+    reload: "重新加载",
+    reloadSafe: "不加载贡献重新加载",
+    /** In place of reloadSafe when safe mode is already on. */
+    safeNote: "已在安全模式：服务端贡献均已跳过，这个错误来自应用本身。",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    paletteHint: (palette: string | null): string =>
+      palette === null ? "命令面板仍可使用。" : `按 ${palette} 仍可打开命令面板。`,
+    marker: "安全模式：未加载服务端贡献",
+    leave: "离开安全模式",
+    enterAction: "进入安全模式（不加载服务端贡献）",
+    leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */
@@ -1168,7 +1187,7 @@ export const zh = {
     current: "当前",
     restore: "恢复",
     restoreTitle: "恢复版本",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
@@ -1184,11 +1203,25 @@ export const zh = {
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
-    removeConfirm: "删除这个工作台及其全部已记录版本？",
+    removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    fileCount: (n: number) => `${n} 个文件`,
+    importAction: "导入 zip",
+    importTitle: "导入工作台",
+    importUploadDesc:
+      "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "工作台已导入",
+    importOverwriteTitle: "覆盖已有工作台",
+    importOverwriteBody: (name: string): string =>
+      `工作台「${name}」已存在，覆盖将替换其源码；数据（state.json）保留。加载成功过的版本仍可从历史恢复，从未加载成功的本地改动会丢失。确认继续？`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
+    importOverwriteAction: "覆盖导入",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "打包导出",
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -2160,10 +2193,22 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后获取其模型列表，只导入你勾选的模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
     groupModeCreate: "仅新增分组",
     groupModeImport: "导入模型",
-    groupImportAll: "批量导入模型",
+    /** The import's first action: list the endpoint's models into the pick list. */
+    groupImportFetch: "获取模型列表",
+    /** The import's second action, once the list is on screen: import the ticked models. */
+    groupImportPicked: (n: number): string => `导入 ${n} 个模型`,
+    /** The pick list's title, and the name of its rows. */
+    groupImportPickTitle: "选择要导入的模型",
+    /** Beside the title: ticked out of listed. */
+    groupImportPickCount: (picked: number, total: number): string => `已选 ${picked} / ${total}`,
+    /** The pick list's bulk actions; both act on the rows the filter leaves on screen. */
+    groupImportSelectAll: "全选",
+    groupImportSelectNone: "全不选",
+    /** The filter box over a long pick list: its placeholder and its accessible name. */
+    groupImportFilter: "按模型 id 筛选",
     groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
     groupImportKeyHint: "该端点的 API key（URL 不是厂商官方地址时必填）",
     groupImportListing: "正在获取模型列表…",
@@ -3116,7 +3161,7 @@ export const zh = {
         `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
+      `PenguinHarness 插件是一个 npm 包：package.json（npm 字段：name、version、description），\`src/index.ts\`（其装饰器声明插件携带的一切：卡片、\`skills/<name>/SKILL.md\`、MCP 服务器），以及构建时据此写出的 \`ifaces.json\`——服务端读取的正是它。无论来源是什么，安装前先读完它的 package.json、src/index.ts 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中（先构建：\`npm install && npm run build\`）——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成模块的 \`mcpServers\` 条目带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
     importUploadDesc: "package.json 位于 zip 根目录或唯一顶层目录，不含 node_modules。",
     importUploadAction: "选择 zip 文件",
     importExamples: [
@@ -3381,13 +3426,16 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
-    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch always compacts on the current model first, and a failed compaction keeps it. */
+    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch compacts on the current model first while that model is available; a failed compaction, or a current model that is unavailable, hands the history over by Trace path instead. */
     modelSwitchInSessionTitle: "切换模型",
     modelSwitchInSessionConfirm: "压缩并切换",
     /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
     modelSwitchInSessionDirectConfirm: "切换",
     modelSwitchInSessionBody: (from: string, to: string): string =>
-      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则保持「${from}」。`,
+      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则改为把本对话的 Trace 文件路径交给「${to}」。`,
+    /** Body when the current model is unavailable (not configured, or no key): nothing is summarized, and the target gets the Trace path. */
+    modelSwitchInSessionHandoverBody: (from: string, to: string): string =>
+      `「${from}」当前不可用，不做摘要：将把本对话的 Trace 文件路径交给「${to}」，由它按需读取此前的历史。`,
     /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
     modelSwitchInSessionDirectBody: (to: string): string =>
       `当前上下文没有内容，将直接切换到「${to}」。`,
@@ -3471,6 +3519,21 @@ export const zh = {
       columnModified: "修改日期",
       /** Tooltip on a file row: files are listed for context but cannot be picked. */
       fileNotSelectable: "只能选择文件夹",
+      /** The new-folder row's field: what an empty field asks for. */
+      newFolderPlaceholder: "输入名称，按 Enter 新建",
+      /** Accessible name of the × that closes the new-folder row. */
+      newFolderCancel: "取消新建文件夹",
+      /** The toolbar's New folder while the folder on screen could not be read. */
+      newFolderDenied: "无法读取此文件夹，不能在这里新建",
+      /** Under the new-folder field: a character this machine does not allow in a name. */
+      newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
+      newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",
+      newFolderExists: (name: string): string => `这里已有名为「${name}」的项目`,
+      /** Windows drops a trailing dot or space, so the folder made would not be the one named. */
+      newFolderTrailing: "名称不能以空格或「.」结尾",
+      newFolderReserved: (name: string): string => `「${name}」是 Windows 保留的名称`,
+      /** Made, but the listing read back does not show it under that name. */
+      newFolderNotListed: (name: string): string => `已新建「${name}」，但这里的列表里找不到它`,
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",
@@ -3722,12 +3785,12 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入 GDPEVO-CRM 评测集",
-        desc: "导入 GDPEVO-CRM 的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
+        label: "导入 GDPEVO Essential 服务工单处理评测集",
+        desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
-          "使用 `benchmark-design` 技能导入 GDPEVO-CRM 评测集：" +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-crm-train ，" +
-          "配对的测试集一并导入。本 Project 已经有了就直接告诉我，不要覆盖。",
+          "用 `benchmark-design` 导入训练集及配对测试集：" +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train ，" +
+          "本项目已有则告知，不要覆盖。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -3853,8 +3916,8 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
-    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream notice after a backfill failure, the error in parentheses; its Retry fetches the previous window again. */
+    loadEarlierFailed: (error: string) => `[加载失败]：未能加载更早的对话（${error}）`,
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
@@ -3877,12 +3940,25 @@ Benchmark：
     steerQueuedItem: (content: string) => `插话已排队，将随下一轮送达：${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** Mid-run send-mode setting: steer (delivered mid-run), follow-up (queued until the run ends) or interrupt (stop, then send). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
     steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
     steerModeFollowUp: "排队",
     steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    steerModeInterrupt: "打断",
+    steerModeInterruptHint: "打断本轮：停止运行，消息接在被打断的那一轮之后立即发送",
+    interruptPlaceholder: "打断本轮并发送，消息接在被打断的那一轮之后",
+    interruptPlaceholderShort: "打断并发送…",
+    interruptSend: "打断并发送",
+    /** The interrupting message's hint line while the run it stopped winds down. */
+    interruptQueuedItem: (content: string) => `正在打断，随后发送：${content}`,
+    /** The text link on a queued steering / follow-up line that sends it now. */
+    interruptQueued: "打断",
+    /** Its tooltip. */
+    interruptQueuedTitle: "停止本轮，立即发送这条消息",
+    /** Toast when the Interrupt link finds its message already sent. */
+    interruptAlreadySent: "这条消息已经发出，无需打断。",
     followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
     followUpPlaceholderShort: "排队为下一条消息…",
     followUpSend: "排队为下一条消息",
@@ -3927,49 +4003,83 @@ Benchmark：
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
-     * The model request's retry row, one per ladder: `n` is the attempt it is about — the next
-     * one while it waits, the one sent after — of the turn's `m` at most (the engine counts the
-     * first request as attempt 1).
+     * A model request's retry ladder, one line per ladder, in the shape of the stop marker
+     * 「[已中断]：…」: a bracketed label, where it stands, and why in parentheses. `n` is the attempt
+     * the line is about — the next one while it waits, the one sent after — of the turn's `m` at
+     * most (the engine counts the first request as attempt 1).
      */
     requestRetry: {
       waiting: (seconds: number, n: number, m: number) => `${seconds} 秒后发起第 ${n}/${m} 次请求`,
       /** The wait is over (or there was none) and the request is going out. */
       sending: (n: number, m: number) => `正在发起第 ${n}/${m} 次请求`,
-      /** The request went out; the row now only records it. */
+      /** The request went out; the line now only records it. */
       sent: (n: number, m: number) => `已发起第 ${n}/${m} 次请求`,
-      gaveUp: (attempts: number) => (attempts > 1 ? `${attempts} 次请求均失败` : "请求失败"),
+      /** The line while it waits, or while the attempt goes out. */
+      retrying: (sentence: string, why: string) => `[重试中]：${sentence}（${why}）`,
+      /** The line once the attempt went out: it stays as the record of a ladder that recovered. */
+      retried: (sentence: string, why: string) => `[已重试]：${sentence}（${why}）`,
       /**
-       * Why it retried, in words: the title over the provider's own message behind the row's
-       * "?". The live protocol carries the classified cause on `error_code`; the legacy status
-       * spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+       * The ladder ended the run — it gave up, or a stop came during a wait — said as the line a
+       * run ended on is, beside 「[已中断]」 and 「[错误]」: how many attempts failed, and why.
        */
-      cause: (
-        status: "retryable" | "failed" | "timeout" | "malformed",
-        errorCode?: string,
-      ): string => {
-        const kind = errorCode ?? status;
-        return kind === "timeout"
+      failed: (attempts: number, why: string) =>
+        attempts > 1 ? `[请求失败]：${attempts} 次请求均失败（${why}）` : `[请求失败]：${why}`,
+      /**
+       * Why, in short: the cause in words, and the HTTP status when the provider's message names
+       * one. The provider's own words are the failure details' (「[详情]」), never the line's.
+       */
+      why: (cause: string, status: number | null) =>
+        status === null ? cause : `${cause}，HTTP ${status}`,
+      /**
+       * The cause in words, from `error_code` (the legacy status spellings failed/timeout/malformed
+       * say the same thing for pre-convergence Traces); null for a code it has no words for.
+       */
+      cause: (kind: string | undefined): string | null =>
+        kind === "timeout"
           ? "连接超时或网络中断"
           : kind === "malformed"
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "image_rejected"
-                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
-                : kind === "output_truncated"
-                  ? "模型输出达到输出上限，被截断"
-                  : kind === "failed"
-                    ? "模型服务返回错误"
-                    : "请求失败";
-      },
+              : kind === "rate_limited"
+                ? "触发限流或额度已用尽"
+                : kind === "auth"
+                  ? "凭据被拒绝"
+                  : kind === "rejected"
+                    ? "模型服务拒绝了请求"
+                    : kind === "image_rejected"
+                      ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
+                      : kind === "output_truncated"
+                        ? "模型输出达到输出上限，被截断"
+                        : kind === "unsupported"
+                          ? "当前模型不支持该请求"
+                          : kind === "invalid_input"
+                            ? "输入无法组成请求"
+                            : kind === "failed"
+                              ? "模型服务返回错误"
+                              : null,
+      /** A retry whose cause has no words (an unknown code). */
+      unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
       retryNow: "立即重试",
       /** The ordinary session abort. */
       stop: "放弃重试",
     },
-    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
-    llmError: (errorMessage?: string) =>
-      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+    /**
+     * Run-ending LLM failure line (request_end status fatal): why in short when it is known; the
+     * provider's own words are in the failure details.
+     */
+    llmError: (why: string | null) => `[错误]：模型请求错误${why === null ? "" : `（${why}）`}`,
+    /**
+     * The details of a failed or retrying model request: 「[详情]」 on its line opens a dialog
+     * with a report to copy or to file as a GitHub issue.
+     */
+    failureReport: {
+      open: "详情",
+      title: "请求失败详情",
+      lead: "这类失败多数来自模型服务或网络。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
+      check: "报告已去掉密钥一类的内容，发送前仍请检查有没有不想公开的信息。",
+    },
     /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
     retryRun: "重试",
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
@@ -4031,8 +4141,37 @@ Benchmark：
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
-    sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
+    /** The routed conversation's machine is connected and did not answer in time. */
+    sessionOnQuietMachine: (machine: string) =>
+      `这个对话在 ${machine} 上，但 ${machine} 暂时没有回应。`,
+    /** No machine can be named: nothing says whether it is not connected or not answering. */
+    sessionOnOfflineMachineUnknown: "本机没有这个对话，它可能在某台暂时联系不上的机器上。",
+    /**
+     * A link the list does not hold while machines that could hold it are silent: what is known —
+     * not here — and where it may be. At most three aliases are named; more end in 等. `state`
+     * says whether those machines are not connected, connected and not answering, or some of each.
+     */
+    sessionMaybeOnMachines: (
+      aliases: readonly string[],
+      more: boolean,
+      state: "disconnected" | "quiet" | "mixed",
+    ) => {
+      const why =
+        state === "disconnected"
+          ? "当前没有连接"
+          : state === "quiet"
+            ? "暂时没有回应"
+            : "当前没有连接或暂时没有回应";
+      return aliases.length === 1 && !more
+        ? `本机没有这个对话，它可能在 ${aliases[0]} 上，但 ${aliases[0]} ${why}。`
+        : `本机没有这个对话，它可能在 ${aliases.join("、")}${more ? " 等" : " "}机器上，但这些机器${why}。`;
+    },
     sessionOfflineHint: "连接恢复后会自动打开。",
+    sessionQuietHint: "机器回应后会自动打开。",
+    /** The machine holding the routed conversation will not show it to this server (403 session_forbidden). */
+    sessionRefused: (machine: string | null) =>
+      machine === null ? "这台机器不让本服务端查看这个对话" : `${machine} 不让本服务端查看这个对话`,
+    sessionRefusedHint: "对话仍在那台机器上，但它拒绝了本服务端的读取。",
     /** The routed conversation does not exist (a stale link, or deleted elsewhere): said in place, never swapped for another conversation. */
     sessionNotFound: "会话不存在或已被删除",
     sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
@@ -4059,6 +4198,48 @@ Benchmark：
       body: (alias: string) =>
         `${alias} 的版本和当前不一致，这里的对话不会自动刷新。请到「机器管理」重启这台机器。`,
       open: "去机器管理",
+    },
+    /**
+     * A conversation's history coming over from the machine it lives on: the row that stands in
+     * for the transcript until its newest messages arrive, the line over the transcript while the
+     * rest syncs behind it, and the line under an unfolded output while its whole text arrives.
+     * `alias` is null while the machine list has not answered.
+     */
+    historyTransfer: {
+      window: (alias: string | null) =>
+        alias === null ? "正在加载最近的对话" : `正在从 ${alias} 加载最近的对话`,
+      /** Behind the first paint: the rest of the conversation comes over to this server. */
+      fill: "更早的历史正在同步",
+      /** Behind the first paint: the whole of the outputs the transcript shows folded. */
+      heavy: "完整输出正在同步",
+      /** Under an unfolded output or thinking block while its whole text arrives. */
+      body: "正在加载完整内容",
+      /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
+      bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
+      /** The Trace panel bringing a machine's Trace file over before it opens it. */
+      trace: (alias: string | null) =>
+        alias === null ? "正在获取 Trace" : `正在从 ${alias} 获取 Trace`,
+      /** The machine is not connected and the server reconnects: the attempt, then the seconds. */
+      reconnecting: (attempt: number) => `与机器的连接已断开，正在重连（第 ${attempt} 次）`,
+      reconnectIn: (seconds: number, attempt: number) =>
+        `与机器的连接已断开，${seconds} 秒后重连（第 ${attempt} 次）`,
+      /** Connected, but the machine sent nothing for a while: the server asks it again. */
+      asking: (attempt: number) => `机器没有回应，正在重新请求（第 ${attempt} 次）`,
+      askIn: (seconds: number, attempt: number) =>
+        `机器没有回应，${seconds} 秒后重新请求（第 ${attempt} 次）`,
+      /**
+       * Connected and beating, but nothing else from the machine for a minute (a route stuck over
+       * there): nothing is retried, so no attempt and no countdown.
+       */
+      slow: (alias: string | null) =>
+        alias === null
+          ? "机器已连接，但一分钟内没有传来新数据，仍在等待"
+          : `${alias} 已连接，但一分钟内没有传来新数据，仍在等待`,
+      /** A wait the server names in words this build does not know: said without guessing why. */
+      waitingOther: "正在等待机器",
+      retryNow: "立即重试",
+      /** The stream broke its own rules again and again: the read stops, Retry starts it over. */
+      broken: "历史消息传输中断，请重试",
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
@@ -4222,6 +4403,14 @@ Benchmark：
     compactionResult: "压缩结果",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
+    /** The same marker when the switch handed the history over by Trace path instead of a summary. */
+    modelChangedByTrace: (from: string, to: string): string =>
+      `模型已切换 · ${from} → ${to} · 经 Trace 交接`,
+    /** Its hover: why there is no summary, and the file the new model reads the history from. */
+    modelChangedByTraceHint: (tracePath?: string): string =>
+      tracePath
+        ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
+        : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -4907,16 +5096,16 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveConfirmTitle: "保存文件",
-    saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
+    /** The editor's ✓: writes the draft and goes back to the preview (the save shortcut saves and stays). */
+    saveAndClose: "保存并退出",
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
     saveTooLarge: (mb: number): string => `内容超过 ${mb}MB 写入上限，未保存`,
     discardTitle: "放弃未保存的修改",
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
-    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
-    stopEditing: "退出编辑",
+    /** The editor's ×: drops what was typed and goes back to the preview, without asking — the button is the discard. */
+    discardChanges: "放弃更改",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
@@ -5216,7 +5405,7 @@ Benchmark：
       benchmarkId: string;
       time: string;
       label: string;
-      version: number;
+      version: number | string;
       provider: string;
       modelId: string;
       thinkingLevel: string;
@@ -5388,19 +5577,29 @@ Benchmark：
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-evaluation 插件（Agent Evaluation）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
-      "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
+      "这个会话运行所用的模型，缺省为 Project 默认模型；它负责派发、打分与记录，不是被测的模型",
+    testedModel: "被测智能体使用的模型",
+    testedModelHint:
+      "被测智能体每次测试都用这个模型，思考等级沿用它自己的配置；预设为它在这套 Benchmark 上最近一次评估所用的模型，没有时为 Project 默认模型",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
     /** The fixed tail: the `agent-evaluation` inputs, the label check and the single append. */
-    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+    evaluateTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider: string;
+      modelId: string;
+    }): string =>
       "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
-      `- runs：\`${p.runs}\`\n\n` +
+      `- runs：\`${p.runs}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n\n` +
       "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能。" +
-      "被测模型就是本会话自己的模型：在第一次 `run_subagent` 之前从你的 Environment 读出 `Provider` 与 `Model ID`，作为每个请求的 `provider` 与 `model_id`。" +
-      "智能体不保存模型，不要到被测智能体的文件、Project 配置或服务端去找；Environment 缺其中任何一行，就停下来问我。" +
+      "被测模型就是上面这组 provider 与模型，不一定是本会话自己的模型：把它们作为每个请求的 `provider` 与 `model_id`。" +
       "思考等级取被测智能体配置的等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
@@ -5413,8 +5612,7 @@ Benchmark：
       "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
-    sessionModelHint:
-      "做分析与改动的模型，缺省为 Project 默认模型；评测被测智能体时沿用基线记录的模型，不在这里改",
+    sessionModelHint: "运行方法、读结果并做改动的模型，缺省为 Project 默认模型；它不是被测的模型",
     optimizeRunsHint: "每个候选版本每道题跑几次取平均",
     roundLimitField: "最多轮数",
     roundLimitHint: "每轮一个改动；评测完整才算一轮",
@@ -5423,13 +5621,15 @@ Benchmark：
     focusField: "优化重点",
     focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
     noBaseline:
-      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」跑一次完整评测取得基线。",
+      "所选被测智能体在这套 Benchmark 上还没有这个模型的基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」用同一个模型跑一次完整评测取得基线。",
     baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
     /** The fixed tail: the `agent-optimization` inputs, the acceptance rule and the report. */
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
+      provider: string;
+      modelId: string;
       roundLimit: number;
       targetScore: number;
     }): string =>
@@ -5437,10 +5637,12 @@ Benchmark：
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n` +
       `- desired_score：\`>=${p.targetScore}\`\n` +
       `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
       "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 评测完整的 Case × runs 矩阵，每个子会话的 prompt 里都写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
+      "Reference 是被测智能体当前 Agent State 在上面这组 provider 与模型上的完整评估，每个候选都在同一组 provider、model_id 与 thinking_level 上评测；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
     // The Optimize tab's Method select, built from the plugin library (benchmark/rsi-methods.ts).
@@ -5456,45 +5658,42 @@ Benchmark：
     methodsFailed: "插件库读取失败，先按默认循环优化",
     methodsNone: "插件库里没有自进化算法工具包，按默认循环优化",
     /**
-     * Shown where the default's round limit and target score are: any other toolkit sets its own
-     * budget.
+     * Shown where the default's round limit and target score are: any other toolkit follows its
+     * own Skill for its data and budget.
      */
-    methodBudgetHint: "这个方法用它自己的预算：论文默认值降为冒烟档，除非在「优化重点」里另行指定",
+    methodBudgetHint:
+      "这个方法按它自己的技能运行：在哪些数据上训练和测试、预算多少，都由技能决定，除非在「优化重点」里另行指定",
+    /** Any other toolkit's count field: complete passes over its test set per reported State. */
+    testRepetitionsField: "测试集重复次数",
+    testRepetitionsHint: "报告的每个 State（基线与最终版本）在测试集上完整测几次",
     /** The optimizer field's hint under any other toolkit: the Skill that agent must carry. */
     methodOptimizerHint: (skill: string): string =>
       `运行该方法、修改被测智能体的一方；需要装有 ${skill} 技能`,
     methodMissingSkill: (plugin: string, skill: string): string =>
       `该智能体没有安装 ${skill} 技能，无法运行这个方法——先在插件库为它安装 ${plugin} 插件，或换用默认智能体。`,
     /**
-     * The tail for a toolkit other than the default: its own Skill, the three inputs every toolkit
-     * takes, and its paper's loop and budget. Given the baseline's provider and model, it pins the
-     * evaluations to them, as the default loop does, so they join the baseline's series.
+     * The tail for a toolkit other than the default: its own Skill, the tested agent, the
+     * Benchmark it starts from, the test-set repetitions and the tested model. How the method
+     * trains, tests, budgets and records is left to that Skill.
      */
     rsiOptimizeTail: (p: {
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
-      runs: number;
-      provider?: string;
-      modelId?: string;
-    }): string => {
-      const pinned =
-        p.provider && p.modelId
-          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
-          : "";
-      return (
-        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体运行它的方法。\n\n` +
-        `- test_agent_id：\`${p.targetAgentId}\`\n` +
-        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
-        `- runs：\`${p.runs}\`\n` +
-        pinned +
-        "\n" +
-        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
-        "按原论文的流程运行，预算用技能的冒烟档（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
-        "基线与每个候选都经技能自带的评测参考测量，固定被测智能体的运行时，每条完整评估都以同一标签记入 scoreboard.yaml；" +
-        "结束时报告基线分、最终分、保留的版本与方法改了什么。"
-      );
-    },
+      testRepetitions: number;
+      provider: string;
+      modelId: string;
+    }): string =>
+      `请使用 \`${p.skill}\` 技能，从这套 Benchmark 出发对被测智能体运行它的方法。\n\n` +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- test_repetitions：\`${p.testRepetitions}\`\n` +
+      `- provider：\`${p.provider}\`\n` +
+      `- model_id：\`${p.modelId}\`\n\n` +
+      "按技能的定义运行这个方法：在哪些数据上训练和测试、预算多少、怎样测量、记录什么，都以技能为准。" +
+      "被测智能体固定使用这组 provider 与模型，思考等级沿用它自己的配置。" +
+      "`test_repetitions` 是你报告的每个 State（基线与最终版本）在测试集上完整测试的次数。" +
+      "只问我方法必需而我没给的输入；结束时报告基线分、最终分、保留的版本与方法改了什么。",
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
@@ -5561,10 +5760,9 @@ Benchmark：
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */
   company: {
-    /** The mode switch (top-left of the sidebar, above the Project switcher) and its two options. */
-    workMode: "工作模式",
-    modeDev: "开发",
     modeCompany: "公司",
+    modeDev: "开发",
+    workMode: "工作模式",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
      * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
@@ -6308,6 +6506,23 @@ Benchmark：
       loadFailed: "手册加载失败",
     },
   },
+  /**
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * report dialog it opens, and the notice a crashed part of the page shows.
+   */
+  report: {
+    action: "报告问题",
+    title: "报告问题",
+    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
+    label: "报告",
+    copy: "复制",
+    copied: "已复制报告",
+    copyFailed: "没能复制，请选中报告手动复制",
+    fileIssue: "到 GitHub 提交 issue",
+    crashed: "[出错了]：这部分页面没能显示",
+    reload: "重新加载",
+  },
   errors: {
     networkError: "网络错误，请检查连接",
     /**
@@ -6336,6 +6551,13 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
+      trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",
+      machine_refused: "机器拒绝了这次读取。",
+      machine_no_answer: "机器没有回应。",
+      machine_not_found: "这台机器不在当前 Project 的机器列表中。",
+      machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      machine_answered: "机器给出的应答无法使用，请重试。",
+      trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
       job_running: "这台机器上有任务在执行，请等它完成。",
@@ -6368,6 +6590,7 @@ Benchmark：
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
+      workbench_too_large: "该工作台的源码过大，超出了导出限制。",
       benchmark_busy:
         "这个 Benchmark 正在评估：它的 .jobs/ 里还有没跑完的运行，现在覆盖，进行中的评估会接着写进新导入的副本。请等评估结束后再覆盖。",
       file_not_found: "该文件已不存在。",
@@ -6380,12 +6603,14 @@ Benchmark：
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       dir_permission_denied: "没有读取该目录的权限。",
+      dir_write_denied: "没有在该目录中新建的权限。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       reveal_failed: "无法打开文件夹。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",
       workspace_not_found: "该 Workspace 不存在或不是目录。",
       session_not_found: "该 Session 已不存在，或你没有访问权限。",
+      session_forbidden: "你没有访问该 Session 的权限。",
       session_deleting: "该 Session 正在删除中。",
       approval_not_found: "该授权请求已处理或已失效。",
       process_not_found: "该后台进程已结束或已被移除。",

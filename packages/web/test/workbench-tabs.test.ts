@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import {
@@ -103,5 +104,39 @@ describe("workbenches with nothing to show", () => {
     expect(workbenchNoticesOf([info({})])).toEqual([]);
     expect(workbenchNoticesOf([info({ error: "broken" })])).toEqual([]);
     expect(workbenchNoticesOf([info({ tabs: [] })])).toEqual([]);
+  });
+});
+
+describe("the chat page under a workbench tab", () => {
+  it("does not paint what the page covers, so no dock layer shows through it", () => {
+    // The page lies over the chat at z-10 and the docks paint above that: the bottom dock's
+    // boundary handle (z-20) lit up across the page as a line that took the cursor and resized
+    // the hidden dock, and a fullscreen dock (z-40) lay over the page whole. So while the page
+    // is shown, what it covers stays mounted but hidden: the toolbar and the dock area.
+    const shown = "workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null";
+    const covered = `const coveredByWorkbench = ${shown} ? "invisible" : "";`;
+    // The split composition keeps the page-cover decision in the files that paint each region.
+    const page = readFileSync(
+      new URL("../src/features/chat/chat-page.tsx", import.meta.url),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(page).toContain(
+      `{${shown} && ( <div className="absolute inset-x-0 bottom-0 top-9 z-10">`,
+    );
+    const toolbar = readFileSync(
+      new URL("../src/features/chat/toolbar/main-chat-toolbar.tsx", import.meta.url),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(toolbar).toContain(covered);
+    expect(toolbar).toMatch(/\{selected && \( <div className=\{`[^`]*\$\{coveredByWorkbench\}`\}/);
+    expect(toolbar).toMatch(
+      /\{archivedRow && \( <div className=\{`[^`]*\$\{coveredByWorkbench\}`\}/,
+    );
+    const body = readFileSync(
+      new URL("../src/features/chat/body/main-chat-body.tsx", import.meta.url),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(body).toContain(covered);
+    expect(body).toMatch(/<div data-dock-area className=\{`[^`]*\$\{coveredByWorkbench\}`\}>/);
   });
 });

@@ -18,8 +18,8 @@
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
- * user-defined), the speed test, and the gear last on every group: a menu with the group's sort
- * and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
+ * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
  *
  * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
  * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
@@ -53,8 +53,17 @@
  * write and closes only once it landed — a refused one leaves the table as it was and the draft
  * in the dialog — and closing it with unsaved edits asks first.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from "react";
+
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -116,10 +125,9 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
+
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -131,13 +139,12 @@ import {
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
+  type FastModeProtocol,
+  type ModelProviderBridgeAuth,
+  type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
+
 import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
-import type {
-  FastModeProtocol,
-  ModelProviderBridgeAuth,
-  ModelProviderInfo,
-} from "@prismshadow/penguin-server/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -146,13 +153,13 @@ import {
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "./model-grouping";
+} from "../../lib/model-grouping";
 import {
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "./model-group-order";
-import { TAG_TONE, modelTags } from "./model-tags";
+} from "../../lib/model-group-order";
+import { TAG_TONE, modelTags } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -166,8 +173,10 @@ import {
   needsProtocolDetectOnSave,
   protocolForPersist,
   protocolSelectorValue,
+  type InheritedProtocol,
+  type ProtocolClientType,
 } from "./protocol-types";
-import type { InheritedProtocol, ProtocolClientType } from "./protocol-types";
+
 import {
   isGroupExpanded,
   loadExpandedProviders,
@@ -183,23 +192,23 @@ import {
   storeModelGroupPins,
   storeModelGroupsFolded,
   withModelGroupPinned,
+  type ModelGroupPins,
 } from "./model-group-pins";
-import type { ModelGroupPins } from "./model-group-pins";
 import { clearDraftModelRef } from "../chat/draft-cache";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
-import { buildImportedRows, groupImportConnection } from "./group-import";
+import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
+import { ImportPickList } from "./group-import-picker";
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
   groupShape,
   inheritedConnection,
   rowKey,
+  type ProviderConnections,
 } from "./connection";
-import type { ProviderConnections } from "./connection";
+
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -208,13 +217,14 @@ import {
   sortModelGroups,
   storeModelGroupSorts,
   withModelGroupSort,
+  type ModelGroupSort,
 } from "./model-sort";
-import type { ModelGroupSort } from "./model-sort";
-import { tpsTone, ttftTone } from "./speed-test";
-import type { SpeedResult, SpeedTone } from "./speed-test";
+
+import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
+
 import { toneInk } from "../../lib/tone";
-import { KeyAuthDialog } from "./key-auth-dialog";
-import type { KeyAuthTexts } from "./key-auth-dialog";
+import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
+
 import {
   HEADER_BUTTON,
   HEADER_LABEL,
@@ -222,14 +232,22 @@ import {
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
+  type GroupHeaderAction,
 } from "./group-header";
-import type { GroupHeaderAction } from "./group-header";
+
 import { GroupBalance } from "./group-balance";
 import { DisconnectConfirm, GroupConnection } from "./group-connection";
-import { DetailsFold, MODEL_DIALOG_SLOTS, foldedErrors, foldedSlots } from "./model-dialog-details";
-import type { ModelDialogSlot } from "./model-dialog-details";
+import {
+  DetailsFold,
+  MODEL_DIALOG_SLOTS,
+  foldedErrors,
+  foldedSlots,
+  type ModelDialogSlot,
+} from "./model-dialog-details";
+
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -1102,7 +1120,7 @@ export function ModelsPage() {
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -1157,7 +1175,7 @@ export function ModelsPage() {
         keyLanded.current = false;
         setOauthFor(PENGUIN_GO_PROVIDER_ID);
       } else {
-        toastError(apiErrorText(error));
+        toastApiError(error);
       }
     } finally {
       setBusy(false);
@@ -2117,10 +2135,15 @@ export function ModelsPage() {
  *   dialog's field rhythm: API key first, then the base URL with the detect action at its
  *   top-right and the in-field protocol picker as manual override (ProtocolSuffixMenu —
  *   the same one-to-one path menu). Only once a protocol is determined (detected or
- *   picked) does the "import all models" action appear; it lists the endpoint
- *   (POST models/list) and hands the group's connection and the appended rows to the page
- *   for one table PUT: the base URL, protocol and key are written once, as the group's, and
- *   the rows store nothing of them.
+ *   picked) does the "fetch model list" action appear; it lists the endpoint
+ *   (POST models/list) into a pick list (ImportPickList), every model ticked, and the
+ *   action becomes "import N models", held while nothing is ticked. That one hands the
+ *   group's connection and the rows of the ticked models to the page for one table PUT: the
+ *   base URL, protocol and key are written once, as the group's, and the rows store nothing
+ *   of them. The list answers for the key, base URL and protocol it was fetched with: it is
+ *   hidden, and the fetch action is back, while any of them differs from those, and it returns
+ *   with its ticks once all three match again. The three are locked while a fetch or the save
+ *   runs, so a request never answers for values that changed under it.
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
@@ -2166,6 +2189,17 @@ function AddGroupDialog({
   const [detectFailed, setDetectFailed] = useState(false);
   /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
   const [importing, setImporting] = useState<string | null>(null);
+  /**
+   * The fetched listing: the endpoint it answers for, the ids on offer, how many listing entries
+   * offered nothing (for the toast), and the ticked ids. The ticks are part of the dialog's form
+   * and commit with Import; null until a listing landed.
+   */
+  const [listing, setListing] = useState<{
+    endpoint: string;
+    ids: string[];
+    dropped: number;
+    picked: Set<string>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
@@ -2238,9 +2272,19 @@ function AddGroupDialog({
     form.patch({ clientType: t });
   };
 
-  const runImport = async () => {
+  /** The endpoint a listing answers for: the key, base URL and protocol as they would be sent. */
+  const endpointOf = (url: string, protocol: string, key: string) =>
+    JSON.stringify([url, protocol, key]);
+  /** The listing on screen: only while the fields still name the endpoint it came from. */
+  const list =
+    listing !== null &&
+    clientType !== null &&
+    listing.endpoint === endpointOf(baseUrl.trim(), clientType, apiKey.trim())
+      ? listing
+      : null;
+
+  const fetchList = async () => {
     if (!nameValid || clientType === null) return;
-    const n = trimmed;
     const url = baseUrl.trim();
     if (!detectableBaseUrl(url)) {
       setError(S.models.groupImportNeedUrl);
@@ -2263,18 +2307,38 @@ function AddGroupDialog({
         );
         return;
       }
-      const built = buildImportedRows(rows, n, listed.models);
-      if (built.added === 0) {
+      const { ids, dropped } = pickableModelIds(listed.models);
+      if (ids.length === 0) {
         setError(S.models.groupImportEmpty);
         return;
       }
-      setImporting(S.models.groupImportSaving(built.added));
+      setListing({
+        endpoint: endpointOf(url, clientType, key),
+        ids,
+        dropped,
+        picked: new Set(ids),
+      });
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const runImport = async () => {
+    if (!nameValid || clientType === null || list === null || list.picked.size === 0) return;
+    const n = trimmed;
+    const chosen = list.ids.filter((id) => list.picked.has(id));
+    const built = buildImportedRows(rows, n, chosen);
+    setError(null);
+    setImporting(S.models.groupImportSaving(built.added));
+    try {
       await onImport(
         [...rows, ...built.rows],
         n,
-        groupImportConnection({ baseUrl: url, clientType, apiKey: key }),
+        groupImportConnection({ baseUrl: baseUrl.trim(), clientType, apiKey: apiKey.trim() }),
         built.added,
-        built.skipped,
+        list.dropped + built.skipped,
       );
     } catch (e) {
       setError(apiErrorText(e));
@@ -2311,18 +2375,34 @@ function AddGroupDialog({
               {S.common.confirm}
             </Button>
           ) : (
-            // The import action exists only once the protocol is determined (detected or
-            // hand-picked): before that there is nothing meaningful to run.
-            clientType !== null && (
+            // The import actions exist only once the protocol is determined (detected or
+            // hand-picked): before that there is nothing meaningful to run. Fetch the list
+            // first; once it is on screen, import what is ticked.
+            clientType !== null &&
+            (list === null ? (
               <Button
                 size="sm"
                 variant="primary"
                 disabled={busy || !nameValid || baseUrlMissing}
-                onClick={() => void runImport()}
+                onClick={() => void fetchList()}
               >
-                {S.models.groupImportAll}
+                {S.models.groupImportFetch}
               </Button>
-            )
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid || list.picked.size === 0}
+                // Fetch and Import are one button in one place, and the list lands within a
+                // double-click: the second click of a double-click on Fetch must not import.
+                // A keyboard press reports detail 0 and a single click 1.
+                onClick={(e) => {
+                  if (e.detail <= 1) void runImport();
+                }}
+              >
+                {S.models.groupImportPicked(list.picked.size)}
+              </Button>
+            ))
           )}
         </>
       }
@@ -2362,6 +2442,9 @@ function AddGroupDialog({
               size="sm"
               label={S.models.apiKey}
               value={apiKey}
+              // Locked while a fetch or save runs, like the base URL: the request speaks with
+              // this key, and the list it brings back answers for it.
+              disabled={busy}
               onChange={(e) => {
                 form.patch({ apiKey: e.target.value });
                 setError(null);
@@ -2418,12 +2501,21 @@ function AddGroupDialog({
                     path={suffixLabel}
                     detecting={detecting}
                     tone={detectFailed ? "warn" : null}
+                    disabled={busy}
                     onPick={pickProtocol}
                   />
                 </div>
               </div>
               {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
+            {list !== null && (
+              <ImportPickList
+                ids={list.ids}
+                picked={list.picked}
+                disabled={busy}
+                onChange={(picked) => setListing({ ...list, picked })}
+              />
+            )}
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
             )}
@@ -3421,10 +3513,10 @@ function ModelDialog({
           }}
         >
           {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
-              TokenDance, SiliconFlow, Atlas Cloud), and the group the row was loaded in — a row
-              already in another gateway or a vendor group may stay there, but no other row may
-              be moved into one (the server refuses that as an addition, model_not_addable). The
-              current value stays listed so it is valid. */}
+              TokenDance, SiliconFlow, Atlas Cloud, Runcrate), and the group the row was loaded
+              in — a row already in another gateway or a vendor group may stay there, but no
+              other row may be moved into one (the server refuses that as an addition,
+              model_not_addable). The current value stays listed so it is valid. */}
           {MODEL_PROVIDERS.filter(
             (p) =>
               isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,

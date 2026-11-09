@@ -11,7 +11,9 @@
  * - Given a caller who is not an admin, even a member of the machine's Project, the answer is the
  *   Session routes' 404 and no machine is asked.
  * - Given an id that no machine holds, the answer is the Session routes' 404, and asking again
- *   at once reaches no machine.
+ *   at once reaches no machine; given two machines where one never answers and the other says
+ *   no, the answer is 503 `machine_no_answer` naming the silent one, and with both saying no,
+ *   the 404.
  * - Given a machine that refuses this server's session (401), the answer is 502
  *   `machine_refused` naming the machine, never a 401 the client would read as its own sign-out.
  * - Given a known Session whose machine is not connected, the answer is 503 `not_connected`
@@ -48,6 +50,15 @@ const seen: { method: string; url: string; headers: http.IncomingHttpHeaders }[]
 /** Every call frame the machine's API socket received. */
 const socketCalls: { call: { path: string } }[] = [];
 let connected = true;
+/**
+ * A second machine of the Project, when a case lists it: one that never answers, or one that
+ * answers it holds no such Session.
+ */
+let second: "none" | "mute" | "absent" | "forbidden" = "none";
+const SECOND = "Wq3mN8rT2vYx-Ab1";
+const SECOND_ALIAS = "gpu-box";
+let secondMachine: http.Server;
+let secondPort = 0;
 
 let machine: http.Server;
 let wss: WebSocketServer;
@@ -102,6 +113,16 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => machine.listen(0, "127.0.0.1", resolve));
   port = (machine.address() as { port: number }).port;
+  secondMachine = http.createServer((_req, res) => {
+    if (second === "absent") {
+      json(res, 404, { error: { code: "session_not_found", message: "No such Session." } });
+    } else if (second === "forbidden") {
+      json(res, 403, { error: { code: "session_forbidden", message: "Not for this account." } });
+    }
+    // Mute: the request is taken and never answered.
+  });
+  await new Promise<void>((resolve) => secondMachine.listen(0, "127.0.0.1", resolve));
+  secondPort = (secondMachine.address() as { port: number }).port;
 
   t = await createTestApp({
     machines: fakeMachinesNode(
@@ -114,6 +135,15 @@ beforeAll(async () => {
                 alias: ALIAS,
                 api: connected ? machineApi(new http.Agent(), port, MINTED) : null,
               },
+              ...(second === "none"
+                ? []
+                : [
+                    {
+                      machineId: SECOND,
+                      alias: SECOND_ALIAS,
+                      api: machineApi(new http.Agent(), secondPort, MINTED),
+                    },
+                  ]),
             ],
       (machineId) =>
         machineId === MACHINE && connected
@@ -144,6 +174,8 @@ afterAll(async () => {
   await new Promise<void>((resolve) => wss.close(() => resolve()));
   machine.closeAllConnections();
   await new Promise<void>((resolve) => machine.close(() => resolve()));
+  secondMachine.closeAllConnections();
+  await new Promise<void>((resolve) => secondMachine.close(() => resolve()));
 });
 
 const errorOf = async (res: Response) =>
@@ -197,6 +229,49 @@ describe("a Session-level request for a machine's Session", () => {
       expect((await errorOf(res)).code).toBe("session_not_found");
     }
     expect(asks(id)).toHaveLength(1);
+  });
+
+  it("answers 503 machine_no_answer naming the machine that did not answer, not a 404, when the others say no", async () => {
+    const id = "session-2026-10-22-09-00-00-0badcafe";
+    second = "mute";
+    try {
+      const res = await apiClient(t.app, admin).get(`/api/sessions/${id}/messages`);
+      expect(res.status).toBe(503);
+      expect(await errorOf(res)).toMatchObject({
+        code: "machine_no_answer",
+        details: { machineId: SECOND, alias: SECOND_ALIAS },
+      });
+      expect(asks(id)).toHaveLength(1);
+    } finally {
+      second = "none";
+    }
+  }, 20_000);
+
+  it("answers 403 session_forbidden naming the machine that holds the Session and will not show it, never a 404", async () => {
+    const id = "session-2026-10-22-09-00-00-0f0bdd1e";
+    second = "forbidden";
+    try {
+      const res = await apiClient(t.app, admin).get(`/api/sessions/${id}/messages`);
+      expect(res.status).toBe(403);
+      expect(await errorOf(res)).toMatchObject({
+        code: "session_forbidden",
+        details: { machineId: SECOND, alias: SECOND_ALIAS },
+      });
+    } finally {
+      second = "none";
+    }
+  });
+
+  it("is the Session routes' 404 when every machine that could hold the Session says it does not", async () => {
+    const id = "session-2026-10-22-09-00-00-0ddba11e";
+    second = "absent";
+    try {
+      const res = await apiClient(t.app, admin).get(`/api/sessions/${id}/messages`);
+      expect(res.status).toBe(404);
+      expect((await errorOf(res)).code).toBe("session_not_found");
+    } finally {
+      second = "none";
+    }
   });
 
   it("answers a machine's refusal as 502 machine_refused naming the machine, never as a 401", async () => {

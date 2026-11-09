@@ -10,7 +10,7 @@
  * that (a static render, a test), so it is never blank. Its picture is named by a summary that
  * reads the data out in words; the title, when the model gave one, heads the surface.
  */
-import type { A2uiChart } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiChart } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import { BarChart } from "../../charts/cartesian/bar-chart";
 import { HBarChart } from "../../charts/cartesian/hbar-chart";

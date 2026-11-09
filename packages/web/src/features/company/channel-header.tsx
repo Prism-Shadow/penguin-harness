@@ -34,22 +34,22 @@ import {
   UserAvatar,
   menuPanelClass,
   noAutofill,
-  toastError,
   toastSuccess,
   usePortalPanel,
+  type AvatarStackItem,
 } from "@prismshadow/penguin-ui";
-import type { AvatarStackItem } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
-import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
-import type { InviteCandidate } from "./channel-list";
+import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
+
 import { parsePrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Opening a desk session (the open door): the member popover's employee rows, and the org chart's node menu. */
 export const DESK_ICON = ICONS.doorOpen;
@@ -315,7 +315,7 @@ export function ChannelHeader({
       setCurrentAgentId(agentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpeningDesk(null);
     }
@@ -330,7 +330,7 @@ export function ChannelHeader({
       toastSuccess(S.company.channels.invited(candidate.name));
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -344,7 +344,7 @@ export function ChannelHeader({
       toastSuccess(S.company.channels.left);
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -358,7 +358,7 @@ export function ChannelHeader({
       toastSuccess(archived ? S.company.channels.archived : S.company.channels.unarchived);
       onChanged();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }

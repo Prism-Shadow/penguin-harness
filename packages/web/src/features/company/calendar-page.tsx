@@ -19,8 +19,8 @@
  * still opens its own event; its 「新建日程」 hint is lifted back above them, on a line of the
  * cell reserved for it, so a day that already has events still says what its empty space does.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type {
@@ -45,7 +45,6 @@ import {
   Switch,
   Textarea,
   toastAttention,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -57,10 +56,10 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneInk, type Tone } from "../../lib/tone";
+
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
@@ -76,9 +75,14 @@ import {
   toLocalInput,
   viewRange,
   weekDays,
+  type Cadence,
+  type CalendarView,
+  type EventInstance,
+  type GridDay,
 } from "./calendar-geom";
-import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
+
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
+import { toastApiError } from "../../lib/toast-api-error";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -333,7 +337,7 @@ export function CalendarPage() {
       void load();
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -349,7 +353,7 @@ export function CalendarPage() {
       setOpened(null);
       void load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -361,7 +365,7 @@ export function CalendarPage() {
       const desk = await api.getOrgDesk(projectId, orgId, agentId);
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

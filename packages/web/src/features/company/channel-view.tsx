@@ -48,10 +48,10 @@ import {
   ICON_SIZE,
   NoticeStrip,
   Skeleton,
-  toastError,
   toastSuccess,
+  type ChannelSender,
 } from "@prismshadow/penguin-ui";
-import type { ChannelSender } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -59,13 +59,13 @@ import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany, useCompanyEvents } from "../../state/company";
+import { useCompany, useCompanyEvents } from "./company-state";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { createStreamFollow, stickToBottom } from "../chat";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
@@ -95,9 +95,12 @@ import {
   joinedElsewhere,
   lastMessageId,
   messageCount,
+  type ChannelDay,
+  type StreamItem,
 } from "./channel-stream";
-import type { ChannelDay, StreamItem } from "./channel-stream";
+
 import { parsePrincipal } from "./principals";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -257,7 +260,7 @@ export function ChannelView() {
           : [{ date: target, messages: res.messages }, ...prev],
       );
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setLoadingEarlier(false);
     }
@@ -368,7 +371,7 @@ export function ChannelView() {
       );
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     }
   };
@@ -383,7 +386,7 @@ export function ChannelView() {
       await loadDetail();
       void company.reloadChannels();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setJoining(false);
     }

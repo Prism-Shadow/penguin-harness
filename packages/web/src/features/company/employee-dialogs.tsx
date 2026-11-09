@@ -19,8 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -43,7 +43,6 @@ import {
   Select,
   Textarea,
   discardUnsaved,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -57,19 +56,24 @@ import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
+  type AvatarCrop,
 } from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import {
+  SkillPickList,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+  type PickableItem,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -79,7 +83,8 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../chat/thinking-level";
+} from "../model-picker";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -272,7 +277,7 @@ function HireForm({
       onHired();
     } catch (e) {
       setStdioConfirmOpen(false);
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -572,7 +577,7 @@ export function EmployeeEditDialog({
       },
       (e: unknown) => {
         if (cancelled) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
         onClose();
       },
     );
@@ -627,7 +632,7 @@ export function EmployeeEditDialog({
       }
       onSaved();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -994,7 +999,7 @@ function DeskRenewForm({
       discardUnsaved(form.scope);
       onRenewed(desk.sessionId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       if (patched) onChartChanged();
     } finally {
       setBusy(false);

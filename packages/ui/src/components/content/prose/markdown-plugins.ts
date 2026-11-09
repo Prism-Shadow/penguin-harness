@@ -10,17 +10,18 @@
  *
  * ## Math
  *
- * Three delimiter pairs are accepted, which is what it takes to cover what models actually emit:
- * `$$…$$` and `\[…\]` render as display math, `\(…\)` as inline. `remark-math` brings the dollar
- * form, `remarkMathBrackets` the TeX bracket forms (see its module comment for why those cannot be
- * a text-node rewrite), and `remarkMathDollars` makes a `$$…$$` pair display wherever it is written
- * rather than only when it stands alone on its own lines.
+ * Four delimiter pairs are accepted, which is what it takes to cover what models actually emit:
+ * `$$…$$` and `\[…\]` render as display math, `$…$` and `\(…\)` as inline. `remark-math` brings
+ * `$$…$$`, `remarkMathSingleDollar` the guarded `$…$`, `remarkMathBrackets` the TeX bracket forms
+ * (see their module comments for why none of them can be a text-node rewrite), and
+ * `remarkMathDollars` makes a `$$…$$` pair display wherever it is written rather than only when it
+ * stands alone on its own lines.
  *
- * **Single-dollar inline math is off.** It is the one delimiter whose cost is paid by text that was
- * never meant to be math, and in this product that text is everywhere: `$PATH`, `$HOME`, prices.
- * `remark-math` rejects a span that starts or ends with whitespace, which saves a lone `$5`, but
- * two dollars in a sentence are enough and agent transcripts are full of pairs. Measured against
- * this repo's own idiom, with single-dollar math enabled:
+ * **Single-dollar inline math runs on a guarded rule, not remark-math's.** It is the one delimiter
+ * whose cost is paid by text that was never meant to be math, and in this product that text is
+ * everywhere: `$PATH`, `$HOME`, prices. `remark-math`'s own rule only rejects a span that starts or
+ * ends with whitespace, which saves a lone `$5`, but two dollars in a sentence are enough and agent
+ * transcripts are full of pairs. Measured against this repo's own idiom, with that rule:
  *
  *     Set $PATH and $HOME before running.  ->  Set <math>PATH and </math>HOME before running.
  *     It costs $5 and $10 in total.        ->  It costs <math>5 and </math>10 in total.
@@ -28,10 +29,26 @@
  *     echo $PATH; echo $HOME               ->  echo <math>PATH; echo </math>HOME
  *     Prices: $1,200 and $3,400.           ->  Prices: <math>1,200 and </math>3,400.
  *
- * Each of those loses its dollar signs, its spacing and its meaning. The failure in the other
- * direction is that someone writing `$x^2$` sees `$x^2$` — the source, legible, and re-typable as
- * `\(x^2\)`. Corrupting prose that was already correct is the worse trade, so the dollar pair is
- * reserved for `$$…$$`, which no shell variable or price produces by accident.
+ * Each of those loses its dollar signs, its spacing and its meaning; and with the form off, the
+ * `$x^2$` models write constantly shows as raw source. The rule in math-single-dollar.ts (Pandoc's,
+ * tightened) avoids both: an opener is followed by a non-space and
+ * not preceded by an ASCII letter, digit, `\` or `$`; the first `$` after it closes the formula
+ * only if it follows a non-space and is not followed by an ASCII letter or digit, and otherwise
+ * nothing opens there; a formula never crosses a line. Each line above stays text, as do two that
+ * Pandoc's own rule, which refuses only a digit after the closer, still typesets:
+ *
+ *     Set $PATH and $HOME before running.  the second `$` follows a space, so it cannot close
+ *     It costs $5 and $10 in total.        the second `$` follows a space
+ *     The range is $5-$10 per seat.        a digit follows the second `$`
+ *     echo $PATH; echo $HOME               the second `$` follows a space
+ *     Prices: $1,200 and $3,400.           the second `$` follows a space
+ *     export PATH=$HOME/bin:$PATH          a letter follows it (Pandoc: <math>HOME/bin:</math>)
+ *     "$A$B"                               a letter follows it (Pandoc: <math>A</math>)
+ *     价格是$5，折扣后$3                   a digit follows the second `$`
+ *
+ * while `分母 $n-1=2$，不是 $n$）` typesets both formulas: a CJK character or a punctuation mark
+ * after a closer is fine. What the rule gives up is a formula glued to a word, `$i$th`, which
+ * stays text (`$i$-th` and `\(i\)th` render).
  */
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -40,6 +57,8 @@ import type { Options } from "react-markdown";
 import { remarkAutolinkBoundary } from "./remark-autolink-boundary";
 import { remarkLiteralTildes } from "./remark-literal-tildes";
 import { rehypeMarkdownTables } from "./markdown-table";
+import { rehypeMathPunctuation } from "./math-punctuation";
+import { rehypeSingleDollarEdge, remarkMathSingleDollar } from "./math-single-dollar";
 import { remarkMathBrackets } from "./remark-math-brackets";
 import { remarkMathDollars } from "./remark-math-dollars";
 
@@ -84,7 +103,10 @@ export const REMARK_PLUGINS: PluginList = [
   // Strikethrough is shown as the tildes the model typed (see remark-literal-tildes.ts).
   remarkLiteralTildes,
   remarkAutolinkBoundary,
+  // `$$` only; a lone `$` is the next plugin's, under its guarded rule.
   [remarkMath, { singleDollarTextMath: false }],
+  // After remark-math, so its construct is tried first at `$` (see math-single-dollar.ts).
+  remarkMathSingleDollar,
   remarkMathBrackets,
   remarkMathDollars,
 ];
@@ -105,10 +127,13 @@ type RehypePluginList = NonNullable<Options["rehypePlugins"]>;
  * cells (markdown-table.ts). `rehype-katex` turns every element the remark stage classed
  * `math-inline` / `math-display` into KaTeX's own markup, replacing it outright — which is also why
  * a `$$…$$` block never reaches the chat renderer's `<pre>` override and never becomes a CodeBlock.
+ * `rehypeMathPunctuation` then keeps each inline formula on one line with the punctuation mark it
+ * touches, so no line starts with the `，` after a formula (math-punctuation.ts).
  */
 export const REHYPE_PLUGINS: RehypePluginList = [
   rehypeMarkdownTables,
   [rehypeKatex, KATEX_OPTIONS],
+  rehypeMathPunctuation,
 ];
 
 /**
@@ -118,7 +143,12 @@ export const REHYPE_PLUGINS: RehypePluginList = [
  *
  * The table pass is the one stage kept on: it re-parses nothing, it only walks the tree, so it
  * costs next to nothing per delta — and with it a table has its scroll box and its column kinds
- * from the first row that arrives, so nothing rewraps or jumps when the reply settles.
+ * from the first row that arrives, so nothing rewraps or jumps when the reply settles. The
+ * single-dollar edge pass is another walk: a `$…$` whose closer is the last character received
+ * stays source until the next character says whether it closes, so `export PATH=$HOME/bin:$`
+ * does not drop its dollar signs for a frame and take them back (math-single-dollar.ts). The
+ * punctuation pass is the third, and the settled stage runs it too, so a formula's source is
+ * grouped with its punctuation exactly as the typeset formula will be.
  *
  * KaTeX itself is cheap — ~0.3ms for a typical formula. What is not cheap is the rest of the stage
  * around it: `rehype-katex` re-parses KaTeX's ~2.5KB of markup per formula back into hast, and
@@ -135,7 +165,11 @@ export const REHYPE_PLUGINS: RehypePluginList = [
  * 2352ms in place. This is the same trade as `highlight={!streaming}` for code blocks — the settle
  * render re-parses the message anyway, so it is where the expensive stage belongs.
  */
-export const STREAMING_REHYPE_PLUGINS: RehypePluginList = [rehypeMarkdownTables];
+export const STREAMING_REHYPE_PLUGINS: RehypePluginList = [
+  rehypeMarkdownTables,
+  rehypeSingleDollarEdge,
+  rehypeMathPunctuation,
+];
 
 /**
  * The rehype stage of the public sites' articles (`SiteMarkdown`): the table pass, so a table on

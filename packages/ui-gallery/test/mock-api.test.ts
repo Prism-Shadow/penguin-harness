@@ -74,6 +74,7 @@ describe("the mocked API", () => {
 
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
     const store = resetStore({ lang: "zh", signedIn: true });
+    expect(await api.getContributions()).toEqual({ pages: [], agentTabs: [], sessionTabs: [] });
     const me = await api.getMe();
     expect(me.user.isAdmin).toBe(true);
     expect(me.companyMode).toBe(false);
@@ -260,6 +261,7 @@ describe("the mocked API", () => {
     const tail = await api.getMessages(running.sessionId, { kind: "tail", limit: 50 });
     expect(tail.page).toEqual({
       earlierTurns: 0,
+      units: expect.any(Number),
       prior: expect.objectContaining({ elapsedMs: 0 }),
     });
     expect(tail.live).toBeDefined();

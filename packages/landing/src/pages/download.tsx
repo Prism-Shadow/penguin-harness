@@ -135,7 +135,7 @@ function SourceSpeedButton({
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
-      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+      className={`flex min-w-0 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition-colors ${
         selected
           ? "border-brand-400 bg-brand-50/70 dark:border-brand-700 dark:bg-brand-950/50"
           : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800"
@@ -148,7 +148,7 @@ function SourceSpeedButton({
             <CheckIcon className="h-3 w-3 shrink-0 text-brand-600 dark:text-brand-300" />
           )}
         </span>
-        <span className="mt-0.5 block font-mono text-[11px] text-gray-500 tabular-nums dark:text-gray-400">
+        <span className="mt-0.5 block font-mono text-xs text-gray-500 tabular-nums dark:text-gray-400">
           {speedText(measurement, testing)}
         </span>
       </div>
@@ -219,7 +219,7 @@ export function DownloadPage() {
     "inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700";
 
   return (
-    <Section eyebrow={S.download.eyebrow} title={S.download.title} className="pt-14 sm:pt-20">
+    <Section title={S.download.title} className="pt-14 sm:pt-20">
       <div className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-3">
         {PLATFORMS.map((platform) => {
           const PlatformIcon = PLATFORM_ICONS[platform];
@@ -228,9 +228,7 @@ export function DownloadPage() {
             <article
               key={platform}
               className={`flex min-w-0 flex-col rounded-2xl border bg-white p-5 shadow-sm dark:bg-gray-900 ${
-                recommended
-                  ? "border-brand-500 ring-1 ring-brand-500"
-                  : "border-gray-200 dark:border-gray-800"
+                recommended ? "border-brand-500" : "border-gray-200 dark:border-gray-800"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -241,7 +239,7 @@ export function DownloadPage() {
                 </span>
                 <div className="flex flex-wrap justify-end gap-1.5">
                   {recommended && (
-                    <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300">
                       {S.download.recommended}
                     </span>
                   )}
@@ -274,9 +272,7 @@ export function DownloadPage() {
                       <DownloadIcon className="h-4 w-4" />
                     )}
                     <span>{variant}</span>
-                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold">
-                      {installerSuffix(file)}
-                    </span>
+                    <span className="text-xs font-normal opacity-70">{installerSuffix(file)}</span>
                   </a>
                 ))}
               </div>
@@ -286,15 +282,17 @@ export function DownloadPage() {
       </div>
 
       <section
-        className="mx-auto mt-7 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-2.5 dark:border-gray-800 dark:bg-gray-950/70"
+        className="mx-auto mt-7 max-w-4xl rounded-2xl border border-gray-200 bg-gray-50/80 p-2.5 dark:border-gray-800 dark:bg-gray-950/70"
         title={S.download.speed.subtitle}
       >
         <div className="flex items-center justify-between gap-3 px-0.5">
           <h3 className="text-sm font-semibold tracking-tight">{S.download.speed.title}</h3>
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="inline-flex min-w-0 items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
             {(probing || refining) && <SpinnerIcon className="h-3 w-3 shrink-0 animate-spin" />}
             <span className="truncate">
-              {selected === "oss" ? S.download.speed.oss : S.download.speed.github} ·{" "}
+              {selected === "oss" ? S.download.speed.oss : S.download.speed.github}
+            </span>
+            <span className="shrink-0">
               {override ? S.download.speed.manual : S.download.speed.automatic}
             </span>
           </span>
@@ -326,11 +324,10 @@ export function DownloadPage() {
               ? S.download.statusOss(availableMirror.tag)
               : S.download.statusGithub}
         </p>
-        <p>
+        <p className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
           <a href={hrefFor(DESKTOP_SHA256SUMS)} className={textLink}>
             {S.download.checksums}
           </a>
-          <span className="mx-2 text-gray-300 dark:text-gray-700">·</span>
           <a href={RELEASES_URL} target="_blank" rel="noreferrer" className={textLink}>
             {S.download.allReleases}
             <ExternalLinkIcon className="h-3 w-3" />

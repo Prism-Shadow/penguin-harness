@@ -46,17 +46,15 @@ import {
   RailDivider,
   SkeletonList,
   railItemClass,
-  toastError,
   toastSuccess,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { sessionActivityLabel } from "../../lib/session-activity";
-import { apiErrorText } from "../../lib/api-error";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";
@@ -66,21 +64,30 @@ import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
+  type SessionRowAction,
+  type SessionRowState,
 } from "../../components/ui/session-row-menu";
-import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
+
 import { Truncated } from "../../components/ui/truncated";
-import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
-import { orgKey } from "./company-nav";
+import { MessagingBindingModal } from "../messaging";
+import { orgKey } from "../../lib/company-nav";
 import { INVALID_ICON } from "./shared";
-import { deskRowLabel, deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
-import type { OrgDeskRow } from "./org-sessions";
+import {
+  deskRowLabel,
+  deskRows,
+  orgRowActivity,
+  ticketSessionTitles,
+  type OrgDeskRow,
+} from "./org-sessions";
+
 import {
   dismissAllTempSessions,
   dismissTempSession,
   tempSessionRows,
   useTempSessions,
+  type TempSessionRow,
 } from "./temp-session";
-import type { TempSessionRow } from "./temp-session";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The row's surface — the hover and active fill — on the wrapper rather than on the button,
@@ -137,7 +144,7 @@ function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) 
       void company.reloadOrgSessions();
       openSession(desk.sessionId, agentId);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setOpening(null);
     }

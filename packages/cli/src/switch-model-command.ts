@@ -10,8 +10,9 @@
  * current model.
  *
  * The switch itself is `POST /api/sessions/:id/switch-model`: the server compacts on the
- * current model first (always summarizing), then opens the next context on the target; a
- * Session that never ran switches inline.
+ * current model first (always summarizing), then opens the next context on the target — or,
+ * when that model is unavailable or the summary fails, hands the history over by its Trace path
+ * (the live renderer prints that line); a Session that never ran switches inline.
  */
 import { DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
 import type { Messages } from "./i18n.js";
@@ -68,8 +69,6 @@ export function switchModelRefusal(
       );
     case "model_unavailable":
       return t.switchModelUnavailable(label, err.detail);
-    case "compaction_not_configured":
-      return t.switchModelNoCompaction();
     default:
       return null;
   }

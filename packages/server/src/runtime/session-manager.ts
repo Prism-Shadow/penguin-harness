@@ -40,6 +40,7 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  getModel,
   isHookContinue,
   isHookInput,
   isSessionMeta,
@@ -177,6 +178,16 @@ function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
   const { provider, modelId } = session;
   if (provider === undefined || modelId === undefined) return null;
   return { provider, modelId };
+}
+
+/**
+ * Refuses work on a runtime loaded for a model switch alone while it is still on the model it
+ * cannot reach (see `RuntimeEntry.stranded`), with the ordinary load's own refusal.
+ */
+function assertNotStranded(entry: RuntimeEntry): void {
+  if (!entry.stranded) return;
+  const { status, code, message } = entry.stranded;
+  throw new HttpError(status, code, message);
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
@@ -317,8 +328,14 @@ export interface SessionLoader {
    * Load a runtime Session from an index row: recover (with a Trace) or self-heal
    * rebuild (no Trace, under the row's session_id). Throws HttpError(409) for unrecoverable
    * cases such as a missing Workspace.
+   *
+   * `switchTo`: the ordinary load refused this Session, and this one is for a model switch to
+   * that model alone (see `SessionManager.startSwitch`). A Session whose model can no longer be
+   * reached recovers anyway — the switch sends that model nothing and hands the history over
+   * by Trace path — and one that left no Trace is rebuilt on the target directly, which is all
+   * a never-run Session's switch is; the target's own refusals are then the switch's 409s.
    */
-  load(row: SessionRow): Promise<RuntimeSession>;
+  load(row: SessionRow, opts?: { switchTo?: ModelRefDto }): Promise<RuntimeSession>;
 }
 
 /**
@@ -346,7 +363,8 @@ export function createCoreSessionLoader(
   } = {},
 ): SessionLoader {
   return {
-    async load(row: SessionRow): Promise<RuntimeSession> {
+    async load(row: SessionRow, loadOpts = {}): Promise<RuntimeSession> {
+      const { switchTo } = loadOpts;
       const agent = await createAgent({
         root,
         projectId: row.projectId,
@@ -368,7 +386,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            ...(switchTo ? { allowUnreachableModel: true } : {}),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -398,19 +419,40 @@ export function createCoreSessionLoader(
       // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
       // reading of the same row.
       const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
+      // A switch rebuilds it on the target: the model the row names could not be loaded, and a
+      // Session that never ran has no context on it to close.
+      const model = switchTo ?? { provider: row.provider, modelId: row.modelId };
+      if (
+        switchTo &&
+        !getModel(agent.projectConfig, { provider: switchTo.provider, model_id: switchTo.modelId })
+      ) {
+        throw switchRefusal(
+          new ModelSwitchRefusedError(
+            "model_not_configured",
+            `Model is not in the Project config: ${switchTo.provider}/${switchTo.modelId}.`,
+          ),
+          switchTo,
+        );
+      }
       try {
         return await agent.createSession({
           sessionId: row.sessionId,
           workspaceDir: row.workspace,
-          modelId: row.modelId,
-          provider: row.provider,
+          modelId: model.modelId,
+          provider: model.provider,
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
-        if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
+        if (switchTo && isMissingCredential(err)) {
+          throw switchRefusal(
+            new ModelSwitchRefusedError("model_unavailable", String(err)),
+            switchTo,
+          );
+        }
+        if (isMissingCredential(err)) throw modelCredentialMissing(model.modelId);
         throw toUnrecoverableError(err);
       }
     },
@@ -516,6 +558,11 @@ interface QueuedFollowUp {
    * which door the message came through.
    */
   recall: RecallStore;
+  /**
+   * An interrupt (TaskCreateRequest.interrupt, POST /interrupt): it aborted the run it is
+   * waiting on and starts first. Interrupts keep their own order at the head of the queue.
+   */
+  interrupt?: true;
 }
 
 /** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
@@ -538,6 +585,13 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /**
+   * The ordinary load's refusal, while this runtime — loaded for a model switch alone, because
+   * the ordinary load refused it (see `SessionLoader.load`'s `switchTo`) — is still on the model
+   * it cannot reach: no Task or compaction runs here, each is answered with it instead. Cleared
+   * when the Session moves off that model (see `syncEntryModel`).
+   */
+  stranded?: { status: number; code: string; message: string };
   status: SessionStatus;
   approvals: Approvals;
   abort: AbortController | null;
@@ -650,6 +704,7 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
     text: f.recall.text,
     images: f.recall.images.length,
     files: f.recall.files.length,
+    ...(f.interrupt ? { interrupt: true as const } : {}),
   };
 }
 
@@ -1102,12 +1157,15 @@ export class SessionManager {
    * message's file attachments to disk) can find out about the ordinary "a Task is already
    * running" rejection before doing it, instead of undoing it afterwards.
    */
-  assertCanAcceptTask(sessionId: string, opts?: { queueIfBusy?: boolean }): void {
+  assertCanAcceptTask(
+    sessionId: string,
+    opts?: { queueIfBusy?: boolean; interrupt?: boolean },
+  ): void {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
     const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy) this.assertIdle(entry);
+    if (entry && !opts?.queueIfBusy && !opts?.interrupt) this.assertIdle(entry);
   }
 
   /**
@@ -1139,29 +1197,37 @@ export class SessionManager {
    * not carry (the pre-attachment text and where each file landed on disk); every other
    * caller's store is read off the input, so a queued follow-up is recallable and shows
    * its content whichever path queued it.
+   *
+   * With `interrupt`, a busy session aborts its run and the input waits at the head of the
+   * queue instead (see enqueueInterrupt). So does an idle one whose queue has not drained yet,
+   * so that the interrupt cannot overtake an earlier one still waiting to start.
    */
   async startTask(
     sessionId: string,
     input: AmspRecord[],
-    opts?: { queueIfBusy?: boolean; recall?: RecallStore },
+    opts?: { queueIfBusy?: boolean; interrupt?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // Neither started nor queued on a runtime stranded on a model it cannot reach.
+      assertNotStranded(entry);
       // A person's message opens a fresh chain for company mode's hop accounting, whether the
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
+      if (opts?.interrupt && (entry.status !== "idle" || entry.followUps.length > 0)) {
+        this.assertQueueRoom(entry);
+        this.enqueueInterrupt(entry, {
+          id: randomUUID(),
+          input,
+          recall: opts.recall ?? recallStoreOf(input),
+        });
+        return { sessionId: entry.sessionId, queued: true };
+      }
       if (entry.status !== "idle" && opts?.queueIfBusy) {
-        // The cap refuses the overflow rather than enqueuing it: see FOLLOW_UP_QUEUE_LIMIT.
-        if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
-          throw new HttpError(
-            429,
-            "queue_full",
-            `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
-          );
-        }
+        this.assertQueueRoom(entry);
         entry.followUps.push({
           id: randomUUID(),
           input,
@@ -1243,6 +1309,7 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       await this.assertGoalPluginInstalled(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       const objective = args.objective;
       const started = await entry.session.runUserPromptHook?.("goal", objective, {
@@ -1392,6 +1459,8 @@ export class SessionManager {
    * material — the turn it resends already offered its text when it was first sent.
    */
   private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
+    // Every Task starts here — a retry, a queued follow-up, a background notice's delivery.
+    assertNotStranded(entry);
     const ac = new AbortController();
     entry.status = "running";
     entry.abort = ac;
@@ -1454,6 +1523,7 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      assertNotStranded(entry);
       this.assertIdle(entry);
       // When there's nothing to compact, core's compact() yields no messages at all: we
       // can't just return 202 and walk away, or the frontend would wait forever for a
@@ -1500,6 +1570,15 @@ export class SessionManager {
    * leaves them where they were. Usage: a drive bills to the model it started on, so the
    * switch's compaction request goes to the model that served it and the next run to the new
    * one.
+   *
+   * A Session not in memory is loaded the ordinary way first, so a refusal of the target is
+   * core's, as for any loaded Session. Only one the ordinary load refuses — its model can no
+   * longer be reached — is loaded for this switch alone (`SessionLoader.load`'s `switchTo`):
+   * with a Trace it is resumed anyway, since core then hands its history over by Trace path
+   * rather than ask that model for a summary; without one it is rebuilt on the target, and the
+   * load is the whole switch (200, or the target's 409). Such a runtime runs nothing on the
+   * model it cannot reach (`RuntimeEntry.stranded`), and one the switch did not move is not
+   * kept: the next access loads it the ordinary way and meets the ordinary refusal.
    */
   async startSwitch(
     sessionId: string,
@@ -1509,14 +1588,20 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+      const held = this.entries.get(sessionId) ?? this.deps.sessions.findById(sessionId);
+      if (held && held.provider === ref.provider && held.modelId === ref.modelId) {
         throw new HttpError(
           409,
           "same_model",
           `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
         );
+      }
+      const entry = await this.ensureEntry(sessionId, { switchTo: ref });
+      this.assertIdle(entry);
+      const from = { provider: entry.provider, modelId: entry.modelId };
+      if (from.provider === ref.provider && from.modelId === ref.modelId) {
+        // The load rebuilt a Session that left no Trace on the target: switched already.
+        return { sessionId: entry.sessionId, switched: true };
       }
       if (!entry.session.switchModel) {
         throw new HttpError(
@@ -1525,6 +1610,13 @@ export class SessionManager {
           "Switching the model is not available for this Session.",
         );
       }
+      // A runtime loaded for this switch alone that the switch did not move is dropped once
+      // nothing holds it: the next access loads it the ordinary way.
+      const dropUnmoved = (): void => {
+        if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
+        if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
+        this.entries.delete(entry.sessionId);
+      };
       const ac = new AbortController();
       const gen = entry.session.switchModel({ ...ref, signal: ac.signal });
       const head = gen.next();
@@ -1539,12 +1631,14 @@ export class SessionManager {
         if (first.done) return settled();
         entry.status = "compacting";
         this.publishState(entry, "compacting");
-        return this.drive(entry, resumeFrom(first.value, gen));
+        return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
       }, settled);
       let first: IteratorResult<AmspRecord, StopReason>;
       try {
         first = await head;
       } catch (err) {
+        settled();
+        dropUnmoved();
         throw switchRefusal(err, ref);
       }
       entry.lastActivityMs = Date.now();
@@ -1582,6 +1676,8 @@ export class SessionManager {
     if (entry.provider === model.provider && entry.modelId === model.modelId) return;
     entry.provider = model.provider;
     entry.modelId = model.modelId;
+    // Off the model it could not reach, a runtime loaded for a switch alone is an ordinary one.
+    delete entry.stranded;
     const ctx = { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId };
     try {
       this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
@@ -1720,6 +1816,83 @@ export class SessionManager {
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
     return { recall: queued.recall };
+  }
+
+  /**
+   * Send one waiting message now (POST /interrupt): the queued follow-up `followUpId` names,
+   * or the undelivered steering message `steerId` names, becomes an interrupt (see
+   * enqueueInterrupt). A follow-up keeps its id, so it stays recallable by it; one that is an
+   * interrupt already is left where it is. 409 `follow_up_started` when the follow-up is no
+   * longer queued, 409 `not_pending` when the steering message already reached the model.
+   */
+  interruptQueued(sessionId: string, target: { followUpId: string } | { steerId: string }): void {
+    const entry = this.entries.get(sessionId);
+    if ("followUpId" in target) {
+      const i = entry?.followUps.findIndex((f) => f.id === target.followUpId) ?? -1;
+      if (!entry || i < 0) {
+        throw new HttpError(
+          409,
+          "follow_up_started",
+          "This follow-up message already started; there is nothing left to interrupt with.",
+        );
+      }
+      if (entry.followUps[i]!.interrupt) return;
+      const [queued] = entry.followUps.splice(i, 1);
+      this.enqueueInterrupt(entry, queued!);
+      return;
+    }
+    const i = entry?.pendingSteering.findIndex((p) => p.info.id === target.steerId) ?? -1;
+    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
+    if (entry && pending) this.assertQueueRoom(entry); // before core lets go of the message
+    // Core decides, as for a recall: the mirror can lag a delivery the stream has not shown.
+    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
+      throw new HttpError(
+        409,
+        "not_pending",
+        "This steering message was already delivered to the model.",
+      );
+    }
+    entry.pendingSteering.splice(i, 1);
+    this.enqueueInterrupt(entry, {
+      id: pending.info.id,
+      input: pending.input,
+      recall: pending.recall,
+    });
+  }
+
+  /**
+   * The shared half of every interrupt: puts `item` at the head of the follow-up queue, behind
+   * earlier interrupts and ahead of every ordinary follow-up, then aborts the run the way
+   * POST /abort does. The drive's finally starts the head of the queue, and core sends the
+   * abort's carry-over ahead of it, so the message lands right after the turn it cut. Steering
+   * still undelivered meets the abort as it would meet a Stop: it goes back to the composer.
+   */
+  private enqueueInterrupt(entry: RuntimeEntry, item: QueuedFollowUp): void {
+    const head = entry.followUps.findIndex((f) => !f.interrupt);
+    entry.followUps.splice(head < 0 ? entry.followUps.length : head, 0, {
+      ...item,
+      interrupt: true,
+    });
+    entry.lastActivityMs = Date.now();
+    this.publishState(entry, entry.status);
+    if (entry.abort) {
+      entry.approvals.denyMain();
+      entry.abort.abort();
+    }
+  }
+
+  /**
+   * One cap for everything waiting in the queue, interrupts included (429 queue_full): see
+   * FOLLOW_UP_QUEUE_LIMIT.
+   */
+  private assertQueueRoom(entry: RuntimeEntry): void {
+    if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
+      throw new HttpError(
+        429,
+        "queue_full",
+        `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
+      );
+    }
   }
 
   /**
@@ -2109,7 +2282,10 @@ export class SessionManager {
     }
   }
 
-  private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
+  private async ensureEntry(
+    sessionId: string,
+    loadOpts?: { switchTo?: ModelRefDto },
+  ): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
@@ -2144,7 +2320,18 @@ export class SessionManager {
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
-    const session = await this.deps.loader.load(row);
+    // A switch first loads the Session the ordinary way; only a Session the ordinary load
+    // refuses is loaded for the switch alone, and stays stranded on its model until it moves.
+    const switchTo = loadOpts?.switchTo;
+    let session: RuntimeSession;
+    let refusal: HttpError | undefined;
+    try {
+      session = await this.deps.loader.load(row);
+    } catch (err) {
+      if (switchTo === undefined || !(err instanceof HttpError)) throw err;
+      session = await this.deps.loader.load(row, { switchTo });
+      refusal = err;
+    }
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
@@ -2190,6 +2377,11 @@ export class SessionManager {
     // crashed between the Trace write and the row update resumes (from the Trace) on the new
     // model, and the row is brought back in step here.
     this.syncEntryModel(entry);
+    // Loaded for the switch alone and not on the target by now: stranded until it moves off.
+    const onTarget = entry.provider === switchTo?.provider && entry.modelId === switchTo?.modelId;
+    if (refusal && !onTarget) {
+      entry.stranded = { status: refusal.status, code: refusal.code, message: refusal.message };
+    }
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
     if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
@@ -2734,6 +2926,7 @@ export abstract class Sessions extends Interface<
     | "steer"
     | "recallSteering"
     | "recallFollowUp"
+    | "interruptQueued"
     | "retryNow"
     | "abortTask"
     | "listProcesses"

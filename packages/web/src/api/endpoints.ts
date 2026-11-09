@@ -163,6 +163,7 @@ import type {
   QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
+  InterruptRequest,
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
@@ -223,6 +224,8 @@ import type {
   UpdateProfileResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
+  HostCommand,
+  HostCommandsResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -237,6 +240,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchArchiveInstallRequest,
+  WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
   WorkbenchVersion,
   VersionRollbackResponse,
@@ -266,8 +271,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam } from "../lib/session-grouping";
-import type { ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -1390,6 +1394,13 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     { method: "DELETE" },
   );
 
+/** Send one waiting message now — the follow-up `followUpId` names or the steering `steerId` names: the run stops and it goes out first (202; 409 follow_up_started / not_pending once it is no longer waiting). */
+export const postInterrupt = (sessionId: string, body: InterruptRequest) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
+    method: "POST",
+    body,
+  });
+
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).
   apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
@@ -2318,7 +2329,9 @@ export const uninstallMachine = (projectId: string, machineId: string, removeDat
 
 // Version & self-update ----------------------------------------------------------------
 
-export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** This server's version report, or, given a machine's id, that machine's (its OS for a report). */
+export const getVersion = (machine?: string) =>
+  apiFetch<VersionResponse>("/api/version", machine === undefined ? {} : { server: machine });
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 /** Push a kept version back (admin); the swap follows the 202. */
@@ -2354,6 +2367,13 @@ export const restartServer = () =>
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
+export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
+
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). The id is the host's word — this build need not know it. */
+export const runHostCommand = (command: string) =>
+  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
@@ -2749,6 +2769,29 @@ export const rollbackWorkbench = (
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
   );
+/** Imports one workbench's source from an uploaded zip (base64) and loads it; 409 `workbench_exists` on a taken id unless overwrite; 201 returns the workbench as its load left it. */
+export const installWorkbenchArchive = (
+  projectId: string,
+  agentId: string,
+  body: WorkbenchArchiveInstallRequest,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchArchiveInstallResponse>(`${workbenchesBase(projectId, agentId)}/archive`, {
+    method: "POST",
+    body,
+    server: machineId,
+  });
+/** Zip download URL for one workbench's source (server sets Content-Disposition attachment); the export round-trips through installWorkbenchArchive. */
+export const workbenchArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+): string =>
+  apiUrl(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/archive`,
+    machineId,
+  );
 /** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
 export const removeWorkbench = (
   projectId: string,
@@ -2970,3 +3013,5 @@ export const clearBuiltinBrowserData = (
     body: { storages, ...scope },
     server: null,
   });
+
+export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

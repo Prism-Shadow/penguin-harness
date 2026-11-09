@@ -1787,13 +1787,13 @@ export class ProjectConfigService implements ProjectConfigStore {
       );
     }
 
-    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups
-    // take models added by hand (core's isAddableGroup); every other built-in group, the other
-    // gateways included, carries its catalog presets and the rows it already stores. The
-    // same grandfathering as above: a stored row is written as it stands, hand-added
-    // ones from before this rule included, and so is a row renamed inside its own group. A row
-    // moved in from another group is being added here, and a preset is always welcome back
-    // (the preset sync writes a deleted one again).
+    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate and
+    // user-defined groups take models added by hand (core's isAddableGroup); every other
+    // built-in group, the other gateways included, carries its catalog presets and the rows it
+    // already stores. The same grandfathering as above: a stored row is written as it stands,
+    // hand-added ones from before this rule included, and so is a row renamed inside its own
+    // group. A row moved in from another group is being added here, and a preset is always
+    // welcome back (the preset sync writes a deleted one again).
     for (const entry of req.models) {
       if (!unaddableModel(entry.provider, entry.modelId)) continue;
       if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;

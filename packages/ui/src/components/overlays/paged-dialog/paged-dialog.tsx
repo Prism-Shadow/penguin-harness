@@ -98,7 +98,10 @@ export function PagedDialog<K extends string>({
           ))}
         </NavList>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* min-h-0: stacked under the rail on narrow screens, a flex item's automatic minimum
+            height is its content's, so without it the pane outgrows the sheet and the body's
+            own scroller never scrolls — the bottom of a long page is cut off out of reach. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">
             <h2 className={`flex min-w-0 items-center ${ICON_GAP.row} text-lg font-semibold`}>
               {activeLabel}

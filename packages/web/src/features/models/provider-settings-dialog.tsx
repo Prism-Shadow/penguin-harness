@@ -56,10 +56,10 @@ import {
   fixedClientType,
   providerCalledKeyless,
   providerEnvFallbackKey,
+  type ModelProviderInfo,
 } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
@@ -71,9 +71,11 @@ import {
   isCustomLikeGroup,
   isGenericProtocolClientType,
   protocolSelectorValue,
+  type ProtocolClientType,
 } from "./protocol-types";
-import type { ProtocolClientType } from "./protocol-types";
+
 import type { RowState } from "./models-page";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
 type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;
@@ -441,7 +443,7 @@ export function ProviderSettingsDialog({
         if (!dismissed.current) onSaved(result.res);
       }
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSaving(false);
     }

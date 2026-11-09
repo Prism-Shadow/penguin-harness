@@ -4,14 +4,16 @@
  * - Given a docs or landing edit, when planning CI, then only affected sites run, on Linux.
  * - Given a catalog README edit, when planning CI, then only the README catalog check runs.
  * - Given README and landing edits together, when planning CI, then each keeps its own checks.
- * - Given README and core edits together, when planning CI, then core covers the catalog once.
+ * - Given README and core edits together, when planning CI, then the server suite (core's
+ *   consumer) covers the catalog once.
  * - Given a core edit, when planning CI, then its transitive consumers and native OS tests run.
  * - Given a web edit, when planning CI, then the gallery, landing and desktop are checked too.
  * - Given a web edit, when planning CI, then the web suite runs in two Linux jobs that each run
- *   half of every package's files and build what the web imports, not the web's own bundle;
- *   without the web among them, ui and cli run whole in one job.
+ *   half of every package's files and build what the web imports, not the web's own bundle nor
+ *   the UI package's build, which only that bundle reads; without the web among them, ui and cli
+ *   run whole in one job.
  * - Given any typecheck, when planning CI, then its build selects the checked packages'
- *   dependencies and never a site bundle.
+ *   dependencies and never a site bundle or the UI package's build.
  * - Given the gallery among the tested packages, when planning CI, then the one Linux job that
  *   tests it also runs its browser layout checks; without it, no job does.
  * - Given the web's inline boot script changes, when planning CI, then UI's copy guard runs.
@@ -210,7 +212,7 @@ describe("affected CI", { concurrency: false }, () => {
     }
   });
 
-  it("README and core edits use the core suite without a duplicate catalog job", () => {
+  it("README and core edits use the server suite, core's consumer, without a duplicate catalog job", () => {
     write("README.md", "changed\n");
     const plan = changed("packages/core/src/index.js");
     assert.equal(plan.readme, false);
@@ -280,10 +282,12 @@ describe("affected CI", { concurrency: false }, () => {
       const selected = built(half.build);
       assert.ok(selected.has(name("server")), `${half.shard} builds what the web imports`);
       assert.ok(!selected.has(name("web")), `${half.shard} does not build the web bundle`);
+      assert.ok(!selected.has(name("ui")), `${half.shard} reads the UI package from source`);
     }
-    // Desktop's shard still carries the web bundle it packs.
+    // Desktop's shard still carries the web bundle it packs, and the UI build that bundle copies.
     const desktop = plan.linux.include.find((shard) => shard.packages.includes(name("desktop")));
     assert.ok(built(desktop.build).has(name("web")));
+    assert.ok(built(desktop.build).has(name("ui")));
   });
 
   it("runs the gallery's layout checks in the one Linux job that tests the gallery", () => {
@@ -307,13 +311,13 @@ describe("affected CI", { concurrency: false }, () => {
     assert.ok(!shard.tests.includes("--shard"));
   });
 
-  it("typecheck builds what the checked packages import, never a site bundle", () => {
+  it("typecheck builds what the checked packages import, never a site bundle or the UI build", () => {
     const plan = changed("packages/web/src/index.js");
     const selected = built(plan.typecheck_build);
-    for (const dependency of ["core", "server", "ui", "cli"]) {
+    for (const dependency of ["core", "server", "cli"]) {
       assert.ok(selected.has(name(dependency)), `${dependency} is imported by a checked package`);
     }
-    for (const leaf of ["web", "ui-gallery", "docs", "landing", "desktop"]) {
+    for (const leaf of ["web", "ui-gallery", "docs", "landing", "desktop", "ui"]) {
       assert.ok(!selected.has(name(leaf)), `${leaf} is never built for a typecheck`);
     }
   });

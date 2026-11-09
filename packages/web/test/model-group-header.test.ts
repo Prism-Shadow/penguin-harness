@@ -7,9 +7,10 @@
  * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, Penguin Go, DeepSeek)
  *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
  *   the three groups with a flow; Add model only where hand-added models are taken (custom,
- *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, user-defined); Delete group only on
- *   a user-defined group; then the speed test and the gear on every group, the gear last. No
- *   group offers a separate "Enter key": the group key is set in the settings (or by Connect).
+ *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, Runcrate, user-defined); Delete
+ *   group only on a user-defined group; then the speed test and the gear on every group, the
+ *   gear last. No group offers a separate "Enter key": the group key is set in the settings (or
+ *   by Connect).
  * - A member keeps the two read-only parts and the gear, and nothing that writes.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
  * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
@@ -27,13 +28,17 @@
  *   dialog. A member's menu holds the sort alone; a busy page holds Group settings… back but
  *   never the sort, nor the gear itself.
  */
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import { MODEL_PROVIDERS, providerInfo } from "@prismshadow/penguin-server/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import {
+  MODEL_PROVIDERS,
+  providerInfo,
+  type ModelProviderInfo,
+} from "@prismshadow/penguin-server/model-catalog";
+
 import {
   connectedMenuItems,
   connectionStatus,
@@ -47,15 +52,16 @@ import {
   DisconnectConfirm,
   GroupConnection,
   NotConnectedButton,
+  type DisconnectHost,
 } from "../src/features/models/group-connection";
-import type { DisconnectHost } from "../src/features/models/group-connection";
+
 import { BalanceMenu, balanceView } from "../src/features/models/group-balance";
 import {
   GroupSettingsControl,
   GroupSettingsMenu,
 } from "../src/features/models/group-settings-menu";
 import type { ModelGroupSort } from "../src/features/models/model-sort";
-import { userProviderInfo } from "../src/features/models/model-grouping";
+import { userProviderInfo } from "../src/lib/model-grouping";
 import { S } from "../src/lib/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
@@ -143,6 +149,7 @@ describe("the group header's actions, in order, by group kind", () => {
       "atlascloud",
       "custom",
       "openrouter",
+      "runcrate",
       "siliconflow",
       "tokendance",
       "vllm",

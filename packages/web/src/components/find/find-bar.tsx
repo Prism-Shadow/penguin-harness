@@ -46,8 +46,8 @@
  * Nothing here is portaled: the panel is `fixed` at z-40, the in-flow-overlay layer the app
  * menus use, so a dialog (z-50) opened over it still covers it.
  */
-import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+
 import { FindField } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { revealCollapsedIn } from "../../lib/find-expand";
@@ -60,8 +60,10 @@ import {
   indexRegions,
   paintHits,
   revealHit,
+  type FindHit,
+  type FindRegion,
 } from "../../lib/find-dom";
-import type { FindHit, FindRegion } from "../../lib/find-dom";
+
 import { stepMatchIndex } from "../../lib/find-text";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { formatChord } from "../../lib/shortcuts/format";

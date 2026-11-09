@@ -26,8 +26,8 @@
  * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
  * and keeps what is being typed.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+
 import type {
   MemoryFileInfo,
   MemoryImportMode,
@@ -65,8 +65,9 @@ import {
   toastSuccess,
   useCopied,
   useFormDraft,
+  type SheetSnap,
 } from "@prismshadow/penguin-ui";
-import type { SheetSnap } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -82,8 +83,9 @@ import {
   memoryDocumentFileName,
   parseMemoryScopeDocument,
   planMemoryImport,
+  type MemoryImportPlan,
 } from "./memory-transfer";
-import type { MemoryImportPlan } from "./memory-transfer";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -293,7 +295,7 @@ export function MemoryTab({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSwitchBusy(false);
     }
@@ -308,7 +310,7 @@ export function MemoryTab({
       toastSuccess(S.memory.insertPlaceholderDone);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -360,7 +362,7 @@ export function MemoryTab({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSavingPrompts(false);
     }
@@ -374,7 +376,7 @@ export function MemoryTab({
       setViewing({ scope, file: res.file, content: res.content });
       setViewOpen(true);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -444,7 +446,7 @@ export function MemoryTab({
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -486,7 +488,7 @@ export function MemoryTab({
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setImportBusy(false);
     }
@@ -523,7 +525,7 @@ export function MemoryTab({
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

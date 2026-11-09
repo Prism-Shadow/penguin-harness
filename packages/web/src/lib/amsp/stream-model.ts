@@ -63,7 +63,11 @@ import {
   isTaskRecord,
   normalizeSessionSource,
 } from "@prismshadow/amsp";
-import { parseBackgroundTaskDoneMessage, parseUserSteeringText } from "@prismshadow/amsp/markers";
+import {
+  parseBackgroundTaskDoneMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -78,6 +82,8 @@ import type {
   TokenUsagePayload,
   ToolStatus,
 } from "@prismshadow/amsp";
+import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
+import type { ElidedBody, HistoryRecordLike } from "@prismshadow/penguin-core/interfaces";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
@@ -90,10 +96,16 @@ import {
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
+  type TaskStats,
+  type TaskStatsTracker,
 } from "./task-stats";
-import type { TaskStats, TaskStatsTracker } from "./task-stats";
-import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
-import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+
+import {
+  classifyMemoryPath,
+  mergeMemoryChanges,
+  type MemoryChangeEntry,
+  type MemoryChangeRow,
+} from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -178,6 +190,24 @@ export interface AssistantTextItem {
   tracePosition?: TracePosition;
 }
 
+/**
+ * A history record that came with values left out — the bulky bodies the transcript shows folded
+ * (a tool's output, a long argument, a thinking block, a child's inline image): the record as it
+ * arrived, previews in place, and the entries naming what was left out. The whole values are
+ * fetched when the reader unfolds the item; `takeWholeRecord` then puts the record back.
+ */
+export interface ElidedRecord {
+  record: HistoryRecordLike;
+  entries: ElidedBody[];
+}
+
+/** An item's folded values being fetched: the bytes so far of their total, or why it failed. */
+export interface BodyLoad {
+  doneBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
 export interface ThinkingItem {
   kind: "thinking";
   id: number;
@@ -187,6 +217,10 @@ export interface ThinkingItem {
   startedAtMs?: number;
   /** Thinking duration (settled when the complete message arrives: message time - start time). */
   durationMs?: number;
+  /** The text came as a preview of a longer one (a history window folds long thinking). */
+  elided?: ElidedRecord;
+  /** The whole text being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 export interface ToolCallItem {
@@ -241,6 +275,12 @@ export interface ToolCallItem {
   argStartedAtMs?: number;
   /** Total tool duration (settled when the tool_call_output complete message arrives) = the argument-generation segment + the execution segment, excluding the approval wait (see settleToolDuration). */
   durationMs?: number;
+  /** The call's arguments came with a long string value as a preview (a history window folds it). */
+  elidedCall?: ElidedRecord;
+  /** The output (or a child's inline image) came as a preview. */
+  elidedOutput?: ElidedRecord;
+  /** The whole values being fetched. */
+  bodyLoad?: BodyLoad;
 }
 
 /** A standalone sub-session card for when no run_subagent tool card can be bound. */
@@ -266,13 +306,25 @@ export interface AbortItem {
  * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
  * produces no abort event — the request_end is its terminal record).
  */
-export interface LlmErrorItem {
+export interface LlmErrorItem extends RequestFailureFacts {
   kind: "llm_error";
   id: number;
   /** Machine-readable cause (request_end.error_code). */
   errorCode?: string;
-  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  /** The provider's own error text (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
+  /** The request's ordinal within its retry run (request_end.attempt); absent on a first try and in old Traces. */
+  attempt?: number;
+}
+
+/**
+ * What a failed request's details report beyond its record, read from the records around it:
+ * the model its context was opened on (`StreamModel.contextModel` when the request ended; absent
+ * when no `session_meta` had said which yet) and when it ended (the request_end's timestamp).
+ */
+export interface RequestFailureFacts {
+  model?: { provider: string; modelId: string };
+  atMs?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -285,7 +337,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem {
+export interface ReconnectItem extends RequestFailureFacts {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -298,7 +350,7 @@ export interface ReconnectItem {
   gaveUp?: boolean;
   /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
   errorCode?: string;
-  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  /** The latest failure's detail (request_end.error_message), shown in the failure details. */
   errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
@@ -392,6 +444,12 @@ export interface ModelChangeItem {
   to: { provider: string; modelId: string };
   /** The timestamp of the `session_meta` that named the new model (ms). */
   tsMs?: number;
+  /**
+   * The switch handed the history over by its Trace path instead of a summary: the
+   * `[model_switch_from]` handoff naming this Session that followed the meta (folded into this
+   * marker rather than shown as a message), with the file it named.
+   */
+  handover?: { tracePath?: string };
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -803,6 +861,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       msg.timestamp,
       nowMs,
       (msg as AmspRecord & { tracePosition?: TracePosition }).tracePosition,
+      elidedOf(msg),
     );
     advanceLastTs(model, msg.timestamp);
     return;
@@ -1306,12 +1365,20 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
 // Complete messages
 // ---------------------------------------------------------------------------
 
+/** What a history record left out, or undefined for a record carried whole (every live one). */
+function elidedOf(msg: AmspRecord): ElidedRecord | undefined {
+  const record = msg as HistoryRecordLike;
+  const entries = record.elided;
+  return entries !== undefined && entries.length > 0 ? { record, entries } : undefined;
+}
+
 function handleComplete(
   model: StreamModel,
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
   tracePosition?: TracePosition,
+  elided?: ElidedRecord,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1322,6 +1389,21 @@ function handleComplete(
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // The Trace handoff an in-session model switch opened the context with instead of a
+        // summary (a whole `[model_switch_from]` block naming this Session — a `/model` new
+        // conversation's names its source): no bubble and no Task either; it marks the switch.
+        const handover = parseInPlaceModelSwitch(p.text, model.contextModel?.sessionId);
+        if (handover !== null) {
+          touchTask(model, timestamp);
+          const marker = model.items.findLast(
+            (i): i is ModelChangeItem => i.kind === "model_change",
+          );
+          if (marker) {
+            marker.handover =
+              handover.tracePath !== undefined ? { tracePath: handover.tracePath } : {};
+          }
           return;
         }
         // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
@@ -1472,6 +1554,8 @@ function handleComplete(
         }
         target.thinking = p.thinking;
         target.streaming = false;
+        if (elided !== undefined) target.elided = elided;
+        else delete target.elided;
         settleThinkingDuration(target, tsMs);
         if (target === model.openThinking) model.openThinking = null;
         model.pendingThinking = null;
@@ -1485,6 +1569,7 @@ function handleComplete(
         id: nextId(model),
         thinking: p.thinking,
         streaming: false,
+        ...(elided !== undefined ? { elided } : {}),
       };
       // History rebuild (no fragment): approximate the thinking start with the previous message's time.
       if (model.lastTsMs > 0) item.startedAtMs = model.lastTsMs;
@@ -1505,6 +1590,8 @@ function handleComplete(
       if (card) {
         card.name = p.name;
         card.argumentsText = p.arguments;
+        if (elided !== undefined) card.elidedCall = elided;
+        else delete card.elidedCall;
         card.callStreaming = false;
         card.callComplete = true;
         if (tsMs !== undefined) card.callStartedAtMs = tsMs;
@@ -1526,6 +1613,7 @@ function handleComplete(
         callStreaming: false,
       });
       created.callComplete = true;
+      if (elided !== undefined) created.elidedCall = elided;
       if (tsMs !== undefined) created.callStartedAtMs = tsMs;
       noteApprovalWait(model, created); // createToolCard may have already backfilled a pending approval timestamp
       // History rebuild (no partial_tool_call start): approximate "argument
@@ -1548,6 +1636,8 @@ function handleComplete(
         });
       }
       card.output = p.output;
+      if (elided !== undefined) card.elidedOutput = elided;
+      else delete card.elidedOutput;
       // The complete message converges the images (the streamed delta already carried them once; overwrites with the same value; also serves as a fallback for a mid-stream join).
       if (p.images && p.images.length > 0) card.images = p.images;
       card.outputStreaming = false;
@@ -1944,11 +2034,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
-        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        const item: LlmErrorItem = {
+          kind: "llm_error",
+          id: nextId(model),
+          ...failureFacts(model, tsMs),
+        };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
+        if (typeof p.attempt === "number") item.attempt = p.attempt;
         model.items.push(item);
         return;
       }
@@ -1963,6 +2058,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // Traces written before the field existed lack it (rendered as attempt 1).
           attempt: p.attempt ?? 1,
           retrying: false,
+          ...failureFacts(model, tsMs),
         };
         if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
@@ -1999,6 +2095,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+/** The model the running context was opened on and the record's time, for a failed request's details. */
+function failureFacts(model: StreamModel, tsMs: number | undefined): RequestFailureFacts {
+  const held = model.contextModel;
+  return {
+    ...(held !== null ? { model: { provider: held.provider, modelId: held.modelId } } : {}),
+    ...(tsMs !== undefined ? { atMs: tsMs } : {}),
+  };
 }
 
 function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
@@ -2326,33 +2431,53 @@ const IMAGE_IN_KEY = "<image>";
  */
 function imageInKey(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+  // "" is an image a history window folded away (a child's output has no Trace position to be
+  // carried by reference, so its large image is elided whole): the same picture as its bytes.
+  return value === "" ||
+    value.startsWith("data:") ||
+    /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
     ? IMAGE_IN_KEY
     : value;
 }
 
+/** Where a dedup key's folded values would be fetched from: nowhere, the key drops the refs. */
+const KEY_SOURCE = { agentId: "", sessionId: "", fileIndex: 0, ordinal: 0 };
+
 /**
  * The envelope a history copy and its SSE copy share. Disk-only transport metadata
- * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
- * may an image's form: a windowed history page carries a user `image_url` and a tool output's
- * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
- * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
- * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
- * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * (`tracePosition`, the `elided` entries) must not make an otherwise identical SSE envelope look
+ * new, and neither may a value's form:
+ *
+ * - An image: a windowed history page carries a user `image_url` and a tool output's `images` by
+ *   reference while the stream carries the bytes, and an SSE copy that escaped the overlap dedup
+ *   would draw the person's image twice. Every form stands in as one token, before anything is
+ *   folded: the bytes, the reference, and the empty string a window leaves where it folded an
+ *   image away — a child's record has no Trace position to carry its image by reference, so a
+ *   large one comes folded on the history side only. Two images of one prompt may then share a
+ *   key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ *   appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ * - A bulky value: a history window carries a tool's output, a long argument or a thinking
+ *   block folded (a head and a tail) while the stream carries it whole, so the key folds the
+ *   stream's copy by the same rule the server folds by (folding a folded copy changes nothing).
  */
-function dedupKey(msg: AmspRecord): string {
-  const { tracePosition: _tracePosition, ...envelope } = msg as AmspRecord & {
-    tracePosition?: TracePosition;
-  };
+function dedupKey(input: AmspRecord): string {
+  let msg = input as HistoryRecordLike;
   if (msg.type === "model_msg") {
     const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
     if (p.type === "image_url") {
-      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
-    }
-    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
-      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+      msg = { ...msg, payload: { ...p, image_url: imageInKey(p.image_url) } } as HistoryRecordLike;
+    } else if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      msg = { ...msg, payload: { ...p, images: p.images.map(imageInKey) } } as HistoryRecordLike;
     }
   }
+  const folded = elideHistoryRecord(msg, KEY_SOURCE).record;
+  const {
+    tracePosition: _tracePosition,
+    elided: _elided,
+    ...envelope
+  } = folded as HistoryRecordLike & {
+    tracePosition?: TracePosition;
+  };
   return JSON.stringify(envelope);
 }
 
@@ -2368,6 +2493,57 @@ export function buildDedupIndex(messages: AmspRecord[], limit = 100): Set<string
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
 export function isDuplicate(index: Set<string>, msg: AmspRecord): boolean {
   return index.has(dedupKey(msg));
+}
+
+// ---------------------------------------------------------------------------
+// Folded bodies (history windows carry bulky values as previews)
+// ---------------------------------------------------------------------------
+
+/** Which of an item's values a folded record fills: a call's arguments, its output, a thinking text. */
+export type ElidedSlot = "call" | "output" | "thinking";
+
+/** An item's folded records, each with the slot its whole values go back into. */
+export function elidedRecordsOf(
+  item: ToolCallItem | ThinkingItem,
+): { slot: ElidedSlot; elided: ElidedRecord }[] {
+  if (item.kind === "thinking") {
+    return item.elided === undefined ? [] : [{ slot: "thinking", elided: item.elided }];
+  }
+  const out: { slot: ElidedSlot; elided: ElidedRecord }[] = [];
+  if (item.elidedCall !== undefined) out.push({ slot: "call", elided: item.elidedCall });
+  if (item.elidedOutput !== undefined) out.push({ slot: "output", elided: item.elidedOutput });
+  return out;
+}
+
+/**
+ * The item takes a record whose values are whole again (`withElidedBody` put each one back): it
+ * shows them from now on, and that slot is folded no more.
+ */
+export function takeWholeRecord(
+  item: ToolCallItem | ThinkingItem,
+  slot: ElidedSlot,
+  record: HistoryRecordLike,
+): void {
+  const p = record.payload as {
+    arguments?: unknown;
+    output?: unknown;
+    images?: unknown;
+    thinking?: unknown;
+  };
+  if (item.kind === "thinking") {
+    if (slot !== "thinking") return;
+    if (typeof p.thinking === "string") item.thinking = p.thinking;
+    delete item.elided;
+    return;
+  }
+  if (slot === "call") {
+    if (typeof p.arguments === "string") item.argumentsText = p.arguments;
+    delete item.elidedCall;
+  } else if (slot === "output") {
+    if (typeof p.output === "string") item.output = p.output;
+    if (Array.isArray(p.images) && p.images.length > 0) item.images = p.images as string[];
+    delete item.elidedOutput;
+  }
 }
 
 /**

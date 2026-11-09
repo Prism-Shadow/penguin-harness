@@ -3,19 +3,24 @@
  * dialog's archive page lists the rest — the conversations archived by hand, and the Sessions a
  * program opened (`penguin run`, here) that nobody kept.
  *
- * Seeded through the API: three conversations of the user and three `penguin run` Sessions,
- * every one titled.
+ * Seeded through the API: eleven older `penguin run` Sessions ("Backfill 01" to "Backfill 11"),
+ * then three conversations of the user and three more `penguin run` Sessions, every one titled.
  *
  * - The `penguin run` Sessions never reach the sidebar; the conversations do.
  * - Archiving a conversation from its row takes it out of the sidebar; archiving the one on
  *   screen lands on New chat, not on its stub.
  * - The archive page lists the archived conversations and the program's Sessions, each program's
- *   with a CLI pill; the search and the source filter narrow the list.
+ *   with a CLI pill and each conversation with a User pill; the search and the source filter
+ *   narrow the list.
  * - A row's box shows while the row is hovered, and only then: one ticked and unticked again does
  *   not stay painted beside the hovered row's.
  * - Unarchiving a program's Session from its row puts it in the sidebar, wearing its CLI glyph.
- * - Select all chooses the whole group; unticking one row keeps the rest; Deselect all clears it.
+ * - Select all chooses the whole group, its second page included; unticking one row keeps the
+ *   rest; Deselect all clears it.
  * - Choosing two rows and deleting them asks first, then removes them for good.
+ * - A group of more than ten shows ten a page with a pager, in reach on a phone's bottom sheet
+ *   too: rows chosen on either page stay chosen across pages, and once the last page's rows are
+ *   gone the group steps back to the page before, its pager gone with the second page.
  * - An archived Session's URL shows its stub — title, time, source — and unarchiving there loads
  *   the conversation in place and returns it to the sidebar.
  *
@@ -64,6 +69,9 @@ test("archived chats live on the Settings page, and an archived URL shows its st
     expect(renamed.ok(), `rename ${title}`).toBeTruthy();
     return session.sessionId;
   };
+  // Older than the rest: they fill the group's second page.
+  for (let i = 1; i <= 11; i++)
+    await create(`Backfill ${String(i).padStart(2, "0")}`, { source: "cli" });
   await create("Quarterly report");
   const scratch = await create("Scratch notes");
   await create("Release checklist");
@@ -120,13 +128,13 @@ test("archived chats live on the Settings page, and an archived URL shows its st
     await expect(dialog.getByText(title, { exact: true })).toBeVisible();
   }
   await expect(dialog.getByText("Release checklist")).toHaveCount(0);
-  // A program's Session names its source in a pill; a person's conversation carries none.
+  // Every row names its source in a pill: a program's Session, and a person's conversation too.
   await expect(
     dialog.locator("li", { hasText: "Nightly batch" }).getByText("CLI", { exact: true }),
   ).toBeVisible();
-  await expect(dialog.locator("li", { hasText: "Quarterly report" }).getByText("用户")).toHaveCount(
-    0,
-  );
+  await expect(
+    dialog.locator("li", { hasText: "Quarterly report" }).getByText("用户", { exact: true }),
+  ).toBeVisible();
 
   // A row's box shows while its row is hovered, and only then — not after it was ticked and
   // unticked, beside the next hovered row's.
@@ -169,12 +177,13 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   await expect(dialog.getByText("Index rebuild", { exact: true })).toHaveCount(0);
   await expect(sidebar.getByText("Index rebuild")).toBeVisible();
 
-  // Select all chooses the whole group; unticking one keeps the rest; Deselect all clears it.
+  // Select all chooses the whole group, the page not shown included; unticking one keeps the
+  // rest; Deselect all clears it.
   await dialog.getByRole("button", { name: "全选", exact: true }).click();
-  await expect(dialog.getByText("已选 4 项")).toBeVisible();
+  await expect(dialog.getByText("已选 15 项")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "取消全选", exact: true })).toBeVisible();
   await dialog.getByRole("checkbox", { name: "选择「Scratch notes」" }).uncheck();
-  await expect(dialog.getByText("已选 3 项")).toBeVisible();
+  await expect(dialog.getByText("已选 14 项")).toBeVisible();
   await expect(dialog.getByRole("checkbox", { name: "选择「Weekly digest」" })).toBeChecked();
   await dialog.getByRole("button", { name: "全选", exact: true }).click();
   await dialog.getByRole("button", { name: "取消全选", exact: true }).click();
@@ -191,6 +200,54 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   await expect(dialog.getByText("Quarterly report", { exact: true })).toHaveCount(0);
   await expect(dialog.getByText("Nightly batch", { exact: true })).toHaveCount(0);
   await expect(dialog.getByText("Weekly digest", { exact: true })).toBeVisible();
+
+  // Thirteen left: ten a page, and the pager under them.
+  const rowBoxes = dialog.getByRole("checkbox", { name: /^选择「/ });
+  await expect(rowBoxes).toHaveCount(10);
+  const next = dialog.getByRole("button", { name: "下一页", exact: true });
+  const back = dialog.getByRole("button", { name: "上一页", exact: true });
+  await expect(dialog.getByText("1/2", { exact: true })).toBeVisible();
+  await expect(back).toBeDisabled();
+  await expect(dialog.getByText("Backfill 03", { exact: true })).toHaveCount(0);
+  await next.click();
+  await expect(dialog.getByText("2/2", { exact: true })).toBeVisible();
+  for (const title of ["Backfill 03", "Backfill 02", "Backfill 01"]) {
+    await expect(dialog.getByText(title, { exact: true })).toBeVisible();
+  }
+  await expect(dialog.getByText("Weekly digest", { exact: true })).toHaveCount(0);
+  await expect(next).toBeDisabled();
+  // On a phone the dialog is a bottom sheet: the pager under ten rows is still in reach.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await back.click();
+  await expect(dialog.getByText("1/2", { exact: true })).toBeVisible();
+  await next.click();
+  await expect(dialog.getByText("2/2", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  // A row chosen on each page: both stay chosen whichever page shows.
+  await dialog.getByRole("checkbox", { name: "选择「Backfill 02」" }).check({ force: true });
+  await back.click();
+  await dialog.getByRole("checkbox", { name: "选择「Backfill 11」" }).check();
+  await expect(dialog.getByText("已选 2 项")).toBeVisible();
+  await next.click();
+  await expect(dialog.getByRole("checkbox", { name: "选择「Backfill 02」" })).toBeChecked();
+  // Unarchived from the second page: the rows below close up, and it still has one.
+  await dialog.getByRole("button", { name: "取消归档", exact: true }).first().click();
+  await expect(dialog.getByText(/^已选 \d+ 项$/)).toHaveCount(0);
+  await expect(dialog.getByText("Backfill 02", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("2/2", { exact: true })).toBeVisible();
+  await expect(rowBoxes).toHaveCount(1);
+
+  // Its last row deleted, the second page is gone: back on the first, with no pager.
+  await dialog
+    .locator("li", { hasText: "Backfill 01" })
+    .getByRole("button", { name: /^删除/ })
+    .click();
+  const confirmOne = page.getByRole("dialog").filter({ hasText: "确定删除「Backfill 01」" });
+  await confirmOne.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(dialog.getByText("Weekly digest", { exact: true })).toBeVisible();
+  await expect(rowBoxes).toHaveCount(10);
+  await expect(next).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // An archived Session's URL: the stub, then the conversation once unarchived.

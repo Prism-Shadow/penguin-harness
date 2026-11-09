@@ -32,8 +32,8 @@
  * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
  * replaces a bar rather than a word.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -47,16 +47,14 @@ import {
   Skeleton,
   StatusIcon,
   UpdateDot,
-  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
-import { apiErrorText } from "../../lib/api-error";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
@@ -80,6 +78,7 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
@@ -240,7 +239,7 @@ export function PluginCard(props: PluginCardProps) {
     try {
       await downloadArchive(url, row.name);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
