@@ -14,7 +14,7 @@
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { ContributedPage } from "../../lib/local-contributed-page";
-import { orgPagesOf } from "../../lib/local-page-table";
+import type { PageEntry } from "../../lib/local-page-table";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
 import { OrgChartPage } from "./org-chart-page";
@@ -30,7 +30,21 @@ import { useCompany } from "./company-state";
 const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {};
 
 export function OrgRoutes() {
-  const contributed = orgPagesOf(useOrgPages());
+  const contributed = useOrgPages().flatMap((page) =>
+    page.released && page.renderer !== undefined
+      ? [
+          {
+            id: page.id,
+            key: page.key,
+            path: page.path,
+            nav: page.nav,
+            admin: page.admin,
+            released: page.released,
+            renderer: page.renderer,
+          } satisfies PageEntry,
+        ]
+      : [],
+  );
   const { homePath } = useCompany();
   return (
     <Routes>
