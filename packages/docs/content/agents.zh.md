@@ -74,7 +74,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 
 **开始之前**
 
-- 要复制的 Agent 的快照包（`.tar.gz`）。单个包最大 14 MB。制作方法见[导出和导入快照](#导出和导入快照)。
+- 要复制的 Agent 的快照包（`.tar.gz`）。单个包最大 14 MB。制作方法见[导出和导入 Agent](#导出和导入-agent)。
 
 1. 在**创建 Agent** 对话框中，在**从快照初始化**下点击**选择快照包**，选定包文件。**Agent id** 为空时，会按文件名自动填入。
 2. **名称**和**描述**留空则沿用包里的值，填写则覆盖。
@@ -127,7 +127,7 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 
 大多数设置，任何 Project 成员都能修改。以下操作只有 Project owner 能做：
 
-- 删除 Agent、导入快照；
+- 删除 Agent、用文件覆盖 Agent；
 - 打开或关闭**启用钩子**；
 - 编辑密钥保险柜变量、**启用密钥保险柜**开关和**保险柜提示词**；
 - 创建、编辑、启用、停用和删除定时任务，编辑**启用定时任务**开关和**定时任务提示词**（成员仍可使用**用 AI 创建**）；
@@ -140,12 +140,18 @@ Agent 属于它所在的服务端。Project 用到机器时，每台已连接机
 
 修改**名称**或**描述**，然后选择**保存**。
 
-### 导出和导入快照
+### 导出和导入 Agent
 
 **Agent State** 区块显示 **Agent State 版本**和 **State 路径**（Agent State 在服务端所在的文件夹），点击复制按钮可以复制路径。
 
-- **导出快照**：把 Agent State 下载为 `.tar.gz` 包。包里不含密钥保险柜，密钥不会随快照流出。
-- **导入快照**：用包整体替换 Agent State，并采用包内的版本，但保留 Agent 当前的密钥保险柜。工作台的版本历史位于 Agent State 之外，导入不会改动它。导入前会先把当前 Agent State 打包成一个单独的备份，放在 Agent 文件夹下的 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`。每次导入都重新打包，从不覆盖已有文件；它不属于 `v<version>.tar.gz` 快照，因此同一版本的旧快照既不会被沿用，也不会被覆盖。只有 Project owner 能导入。如果包内版本不比当前版本新，会弹出**版本冲突**对话框，要求确认覆盖。
+Agent 以其目录的 zip 往来：`<agentId>/agent_state/…`，以及所选 Session 的 `<agentId>/traces/…`。没有清单，名称、描述与版本本就在 `system_config.yaml` 里。配置总是带上；Skill、钩子、记忆与 Workbench（可含其数据）缺省带上，可以去掉；定时任务只在选择时带上，因为导入后会按计划运行。密钥保险柜从不进包，Trace 中出现的 vault 值替换为 `[vault:<KEY>]`。直接写在配置里的字面值会原样带出，凭据请以 `${KEY}` 引用。
+
+- 以尚无 Agent 的 id 导入时，从包新建 Agent，State、名称、描述与版本取自包内。任何成员都可以。
+- 覆盖已有 Agent 只有 Project owner 能做。先把当前 Agent State 打包成一个单独的备份 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，再整体替换；包里没带的部件只留在备份里。Agent 的对话、密钥保险柜、API 密钥与任职保留。工作台的版本历史位于 Agent State 之外，导入不会改动它。
+- 包里的 Session 落为该 Agent 的对话，标题取自首条消息。本服务器已有的 Session（同一服务器导出再导入即是如此）跳过并在结果中列出。
+- `system_config.yaml` 缺 `system_prompt` 的包叠加在默认配置之上，包里没带的文件沿用默认值，因此手写的包只需写出要改的键。
+
+此前导出的 `.tar.gz` 快照包在 1.0 之前照样可以导入。路由见 [Agent 路由](/server-api#agent-路由)。
 
 版本和快照的工作机制见[自我进化](/self-improvement#快照与版本)。
 

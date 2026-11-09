@@ -74,7 +74,7 @@ A snapshot package is an exported Agent State. You can create an agent from one,
 
 **Before you begin**
 
-- A snapshot package (`.tar.gz`) of the agent you want to copy. A package can be up to 14 MB. To create one, see [Export and import a snapshot](#export-and-import-a-snapshot).
+- A snapshot package (`.tar.gz`) of the agent you want to copy. A package can be up to 14 MB. To create one, see [Export and import an agent](#export-and-import-an-agent).
 
 1. In the **Create agent** dialog, under **Initialize from a snapshot**, select **Choose a snapshot package** and pick the package. If **Agent id** is empty, it is filled in from the file name.
 2. Leave **Name** and **Description** empty to keep the values in the package, or fill them in to replace them.
@@ -127,7 +127,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 
 Any Project member can change most settings. These actions are for the Project owner only:
 
-- deleting the agent and importing a snapshot;
+- deleting the agent and overwriting it from a file;
 - turning **Enable hooks** on or off;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
@@ -140,12 +140,18 @@ Any Project member can change most settings. These actions are for the Project o
 
 Change **Name** or **Description**, then select **Save**.
 
-### Export and import a snapshot
+### Export and import an agent
 
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
-- **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+An agent travels as a zip of its directory: `<agentId>/agent_state/…` and, for the Sessions you choose, `<agentId>/traces/…`. There is no manifest; the name, description and version are in `system_config.yaml`. The configuration always travels. Skills, hooks, memory and workbenches, with or without their data, travel unless you leave them out; scheduled tasks only when you take them, since an imported task runs on its schedule. The vault never travels, and a vault value found in a Trace is replaced by `[vault:<KEY>]`. A value written literally into the configuration travels as it is, so reference credentials as `${KEY}`.
+
+- Importing under an id no agent has creates the agent from the package, with its State, name, description and version. Any member can.
+- Overwriting an agent is for the Project owner. The current Agent State is first packed into a backup of its own, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, then replaced whole; parts the package leaves out stay only in the backup. The agent's conversations, vault, API keys and employments stay. The workbench version history sits beside the Agent State, so an import leaves it as it is.
+- Sessions the package carries land as conversations of the agent, titled from their first message. A Session this server already has, as when you import an export from the same server, is skipped and reported.
+- A package whose `system_config.yaml` has no `system_prompt` is laid over the default configuration, and the files it leaves out come from the defaults, so a hand-written package needs only the keys it changes.
+
+A `.tar.gz` snapshot package exported before this format imports the same way until 1.0. For the routes, see [Agent routes](/server-api#agent-routes).
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 

@@ -238,7 +238,7 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
   });
 
   // Export one installed skill as a zip: served verbatim as an attachment (same shape as
-  // the snapshot export / trace download — a direct binary body, not a JSON envelope), so
+  // the Agent export / trace download — a direct binary body, not a JSON envelope), so
   // what's downloaded can be re-imported byte-compatibly via the POST archive route.
   app.get("/:name/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");
