@@ -228,11 +228,12 @@ describe("Agent zip export and import", () => {
       await owner.put(`${agents}/target/vault`, { entries: [{ key: "TOKEN", value: "kept" }] });
       await owner.post(`${agents}/target/api/keys`, { name: "ci" });
       await write(stateOf("target", "marker.txt"), "previous State");
+      await write(stateOf("target", "memory/user/own.md"), "the target's own memory");
       await write(
         path.join(tracesDir(t.root, P, "target"), "2026-03-01", "kept_001.jsonl"),
         "{}\n",
       );
-      pkg = await exportOf("source");
+      pkg = await exportOf("source", "?memory=0");
     });
 
     it("an import without overwrite is 409 naming the id, and writes nothing", async () => {
@@ -252,7 +253,7 @@ describe("Agent zip export and import", () => {
       expect((await importAs(member, pkg, "?agentId=target&overwrite=1")).status).toBe(403);
     });
 
-    it("the owner's overwrite backs the State up, replaces it, and keeps the vault, Traces and API keys", async () => {
+    it("the owner's overwrite backs the State up, replaces the parts the zip carries, and keeps the vault, Traces, API keys and the parts it left out", async () => {
       const vault = await fs.readFile(agentVaultPath(t.root, P, "target"));
 
       const res = await importAs(owner, pkg, "?agentId=target&overwrite=1");
@@ -268,6 +269,9 @@ describe("Agent zip export and import", () => {
       expect(backed).toContain("agent_state/marker.txt");
       await expect(fs.access(stateOf("target", "marker.txt"))).rejects.toThrow();
       await expect(fs.access(stateOf("target", "skills/demo/SKILL.md"))).resolves.toBeUndefined();
+      await expect(fs.readFile(stateOf("target", "memory/user/own.md"), "utf8")).resolves.toBe(
+        "the target's own memory",
+      );
       expect(await fs.readFile(agentVaultPath(t.root, P, "target"))).toEqual(vault);
       await expect(
         fs.access(path.join(tracesDir(t.root, P, "target"), "2026-03-01", "kept_001.jsonl")),

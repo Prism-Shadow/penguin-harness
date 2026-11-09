@@ -92,7 +92,7 @@ Agent 按 `skill-porting` 插件中的 `agent-porting` Skill 操作：只读取�
 2. 检查 **Agent id**。它按文件名自动填入，并去掉 `-<yyyymmdd>` 或 `-v<n>` 尾缀。
 3. 选择**导入**。提示会说明 Agent 是新建还是覆盖，以及导入和略过了多少个对话；新 Agent 随即出现在列表中。
 
-任何 Project 成员都能导入新 Agent。id 已被占用时，对话框会提示：选择**改用其他 id** 修改 id；Project owner 也可以选择**覆盖现有 Agent** 并确认。覆盖会替换该 Agent 的 Agent State，它的对话、密钥保险柜与 API 密钥保留，替换前先写一份备份快照。
+任何 Project 成员都能导入新 Agent。id 已被占用时，对话框会提示：选择**改用其他 id** 修改 id；Project owner 也可以选择**覆盖现有 Agent** 并确认。覆盖会替换该 Agent 的 Agent State 中文件所带的部分，它的对话、密钥保险柜与 API 密钥保留，替换前先写一份备份快照。
 
 ## 删除 Agent
 
@@ -161,7 +161,7 @@ Agent 按 `skill-porting` 插件中的 `agent-porting` Skill 操作：只读取�
 Agent 以其目录的 zip 往来：`<agentId>/agent_state/…`，以及所选 Session 的 `<agentId>/traces/…`。没有清单，名称、描述与版本本就在 `system_config.yaml` 里。配置总是带上；Skill、钩子、记忆与 Workbench（可含其数据）缺省带上，可以去掉；定时任务只在选择时带上，因为导入后会按计划运行。密钥保险柜从不进包，Trace 中出现的 vault 值替换为 `[vault:<KEY>]`。直接写在配置里的字面值会原样带出，凭据请以 `${KEY}` 引用。
 
 - 以尚无 Agent 的 id 导入时，从包新建 Agent，State、名称、描述与版本取自包内。任何成员都可以。
-- 覆盖已有 Agent 只有 Project owner 能做。先把当前 Agent State 打包成一个单独的备份 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，再整体替换；包里没带的部件只留在备份里。Agent 的对话、密钥保险柜、API 密钥与任职保留。工作台的版本历史位于 Agent State 之外，导入不会改动它。
+- 覆盖已有 Agent 只有 Project owner 能做。先把当前 Agent State 打包成一个单独的备份 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，再以包里的内容替换：包里没有的部件（如不带记忆的导出）沿用该 Agent 现有的内容，包里没带数据的工作台也保留现有数据。Agent 的对话、密钥保险柜、API 密钥与任职保留。工作台的版本历史位于 Agent State 之外，导入不会改动它。
 - 包里的 Session 落为该 Agent 的对话，标题取自首条消息。本服务器已有的 Session（同一服务器导出再导入即是如此）跳过并在结果中列出。
 - `system_config.yaml` 缺 `system_prompt` 的包叠加在默认配置之上，包里没带的文件沿用默认值，因此手写的包只需写出要改的键。
 

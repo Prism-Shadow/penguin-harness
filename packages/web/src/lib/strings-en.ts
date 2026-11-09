@@ -1973,7 +1973,7 @@ export const en: Strings = {
     replaceAction: "Replace",
     overwriteTitle: "Replace the Agent State",
     overwriteBody: (agentId: string, file: string): string =>
-      `Replace the Agent State of ${agentId} from ${file}? Its conversations, vault and API keys stay. A backup snapshot is written first.`,
+      `Replace the Agent State of ${agentId} from ${file}? Parts the file does not carry, its conversations, vault and API keys stay. A backup snapshot is written first.`,
     importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
       `${overwritten ? "Overwrote" : "Imported"} the agent ${name}; conversations: ${imported} imported, ${skipped} already here and skipped`,
     resetConfigTitle: "Restore default configuration",

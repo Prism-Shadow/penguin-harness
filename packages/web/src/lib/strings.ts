@@ -2103,7 +2103,7 @@ export const zh = {
     replaceAction: "替换",
     overwriteTitle: "替换 Agent State",
     overwriteBody: (agentId: string, file: string): string =>
-      `用「${file}」替换「${agentId}」的 Agent State？它的对话、保险柜与 API 密钥保留；替换前会先写一份备份快照。`,
+      `用「${file}」替换「${agentId}」的 Agent State？文件里没有的部件、它的对话、保险柜与 API 密钥保留；替换前会先写一份备份快照。`,
     importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
       `${overwritten ? "已覆盖" : "已导入"} Agent「${name}」；对话：导入 ${imported} 个，略过已有的 ${skipped} 个`,
     resetConfigTitle: "还原为默认配置",
