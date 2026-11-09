@@ -33,7 +33,7 @@ Running 600 containerized trials involves network setup, offline installation bu
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="1740" alt="Figure 2: Using PenguinHarness to coordinate repeat experiments for all four Harnesses" /><figcaption>Figure 2: Using PenguinHarness to coordinate repeat experiments for all four Harnesses</figcaption></figure>
 
-Starting the full experiment from the PenguinHarness web interface takes four steps:
+Reproducing this workflow in the PenguinHarness web interface takes four steps:
 
 **Step 1: Connect the model in Models**
 
@@ -120,7 +120,7 @@ The overall scores provide a starting point:
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/01-overall-bars.png" width="2880" height="1140" alt="Figure 5: Overall scores for four Harnesses across three runs" /><figcaption>Figure 5: Overall scores for four Harnesses across three runs</figcaption></figure>
 
-DSH and PenguinHarness, the top two on this chart, differ by just 0.67 points. Across 150 attempts each, that is 58 passes versus 57: a difference of one passing attempt. Breaking the results down by subset, per-task pass frequency and resource use reveals further differences among the four Harnesses.
+DSH and PenguinHarness, the top two on this chart, differ by just 0.67 points. Across 150 attempts each, that is 58 passes versus 57: a difference of one passing attempt. The other overall scores also look fairly close at first glance. Breaking the results down by subset, per-task pass frequency and resource use reveals further differences among the four Harnesses.
 
 **Observation 1: PenguinHarness performs best on software engineering tasks**
 
@@ -128,7 +128,9 @@ The five-subset breakdown shows which kinds of tasks each Harness handles best:
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="Figure 6: Scores for four Harnesses across five subsets" /><figcaption>Figure 6: Scores for four Harnesses across five subsets</figcaption></figure>
 
-In Figure 6, PenguinHarness has its clearest advantage on Sec B Software Engineering, which requires fixing bugs without internet access. It leads that subset with 70.00 points and ties DSH at 70.00 on Sec A Data Analysis. DSH leads Sec C Automation, while Pi leads Sec E Terminal Troubleshooting. Even with the model fixed, changing the Harness affects how well the agent handles different task types. Across all four Harnesses and three runs, the model solved 31 of the 50 tasks, or 62%; 19 tasks remained unsolved by every Harness. Only 17 of those 31 tasks were solved by all four. Of the remaining 14, nine were solved by two or three Harnesses, and five by just one. When an agent fails, the execution trace can help locate tool-design or context-feedback issues that may be limiting capabilities the model has shown elsewhere.
+In Figure 6, PenguinHarness has its clearest advantage on Sec B Software Engineering, which requires fixing bugs without internet access. It leads that subset with 70.00 points and ties DSH at 70.00 on Sec A Data Analysis. DSH leads Sec C Automation, while Pi leads Sec E Terminal Troubleshooting. Even with the model fixed, changing the Harness affects how well the agent handles different task types. Across all four Harnesses and three runs, the model solved 31 of the 50 tasks, or 62%; 19 tasks remained unsolved by every Harness. Only 17 of those 31 tasks were solved by all four. Of the remaining 14, nine were solved by two or three Harnesses, and five by just one.
+
+When an agent fails, the execution trace can help locate tool-design or context-feedback issues that may be limiting capabilities the model has shown elsewhere.
 
 **Observation 2: PenguinHarness and DSH tie on Pass@3, while inconsistent execution lowers their average scores**
 
@@ -136,7 +138,7 @@ A single Harness passes an average of 15 to 19.3 tasks per run. Giving it three 
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/09-pass-frequency.png" width="2880" height="1330" alt="Figure 7: Per-task pass frequencies across three runs of 50 tasks" /><figcaption>Figure 7: Per-task pass frequencies across three runs of 50 tasks</figcaption></figure>
 
-DSH and PenguinHarness each solve 25 tasks at least once, tying for first place. Of PenguinHarness's 25 solved tasks, only 10 pass all three times. Another 12 tasks, the largest count among the four Harnesses, pass twice and fail once. Converting those 12 failures into passes, with no regressions elsewhere, would add 8 points without solving any new tasks. The pattern is especially pronounced in Sec B Software Engineering: DSH and PenguinHarness each solve all 10 bug-fixing tasks at least once, reaching 100% Pass@3, yet only 2 and 3 tasks respectively pass in all three runs. For practical use, succeeding once is insufficient. Adding a check before submission to turn two passes out of three into three out of three is a key target for improving scores.
+DSH and PenguinHarness each solve 25 tasks at least once, tying for first place. Of PenguinHarness's 25 solved tasks, only 10 pass all three times. Another 12 tasks pass twice and fail once. Converting those 12 failures into passes, with no regressions elsewhere, would add 8 points without solving any new tasks. Take the software engineering subset: DSH and PenguinHarness each fix every task at least once, so neither leaves a task unsolved across all three runs. Yet only 2 and 3 tasks respectively pass every time. For practical use, succeeding once is insufficient. Adding a check before submission to turn two passes out of three into three out of three is a key target for improving scores.
 
 **Observation 3: Identical scores can hide different passing tasks**
 
@@ -144,10 +146,7 @@ Among the 20 subset experiments, two score 0 in every run. Beyond those, four gr
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1560" alt="Figure 8: PenguinHarness per-task pass records across three Sec E runs" /><figcaption>Figure 8: PenguinHarness per-task pass records across three Sec E runs</figcaption></figure>
 
-Figure 8 shows that only CASE-008 passes all three times. The other 10 points come from CASE-010 in Run 1 and CASE-004 in Runs 2 and 3. Among the other three groups with identical scores across runs, only DSH on Sec A passes the same seven tasks every time for 70 points. The remaining two groups also have task-level swaps that leave the total unchanged:
-
-1. **Codex scores 60 on Sec A in every run**: A gain and a loss involving CASE-002 and CASE-007 in Run 2 cancel out, leaving the same 60-point score.
-2. **Codex scores 10 on Sec D in every run**: No task passes all three times. Run 1 passes CASE-010 Asteroid Orbit Determination; Runs 2 and 3 pass CASE-003 Brain Image Registration, producing three 10-point totals from different tasks.
+Figure 8 shows that only CASE-008 passes all three times. The other 10 points come from CASE-010 in Run 1 and CASE-004 in Runs 2 and 3. Among the other three groups with identical scores across runs, only DSH on Sec A passes the same seven tasks every time for 70 points. The remaining two groups also have task-level swaps that leave the total unchanged. Codex on scientific computing is an even clearer example: it scores 10 in every run, yet no task passes all three times.
 
 When iterating on an agent, running only once after a prompt or tool change, or tracking only the total score, obscures the difference between an improvement and a trade-off that fixes task A while breaking task B. Random variation can easily look like progress.
 

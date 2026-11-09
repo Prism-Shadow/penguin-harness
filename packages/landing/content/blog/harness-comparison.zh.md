@@ -6,11 +6,11 @@ author: "Zhihao Liu (Prism Shadow AI)"
 excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
 ---
 
-平时用 Agent 写代码、查数据，每当任务失败时，我们大多会把原因归结给大模型：“这模型还是不够聪明。”但真是模型的问题吗？如果把模型固定，只换掉外层的 Harness，Agent 的表现到底能差多少？为了拿到真实数据，我们使用 PenguinHarness 创建了一个专门组织实验的 Agent，让它调用 Harbor 容器环境，对 DSH、PenguinHarness、Pi、Codex 四种 Harness 发起测试。50 道题，每种 Harness 连续跑满 3 轮，一共 600 次真实作答。今天我们就来聊聊，这场实验是怎么在 PenguinHarness 里跑起来的，以及分析这 600 条实验记录后，我们看到的四个有趣现象。
+平时用 Agent 写代码、查数据，每当任务失败时，我们大多会把原因归结给大模型：“这模型还是不够聪明。”但真是模型的问题吗？如果把模型固定，只换掉外层的 Harness，Agent 的表现会差多少？为了拿到真实数据，我们使用 PenguinHarness 创建了一个专门组织实验的 Agent，让它使用 Harbor 容器环境，对 DSH、PenguinHarness、Pi、Codex 四种 Harness 发起测试。50 道题，每种 Harness 连续跑满 3 轮，一共 600 次作答。今天我们就来聊聊，这场实验是怎么在 PenguinHarness 里跑起来的，以及分析这 600 条实验记录后，我们看到的四个有趣现象。
 
 ## 1. Benchmark 构成与实验规则
 
-要看清 Harness 之间的真实差距，首先得把其它变量全部固定。我们在四组实验里统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度全部拉满到 max，由 Harbor 0.23.0 在独立 Docker 容器里把 50 道题各跑 3 轮：
+要看清 Harness 之间的差距，首先得把其它变量固定。我们在四组实验里统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度全部拉满到 max，使用 Harbor 0.23.0 在独立 Docker 容器里把 50 道题各跑 3 轮：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/03-experiment-design.png" width="2880" height="1730" alt="图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计" /><figcaption>图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计</figcaption></figure>
 
@@ -29,11 +29,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 ## 2. 用 Penguin 四步发起实验
 
-跑 600 次容器评测涉及不少繁琐环节：配网络、打离线包、控并发、查异常重跑，最后还要汇总 20 组实验的 YAML 报表。但我们不需要手敲一堆终端脚本，直接在 PenguinHarness 界面里创建一个专门的 Agent，让它接管全流程实验即可。
+跑 600 次容器评测涉及不少环节：配网络、打离线包、控并发、查异常重跑，最后还要汇总 20 组实验的 YAML 报表。但我们不需要手敲一堆终端脚本，直接在 PenguinHarness 界面里创建一个专门的 Agent，让它接管全流程实验即可。
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="1740" alt="图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程" /><figcaption>图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程</figcaption></figure>
 
-在 PenguinHarness 的 Web 界面里，从零发起整套实验只需要四步：
+在 PenguinHarness 的 Web 界面里，只需要四步就可以复现我们这套流程：
 
 **第一步：在「模型配置」中接入被测模型**
 
@@ -120,15 +120,17 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/01-overall-bars.png" width="2880" height="1140" alt="图 5｜四种 Harness 的三轮总体得分对比" /><figcaption>图 5｜四种 Harness 的三轮总体得分对比</figcaption></figure>
 
-光看这张总榜，前两名 DSH 和 PenguinHarness 只差了 0.67 分，150 次作答里也就是 58 次通过和 57 次通过，只差了 1 次，看起来好像大差不差。但把总分拆到五个子集、拆到每道题的通过次数和资源消耗上，四家的差距一下就出来了。
+光看这张总榜，前两名 DSH 和 PenguinHarness 只差了 0.67 分，150 次作答里也就是 58 次通过和 57 次通过，只差了 1 次，其余成绩看起来好像也大差不差。但把总分拆到五个子集、拆到每道题的通过次数和资源消耗上，四家的差距一下就出来了。
 
 **现象一：PenguinHarness 最擅长解决软件工程题**
 
-把总分拆到 A 至 E 五个子集后，四款 Harness 各自擅长什么题型就看得很清楚了：
+把总分拆到 A 至 E 五个子集后，可以明显的看出来四款 Harness 各自擅长什么题型：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜四种 Harness 在五个子集上的得分对比" /><figcaption>图 6｜四种 Harness 在五个子集上的得分对比</figcaption></figure>
 
-如图 6 所示，PenguinHarness 在断网修 Bug 的 Sec B 软件工程子集上优势最为突出，拿到全场最高的 70.00 分；并与 DSH 在 Sec A 数据分析上同拿 70.00 分并列第一，DSH 在 Sec C 自动化流程上领先，Pi 则在 Sec E 终端排障上领先——同一颗模型，换一套 Harness，擅长的题型就变了。更有意思的是，把四家三轮的成绩合在一起看，这 50 道题里其实有 31 道题这颗模型是会做的，占了 62%，只有 19 道题四家全都没做出来。但在这 31 道会做的题里，四家都能拿下的只有 17 道。剩下的 14 道题全看你用哪套 Harness：有 9 道题只有两三家能做出来，更有 5 道题只有唯一一家能跑通。当你的 Agent 搞不定一个任务时，未必是底层模型真不会做，接下来很值得顺着执行轨迹去深挖：究竟是哪一步的工具设计或上下文反馈，限制了模型原本具备的能力。
+如图 6 所示，PenguinHarness 在断网修 Bug 的 Sec B 软件工程子集上优势最为突出，拿到全场最高的 70.00 分；并与 DSH 在 Sec A 数据分析上同拿 70.00 分并列第一，DSH 在 Sec C 自动化流程上领先，Pi 则在 Sec E 终端排障上领先——同一颗模型，换一套 Harness，擅长的题型就变了。更有意思的是，把四家三轮的成绩合在一起看，这 50 道题里其实有 31 道题这颗模型是会做的，占了 62%，只有 19 道题四家全都没做出来。但在这 31 道会做的题里，四家都能拿下的只有 17 道。剩下的 14 道题全看你用哪套 Harness：有 9 道题只有两三家能做出来，更有 5 道题只有唯一一家能跑通。
+
+当你的 Agent 搞不定一个任务时，未必是底层模型真不会做，接下来很值得顺着执行轨迹去深挖：究竟是哪一步的工具设计或上下文反馈，限制了模型原本具备的能力。
 
 **现象二：看 Pass@3，PenguinHarness 与 DSH 并列第一，拉低总分的原因是发挥不稳定**
 
@@ -136,7 +138,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/09-pass-frequency.png" width="2880" height="1330" alt="图 7｜50 道题在三轮测试中的通过频次分布" /><figcaption>图 7｜50 道题在三轮测试中的通过频次分布</figcaption></figure>
 
-从图 7 可以直接看出，DSH 与 PenguinHarness 在三轮内都解出了 25 道题，并列全场第一。但把 PenguinHarness 解出的这 25 道题拆开看，三次都能稳稳做对的只有 10 道题，另外有全场最多的 12 道题明明做对了两次、却偏偏失手一次——假如能把这 12 道题里做错的那一次做对、同时其他题不丢分，不用多攻克任何一道新难题，光在稳定性上就有 8 分的提升空间。这种情况在 Sec B 软件工程子集上尤为极端：这 10 道修 Bug 题目在三轮内其实全部被 DSH 和 PenguinHarness 修好过，两家的子集 Pass@3 都达到了 100%，但真正能三次全过的分别只有 2 题和 3 题。这也说明：对实际使用来说，能跑通一次还不够；怎么在交卷前多做一步自检，把“三轮对两轮”变成“三次跑三次全过”，才是接下来提分的关键。
+从图 7 可以直接看出，DSH 与 PenguinHarness 在三轮内都解出了 25 道题，并列第一。但把 PenguinHarness 解出的这 25 道题拆开看，三次都能稳稳做对的只有 10 道题，另外有 12 道题都只做对了两次。假如能把这 12 道题里做错的那一次做对、同时其他题不丢分，不用多攻克任何一道新难题，光在稳定性上就有 8 分的提升空间。拿软件工程那组修 Bug 的题来说，DSH 和 PenguinHarness 对每一道题都至少修对过一次，说明没有哪道题是完全不会做的；可真要看哪道题能三次测试全部通过，两家却分别只有 2 道和 3 道。这也说明：对实际使用来说，能跑通一次还不够；怎么在交卷前多做一步自检，把“三轮对两轮”变成“三次跑三次全过”，才是接下来提分的关键。
 
 **现象三：三轮总分一模一样，做对的题却换了——看评测结果不能只看总分**
 
@@ -144,10 +146,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1560" alt="图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录" /><figcaption>图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录</figcaption></figure>
 
-如图 8 所示，虽然每轮都拿 20 分，但真正三轮全做对的只有 CASE-008 一道题；另外 10 分，第 1 轮拿在 CASE-010 上，第 2、3 轮却拿在了 CASE-004 上。再去查另外三组“三轮同分”的实验，只有 DSH 在 Sec A 的 70 分是实打实的同 7 道题三轮全过，剩下两组也都是靠“这轮做对 A 题、下轮做对 B 题”刚好凑出了同样的总分：
-
-1. **Codex 在 Sec A 三轮都是 60 分**：第 2 轮靠 CASE-002 和 CASE-007 的一增一减，刚好凑出同样的 60 分。
-2. **Codex 在 Sec D 三轮都是 10 分**：它没有任何一道题三轮全过，第 1 轮做对的是 CASE-010 小行星定轨，第 2、3 轮做对的却换成了 CASE-003 脑成像配准，跨轮次拼出了三个 10 分。
+如图 8 所示，虽然每轮都拿 20 分，但真正三轮全做对的只有 CASE-008 一道题；另外 10 分，第 1 轮拿在 CASE-010 上，第 2、3 轮却拿在了 CASE-004 上。再去查另外三组“三轮同分”的实验，只有 DSH 在 Sec A 的 70 分是实打实的同 7 道题三轮全过，剩下两组也都是靠“这轮做对 A 题、下轮做对 B 题”刚好凑出了同样的总分。Codex 在科学计算上的表现更极端：三轮都是 10 分，却没有一道题三轮全过。
 
 因此在日常迭代 Agent 时，如果每次改完提示词或工具链只跑一轮、或者只盯着总分涨跌，根本分不清一次改动到底是真提分，还是“修好了 A 题、弄坏了 B 题”，很容易把随机波动当成优化成果。
 
