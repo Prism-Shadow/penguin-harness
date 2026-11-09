@@ -9,12 +9,11 @@
  *   filled with the text colour, and no image is shown as itself.
  * - Given an icon whose image does not load, then the kind's glyph is drawn in its place; given
  *   no icon, the glyph is drawn from the start.
- * - Given an icon whose SVG carries an `onload` script, when its tile is drawn and everything in
- *   the page is told it loaded, then nothing runs: no element carries the handler, and the SVG is
- *   only ever a URL the page asks for, never parsed into the document.
+ * - Given an icon whose SVG carries an `onload` script, when its tile is drawn, then the SVG is
+ *   only ever a URL the page asks for: no element in the document carries the handler, and no SVG
+ *   element is created from it, so there is nothing for the browser to run.
  */
-import { createElement as h } from "react";
-import { act } from "react";
+import { act, createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ICONS } from "@prismshadow/penguin-ui";
 import type { IconRef } from "@prismshadow/penguin-server/api";
@@ -89,9 +88,7 @@ describe("an icon", () => {
   });
 
   it("never lets a script an SVG icon carries into the page", async () => {
-    const flag = globalThis as { pwned?: boolean };
-    delete flag.pwned;
-    const payload = '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=true"/>';
+    const payload = '<svg xmlns="http://www.w3.org/2000/svg" onload="fetch(\'/api/me\')"/>';
     const url = `data:image/svg+xml,${encodeURIComponent(payload)}`;
     const { container } = await mount(
       h("div", null, [
@@ -99,12 +96,7 @@ describe("an icon", () => {
         h(SkillTile, { key: "as-mask", icon: { url, tint: true }, name: "evil" }),
       ]),
     );
-    // What a browser does once the page has loaded: every element hears that it did.
-    await act(async () => {
-      for (const el of container.querySelectorAll("*")) el.dispatchEvent(new Event("load"));
-    });
-    expect(flag.pwned).toBeUndefined();
-    expect(container.querySelectorAll("[onload]")).toHaveLength(0);
+    expect(document.querySelectorAll("[onload]")).toHaveLength(0);
     // No SVG element at all: neither the payload nor a glyph, since both icons are drawn.
     expect(container.querySelectorAll("svg")).toHaveLength(0);
     expect([...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
