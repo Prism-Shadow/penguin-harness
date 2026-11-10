@@ -29,9 +29,13 @@ export {
   INDEX_FILE,
   servedPath,
   validateThemePack,
+  type CleanlinessHit,
+  type CleanlinessRules,
+  type CleanlinessSource,
   type ThemeContract,
   type ValidatedThemePack,
 } from "./pack.js";
+export { layerOrder, layerStatement, servedVersion } from "./layers.js";
 export {
   BASE_PACK_ID,
   FONTS_MAP_FILE,

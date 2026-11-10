@@ -91,9 +91,13 @@ export interface CssParseError {
 }
 
 export interface CssParseOptions {
-  readonly positions: true;
+  readonly positions: boolean;
   readonly filename: string;
-  readonly parseCustomProperty: true;
+  readonly parseCustomProperty: boolean;
+  /** Declaration values parsed into nodes (css-tree's default) or kept as Raw. */
+  readonly parseValue?: boolean;
+  /** Rule selectors parsed into nodes (css-tree's default) or kept as Raw. */
+  readonly parseRulePrelude?: boolean;
   readonly onParseError: (error: CssParseError, fallback: CssNode | null) => void;
 }
 

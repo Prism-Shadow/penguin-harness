@@ -27,6 +27,7 @@
     "./highlighter": "./src/components/content/code-block/highlighter-core.ts",
     "./fonts-credits": "./src/fonts/credits.ts",
     "./testing": "./src/testing/index.ts",
+    "./pack-rules": "./src/testing/pack-rules.ts",
     "./site": "./src/site.ts",
     "./site.css": {
       "style": "./src/site.css",

@@ -669,7 +669,7 @@ interface AgentApiKeyInfo {
 | GET | `/api/themes/:id/export` | 任何主题包（内置或导入）的 zip 附件 |
 
 - `ThemePackDto` 是规范化后的清单（`id`、`names`、`version`、`api`、`base`、`modes`、`swatches`、`accent`、`fonts`、`avatar?`）加上 `href` 与 `v`。`v` 是主题包内容的摘要，`href` 为 `/api/themes/<id>/files/index.css?v=<v>`。因此覆盖导入改动了任何内容，两者都会变化，缓存随之失效。
-- 导入在写入任何东西之前先校验。zip 的 `pack.json` 在根目录或唯一的一层顶级目录里。zip 只可含 `tokens.css`、`recipes.css`、`accents.css`、`fonts.css`、`sections/<hook>.css`、`fonts/*.woff2`、`art/*.svg|png|webp`、`README.md`、`LICENSE*` 与 `LICENSES/*.txt`，别无其他。上限为 200 个文件、zip 16 MiB、解压后 24 MiB、样式表合计 512 KiB。每份样式表按 PRFC-0026 的语法解析，存下的是解析器重新生成的文本，从不是上传的原文。
+- 导入在写入任何东西之前先校验。zip 的 `pack.json` 在根目录或唯一的一层顶级目录里。zip 只可含 `tokens.css`、`recipes.css`、`accents.css`、`fonts.css`、`sections/<hook>.css`、`fonts/*.woff2`、`art/*.svg|png|webp`、`README.md`、`LICENSE*` 与 `LICENSES/*.txt`，别无其他。上限为 200 个文件、zip 16 MiB、解压后 24 MiB、样式表合计 512 KiB。每份样式表按 PRFC-0026 的语法解析，存下的是解析器重新生成的文本，从不是上传的原文。之后还要过「干净的底线」的静态规则（R1、R2、R5–R11），一处命中也不许有。所存的 `index.css` 不含任何属于构建的内容。提供时在前面加上 App 样式表的完整层序声明，因此它先于 App 自己的样式表加载时（重新加载后首帧脚本正是这样做的），层序不变。列表与提供时用的 `v` 合进了这一次序，Web App 构建改变了次序，地址也随之改变。
 - 拒绝：
   - `400` `theme_invalid`：`details` 为 `{file, reason, line?, column?}`，指向第一处被拒的内容。
   - `400` `theme_id_reserved`：用了内置包的 id。
@@ -680,7 +680,7 @@ interface AgentApiKeyInfo {
   - `403` `admin_required`：成员的写操作。
 - 文件响应带它的类型，以及 `X-Content-Type-Options: nosniff`、`Cache-Control: private, max-age=31536000, immutable`、`Content-Security-Policy: sandbox; default-src 'none'` 与 `Cross-Origin-Resource-Policy: same-origin`。只提供该主题包 `installed.json` 所列的文件。
 - 删除内置包返回 `400` `theme_builtin`。未导入的 id 返回 `404` `theme_not_found`，导出未知 id 亦然。
-- 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。要做自己的主题包，就导出一个，把 `pack.json` 与选择器里的 id 改成自己的，再导入。
+- 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。白领导出时不带 `recipes.css`，因为 `"base": "modern"` 的包从基准沿用白领的配方，导出的 `README.md` 写明了这一点。要做自己的主题包，就导出白领，把 `pack.json` 与选择器里的 id 改成自己的，再导入。极客会带着配方导出，配方里的干净底线命中要先清掉才能导入。
 - 主题包存在数据根的 `themes/<id>/`，每次上传的原 zip 留在 `themes/archives/`。主题包不同步到机器。
 - 每次导入、覆盖与删除，都向每个登录用户的事件流发送 `themes_changed`。
 

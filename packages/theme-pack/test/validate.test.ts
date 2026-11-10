@@ -6,6 +6,10 @@
  * - Given an accepted pack, the served stylesheet carries the tokens, recipes and section skins in
  *   `ui-theme`, the accent presets in `ui-accent` and the faces outside any layer; every url()
  *   naming a pack file points at the pack's files route at its version, and inline images stay.
+ * - Given the app sheet's layer order, the kept stylesheet holds none of it (it is the build's,
+ *   and the server puts it in front as it serves): alone, loaded before the app's sheet as after a
+ *   reload, it would move the app's layers; behind the app's statement it leaves the order the app
+ *   sheet alone sets. The served version moves with that order and only with it.
  * - Given the same pack with one value changed, it is served at another version.
  * - Given a pack breaking one rule, it is refused whole, naming the file, the line and why — one
  *   scenario per reason: a remote url(), @import, a prefix test of an input's value, !important, a
@@ -15,11 +19,22 @@
  *   the pack's own names.
  * - Given a pack written against a newer theme API, it is refused as unsupported.
  * - Given a preset pack.json lists and accents.css never declares, the pack is refused.
+ * - Given the build's clean-baseline rules, they read the stylesheets as re-emitted, in their
+ *   layers, the faces left out, and their first hit refuses the pack, naming the rule, what it says
+ *   and what it found (the rules themselves run in the server's suite, over real imports).
  * - Given stylesheets adding up past 512 KiB, the pack is refused as too large.
  */
 import { describe, expect, it } from "vitest";
-import { ThemePackError, validateThemePack } from "../src/index.js";
 import {
+  ThemePackError,
+  layerOrder,
+  layerStatement,
+  servedVersion,
+  validateThemePack,
+} from "../src/index.js";
+import {
+  APP_LAYERS,
+  APP_SHEET,
   CONTRACT,
   DOODLE_MANIFEST,
   DOODLE_RECIPES,
@@ -61,6 +76,7 @@ describe("validateThemePack", () => {
     const pack = await validateThemePack(doodlePack(), CONTRACT);
     const css = pack.indexCss;
     expect(pack.v).toMatch(/^[0-9a-f]{8}$/);
+    // The faces first, outside any layer; the build's layer order is the server's to put in front.
     expect(css.startsWith("@font-face{")).toBe(true);
     expect(css).toContain(`url(/api/themes/sketch/files/fonts/hand.woff2?v=${pack.v})`);
     expect(css).toContain(`url(/api/themes/sketch/files/art/empty.svg?v=${pack.v})`);
@@ -74,6 +90,22 @@ describe("validateThemePack", () => {
     // What is kept names the pack's files as the pack does, not where the server serves them.
     expect(decode(pack.files.get("fonts.css"))).toContain("url(fonts/hand.woff2)");
     expect(pack.served).toEqual(["index.css", "art/empty.svg", "fonts/hand.woff2"]);
+  });
+
+  it("keeps a stylesheet the app sheet's layer statement, put in front, lets load first unharmed", async () => {
+    // The order the compiled app sheet sets, a comment that names a layer not counting.
+    expect(layerOrder(APP_SHEET)).toEqual(APP_LAYERS);
+    const pack = await validateThemePack(doodlePack(), CONTRACT);
+    // After a reload the pre-paint script links the pack's sheet first: alone, it would open its
+    // layers ahead of the app's, under Tailwind's; behind the app's statement it leaves the order.
+    expect(layerOrder(pack.indexCss + APP_SHEET)).not.toEqual(APP_LAYERS);
+    const served = layerStatement(layerOrder(APP_SHEET)) + pack.indexCss;
+    expect(layerOrder(served + APP_SHEET)).toEqual(APP_LAYERS);
+    // The address moves with the order a build puts in front, and only with it.
+    expect(servedVersion(pack.v, APP_LAYERS)).toBe(servedVersion(pack.v, [...APP_LAYERS]));
+    expect(servedVersion(pack.v, ["reset", ...APP_LAYERS])).not.toBe(
+      servedVersion(pack.v, APP_LAYERS),
+    );
   });
 
   it("serves a pack with one value changed at another version", async () => {
@@ -190,6 +222,33 @@ describe("validateThemePack", () => {
     const err = await refusal(doodlePack({ "pack.json": JSON.stringify(manifest) }));
     expect(err.problem.file).toBe("accents.css");
     expect(err.problem.reason).toContain("chalk");
+  });
+
+  it("hands the build's clean-baseline rules what the browser will receive, and refuses on their first hit", async () => {
+    const seen: { file: string; css: string; layer: string | null }[] = [];
+    const rules = {
+      hits: (sources: readonly { file: string; css: string; layer: string | null }[]) => {
+        seen.push(...sources);
+        return [{ rule: "R7", file: "recipes.css", line: 1, found: ".ui-edge { padding: 4px }" }];
+      },
+      says: { R7: "the type and spacing scale moves only through tokens" },
+    };
+    const refused = await validateThemePack(doodlePack(), { ...CONTRACT, cleanliness: rules }).then(
+      () => null,
+      (e: unknown) => e as ThemePackError,
+    );
+    expect(refused?.problem).toEqual({
+      file: "recipes.css",
+      reason: "R7, the type and spacing scale moves only through tokens: .ui-edge { padding: 4px }",
+    });
+    const accepted = await validateThemePack(doodlePack(), CONTRACT);
+    expect(seen.map(({ file, layer }) => [file, layer])).toEqual([
+      ["tokens.css", "ui-theme"],
+      ["recipes.css", "ui-theme"],
+      ["sections/empty.css", "ui-theme"],
+      ["accents.css", "ui-accent"],
+    ]);
+    for (const { file, css } of seen) expect(css, file).toBe(decode(accepted.files.get(file)));
   });
 
   it("refuses stylesheets adding up past 512 KiB as too large", async () => {

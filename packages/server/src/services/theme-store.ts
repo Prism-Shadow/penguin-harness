@@ -16,10 +16,19 @@
  * it in with a rename, so a reader sees one pack or the other, never half of each; writes are
  * taken one at a time.
  *
+ * Nothing stored holds a fact of the build. `index.css` is served with the served app sheet's
+ * cascade layer order in front (read once per build), so it may load before the app's sheet, as
+ * the pre-paint script loads it after a reload; and the version a pack is listed and served at
+ * mixes that order into the content's `v` (`servedVersion`), so a build that changes the order
+ * moves every pack's address and no browser keeps a sheet cached under the old one. A URL's bytes
+ * change only with the build, and the list hands out the new URL with it, which is why the files
+ * stay `immutable` under their version.
+ *
  * The built-in packs are the build's: their sources travel inside the Web App's files (the UI
  * package's Vite plugin writes `themes/<id>/` and each pack's `fonts.json`), so a built-in exports
  * from the very build this server serves, offline, and the base pack among them says which theme
- * API and which token names an import is checked against.
+ * API and which token names an import is checked against. The clean baseline's rules (R1, R2,
+ * R5–R11) come from the UI package's own table, and an import may hit none of them.
  */
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -34,6 +43,9 @@ import {
   THEME_PACK_ID,
   builtinExportFiles,
   contractOfBase,
+  layerOrder,
+  layerStatement,
+  servedVersion,
   parseFontsMap,
   parseManifest,
   readPackArchive,
@@ -44,6 +56,9 @@ import {
   type ThemeContract,
   type ThemePackManifest,
 } from "@prismshadow/penguin-theme-pack";
+// The clean baseline's rule table, the one the UI package's de-slop suite runs over the built-in
+// packs: an import is held to it with no hit allowed. Inlined by the build (tsup.config.ts).
+import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
 import type { ThemePackDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { WebFiles } from "../workbenches/ui-runtime.js";
@@ -92,6 +107,26 @@ function webFile(source: WebFiles, rel: string): Uint8Array | undefined {
   }
 }
 
+/**
+ * The served app's own stylesheets: the files `index.html` links, by their path in the Web App's
+ * files. The page's scripts are left out first — the pre-paint script writes a pack's link from a
+ * string, which is no stylesheet of the app's. A build names its sheets by a digest of their
+ * content, so the list changes whenever a sheet does.
+ */
+function appSheets(source: WebFiles): string[] {
+  const html = webFile(source, "index.html");
+  if (html === undefined) return [];
+  const page = new TextDecoder().decode(html).replace(/<script\b[\s\S]*?<\/script>/gi, "");
+  const sheets: string[] = [];
+  for (const [tag] of page.matchAll(/<link\b[^>]*>/gi)) {
+    if (!/\brel=["']?stylesheet\b/i.test(tag)) continue;
+    const href = /\bhref=["']?([^"'\s>]+)/i.exec(tag)?.[1];
+    if (href === undefined || !href.startsWith("/") || href.startsWith("//")) continue;
+    sheets.push(href.slice(1).split(/[?#]/)[0]!);
+  }
+  return sheets;
+}
+
 /** Every file under `dir`, by its `/`-separated path in it. */
 async function readTree(
   dir: string,
@@ -121,6 +156,8 @@ async function writeTree(
 
 export class ThemeStore {
   private writes: Promise<unknown> = Promise.resolve();
+  /** The served build's layer order, and the sheet list it was read from. */
+  private layers: { key: string; order: readonly string[] } | null = null;
 
   constructor(private readonly deps: ThemeStoreDeps) {}
 
@@ -193,7 +230,10 @@ export class ThemeStore {
     return folder;
   }
 
-  /** The theme contract of the served build, read from its base pack. */
+  /**
+   * The theme contract of the served build: the API and token names its base pack declares, the
+   * clean baseline's rules, and the cascade layer order its own stylesheet sets.
+   */
   private contract(source: WebFiles): ThemeContract {
     const manifest = webFile(source, `${BUILTIN_DIR}/${BASE_PACK_ID}/${MANIFEST_FILE}`);
     const tokens = webFile(source, `${BUILTIN_DIR}/${BASE_PACK_ID}/tokens.css`);
@@ -204,7 +244,26 @@ export class ThemeStore {
         "This server's Web App build carries no theme pack sources, so a pack cannot be checked against it.",
       );
     }
-    return contractOfBase(manifest, new TextDecoder().decode(tokens));
+    return {
+      ...contractOfBase(manifest, new TextDecoder().decode(tokens)),
+      cleanliness: { hits: packRuleHits, says: PACK_RULES },
+    };
+  }
+
+  /**
+   * The cascade layers the served app's stylesheets name, in the order they first name each, read
+   * once per build: kept against the list of sheets `index.html` links, whose names change with
+   * their content. A pack's `index.css` is served with this order in front (layers.ts), so the
+   * stored file holds nothing a later build could make wrong.
+   */
+  private servedLayers(source: WebFiles): readonly string[] {
+    const sheets = appSheets(source);
+    const key = sheets.join("\n");
+    if (this.layers?.key !== key) {
+      const css = sheets.map((sheet) => new TextDecoder().decode(webFile(source, sheet)));
+      this.layers = { key, order: layerOrder(css.join("\n")) };
+    }
+    return this.layers.order;
   }
 
   /** Ids no import may take: the reserved names, the served build's packs, the archive folder. */
@@ -258,30 +317,38 @@ export class ThemeStore {
     } catch {
       return [];
     }
+    const layers = this.servedLayers(this.deps.webFiles());
     const packs: { at: string; dto: ThemePackDto }[] = [];
     for (const name of names.sort()) {
       const pack = await this.installed(name);
       if (pack !== null)
         packs.push({
           at: pack.record.installedAt,
-          dto: ThemeStore.dto(pack.manifest, pack.record.v),
+          dto: ThemeStore.dto(pack.manifest, servedVersion(pack.record.v, layers)),
         });
     }
     return packs.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).map((pack) => pack.dto);
   }
 
-  /** A file an imported pack serves, or null: only what its `installed.json` lists. */
+  /**
+   * A file an imported pack serves, or null: only what its `installed.json` lists. `index.css` is
+   * served with the served build's layer order in front of what is stored.
+   */
   async served(id: string, rel: string): Promise<Uint8Array | null> {
     const pack = await this.installed(id);
     if (pack === null || !pack.record.files.includes(rel)) return null;
     const base = path.join(this.dir, id);
     const abs = path.resolve(base, ...rel.split("/"));
     if (!abs.startsWith(base + path.sep)) return null;
+    let bytes: Uint8Array;
     try {
-      return await fsp.readFile(abs);
+      bytes = await fsp.readFile(abs);
     } catch {
       return null;
     }
+    if (rel !== INDEX_FILE) return bytes;
+    const statement = layerStatement(this.servedLayers(this.deps.webFiles()));
+    return Buffer.concat([Buffer.from(statement), bytes]);
   }
 
   /**
@@ -356,7 +423,7 @@ export class ThemeStore {
       if (previous !== null && previous.record.archive !== archive) {
         await fsp.rm(path.join(archives, previous.record.archive), { force: true });
       }
-      return ThemeStore.dto(pack.manifest, pack.v);
+      return ThemeStore.dto(pack.manifest, servedVersion(pack.v, this.servedLayers(source)));
     });
   }
 

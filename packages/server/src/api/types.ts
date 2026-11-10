@@ -5498,9 +5498,10 @@ export interface ThemePackAccentPreset {
 /**
  * An imported pack as the picker and the pre-paint cache read it: its normalised manifest
  * (`pack.json`), plus where its stylesheet is served and at which version. `v` is a digest of
- * the pack's content, so it changes when a replace changes anything and a cached stylesheet
- * misses; `href` is `/api/themes/<id>/files/index.css?v=<v>`, which the browser builds from `id`
- * and `v` itself before the first paint.
+ * the pack's content and of the cascade layer order the served Web App build puts in front of its
+ * stylesheet, so it changes when a replace changes anything, or a new build changes that order,
+ * and a cached stylesheet misses; `href` is `/api/themes/<id>/files/index.css?v=<v>`, which the
+ * browser builds from `id` and `v` itself before the first paint.
  */
 export interface ThemePackDto {
   /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */

@@ -14,10 +14,13 @@
  *   families, and the font files — MiSans among them, which may not be offered on its own — are
  *   not handed out;
  * - the base pack (Frost) writes its values on the bare root and its recipes under
- *   `data-theme-base="modern"`, so every pack starts from them. Exported, those selectors are
+ *   `data-theme-base="modern"`, so every pack starts from them. Exported, its selectors are
  *   scoped to its id like any other pack's, `:root[data-theme="modern"]`, and the person renames
  *   that id with the rest. The rewrite edits the selector text in place, so the export keeps the
- *   source's comments and layout.
+ *   source's comments and layout. Its recipes stay behind, and a README says why: a copy built
+ *   on `base: "modern"` takes them from the base. So Frost, exported and renamed, imports as it
+ *   is. A pack on the foundation alone (Console) exports its recipes, which carry the
+ *   clean-baseline hits the built-ins are allowed; an import of it clears them first.
  */
 import {
   childrenOf,
@@ -102,31 +105,58 @@ export function rescopeBase(source: string, id: string): string {
   return out;
 }
 
+/** What the base pack's export says in its README about the recipes it leaves behind. */
+const BASE_EXPORT_NOTE = `## Where the recipes are
+
+This export of Frost carries its token values and accent presets, not its hook recipes. A pack
+whose \`pack.json\` says \`"base": "modern"\` takes Frost's recipes from the base, so it needs no
+copy of them.
+
+To make it a pack of your own, change \`id\` in \`pack.json\`, and the same id in each
+\`:root[data-theme="${BASE_PACK_ID}"]\` selector of \`tokens.css\` and \`accents.css\`. Change
+\`names\` and the values you want, then zip the folder and import it.
+`;
+
 /**
  * A built-in pack's export form, from its folder as the build carries it (its fonts already
  * resolved from `fonts.json` to `fonts/<path>`).
+ *
+ * The base pack leaves its `recipes.css` behind, and its README says so: a renamed copy still
+ * says `base: "modern"` and takes those recipes from the base, so a copy would add nothing — and
+ * the recipes carry the clean-baseline hits the built-ins are allowed and an import is not.
  */
 export function builtinExportFiles(id: string, folder: ReadonlyMap<string, Uint8Array>): PackFiles {
   const ownFonts = [...folder.keys()].some((path) => path.startsWith("fonts/"));
+  const base = id === BASE_PACK_ID;
   const out: PackFiles = new Map();
   for (const [path, bytes] of [...folder].sort(([a], [b]) => (a < b ? -1 : 1))) {
     if (BUILD_ONLY.has(path) || (path === "fonts.css" && !ownFonts)) continue;
-    if (id === BASE_PACK_ID && SCOPED_SHEETS.test(path)) {
+    if (base && path === "recipes.css") continue;
+    if (base && SCOPED_SHEETS.test(path)) {
       const text = new TextDecoder().decode(bytes);
       out.set(path, new TextEncoder().encode(rescopeBase(text, id)));
     } else {
       out.set(path, bytes);
     }
   }
+  if (base) {
+    const readme = out.get("README.md");
+    const lead = readme === undefined ? "# Frost\n\n" : `${new TextDecoder().decode(readme)}\n`;
+    out.set("README.md", new TextEncoder().encode(`${lead}${BASE_EXPORT_NOTE}`));
+  }
   return out;
 }
 
 /**
- * The theme contract a build implements, read from its base pack: the API its manifest targets
- * (the UI package's suite holds every built-in to the build's own number) and the `--ui-*` names
- * its tokens declare (the base declares every contract name: it is the fallback for all of them).
+ * What a build's base pack says of its theme contract: the API its manifest targets (the UI
+ * package's suite holds every built-in to the build's own number) and the `--ui-*` names its
+ * tokens declare (the base declares every contract name: it is the fallback for all of them).
+ * The clean-baseline rules are code, not data, and the caller adds them.
  */
-export function contractOfBase(manifest: Uint8Array, tokensCss: string): ThemeContract {
+export function contractOfBase(
+  manifest: Uint8Array,
+  tokensCss: string,
+): Pick<ThemeContract, "api" | "tokens"> {
   const { api } = parseManifest(manifest);
   const tokens = new Set<string>();
   const visit = (node: CssNode) => {

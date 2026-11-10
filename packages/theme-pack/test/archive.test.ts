@@ -12,8 +12,9 @@
  *   the version is the same.
  * - Given the base pack's folder (Frost's bare root and base-keyed recipes, the build's
  *   index.css, a fonts.css over the app's shared faces), its export form scopes every rule to its
- *   id with the source's comments kept, leaves the build's files behind, and passes the
- *   validator under the contract the base declares; a pack with fonts of its own keeps them.
+ *   id with the source's comments kept, leaves the build's files and its recipes behind with a
+ *   README saying the recipes come from the base, and passes the validator under the contract the
+ *   base declares; a pack with fonts of its own keeps them.
  */
 import { describe, expect, it } from "vitest";
 import { zipSync } from "fflate";
@@ -22,6 +23,7 @@ import {
   builtinExportFiles,
   contractOfBase,
   readPackArchive,
+  rescopeBase,
   validateThemePack,
   writePackArchive,
 } from "../src/index.js";
@@ -169,19 +171,21 @@ describe("the built-in packs' export form", () => {
       ],
     ]);
 
-  it("scopes the base's rules to its id, keeps its comments, and leaves the build's files behind", async () => {
+  it("scopes the base's rules to its id, keeps its comments, and leaves the build's files and its recipes behind", async () => {
     const files = builtinExportFiles("modern", baseFolder());
     expect([...files.keys()].sort()).toEqual([
+      "README.md",
       "accents.css",
       "pack.json",
-      "recipes.css",
       "tokens.css",
     ]);
     const tokens = decode(files.get("tokens.css"));
     expect(tokens).toContain("/* Frost's values, on the bare root. */");
     expect(tokens).toContain(':root[data-theme="modern"] {');
     expect(tokens).toContain(':root[data-theme="modern"].dark {');
-    expect(decode(files.get("recipes.css"))).toContain(
+    expect(decode(files.get("README.md"))).toContain('`"base": "modern"` takes Frost\'s recipes');
+    // A base-keyed recipe, wherever one sits, is scoped to the pack's id the same way.
+    expect(rescopeBase(decode(baseFolder().get("recipes.css")), "modern")).toContain(
       ':root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream',
     );
     const contract = contractOfBase(
@@ -189,7 +193,9 @@ describe("the built-in packs' export form", () => {
       decode(baseFolder().get("tokens.css")),
     );
     expect(contract.api).toBe(1);
-    await expect(validateThemePack(files, contract)).resolves.toMatchObject({
+    await expect(
+      validateThemePack(files, { ...contract, cleanliness: null }),
+    ).resolves.toMatchObject({
       manifest: { id: "modern" },
     });
   });
