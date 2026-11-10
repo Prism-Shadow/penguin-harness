@@ -257,10 +257,13 @@ jobs:
           retention-days: 7
       # Layout the component library only shows in a real engine, measured in the gallery: list
       # rows keep their actions inside the card, attachment tiles keep their image's shape. Run by
-      # the job that tests the gallery (the plan's `gallery`), against its own dev server, in the
-      # Chromium the setup step installed alongside the build.
+      # the job that tests the gallery (the plan's `gallery`), against the gallery its build step
+      # built (GALLERY_SERVE=build: a third of the dev server's time), in the Chromium the setup
+      # step installed alongside the build.
       - name: Component layout checks (ui-gallery)
         if: matrix.gallery
+        env:
+          GALLERY_SERVE: build
         run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
       - name: Gallery layout failure diagnostics
         if: failure() && matrix.gallery
