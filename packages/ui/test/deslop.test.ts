@@ -19,10 +19,8 @@
  * The rules §3 leaves to review — two badges per row, spacing steps per kind of child, nesting
  * across components, copy voice — are not here; the frontend skill carries them.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { THEME_IDS, THEME_MODES } from "../src/tokens";
+import { THEME_MODES } from "../src/tokens";
 import {
   DESLOP_CHECKS,
   DESLOP_RULE_NUMBERS,
@@ -32,11 +30,12 @@ import {
   TABULAR_COMPONENTS,
   allowlistProblems,
   analyzeFile,
-  analyzeThemeFile,
+  analyzePack,
   deslopHits,
   isClassShaped,
   matchesPolicyPath,
   modeDeclarations,
+  packFolders,
   parseClassToken,
   scanSourceRoots,
   unscannedRoots,
@@ -162,13 +161,11 @@ describe("theme values the rules reach", () => {
   // heading rung reaches a mono face only by reading `--ui-font-ui`, so a theme that wants mono
   // titles says so once, in the face, and a component still never writes `font-mono` on a label
   // (rule 16). The reading face stays proportional in every theme: prose is not set in mono.
-  const themes = THEME_IDS.map((id) => {
-    const rel = `themes/${id}.css`;
-    const path = join(SRC_DIR, rel);
-    const analysis: ThemeFileAnalysis | null = existsSync(path)
-      ? analyzeThemeFile(readFileSync(path, "utf8"), id)
-      : null;
-    return { id, rel, analysis };
+  // Every pack folder, not the registry's list: a pack's values are held to the rules the moment
+  // its folder exists.
+  const themes = packFolders().map((id) => {
+    const analysis: ThemeFileAnalysis | null = analyzePack(id);
+    return { id, rel: `themes/${id}/`, analysis };
   });
   const MONO = /--ui-font-mono|monospace/;
   for (const { id, rel, analysis } of themes) {

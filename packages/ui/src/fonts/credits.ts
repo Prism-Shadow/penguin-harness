@@ -83,7 +83,7 @@ export const FONT_CREDITS: readonly FontCredit[] = [
     licenseText: ibmPlexSans,
   },
   {
-    // Declared in `fonts/geek.css` and named by no theme since Console's uppercase condensed h1
+    // Declared in Console's `fonts.css` and named by no theme since its uppercase condensed h1
     // went; its files still ship until the dependency is dropped, so it is still credited.
     id: "ibm-plex-sans-condensed",
     family: "IBM Plex Sans Condensed",

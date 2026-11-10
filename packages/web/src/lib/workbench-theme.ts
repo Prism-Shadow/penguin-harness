@@ -31,9 +31,9 @@
  * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
 import {
-  DEFAULT_THEME_ID,
-  THEME_IDS,
+  INITIAL_THEME_ID,
   TOKEN_NAMES,
+  isThemeId,
   resolveAccent,
   type ThemeId,
 } from "@prismshadow/penguin-ui";
@@ -86,13 +86,16 @@ const LEGACY_THEME_VARS = [
 export const WORKBENCH_THEME_VARS: readonly string[] = [...TOKEN_NAMES, ...LEGACY_THEME_VARS];
 
 /**
- * Root attributes copied to the frame. `data-theme` is always written (the app leaves it off
- * for the stylesheet's fallback theme, which a page has no stylesheet to fall back to);
- * `data-accent` names the preset actually painted and is absent when the theme's own accent
- * shows; `data-font-latin` / `data-font-cjk` are absent when the theme's own faces apply.
+ * Root attributes copied to the frame. `data-theme` is always written, as the app writes it;
+ * `data-theme-base` is copied as the app's root carries it (`modern` for a pack built on Frost,
+ * absent for one on the foundation alone), so the shared components' stylesheet in a page
+ * compiled from TSX draws the same recipes as the app; `data-accent` names the preset actually
+ * painted and is absent when the theme's own accent shows; `data-font-latin` / `data-font-cjk`
+ * are absent when the theme's own faces apply.
  */
 export const WORKBENCH_THEME_ATTRS = [
   "data-theme",
+  "data-theme-base",
   "data-accent",
   "data-font-latin",
   "data-font-cjk",
@@ -119,7 +122,7 @@ interface AppRoot {
 
 function themeIdOf(root: AppRoot): ThemeId {
   const id = root.getAttribute("data-theme");
-  return (THEME_IDS as readonly string[]).includes(id ?? "") ? (id as ThemeId) : DEFAULT_THEME_ID;
+  return isThemeId(id) ? id : INITIAL_THEME_ID;
 }
 
 /**
@@ -140,7 +143,7 @@ export function readAppTheme(
   const attrs: WorkbenchTheme["attrs"] = { "data-theme": themeId };
   const accent = resolveAccent(themeId, root.getAttribute("data-accent"));
   if (accent !== null) attrs["data-accent"] = accent;
-  for (const name of ["data-font-latin", "data-font-cjk"] as const) {
+  for (const name of ["data-theme-base", "data-font-latin", "data-font-cjk"] as const) {
     const value = root.getAttribute(name);
     if (value !== null && value !== "") attrs[name] = value;
   }

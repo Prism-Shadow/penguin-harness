@@ -5,10 +5,10 @@
  *
  * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
  * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
- * tokens (body colours and fonts, focus ring, selection, scrollbars); each `themes/*.css` holds
- * one theme's values, including the gray bridge the palette classes below resolve through. This
- * file keeps what is the app's own: the brand scale, layout invariants, animations and the
- * unlayered content rules.
+ * tokens (body colours and fonts, focus ring, selection, scrollbars); each theme pack's
+ * `themes/<id>/index.css` holds one theme's values, including the gray bridge the palette classes
+ * below resolve through, the base pack (Frost) first. This file keeps what is the app's own: the
+ * brand scale, layout invariants, animations and the unlayered content rules.
  *
  * Stacking: every z-index names a layer of the UI package's scale (`z-<layer>`, layers.css), whose
  * header holds the order. Chrome (top bar, navigation) creates no stacking context; each window
@@ -17,9 +17,9 @@
  */
 @import "tailwindcss";
 @import "@prismshadow/penguin-ui/theme.css";
-@import "@prismshadow/penguin-ui/themes/github.css";
-@import "@prismshadow/penguin-ui/themes/modern.css";
-@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/themes/modern/index.css";
+@import "@prismshadow/penguin-ui/themes/github/index.css";
+@import "@prismshadow/penguin-ui/themes/geek/index.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 
 /* Tailwind scans the Vite root only: the package's components carry class strings too. The test

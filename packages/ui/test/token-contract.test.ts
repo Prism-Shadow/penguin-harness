@@ -1,17 +1,19 @@
 /**
- * The token contract (src/tokens.ts): every theme × mode defines every name — the base rule plus
- * that mode's own, the dark rule declaring only what dark changes — and nothing else is a token.
+ * The token contract (src/tokens.ts) over every theme pack (src/themes/<id>/): the base pack,
+ * Frost, and every pack on the foundation alone define every name in every mode — the base rule
+ * plus that mode's own, the dark rule declaring only what dark changes — a pack built on Frost
+ * declares only contract names, and nothing else is a token. Each pack's manifest is held to its
+ * own CSS: it is what the tables in tokens.ts and boot.ts and every picker read.
  *
- * Components read tokens by name and never ask which theme is active, so a name one theme leaves
+ * Components read tokens by name and never ask which theme is active, so a name the base leaves
  * out does not fail loudly anywhere — the property is simply unset, the utility that reads it
  * computes to its initial value, and a surface turns transparent or a label falls back to the
- * browser's serif in that one theme and mode only. The theme files are parsed here and diffed
- * against the contract so that gap is a named test failure instead of a screenshot someone has to
- * notice.
+ * browser's serif. The packs are parsed here and diffed against the contract so that gap is a
+ * named test failure instead of a screenshot someone has to notice.
  *
- * A theme file that does not exist yet, or is still the skeleton's stub (its header says `Stub:`
- * and it declares no `--ui-*` property), is reported as a skipped, named case — never as a pass.
- * The moment a file declares a single token, the whole contract applies to it.
+ * A pack that is still the skeleton's stub (its header says `Stub:` and it declares no `--ui-*`
+ * property) is reported as a skipped, named case — never as a pass. The moment a pack declares a
+ * single token, the whole contract applies to it.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,26 +26,35 @@ import {
   THEME_FONTS,
 } from "../src/boot";
 import {
-  ACCENT_PRESETS,
-  DEFAULT_THEME_ID,
+  BUILTIN_PACKS,
+  INITIAL_THEME_ID,
   STREAM_REVEALS,
   THEME_ACCENT_PRESETS,
+  THEME_API,
   THEME_IDS,
   THEME_MODES,
   THEME_OWN_ACCENTS,
   TOKEN_GROUPS,
   TOKEN_NAMES,
+  builtinPack,
+  isThemeId,
 } from "../src/tokens";
-import type { ThemeId } from "../src/tokens";
+import type { ThemeId, ThemePackManifest } from "../src/tokens";
 import {
+  THEMES_DIR,
   accentProblems,
   analyzeFile,
-  analyzeThemeFile,
+  analyzePack,
   contractProblems,
   darkRepeats,
   matchesPolicyPath,
   modeDeclarations,
+  packFolders,
+  parseColor,
   parseCssRules,
+  readPackManifest,
+  readPackSources,
+  resolveThemeValue,
   scanSourceRoots,
   stripCssComments,
   unscannedRoots,
@@ -56,12 +67,8 @@ type ThemeState =
   | { id: ThemeId; file: string; status: "pending"; reason: string };
 
 function themeState(id: ThemeId): ThemeState {
-  const file = `src/themes/${id}.css`;
-  const path = join(SRC_DIR, "themes", `${id}.css`);
-  if (!existsSync(path)) {
-    return { id, file, status: "pending", reason: "the file does not exist yet" };
-  }
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const file = `src/themes/${id}/`;
+  const analysis = analyzePack(id);
   if (analysis.isStub) {
     return {
       id,
@@ -75,6 +82,134 @@ function themeState(id: ThemeId): ThemeState {
 
 const THEMES = THEME_IDS.map(themeState);
 const read = (rel: string) => readFileSync(join(SRC_DIR, rel), "utf8");
+/** Every rule of a pack, across its stylesheets. */
+const packRules = (id: string) =>
+  readPackSources(join(THEMES_DIR, id)).flatMap((source) => parseCssRules(source.css));
+const PRIMER: ThemeId = "github";
+const filled = (id: ThemeId) => {
+  const theme = THEMES.find((entry) => entry.id === id);
+  if (theme === undefined || theme.status !== "filled") throw new Error(`${id} is filled`);
+  return theme.analysis;
+};
+/** A pack the contract holds to every name: the base itself, or one on the foundation alone. */
+const complete = (id: ThemeId) => id === INITIAL_THEME_ID || builtinPack(id).base === "foundation";
+
+describe("the pack folders", () => {
+  it("are the registry's built-ins, one folder each, and each manifest names its folder", () => {
+    // A folder the registry does not import is a theme the app never offers; a registered id
+    // with no folder has no CSS behind it.
+    expect(packFolders()).toEqual([...THEME_IDS].sort());
+    for (const id of packFolders()) {
+      expect((readPackManifest(join(THEMES_DIR, id)) as { id?: unknown }).id, id).toBe(id);
+      expect(existsSync(join(THEMES_DIR, id, "index.css")), `${id}/index.css`).toBe(true);
+    }
+    expect(BUILTIN_PACKS.map((pack) => pack.id)).toEqual([...THEME_IDS]);
+    expect(isThemeId("modern")).toBe(true);
+    expect(isThemeId("toString")).toBe(false);
+  });
+
+  it("hold the base, Frost, which is the theme a browser starts in and builds on itself", () => {
+    expect(builtinPack(INITIAL_THEME_ID).base).toBe("modern");
+    expect(builtinPack(INITIAL_THEME_ID).base).toBe(INITIAL_THEME_ID);
+  });
+
+  it("serve every stylesheet through index.css in its layer, and write no layer themselves", () => {
+    // The layer is the pack's place in the cascade, and an imported pack never chooses it: the
+    // server serves its files in the layers the base and the packs are served in here.
+    for (const id of packFolders()) {
+      const layered = id === INITIAL_THEME_ID ? "ui-base" : "ui-theme";
+      const sources = readPackSources(join(THEMES_DIR, id));
+      const served = Object.fromEntries(
+        sources.filter((source) => source.file !== "index.css").map((s) => [s.file, s.layer]),
+      );
+      expect(served["tokens.css"], `${id} tokens.css`).toBe(layered);
+      expect(served["accents.css"], `${id} accents.css`).toBe("ui-accent");
+      if ("recipes.css" in served) expect(served["recipes.css"], `${id} recipes.css`).toBe(layered);
+      for (const source of sources) {
+        expect(stripCssComments(source.css), `${id}/${source.file}`).not.toMatch(/@layer\b/);
+      }
+    }
+  });
+
+  for (const pack of BUILTIN_PACKS) {
+    it(`${pack.id}: the manifest is well formed, targets this build's theme API and names what its CSS sets`, () => {
+      const problems = manifestProblems(pack);
+      expect(problems, `src/themes/${pack.id}/pack.json`).toEqual([]);
+    });
+  }
+});
+
+/**
+ * Whether two spellings name one colour: within one step of 255 per channel, so a hex swatch
+ * matches the `oklch()` it was converted from.
+ */
+const sameColor = (a: string, b: string | null) => {
+  const x = parseColor(a);
+  const y = b === null ? null : parseColor(b);
+  return (
+    x !== null &&
+    y !== null &&
+    Math.abs(x.r - y.r) <= 1 &&
+    Math.abs(x.g - y.g) <= 1 &&
+    Math.abs(x.b - y.b) <= 1 &&
+    Math.abs(x.a - y.a) <= 0.01
+  );
+};
+
+/** The family a font stack names first, unquoted. */
+const firstFamily = (stack: string | null | undefined) =>
+  (stack ?? "")
+    .split(",")[0]!
+    .trim()
+    .replace(/^["']|["']$/g, "");
+
+/**
+ * What a manifest says that its CSS does not: the shape the registry's type promises, the theme
+ * API, the swatches and the theme's own accent against the values the pack resolves to, and the
+ * faces against the family each stack names first. The presets are `accentProblems`' (below).
+ */
+function manifestProblems(pack: ThemePackManifest): string[] {
+  const problems: string[] = [];
+  if (pack.api !== THEME_API)
+    problems.push(`api is ${pack.api}; this build implements ${THEME_API}`);
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(pack.id)) problems.push(`id ${pack.id} is not a pack id`);
+  if (!pack.names.zh || !pack.names.en) problems.push("names needs zh and en");
+  if (!/^\d+\.\d+\.\d+$/.test(pack.version)) problems.push(`version ${pack.version} is not semver`);
+  if (pack.base !== "modern" && pack.base !== "foundation") problems.push(`base is ${pack.base}`);
+  if (pack.modes.join(",") !== THEME_MODES.join(",")) problems.push(`modes are ${pack.modes}`);
+  const id = pack.id as ThemeId;
+  const base = analyzePack(INITIAL_THEME_ID);
+  const theme = analyzePack(id);
+  for (const mode of THEME_MODES) {
+    const swatch = pack.swatches[mode];
+    for (const [part, token] of [
+      ["canvas", "--ui-canvas"],
+      ["ink", "--ui-fg"],
+      ["accent", "--ui-accent"],
+    ] as const) {
+      const value = resolveThemeValue(token, mode, theme, base);
+      if (!/^#[0-9a-f]{6}$/.test(swatch[part]) || !sameColor(swatch[part], value)) {
+        problems.push(`swatches.${mode}.${part} ${swatch[part]} is not ${token} (${value})`);
+      }
+    }
+    if (!/^#[0-9a-f]{6}$/.test(pack.accent.own[mode])) {
+      problems.push(`accent.own.${mode} ${pack.accent.own[mode]} is not a hex colour`);
+    }
+  }
+  for (const [role, token] of [
+    ["sans", "--ui-font-sans"],
+    ["ui", "--ui-font-ui"],
+    ["mono", "--ui-font-mono"],
+    ["cjk", "--ui-font-cjk"],
+    ["display", "--ui-font-display"],
+  ] as const) {
+    const first = firstFamily(resolveThemeValue(token, "light", theme, base));
+    if (pack.fonts[role] !== first) {
+      problems.push(`fonts.${role} is ${pack.fonts[role]}; ${token} names ${first} first`);
+    }
+  }
+  return problems;
+}
 
 describe("the contract itself", () => {
   it("lists each name once, every one a --ui-* custom property", () => {
@@ -92,11 +227,14 @@ describe("the contract itself", () => {
   });
 });
 
-describe("theme files", () => {
-  it("exist for the default theme, which every other theme's cascade falls back on", () => {
-    // Skipping a stub is for themes still being written; the default file's absence would leave
-    // every <html> with no tokens at all.
-    expect(existsSync(join(SRC_DIR, "themes", `${DEFAULT_THEME_ID}.css`))).toBe(true);
+describe("theme packs", () => {
+  it("include the base, complete in both modes: a name it leaves out is unset in every pack", () => {
+    // Skipping a stub is for themes still being written; the base is every pack's fallback, so
+    // a hole in it is a hole in every pack that leaves the name to it.
+    const base = filled(INITIAL_THEME_ID);
+    for (const mode of THEME_MODES) {
+      expect(contractProblems(base, mode), `Frost (${mode})`).toEqual([]);
+    }
   });
 
   for (const theme of THEMES) {
@@ -105,18 +243,21 @@ describe("theme files", () => {
       continue;
     }
     const { analysis } = theme;
+    const whole = complete(theme.id);
+    const layer = theme.id === INITIAL_THEME_ID ? "ui-base" : "ui-theme";
 
     describe(theme.file, () => {
-      it("declares its tokens in the two canonical rules, inside @layer ui-theme, once each", () => {
+      it(`declares its tokens in the two canonical rules, served in @layer ${layer}, once each`, () => {
         expect(analysis.structure).toEqual([]);
       });
 
       for (const mode of THEME_MODES) {
         const rules = mode === "light" ? "the base rule" : "the base rule plus the dark rule";
-        it(`defines every contract name in ${mode} mode (${rules}), and nothing outside the contract`, () => {
+        const scope = whole ? "every contract name" : "contract names only";
+        it(`defines ${scope} in ${mode} mode (${rules}), and nothing outside the contract`, () => {
           expect(
-            contractProblems(analysis, mode),
-            `${theme.file} (${mode}: ${rules}) must declare exactly the names in tokens.ts`,
+            contractProblems(analysis, mode, { complete: whole }),
+            `${theme.file} (${mode}: ${rules}) must declare ${whole ? "exactly" : "only"} the names in tokens.ts`,
           ).toEqual([]);
         });
       }
@@ -131,11 +272,13 @@ describe("theme files", () => {
         ).toEqual([]);
       });
 
-      it("declares the accent presets tokens.ts lists for it, each setting accent names only", () => {
+      it("declares the accent presets its manifest lists, each setting accent names only", () => {
         // A preset is the one rule outside the canonical two that may set a token: the accent
         // names, on the theme's own root, in `@layer ui-accent`; a dark rule lifts what dark
-        // changes. The ids and their order are the picker's, so tokens.ts and the file agree.
-        expect(accentProblems(analysis, ACCENT_PRESETS[theme.id])).toEqual([]);
+        // changes. The ids and their order are the picker's, so the manifest and the CSS agree.
+        expect(
+          accentProblems(analysis, builtinPack(theme.id).accent.presets, filled(INITIAL_THEME_ID)),
+        ).toEqual([]);
       });
     });
   }
@@ -213,7 +356,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
   };
 
   it("keeps Primer's five ids and light values byte for byte, and lifts only rose in dark", () => {
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     expect([...THEME_ACCENT_PRESETS.github]).toEqual(Object.keys(PRIMER_TODAY));
     for (const [id, values] of Object.entries(PRIMER_TODAY)) {
@@ -250,7 +393,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     const sheet = read("theme.css");
     const presets = parseCssRules(sheet).filter((rule) => /data-accent=/.test(rule.selector));
     expect(presets.map((rule) => `${rule.line}: ${rule.selector}`)).toEqual([]);
-    expect(stripCssComments(sheet)).toMatch(/@layer ui-theme, ui-accent, ui-font;/);
+    expect(stripCssComments(sheet)).toMatch(/@layer ui-base, ui-theme, ui-accent, ui-font;/);
   });
 
   it("is one value per mode in Frost and Console: the family derives from --ui-accent", () => {
@@ -258,7 +401,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     // restates hover, active, wash and line — the theme derives them — and keeps the theme's
     // label ink for the mode. Primer's presets stay literal (the check above pins them).
     for (const theme of THEMES) {
-      if (theme.status !== "filled" || theme.id === DEFAULT_THEME_ID) continue;
+      if (theme.status !== "filled" || theme.id === PRIMER) continue;
       for (const [id, rules] of theme.analysis.accents) {
         expect([...rules.light.keys()], `${theme.id} ${id} light`).toEqual(["--ui-accent"]);
         // A dark rule lifts the accent and nothing else; a preset that holds across modes
@@ -364,7 +507,7 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
       "--ui-field-label-w",
       "--ui-field-gap",
     ]);
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     // Today's file tree: a 0.5rem inset and 0.875rem per level.
     expect(primer.analysis.modes.light.get("--ui-tree-inset")).toBe("0.5rem");
@@ -388,7 +531,7 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
   });
 
   it("keeps Primer at today's rendering: Tailwind's stock unit and rungs, one face, no field", () => {
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
     expect(light.get("--ui-space-unit")).toBe("0.25rem");
@@ -457,7 +600,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
   });
 
   it("keeps Primer's light ink, lines and switch on today's rungs, reads in the platform's faces, and moves only its dark", () => {
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
     // The rungs are the ones the app always drew, on Tailwind's stock gray bridge.
@@ -533,7 +676,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     // The three eyebrow recipes were one recipe reading the h6 rung; a theme adds only its ink.
     const rules = parseCssRules(read("theme.css"));
     const eyebrow = rules.find((rule) => rule.selector === ".ui-eyebrow");
-    expect(eyebrow?.atRules).toEqual(["@layer ui-theme"]);
+    expect(eyebrow?.atRules).toEqual(["@layer ui-base"]);
     expect(eyebrow?.declarations.map((d) => `${d.name}: ${d.value}`)).toEqual([
       "font-family: var(--ui-h6-font)",
       "font-size: var(--ui-h6-size)",
@@ -547,9 +690,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
       "color: var(--ui-fg-emphasis)",
     ]);
     for (const id of THEME_IDS) {
-      const own = parseCssRules(read(`themes/${id}.css`)).filter((rule) =>
-        /\.ui-eyebrow\b/.test(rule.selector),
-      );
+      const own = packRules(id).filter((rule) => /\.ui-eyebrow\b/.test(rule.selector));
       for (const rule of own) {
         expect(
           rule.declarations.map((d) => d.name),
@@ -583,7 +724,7 @@ describe("the update mark (W1, 2026-09-30)", () => {
   });
 
   it("keeps Primer's pale notification red, one value in both modes", () => {
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     expect(primer.analysis.modes.light.get("--ui-mark-new")).toBe("oklch(70.4% 0.191 22.216)");
     expect(primer.analysis.modes.dark.has("--ui-mark-new")).toBe(false);
@@ -628,7 +769,7 @@ describe("the chart style tokens (round 7)", () => {
     // A Primer change of the theme work (2026-09-30): amber, sky, emerald, teal and orange
     // move from their 500 steps (2.2–2.9:1 on white) to the 600 steps the app's dark series
     // already used; violet, rose and fuchsia clear 3:1 at 500 and stay.
-    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    const primer = THEMES.find((theme) => theme.id === PRIMER);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
     expect(light.get("--ui-chart-1")).toBe("oklch(60.6% 0.25 292.717)"); // violet-500
@@ -786,7 +927,7 @@ describe("the themes' own faces (round 6)", () => {
       cjk: "Noto Sans SC",
       mono: "JetBrains Mono",
     });
-    const mono = parseCssRules(read("themes/geek.css"))
+    const mono = packRules("geek")
       .filter((rule) =>
         rule.declarations.some((d) => d.name === "font-family" && /--ui-font-mono/.test(d.value)),
       )
@@ -808,27 +949,25 @@ describe("the themes' own faces (round 6)", () => {
 });
 
 describe("theme import order", () => {
-  // In dark, a theme takes every token its dark rule leaves out from its own base rule. That base
-  // rule ties with github.css's dark rule (`:root.dark`) on specificity and wins only by coming
-  // later in the sheet, so an entry stylesheet must import github.css before the other themes:
-  // the other way round, Frost and Console in dark would take Primer's dark values for those
-  // tokens.
+  // Every entry stylesheet compiles every built-in pack into its one sheet, the base first: a
+  // pack left out is a theme the picker offers and nothing paints, and the base opens the order
+  // the other packs' rules are read in. Nothing is fetched at run time for a built-in.
   const GALLERY = join(REPO_ROOT, "packages", "ui-gallery");
   const entries: Record<string, string> = {
     web: join(WEB_DIR, "src", "styles.css"),
+    published: join(SRC_DIR, "..", "scripts", "styles.entry.css"),
     ...(existsSync(GALLERY) ? { gallery: join(GALLERY, "src", "styles.css") } : {}),
   };
-  const IMPORT = /@import\s+["']@prismshadow\/penguin-ui\/themes\/([\w-]+)\.css["']/g;
+  const IMPORT =
+    /@import\s+["'](?:@prismshadow\/penguin-ui|\.\.\/src)\/themes\/([\w-]+)\/index\.css["']/g;
 
   for (const [name, file] of Object.entries(entries)) {
-    it(`${name}: imports every theme once, the default (${DEFAULT_THEME_ID}.css) first`, () => {
-      const themes = [...stripCssComments(readFileSync(file, "utf8")).matchAll(IMPORT)].map(
+    it(`${name}: imports every built-in pack once, the base (${INITIAL_THEME_ID}) first`, () => {
+      const packs = [...stripCssComments(readFileSync(file, "utf8")).matchAll(IMPORT)].map(
         (m) => m[1],
       );
-      expect(themes[0], `${file} imports its themes as ${themes.join(", ")}`).toBe(
-        DEFAULT_THEME_ID,
-      );
-      expect([...themes].sort()).toEqual([...THEME_IDS].sort());
+      expect(packs[0], `${file} imports its packs as ${packs.join(", ")}`).toBe(INITIAL_THEME_ID);
+      expect([...packs].sort()).toEqual([...THEME_IDS].sort());
     });
   }
 });
