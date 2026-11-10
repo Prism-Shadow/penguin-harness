@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** feat
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1531](https://github.com/Prism-Shadow/penguin-harness/pull/1531)
 
 [English](2026-11-10-theme-doodle.md)
 
