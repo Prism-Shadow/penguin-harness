@@ -719,7 +719,7 @@ describe("the rule checks, on known shapes", () => {
     expect(
       tsx('<i className="bg-gray-100 dark:bg-surface text-white" style={{ color: "#2563eb" }} />'),
     ).toEqual(["20:bg-gray-100", "20:dark:bg-surface", "20:text-white", "20:#2563eb"]);
-    expect(found("tokens.ts", 'export const C = "#2563eb";')).toEqual([]);
+    expect(found("avatar.ts", 'export const C = "#2563eb";')).toEqual([]);
     expect(found("screens/p.tsx", 'export const L = "trace file #001";')).toEqual([]);
     expect(
       found("x.tsx", 'export const X = () => <i className="bg-gray-100" />;', PALETTE_OK),
