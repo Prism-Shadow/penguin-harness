@@ -11,9 +11,10 @@ import type {
 } from "@prismshadow/penguin-core";
 import {
   effectiveConnection,
-  modelEnvPreviewKey,
   providerConnectionShape,
+  type ProviderConnection,
 } from "@prismshadow/penguin-core";
+import { modelEnvPreviewKey } from "../../model-catalog/env-keys.js";
 import { maskApiKey } from "../i18n.js";
 
 function alignColumns<K extends string>(
@@ -39,24 +40,29 @@ function sourceMark(source: ConnectionSource): string {
 
 /**
  * The key a row is used with, masked: its own, its group's (marked `(provider)`), or — with
- * neither — the environment variable the models page would show for it (modelEnvPreviewKey on
- * the effective endpoint, the same narrowing the server's preview applies), marked `(env)`
+ * neither — the variable MMSP's routed client reads (modelEnvPreviewKey, which the server's
+ * preview reads too: only for no base URL or the client's own default endpoint), marked `(env)`
  * when that variable is set. `-` when there is none.
  */
 function displayedKey(
   entry: ModelEntry,
   effective: EffectiveConnection,
+  group: ProviderConnection | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
   if (effective.apiKeySource !== "none") {
     return `${maskApiKey(effective.apiKey)}${sourceMark(effective.apiKeySource)}`;
   }
-  const envKey = modelEnvPreviewKey({
-    provider: entry.provider,
-    modelId: entry.model_id,
-    clientType: effective.clientType,
-    baseUrl: effective.baseUrl,
-  });
+  const envKey = modelEnvPreviewKey(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: entry.base_url,
+      apiKey: entry.api_key,
+    },
+    providerConnectionShape(group),
+  );
   const value = envKey !== undefined ? env[envKey]?.trim() : undefined;
   return value ? `${maskApiKey(value)} (env)` : maskApiKey(undefined);
 }
@@ -100,7 +106,7 @@ export function formatModelRows(
       pricing: entry.pricing
         ? `price=${entry.pricing.cache_read}/${entry.pricing.cache_write}/${entry.pricing.output}`
         : "",
-      api_key: `api_key=${displayedKey(entry, effective, env)}`,
+      api_key: `api_key=${displayedKey(entry, effective, cfg.providers?.[entry.provider], env)}`,
       base_url: effective.baseUrl
         ? `base_url=${effective.baseUrl}${sourceMark(effective.baseUrlSource)}`
         : "",
