@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   BACKGROUND_STORAGE_KEYS,
   BOOT_SCRIPT,
+  STATIC_BOOT_SCRIPT,
   BOOT_WALLPAPER_PROPERTIES,
   DEFAULT_TEXT_SIZE,
   FONT_CJK_OPTIONS,
@@ -119,10 +120,17 @@ const snapshot = (root: FakeRoot, storage: { map: Map<string, string> }) => ({
  * script leaks no global — a case below holds that — so runs cannot see each other.)
  */
 const compiled = new Script(BOOT_SCRIPT);
+/** The static sites' variant, with no cached-pack branch. */
+const compiledStatic = new Script(STATIC_BOOT_SCRIPT);
 const context = createContext({ document: {}, localStorage: {}, matchMedia: () => ({}) });
 
 /** Runs the script against the given storage and system preference. */
-function runBoot(stored: Record<string, string | null>, systemDark: boolean, throwing = false) {
+function runBoot(
+  stored: Record<string, string | null>,
+  systemDark: boolean,
+  throwing = false,
+  script = compiled,
+) {
   const root = fakeRoot();
   const localStorage = fakeStorage(stored, throwing);
   context.document = { documentElement: root };
@@ -130,7 +138,7 @@ function runBoot(stored: Record<string, string | null>, systemDark: boolean, thr
   context.matchMedia = (query: string) => ({
     matches: query === "(prefers-color-scheme: dark)" && systemDark,
   });
-  compiled.runInContext(context);
+  script.runInContext(context);
   return snapshot(root, localStorage);
 }
 
@@ -198,13 +206,19 @@ describe("BOOT_SCRIPT", () => {
                       [THEME_STORAGE_KEYS.fontCjk]: cjk,
                     };
                     cases++;
-                    const boot = runBoot(stored, systemDark);
-                    const provider = viaProvider(stored, systemDark);
-                    if (JSON.stringify(boot) !== JSON.stringify(provider)) {
-                      mismatches.push(
-                        `${JSON.stringify(stored)} system=${systemDark ? "dark" : "light"}: ` +
-                          `boot ${JSON.stringify(boot)} vs provider ${JSON.stringify(provider)}`,
-                      );
+                    const provider = JSON.stringify(viaProvider(stored, systemDark));
+                    // The static sites' variant paints the same wherever no pack is cached.
+                    for (const [name, script] of [
+                      ["BOOT_SCRIPT", compiled],
+                      ["STATIC_BOOT_SCRIPT", compiledStatic],
+                    ] as const) {
+                      const boot = JSON.stringify(runBoot(stored, systemDark, false, script));
+                      if (boot !== provider) {
+                        mismatches.push(
+                          `${name} ${JSON.stringify(stored)} system=${systemDark ? "dark" : "light"}: ` +
+                            `boot ${boot} vs provider ${provider}`,
+                        );
+                      }
                     }
                   }
     expect(cases).toBeGreaterThan(10_000);
@@ -313,14 +327,16 @@ describe("BOOT_SCRIPT", () => {
     });
   });
 
-  it("leaves no global behind", () => {
-    const context: Record<string, unknown> = {
-      document: { documentElement: fakeRoot() },
-      localStorage: fakeStorage({}),
-      matchMedia: () => ({ matches: false }),
-    };
-    runInNewContext(BOOT_SCRIPT, context);
-    expect(Object.keys(context).sort()).toEqual(["document", "localStorage", "matchMedia"]);
+  it("leaves no global behind, nor does the static sites' variant", () => {
+    for (const script of [BOOT_SCRIPT, STATIC_BOOT_SCRIPT]) {
+      const context: Record<string, unknown> = {
+        document: { documentElement: fakeRoot() },
+        localStorage: fakeStorage({}),
+        matchMedia: () => ({ matches: false }),
+      };
+      runInNewContext(script, context);
+      expect(Object.keys(context).sort()).toEqual(["document", "localStorage", "matchMedia"]);
+    }
   });
 });
 
@@ -438,6 +454,27 @@ describe("a cached imported pack", () => {
       expect(painted).toMatchObject({ theme: INITIAL_THEME_ID, themeBase: "modern", writes: [] });
       // The stored choice is left as it is: the reader never writes it back.
       expect(painted.stored[THEME_STORAGE_KEYS.themeId]).toBe("sakura");
+    }
+  });
+
+  it("is never linked by the static sites' script, which has no theme server to link from", () => {
+    // The gallery's frames are a static site: a cached pack there would point at an /api/themes
+    // the site does not have. The static script paints the initial theme, takes only built-in
+    // presets, and writes nothing into the head.
+    for (const list of lists) {
+      const root = fakeRoot();
+      const writes: string[] = [];
+      context.document = { documentElement: root, write: (html: string) => void writes.push(html) };
+      context.localStorage = fakeStorage({
+        [THEME_STORAGE_KEYS.themePacks]: list,
+        [THEME_STORAGE_KEYS.themeId]: "sakura",
+        [THEME_STORAGE_KEYS.accent]: "petal",
+      });
+      context.matchMedia = () => ({ matches: false });
+      compiledStatic.runInContext(context);
+      expect(writes, `${list}`).toEqual([]);
+      expect(root.dataset.theme, `${list}`).toBe(INITIAL_THEME_ID);
+      expect(root.dataset.accent, `${list}`).toBeUndefined();
     }
   });
 
