@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1517](https://github.com/Prism-Shadow/penguin-harness/pull/1517)
 
 [English](2026-11-10-vibe-coding-rewrite.md)
 
