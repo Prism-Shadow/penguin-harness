@@ -200,6 +200,8 @@ export * from "./runtime/goal-events.js";
 export * from "./services/session-deletion.js";
 export * from "./services/agent-deletion.js";
 export * from "./services/organization-deletion.js";
+export * from "./services/agent-export.js";
+export * from "./services/agent-zip.js";
 export * from "./http/sse.js";
 export * from "./socket/stream-answer.js";
 export * from "./http/media-type.js";

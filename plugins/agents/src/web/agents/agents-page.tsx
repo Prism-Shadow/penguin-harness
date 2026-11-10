@@ -145,6 +145,10 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The header's "Import agent" dialog. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The card whose export icon opened the export dialog. */
+  const [exporting, setExporting] = useState<PlacedAgent | null>(null);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -595,6 +599,19 @@ export function AgentsPage() {
               className="text-gray-600 dark:text-gray-300"
             />
           </Button>
+          <Button
+            size="icon"
+            title={offReason ?? S.agent.exportAgent}
+            aria-label={S.agent.exportAgent}
+            disabled={!reachable}
+            onClick={() => setExporting({ agent: a, on })}
+          >
+            <GlyphIcon
+              d={ICONS.download}
+              size={ICON_SIZE.iconButton}
+              className="text-gray-600 dark:text-gray-300"
+            />
+          </Button>
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -655,6 +672,10 @@ export function AgentsPage() {
               />
             </div>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.agent.importAgent}
+            </Button>
           </>
         }
       >
@@ -738,8 +759,29 @@ export function AgentsPage() {
           .filter((list) => list.machine.link === "connected")
           .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
+        onImport={() => {
+          setCreateOpen(false);
+          setImportOpen(true);
+        }}
         onCreated={onCreated}
       />
+
+      {projectId && importOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          machineId={null}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+      {projectId && exporting !== null && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={exporting.agent.agentId}
+          agentName={agentDisplayName(exporting.agent)}
+          machineId={exporting.on?.machine.machineId ?? null}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

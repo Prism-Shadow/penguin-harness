@@ -120,9 +120,6 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // process's cwd instead of being rejected.
       directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
-    // Optional snapshot seed: the new Agent starts from an exported package instead of the
-    // default template (the service rejects combining it with seeding).
-    const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,
@@ -130,7 +127,6 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       description,
       plugins,
       directory,
-      archive,
     );
     const agent: AgentSummary = {
       ...item,

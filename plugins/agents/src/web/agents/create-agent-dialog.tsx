@@ -2,8 +2,9 @@
  * The Agents page's "Create Agent" dialog (agents-page.tsx): name + id + description, and what
  * the new Agent starts with — plugins from the library (each one's skills, hook package and MCP
  * servers), and Skills from a project directory's .agents/skills or .claude/skills — through
- * form-variant dropdowns over the shared multi-select panel, with select all / select none; or,
- * instead of those, an exported snapshot package. A plain new Agent otherwise starts with none.
+ * form-variant dropdowns over the shared multi-select panel, with select all / select none. A
+ * plain new Agent otherwise starts with none; one from an exported file is the page's "Import
+ * agent", which the footer points to.
  * A picked plugin with a stdio MCP server asks before the Agent is created, showing the command
  * it runs on this server.
  *
@@ -13,7 +14,7 @@
  * only while the dialog is open, so every opening starts empty — the spec's 「创建弹窗不留草稿」.
  * A rejection from the server lands under the id, and the dialog stays open as it was.
  */
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   AgentCreateRequest,
@@ -22,13 +23,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  CloseIcon,
   ConfirmModal,
   FieldError,
   FieldHint,
   FieldLabel,
   FormPicker,
-  HiddenFileInput,
   ICONS,
   Input,
   Modal,
@@ -77,12 +76,6 @@ interface CreateAgentDraft {
   skillsDir: string;
   /** The Skills picked from that directory. */
   dirSkills: string[];
-  /**
-   * Snapshot package to initialize the new Agent from (null = default template). Picking one
-   * hides the two seed fields: the package carries its own skills and hooks, and the server
-   * rejects the combination.
-   */
-  snapshot: File | null;
 }
 
 const EMPTY: CreateAgentDraft = {
@@ -92,26 +85,14 @@ const EMPTY: CreateAgentDraft = {
   plugins: [],
   skillsDir: "",
   dirSkills: [],
-  snapshot: null,
 };
 
-/**
- * What Create would send, for the dirty comparison: the text trimmed, and the picked package by
- * what identifies it (two `File`s have no fields of their own to compare).
- */
+/** What Create would send, for the dirty comparison: the text trimmed. */
 const normalizeCreate = (draft: CreateAgentDraft) => ({
   ...draft,
   name: draft.name.trim(),
   agentId: draft.agentId.trim(),
   description: draft.description.trim(),
-  snapshot:
-    draft.snapshot === null
-      ? null
-      : {
-          name: draft.snapshot.name,
-          size: draft.snapshot.size,
-          lastModified: draft.snapshot.lastModified,
-        },
 });
 
 export interface CreateAgentDialogProps {
@@ -135,6 +116,7 @@ function CreateAgentForm({
   library,
   libraryError,
   onClose,
+  onImport,
   onCreated,
 }: CreateAgentDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeCreate });
@@ -144,6 +126,8 @@ function CreateAgentForm({
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  /** Over to the import dialog: what was filled in here goes nowhere with it, so it asks first. */
+  const requestImport = useGuardedClose(onImport ?? onClose, form.scope, { locked: busy });
   const [pluginsOpen, setPluginsOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
@@ -156,23 +140,6 @@ function CreateAgentForm({
   const idValid = SEMANTIC_ID_PATTERN.test(id);
   // The id rule is named once something is typed into the box; an empty one has its asterisk.
   const idError = refused ?? (id !== "" && !idValid ? S.agent.idHint : undefined);
-
-  const onPickSnapshot = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    // Seeding and the package are mutually exclusive; drop any picks made before. Suggest the id
-    // from the package name (exported as <agentId>-v<n>.tar.gz) while the field is still empty;
-    // the suggestion stays editable, an unusable derivation is dropped.
-    const derived = agentIdFromSnapshotName(file.name);
-    form.patch({
-      snapshot: file,
-      plugins: [],
-      skillsDir: "",
-      dirSkills: [],
-      ...(!agentId.trim() && SEMANTIC_ID_PATTERN.test(derived) ? { agentId: derived } : {}),
-    });
-  };
 
   // Re-read whenever the picked directory changes. A directory that carries no Skills answers with
   // an empty list, which the field states in place of its hint rather than treating as a failure.
@@ -216,12 +183,9 @@ function CreateAgentForm({
   }, [dirSkills, setDraft]);
 
   /** The picked seed plugins that carry a stdio MCP server: creating the Agent runs their commands on this server. */
-  const stdioSeeds =
-    snapshotFile === null
-      ? (library ?? []).filter(
-          (plugin) => plugins.includes(plugin.name) && stdioServers(plugin).length > 0,
-        )
-      : [];
+  const stdioSeeds = (library ?? []).filter(
+    (plugin) => plugins.includes(plugin.name) && stdioServers(plugin).length > 0,
+  );
 
   /** `confirmed`: the stdio confirmation was answered, or nothing picked asks for one. */
   const create = async (confirmed = false) => {
@@ -240,20 +204,14 @@ function CreateAgentForm({
       const body: AgentCreateRequest = { agentId: id };
       if (name.trim()) body.name = name.trim();
       if (description.trim()) body.description = description.trim();
-      if (snapshotFile !== null) {
-        // Initialize from the picked package; seeding is mutually exclusive (the package
-        // carries its own skills and hooks), and picking the file already cleared those fields.
-        body.dataBase64 = await fileToBase64(snapshotFile);
-      } else {
-        // Picked plugins are seeded server-side inside the same create call, so a failure leaves
-        // no half-equipped Agent behind.
-        if (plugins.length > 0) body.plugins = plugins;
-        // The pair only means anything together, so it is sent only when a directory actually
-        // contributed something — picking a directory and then no Skills from it is a plain Agent.
-        if (skillsDir && pickedDirSkills.length > 0) {
-          body.skillsDirectory = skillsDir;
-          body.directorySkills = pickedDirSkills;
-        }
+      // Picked plugins are seeded server-side inside the same create call, so a failure leaves
+      // no half-equipped Agent behind.
+      if (plugins.length > 0) body.plugins = plugins;
+      // The pair only means anything together, so it is sent only when a directory actually
+      // contributed something — picking a directory and then no Skills from it is a plain Agent.
+      if (skillsDir && pickedDirSkills.length > 0) {
+        body.skillsDirectory = skillsDir;
+        body.directorySkills = pickedDirSkills;
       }
       const res = await api.createAgent(projectId, body);
       // Created: nothing typed is unsaved any more. Forgotten now rather than when the dialog
@@ -276,6 +234,14 @@ function CreateAgentForm({
         onClose={requestClose}
         footer={
           <>
+            {onImport !== undefined && (
+              <p className="mr-auto flex flex-wrap items-center gap-x-2 text-xs text-fg-muted">
+                <span>{S.agent.createFromFileHint}</span>
+                <Button size="sm" variant="link" onClick={requestImport}>
+                  {S.agent.importAgent}
+                </Button>
+              </p>
+            )}
             <Button size="sm" onClick={requestClose}>
               {S.common.cancel}
             </Button>
@@ -323,85 +289,102 @@ function CreateAgentForm({
             value={description}
             onChange={(e) => form.patch({ description: e.target.value })}
           />
-          {/* Optional snapshot seed: the new Agent starts from an exported package instead of
-            the default template. Picking one hides the two seed fields below — the package
-            carries its own skills and hooks, and the server rejects the combination. */}
+          {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
+          model and workspace pickers) over the shared multi-select panel, so a dialog field
+          and the composer's dropdown offer one list with one set of row semantics. */}
           <div>
-            <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
-            {snapshotFile === null ? (
-              <label
-                className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput
-                  accept={SNAPSHOT_ACCEPT}
-                  disabled={busy}
-                  onChange={onPickSnapshot}
-                />
-                {S.agent.createSnapshotPick}
-              </label>
+            <FieldLabel>{S.agent.createPlugins}</FieldLabel>
+            <FormPicker
+              size="sm"
+              open={pluginsOpen}
+              setOpen={setPluginsOpen}
+              label={
+                plugins.length === 0
+                  ? S.agent.createPluginsPlaceholder
+                  : S.agent.createPluginsPicked(plugins.length)
+              }
+              muted={plugins.length === 0}
+              ariaLabel={S.agent.createPlugins}
+              disabled={busy}
+              menuClass="w-[26rem]"
+            >
+              <SkillPickList
+                skills={library ?? []}
+                selected={plugins}
+                onToggle={(pluginName) =>
+                  setDraft((d) => ({ ...d, plugins: toggleSkillName(d.plugins, pluginName) }))
+                }
+                onSelectAll={(names) =>
+                  setDraft((d) => ({ ...d, plugins: addSkillNames(d.plugins, names) }))
+                }
+                onSelectNone={(names) =>
+                  setDraft((d) => ({ ...d, plugins: removeSkillNames(d.plugins, names) }))
+                }
+                emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
+                searchPlaceholder={S.plugins.searchPlaceholder}
+              />
+            </FormPicker>
+            {libraryError ? (
+              <FieldError>{libraryError}</FieldError>
             ) : (
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
-                  {snapshotFile.name}
-                </span>
-                <button
-                  type="button"
-                  data-tooltip={S.agent.createSnapshotClear}
-                  aria-label={S.agent.createSnapshotClear}
-                  disabled={busy}
-                  onClick={() => form.patch({ snapshot: null })}
-                  className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <CloseIcon size={12} />
-                </button>
-              </div>
+              <FieldHint>{S.agent.createPluginsHint}</FieldHint>
             )}
-            <FieldHint>
-              {snapshotFile === null ? S.agent.createSnapshotHint : S.agent.createSnapshotSkillsOff}
-            </FieldHint>
           </div>
-          {snapshotFile === null && (
-            <>
-              {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
-              model and workspace pickers) over the shared multi-select panel, so a dialog field
-              and the composer's dropdown offer one list with one set of row semantics. */}
-              <div>
-                <FieldLabel>{S.agent.createPlugins}</FieldLabel>
+          {/* Skills a checkout already carries: pick the project directory, then pick from what
+          its .agents/skills / .claude/skills hold. Separate from the library field because a
+          directory Skill may share a library plugin's Skill name and still be the one installed. */}
+          <div>
+            <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
+            <WorkspaceSelect
+              // Keyed by the location: a picker browsing one server is not reused for another.
+              key={location ?? HERE}
+              projectId={projectId ?? ""}
+              workspace={skillsDir}
+              onChange={(next) => form.patch({ skillsDir: next })}
+              machineId={location}
+              chooseMachine={false}
+              variant="form"
+              fieldLabel={S.agent.createDirSkills}
+              emptyLabel={S.agent.createDirSkillsPick}
+              clearLabel={S.agent.createDirSkillsClear}
+            />
+            {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
+              <div className="mt-2">
                 <FormPicker
                   size="sm"
-                  open={pluginsOpen}
-                  setOpen={setPluginsOpen}
+                  open={dirSkillsOpen}
+                  setOpen={setDirSkillsOpen}
                   label={
-                    plugins.length === 0
-                      ? S.agent.createPluginsPlaceholder
-                      : S.agent.createPluginsPicked(plugins.length)
+                    pickedDirSkills.length === 0
+                      ? S.agent.createSkillsPlaceholder
+                      : S.agent.createSkillsPicked(pickedDirSkills.length)
                   }
-                  muted={plugins.length === 0}
-                  ariaLabel={S.agent.createPlugins}
+                  muted={pickedDirSkills.length === 0}
+                  ariaLabel={S.agent.createDirSkills}
                   disabled={busy}
                   menuClass="w-[26rem]"
                 >
                   <SkillPickList
-                    skills={library ?? []}
-                    selected={plugins}
-                    onToggle={(pluginName) =>
-                      setDraft((d) => ({ ...d, plugins: toggleSkillName(d.plugins, pluginName) }))
+                    skills={dirSkills}
+                    selected={pickedDirSkills}
+                    onToggle={(skillName) =>
+                      setDraft((d) => ({
+                        ...d,
+                        dirSkills: toggleSkillName(d.dirSkills, skillName),
+                      }))
                     }
                     onSelectAll={(names) =>
-                      setDraft((d) => ({ ...d, plugins: addSkillNames(d.plugins, names) }))
+                      setDraft((d) => ({ ...d, dirSkills: addSkillNames(d.dirSkills, names) }))
                     }
                     onSelectNone={(names) =>
-                      setDraft((d) => ({ ...d, plugins: removeSkillNames(d.plugins, names) }))
+                      setDraft((d) => ({
+                        ...d,
+                        dirSkills: removeSkillNames(d.dirSkills, names),
+                      }))
                     }
-                    emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
-                    searchPlaceholder={S.plugins.searchPlaceholder}
+                    emptyHint={S.agent.createDirSkillsEmpty}
                   />
                 </FormPicker>
-                {libraryError ? (
-                  <FieldError>{libraryError}</FieldError>
-                ) : (
-                  <FieldHint>{S.agent.createPluginsHint}</FieldHint>
-                )}
               </div>
               {/* Skills a checkout already carries: pick the project directory, then pick from what
               its .agents/skills / .claude/skills hold. Separate from the library field because a

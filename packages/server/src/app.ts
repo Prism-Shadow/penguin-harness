@@ -23,6 +23,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -514,7 +516,13 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
+    // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+    const size = isAgentImport(c.req.method, c.req.path)
+      ? MAX_PACKAGE_BYTES
+      // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+      : isAgentImport(c.req.method, c.req.path)
+        ? MAX_PACKAGE_BYTES
+        : bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,

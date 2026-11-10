@@ -5,17 +5,16 @@
  * the package's fake server.
  *
  * - On an Agent's API tab: turning the API off, opening it to keyless callers, and deleting a key.
- * - On an Agent's Overview tab: importing an Agent State package over the Agent's own.
  * - In the server's Settings: turning the Agent API, Chrome connections and company mode off for
  *   every user.
  *
- * (A workbench's restore is agent-workbenches.test.ts's.)
+ * (A workbench's restore is agent-workbenches.test.ts's; replacing an Agent's State from a file is
+ * agent-archive-dialogs.test.ts's.)
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
 import type { AgentApiKeyInfo } from "@prismshadow/penguin-server/api";
 import { ApiTab } from "../src/features/agents/api-tab";
-import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { AgentApiSection } from "../src/features/settings/agent-api-section";
 import { ChromeExtensionSection } from "../src/features/settings/chrome-extension-section";
 import { CompanySection } from "../src/features/settings/company-section";
@@ -31,7 +30,7 @@ import {
   topDialog,
 } from "./helpers/agent-app";
 import { adminSettingsServer } from "./helpers/admin-settings";
-import { button, click, mount, pickFile, switchNamed, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, mount, switchNamed, unmountAll, waitFor } from "./helpers/dom";
 import type { FetchRequest } from "./helpers/fetch";
 
 const KEY: AgentApiKeyInfo = {
@@ -61,13 +60,6 @@ async function apiTab(): Promise<Writes> {
     at: `/agents/${AGENT_ID}?tab=api`,
   });
   await waitFor(() => document.querySelector('button[role="switch"]') !== null);
-  return () => server.writes();
-}
-
-async function overview(): Promise<Writes> {
-  const server = agentServer();
-  await mountAgentApp(h(AgentSettingsPage), { at: `/agents/${AGENT_ID}?tab=overview` });
-  await waitFor(() => document.body.textContent?.includes(en.agent.importSnapshot) === true);
   return () => server.writes();
 }
 
@@ -108,17 +100,6 @@ const ACTIONS: Action[] = [
     press: () => click(button(`${en.agent.apiDeleteKey} ${KEY.name}`)),
     confirm: en.common.delete,
     write: { method: "DELETE", path: `${AGENT_PATH}/api/keys/${KEY.keyId}` },
-  },
-  {
-    name: "importing an Agent State package over the Agent's own",
-    open: overview,
-    press: async () => {
-      const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
-      await pickFile(input, new File(["package"], "agent.zip", { type: "application/zip" }));
-      await waitFor(() => document.querySelector('[role="dialog"]') !== null);
-    },
-    confirm: en.agent.importSnapshot,
-    write: { method: "POST", path: `${AGENT_PATH}/import` },
   },
   {
     name: "turning the Agent API off for every user",

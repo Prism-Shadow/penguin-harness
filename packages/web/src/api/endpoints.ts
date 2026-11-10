@@ -13,8 +13,7 @@ import type {
   AgentCreateResponse,
   AgentHooksResponse,
   AgentMcpServersResponse,
-  AgentImportRequest,
-  AgentImportResponse,
+  AgentArchiveImportResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -1973,11 +1972,41 @@ export const benchmarkCaseFileUrl = (
   );
 };
 
-// Agent State snapshot export / import ------------------------------------------------------
+// Agent zip export / import ----------------------------------------------------------------
 
 /** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
 export const agentExportUrl = (projectId: string, agentId: string): string =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`;
+
+/**
+ * The zip export with its parts query; a browser-followed URL, so the proxy prefix is in it
+ * (downloadArchive fetches it).
+ */
+export const agentArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  parts: Record<string, string>,
+  machineId: string | null,
+): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/archive?${new URLSearchParams(parts).toString()}${machineId ? `&server=${encodeURIComponent(machineId)}` : ""}`;
+
+/**
+ * Uploads an Agent zip (or an older `.tar.gz`) as it is: a new Agent `agentId`, or with
+ * `overwrite` (owners only) the State of the existing one. A taken id without it is 409
+ * `agent_exists`, the id in `details.agentId`.
+ */
+export const importAgentArchive = (
+  projectId: string,
+  file: Blob,
+  target: { agentId: string; overwrite: boolean },
+  machineId: string | null,
+) =>
+  apiFetch<AgentArchiveImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/import?agentId=` +
+      `${encodeURIComponent(target.agentId)}${target.overwrite ? "&overwrite=1" : ""}`,
+    { method: "POST", body: file, server: machineId },
+  );
 
 export const importAgent = (projectId: string, agentId: string, body: AgentImportRequest) =>
   apiFetch<AgentImportResponse>(

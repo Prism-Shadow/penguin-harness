@@ -678,11 +678,10 @@ export class AgentService implements AgentLifecycle {
    * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all.
    *
-   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
-   * it instead of the default template (explicit name/description override the package's
-   * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
-   * package carries its own skills and hooks. An invalid package fails the whole creation
-   * inside the same cleanup window, leaving no empty Agent behind.
+   * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
+   * description and version instead of the template's, and its Traces land once the State is
+   * in. An invalid package fails the whole creation inside the same cleanup window, leaving no
+   * empty Agent behind.
    */
   async createAgent(
     projectId: string,
@@ -691,20 +690,13 @@ export class AgentService implements AgentLifecycle {
     description?: string,
     pluginNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
-    archive?: Buffer,
+    archive?: AgentPackage,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
-      );
-    }
-    if (archive !== undefined && (pluginNames?.length || directory)) {
-      throw new HttpError(
-        400,
-        "snapshot_with_plugins",
-        "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
       );
     }
     const taken =
@@ -729,23 +721,8 @@ export class AgentService implements AgentLifecycle {
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       if (archive !== undefined) {
-        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
-        // version confirmation: both guards protect existing State, and this Agent has
-        // none yet — its template state is not worth preserving.
-        await this.snapshots.importArchive(projectId, agentId, archive, {
-          confirm: true,
-          preSnapshot: false,
-        });
-        // Explicit name/description override the package's values; absent ones keep them.
-        // No id fallback here: the package is the identity being copied in.
-        if (name !== undefined || description !== undefined) {
-          await this.agentConfig.updateConfig(projectId, agentId, {
-            config: {
-              ...(name !== undefined ? { name } : {}),
-              ...(description !== undefined ? { description } : {}),
-            },
-          });
-        }
+        // No pre-import snapshot: it protects existing State, and this Agent has none yet.
+        await this.snapshots.importArchive(projectId, agentId, archive, { preSnapshot: false });
       } else {
         await this.agentConfig.updateConfig(projectId, agentId, {
           config: { name: displayName, ...(description !== undefined ? { description } : {}) },

@@ -248,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 发布准备" --json
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent export` 与 `agent import` 以 Agent 目录的 zip 搬运 Agent，见 [penguin agent export 与 import](#penguin-agent-export-与-import)。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -267,6 +267,23 @@ penguin agent create --agent-id <id> [options]
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export 与 import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` 把 Agent 保存为 `<agent-id>-<yyyymmdd>.zip`（或 `--out` 指定的文件），缺省与 Web App 的导出弹窗相同：除定时任务外的全部部件，不含 Trace。`--traces last:<N>` 取最近活跃的 N 个 Session（1~500），各自连同它启动的 Subagent 会话；`--traces 2026-10-01..2026-10-31` 取这些日期目录中的 Session。密钥保险柜从不进包。见[导出和导入 Agent](/agents#导出和导入-agent)。
+
+`import` 原样上传 zip，或在 1.0 之前也接受 `.tar.gz` 快照包。目录即 Agent 目录，含 `agent_state/` 以及（如有）`traces/`，以目录名为顶层打成 zip，不含 `node_modules` 与 `.git`。id 取 `--agent-id`，没有则取 zip 的顶层目录名或目录名。id 已被占用时拒绝并提示如何覆盖：`--overwrite` 先写一份备份快照，再替换该 Agent 的 State，仅 Project owner 可用。命令打印新建还是覆盖、版本，以及因本服务器已有而跳过的 Session。
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api

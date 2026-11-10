@@ -69,24 +69,23 @@ export abstract class AgentConfig {
   ): Promise<VaultResponse>;
 }
 
+/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
+export interface AgentPackage {
+  bytes: Buffer<ArrayBufferLike>;
+  /** Given the package's `traces/` once its State is in place, before the staging goes. */
+  landTraces?: (dir: string) => Promise<void>;
+}
+
 /** Snapshots: the mechanism SnapshotService implements. */
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract ensureSnapshot(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string }>;
-  abstract exportArchive(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string; fileName: string }>;
   abstract importArchive(
     projectId: string,
     agentId: string,
-    archive: Buffer<ArrayBufferLike>,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }>;
+    pkg: AgentPackage,
+    opts: { preSnapshot: boolean },
+  ): Promise<{ version: number; backup?: string }>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -189,7 +188,7 @@ export abstract class AgentLifecycle {
     description?: string,
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
-    archive?: Buffer<ArrayBufferLike>,
+    archive?: AgentPackage,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

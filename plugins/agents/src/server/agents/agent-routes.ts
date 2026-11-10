@@ -8,6 +8,7 @@ import { memoryRoutes } from "../memory.js";
 import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
 import { agentSkillsRoutes } from "../skills.js";
 import { agentTransferRoutes } from "../agent-transfer.js";
+import { agentArchiveRoutes } from "./agent-archive.js";
 import { agentTracesRoutes } from "@penguinharness/plugin-usage/server";
 import { agentApiRoutes } from "../agent-api.js";
 
@@ -19,8 +20,8 @@ import type { Traces } from "@prismshadow/penguin-server/internal";
 
 
 /**
- * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, transfer,
- * traces — and benchmarks, which are Project-level peers of an Agent but read through the same
+ * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, export and
+ * import, traces — and benchmarks, which are Project-level peers of an Agent but read through the same
  * services.
  */
 @Component({
@@ -51,8 +52,8 @@ import type { Traces } from "@prismshadow/penguin-server/internal";
         order: 225,
       },
       {
-        id: "agents.transfer",
-        prefix: "/api/projects/:projectId/agents/:agentId",
+        id: "agents.archive",
+        prefix: "/api/projects/:projectId/agents",
         auth: "user",
         order: 230,
       },
@@ -79,11 +80,15 @@ export class AgentRoutes {
   @Use() private readonly clock!: Clock;
   @Use() private readonly settings!: Settings;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly agents!: AgentLifecycle;
+  @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly traceStore!: TraceIndexStore;
+  @Use() private readonly sessions!: SessionIndex;
   @Bind("agents.memory") memoryRoutes!: Hono<AppEnv>;
   @Bind("agents.benchmarks") benchmarksRoutes!: Hono<AppEnv>;
   @Bind("agents.skills") skillsRoutes!: Hono<AppEnv>;
   @Bind("agents.api") apiRoutes!: Hono<AppEnv>;
-  @Bind("agents.transfer") transferRoutes!: Hono<AppEnv>;
+  @Bind("agents.archive") archiveRoutes!: Hono<AppEnv>;
   @Bind("agents.traces") tracesRoutes!: Hono<AppEnv>;
 
   setup() {
@@ -101,12 +106,18 @@ export class AgentRoutes {
       settings: this.settings,
       now: () => clock.now(),
     });
-    this.transferRoutes = agentTransferRoutes({
+    this.archiveRoutes = agentArchiveRoutes({
       root: this.paths.root,
-      agentConfigService,
       access,
+      agentConfig: agentConfigService,
+      agents: this.agents,
       snapshots: this.snapshots,
+      traces: this.traces,
       workbenches: this.workbenches,
+      traceIndex: this.traceIndex,
+      traceStore: this.traceStore,
+      sessions: this.sessions,
+      now: () => clock.now(),
     });
     this.tracesRoutes = agentTracesRoutes({
       agentConfigService,

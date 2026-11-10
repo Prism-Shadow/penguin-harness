@@ -2438,17 +2438,17 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent State export / import
+// Agent zip export / import
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/export", ({ params }) =>
-    raw("\u001f\u008b demo snapshot", {
-      "content-type": "application/gzip",
-      "content-disposition": `attachment; filename="${params.agentId}.tar.gz"`,
+  .get("/api/projects/:projectId/agents/:agentId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.agentId}.zip"`,
     }),
   )
-  .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
+  .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
 
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)
