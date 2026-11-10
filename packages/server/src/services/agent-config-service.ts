@@ -96,7 +96,7 @@ export interface AgentConfigView {
  * one goes right after `description` (else `name`), where a reader looks for who the Agent is,
  * or last when the file has neither.
  */
-function setAuthor(doc: ReturnType<typeof parseDocument>, author: AgentAuthor): void {
+function setAuthor(doc: Document, author: AgentAuthor): void {
   const map = doc.contents;
   if (!isMap(map) || map.has("author")) {
     doc.setIn(["author"], author);
