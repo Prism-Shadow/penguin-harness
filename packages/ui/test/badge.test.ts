@@ -72,8 +72,10 @@ describe("Badge", () => {
       expect(size, `${id} --ui-badge-size is a rem length`).toBeDefined();
       expect(small, `${id} --ui-text-small-size is a rem length`).toBeDefined();
       expect(Number(size), id).toBeLessThan(Number(small));
-      expect(rem(valueIn(id, "light", "--ui-badge-lh")), `${id} --ui-badge-lh is a rem length`)
-        .toBeDefined();
+      expect(
+        rem(valueIn(id, "light", "--ui-badge-lh")),
+        `${id} --ui-badge-lh is a rem length`,
+      ).toBeDefined();
     }
   });
 
