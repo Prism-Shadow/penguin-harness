@@ -26,6 +26,9 @@
       "@penguinharness/plugin-machines/server": [
         "../../plugins/machines/src/server/index.ts"
       ],
+      "@penguinharness/plugin-machines/server/*": [
+        "../../plugins/machines/src/server/*"
+      ],
       "@penguinharness/plugin-agents/server": [
         "../../plugins/agents/src/server/index.ts"
       ],

@@ -14,6 +14,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./machines/*": {
+      "types": "./dist/machines/*.d.ts",
+      "import": "./dist/machines/*.js"
+    },
     "./api": {
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"

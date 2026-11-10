@@ -25,7 +25,7 @@ import type {
   McpConnectBeginPayload,
   McpConnectEndPayload,
   AmspRecord,
-  OmniPayload,
+  AmspPayload,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -43,6 +43,8 @@ import type {
 } from "@prismshadow/penguin-core";
 import type {
   ForkTraceResult,
+  HistoryTraceFile,
+  HistoryWindowRead,
   MessagesPageRequest,
   MessagesPageResult,
 } from "@penguinharness/plugin-usage/server";
@@ -143,6 +145,17 @@ export abstract class Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult>;
+  abstract readHistoryWindow(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest | { kind: "full" },
+  ): Promise<HistoryWindowRead>;
+  abstract historyTraceFiles(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<HistoryTraceFile[]>;
   abstract forkSessionTrace(
     projectId: string,
     agentId: string,

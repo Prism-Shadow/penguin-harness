@@ -29,6 +29,25 @@ export const SESSION_COOKIE = "penguin_session";
  * service that issues the sessions, never written here: the ROW carries the authoritative
  * expiry, and a cookie that expired first would log someone out mid-session.
  */
+/** Browsers share cookies across ports; non-browser jars retain the legacy plain name. */
+export function sessionCookieName(requestUrl: string | URL, browser: boolean): string {
+  const port = browser ? new URL(requestUrl).port : "";
+  return port ? `${SESSION_COOKIE}_${port}` : SESSION_COOKIE;
+}
+
+/** Prefer this request URL's port cookie, retaining the legacy plain-cookie fallback. */
+export function sessionCookies(
+  cookies: Record<string, string | undefined>,
+  requestUrl: string | URL,
+): { name: string; token: string }[] {
+  const own = sessionCookieName(requestUrl, true);
+  const names = own === SESSION_COOKIE ? [own] : [own, SESSION_COOKIE];
+  return names.flatMap((name) => {
+    const token = cookies[name];
+    return token ? [{ name, token }] : [];
+  });
+}
+
 export function cookieOptions(
   c: { req: { url: string; header(name: string): string | undefined } },
   ttlMs: number,

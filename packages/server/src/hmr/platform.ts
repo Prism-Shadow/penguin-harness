@@ -64,7 +64,7 @@ import { terminalRoutes } from "@penguinharness/plugin-terminal/server";
 import type { Identity } from "@penguinharness/plugin-terminal/server";
 import { platformDef } from "../platform.js";
 import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
-import ifaceTable from "../ifaces.json" with { type: "json" };
+import ifaceTable from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,

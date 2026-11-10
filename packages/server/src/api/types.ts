@@ -542,6 +542,73 @@ export interface PinnedBalance {
   provider: string;
 }
 
+
+/** The custom background's display settings, as the Web App stores them. */
+export interface BackgroundSettingsDto {
+  /** 0–100: how much of the page colour shows through the image. */
+  transparency: number;
+  mode: string;
+  position: string;
+}
+
+/**
+ * The background image cap, in characters of the data URL: the same number the Web App encodes
+ * against, so the browser and the server cannot disagree about what "too large" means.
+ */
+export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
+
+/** GET /api/me/background-image. */
+export interface BackgroundImageResponse {
+  /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
+  image: string | null;
+  imageId: string | null;
+}
+
+/** PUT /api/me/background-image: the image to keep, or null to remove it. */
+export interface BackgroundImageRequest {
+  image: string | null;
+}
+
+/** PUT /api/me/background-image's answer: the id the image is now known by (null once removed). */
+export interface BackgroundImagePutResponse {
+  imageId: string | null;
+}
+
+/**
+ * The kinds of draft the account keeps, as the first segment of a draft key
+ * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
+ * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
+ * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
+ * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
+ * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
+ * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
+ * (`a2ui:<sessionId>:<block>`).
+ */
+export const DRAFT_KINDS = ["chat", "parked", "org", "channel", "session", "a2ui"] as const;
+export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+/** One draft's cap, in characters of its JSON text. */
+export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
+
+/** Draft writes one PATCH may carry. */
+export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+
+/** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
+export interface DraftsResponse {
+  drafts: Record<string, unknown>;
+}
+
+/**
+ * PATCH /api/me/drafts: drafts to write, by key; `null` removes one. Applied together. When the
+ * account then holds more than its bound, its least recently written drafts outside this patch
+ * are dropped.
+ */
+export interface DraftsPatchRequest {
+  drafts: Record<string, unknown>;
+}
+
+/** A group balance pinned beside the user name: which Project's key reads which group's balance. */
+
 export interface PrefsResponse {
   prefs: UiPrefs;
 }
@@ -1426,6 +1493,35 @@ export interface AgentCreateResponse {
   agent: AgentSummary;
 }
 
+export interface AgentDeletionInfo {
+  /** Names this deletion (GET /api/projects/:projectId/agent-deletions/:deletionId). */
+  deletionId: string;
+  agentId: string;
+  /**
+   * `counting`: the folder is walked to learn how many entries it holds (`total` grows);
+   * `removing`: they are removed (`removed` grows towards `total`); `done`: nothing is left;
+   * `failed`: some entries could not be removed (`error` says why). What is left is tried again
+   * when the server next starts.
+   */
+  phase: "counting" | "removing" | "done" | "failed";
+  /** Entries found: so far while counting, then in all. Files and folders alike. */
+  total: number;
+  /** Entries removed so far. */
+  removed: number;
+  /** The first error the removal met, as the operating system worded it (`failed` only). */
+  error?: string;
+}
+
+/** DELETE /api/projects/:projectId/agents/:agentId (202). */
+export interface AgentDeleteResponse {
+  deletion: AgentDeletionInfo;
+}
+
+/** GET /api/projects/:projectId/agent-deletions/:deletionId. */
+export interface AgentDeletionResponse {
+  deletion: AgentDeletionInfo;
+}
+
 export interface AgentModelConfigDto {
   maxTokens?: number;
   thinkingLevel?: ThinkingLevelName;
@@ -2115,6 +2211,13 @@ export interface ArchivedSessionGroup {
   asOf?: string;
 }
 
+/**
+ * Which servers' groups GET /api/me/archived-sessions/groups answers with: `here` this server's
+ * alone, never waiting on a machine; `machines` the machines' alone. Absent: both, in one answer.
+ * The Web App asks the two apart, so a machine that answers nothing never holds this server's.
+ */
+export type ArchivedSessionGroupServers = "here" | "machines";
+
 /** GET /api/me/archived-sessions/groups. */
 export interface ArchivedSessionGroupsResponse {
   groups: ArchivedSessionGroup[];
@@ -2336,6 +2439,230 @@ export interface TracePosition {
   ordinal: number;
 }
 
+//   - web leg, `GET /api/sessions/:id/history` and `…/trace-body?ref=` (every server): the
+//     window as whole-record lines with progress, bulky bodies elided.
+
+/** One Trace file of a Session or a descendant: `${agentId}/${sessionId}/${fileIndex}`. */
+export type HistoryFileKey = string;
+
+/**
+ * One run of a Trace file the hub holds: bytes [lo, hi), from a line start to just after a
+ * `\n`, vouched for by the hashes of its edges. Every run is checked on its own, so a hub that
+ * holds several runs (a window, then older pages, then part of the fill) is sent none of them.
+ */
+export interface HistoryHeldRange {
+  lo: number;
+  /** Records before `lo` (the ordinal of the first record at or after it). */
+  loOrd: number;
+  hi: number;
+  /** sha256 (base64url) of bytes [lo, min(hi, lo + 4 KiB)). */
+  loAnchor: string;
+  /** sha256 (base64url) of bytes [max(lo, hi − 4 KiB), hi). */
+  hiAnchor: string;
+}
+
+/**
+ * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
+ * machine sends only what is missing: the file's identity, every run held (`ranges`), and a
+ * line held in part. The single-run form (`lo`…`hiAnchor` beside `k`, no `ranges`) is still
+ * read while the hub moves to `ranges`; it names one run, the top one.
+ */
+export interface HistoryHave extends Partial<HistoryHeldRange> {
+  k: HistoryFileKey;
+  /** The file's inode as a decimal string: NTFS file ids pass 2^53, which a JSON number cannot carry. */
+  ino: string;
+  /** The device the file lives on, decimal: a hint, never compared (overlayfs can change it across a restart). */
+  dev?: string;
+  /** Whole milliseconds, or 0 where the machine keeps no birth time; compared only when both sides know one. */
+  birthtimeMs: number;
+  /** Every run held, in any order. */
+  ranges?: HistoryHeldRange[];
+  /**
+   * A line held in part: bytes [off, off + len) of the line starting at `off`, whose sha256 is
+   * `anchor`. The machine sends the rest of it from `off + len` — before `ready` when it is a light
+   * line of the window, after it otherwise; a partial that does not check is dropped and the line
+   * sent whole.
+   */
+  partial?: { off: number; len: number; anchor: string };
+}
+
+/** One Trace file the window or the fill reads, as the machine sees it now. */
+export interface HistoryFileFact {
+  k: HistoryFileKey;
+  /**
+   * The file's identity: the inode (decimal, see HistoryHave.ino), the device (a hint, never
+   * compared), the birth time (0 where the platform keeps none: it then reads the change time,
+   * which every append moves). A held copy is the same file while `sameHistoryFile`
+   * (services/history-wire.ts) says so; its content is checked by its runs' anchors.
+   */
+  ino: string;
+  dev?: string;
+  birthtimeMs: number;
+  size: number;
+  /** Record count by the tolerant reader's rule (blank and unparseable lines are no record). */
+  records: number;
+  /** A rotated shard: it never changes again, and a whole copy is good for good. */
+  final: boolean;
+  /** The hub's `have` for this file did not validate: drop the copy, the lines come from scratch. */
+  reset?: true;
+}
+
+/**
+ * One run of records the window takes from one file, in window order: records [from, to) by
+ * ordinal, bytes [from, to) by offset (blank and malformed lines inside the run are skipped as
+ * the tolerant reader skips them). `origin` null: the Session's own records, which carry their
+ * `tracePosition`; otherwise the child Session chain its records are tagged with, outer to
+ * inner, prepended to any `origin` a line carries.
+ */
+export interface HistorySegment {
+  k: HistoryFileKey;
+  from: [offset: number, ordinal: number];
+  to: [offset: number, ordinal: number];
+  origin: string[] | null;
+}
+
+/**
+ * A window record whose line is heavy, in its final web form — `tracePosition` or `origin` set,
+ * images by reference, bodies elided, its `elided` entries attached — so the hub can deliver
+ * the window before that line's bytes arrive. `[offset, offset + length)` is its line.
+ */
+export interface HistoryStub {
+  k: HistoryFileKey;
+  ordinal: number;
+  offset: number;
+  length: number;
+  record: HistoryMessage;
+}
+
+/** The machine leg's first event, `window`. */
+export interface HistoryLinesWindow {
+  /** What `/messages` answers beside the records, captured before any file is read. */
+  envelope: {
+    page?: MessagesPageInfo;
+    live?: MessagesLiveTail;
+    pendingInputs: AmspRecord[];
+    serverNowMs: number;
+    status: SessionStatus;
+  };
+  /** Every Trace file of the Session and its descendants; a file the hub holds that is absent here is gone. */
+  files: HistoryFileFact[];
+  layout: HistorySegment[];
+  stubs: HistoryStub[];
+  /** Bytes (of `text`) and lines this stream will send in each phase. */
+  totals: Record<"window" | "heavy" | "fill", { bytes: number; lines: number }>;
+}
+
+/** `lines`: whole lines of file `k` from byte `off`; `ord` = records before `off`. */
+export interface HistoryLinesFrame {
+  k: HistoryFileKey;
+  off: number;
+  ord: number;
+  text: string;
+  /** `text` is base64 (bytes that are not valid UTF-8). */
+  b64?: true;
+}
+
+/** `part`: a piece of one line of file `k`, in order; `ord` = records before that line. */
+export interface HistoryPartFrame {
+  k: HistoryFileKey;
+  /** The first byte of the line this part belongs to. */
+  line: number;
+  off: number;
+  ord: number;
+  text: string;
+  last: boolean;
+  b64?: true;
+}
+
+/**
+ * `window-part`: a piece of the `window` event's JSON text, for a window larger than one frame
+ * (FRAME_TEXT_BUDGET). The pieces come in order before anything else; joined, their texts are
+ * the `HistoryLinesWindow` JSON, and the piece with `last` completes it.
+ */
+export interface HistoryWindowPart {
+  text: string;
+  last: boolean;
+}
+
+/**
+ * Event names of the machine leg (`history-lines`), in order: `window` (or its `window-part`s),
+ * the window's light `lines`/`part`s (with the rest of one the hub held in part), `ready` (the
+ * hub can assemble the window), the rest of every other line the hub held in part, the heavy
+ * lines and the fill, `done`. `ping` beats from the start,
+ * planning included; `error` (HistoryStreamError) ends a stream that cannot be served, such as a
+ * `body` ref into no line of the Session. Every event's data is at most FRAME_TEXT_BUDGET of text
+ * plus its JSON envelope.
+ */
+export type HistoryLinesEvent =
+  "window" | "window-part" | "lines" | "part" | "ready" | "done" | "error" | "ping";
+
+/** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
+export interface HistoryProgress {
+  phase: "window" | "heavy" | "fill";
+  /** The machine the bytes come from; null for this server's own Session. */
+  machineId: string | null;
+  doneBytes: number;
+  totalBytes: number;
+  doneLines: number;
+  totalLines: number;
+  /**
+   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
+   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
+   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
+   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
+   * stream goes on. Null again once bytes move.
+   */
+  waiting: null | {
+    reason: "not_connected" | "retrying" | "slow";
+    attempt: number;
+    nextAt: number;
+  };
+}
+
+/** The web leg's `page` event: what the window holds beside its records. */
+export interface HistoryPage {
+  windowId: string;
+  /** Records the window carries. */
+  count: number;
+  /** Bytes of their lines. */
+  bytes: number;
+  page?: MessagesPageInfo;
+  live?: MessagesLiveTail;
+  serverNowMs: number | null;
+}
+
+/**
+ * The web leg's `records` event (whole lines, each one `HistoryMessage` JSON, `offset` counting
+ * the window's text so far) and `part` event (a piece of one record longer than a frame, with
+ * `last` ending it).
+ */
+export interface HistoryRecords {
+  windowId: string;
+  offset: number;
+  text: string;
+  last?: boolean;
+}
+
+/** The web leg's `error` event: terminal; the reader stops and shows it. */
+export interface HistoryStreamError {
+  code: string;
+  message: string;
+  details?: ErrorDetails;
+}
+
+/** Event names of the web leg (`history`, `trace-body`); `ping` is the beat. */
+export type HistoryStreamEvent =
+  "progress" | "page" | "records" | "part" | "done" | "filled" | "error" | "ping";
+
+// ---------------------------------------------------------------------------
+// Task run, approval, interruption, compaction
+// ---------------------------------------------------------------------------
+
+/**
+ * A single Prompt's input parts: text, image (data: / http(s) URL), or an uploaded file.
+ * Docs: /docs/server-api § "Session-Level Endpoints".
+ */
+
 /** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
 export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition };
 
@@ -2519,6 +2846,8 @@ export type TaskInputPart =
    * separators, no `..`).
    */
   | { type: "file"; fileName: string; dataUrl: string };
+
+export type InterruptRequest = { followUpId: string } | { steerId: string };
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];
@@ -3290,8 +3619,10 @@ export interface MessagingTestMessageResponse {
 export type ServerEvent =
   /**
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
-   * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
+   * calls under read-only (see runtime/approvals.ts)
+   pending approvals are resent on reconnect.
    */
+  | { type: "heartbeat" }
   | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
@@ -4787,6 +5118,18 @@ export interface SkillArchiveInstallRequest {
  * version). Installation is out of scope here: an entry's `name` is the package
  * specifier a Project's plugin list names.
  */
+export interface WorkbenchArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace the source of a workbench with that id (its state.json stays) instead of answering 409. */
+  overwrite?: boolean;
+}
+
+/** 201 of the workbench archive import: the workbench as its load left it (`error` set when the files do not load). */
+export interface WorkbenchArchiveInstallResponse {
+  workbench: WorkbenchInfo;
+}
+
 export interface PluginIndexEntry {
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
@@ -5070,6 +5413,37 @@ export interface DesktopTrayCommandMessage {
 // page's to say; the shell only reports.
 
 /** What the shell's read of one folder came to. */
+
+/**
+ * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
+ * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
+ * seam authenticates the cookie and the Origin there and hands the socket to the platform,
+ * which serves the protocol as the signed-in user (server: socket/ref.ts). Shared so the Web
+ * App and anything else that speaks to another server spell the address the same way.
+ */
+export const API_SOCKET_PATH = "/api/socket";
+
+/**
+ * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
+ * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
+ * revealing a file) or a first-login link (a password change without the old password). The
+ * socket's handshake does not say how the cookie behind it was minted, so these are made over
+ * HTTP: the socket answers them 421 `not_on_socket` and the Web App never sends them there.
+ */
+export function sessionKindPath(pathname: string): boolean {
+  return (
+    pathname === "/api/me/password" ||
+    pathname === "/api/desktop" ||
+    pathname.startsWith("/api/desktop/") ||
+    /^\/api\/projects\/[^/]+\/dirs\/access$/.test(pathname) ||
+    (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
+  );
+}
+/** The API socket's address. No id is involved: the handshake's cookie names the user. */
+export function apiSocketPath(): string {
+  return API_SOCKET_PATH;
+}
+
 export interface DesktopFolderAccessResult {
   /** The folder could be read. Always true off macOS, where the shell reads nothing. */
   granted: boolean;
@@ -5118,6 +5492,118 @@ export interface DesktopOpenPrivacySettingsMessage {
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+export interface MessagingAccount {
+  channel: MessagingChannel;
+  accountId: string;
+}
+
+/**
+ * GET /api/messaging/accounts (admin only) — every bot account this server has enabled,
+ * across all its Projects. A server that connects machines asks each of them this when a
+ * bot is about to be turned on, so that one account is enabled on one server at a time.
+ */
+export interface MessagingAccountsResponse {
+  accounts: MessagingAccount[];
+}
+
+export interface MessagingAccountHolder {
+  machineId: string | null;
+  alias: string | null;
+}
+
+/**
+ * Why a machine could not be asked: no connection to it, a build without the accounts
+ * route (it answered 404), or any other failed answer.
+ */
+export type MessagingUnreachableReason = "not_connected" | "older_build" | "failed";
+
+/** A machine of the Project that could not be asked whether it holds the bot. */
+export interface MessagingUnreachableMachine {
+  machineId: string;
+  alias: string;
+  reason: MessagingUnreachableReason;
+}
+
+/**
+ * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
+ * have this bot enabled: this server, and each machine the Project uses that could be asked.
+ * Machines that could not be asked are listed apart; the caller decides what to do about
+ * them. Never names a Session. A caller who is not an admin is answered for this server
+ * only, because machines are admins' (both lists then hold no machine).
+ */
+export interface MessagingAccountHoldersResponse {
+  holders: MessagingAccountHolder[];
+  unreachable: MessagingUnreachableMachine[];
+}
+
+/**
+ * writes it. What this list holds is the ids this build has its OWN words for, so the page
+ * can show a better label than the host sent (translated, with search terms). An id absent
+ * here is still offered, still runnable, and shown in the host's words.
+ */
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+
+/**
+ * One command the host offers, carrying the words to show for it.
+ *
+ * The words travel WITH the command because the three programs involved ship apart: the
+ * shell reaches users through an installer, the server and the page through a hot push. A
+ * page that could only render commands it already had words for made the offer list pointless
+ * — a host could never offer anything new — and reading words it did not have blanked it.
+ *
+ * `command` is opaque to both server and page: the host decides what it means and the host
+ * runs it. Neither side validates it against a list of its own; the only question either asks
+ * is whether the host offered it.
+ */
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommandOffer[];
+}
+
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
+  commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: string;
+}
+
+/**
+ * The outcome of one self-update run (`penguin update --yes` on the server host), carried
+ * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
+ * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ */
+
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
   /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
@@ -5170,6 +5656,28 @@ export interface RestartResponse {
 }
 
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
+export interface MachineSocketFact {
+  /**
+   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
+   * when the machine answered the handshake with a status (a program predating the socket),
+   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
+   * the dial did not complete or a socket that was up closed.
+   *
+   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
+   * swaps its platform and never the process that takes the upgrade, so the machine reports the
+   * current build and still has no socket: it is not running this server's version, which a remote
+   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
+   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
+   * completes: a
+   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
+   */
+  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
+  /** When that state was entered (ISO). */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail?: string;
+}
+
 export interface MachineInfo {
   /** `ssh:<alias>` — the id the install route is asked for. */
   id: string;

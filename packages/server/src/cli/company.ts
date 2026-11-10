@@ -26,7 +26,7 @@ import type {
 } from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
 import type { Messages } from "./i18n.js";
-import table from "../ifaces.json" with { type: "json" };
+import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import { registerOrgCommand } from "./commands/org.js";
 
 /** The node the host located for a key, typed with this package's commander. */

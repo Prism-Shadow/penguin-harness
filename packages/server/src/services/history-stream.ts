@@ -34,8 +34,8 @@ import type {
 import { HttpError, badRequest } from "../http/errors.js";
 import { FRAME_TEXT_BUDGET } from "../socket/line-frames.js";
 import { messagesPageQuery } from "./session-history.js";
-import { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";
-import type { MessagesPageRequest } from "./trace-service.js";
+import { MESSAGES_PAGE_MAX_BYTES } from "@penguinharness/plugin-usage/server";
+import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import type { SseRevocation } from "../http/sse.js";
 import { formatSseEvent } from "../socket/sse-text.js";
 import { answerOf } from "../socket/stream-answer.js";

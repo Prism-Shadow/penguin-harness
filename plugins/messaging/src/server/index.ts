@@ -23,5 +23,6 @@ export * from "./messaging/wechat-api.js";
 export * from "./messaging/wechat-connector.js";
 export * from "./messaging/wechat-markdown.js";
 export * from "./messaging/wechat-scan.js";
+export * from "./messaging/account-holders.js";
 export * from "./routes/messaging.js";
 export * from "./routes/messaging-channels.js";

@@ -22,7 +22,7 @@
  * first. An id that every machine denied is remembered as a miss for a short while, so a bad id
  * retried in a loop does not ask the whole fleet on every try.
  */
-import type { MachineApi } from "./machine-api.js";
+import type { MachineApi } from "@penguinharness/plugin-machines/server/machine-api.js";
 
 /** Where a Session lives: the machine, and the Project it belongs to there. */
 export interface SessionPlace {

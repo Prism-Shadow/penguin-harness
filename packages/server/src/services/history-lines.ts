@@ -42,12 +42,12 @@ import type {
   HistoryStub,
   HistoryWindowPart,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@penguinharness/plugin-usage/server";
 import type { Sessions } from "../runtime/session-manager.js";
 import { FRAME_TEXT_BUDGET, lineFrames, partFrames } from "../socket/line-frames.js";
 import type { LineFrame, PartFrame } from "../socket/line-frames.js";
@@ -61,7 +61,7 @@ import {
   sameHistoryFile,
 } from "./history-wire.js";
 import type { HistoryLinesQuery } from "./history-wire.js";
-import { decodeCursor } from "./message-window.js";
+import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import {
   MESSAGES_PAGE_LIMIT_DEFAULT,
   appendPendingInputs,
@@ -69,8 +69,8 @@ import {
   messagesPageInfo,
   pageLimit,
 } from "./session-history.js";
-import { withImagesByReference } from "./trace-images.js";
-import type { HistoryTraceFile, HistoryWindowRead } from "./trace-service.js";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+import type { HistoryTraceFile, HistoryWindowRead } from "@penguinharness/plugin-usage/server";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */
 export const HISTORY_LINES_BEAT_MS = 5_000;

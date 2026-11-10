@@ -14,9 +14,9 @@
  * one. A server older than this door answers 404 — an unknown identity, not a failure.
  */
 import type { VersionReport } from "@prismshadow/penguin-core";
-import type { MachineApi } from "./machine-api.js";
-import { runningBuild, runsPlan } from "./install-server.js";
-import type { PushPlan, RunningBuild } from "./install-server.js";
+import type { MachineApi } from "@penguinharness/plugin-machines/server/machine-api.js";
+import { runningBuild, runsPlan } from "@penguinharness/plugin-machines/server/install-server.js";
+import type { PushPlan, RunningBuild } from "@penguinharness/plugin-machines/server/install-server.js";
 
 /** The door a machine's server answers the handshake on. */
 export const HANDSHAKE_PATH = "/api/handshake";

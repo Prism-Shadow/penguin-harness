@@ -14,7 +14,7 @@
  * Goes with the fallback itself, once no supported machine predates `history-lines`.
  */
 import type { MessagesResponse } from "../api/types.js";
-import { initialScanState, scanMessages } from "../services/message-window.js";
+import { initialScanState, scanMessages } from "@penguinharness/plugin-usage/server";
 
 /** `response` with its page's `units`, counted when the machine's own page has none. */
 export async function withWindowUnits(response: MessagesResponse): Promise<MessagesResponse> {

@@ -9,6 +9,7 @@
     "./web": "./src/web/index.ts"
   },
   "dependencies": {
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-hmr": "workspace:*",
     "@penguinharness/plugin-sessions": "workspace:*",

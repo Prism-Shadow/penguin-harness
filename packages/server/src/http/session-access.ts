@@ -7,8 +7,8 @@
  * `session_forbidden`. A hub reads its machines as their admin, and drops its copy of a Session
  * the machine says does not exist: a refusal must not read as a deletion.
  */
-import type { SessionRow } from "../db/repos/sessions.js";
-import type { Access } from "../mechanisms/projects.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
+import type { Access } from "@penguinharness/plugin-projects/server";
 import { HttpError } from "./errors.js";
 
 /** `row` (the Session the path names, or null), for a caller who may read it; else the refusal. */

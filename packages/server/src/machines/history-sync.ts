@@ -53,17 +53,17 @@ import { HttpError } from "../http/errors.js";
 import { assembleWindow } from "../services/history-layout.js";
 import { historyLinesPath, parseHistoryFileKey } from "../services/history-wire.js";
 import type { HistoryLinesQuery } from "../services/history-wire.js";
-import { encodeCursor } from "../services/message-window.js";
+import { encodeCursor } from "@penguinharness/plugin-usage/server";
 import { historyResponse } from "../services/session-history.js";
-import { SESSION_ROUTES_BASE } from "../services/trace-images.js";
-import type { MessagesPageRequest } from "../services/trace-service.js";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
+import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";
 import { LineCommitter, frameBytes } from "../socket/line-frames.js";
 import { decodedWhole } from "./answer-decoding.js";
 import type { MachineSocket, Sink } from "./machine-sockets.js";
 import { withWindowUnits } from "./older-window-units.js";
-import type { ProxyTarget } from "./proxy.js";
+import type { ProxyTarget } from "@penguinharness/plugin-machines/server/proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
 /** A machine stream that sends nothing for this long — not even its beat — is cut and reopened. */

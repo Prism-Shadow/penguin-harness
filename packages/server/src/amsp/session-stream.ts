@@ -16,7 +16,7 @@
  */
 import type { Context } from "hono";
 import { sseEndpoint } from "../http/sse.js";
-import type { SseRevocation, StreamedChannel } from "../http/sse.js";
+import type { SseRevocation, StreamedChannel } from "@prismshadow/penguin-server/internal";
 
 export function amspSessionStream(
   c: Context,

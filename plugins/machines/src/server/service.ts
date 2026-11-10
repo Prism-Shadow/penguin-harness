@@ -143,8 +143,30 @@ import type { Users } from "@prismshadow/penguin-server/internal";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 
 import { currentRemoteLayout } from "./layout.js";
-import { LinkActivity } from "./link-activity.js";
+import { LinkActivity } from "@prismshadow/penguin-server/machines/link-activity.js";
 import type { RemoteLayout } from "./layout.js";
+
+import { MachineEventHub } from "@prismshadow/penguin-server/machines/event-hub.js";
+import { MachineSockets } from "@prismshadow/penguin-server/machines/machine-sockets.js";
+import type { StreamSettle } from "@prismshadow/penguin-server/machines/machine-sockets.js";
+import { MachineAnswers } from "@prismshadow/penguin-server/machines/answer-cache.js";
+import { machineHistory } from "@prismshadow/penguin-server/machines/history-routes.js";
+import type { MachineHistory } from "@prismshadow/penguin-server/machines/history-routes.js";
+import { traceCacheAt } from "@prismshadow/penguin-server/machines/trace-cache.js";
+import type { TraceCache } from "@prismshadow/penguin-server/machines/trace-cache.js";
+import { askHandshake, judgeHandshake } from "@prismshadow/penguin-server/machines/handshake.js";
+import type { HandshakeReading } from "@prismshadow/penguin-server/machines/handshake.js";
+import { machineSessionForward } from "@prismshadow/penguin-server/machines/session-forward.js";
+import type { MachineSessionForward } from "@prismshadow/penguin-server/machines/session-forward.js";
+import type { DatabaseSync } from "node:sqlite";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { Dirent, Stats } from "node:fs";
+import { Hono } from "hono";
+import type { Context } from "hono";
+import type { AmspRecord } from "@prismshadow/amsp";
+import type { MachineSocketFact, Projects } from "@prismshadow/penguin-server/api";
+import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
+
 
 /**
  * What a dial to a machine's server returns: the connection to route requests over, the port

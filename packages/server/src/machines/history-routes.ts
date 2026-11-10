@@ -46,13 +46,13 @@ import {
 } from "../services/history-stream.js";
 import type { HistoryOut } from "../services/history-stream.js";
 import { historyFileKey } from "../services/history-wire.js";
-import { traceRecordImage } from "../services/trace-images.js";
+import { traceRecordImage } from "@penguinharness/plugin-usage/server";
 import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
 import { GenerationClosed, HistorySync } from "./history-sync.js";
 import type { HistoryReader, HistorySyncDeps } from "./history-sync.js";
 import type { MachineSockets } from "./machine-sockets.js";
-import { proxyThroughSession } from "./proxy.js";
-import type { ProxyPath, ProxyTarget } from "./proxy.js";
+import { proxyThroughSession } from "@penguinharness/plugin-machines/server/proxy.js";
+import type { ProxyPath, ProxyTarget } from "@penguinharness/plugin-machines/server/proxy.js";
 import type { TraceCache } from "./trace-cache.js";
 
 /** How many Sessions' Projects are remembered for the Project-scoped Trace path. */

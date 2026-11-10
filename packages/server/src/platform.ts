@@ -1,6 +1,6 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
-import table from "./ifaces.json" with { type: "json" };
+import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import type { HmrCapabilities, ReassemblyChange } from "./hmr/capabilities.js";
 import {
   ConfigPaths,

@@ -23,16 +23,16 @@ import type {
   MessagingAccountsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { Machines } from "../../machines/service.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Machines } from "@penguinharness/plugin-machines/server/service.js";
+import type { MessagingBindings } from "@penguinharness/plugin-messaging/server";
+import type { Access } from "@penguinharness/plugin-projects/server";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 import {
   enabledAccounts,
   findAccountHolders,
   holdsAccount,
-} from "../../runtime/messaging/account-holders.js";
-import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
+} from "@penguinharness/plugin-messaging/server";
+import { isMessagingChannel } from "@penguinharness/plugin-messaging/server";
 import { HttpError } from "../errors.js";
 import { badRequest, requireValidId } from "../validate.js";
 

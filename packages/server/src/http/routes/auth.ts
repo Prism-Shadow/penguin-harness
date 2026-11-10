@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AuthResponse } from "../../api/types.js";
-import { cookieOptions, sessionCookieName, sessionCookies } from "../../auth/middleware.js";
+import { cookieOptions, sessionCookieName, sessionCookies } from "@penguinharness/plugin-settings/server";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import { HttpError } from "../errors.js";

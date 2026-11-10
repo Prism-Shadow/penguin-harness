@@ -21,14 +21,14 @@ import type {
   MessagesPageInfo,
   MessagesResponse,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@penguinharness/plugin-usage/server";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { decodeCursor } from "./message-window.js";
-import { withImagesByReference } from "./trace-images.js";
-import type { MessagesPageRequest, MessagesPageResult } from "./trace-service.js";
+import { decodeCursor } from "@penguinharness/plugin-usage/server";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+import type { MessagesPageRequest, MessagesPageResult } from "@penguinharness/plugin-usage/server";
 
 export interface SessionHistoryDeps {
   traceService: Pick<Traces, "readMessages" | "readMessagesPage" | "readTraceImage">;

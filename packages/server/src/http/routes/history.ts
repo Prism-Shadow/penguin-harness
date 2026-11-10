@@ -20,12 +20,12 @@ import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import type { Channels } from "../../hmr/capabilities.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Traces } from "../../mechanisms/traces.js";
+import type { Auth } from "@penguinharness/plugin-settings/server";
+import type { Access } from "@penguinharness/plugin-projects/server";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
+import type { Traces } from "@penguinharness/plugin-usage/server";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import {
   HeldWindows,
@@ -43,7 +43,7 @@ import {
   messagesPageInfo,
 } from "../../services/session-history.js";
 import type { SessionHistoryDeps } from "../../services/session-history.js";
-import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
 import { readableSession } from "../session-access.js";
 import { streamRevocation } from "../sse.js";
 

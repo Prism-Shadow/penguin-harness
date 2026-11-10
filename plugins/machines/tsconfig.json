@@ -18,6 +18,9 @@
       "@prismshadow/penguin-server/api": [
         "../../packages/server/src/api/types.ts"
       ],
+      "@prismshadow/penguin-server/machines/*": [
+        "../../packages/server/src/machines/*"
+      ],
       "@prismshadow/penguin-server/internal": [
         "../../packages/server/src/internal.ts"
       ],

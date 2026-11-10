@@ -36,14 +36,14 @@ import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "@penguinharness/plugin-terminal/server";
 import { originRule } from "./http/public-origin.js";
-import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
+import { attachExtensionWebSocket } from "@penguinharness/plugin-browser/server";
+import type { ExtensionGate } from "@penguinharness/plugin-browser/server";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
-import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Settings } from "@penguinharness/plugin-settings/server";
+import type { Errors } from "@penguinharness/plugin-usage/server";
+import type { Auth } from "@penguinharness/plugin-settings/server";
 
 /**
  * The startup lifecycle: one line per step, in the order they have to happen.
