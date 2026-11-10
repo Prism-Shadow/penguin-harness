@@ -798,21 +798,21 @@ export interface ProviderConnectionUpdate {
 }
 
 /**
- * The Project's default model moved because a group became connected: its first group key
- * landed, and the catalog names the model of that group the default moves to (TokenDance's and
- * Penguin Go's DeepSeek V4.1 Flash). Reported by the write that moved it, so the page can say
- * so and offer to put `previousDefault` back.
+ * A group just became connected (its first group key landed) and the catalog names a model of
+ * that group as its connect default (TokenDance's and Penguin Go's DeepSeek V4.1 Flash), while
+ * the Project's default sits outside the group or is unset. Reported by the write that stored the
+ * key, which leaves the default as it is: the page asks whether to make `model` the default.
  */
-export interface DefaultModelSwitch {
-  /** The default the Project stores now. */
-  defaultModel: ModelRefDto;
-  /** The default it replaced; absent when the Project had none. */
-  previousDefault?: ModelRefDto;
+export interface DefaultModelOffer {
+  /** The model offered as the default. */
+  model: ModelRefDto;
+  /** The default the Project stores now, outside the group; absent when it has none. */
+  current?: ModelRefDto;
 }
 
-/** `PUT /models/providers/:provider`: the table as it now stands, and the default it moved, if any. */
+/** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
 export interface ProviderConnectionResponse extends ModelsResponse {
-  defaultSwitch?: DefaultModelSwitch;
+  defaultOffer?: DefaultModelOffer;
 }
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
@@ -1196,8 +1196,8 @@ export interface ModelOAuthStatusResponse {
    * would otherwise name a count the server never wrote.
    */
   applied?: number;
-  /** The default model the minted key moved (see DefaultModelSwitch); on every `done` answer. */
-  defaultSwitch?: DefaultModelSwitch;
+  /** The default model offered on the minted key (see DefaultModelOffer); on every `done` answer. */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1213,8 +1213,8 @@ export interface ModelOAuthCodeRequest {
 export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
-  /** The default model the minted key moved (see DefaultModelSwitch). */
-  defaultSwitch?: DefaultModelSwitch;
+  /** The default model offered on the minted key (see DefaultModelOffer). */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1241,8 +1241,8 @@ export interface PlatformAuthFlowStatusResponse {
   status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
   error?: PlatformAuthFlowErrorCode;
   applied?: number;
-  /** The default model the delivered key moved (see DefaultModelSwitch); on every `completed` answer. */
-  defaultSwitch?: DefaultModelSwitch;
+  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
+  defaultOffer?: DefaultModelOffer;
 }
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */

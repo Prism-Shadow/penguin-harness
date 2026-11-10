@@ -240,10 +240,10 @@ export interface ModelProviderInfo {
    */
   recommended?: boolean;
   /**
-   * The model id, in this group, that a Project's default moves to when the group becomes
-   * connected: its first group key lands through the connect flow or the group settings
-   * (services/connect-default-model.ts). Nothing moves when the Project's table no longer
-   * holds that row.
+   * The model id, in this group, offered as a Project's default model when the group becomes
+   * connected: its first group key lands through the connect flow or the group settings, and the
+   * Project's default is outside the group (services/connect-default-offer.ts). Nothing is
+   * offered when the Project's table no longer holds that row.
    */
   connectDefault?: string;
 }

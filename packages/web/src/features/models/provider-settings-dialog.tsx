@@ -319,7 +319,7 @@ export function ProviderSettingsDialog({
   /** Env-fallback variables the server reported a value for (see the page's detectedEnvKeys). */
   detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
-  /** The table the server answered with, once the group's connection is written, and the default model a first key moved, if any. */
+  /** The table the server answered with, once the group's connection is written, and the default model a first key offers, if any. */
   onSaved: (res: ProviderConnectionResponse) => void;
 }) {
   // Dirty means a Save would send something: the draft is compared as the update it makes.

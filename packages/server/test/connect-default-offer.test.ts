@@ -1,16 +1,16 @@
 /**
- * Connecting TokenDance or Penguin Go makes that group's DeepSeek V4.1 Flash the Project's default
- * model, here through the group settings (`PUT /models/providers/:provider` with a key). The
- * connect flows land on the same rule: model-oauth.test.ts and platform-auth.test.ts cover them.
+ * Connecting TokenDance or Penguin Go offers that group's DeepSeek V4.1 Flash as the Project's
+ * default model, here through the group settings (`PUT /models/providers/:provider` with a key).
+ * The connect flows land on the same rule: model-oauth.test.ts and platform-auth.test.ts cover
+ * them. The default only moves when the user accepts, through `PUT /models/default`.
  *
- * - Given a new Project, whose TokenDance group holds no key, when the owner saves a TokenDance
- *   key, then the default is TokenDance's DeepSeek V4.1 Flash, and the answer names it and the
- *   default it replaced.
- * - Given a Project with no default model, the same save sets it, and the answer names no
- *   default replaced.
- * - Nothing moves, and the answer names no switch, when the group already held a key, when
- *   another group gets its first key, when the Project no longer holds the row, and when the
- *   default already is that model.
+ * - Given a new Project, whose default is DeepSeek's and whose TokenDance group holds no key,
+ *   when the owner saves a TokenDance key, then the answer offers TokenDance's DeepSeek V4.1
+ *   Flash and names the current default, and the stored default is still DeepSeek's.
+ * - Given a Project with no default model, the same save offers it and names no current default,
+ *   and the Project still has none.
+ * - No offer when the group already held a key, when another group gets its first key, when the
+ *   Project no longer holds the row, and when the default already is a model of the group.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
@@ -23,10 +23,11 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const TOKENDANCE_FLASH: ModelRefDto = { provider: "tokendance", modelId: "deepseek-v4.1-flash" };
+const TOKENDANCE_PRO: ModelRefDto = { provider: "tokendance", modelId: "deepseek-v4-pro-0813" };
 /** A new Project's default model. */
 const DEEPSEEK_FLASH: ModelRefDto = { provider: "deepseek", modelId: "deepseek-flash" };
 
-describe("a group's first key moves the default model", () => {
+describe("a group's first key offers its default model", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -62,66 +63,55 @@ describe("a group's first key moves the default model", () => {
     expect(res.status).toBe(200);
   };
 
-  it("a TokenDance key saved by hand makes its DeepSeek V4.1 Flash the default, and says which one it replaced", async () => {
+  it("a TokenDance key saved by hand offers its DeepSeek V4.1 Flash, naming the current default, and moves nothing", async () => {
     expect((await models()).defaultModel).toEqual(DEEPSEEK_FLASH);
 
     const res = await saveKey("tokendance");
 
-    expect(res.defaultSwitch).toEqual({
-      defaultModel: TOKENDANCE_FLASH,
-      previousDefault: DEEPSEEK_FLASH,
-    });
-    expect(res.defaultModel).toEqual(TOKENDANCE_FLASH);
-    expect((await models()).defaultModel).toEqual(TOKENDANCE_FLASH);
+    expect(res.defaultOffer).toEqual({ model: TOKENDANCE_FLASH, current: DEEPSEEK_FLASH });
+    expect(res.defaultModel).toEqual(DEEPSEEK_FLASH);
+    expect((await models()).defaultModel).toEqual(DEEPSEEK_FLASH);
   });
 
-  it("a Project with no default gets one, and the answer names none replaced", async () => {
+  it("a Project with no default is offered one, and still has none", async () => {
     await dropRows((m) => m.provider === "deepseek");
     expect((await models()).defaultModel).toBeUndefined();
 
     const res = await saveKey("tokendance");
 
-    expect(res.defaultSwitch).toEqual({ defaultModel: TOKENDANCE_FLASH });
-    expect((await models()).defaultModel).toEqual(TOKENDANCE_FLASH);
+    expect(res.defaultOffer).toEqual({ model: TOKENDANCE_FLASH });
+    expect((await models()).defaultModel).toBeUndefined();
   });
 
   it.each([
     {
       when: "the group already held a key",
-      arrange: async () => {
-        await saveKey("tokendance", "sk-first-0001");
-        await owner.put(`${url()}/default`, DEEPSEEK_FLASH);
-      },
+      arrange: () => saveKey("tokendance", "sk-first-0001"),
       provider: "tokendance",
-      expected: DEEPSEEK_FLASH,
     },
     {
       when: "another group gets its first key",
       arrange: async () => {},
       provider: "openrouter",
-      expected: DEEPSEEK_FLASH,
     },
     {
       when: "the Project no longer holds the row",
       arrange: () =>
         dropRows((m) => m.provider === "tokendance" && m.modelId === TOKENDANCE_FLASH.modelId),
       provider: "tokendance",
-      expected: DEEPSEEK_FLASH,
     },
     {
-      when: "the default already is that model",
-      arrange: async () => {
-        await owner.put(`${url()}/default`, TOKENDANCE_FLASH);
-      },
+      when: "the default already is a model of the group",
+      arrange: () => owner.put(`${url()}/default`, TOKENDANCE_PRO),
       provider: "tokendance",
-      expected: TOKENDANCE_FLASH,
     },
-  ])("nothing moves when $when", async ({ arrange, provider, expected }) => {
+  ])("no offer when $when", async ({ arrange, provider }) => {
     await arrange();
+    const before = (await models()).defaultModel;
 
     const res = await saveKey(provider);
 
-    expect(res.defaultSwitch).toBeUndefined();
-    expect((await models()).defaultModel).toEqual(expected);
+    expect(res.defaultOffer).toBeUndefined();
+    expect((await models()).defaultModel).toEqual(before);
   });
 });

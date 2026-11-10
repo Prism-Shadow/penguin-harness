@@ -66,7 +66,7 @@ import {
 
 import type {
   CredentialInfo,
-  DefaultModelSwitch,
+  DefaultModelOffer,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -248,7 +248,7 @@ import {
 
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
-import { announceDefaultSwitch } from "./connect-default-notice";
+import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /**
@@ -1021,11 +1021,12 @@ export function ModelsPage() {
   /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
   const keyLanded = useRef(false);
   /**
-   * The default model the key it wrote moved, said once the dialog is dismissed: the
-   * authorization ran in another tab, and a notice raised while the user is there is gone by
-   * the time they are back.
+   * The default model the key it wrote offers, asked about once the dialog is dismissed: the
+   * dialog reports the outcome first, and a question on top of it would hide that.
    */
-  const landedSwitch = useRef<DefaultModelSwitch | undefined>(undefined);
+  const landedOffer = useRef<DefaultModelOffer | undefined>(undefined);
+  /** A connect's offer of its group's model as the default, while the question is open. */
+  const [defaultOffer, setDefaultOffer] = useState<DefaultModelOffer | null>(null);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -1157,25 +1158,11 @@ export function ModelsPage() {
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
 
-  /** Says a connect moved the default model, with Undo (connect-default-notice.ts). */
-  const announceSwitch = (
-    change: DefaultModelSwitch | undefined,
-    named: readonly { provider: string; modelId: string; displayName?: string | undefined }[],
-  ) => {
-    if (change === undefined || !projectId) return;
-    const defaultChanged = (ref: ModelRefDto) => {
-      setDefaultModel(ref);
-      // As after any default change here: the draft chat drops its stored model pick and
-      // follows the new default.
-      if (userId) clearDraftModelRef(userId, projectId);
-    };
-    announceDefaultSwitch({ projectId, defaultChanged }, change, named);
-  };
-  /** The end of a connect dialog's dismissal: the notice of a default its key moved, then a clean slate. */
+  /** The end of a connect dialog's dismissal: the question its key's offer asks, then a clean slate. */
   const endConnect = () => {
-    announceSwitch(landedSwitch.current, rows ?? []);
+    if (landedOffer.current !== undefined) setDefaultOffer(landedOffer.current);
     keyLanded.current = false;
-    landedSwitch.current = undefined;
+    landedOffer.current = undefined;
   };
 
   /**
@@ -1932,7 +1919,7 @@ export function ModelsPage() {
           onSaved={(res) => {
             adopt(res);
             setSettingsFor(null);
-            announceSwitch(res.defaultSwitch, res.models);
+            if (res.defaultOffer !== undefined) setDefaultOffer(res.defaultOffer);
           }}
         />
       )}
@@ -1959,9 +1946,9 @@ export function ModelsPage() {
               if (keyLanded.current) void load();
               endConnect();
             }}
-            onApplied={(_applied, change) => {
+            onApplied={(_applied, offer) => {
               keyLanded.current = true;
-              landedSwitch.current = change;
+              landedOffer.current = offer;
             }}
           />
         ) : (
@@ -1979,16 +1966,33 @@ export function ModelsPage() {
               if (keyLanded.current) void load();
               endConnect();
             }}
-            onApplied={(_applied, change) => {
+            onApplied={(_applied, offer) => {
               // The dialog stays open and reports the outcome itself (its `done` phase), because
               // the authorization ran in another tab and a toast would be announced to a window
               // nobody is looking at. All this seam does is record what the dismissal has to do:
-              // a reload, and the notice of a default the key moved.
+              // a reload, and the question of the default the key offers.
               keyLanded.current = true;
-              landedSwitch.current = change;
+              landedOffer.current = offer;
             }}
           />
         ))}
+
+      {/* Waits for `rows`: a connect flow's dismissal reloads the table, and the question names
+          its models from it. */}
+      {projectId && rows && defaultOffer !== null && (
+        <ConnectDefaultOfferConfirm
+          projectId={projectId}
+          offer={defaultOffer}
+          rows={rows}
+          onClose={() => setDefaultOffer(null)}
+          onAccepted={(ref) => {
+            setDefaultModel(ref);
+            // As after any default change here: the draft chat drops its stored model pick and
+            // follows the new default.
+            if (userId) clearDraftModelRef(userId, projectId);
+          }}
+        />
+      )}
 
       {rows && deleteGroupFor !== null && (
         <ConfirmModal
@@ -4246,8 +4250,8 @@ function ModelOAuthDialog({
   /** Models in the group with no key of their own: the ones that will use the new group key. */
   count: number;
   onClose: () => void;
-  /** The key landed: how many models use it, and the default model it moved, if any. */
-  onApplied: (applied: number, defaultSwitch: DefaultModelSwitch | undefined) => void;
+  /** The key landed: how many models use it, and the default model it offers, if any. */
+  onApplied: (applied: number, defaultOffer: DefaultModelOffer | undefined) => void;
 }) {
   /** The route back the user picked. */
   const [manual, setManual] = useState(false);
@@ -4317,7 +4321,7 @@ function ModelOAuthDialog({
           const n = res.applied ?? count;
           setApplied(n);
           setPhase("done");
-          onAppliedRef.current(n, res.defaultSwitch);
+          onAppliedRef.current(n, res.defaultOffer);
           return;
         }
         if (res.status === "error") {
@@ -4353,7 +4357,7 @@ function ModelOAuthDialog({
         const n = res.applied ?? count;
         setApplied(n);
         setPhase("done");
-        onAppliedRef.current(n, res.defaultSwitch);
+        onAppliedRef.current(n, res.defaultOffer);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);

@@ -93,7 +93,7 @@ import type {
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
-  DefaultModelSwitch,
+  DefaultModelOffer,
   CommandPolicyRuleDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -118,7 +118,7 @@ import type {
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
-import { connectDefaultSwitch } from "./connect-default-model.js";
+import { connectDefaultOffer } from "./connect-default-offer.js";
 import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
@@ -419,35 +419,24 @@ function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
 }
 
 /**
- * `next`, the table a write that stores `provider`'s group key is about to store, with the
- * Project's default moved where connectDefaultSwitch says the key's landing moves it (that
- * group's connect default, on the group's first key), and the switch that made.
+ * The default a write that stores `provider`'s group key offers (connectDefaultOffer), from the
+ * table as it stood (`before`) and the one the write stores (`next`). The offer is only reported:
+ * the write keeps the Project's default as it is.
  */
-function withConnectDefault(
+function connectOfferOf(
   before: RawTable,
   next: RawTable,
   provider: string,
-): { table: RawTable; defaultSwitch?: DefaultModelSwitch } {
-  const previous = optRef(before.default_model);
-  const defaultSwitch = connectDefaultSwitch({
+): DefaultModelOffer | undefined {
+  const current = optRef(before.default_model);
+  return connectDefaultOffer({
     provider,
     hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
     hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
-    previous:
-      previous === undefined
-        ? undefined
-        : { provider: previous.provider, modelId: previous.model_id },
+    current:
+      current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
     holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
   });
-  if (defaultSwitch === undefined) return { table: next };
-  const { defaultModel } = defaultSwitch;
-  return {
-    table: {
-      ...next,
-      default_model: { provider: defaultModel.provider, model_id: defaultModel.modelId },
-    },
-    defaultSwitch,
-  };
 }
 
 /** A group's stored connection as the page reads it: the group's own values, the key masked. */
@@ -2066,9 +2055,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
    * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. A protocol
    * Penguin Go's fixed one does not allow is refused before anything is written
-   * (checkGroupProtocol). A group's first key moves the default to the group's connect default
-   * in the same write (withConnectDefault). Returns the models view as it now stands, with the
-   * default it moved.
+   * (checkGroupProtocol). Returns the models view as it now stands, with the default a group's
+   * first key offers (connectOfferOf); the default itself is left as it is.
    */
   async setProviderConnection(
     projectId: string,
@@ -2079,17 +2067,14 @@ export class ProjectConfigService implements ProjectConfigStore {
       const raw = await this.readRaw(projectId);
       checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
-      const { table: next, defaultSwitch } = withConnectDefault(
-        raw,
-        { ...raw, providers: table },
-        provider,
-      );
+      const next = { ...raw, providers: table };
+      const defaultOffer = connectOfferOf(raw, next, provider);
       await this.writeRaw(projectId, next);
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
       }
       const res = await this.getModels(projectId);
-      return defaultSwitch === undefined ? res : { ...res, defaultSwitch };
+      return defaultOffer === undefined ? res : { ...res, defaultOffer };
     });
   }
 
@@ -2098,11 +2083,10 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Enter key, the Connect flows and the ModelScope refresh all land on. No row is read or
    * replaced: a model with its own key keeps it (and keeps billing the account it was given),
    * and a caller that never saw the rest of the table cannot flatten it. A group with no rows
-   * still takes the key. A group's first key moves the default to the group's connect default
-   * in the same write (withConnectDefault).
+   * still takes the key.
    *
    * Returns how many of the group's rows now use it — the ones without a key of their own —
-   * and the default it moved.
+   * and the default a group's first key offers (connectOfferOf), which is not written.
    */
   async setGroupApiKey(
     projectId: string,
@@ -2155,14 +2139,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<GroupKeyApplied> {
     const raw = await this.readRaw(projectId);
     const { table } = patchProviderTable(asTable(raw.providers), provider, { apiKey });
-    const { table: next, defaultSwitch } = withConnectDefault(
-      raw,
-      { ...raw, providers: table },
-      provider,
-    );
+    const next = { ...raw, providers: table };
+    const defaultOffer = connectOfferOf(raw, next, provider);
     await this.writeRaw(projectId, next);
     const applied = rowsFollowingGroupKey(raw, provider);
-    return defaultSwitch === undefined ? { applied } : { applied, defaultSwitch };
+    return defaultOffer === undefined ? { applied } : { applied, defaultOffer };
   }
 
   /** A group's key (`[providers.<id>].api_key`), never a row's own; never sent over HTTP. */
@@ -2222,9 +2203,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Returns how many rows were added, `updated` (price, promotion or route changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
-   * otherwise the rows added. An authorization that writes the group's first key moves the
-   * default to the group's connect default in the same write (withConnectDefault) and reports
-   * it as `defaultSwitch`.
+   * otherwise the rows added. An authorization that writes the group's first key reports the
+   * default it offers as `defaultOffer` (connectOfferOf), without writing it.
    */
   async mergePlatformModels(
     projectId: string,
@@ -2310,18 +2290,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
-    let defaultSwitch: DefaultModelSwitch | undefined;
+    let defaultOffer: DefaultModelOffer | undefined;
     if (added.length > 0 || routesUpdated > 0 || pricesChanged || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
-      const written = withConnectDefault(
-        before,
-        { ...raw, ...(providers !== undefined ? { providers } : {}), models: nextModels },
-        provider,
-      );
-      defaultSwitch = written.defaultSwitch;
-      await this.writeRaw(projectId, written.table);
+      const next = {
+        ...raw,
+        ...(providers !== undefined ? { providers } : {}),
+        models: nextModels,
+      };
+      defaultOffer = connectOfferOf(before, next, provider);
+      await this.writeRaw(projectId, next);
     }
     // After the file write, so each promotion applies to the list price that was persisted.
     // A missing promotion clears the advertised row's old one; unadvertised rows are kept.
@@ -2346,7 +2326,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       added: added.length,
       updated: Math.max(routesUpdated, changedIds.size),
       applied,
-      ...(defaultSwitch !== undefined ? { defaultSwitch } : {}),
+      ...(defaultOffer !== undefined ? { defaultOffer } : {}),
     };
   }
 

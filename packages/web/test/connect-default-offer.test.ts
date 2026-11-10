@@ -1,25 +1,27 @@
 // @vitest-environment jsdom
 /**
- * The notice after connecting TokenDance or Penguin Go moved the Project's default model, on the
- * real models page against a fake of its API. The server decides whether a connect moves the
- * default (server test connect-default-model.test.ts); the page says what it was told.
+ * The question after connecting TokenDance or Penguin Go offered that group's DeepSeek V4.1 Flash
+ * as the Project's default model, on the real models page against a fake of its API. The server
+ * decides whether a connect offers it and never moves the default itself (server test
+ * connect-default-offer.test.ts); the page asks what it was told.
  *
- * - Given TokenDance is not connected, when the owner saves its key in the group settings and the
- *   server reports the default moved, then a notice names TokenDance's DeepSeek V4.1 Flash with
- *   Undo, and the list marks that model as the default.
- * - When the owner presses Undo, the previous default is written back, the list marks it again,
- *   and a notice says so.
- * - Given the Project had no default, the notice offers no Undo.
- * - Given the server reports no switch (the group was connected already, another group, the row
- *   is gone), no notice appears.
- * - Given TokenDance's connect flow writes the key and moves the default, the notice waits until
- *   the dialog's outcome is dismissed, and then offers Undo; Penguin Go's flow does the same.
+ * - Given the default is DeepSeek's, when the owner saves a TokenDance key in the group settings
+ *   and the server offers TokenDance's DeepSeek V4.1 Flash, then a question names the current
+ *   default and the offered model, and nothing is written yet: the list still marks DeepSeek's.
+ * - When the owner switches, the offered model is written through the default route, the list
+ *   marks it, and a notice says it saved.
+ * - When the owner keeps the current default, nothing is written and the list is unchanged.
+ * - Given the Project had no default, the question asks whether to set one, and setting it
+ *   writes the offered model.
+ * - Given the server offers nothing, no question appears.
+ * - Given TokenDance's connect flow writes the key with an offer, the question waits until the
+ *   dialog's outcome is dismissed; Penguin Go's flow does the same.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
 import { MemoryRouter } from "react-router";
 import type {
-  DefaultModelSwitch,
+  DefaultModelOffer,
   ModelInfo,
   ModelRefDto,
   ModelsResponse,
@@ -73,31 +75,25 @@ const ROWS = [
   row("penguin-go", "deepseek-flash", "Go Flash"),
 ];
 
-const switched = (name: string) => en.models.connectDefaultSwitched(name);
-
 /**
- * The models API with a group key write that moves the default as the server would, when told
- * to: `moves` answers whether it does for a group, and the switch names the default it replaced.
+ * The models API, whose group key writes report an offer where `offers` says so, as the server
+ * would: the offered model and the current default, which the write leaves where it is.
  */
-function modelsServer(start: ModelRefDto | undefined, moves: (provider: string) => boolean) {
+function modelsServer(start: ModelRefDto | undefined, offers: (provider: string) => boolean) {
   let table: ModelsResponse = {
     providers: {},
     models: ROWS,
     ...(start !== undefined ? { defaultModel: start } : {}),
   };
-  /** The group's key lands; the default moves where `moves` says, and the switch is answered. */
-  const connect = (provider: string, target: ModelRefDto): DefaultModelSwitch | undefined => {
-    const previous = table.defaultModel;
+  /** The group's key lands; the default stays, and the offer is answered where `offers` says. */
+  const connect = (provider: string, model: ModelRefDto): DefaultModelOffer | undefined => {
     table = {
       ...table,
       providers: { ...table.providers, [provider]: { apiKeyMasked: "sk-…0001" } },
     };
-    if (!moves(provider)) return undefined;
-    table = { ...table, defaultModel: target };
-    return {
-      defaultModel: target,
-      ...(previous !== undefined ? { previousDefault: previous } : {}),
-    };
+    if (!offers(provider)) return undefined;
+    const current = table.defaultModel;
+    return { model, ...(current !== undefined ? { current } : {}) };
   };
   const fake = stubFetch((req) => {
     if (req.path === "/api/me") return json(ADMIN_ME);
@@ -106,8 +102,8 @@ function modelsServer(start: ModelRefDto | undefined, moves: (provider: string) 
     if (req.path === "/api/projects/p1/usage/model-totals") return json({ totals: [] });
     if (req.path === "/api/projects/p1/models" && req.method === "GET") return json(table);
     if (req.path === "/api/projects/p1/models/providers/tokendance" && req.method === "PUT") {
-      const defaultSwitch = connect("tokendance", TOKENDANCE);
-      return json({ ...table, ...(defaultSwitch !== undefined ? { defaultSwitch } : {}) });
+      const defaultOffer = connect("tokendance", TOKENDANCE);
+      return json({ ...table, ...(defaultOffer !== undefined ? { defaultOffer } : {}) });
     }
     if (req.path === "/api/projects/p1/models/default" && req.method === "PUT") {
       table = { ...table, defaultModel: req.body as ModelRefDto };
@@ -117,8 +113,8 @@ function modelsServer(start: ModelRefDto | undefined, moves: (provider: string) 
       return json({ flowId: "td-flow", authorizeUrl: "https://td.example/auth", mode: "manual" });
     }
     if (req.path === "/api/projects/p1/model-oauth/td-flow/code") {
-      const defaultSwitch = connect("tokendance", TOKENDANCE);
-      return json({ ok: true, applied: 1, ...(defaultSwitch ? { defaultSwitch } : {}) });
+      const defaultOffer = connect("tokendance", TOKENDANCE);
+      return json({ ok: true, applied: 1, ...(defaultOffer ? { defaultOffer } : {}) });
     }
     if (req.path === "/api/projects/p1/platform-auth/start") {
       return json(
@@ -127,21 +123,21 @@ function modelsServer(start: ModelRefDto | undefined, moves: (provider: string) 
       );
     }
     if (req.path === "/api/projects/p1/platform-auth/go-flow/status") {
-      const defaultSwitch = connect("penguin-go", PENGUIN_GO);
-      return json({ status: "completed", applied: 1, ...(defaultSwitch ? { defaultSwitch } : {}) });
+      const defaultOffer = connect("penguin-go", PENGUIN_GO);
+      return json({ status: "completed", applied: 1, ...(defaultOffer ? { defaultOffer } : {}) });
     }
     return apiError(404, "not_found");
   });
-  /** The defaults the page wrote back through the narrow default route (Undo). */
-  const restores = () =>
+  /** The defaults the page wrote through the narrow default route. */
+  const writes = () =>
     fake.requests
       .filter((r) => r.path === "/api/projects/p1/models/default" && r.method === "PUT")
       .map((r) => r.body);
-  return { restores };
+  return { writes };
 }
 
-async function openModelsPage(start: ModelRefDto | undefined, moves = (_p: string) => true) {
-  const server = modelsServer(start, moves);
+async function openModelsPage(start: ModelRefDto | undefined, offers = (_p: string) => true) {
+  const server = modelsServer(start, offers);
   await mount(
     h(
       MemoryRouter,
@@ -175,6 +171,14 @@ const defaults = () =>
   ["DeepSeek Flash", "DeepSeek V4.1 Flash", "Go Flash"].filter((name) =>
     card(name)?.textContent?.includes(en.models.default),
   );
+/** The question asked when DeepSeek's default meets TokenDance's offer. */
+const SWITCH_QUESTION = () =>
+  en.models.connectDefaultOffer("TokenDance", "DeepSeek Flash (DeepSeek)", "DeepSeek V4.1 Flash");
+/** Presses the topmost dialog's button that reads `text`. */
+const pressInDialog = (text: string) =>
+  click(
+    [...dialogs().at(-1)!.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!,
+  );
 /** The texts of the toasts on screen. */
 const notices = () => toastStore.getState().items.map((t) => t.text);
 /** Whether the page says `text` anywhere, a dialog's body included. */
@@ -200,7 +204,7 @@ async function saveTokenDanceKey() {
   await click(button(en.common.save));
 }
 
-describe("the notice after a connect moved the default model", () => {
+describe("the question after a connect offered a default model", () => {
   beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   beforeEach(() => {
@@ -220,53 +224,69 @@ describe("the notice after a connect moved the default model", () => {
     localStorage.clear();
   });
 
-  it("names the new default with Undo once a TokenDance key is saved, and the list marks it", async () => {
-    await openModelsPage(DEEPSEEK);
-    expect(defaults()).toEqual(["DeepSeek Flash"]);
+  it("asks once a TokenDance key is saved, naming both models, and writes nothing yet", async () => {
+    const server = await openModelsPage(DEEPSEEK);
 
     await saveTokenDanceKey();
-    await waitFor(() => notices().length > 1);
+    await waitFor(() => shows(SWITCH_QUESTION()));
 
-    expect(notices()).toContain(switched("DeepSeek V4.1 Flash (TokenDance)"));
-    expect(hasButton(en.common.undo)).toBe(true);
-    expect(defaults()).toEqual(["DeepSeek V4.1 Flash"]);
+    expect(dialogButtons()).toEqual([en.models.connectDefaultKeep, en.models.connectDefaultSwitch]);
+    expect(server.writes()).toEqual([]);
+    expect(defaults()).toEqual(["DeepSeek Flash"]);
   });
 
-  it("Undo writes the previous default back, the list marks it again, and a notice says so", async () => {
+  it("Switch writes the offered model as the default, the list marks it, and a notice says it saved", async () => {
     const server = await openModelsPage(DEEPSEEK);
     await saveTokenDanceKey();
-    await waitFor(() => hasButton(en.common.undo));
+    await waitFor(() => shows(SWITCH_QUESTION()));
 
-    await click(button(en.common.undo));
-    await waitFor(() => server.restores().length === 1);
-    await waitFor(() => defaults()[0] === "DeepSeek Flash");
+    await pressInDialog(en.models.connectDefaultSwitch);
+    await waitFor(() => defaults()[0] === "DeepSeek V4.1 Flash");
 
-    expect(server.restores()).toEqual([DEEPSEEK]);
-    expect(defaults()).toEqual(["DeepSeek Flash"]);
-    expect(notices()).toContain(en.models.connectDefaultRestored("DeepSeek Flash (DeepSeek)"));
+    expect(server.writes()).toEqual([TOKENDANCE]);
+    expect(defaults()).toEqual(["DeepSeek V4.1 Flash"]);
+    expect(notices()).toEqual([en.common.saved, en.common.saved]);
+    expect(shows(SWITCH_QUESTION())).toBe(false);
   });
 
-  it("offers no Undo when the Project had no default", async () => {
-    await openModelsPage(undefined);
-
+  it("Keep current writes nothing and leaves the default as it was", async () => {
+    const server = await openModelsPage(DEEPSEEK);
     await saveTokenDanceKey();
-    await waitFor(() => notices().length > 1);
+    await waitFor(() => shows(SWITCH_QUESTION()));
 
-    expect(notices()).toContain(switched("DeepSeek V4.1 Flash (TokenDance)"));
-    expect(hasButton(en.common.undo)).toBe(false);
+    await pressInDialog(en.models.connectDefaultKeep);
+    await waitFor(() => !shows(SWITCH_QUESTION()));
+
+    expect(server.writes()).toEqual([]);
+    expect(defaults()).toEqual(["DeepSeek Flash"]);
   });
 
-  it("says nothing when the server reports no switch", async () => {
+  it("asks to set a default when the Project had none, and setting it writes the offered model", async () => {
+    const server = await openModelsPage(undefined);
+    await saveTokenDanceKey();
+    const question = en.models.connectDefaultOfferUnset("TokenDance", "DeepSeek V4.1 Flash");
+    await waitFor(() => shows(question));
+
+    expect(dialogButtons()).toEqual([en.models.connectDefaultNotNow, en.models.connectDefaultSet]);
+
+    await pressInDialog(en.models.connectDefaultSet);
+    await waitFor(() => server.writes().length === 1);
+
+    expect(server.writes()).toEqual([TOKENDANCE]);
+  });
+
+  it("asks nothing when the server offers nothing", async () => {
     await openModelsPage(DEEPSEEK, () => false);
 
     await saveTokenDanceKey();
     await waitFor(() => notices().length > 0);
 
     expect(notices()).toEqual([en.common.saved]);
-    expect(defaults()).toEqual(["DeepSeek Flash"]);
+    expect(hasButton(en.models.connectDefaultKeep)).toBe(false);
+    expect(hasButton(en.models.connectDefaultNotNow)).toBe(false);
   });
 
-  it("waits for TokenDance's connect flow to be dismissed, then offers Undo", async () => {
+  it("waits for TokenDance's connect flow to be dismissed, then asks", async () => {
     await openModelsPage(DEEPSEEK);
     await click(button(en.models.oauthKey));
     await waitFor(() => hasButton(en.models.oauthSubmitCode));
@@ -274,16 +294,13 @@ describe("the notice after a connect moved the default model", () => {
     await click(button(en.models.oauthSubmitCode));
     await waitFor(() => shows(en.models.oauthAppliedBody("TokenDance", 1)));
 
-    expect(notices()).toEqual([]);
+    expect(shows(SWITCH_QUESTION())).toBe(false);
 
     await closeDialog();
-    await waitFor(() => notices().length > 0);
-
-    expect(notices()).toEqual([switched("DeepSeek V4.1 Flash (TokenDance)")]);
-    expect(hasButton(en.common.undo)).toBe(true);
+    await waitFor(() => shows(SWITCH_QUESTION()));
   });
 
-  it("waits for Penguin Go's connect flow to be dismissed, then offers Undo", async () => {
+  it("waits for Penguin Go's connect flow to be dismissed, then asks", async () => {
     // The flow opens its tab from the click, before the server has the address.
     const tab = { opener: null, location: { replace: () => {} }, close: () => {} };
     vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
@@ -293,13 +310,15 @@ describe("the notice after a connect moved the default model", () => {
     // Done is the one phase whose footer says Close rather than Cancel. (The dialog's sentences
     // are read once, when the page module loads, so they are not in the language set here.)
     await waitFor(() => dialogButtons().includes(en.common.close));
+    const question = en.models.connectDefaultOffer(
+      "Penguin Go",
+      "DeepSeek Flash (DeepSeek)",
+      "Go Flash",
+    );
 
-    expect(notices()).toEqual([]);
+    expect(shows(question)).toBe(false);
 
     await closeDialog();
-    await waitFor(() => notices().length > 0);
-
-    expect(notices()).toEqual([switched("Go Flash (Penguin Go)")]);
-    expect(hasButton(en.common.undo)).toBe(true);
+    await waitFor(() => shows(question));
   });
 });

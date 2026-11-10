@@ -8,7 +8,7 @@ import type { AgentRow } from "../db/repos/agents.js";
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
-  DefaultModelSwitch,
+  DefaultModelOffer,
   EndpointModelListRequest,
   EndpointModelListResponse,
   MemberInfo,
@@ -169,7 +169,7 @@ export abstract class ProjectConfigStore {
   abstract updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   /**
    * One group's `[providers.<id>]` connection, merged per field; rows are never touched. The
-   * group's first key moves the default to its connect default, reported as `defaultSwitch`.
+   * group's first key reports its connect default as `defaultOffer`; the default is untouched.
    */
   abstract setProviderConnection(
     projectId: string,
@@ -180,7 +180,7 @@ export abstract class ProjectConfigStore {
   abstract syncPresets(projectId: string, mode: PresetSyncMode): Promise<PresetSyncResponse>;
   /**
    * Writes the group key; resolves to how many of the group's rows use it (none of their own),
-   * and the default the group's first key moved to its connect default.
+   * and the connect default the group's first key offers as the default model.
    */
   abstract setGroupApiKey(
     projectId: string,
@@ -221,10 +221,10 @@ export abstract class ProjectConfigStore {
   abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
 }
 
-/** A group key written: how many of the group's rows use it, and the default it moved, if any. */
+/** A group key written: how many of the group's rows use it, and the default it offers, if any. */
 export interface GroupKeyApplied {
   applied: number;
-  defaultSwitch?: DefaultModelSwitch;
+  defaultOffer?: DefaultModelOffer;
 }
 
 export interface ModelPromotion {
@@ -279,7 +279,7 @@ export abstract class ModelOAuth {
     provider: string;
     error?: ModelOAuthErrorCode;
     applied?: number;
-    defaultSwitch?: DefaultModelSwitch;
+    defaultOffer?: DefaultModelOffer;
   }>;
   abstract complete(input: {
     flowId: string;

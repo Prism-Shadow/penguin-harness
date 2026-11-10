@@ -240,7 +240,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
     return c.json({
       ok: true,
       applied: result.applied,
-      ...(result.defaultSwitch !== undefined ? { defaultSwitch: result.defaultSwitch } : {}),
+      ...(result.defaultOffer !== undefined ? { defaultOffer: result.defaultOffer } : {}),
     } satisfies ModelOAuthCodeResponse);
   });
 
@@ -266,7 +266,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       status: state.status,
       provider: state.provider,
       ...(state.applied !== undefined ? { applied: state.applied } : {}),
-      ...(state.defaultSwitch !== undefined ? { defaultSwitch: state.defaultSwitch } : {}),
+      ...(state.defaultOffer !== undefined ? { defaultOffer: state.defaultOffer } : {}),
       ...(state.error !== undefined ? { error: state.error } : {}),
     } satisfies ModelOAuthStatusResponse);
   });
