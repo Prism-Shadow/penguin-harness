@@ -6,7 +6,7 @@ description: Create agents, and configure their prompts, tools, Skills, hooks, m
 An agent is a configured assistant in a Project. Each agent has its own instructions, runtime settings, tools, Skills, hook packages, memory, vault variables and scheduled tasks, stored together as its Agent State. You create agents and change their settings on the **Agents** page.
 
 - To see the agents in a Project, see [The Agents page](#the-agents-page).
-- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai) or [Create an agent manually](#create-an-agent-manually).
+- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai), [Create an agent manually](#create-an-agent-manually) or [Import an agent](#import-an-agent).
 - To change an agent, see [Agent settings](#agent-settings) and the section for each tab.
 - To back up, move or reset an agent, see [Overview tab](#overview-tab).
 - To delete an agent, see [Delete an agent](#delete-an-agent).
@@ -22,7 +22,7 @@ Each agent card shows:
 - the agent's name, its id, its Agent State version (for example `v3`) and its description; an agent whose API is on carries an API icon after its name (**API access on**);
 - a row of counts: Sessions, tools, Skills, hook packages, memories, vault variables and scheduled tasks, plus when the agent was last modified. Select a count to open the matching settings tab;
 - the agent's Session activity over the last 30 days;
-- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; and a delete button.
+- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; **Export agent**, which opens the export dialog (see [Export and import an agent](#export-and-import-an-agent)); and a delete button.
 
 When a newer kernel is available for some agents, their cards show **Kernel update needed**, and a notice at the top of the page offers **Update now** and **Dismiss**. See [Update the kernel](#update-the-kernel).
 
@@ -68,20 +68,31 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 
 Any Project member can create an agent.
 
-### Start from a snapshot
+To create an agent from an exported file instead, select **Import agent** in the dialog's footer.
 
-A snapshot package is an exported Agent State. You can create an agent from one, for example to copy an agent to another Project or another machine.
+## Import an agent
 
-**Before you begin**
+**Import agent**, beside the create buttons on the Agents page, opens a dialog with two ways in.
 
-- A snapshot package (`.tar.gz`) of the agent you want to copy. A package can be up to 14 MB. To create one, see [Export and import a snapshot](#export-and-import-a-snapshot).
+### Migrate from another framework
 
-1. In the **Create agent** dialog, under **Initialize from a snapshot**, select **Choose a snapshot package** and pick the package. If **Agent id** is empty, it is filled in from the file name.
-2. Leave **Name** and **Description** empty to keep the values in the package, or fill them in to replace them.
-3. Select **Create**.
+Move an agent set up in Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code or WorkBuddy into a new agent in this Project.
 
-> [!NOTE]
-> A snapshot package carries its own Skills and hooks. While a package is selected, **Plugins** and **Import Skills from a project directory** are hidden.
+1. In **Source framework**, select the tool, or **Other** for any other tool.
+2. Optional: in **Path**, enter where its files are. Empty reads the tool's user directory shown in the box: `~/.claude`, `~/.codex`, `~/.dsh`, `~/.qoder`, `~/.qwen` or `~/.workbuddy-ai`. For **Other**, the field is **Path or description** and is required.
+3. Optional: expand **Full prompt** to read the prompt, or copy it.
+4. Select **Open a new chat**. A conversation with the Project's `default_agent`, or the first agent when there is none, opens with the prompt filled in. Nothing is sent yet.
+5. Review the prompt and send it.
+
+The agent follows the `agent-porting` Skill of the `skill-porting` plugin. It reads the source without changing it and never copies a secret's value. It writes the new agent in the layout of an exported zip, imports it with `penguin agent import`, and reports the new agent's id, what it brought over, what it could not and why, and the vault keys to fill in. When that agent does not have the Skill yet, **Open a new chat** installs the plugin on it first.
+
+### Import a file
+
+1. Under **Import a file**, select **Choose a file** and pick a `.zip` exported from an agent. Until 1.0, an older `.tar.gz` snapshot package works too.
+2. Check **Agent id**. It is filled in from the file name without its `-<yyyymmdd>` or `-v<n>` ending.
+3. Select **Import**. A message says whether the agent was created or overwritten, and how many conversations were imported and skipped. The new agent appears in the list.
+
+Any Project member can import a new agent. When the id is taken, the dialog says so. Select **Use another id** to change it, or, as the Project owner, **Overwrite the existing agent** and confirm. Overwriting replaces the parts of that agent's Agent State the file carries; its conversations, vault and API keys stay, and a backup snapshot is written first.
 
 ## Delete an agent
 
@@ -99,7 +110,7 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 
 | Tab | What you configure |
 | --- | --- |
-| **Overview** | Name and description, Agent State snapshots, kernel updates, and restoring the default configuration |
+| **Overview** | Name and description, export and replace from a file, kernel updates, and restoring the default configuration |
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
@@ -125,7 +136,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 
 Any Project member can change most settings. These actions are for the Project owner only:
 
-- deleting the agent and importing a snapshot;
+- deleting the agent, and overwriting or replacing it from a file;
 - the switches on the **Plugins** tab (**Enable skills**, **Enable hooks**, **Enable workbenches** and each workbench's own), the **Skills prompt**, and uninstalling a plugin;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
@@ -138,12 +149,21 @@ Any Project member can change most settings. These actions are for the Project o
 
 Change **Name** or **Description**, then select **Save**.
 
-### Export and import a snapshot
+### Export and import an agent
 
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
-- **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+- **Export…** opens the export dialog, which **Export agent** on the agent's card opens too. Choose what goes in beside the configuration: **Skills**, **Hooks**, **Memory**, **Workbenches**, with **With their data** for each workbench's state, and **Schedules**, off by default. Under **Conversations**, choose **None**, **Latest N** (20 by default, up to 500) or a **Date range**. Select **Export** to save `<agentId>-<yyyymmdd>.zip`.
+- **Replace from file…** (Project owner only) opens the [import dialog](#import-an-agent) with only its file section. Pick an exported file, select **Replace** and confirm.
+
+An agent travels as a zip of its directory: `<agentId>/agent_state/…` and, for the Sessions you choose, `<agentId>/traces/…`. There is no manifest; the name, description and version are in `system_config.yaml`. The configuration always travels. Skills, hooks, memory and workbenches, with or without their data, travel unless you leave them out; scheduled tasks only when you take them, since an imported task runs on its schedule. The vault never travels, and a vault value found in a Trace is replaced by `[vault:<KEY>]`. A value written literally into the configuration travels as it is, so reference credentials as `${KEY}`.
+
+- Importing under an id no agent has creates the agent from the package, with its State, name, description and version. Any member can.
+- Overwriting an agent is for the Project owner. The current Agent State is first packed into a backup of its own, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, then replaced by what the package carries: a part the package leaves out (an export without memory, say) keeps the agent's own, and so does a workbench's data the package left out. The agent's conversations, vault, API keys and employments stay. The workbench version history sits beside the Agent State, so an import leaves it as it is.
+- Sessions the package carries land as conversations of the agent, titled from their first message. A Session this server already has, as when you import an export from the same server, is skipped and reported.
+- A package whose `system_config.yaml` has no `system_prompt` is laid over the default configuration, and the files it leaves out come from the defaults, so a hand-written package needs only the keys it changes.
+
+A `.tar.gz` snapshot package exported before this format imports the same way until 1.0. For the routes, see [Agent routes](/server-api#agent-routes).
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 

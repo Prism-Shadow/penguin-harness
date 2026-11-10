@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type {
   AgentPluginsInstallResponse,
+  IconRef,
   PluginItem,
   WorkbenchInfo,
   WorkbenchesResponse,
@@ -75,16 +76,17 @@ import { toastApiError } from "../../lib/toast-api-error";
 import { WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { BOOK_ICON, localizedText } from "../chat/skill-use";
-import { agentInstalls, installsKey } from "../plugins/agent-installs";
+import { BOOK_ICON, localizedText } from "../../lib/skill-use";
 import {
+  StdioDisclosure,
+  agentInstalls,
   agentPluginGroups,
   hasParts,
+  installsKey,
   type AgentPluginGroup,
   type AgentPluginStatus,
-} from "../plugins/agent-plugin-groups";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { SkillTile } from "../skills/skill-icon-view";
+} from "../plugins";
+import { SkillTile } from "../skills";
 import { HookImportDialog, useHookRows } from "./agent-hooks";
 import { SkillImportDialog, useSkillRows } from "./agent-skills";
 import { WorkbenchImportDialog, useWorkbenchRows } from "./agent-workbenches";
@@ -313,7 +315,7 @@ export function PluginsTab({
       : localizedText(locale, group.plugin.title || group.name, group.plugin.titleZh);
 
   /** An MCP server a plugin installed: its name and what it waits for; edited on the Tools tab. */
-  const mcpRow = (server: AgentPluginGroup["parts"]["mcpServers"][number], icon?: string) => (
+  const mcpRow = (server: AgentPluginGroup["parts"]["mcpServers"][number], icon?: IconRef) => (
     <ListRow
       key={`mcp:${server.name}`}
       as="li"

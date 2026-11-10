@@ -25,8 +25,8 @@
  * the config at once and move the stored prompt the draft is compared with; what is being typed
  * stays as typed.
  */
-import { useCallback, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
+
 import type {
   AgentConfigDto,
   AgentHooksConfigDto,

@@ -17,6 +17,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
+import { readPluginIcon } from "./icon.mjs";
 import { readLibraryEntries } from "./plugin-table.mjs";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
@@ -81,8 +82,6 @@ function frontmatter(text) {
   return parsed && typeof parsed === "object" ? parsed : {};
 }
 
-const svgDataUrl = (svg) => `data:image/svg+xml,${encodeURIComponent(svg.trim())}`;
-
 /**
  * Every plugin package under `pluginsDir` (one directory per package): its npm fields from
  * `package.json`, and what it declares for the library — card, Skills, hook package, Workbenches —
@@ -101,7 +100,6 @@ export function readPlugins(pluginsDir) {
     const description = optionalString(pkg.description);
     if (description === undefined) fail(file, "a description is required");
     const { card = {}, skills, hooks = {}, workbenches } = readLibraryEntries(dir);
-    const iconPath = optionalString(card.icon) ?? "icon.svg";
     const quickStart = card.quickStart;
     plugins.push({
       id,
@@ -117,7 +115,7 @@ export function readPlugins(pluginsDir) {
       license: optionalString(pkg.license),
       author: readAuthor(pkg.author),
       preinstall: card.preinstall !== false,
-      icon: existsSync(join(dir, iconPath)) ? svgDataUrl(readText(join(dir, iconPath))) : undefined,
+      icon: readPluginIcon(dir, optionalString(card.icon)),
       references: stringList(card.references),
       quickStart:
         quickStart && typeof quickStart.prompt === "string"

@@ -19,7 +19,7 @@
 import { useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useNavigate } from "react-router";
-import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import type { IconRef, WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
@@ -44,8 +44,8 @@ import { workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../chat/skill-use";
-import { SkillTile } from "../skills/skill-icon-view";
+import { localizedText } from "../../lib/skill-use";
+import { SkillTile } from "../skills";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
 import { UPLOAD_LABEL_CLASS } from "./agent-skills";
@@ -118,7 +118,7 @@ function WorkbenchSwitch({
  * remove) they share. `icon` on a row is its plugin's icon; the anvil without one.
  */
 export function useWorkbenchRows(options: WorkbenchRowsOptions): {
-  row: (workbench: WorkbenchInfo, icon?: string) => ReactNode;
+  row: (workbench: WorkbenchInfo, icon?: IconRef) => ReactNode;
   modals: ReactNode;
 } {
   const { agentId, onChanged } = options;
@@ -160,7 +160,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     }
   };
 
-  const row = (workbench: WorkbenchInfo, icon?: string) => {
+  const row = (workbench: WorkbenchInfo, icon?: IconRef) => {
     const first = workbenchTabsOf([workbench])[0];
     const title = first ? localizedText(locale, first.title, first.titleZh) : workbench.name;
     /** A switched-off workbench loads nothing: there is no page to open and nothing to reload. */

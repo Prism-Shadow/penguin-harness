@@ -133,7 +133,8 @@ describe("browserCommon", () => {
     expect(browserCommon(chord("Mod+Shift+KeyY"), "windows")).toBe(false);
     expect(browserCommon(chord("Mod+KeyY", "mac"), "mac")).toBe(true); // history
     expect(browserCommon(chord("Mod+Alt+KeyI", "mac"), "mac")).toBe(true); // developer tools
-    expect(browserCommon(chord("Mod+Alt+KeyP", "mac"), "mac")).toBe(true); // Chrome's page setup
+    expect(browserCommon(chord("Mod+Alt+KeyP", "mac"), "mac")).toBe(false);
+    expect(browserCommon(chord("Mod+Shift+KeyP", "mac"), "mac")).toBe(true); // private window (Firefox)
     expect(browserCommon(chord("Mod+Alt+KeyP"), "linux")).toBe(false);
     expect(browserCommon(chord("Alt+ArrowLeft", "mac"), "mac")).toBe(false);
   });

@@ -35,8 +35,9 @@ import {
   mountAgentApp,
   topDialog,
   whereIs,
+  type AgentServer,
 } from "./helpers/agent-app";
-import type { AgentServer } from "./helpers/agent-app";
+
 import {
   button,
   click,
