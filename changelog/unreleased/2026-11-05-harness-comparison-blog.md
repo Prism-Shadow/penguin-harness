@@ -12,13 +12,8 @@ Added Chinese and English experiment blog posts comparing PenguinHarness, DSH, P
 ## Details
 
 - Added ten diagrams and four interface screenshots covering experiment design, reproduction, execution, statistics, scores, task stability and resource use.
-- Added the article to the practice-post index and synchronized the figures with the reviewed source assets.
-- Updated the Chinese article from Feishu revision 279 and corrected the Sec E command paths and task link against the pinned benchmark snapshot.
-- Synchronized the Chinese title, manuscript, captions and selected figures from Feishu revision 759; section 6 and appendix C are excluded from the published article.
-- Set the Chinese and English article bylines to Zhihao Liu (Prism Shadow AI).
-- Synchronized the Chinese article’s reduced bold formatting with the edited Feishu manuscript.
-- Updated the English title, article, complete experiment prompt, captions and alt text from Chinese revision 759, matching its five sections and fourteen figures.
-- Simplified the introduction, pass-frequency discussion and equal-score examples to match the edited manuscript in both languages.
-- Matched the manuscript’s paragraph joins and removal of the final source-reference paragraph in both languages.
-- Updated both article titles to emphasize the problems observed across four Harnesses on 50 real-world tasks.
-- Corrected the embedding-drift-monitor example to describe multiple defects rather than three in both languages.
+- Added the article to the practice-post index with the byline Zhihao Liu (Prism Shadow AI).
+- Matched the Chinese article to the Feishu manuscript and translated its title, five sections, experiment prompt, captions and alt text into English.
+- Updated all ten diagrams to the manuscript's selected figures.
+- Described the three-step reproduction workflow, the subset comparison, Pass@3, and per-task changes behind equal overall scores.
+- Replaced the resource-use discussion with the DSH storage-engine example comparing conventional and randomized self-tests.

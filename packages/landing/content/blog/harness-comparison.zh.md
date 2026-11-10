@@ -1,23 +1,20 @@
 ---
-title: "用 PenguinHarness 跑完 50 项真实任务：看清四款主流 Harness 都栽在了哪些坑里"
+title: "用 PenguinHarness 对比不同 Harness 的能力与性价比"
 date: 2026-11-05
 category: practice
 author: "Zhihao Liu (Prism Shadow AI)"
 excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
 ---
 
-平时用 Agent 写代码、查数据，每当任务失败时，我们大多会把原因归结给大模型：“这模型还是不够聪明。”但真是模型的问题吗？如果把模型固定，只换掉外层的 Harness，Agent 的表现会差多少？为了拿到真实数据，我们使用 PenguinHarness 创建了一个专门组织实验的 Agent，让它使用 Harbor 容器环境，对 DSH、PenguinHarness、Pi、Codex 四种 Harness 发起测试。50 道题，每种 Harness 连续跑满 3 轮，一共 600 次作答。今天我们就来聊聊，这场实验是怎么在 PenguinHarness 里跑起来的，以及分析这 600 条实验记录后，我们看到的四个有趣现象。
+本文介绍如何使用 PenguinHarness 0.2.19 组织不同 Harness 的对比实验。实验从五个公开 Benchmark 中筛选出 50 道测试题，将模型固定为 DeepSeek-V4.1-Flash-1017，思考强度设为 max，对 PenguinHarness、DSH、Pi 和 Codex 各测 3 轮。下文将依次介绍 Benchmark 构建与实验规则、实验流程，以及实测结果与分析。
 
-## 1. Benchmark 构成与实验规则
+## 1. Benchmark 与实验设置
 
-要看清 Harness 之间的差距，首先得把其它变量固定。我们在四组实验里统一使用模型 DeepSeek-V4.1-Flash-1017，思考强度全部拉满到 max，使用 Harbor 0.23.0 在独立 Docker 容器里把 50 道题各跑 3 轮：
+所有评测任务均在独立 Docker 容器中运行，四个被测 Harness 的版本与测试集构成如图 1 所示。
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/03-experiment-design.png" width="2880" height="1730" alt="图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计" /><figcaption>图 1｜四种 Harness 在 50 道固定任务上的三轮实验设计</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/03-experiment-design.png" width="2880" height="1650" alt="图 1 四个被测 Harness 与测试集构成" /><figcaption>图 1 四个被测 Harness 与测试集构成</figcaption></figure>
 
-这 50 道题可不是随便挑的。我们从五个公开基准的 864 道候选题出发，花了两轮实测才把题库敲定下来，完整筛选记录见仓库 [SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md)：
-
-1. **第一轮按硬件与成本初选 50 题**：去掉所有依赖 GPU、多容器编排、内存超过 8 GB 或运行期需要下载大权重文件的题目，保证一台普通纯 CPU 机器就能跑完全程，且 50 道题跑满三轮的离峰 API 预算不超过 $20。
-2. **第二轮用早期版本试跑校准难度**：用早期版本 PenguinHarness 0.2.13 实测初选题目，把得分接近饱和的子集换入更难的题，同时把原本全拿 0 分的科学计算子集调到合理难度，最终敲定 A 到 E 五个子集，每个子集 10 道题：
+实验采用的 50 道测试题是从上图五个 Benchmark 中，按单机纯 CPU 环境、8 GB 内存上限与难度区分度筛选得出，完整筛选标准见仓库 [SELECTION.zh.md](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/SELECTION.zh.md)。测试集分为 Sec A 至 Sec E 五个子集，每个子集 10 道题，各子集的任务来源、考察内容与单题运行预算如下：
 
 | 子集 | 上游来源 | 考察内容 | 单题时限 | 请求上限 |
 | --- | --- | --- | --- | --- |
@@ -27,21 +24,27 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 | Sec D | Terminal-Bench-Science 0.1 | 在 Linux 终端完成天体物理、生物信息等科学计算建模 | 40m | 320 |
 | Sec E | Terminal-Bench 4.0 | 在真实终端完成系统排障、存储引擎修复与编译调试 | 25m | 200 |
 
-## 2. 用 Penguin 四步发起实验
+为消除环境干扰并保证对比公平，实验遵循以下规则：
 
-跑 600 次容器评测涉及不少环节：配网络、打离线包、控并发、查异常重跑，最后还要汇总 20 组实验的 YAML 报表。但我们不需要手敲一堆终端脚本，直接在 PenguinHarness 界面里创建一个专门的 Agent，让它接管全流程实验即可。
+1. **运行环境离线挂载**：四个 Harness 均预先打包为离线压缩包，容器启动时挂载至独立目录解压运行，不修改题目容器自带的 Python 或 Node 环境。
+2. **开源修 Bug 题断网隔离**：Sec B 的题目来自开源仓库的历史 Bug，为了防止 Agent 联网搜到原仓库已有的修复 PR 或 Issue，Sec B 容器关闭外网访问权限，只允许请求模型 API。
+3. **仅环境未启动成功才补跑**：每轮运行结束后自动检查容器状态。只有当容器未正常启动时，才判定为环境故障并重新运行；若 Agent 已开始执行任务，中途报错或运行超时也会记录成绩，不进行重跑。
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="1740" alt="图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程" /><figcaption>图 2｜用 PenguinHarness 组织四种被测 Harness 的复现流程</figcaption></figure>
+## 2. 用 PenguinHarness 组织实验
 
-在 PenguinHarness 的 Web 界面里，只需要四步就可以复现我们这套流程：
+实验涉及网络配置、离线包构建、并发控制、异常补跑与 YAML 报表汇总。我们在 PenguinHarness 中创建一个专门的 Agent 负责组织上述流程，整体调度方式如图 2 所示：
 
-**第一步：在「模型配置」中接入被测模型**
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/04-penguin-reproduction-flow.png" width="2880" height="1500" alt="图 2 用 PenguinHarness 组织对比实验" /><figcaption>图 2 用 PenguinHarness 组织对比实验</figcaption></figure>
 
-打开左侧的模型配置页面，在 DeepSeek 分组下点开 DeepSeek V4.1 Flash 配置弹窗，填入 API key 与接口地址 https://api.deepseek.com，点击上方的设为默认模型并保存：
+在 PenguinHarness 的 Web 界面中，按以下三步即可复现实验：
+
+**第一步：配置默认模型**
+
+打开左侧的模型配置页面，在 DeepSeek 分组下点开 DeepSeek V4.1 Flash 配置弹窗，填入 API key 与接口地址 https://api.deepseek.com，设为默认模型并保存：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/ui_01_model_config.png" width="2372" height="1544" alt="在模型配置页面接入 DeepSeek V4.1 Flash 并设为默认模型" /><figcaption>在模型配置页面接入 DeepSeek V4.1 Flash 并设为默认模型</figcaption></figure>
 
-**第二步：创建专门组织评测的「Harness评测」Agent**
+**第二步：创建组织实验的 Agent**
 
 切换到 Agents 页面，点击右上角的手动创建，在弹窗里填好名称 Harness评测 与 Agent ID harness_evaluation，点击右下角创建：
 
@@ -51,16 +54,16 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/ui_03_agents_list.png" width="1774" height="834" alt="在 Agents 列表中点击新建对话" /><figcaption>在 Agents 列表中点击新建对话</figcaption></figure>
 
-**第三步：选定「最高」思考强度，把实验 Prompt 交给 Agent**
+**第三步：设置思考强度并发送 Prompt**
 
 进入新建对话页面后，确认左下角已选中 Harness评测 与工作目录，在输入框右下角将模型设为 DeepSeek V4.1 Flash、思考强度设为最高：
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/ui_04_chat_box.png" width="1834" height="836" alt="在新建对话界面选定 Harness评测、工作目录、最高思考强度与被测模型" /><figcaption>在新建对话界面选定 Harness评测、工作目录、最高思考强度与被测模型</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/ui_04_chat_box.png" width="1834" height="836" alt="在新建对话界面选定 Harness评测、工作目录、思考强度与被测模型" /><figcaption>在新建对话界面选定 Harness评测、工作目录、思考强度与被测模型</figcaption></figure>
 
 接着将下面这段完整的实验 Prompt 复制到输入框并发送：
 
 ```text
-请帮我组织并复现四种 Harness 的三轮对比实验，具体要求如下：
+请帮我组织并复现四个 Harness 的三轮对比实验，具体要求如下：
 
 1. 实验仓库与快照
 - 克隆仓库 https://github.com/Prism-Shadow/penguin-harness-benchmark.git 并检出快照 6ad65ea054fe8035c1c48724dbb5626d699f6cb2。
@@ -68,11 +71,11 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 2. 被测对象、统一模型与思考强度
 - 运行器统一使用 Harbor 0.23.0。
-- 四种被测 Harness 与版本分别为：DSH 0.2.1-rc.2、PenguinHarness 0.2.17、Pi 1.4.0、Codex 0.162.1。
-- 模型统一使用 deepseek/DeepSeek-V4.1-Flash-1017，并核实四种被测 Harness 均按各自适配器的实际参数启用 max 思考强度。
+- 四个被测 Harness 与版本分别为：DSH 0.2.1-rc.2、PenguinHarness 0.2.17、Pi 1.4.0、Codex 0.162.1。
+- 模型统一使用 deepseek/DeepSeek-V4.1-Flash-1017，并核实四个被测 Harness 均按各自适配器的实际参数启用 max 思考强度。
 
 3. 五个子集、运行轮次与单题预算
-- 对 Sec A 至 Sec E 五个子集各 10 道题、共 50 道题分别独立运行 3 轮，每种 Harness 运行 150 次，合计 600 次作答：
+- 对 Sec A 至 Sec E 五个子集各 10 道题、共 50 道题分别独立运行 3 轮，每个 Harness 运行 150 次，合计 600 次作答：
   - Sec A：data/penguinharness-benchmark-sec-a，10 题，单题时限 15m，请求上限 100，允许公网并复用共享网络 penguin-bench
   - Sec B：data/penguinharness-benchmark-sec-b，10 题，单题时限 30m，请求上限 250，禁用公网，仅通过 --allow-agent-host 放行模型 API 主机
   - Sec C：data/penguinharness-benchmark-sec-c，10 题，单题时限 10m，请求上限 50，允许公网并复用共享网络 penguin-bench
@@ -82,81 +85,68 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 4. 环境与适配器准备、单题验证与批量运行
 - 创建 Docker 共享网络 penguin-bench 并构建离线运行包。仓库 agents/ 目录内置了 penguin_agent:PenguinAgent 适配器；复现 DSH、Pi、Codex 前，请先核实并准备好符合 Harbor InstalledAgent 接口的对应适配器与离线运行包。
 - 先以单并发运行 data/penguinharness-benchmark-sec-e/tasks 中的 embedding-drift-monitor 完成单题验证，确认离线包解压、模型调用、产物落盘和独立验证器判分正常。
-- 单题验证通过后，按单机并发度不超过 4 依次运行四组 Harness 在五个子集上的三轮实验。
+- 单题验证通过后，按单机并发度不超过 4 依次运行四个 Harness 在五个子集上的三轮实验。
 
 5. 异常核查与结果汇总
-- 每轮结束后按 tools/measure/reruns.py 核查并补跑未实质启动的试次，输出各组各子集的 meta_info.yaml、test/attempt-1..3.yaml 与 test/summary.yaml，并汇总四组的得分、逐题通过频次与资源开销对比表。
+- 每轮结束后按 tools/measure/reruns.py 核查并补跑未实质启动的试次，输出四个 Harness 各子集的 meta_info.yaml、test/attempt-1..3.yaml 与 test/summary.yaml，并汇总得分、逐题通过频次与资源开销对比表。
 ```
 
-**第四步：自动运行并生成汇总报表**
+发出指令后，Harness评测 Agent 会自动克隆代码库并运行单题验证环境，随后遵循并发限制，批量完成三轮测试，在每轮结束后补跑未正常启动的容器，最终汇总输出四个 Harness 的得分、耗时与费用对比表。本文分析的 600 次测试记录均已归档在仓库 [experiments/harness-comparison/](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/experiments/harness-comparison) 目录下。
 
-发出指令后，Harness评测 Agent 会自己下载代码库、先跑一道题验证环境，接着批量跑完三轮测试，并在跑完后自动排查没启动成功的容器、生成四组 Harness 的完整成绩单与开销对比表。本文分析的 600 次完整作答记录，均已归档在仓库 experiments/harness-comparison/ 目录下。
+## 3. 任务执行与评分机制
 
-## 3. 单道题怎么跑完并判分？
+每道测试题在容器内的执行与判分相互独立，具体流程如图 3 所示。Agent 在容器的 /app 目录下读取代码、修改文件并调用工具；待 Agent 进程退出后，判分脚本才进入 /app 目录运行验收测试，仅根据最终结果判分——测试全部通过得 100 分，任一测试未通过得 0 分。
 
-为了防止不同 Harness 在环境上占便宜或吃亏，我们在容器外立了三条规矩：
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1370" alt="图 3 单道题目的容器执行与判分流程" /><figcaption>图 3 单道题目的容器执行与判分流程</figcaption></figure>
 
-1. **环境离线挂载**：四种 Harness 的运行包全部提前打成离线压缩包，容器启动时直接挂载到独立目录解压，绝不触碰题目容器自带的 Python 或 Node 环境。
-2. **开源修 Bug 题断网隔离**：由于 Sec B 的题目来自真实开源仓库的历史缺陷，为了防止 Agent 直接上网搜到原仓库现成的修复 PR 或 Issue，Sec B 容器全程断开公网，仅白名单放行模型 API 域名。
-3. **容器没启动成功才补跑，做错或超时绝不重来**：每轮跑完后自动检查一遍。只有当容器本身没拉起来、Agent 连第一句请求都没发出去时，才算环境故障并重新跑；只要 Agent 已经开始做题，不管中途报错还是超时，成绩都直接算数，绝不重跑刷分。
+以 Sec E 的 CASE-008 为例：容器内预置了一套存在多处逻辑与计算缺陷的漂移监测程序，要求 Agent 在 25 分钟、200 次请求内完成修复，结束后由验收脚本运行 pytest 评分。在该题的三轮测试中，Codex 修改后的代码均未通过 pytest，三轮皆为 0 分；Pi 通过两轮；DSH 与 PenguinHarness 则三轮全部通过测试，得 100 分。
 
-那么，一道题在容器里是怎么跑完并打分的？如图 3 所示，最关键的设计是“做题”和“判卷”完全分开：Agent 在容器的 /app 目录里读代码、改文件、调工具，做完退出后，判卷脚本才进到 /app 目录跑验收测试，只看最终改出来的结果对不对——测试全过得 100 分，有一个不过就是 0 分：
+## 4. 得分、耗时与费用统计
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1570" alt="图 3｜单道题目的容器内执行与独立判分流程" /><figcaption>图 3｜单道题目的容器内执行与独立判分流程</figcaption></figure>
+每个 Harness 在 50 道题上运行三轮、共测试 150 次，总体均分与样本标准差的计算方式如图 4 所示：
 
-举个实际的例子。Sec E 的第 8 题 [embedding-drift-monitor](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/6ad65ea054fe8035c1c48724dbb5626d699f6cb2/data/penguinharness-benchmark-sec-e/tasks/embedding-drift-monitor) 是一道修 Bug 题：容器里提前放好了一套有缺陷的监测程序，里面藏着多处逻辑和计算 Bug。四种 Harness 都要在 25 分钟、200 次请求内自己读代码找出并修好这些问题，交卷后再由判卷脚本跑 pytest 验收。结果很有意思：Codex 三轮都觉得自己改完了、主动交卷，但改出来的代码没跑过 pytest，三轮全拿 0 分；而 DSH 和 PenguinHarness 三轮改出的代码全部通过测试，三轮都是 100 分。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2090" alt="图 4 总体均分与样本标准差的计算方法" /><figcaption>图 4 总体均分与样本标准差的计算方法</figcaption></figure>
 
-## 4. 得分与消耗怎么算？
+API 费用、运行时间与 Token 用量则先按单轮 50 道题累加，再跨三轮取平均值；其中 Token 用量按计费方式拆分为非缓存输入、缓存读取与模型输出三类分别统计。
 
-600 次测试全部跑完后，我们从得分和资源消耗两方面汇总结果。首先是得分：每种 Harness 跑满三轮一共作答 150 次，每多做对 1 次，三轮平均总分就会涨 0.67 分，具体算法如图 4 所示：
+## 5. 实验结果与分析
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2392" alt="图 4｜总体均分与样本标准差的计算" /><figcaption>图 4｜总体均分与样本标准差的计算</figcaption></figure>
+四个 Harness 在 50 道测试题上的三轮总体得分如图 5 所示：
 
-其次是资源消耗：我们将每轮跑完 50 道题的 API 费用、Agent 累计运行时间与 Token 用量分别累加，再跨三轮取平均值；其中 Token 用量按计费方式拆分为非缓存输入、缓存读取、模型输出三类分别统计。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/01-overall-bars.png" width="2880" height="956" alt="图 5 四个 Harness 的总体得分" /><figcaption>图 5 四个 Harness 的总体得分</figcaption></figure>
 
-## 5. 实测中的四个有趣现象
+从三轮总体均分来看，DSH 与 PenguinHarness 分别为 38.67 ± 1.15 分和 38.00 ± 2.00 分，在 150 次测试中分别通过 58 次和 57 次；Pi 与 Codex 依次为 34.00 ± 3.46 分和 30.00 ± 2.00 分，分别通过 51 次和 45 次。仅看总体均分，前两名十分接近；下面进一步从五个任务子集、单题通过频次、同分轮次的题目分布以及资源开销四个方面展开分析。
 
-首先看整体成绩：
+### 5.1 五个子集的得分对比
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/01-overall-bars.png" width="2880" height="1140" alt="图 5｜四种 Harness 的三轮总体得分对比" /><figcaption>图 5｜四种 Harness 的三轮总体得分对比</figcaption></figure>
+把总分拆到 Sec A 至 Sec E 五个子集后，四个 Harness 在不同题型上的表现如图 6 所示：
 
-光看这张总榜，前两名 DSH 和 PenguinHarness 只差了 0.67 分，150 次作答里也就是 58 次通过和 57 次通过，只差了 1 次，其余成绩看起来好像也大差不差。但把总分拆到五个子集、拆到每道题的通过次数和资源消耗上，四家的差距一下就出来了。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3180" alt="图 6 五个子集的得分对比" /><figcaption>图 6 五个子集的得分对比</figcaption></figure>
 
-**现象一：PenguinHarness 最擅长解决软件工程题**
+由图 6 可以看出，总体得分领先的 Harness 并非在所有题型上都占优，四个 Harness 在不同任务上各有优劣：PenguinHarness 在 Sec B 软件工程类题集上得分最高，并与 DSH 在 Sec A 数据分析类题集上并列第一；DSH 在 Sec C 自动化流程类题集上领先；Pi 在 Sec E 终端排障类题集上领先；Codex 则在 Sec D 科学计算类题集上得分最高。
 
-把总分拆到 A 至 E 五个子集后，可以明显地看出来四款 Harness 各自擅长什么题型：
+### 5.2 Pass@3 与解题稳定性
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/02-subset-bars.png" width="2880" height="3260" alt="图 6｜四种 Harness 在五个子集上的得分对比" /><figcaption>图 6｜四种 Harness 在五个子集上的得分对比</figcaption></figure>
+我们统计了每道题在三轮测试中的通过频次：三轮里至少做对一次，记为图 7 里的 Pass@3，代表具备解出该题的能力；三轮全部做对，代表能够稳定得分。
 
-如图 6 所示，PenguinHarness 在断网修 Bug 的 Sec B 软件工程子集上优势最为突出，拿到全场最高的 70.00 分；并与 DSH 在 Sec A 数据分析上同拿 70.00 分并列第一，DSH 在 Sec C 自动化流程上领先，Pi 则在 Sec E 终端排障上领先——同一颗模型，换一套 Harness，擅长的题型就变了。更有意思的是，把四家三轮的成绩合在一起看，这 50 道题里其实有 31 道题这颗模型是会做的，占了 62%，只有 19 道题四家全都没做出来。但在这 31 道会做的题里，四家都能拿下的只有 17 道。剩下的 14 道题全看你用哪套 Harness：有 9 道题只有两三家能做出来，更有 5 道题只有唯一一家能跑通。当你的 Agent 搞不定一个任务时，未必是底层模型真不会做，接下来很值得顺着执行轨迹去深挖：究竟是哪一步的工具设计或上下文反馈，限制了模型原本具备的能力。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/09-pass-frequency.png" width="2880" height="1250" alt="图 7 50 道题在三轮测试中的通过频次分布" /><figcaption>图 7 50 道题在三轮测试中的通过频次分布</figcaption></figure>
 
-**现象二：看 Pass@3，PenguinHarness 与 DSH 并列第一，拉低总分的原因是发挥不稳定**
+由图 7 可以看出，DSH 与 PenguinHarness 在三轮内都解出了 25 道题，并列第一。其中 DSH 的稳定性最强，有 13 道题三轮全部通过，而 PenguinHarness 三轮全部通过的只有 10 道，有 12 道题只通过了两轮。如果这 12 道题在三轮中都能稳定通过，不用多解出任何新题，PenguinHarness 的总体均分就能提高 8 分。我们在真实应用场景中优化 Harness 时，重点同样是提升稳定性。
 
-既然单家 Harness 单轮平均只能做对 15 到 19.3 道题，那如果给它三次机会呢？我们统计了每道题在三轮测试中的通过频次：三轮里至少做对一次，就是图 7 里的 **Pass@3**，说明这道题它能做出来；三轮全部做对，才算每次都能稳定拿分。
+### 5.3 总分相同时的单题得分情况
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/09-pass-frequency.png" width="2880" height="1330" alt="图 7｜50 道题在三轮测试中的通过频次分布" /><figcaption>图 7｜50 道题在三轮测试中的通过频次分布</figcaption></figure>
+在 Sec E 上，PenguinHarness 三轮测试的总分都是 20 分（标准差为 0），其中每道题在三轮测试中的具体得分情况如图 8 所示：
 
-从图 7 可以直接看出，DSH 与 PenguinHarness 在三轮内都解出了 25 道题，并列第一。但把 PenguinHarness 解出的这 25 道题拆开看，三次都能稳稳做对的只有 10 道题，另外有 12 道题都只做对了两次。假如能把这 12 道题里做错的那一次做对、同时其他题不丢分，不用多攻克任何一道新难题，光在稳定性上就有 8 分的提升空间。拿软件工程那组修 Bug 的题来说，DSH 和 PenguinHarness 对每一道题都至少修对过一次，说明没有哪道题是完全不会做的；可真要看哪道题能三次测试全部通过，两家却分别只有 2 道和 3 道。这也说明：对实际使用来说，能跑通一次还不够；怎么在交卷前多做一步自检，把“三轮对两轮”变成“三次跑三次全过”，才是接下来提分的关键。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1480" alt="图 8 PenguinHarness 在 Sec E 子集的三轮逐题得分" /><figcaption>图 8 PenguinHarness 在 Sec E 子集的三轮逐题得分</figcaption></figure>
 
-**现象三：三轮总分一模一样，做对的题却换了——看评测结果不能只看总分**
+由图 8 可以看出，虽然三轮总分都是 20 分，但三轮全部通过的只有 CASE-008 一道题；第 1 轮的另外 10 分来自 CASE-010，而第 2、3 轮的另外 10 分来自 CASE-004。可见，总分没变不代表单题结果没变。<br />我们平时优化 Harness 时也是如此：一次改动前后，可能总分没有变化，但内部的得分情况已经变了，部分任务得分上升，另一部分任务得分下降。因此不能只看总分，还需要具体分析得分升降的分布与原因，保留有效改动并解决导致得分下降的问题，才能让总分提上去。
 
-看子集汇总表时，我们注意到一个奇怪的现象：全部 20 组子集实验里，除去两组三轮全得 0 分的实验外，还有 4 组实验三轮跑出来的总分一模一样，标准差都是 0.00。这代表 Agent 在每道题上的表现都完全稳定吗？我们把 PenguinHarness 在 Sec E 的逐题成绩单拉了出来——它三轮都是 20 分：
+### 5.4 资源开销与得分的关系
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/07-task-stability.png" width="2880" height="1560" alt="图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录" /><figcaption>图 8｜PenguinHarness 在 Sec E 三轮测试中的逐题通过记录</figcaption></figure>
+跑完一轮 50 道题，四个 Harness 的 API 费用、累计运行时间与 Token 用量对比如图 9、图 10 所示：
 
-如图 8 所示，虽然每轮都拿 20 分，但真正三轮全做对的只有 CASE-008 一道题；另外 10 分，第 1 轮拿在 CASE-010 上，第 2、3 轮却拿在了 CASE-004 上。再去查另外三组“三轮同分”的实验，只有 DSH 在 Sec A 的 70 分是实打实的同 7 道题三轮全过，剩下两组也都是靠“这轮做对 A 题、下轮做对 B 题”刚好凑出了同样的总分。Codex 在科学计算上的表现更极端：三轮都是 10 分，却没有一道题三轮全过。因此在日常迭代 Agent 时，如果每次改完提示词或工具链只跑一轮、或者只盯着总分涨跌，根本分不清一次改动到底是真提分，还是“修好了 A 题、弄坏了 B 题”，很容易把随机波动当成优化成果。
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08-resource-comparison.png" width="2880" height="1560" alt="图 9 单轮 50 题的 API 费用与运行耗时" /><figcaption>图 9 单轮 50 题的 API 费用与运行耗时</figcaption></figure>
 
-**现象四：多花 Token 不一定能提分——修 Bug** **的题越跑分越高，科学计算题却在超时白跑**
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08b-token-comparison.png" width="2880" height="2180" alt="图 10 单轮 50 题的三类 Token 用量" /><figcaption>图 10 单轮 50 题的三类 Token 用量</figcaption></figure>
 
-最后我们来看这 600 次测试的资源消耗。跑完一整轮 50 道题，四家 Harness 的费用、耗时与三类 Token 用量从低到高对比如图 9、图 10 所示：
-
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08-resource-comparison.png" width="2880" height="1640" alt="图 9｜单轮 50 题的 API 费用与累计运行时间对比" /><figcaption>图 9｜单轮 50 题的 API 费用与累计运行时间对比</figcaption></figure>
-
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/08b-token-comparison.png" width="2880" height="2260" alt="图 10｜单轮 50 题的三类 Token 用量对比" /><figcaption>图 10｜单轮 50 题的三类 Token 用量对比</figcaption></figure>
-
-由于四家都有约 99% 的输入命中了缓存，API 费用高低主要由模型的输出 Token 决定。那么，让 Agent 多输出 Token、多花时间尝试，到底能不能换来更高分？拆到具体题型里看，结果完全相反：
-
-1. **在 Sec B 软件工程题上，更高的 Token 投入对应着更高的得分**：PenguinHarness 在这 10 道题上单轮输出了 1.45 M Token、花费 $1.48，拿下了全场最高的 70.00 分；而输出与花费依次减少的 DSH、Pi 与 Codex，在这组题上的得分也跟着依次降低。我们推测，这与修 Bug 题能边改代码边跑测试、根据报错持续修正有关。
-2. **在 Sec D 科学计算题上，大量运行时间耗在了超时退出上**：这 10 道题耗掉了各家整轮 34% 到 53% 的运行时间，单轮就要跑上 4 到 5 个多小时，最后四家得分却全在 10 分及以下。在保留了逐题耗时的 DSH 和 Codex 记录里，30 次尝试分别有 10 次和 12 次运行超过 35 分钟——其中 21 次最终拿了 0 分，但也有 1 次例外：Codex 在小行星定轨题上跑了 38.8 分钟，最终拿到了 100 分。这说明长耗时并不等于全在白跑，关键要看 Agent 在这段时间里究竟是在推进解题，还是卡在死胡同里原地打转。
-
-所以多花 Token 能不能换来高分，很大程度上取决于任务环境有没有明确的反馈信号。像修 Bug 这类能随时跑测试、看报错的任务，让 Agent 多试几轮更容易越改越对；但像科学计算这类中间拿不到对错反馈的长任务，单纯放宽步数和时长往往只会增加无效尝试——及时发现它卡在哪一步、督促它换思路或停下，远比硬堆 Token 管用。
+由图 9、图 10 可以看出，得分领先的 DSH 与 PenguinHarness 消耗了更多的运行时间和输出 Token；其中 DSH 的费用与耗时均低于 PenguinHarness，性价比更高。但汇总数据无法反映额外的耗时和 Token 具体消耗在哪些环节，我们进一步分析了 Sec E 中 CASE-004（修复 C++ 存储引擎版本压缩后丢失数据的问题）的运行日志。在这道题的第 1 轮和第 3 轮中，DSH 修改代码后都编写了测试自检：第 1 轮的自测用例全部通过，但未覆盖边界条件，独立验收时有 4 项测试失败；而在第 3 轮中，随机测试触发了边界场景下的数据不一致报错，DSH 随后通过日志定位原因并修正了代码逻辑，虽然多消耗了近一倍的时间和更多 Token，但最终通过了全部 15 项验收测试。<br />我们平时优化 Harness 时也要考虑到这点，如果只在 Prompt 中简单要求“完成修改后编写测试自检”，模型往往只会顺着已有的修改思路编写常规测试，难以测出遗漏的边界问题。因此，在编写自检指令时，需要明确要求构造随机测试，并覆盖异常输入、并发与中间状态等边界场景。
