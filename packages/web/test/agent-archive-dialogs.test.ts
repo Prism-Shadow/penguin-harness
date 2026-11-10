@@ -124,7 +124,7 @@ describe("the Agent export and import dialogs", () => {
     });
     await click(button(en.agent.exportAgent));
     const hooks = [...topDialog().querySelectorAll("label")].find(
-      (label) => label.textContent?.trim() === en.agent.tabHooks,
+      (label) => label.textContent?.trim() === en.agent.exportHooks,
     );
     await click(hooks!.querySelector("input")!);
     await click(buttonIn(topDialog(), en.agent.exportTracesLast));

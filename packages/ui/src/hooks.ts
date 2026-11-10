@@ -34,7 +34,7 @@
  * |                    | code block, `Card`, a framed `Table`                     |                                                       |
  * | `ui-underline-nav` | the selected-tab marker of a tab bar (a page's tabs, a   | items `[role="tab"]`, selected by `aria-selected="true"` |
  * |                    | dock's tab strip)                                        |                                                       |
- * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
+ * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]`; in a desktop window the shell carries `data-window-band` and an absolutely placed `data-slot="band"` child holds the title band (window-band.css frames the main column as a card then) |
  * |                    | host: `AppShell`                                         |                                                       |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |

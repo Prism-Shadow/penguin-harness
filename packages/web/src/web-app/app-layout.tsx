@@ -7,6 +7,9 @@ import { backgroundStyle, useBackground } from "../state/background";
  *   sidebar in a drawer.
  * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
  * transform would trap the menus it opens); the package's components say how.
+ * In the desktop shell's window the page also draws the window's title band (window-chrome.tsx):
+ * the sidebar toggle lives there, and the sidebar and the rail then carry no fold button of their
+ * own.
  */
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
@@ -26,6 +29,8 @@ import { ChangePasswordDialog } from "../components/account/change-password-dial
 import { AppInfoDialog } from "../components/account/app-info-dialog";
 
 import { FindBar } from "../components/find/find-bar";
+import { windowBridge } from "../lib/window-bridge";
+import { TitleBand } from "./window-chrome";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -127,6 +132,12 @@ export function AppLayout() {
     };
   }, [collapsed, inDefaultMode, newChat]);
 
+  const foldSidebar = () => {
+    setOpenSearchOnExpand(false);
+    toggleCollapsed();
+  };
+  // In the desktop window the band's toggle is the one fold button: the column offers none.
+  const band = windowBridge() !== null;
   return (
     <AppShell
       background={
@@ -135,20 +146,15 @@ export function AppLayout() {
           : backgroundStyle(background.image, background.settings)
       }
       navCollapsed={collapsed}
+      band={
+        band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
+      }
       nav={
         collapsed ? (
-          <sidebar.Rail
-            onExpand={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
-          />
+          <sidebar.Rail {...(band ? {} : { onExpand: foldSidebar })} />
         ) : (
           <sidebar.Column
-            onCollapse={() => {
-              setOpenSearchOnExpand(false);
-              toggleCollapsed();
-            }}
+            {...(band ? {} : { onCollapse: foldSidebar })}
             initialSearchOpen={openSearchOnExpand}
           />
         )

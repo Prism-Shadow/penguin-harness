@@ -24,6 +24,7 @@ import type {
   AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentSkillsResponse,
@@ -137,7 +138,7 @@ import type {
   VaultResponse,
   VersionHistoryResponse,
   VersionResponse,
-  WorkbenchInfo,
+  WorkbenchesResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
@@ -2310,6 +2311,35 @@ router
       "content-disposition": `attachment; filename="${params.name}.zip"`,
     }),
   )
+  // A whole plugin at once, as the server does it: the Skills its library entry contributes, its
+  // hook package and the MCP entries it installed (the demo has no workbenches).
+  .delete(
+    "/api/projects/:projectId/agents/:agentId/plugins/:name",
+    (ctx): PluginUninstallResponse => {
+      const installed = installedOf(ctx);
+      const agent = agentOf(ctx);
+      const config = configOf(ctx).config;
+      const name = ctx.params.name ?? "";
+      const plugin = libraryPlugins(ctx.store).find((p) => p.name === name);
+      const skillNames = new Set((plugin?.skills ?? []).map((s) => s.name));
+      const removed = {
+        skills: installed.skills.filter((s) => skillNames.has(s.name)).map((s) => s.name),
+        hooks: installed.hooks.filter((h) => h.name === name).map((h) => h.name),
+        mcpServers: config.mcpServers.filter((e) => e.plugin === name).map((e) => e.name),
+        workbenches: [],
+      };
+      if (removed.skills.length + removed.hooks.length + removed.mcpServers.length === 0) {
+        fail(404, "plugin_not_installed", `Nothing of ${name} is installed on this agent.`);
+      }
+      installed.skills = installed.skills.filter((s) => !skillNames.has(s.name));
+      installed.hooks = installed.hooks.filter((h) => h.name !== name);
+      config.mcpServers = config.mcpServers.filter((e) => e.plugin !== name);
+      agent.skillCount = installed.skills.length;
+      agent.hookCount = installed.hooks.length;
+      agent.pluginUpdates = agent.pluginUpdates.filter((u) => u.name !== name);
+      return { removed };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/skills/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.skills.length;
@@ -2693,11 +2723,20 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get(
-    "/api/projects/:projectId/agents/:agentId/workbenches",
-    (): { workbenches: WorkbenchInfo[] } => ({
-      workbenches: [],
-    }),
+  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
+    workbenches: [],
+    enabled: installedOf(ctx).workbenchesOff !== true,
+  }))
+  .put(
+    "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
+    (ctx): WorkbenchesResponse => {
+      const installed = installedOf(ctx);
+      installed.workbenchesOff = record(ctx.body).enabled === false;
+      return { workbenches: [], enabled: !installed.workbenchesOff };
+    },
+  )
+  .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
+    notFound("Workbench"),
   )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
     readOnly("import a workbench archive"),

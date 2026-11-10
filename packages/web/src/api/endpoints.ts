@@ -144,6 +144,7 @@ import type {
   PluginFilesResponse,
   PluginInstallRequest,
   PluginLibraryResponse,
+  PluginUninstallResponse,
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -236,7 +237,9 @@ import type {
   VersionHistoryResponse,
   WorkbenchArchiveInstallRequest,
   WorkbenchArchiveInstallResponse,
+  WorkbenchEnabledRequest,
   WorkbenchInfo,
+  WorkbenchesResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -1924,6 +1927,25 @@ export const installAgentPlugins = (
     { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
   ).then((r) => installedOn(r, machineId));
 
+/**
+ * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
+ * workbenches, its MCP server entries, its hook package and its Skills. The answer lists what was
+ * removed, and `failed` what could not be (the rest is removed regardless). 404
+ * `plugin_not_installed` when the Agent carries nothing of it; any other 404 is a server older
+ * than the route.
+ */
+export const uninstallAgentPlugin = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null,
+) =>
+  apiFetch<PluginUninstallResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/plugins/${encodeURIComponent(name)}`,
+    { method: "DELETE", server: machineId },
+  );
+
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
 
@@ -2761,9 +2783,33 @@ const workbenchesBase = (projectId: string, agentId: string) =>
  * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
  */
 export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<{ workbenches: WorkbenchInfo[] }>(workbenchesBase(projectId, agentId), {
+  apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
   });
+/** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
+export const setWorkbenchesEnabled = (
+  projectId: string,
+  agentId: string,
+  enabled: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchesResponse>(`${workbenchesBase(projectId, agentId)}/enabled`, {
+    method: "PUT",
+    body: { enabled } satisfies WorkbenchEnabledRequest,
+    server: machineId,
+  });
+/** One workbench's own switch (Project owner): off, it is unloaded and serves nothing. */
+export const setWorkbenchEnabled = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  enabled: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<{ workbench: WorkbenchInfo }>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/enabled`,
+    { method: "PUT", body: { enabled } satisfies WorkbenchEnabledRequest, server: machineId },
+  );
 /** Re-import the folder now (the server also does this whenever a file changes). */
 export const reloadWorkbench = (
   projectId: string,

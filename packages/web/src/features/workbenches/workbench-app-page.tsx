@@ -18,6 +18,7 @@ import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import {
   appPageTab,
+  runningWorkbenches,
   WORKBENCH_UPDATED_EVENT,
   workbenchTabsOf,
   type WorkbenchTab,
@@ -41,6 +42,8 @@ export function WorkbenchAppPage() {
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
+  /** The workbench is listed but switched off: it serves no page, and the page says why. */
+  const [off, setOff] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
@@ -54,7 +57,12 @@ export function WorkbenchAppPage() {
       try {
         const res = await api.getWorkbenches(projectId, agentId, machineId);
         if (!alive) return;
-        setTab(appPageTab(workbenchTabsOf(res.workbenches, machineId), workbenchId, tabKey));
+        const running = runningWorkbenches(res);
+        setOff(
+          res.workbenches.some((w) => w.id === workbenchId) &&
+            !running.some((w) => w.id === workbenchId),
+        );
+        setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
         setFailure(null);
       } catch (err) {
         if (alive) setFailure(err instanceof Error ? err.message : String(err));
@@ -121,12 +129,12 @@ export function WorkbenchAppPage() {
     // A window of its own (`isolate`): its layers order only among themselves, under the
     // palette and every other overlay in the portal root. The theme's canvas shows through a
     // page that paints no background of its own.
-    <div className="relative isolate h-full w-full bg-canvas pt-[env(titlebar-area-height,0px)]">
+    <div className="relative isolate h-full w-full bg-canvas pt-[var(--window-band-height,0px)]">
       {/* A list request that fails after the page is up says so over it, rather than leaving
           a frame that quietly stopped following the workbench. */}
       {tab && failure !== null && (
         <div
-          className="absolute inset-x-0 top-[env(titlebar-area-height,0px)] z-window-overlay bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          className="absolute inset-x-0 top-[var(--window-band-height,0px)] z-window-overlay bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
           role="status"
         >
           {failure}
@@ -146,7 +154,7 @@ export function WorkbenchAppPage() {
           <span>
             {tab === undefined && failure === null
               ? S.workbenches.loadingPage
-              : (failure ?? S.workbenches.noSuchPage)}
+              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
           </span>
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>

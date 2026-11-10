@@ -28,7 +28,6 @@ cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/models
 cycle: features/terminal -> features/dock
 cycle: features/traces -> features/chat
-features/agents/workbenches-tab.tsx -> features/skills/skill-icon-view.tsx
 features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
 features/chat/history-loading.tsx -> features/machines/machine-card.tsx
 features/chat/machine-away.ts -> features/machines/machines-view.ts
