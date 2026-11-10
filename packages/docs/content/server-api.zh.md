@@ -656,6 +656,34 @@ interface AgentApiKeyInfo {
 
 列表不带语法：一份语法有几十到几百 KB，只有对话中真正出现的语言才值得抓取。语法响应缓存一小时——它不换新 App 就不会变，而新 App 意味着一次新的页面加载。别名与文件扩展名必须*先于*语法到达：Shiki 只有在语法加载之后才会注册它自带的别名，而决定是否加载语法的，正是代码块的 info string。语法是数据而非代码：这条路径上不会执行插件提供的任何东西。
 
+## 主题包
+
+主题包是一个目录，含清单 `pack.json` 与几份样式表（PRFC-0026）。管理员按服务器以 zip 导入，这台服务器上的每个账户都能选用。任何主题包，内置的或导入的，都导出成同一形状的 zip。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/themes` | 已导入的主题包，按导入先后：`{themes: ThemePackDto[]}`。不列内置包，Web App 自带它们 |
+| GET | `/api/themes/:id/files/<path>` | 主题包提供的一个文件：它的 `index.css`、一款字体或一幅插画。其余一律 `404` |
+| POST | `/api/themes[?replace=1]` | 仅管理员。请求体为 zip 原文，以 `application/octet-stream` 发送。返回 `201 {theme}` |
+| DELETE | `/api/themes/:id` | 仅管理员。返回 `204` |
+| GET | `/api/themes/:id/export` | 任何主题包（内置或导入）的 zip 附件 |
+
+- `ThemePackDto` 是规范化后的清单（`id`、`names`、`version`、`api`、`base`、`modes`、`swatches`、`accent`、`fonts`、`avatar?`）加上 `href` 与 `v`。`v` 是主题包内容的摘要，`href` 为 `/api/themes/<id>/files/index.css?v=<v>`。因此覆盖导入改动了任何内容，两者都会变化，缓存随之失效。
+- 导入在写入任何东西之前先校验。zip 的 `pack.json` 在根目录或唯一的一层顶级目录里。zip 只可含 `tokens.css`、`recipes.css`、`accents.css`、`fonts.css`、`sections/<hook>.css`、`fonts/*.woff2`、`art/*.svg|png|webp`、`README.md`、`LICENSE*` 与 `LICENSES/*.txt`，别无其他。上限为 200 个文件、zip 16 MiB、解压后 24 MiB、样式表合计 512 KiB。每份样式表按 PRFC-0026 的语法解析，存下的是解析器重新生成的文本，从不是上传的原文。
+- 拒绝：
+  - `400` `theme_invalid`：`details` 为 `{file, reason, line?, column?}`，指向第一处被拒的内容。
+  - `400` `theme_id_reserved`：用了内置包的 id。
+  - `409` `theme_exists`：该 id 已导入，`details.themeId` 给出 id。带 `replace=1` 则覆盖。
+  - `413` `theme_too_large`。
+  - `422` `theme_api_unsupported`：主题包针对更新的主题 API。
+  - `503` `themes_unavailable`：服务器所带的 Web App 构建里没有可供校验的内置包源文件。
+  - `403` `admin_required`：成员的写操作。
+- 文件响应带它的类型，以及 `X-Content-Type-Options: nosniff`、`Cache-Control: private, max-age=31536000, immutable`、`Content-Security-Policy: sandbox; default-src 'none'` 与 `Cross-Origin-Resource-Policy: same-origin`。只提供该主题包 `installed.json` 所列的文件。
+- 删除内置包返回 `400` `theme_builtin`。未导入的 id 返回 `404` `theme_not_found`，导出未知 id 亦然。
+- 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。要做自己的主题包，就导出一个，把 `pack.json` 与选择器里的 id 改成自己的，再导入。
+- 主题包存在数据根的 `themes/<id>/`，每次上传的原 zip 留在 `themes/archives/`。主题包不同步到机器。
+- 每次导入、覆盖与删除，都向每个登录用户的事件流发送 `themes_changed`。
+
 ## 定时任务
 
 下面的路径省略了 `/api/projects/:projectId` 前缀。
@@ -1379,7 +1407,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
 | 每个 Session（AMSP） | `GET /api/sessions/:sessionId/amsp` | 只有 Session 的记录和 `ping`，与 Agent API 提供的相同；见 [Session 流](/amsp#session-流) |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated`、`themes_changed`、公司模式的 `org_*` 事件，以及只发给管理员的 `machines_changed` |
 | 每个 Project 的机器 | `GET /api/projects/:projectId/machines/events` | 每台已连接机器自己的事件，各自带上来源机器的标记，由 hub 每台机器唯一的那次订阅合并而来（**socket hub 内每台机器一条事件流**） |
 
 ### 传输格式
@@ -1407,6 +1435,7 @@ export type ServerEvent =
   | { type: "hello" }
   | { type: "heartbeat" }
   | { type: "web_updated"; rev: string }
+  | { type: "themes_changed" }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
@@ -1436,6 +1465,7 @@ export type ServerEvent =
 | `hello` | 用户通道上的握手 |
 | `heartbeat` | 流自身的拍子，每 20 秒一次：出现在 `/api/events` 和机器的聚合流上，读取方据此分辨流是活着还是停住了 |
 | `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
+| `themes_changed` | 导入、覆盖或删除了一个主题包；客户端重新读取 `GET /api/themes` |
 | `session_created` | 一个 Session 现在存在了：由 Web App、CLI、定时任务或 Agent 派生子 Session 创建 |
 | `session_archived` | Session 被归档或取消归档 |
 | `session_deleted` | Session 被删除 |

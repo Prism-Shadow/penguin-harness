@@ -174,6 +174,7 @@ import {
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
+import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
   Errors,
@@ -524,6 +525,16 @@ export class ApiModule {}
 })
 export class WorkbenchesModule {}
 
+/**
+ * The server's theme packs: the store under the data root and the routes over it. Its own group:
+ * nothing else reads the store, and a pack is a per-server web resource, not a plugin.
+ */
+@Module({
+  children: [ThemeRoutes],
+  exports: [],
+})
+export class ThemesModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
@@ -551,6 +562,7 @@ export class WorkbenchesModule {}
     HistoryRoutes,
     HistoryLinesRoutes,
     WorkbenchesModule,
+    ThemesModule,
     BuiltinBrowserModule,
     AgentApiModule,
     Startup,
