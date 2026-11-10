@@ -99,10 +99,10 @@ export function AgentExportDialog(props: AgentExportDialogProps) {
       <div className="space-y-4">
         <fieldset className="flex flex-col items-start gap-2">
           <FieldLegend>{S.agent.exportInclude}</FieldLegend>
-          {box("skills", S.agent.tabSkills)}
-          {box("hooks", S.agent.tabHooks)}
+          {box("skills", S.agent.exportSkills)}
+          {box("hooks", S.agent.exportHooks)}
           {box("memory", S.agent.tabMemory)}
-          {box("workbenches", S.agent.tabWorkbenches)}
+          {box("workbenches", S.agent.exportWorkbenches)}
           <div className="pl-6">{box("workbenchData", S.agent.exportWorkbenchData)}</div>
           {box("schedules", S.agent.tabSchedules, S.agent.exportSchedulesHint)}
         </fieldset>

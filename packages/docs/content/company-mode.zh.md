@@ -51,7 +51,7 @@ penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>]
 
 让一个装有 `agent-company` 插件的 Agent 帮你开一家公司，它的 `company-setup` Skill 会接手：一次只问一个问题（id、名称、使命、公共工作区、模型、CEO 预算），汇总成摘要请你确认，然后执行同一条 `penguin org create` 命令。它做到这一步就停下。招募、排日程和开工单是 CEO 的事，要等董事会答复之后才开始。
 
-这个插件不预装，从没进过公司的 Agent 得先装上它：在新建 Agent 对话框的**插件**字段里装，或者在 Project 里已有 Agent 的**技能**标签页里装。CEO 和员工从受雇那天起就带着这个插件。
+这个插件不预装，从没进过公司的 Agent 得先装上它：在新建 Agent 对话框的**插件**字段里装，或者在**插件市场**页面装到 Project 里已有的 Agent 上。CEO 和员工从受雇那天起就带着这个插件。
 
 ### id 规则
 
