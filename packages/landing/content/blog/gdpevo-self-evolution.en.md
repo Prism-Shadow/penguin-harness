@@ -172,7 +172,33 @@ Per-benchmark test scores (Mean ± SD) across the six sub-benchmarks are as foll
 | Court Clerk Operations | 52.60 ± 1.68 | 55.37 ± 2.32 (+2.77) | 61.98 ± 1.41 (+9.39) | 51.43 ± 1.69 (−1.17) | 50.55 ± 2.65 (−2.04) |
 | Engineering Portfolio Analytics | 60.32 ± 5.11 | 73.74 ± 0.00 (+13.42) | 83.15 ± 0.00 (+22.83) | 91.52 ± 1.57 (+31.19) | 60.55 ± 3.08 (+0.23) |
 
-## 6. Key Insights and Discussion
+## 6. Result Analysis and Case Studies
+
+As shown in the tables above, all four self-evolution methods outperform the untrained Baseline in overall mean score, and three of the methods actually spend less test-time cost and wall-clock time than Baseline once equipped with a frozen SKILL.md—showing that clear domain rules not only improve accuracy, but also cut down blind trial-and-error during testing. Across individual sub-benchmarks, Coverage Review, Service Ticket Resolution, and Engineering Portfolio Analytics see the largest gains, whereas Court Clerk Operations shows much smaller test improvements. Below we examine two representative case studies to see how the rules distilled during training shape test-set performance.
+
+### 1. Positive Case: Coverage Review
+
+Coverage Review is the clearest example of positive transfer in this study: SkillAdam raises the held-out test mean from 55.00 to 80.67 (+25.67), and the other three methods also achieve consistent gains of 13 to 18 points.
+
+Under the untrained Baseline, the Agent scored exactly 55.00 across all 5 test questions and all 3 repetitions (standard deviation 0.00). The reason is that the claims backend mixes historical claim snapshots, synthetic noise records carrying generated markers, and multi-tier deductible rules; the untrained Agent only checked basic policy status from the surface prompt—earning the base 55 points—while missing the hidden prior-authorization checks, co-pay cap deductions, and summary-block recomputations required by the grader.
+
+During continuous training, the Target Agent repeatedly submitted candidate answers across the 5 training questions and used the online judge's score deltas to uncover these hidden rules, distilling three core auditing rules into SKILL.md:
+
+- **Filter synthetic noise records**: Before joining claim records, strip out decoy entries marked with generated noise identifiers and match claims strictly by submission ID.
+- **Enforce prior-authorization and deductible math**: For procedures requiring prior authorization, verify the approval status first, then apply the plan's deductible and co-pay caps item by item instead of approving the raw billed amount.
+- **Preserve status enums and recompute summaries**: Copy the backend's exact status enum literals into per-claim decisions, and recompute the top-level summary block whenever any individual claim decision changes.
+
+With this frozen SKILL.md mounted, the evolved Agent broke through the 55-point ceiling on every single held-out test task: Question 2 reached a perfect 100.00 across all three repetitions, Question 1 rose to a stable 90.00, and Questions 3 through 5 all climbed from 55.00 to 70.00–71.67. Because these domain conventions cannot be guessed from general model priors alone, this case directly illustrates how training-time skill distillation translates into higher test scores.
+
+### 2. Overfitting Case: Court Clerk Operations
+
+In contrast, Court Clerk Operations illustrates how high training scores can fail to transfer when learned rules become overly specific. As shown in the Section 2 progression chart, SkillAdam's five-question training mean on this sub-benchmark climbed steadily from 69.54 (no-skill rollout) to 79.67 (initial skill), and then to 85.42 after two refinement rounds; yet on the held-out test set, its score edged up by only 2.77 points over Baseline (52.60 to 55.37), while TRACE and OpenSkill slightly regressed by −1.17 and −2.04 points.
+
+Inspecting the rules added to SKILL.md across training iterations reveals why: the initial skill captured general docket-verification steps, but in later iterations—trying to squeeze out the last few points on the 5 training questions—the Agent appended narrow exceptions tailored to the training cases, such as specific scheduling-postponement day offsets, filing-code field combinations, and special status mappings that appeared only in those 5 training dockets.
+
+When this over-specified SKILL.md was frozen and evaluated on the held-out test set, performance split sharply across questions: on Questions 3, 4, and 5, whose docket structures resembled the training cases, scores improved from 50.00, 57.78, and 48.48 under Baseline to 66.67, 68.89, and 60.61; however, on Questions 1 and 2, where scheduling constraints and filing types differed, applying the narrow training exceptions caused misclassifications, pulling scores down from 35.29 and 71.43 to 23.53 and 57.14. The gains and losses largely canceled out, directly motivating our discussion of training overfitting and validation splits in the next section.
+
+## 7. Key Insights and Discussion
 
 While building PenguinHarness as an RSI infrastructure and running these experiments, we made the following observations:
 
@@ -192,7 +218,7 @@ To solve this, we adopted a progressive loading mechanism: the heavy benchmark d
 
 ### 3. Overfitting and Validation Splits
 
-Comparing training curves against final test scores shows that an Agent sometimes achieves steadily higher scores on the training set without seeing a commensurate gain on the test set. In Court Clerk Operations, for example, SkillAdam's training mean rose from 69.54 to 85.42, yet its held-out test score improved by only 2.77 points over Baseline. When the Agent repeatedly refines SKILL.md against just 5 training tasks, some of the learned rules inevitably overfit to those specific examples.
+As the Court Clerk Operations case study above illustrates, when an Agent repeatedly refines SKILL.md against just 5 training tasks, later edits easily overfit to narrow patterns in those specific examples—pushing training scores higher without delivering a commensurate gain on the test set.
 
 Just as traditional deep learning relies on a validation set to prevent overfitting, future agent self-evolution experiments need a dedicated Validation split: distilling edits on the training set, selecting checkpoints on the Validation set to ensure the learned rules generalize, and only then evaluating on the held-out test set. Because the current GDPEVO release has a relatively small task count per sub-benchmark and only provides Train and Test splits, some self-evolution algorithms that originally rely on a separate validation split or larger sample sizes had to be adapted accordingly in this study, which also affected their measured performance. We plan to address these limitations in the upcoming GDPEVO V3 release while also splitting more traditional benchmarks into Train, Validation, and Test sets to conduct more complete self-evolution experiments.
 
