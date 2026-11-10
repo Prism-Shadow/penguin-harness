@@ -684,3 +684,10 @@ html.dark .post-tree-dir {
 html.dark .post-tree-note {
   color: var(--site-gray-400);
 }
+.post-tree-harm {
+  color: #dc2626;
+  font-weight: 500;
+}
+html.dark .post-tree-harm {
+  color: #f87171;
+}
