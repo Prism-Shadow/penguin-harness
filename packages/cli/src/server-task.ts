@@ -47,6 +47,14 @@ export interface GoalOutcome {
   tokensUsed: number;
 }
 
+/** A channel event id, `<epoch>-<seq>`; null for anything else. */
+function parseEventId(id: string): { epoch: string; seq: number } | null {
+  const sep = id.lastIndexOf("-");
+  if (sep <= 0) return null;
+  const seq = Number.parseInt(id.slice(sep + 1), 10);
+  return Number.isInteger(seq) ? { epoch: id.slice(0, sep), seq } : null;
+}
+
 /**
  * A Session's SSE subscription with Last-Event-ID reconnects. `next()` yields frames
  * across reconnects; `close()` ends it. A subscription that drops MID-TASK reconnects
@@ -59,6 +67,8 @@ export class SessionStream {
   private readonly abort = new AbortController();
   private iterator: AsyncGenerator<SseFrame> | null = null;
   private attempts = 0;
+  /** Frames up to this event id, within its epoch, were read before the history was: see skipThrough. */
+  private through: { epoch: string; seq: number } | null = null;
 
   private static readonly MAX_RECONNECTS = 5;
 
@@ -71,6 +81,31 @@ export class SessionStream {
   close(): void {
     this.closed = true;
     this.abort.abort();
+  }
+
+  /**
+   * From here on, `next()` passes over the record frames and `task_state` events published up
+   * to `cursor` (the history read's run-form live tail, `<epoch>-<seq>`): the history, the
+   * run's records and its `status` already hold them. Other server events still come through
+   * (the subscription's pending approvals among them), as does anything of another epoch — a
+   * server that restarted holds no run from before. A frame passed over still moves the
+   * reconnect position.
+   */
+  skipThrough(cursor: string): void {
+    this.through = parseEventId(cursor);
+  }
+
+  private covered(frame: SseFrame): boolean {
+    if (this.through === null || frame.id === undefined) return false;
+    const id = parseEventId(frame.id);
+    if (id === null || id.epoch !== this.through.epoch) return false;
+    if (id.seq > this.through.seq) {
+      this.through = null; // ids only grow: nothing later is covered
+      return false;
+    }
+    if (frame.event === undefined) return true;
+    if (frame.event !== "server_event") return false;
+    return (JSON.parse(frame.data) as { type?: string }).type === "task_state";
   }
 
   /** The next frame, reconnecting through connection drops; null once closed. */
@@ -93,6 +128,7 @@ export class SessionStream {
         }
         this.attempts = 0;
         if (value.id !== undefined) this.lastEventId = value.id;
+        if (this.covered(value)) continue;
         return value;
       } catch (err) {
         if (this.closed) return null;

@@ -6,4 +6,4 @@
 
 [中文版](2026-10-19-web-missing-page-renderer.zh.md)
 
-Contributed pages threw an explicit error when their builtin component was missing instead of silently redirecting to chat. The diagnostic named the renderer, page key and path. Registered builtin components and iframe pages kept their rendering behavior.
+Contributed pages reported missing builtin components instead of silently redirecting to chat or silently skipping a page. A missing component at render time raised an explicit error; an unavailable optional builtin in the merged page table was skipped with a console warning. Both diagnostics named the renderer, page key and path. Registered builtin components and iframe pages kept their rendering behavior.

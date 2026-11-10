@@ -13,10 +13,10 @@
  *    of those. Typing is a draft; only Save writes it.
  * 2. **A Save form registers with the unsaved-changes registry.** A module there that offers
  *    `S.common.save` or `S.common.create` also calls `useFormDraft` or `useUnsavedChanges`, so
- *    every way of leaving it can find it dirty. Every module in `FORM_MODULES` must still exist
- *    and still take part (those two, or `useGuardedClose` for a dialog shell whose pages hold
- *    the forms).
- * 3. **A dialog that holds a form closes through the guard.** In a `FORM_MODULES` module, every
+ *    every way of leaving it can find it dirty.
+ * 3. **A dialog that holds a form closes through the guard.** In a form module — a web `.tsx`
+ *    that takes part in the model (those two, or `useGuardedClose` for a dialog shell whose
+ *    pages hold the forms), found by the scan — every
  *    `<Modal>` and `<PagedDialog>` gets an `onClose` declared from `useGuardedClose(` — Esc, the
  *    ×, the scrim and Cancel all arrive there — unless `EXCUSED_DIALOGS` names its component with
  *    a reason.
@@ -25,58 +25,17 @@
  *    scopes (`SHELL_SCOPES`, named in its `useFormDraft` / `useUnsavedChanges` options) and offers
  *    `S.common.save` also calls `useSaving(…, <that scope>)`.
  *
- * Adding a module to `FORM_MODULES` is how a new settings form joins check 3.
+ * A new settings form joins check 3 the moment it registers with the model.
  *
  * What the parser cannot follow is on the reviewer: a handler built in a variable, a Save
- * button that is a component of its own, a dialog in a module outside `FORM_MODULES`, a scope
- * passed down as a prop.
+ * button that is a component of its own, a dialog in a module that takes no part in the model,
+ * a scope passed down as a prop.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { expectEveryRootScanned, scanSources, type SourceFile } from "./helpers/roots";
 
 const SCAN = scanSources([".tsx", ".ts"]);
-
-/** Modules under packages/web/src whose forms follow the model; check 3 runs on each. */
-const FORM_MODULES: readonly string[] = [
-  "components/account/change-password-dialog.tsx",
-  "features/projects/project-dialogs/project-settings-dialog.tsx",
-  "features/admin/admin-users-page.tsx",
-  "features/agents/agent-settings-page.tsx",
-  "features/agents/api-tab.tsx",
-  "features/agents/create-agent-dialog.tsx",
-  "features/agents/hooks-tab.tsx",
-  "features/agents/mcp-server-dialog.tsx",
-  "features/agents/memory-tab.tsx",
-  "features/agents/prompt-injection-controls.tsx",
-  "features/agents/skills-tab.tsx",
-  "features/agents/vault-add-dialog.tsx",
-  "features/benchmark/benchmark-import-modal.tsx",
-  "features/benchmark/create-benchmark-modal.tsx",
-  "features/builtin-browser/homepage-dialog.tsx",
-  "features/chat/shortcuts-folder.tsx",
-  "features/company/calendar-page.tsx",
-  "features/company/channel-dialogs.tsx",
-  "features/company/employee-dialogs.tsx",
-  "features/company/finance-page.tsx",
-  "features/company/org-dialogs.tsx",
-  "features/company/ticket-dialog.tsx",
-  "features/company/tickets-page.tsx",
-  "features/machines/add-machine-dialog.tsx",
-  "features/machines/ssh-host-dialog.tsx",
-  "features/messaging/messaging-binding-modal.tsx",
-  "features/messaging/messaging-panel.tsx",
-  "features/models/models-page.tsx",
-  "features/models/provider-settings-dialog.tsx",
-  "features/plugins/plugin-import-modal.tsx",
-  "features/plugins/plugin-mcp.tsx",
-  "features/schedules/schedule-form-modal.tsx",
-  "features/settings/plugin-config-card.tsx",
-  "features/settings/profile-section.tsx",
-  "features/settings/proxy-section.tsx",
-  "features/settings/settings-dialog.tsx",
-  "features/settings/uploads-section.tsx",
-];
 
 /** [module, component, why its dialog closes without the guard]. */
 const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
@@ -232,6 +191,18 @@ const callsAny = (sf: ts.SourceFile, names: ReadonlySet<string>): boolean => {
 const REGISTERS = new Set(["useFormDraft", "useUnsavedChanges"]);
 const TAKES_PART = new Set(["useFormDraft", "useUnsavedChanges", "useGuardedClose"]);
 
+/** The web modules taking part in the model, relative to packages/web/src; check 3 runs on each. */
+const FORM_MODULES: readonly string[] = SCAN.files
+  .filter(
+    (f) =>
+      f.root === "web" &&
+      f.rel.endsWith(".tsx") &&
+      !EXCUSED_FILES.some(([rel]) => rel === f.rel) &&
+      [...TAKES_PART].some((hook) => f.text.includes(`${hook}(`)) &&
+      callsAny(parse(f), TAKES_PART),
+  )
+  .map((f) => f.rel);
+
 /** The scopes of the dialogs whose pages save on their own: Settings, and Project settings. */
 const SHELL_SCOPES = new Set(["SETTINGS_SCOPE", "PROJECT_SETTINGS_SCOPE"]);
 
@@ -359,15 +330,9 @@ describe("the settings commit model in the source", () => {
     expect(found).toEqual([]);
   });
 
-  it("keeps FORM_MODULES current: each exists and takes part", () => {
-    const stale = FORM_MODULES.filter((rel) => {
-      const file = webFile(rel);
-      return file === undefined || !callsAny(parse(file), TAKES_PART);
-    });
-    expect(stale).toEqual([]);
-  });
-
   it("closes every dialog of a form module through the guard", () => {
+    // The form modules are found: a renamed hook must not turn this check into a no-op.
+    expect(FORM_MODULES.length).toBeGreaterThan(0);
     const found = FORM_MODULES.flatMap((rel) => {
       const file = webFile(rel);
       return file === undefined ? [] : unguardedDialogs(file);

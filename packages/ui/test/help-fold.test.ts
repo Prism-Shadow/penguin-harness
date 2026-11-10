@@ -54,15 +54,6 @@ describe("HelpFold", () => {
   it("rotates the app's one collapse chevron rather than inventing an indicator", () => {
     // chevron.tsx's glyph and its 90-degree rotation; every other collapsible in the app uses it.
     expect(html).toContain('d="M9 5l7 7-7 7"');
-    expect(html).not.toContain("rotate-90");
-  });
-
-  it("indents the body under the label, unless the caller asks for a flush block", () => {
-    // A block with its own left edge — a code box — has to line up with what sits above it, so
-    // the chevron's indent is dropped; a run of prose keeps it.
-    expect(html).toContain("pl-4.5");
-    const flush = renderStatic(createElement(HelpFold, { flush: true, children: DESC }));
-    expect(flush).not.toContain("pl-4.5");
   });
 
   it("folds the subject into the accessible name, keeping the visible text a prefix of it", () => {

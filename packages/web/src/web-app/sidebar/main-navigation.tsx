@@ -13,8 +13,8 @@ import {
   type NavEntryKey as NavGroupKey,
 } from "../../lib/sidebar-nav-state";
 
-import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
-import { pageTitle } from "../../lib/local-page-table";
+import { glyphOf } from "../../lib/nav-icons";
+import { pageTitle } from "../index";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
@@ -79,23 +79,18 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
    * hangs at the row's right edge, vertically centred on the row.
    */
   const renderNavEntry = (key: NavGroupKey) => {
-    const to = `/${key}`;
     const page = navPages.find((page) => page.key === key);
-    // A page names itself in the interface's language (PageData.title / titleZh); the S.nav
-    // strings cover only the entries no page backs (New chat, the switches, the fold).
-    const label =
-      page !== undefined
-        ? pageTitle(page, locale)
-        : typeof S.nav[key as keyof typeof S.nav] === "string"
-          ? (S.nav[key as keyof typeof S.nav] as string)
-          : key;
+    if (page === undefined) return null;
+    const to = page.path;
+    // A page names itself in the interface's language (PageData.title / titleZh).
+    const label = pageTitle(page, locale);
     const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, navPins);
     return (
       <SidebarNavEntry
         key={key}
         label={label}
-        glyph={page !== undefined ? glyphOf(page.icon) : NAV_ICONS[key as keyof typeof NAV_ICONS]}
+        glyph={glyphOf(page.icon ?? key)}
         href={to}
         active={isCurrentPath(to, location.pathname)}
         renderLink={renderRouterLink}

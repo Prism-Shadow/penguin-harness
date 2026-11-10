@@ -19,7 +19,7 @@ import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from 
 import { sameModelRef } from "../../models";
 import type { useMainChatComposer } from "./main-chat-composer";
 
-/** Exact consecutive main ChatPage statements 147..157; called once, in original order. */
+/** Exact consecutive main ChatPage statements 148..158; called once, in original order. */
 export function useMainChatControls(scope: ReturnType<typeof useMainChatComposer>) {
   const {
     replace,

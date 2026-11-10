@@ -19,6 +19,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import {
   forwardFrameKeys,
+  PAGE_FRAME_SANDBOX,
   readDocumentTheme,
   themeWorkbenchFrame,
 } from "../../lib/workbench-theme";
@@ -37,7 +38,7 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
-import { localizedText } from "../../lib/skill-use";
+import { localizedText } from "../chat";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -357,7 +358,9 @@ export function WorkbenchFrame({
 
   const historyId = `workbench-history-${tab.workbenchId}`;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+    // No fill of its own: the bar and the page sit on the surface the window shows through (the
+    // chat column's canvas, a wallpaper), as the chat does.
+    <div className="flex h-full min-h-0 flex-col">
       <div
         hidden={bare}
         className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400"
@@ -488,7 +491,7 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+        sandbox={PAGE_FRAME_SANDBOX}
       />
       <ConfirmModal
         open={restoring !== null}

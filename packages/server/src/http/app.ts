@@ -18,6 +18,7 @@ import { attributedProjectId } from "./attribution.js";
 import { jsonCompression } from "./json-compression.js";
 import { jsonValidators } from "./json-validators.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -149,7 +150,10 @@ export class HttpModule {
     app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
-      const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());
+      // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+      const size = isAgentImport(c.req.method, c.req.path)
+        ? MAX_PACKAGE_BYTES
+        : bodyLimitBytes(this.settings.getAttachmentLimitsMb());
       if (capped === null || capped.size !== size) {
         capped = {
           size,

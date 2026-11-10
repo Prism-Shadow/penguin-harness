@@ -24,7 +24,7 @@ function opensWithNote(step: A2uiStep): boolean {
 
 /**
  * A step's row: the disc's column as wide as the disc (`size-5`), the step's content beside it.
- * `isolate` keeps the rule's negative z-index inside the row — under the discs, never under the
+ * `isolate` keeps the rule's `behind` layer inside the row — under the discs, never under the
  * reply behind the list.
  */
 const ROW = "relative isolate grid grid-cols-[calc(var(--ui-space-unit)*5)_minmax(0,1fr)] gap-x-2";
@@ -38,7 +38,7 @@ const ROW = "relative isolate grid grid-cols-[calc(var(--ui-space-unit)*5)_minma
  * the ones it finds.
  */
 const RULE =
-  "after:absolute after:left-[calc(var(--ui-space-unit)*2.5_-_0.5px)] after:-z-1 after:w-px " +
+  "after:absolute after:left-[calc(var(--ui-space-unit)*2.5_-_0.5px)] after:z-behind after:w-px " +
   "after:bg-line after:content-['']";
 const RULE_FROM = {
   line: "after:top-[0.5lh]",

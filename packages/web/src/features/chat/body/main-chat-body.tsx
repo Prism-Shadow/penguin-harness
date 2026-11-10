@@ -10,7 +10,7 @@ import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
 import { DockPanel, DockLauncher, measureComposer } from "../../dock";
-import { ChatDockProvider } from "../chat-dock-context";
+import { ChatDockProvider } from "../session/main-dock-context";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 
@@ -36,8 +36,6 @@ export function renderMainChatBody(scope: MainChatView) {
     archivedRow,
     stream,
     allItems,
-    pageAgentId,
-    workflowTabs,
     failureShown,
     setFailureShown,
     activeModelRef,
@@ -59,10 +57,6 @@ export function renderMainChatBody(scope: MainChatView) {
     emptyChat,
     input,
   } = scope;
-  const coveredByWorkbench =
-    workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
   return (
     <>
       <ChatDockProvider value={chatDock}>
@@ -70,7 +64,7 @@ export function renderMainChatBody(scope: MainChatView) {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-        <div data-dock-area className={`flex min-h-0 flex-1 flex-col ${coveredByWorkbench}`}>
+        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
           {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview

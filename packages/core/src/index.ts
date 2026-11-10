@@ -70,7 +70,18 @@ export type {
 } from "./plugin/contributions.js";
 export { hasLibraryContributions, isLibraryPackage, libraryParts } from "./plugin/kinds.js";
 export type { LibraryParts } from "./plugin/kinds.js";
-export { MAX_PLUGIN_ICON_BYTES, isSafeIconSvg, readPluginIcon } from "./plugin/icon.js";
+export { iconImage, readInstalledIcon, readPluginIcon } from "./plugin/icon.js";
+export type { IconImage } from "./plugin/icon.js";
+export {
+  ICON_CONTENT_TYPES,
+  ICON_FILE_NAMES,
+  MAX_ICON_BYTES,
+  iconFileName,
+  isIconFileName,
+  sniffIconFormat,
+} from "./plugin/icon-format.js";
+export type { IconFormat } from "./plugin/icon-format.js";
+export { isSafeIconSvg, isTintableSvg } from "./plugin/icon-svg.js";
 export {
   USER_PROMPT_EVERY_PROMPT_SINCE,
   comparePluginVersions,

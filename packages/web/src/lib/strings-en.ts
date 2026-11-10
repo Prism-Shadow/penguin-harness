@@ -5,7 +5,11 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State).
  */
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
+import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -987,7 +991,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
-    } as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -1657,13 +1661,7 @@ export const en: Strings = {
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
     createDirSkillsClear: "Don't import from a directory",
-    createSnapshot: "Initialize from a snapshot",
-    createSnapshotPick: "Choose a snapshot package",
-    createSnapshotHint:
-      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
-    createSnapshotSkillsOff:
-      "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
-    createSnapshotClear: "Remove the selected package",
+    createFromFileHint: "Creating an agent from an exported file?",
     aiCreateTitle: "Create an agent with AI",
     aiCreateIntro:
       "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
@@ -1925,17 +1923,60 @@ export const en: Strings = {
     stateTitle: "Agent State",
     stateVersion: "Agent State version",
     transferDesc:
-      "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
-    exportSnapshot: "Export snapshot",
-    importSnapshot: "Import snapshot",
+      "Export… packs the agent into a zip. Replace from file… replaces its Agent State from an exported file; its conversations, vault and API keys stay, and a backup snapshot is written first.",
+    exportOpen: "Export…",
+    replaceOpen: "Replace from file…",
+    exportAgent: "Export agent",
+    importAgent: "Import agent",
+    exportTitle: (name: string): string => `Export agent: ${name}`,
+    exportInclude: "Include",
+    exportWorkbenchData: "With their data",
+    exportSchedulesHint: "They run on their schedule once imported",
+    exportTraces: "Conversations",
+    exportTracesNone: "None",
+    exportTracesLast: "Latest N",
+    exportTracesRange: "Date range",
+    exportTracesCount: "Number of conversations",
+    exportTracesFrom: "From",
+    exportTracesTo: "To",
+    exportVaultNote:
+      "The vault never goes into the zip; a value written into the config itself travels as it is.",
+    exportAction: "Export",
+    exporting: "Exporting…",
+    replaceTitle: (name: string): string => `Replace from file: ${name}`,
+    migrateTitle: "Migrate from another framework",
+    migrateInfo:
+      "The Project's default agent reads the source in a new conversation with the agent-porting skill, creates the new agent, and says what it could not move. The prompt only lands in the message box; sending it is up to you.",
+    migrateFramework: "Source framework",
+    migrateOther: "Other",
+    migratePath: "Path",
+    migratePathOther: "Path or description",
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `Migrate this source into a new PenguinHarness agent: ${source}`
+          : `Migrate the ${framework} setup into a new PenguinHarness agent. Source: ${source}`,
+        "Use the agent-porting skill:",
+        "- Read the source in full: instruction files, skills, commands, MCP servers, hooks, subagents and memory. Read only; change nothing in the source.",
+        "- Never copy the value of a key, token or password; note only the names that need filling in.",
+        "- Write the new agent in a scratch folder, in the agent zip layout the skill describes.",
+        `- Import it with \`penguin agent import <that folder> --project-id ${projectId}\`; if the id is taken, pick another with --agent-id.`,
+        "- Finally tell me the new agent's id, what was mapped, what was not and why, and the vault keys to fill in.",
+      ].join("\n"),
+    importFileTitle: "Import a file",
+    importFileHint: ".zip, or an older .tar.gz package until 1.0",
+    importPick: "Choose a file",
+    importAction: "Import",
     importing: "Importing…",
-    importDone: (v: number): string => `Import finished, Agent State version v${v}`,
-    importConflictTitle: "Version conflict",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `Replace the whole Agent State with ${file}? Everything in it is replaced by the snapshot (the Vault is kept); the current version is snapshotted first.`,
-    importConflictBody:
-      "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
+    importExists: (id: string): string => `The id ${id} is taken`,
+    importRename: "Use another id",
+    importOverwrite: "Overwrite the existing agent",
+    replaceAction: "Replace",
+    overwriteTitle: "Replace the Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `Replace the Agent State of ${agentId} from ${file}? Parts the file does not carry, its conversations, vault and API keys stay. A backup snapshot is written first.`,
+    importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
+      `${overwritten ? "Overwrote" : "Imported"} the agent ${name}; conversations: ${imported} imported, ${skipped} already here and skipped`,
     resetConfigTitle: "Restore default configuration",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
@@ -2190,7 +2231,7 @@ export const en: Strings = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
     protocolUnset: "Select protocol",
@@ -3228,6 +3269,9 @@ export const en: Strings = {
   },
 
   chat: {
+    workspacePanel: "Files",
+    memoryViewTitle: "Memory",
+    openAgents: "Agents panel",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
@@ -3240,7 +3284,7 @@ export const en: Strings = {
       high: "high",
       xhigh: "xhigh",
       max: "max",
-    },
+    } satisfies Record<ThinkingLevelName, string>,
     /** English has no trigger/menu split to make: the name above already IS the wire value, so a menu row annotating it would only repeat itself. Taking just the name (the second parameter is dropped) is how this locale says "same text on every surface". */
     thinkingLevelMenuName: (name: string): string => name,
     thinkingSwitchTitle: "Switch thinking level",
@@ -3555,12 +3599,12 @@ When done, open index.html in a browser and self-test once.`,
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
-- id: \`finite_choice_agent\`
+- id: \`${EVOLUTION_DEMO.agentId}\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
 - installed_skills: \`[]\`
 
 Benchmark:
-- id: \`contextual-choice-adaptation\`
+- id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
@@ -3575,8 +3619,8 @@ Scenarios:
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
-- test_agent_id: \`finite_choice_agent\`
-- benchmark_id: \`contextual-choice-adaptation\`
+- test_agent_id: \`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
 - runs: \`3\`
 - desired_score: \`>=95\`
@@ -4035,9 +4079,6 @@ Scenarios:
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openAgents: "Agents panel",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -4047,7 +4088,6 @@ Scenarios:
     memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
     memoryOpWrite: "Wrote",
     memoryOpEdit: "Edited",
-    memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
     memoryRowOpen: "View content",
@@ -5138,8 +5178,7 @@ Scenarios:
     askEvaluationTitle: "Ask AI about this evaluation",
     askEvaluationDescription:
       "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
-    askEvaluationDefault: "Explain this evaluation's result.",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "Explain this evaluation's result",
@@ -5200,8 +5239,7 @@ Scenarios:
     askCaseTitle: "Ask AI about this case",
     askCaseDescription:
       "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
-    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "Explain what this case tests and what a strong answer looks like",
@@ -5641,13 +5679,41 @@ Scenarios:
     resume: "Resume organization",
     deleteOrg: "Delete organization",
     deleteOrgDesc:
-      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+      "Moves the organization to the Project's trash and, by default, permanently deletes the agents only it employs. Built-in agents and agents another organization also employs are kept.",
     deleteOrgConfirm:
-      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. An agent deleted with it is gone for good, with all of its conversations. An agent that is kept stays in the Project with its desk and ticket conversations, but with the organization gone no page lists them any more; while the old CEO's agent exists, the id cannot be used for a new organization. To stop an organization without losing anything, pause it instead.",
+    /** The confirmation's checkbox; the count is null until the organization's Agents are read. */
+    deleteOrgAgents: (count: number | null) =>
+      count === null
+        ? "Also delete this company's agents"
+        : `Also delete this company's agents (${count})`,
+    deleteOrgWillDelete: (names: string) => `Will be deleted permanently: ${names}`,
+    deleteOrgWillKeep: (names: string) => `Will be kept: ${names}`,
+    deleteOrgKeptBuiltin: (name: string) => `${name} (built-in)`,
+    deleteOrgKeptElsewhere: (name: string, orgNames: string) =>
+      `${name} (also employed by ${orgNames})`,
+    deleteOrgKeptUnknown: (name: string) => `${name} (employment unknown)`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `The chart of ${orgNames} cannot be read, so nobody is known to work only here; no agent is deleted until it is fixed.`,
+    deleteOrgAgentsLoadFailed:
+      "The organization's agents could not be read. Retry, or delete the organization alone and keep all of its agents.",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) =>
+      `; kept ${names}, as they changed after the confirmation was shown`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `; kept ${names} because another organization's chart could not be read: ${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) =>
+      `Organization ${orgId} deleted, though its answer did not arrive; the lists were read again`,
     deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
     deleted: (orgId: string) => `Organization ${orgId} deleted`,
+    deletedWithAgents: (orgId: string, count: number) =>
+      `Organization ${orgId} deleted, with ${count === 1 ? "1 agent" : `${count} agents`}`,
+    deleteOrgAgentsFailed: (orgId: string, names: string) =>
+      `Organization ${orgId} deleted, but these agents could not be deleted: ${names}`,
     pauseInfo:
-      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
+      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. Pausing deletes nothing: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {

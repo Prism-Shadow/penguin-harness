@@ -2,10 +2,9 @@
  * CI selection against a real Git history and pnpm workspace, without installing dependencies.
  *
  * - Given a docs or landing edit, when planning CI, then only affected sites run, on Linux.
- * - Given a catalog README edit, when planning CI, then only the README catalog check runs.
- * - Given README and landing edits together, when planning CI, then each keeps its own checks.
- * - Given README and core edits together, when planning CI, then the server suite (core's
- *   consumer) covers the catalog once.
+ * - Given a catalog README edit, when planning CI, then no package job runs.
+ * - Given README edits beside a landing edit, when planning CI, then the landing keeps its checks
+ *   and the READMEs add none.
  * - Given a core edit, when planning CI, then its transitive consumers and native OS tests run.
  * - Given a web edit, when planning CI, then the gallery, landing and desktop are checked too.
  * - Given a web edit, when planning CI, then the web suite runs in two Linux jobs that each run
@@ -159,14 +158,12 @@ describe("affected CI", { concurrency: false }, () => {
       assert.equal(plan.packaging, false);
       assert.equal(plan.installer, false);
       assert.equal(plan.e2e, false);
-      assert.equal(plan.readme, false);
     });
   }
 
   for (const file of ["README.md", "README.zh.md", "plugins/README.md", "plugins/README.zh.md"]) {
-    it(`a ${file} edit checks the catalog without selecting core or its consumers`, () => {
+    it(`a ${file} edit selects no package job`, () => {
       const plan = changed(file);
-      assert.equal(plan.readme, true);
       assert.equal(plan.full, false);
       assert.deepEqual(plan.packages, []);
       for (const matrix of [plan.linux, plan.macos, plan.windows]) {
@@ -188,12 +185,11 @@ describe("affected CI", { concurrency: false }, () => {
     });
   }
 
-  it("README, changelog and landing edits keep the catalog check separate from site checks", () => {
+  it("README and changelog edits beside a landing edit add nothing to the landing's checks", () => {
     write("README.md", "changed\n");
     write("README.zh.md", "changed\n");
     write("changelog/unreleased/2026-10-14-fixture.md", "changed\n");
     const plan = changed("packages/landing/content/blog/fixture.zh.md");
-    assert.equal(plan.readme, true);
     assert.equal(plan.full, false);
     assert.deepEqual(new Set(plan.packages), names("landing"));
     assert.deepEqual(members(plan.linux), names("landing"));
@@ -210,18 +206,6 @@ describe("affected CI", { concurrency: false }, () => {
     ]) {
       assert.equal(plan[job], false, `${job} should not run`);
     }
-  });
-
-  it("README and core edits use the server suite, core's consumer, without a duplicate catalog job", () => {
-    write("README.md", "changed\n");
-    const plan = changed("packages/core/src/index.js");
-    assert.equal(plan.readme, false);
-    for (const matrix of [plan.linux, plan.macos, plan.windows]) {
-      assert.ok(members(matrix).has(name("core")));
-      assert.ok(members(matrix).has(name("server")));
-    }
-    assert.equal(plan.installer, true);
-    assert.equal(plan.e2e, true);
   });
 
   it("a core edit checks transitive consumers and native behavior on every OS", () => {
@@ -407,7 +391,6 @@ describe("affected CI", { concurrency: false }, () => {
       assert.equal(plan.full, false);
       assert.deepEqual(plan.packages, []);
       for (const job of [
-        "readme",
         "tests",
         "macos_tests",
         "windows_tests",
@@ -439,7 +422,6 @@ describe("affected CI", { concurrency: false }, () => {
     const plan = planCI({ cwd, base: git("rev-parse", "HEAD"), full: true });
     const expected = new Set([...allPackages, added]);
     assert.deepEqual(new Set(plan.packages), expected);
-    assert.equal(plan.readme, false);
     expected.delete("@penguinharness/catalog-only");
     for (const matrix of [plan.linux, plan.macos, plan.windows]) {
       assert.deepEqual(members(matrix), expected);

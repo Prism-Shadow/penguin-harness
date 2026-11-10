@@ -38,9 +38,6 @@ export function renderMainChatToolbar(scope: MainChatView) {
     stream,
     outline,
     streamScrollRef,
-    workflowTabs,
-    projectId,
-    pageAgentId,
     railFit,
     machineNameOf,
     onRemoveProcess,
@@ -53,25 +50,17 @@ export function renderMainChatToolbar(scope: MainChatView) {
     headerActivity,
     backgroundCount,
   } = scope;
-  const coveredByWorkbench =
-    workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
   return (
     <>
       {archivedRow && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
         </div>
       )}
       {selected && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
@@ -115,7 +104,9 @@ export function renderMainChatToolbar(scope: MainChatView) {
               viewports show the live chips (Token / cost / elapsed, plus the running-services
               count while any process is alive) and clicking them opens the details card; narrow
               viewports collapse the whole thing to the single info icon. There is no separate
-              info icon while the chips are visible. */}
+              info icon while the chips are visible. The card drops over the docks: portaled,
+              so a dock lifted to fullscreen or the built-in browser's page, which is laid over
+              the Chat window from outside it, never covers it. */}
           {renderMainSessionDetails(scope)}
         </div>
       )}

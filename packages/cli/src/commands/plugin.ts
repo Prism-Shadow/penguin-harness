@@ -32,7 +32,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Command } from "commander";
-import { zipSync } from "fflate";
 import {
   libraryParts,
   readLibraryPackage,
@@ -48,19 +47,24 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { renderTable } from "../table.js";
+import { zipFolder } from "../zip-folder.js";
 import type { Messages } from "../i18n.js";
 
 const installedPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
 
-/** The server's caps on an uploaded package (its services/plugin-archive.ts), checked before anything is sent. */
-const MAX_FILES = 2000;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
-const MAX_ZIP_BYTES = 14 * 1024 * 1024;
-
-/** Never part of an uploaded package: what an install resolves, a checkout's history, npm's own configuration (the server refuses a zip carrying one). */
-const LEFT_OUT = new Set(["node_modules", ".git", ".npmrc"]);
+/**
+ * The server's caps on an uploaded package (its services/plugin-archive.ts), checked before
+ * anything is sent; never part of one: what an install resolves, a checkout's history, npm's own
+ * configuration (the server refuses a zip carrying one).
+ */
+const PACKAGE_CAPS = {
+  files: 2000,
+  fileBytes: 5 * 1024 * 1024,
+  totalBytes: 50 * 1024 * 1024,
+  zipBytes: 14 * 1024 * 1024,
+  leftOut: new Set(["node_modules", ".git", ".npmrc"]),
+};
 
 /** One listed server module's state on this server, in words. */
 function moduleState(t: Messages, row: InstalledPlugin): string {
@@ -86,41 +90,6 @@ export function packageDirectory(arg: string): string | null {
   } catch {
     return null;
   }
-}
-
-/**
- * A package directory as the zip the server's upload route reads: every regular file under one
- * top-level `<rootName>/`, LEFT_OUT and symlinks skipped. Null past the server's caps — the upload
- * would be refused anyway, so nothing is sent.
- */
-function zipPackage(dir: string, rootName: string): { zip: Uint8Array; files: number } | null {
-  const out: Record<string, Uint8Array> = {};
-  let files = 0;
-  let total = 0;
-  const walk = (abs: string, rel: string): boolean => {
-    const entries = fs.readdirSync(abs, { withFileTypes: true });
-    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    for (const entry of entries) {
-      if (LEFT_OUT.has(entry.name)) continue;
-      const childAbs = path.join(abs, entry.name);
-      const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
-      if (entry.isDirectory()) {
-        if (!walk(childAbs, childRel)) return false;
-      } else if (entry.isFile()) {
-        // Sized before a byte is read: a file past the caps is never loaded (one over 2 GiB
-        // could not be read whole at all).
-        const size = fs.statSync(childAbs).size;
-        files += 1;
-        total += size;
-        if (files > MAX_FILES || size > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES) return false;
-        out[`${rootName}/${childRel}`] = new Uint8Array(fs.readFileSync(childAbs));
-      }
-    }
-    return true;
-  };
-  if (!walk(dir, "")) return null;
-  const zip = zipSync(out);
-  return zip.byteLength > MAX_ZIP_BYTES ? null : { zip, files };
 }
 
 /** An MCP server's line after an install: its name, its transport and what it reaches — a URL, or the command it runs. */
@@ -165,7 +134,7 @@ async function uploadDirectory(
   } catch (err) {
     throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
   }
-  const packed = zipPackage(dir, pluginName);
+  const packed = zipFolder(dir, pluginName, PACKAGE_CAPS);
   if (packed === null) throw new Error(t.plugin.dirTooLarge(dir));
   process.stderr.write(`${t.plugin.uploading(name, version, packed.files)}\n`);
   try {

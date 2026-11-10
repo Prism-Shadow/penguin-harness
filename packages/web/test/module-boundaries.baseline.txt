@@ -10,31 +10,22 @@ cycle: features/ai-create -> features/chat
 cycle: features/builtin-browser -> features/dock
 cycle: features/chat -> features/agents
 cycle: features/chat -> features/ai-create
-cycle: features/chat -> features/builtin-browser
 cycle: features/chat -> features/company
-cycle: features/chat -> features/dock
 cycle: features/chat -> features/models
 cycle: features/chat -> features/schedules
-cycle: features/chat -> features/settings
-cycle: features/chat -> features/terminal
-cycle: features/chat -> features/traces
 cycle: features/company -> features/chat
 cycle: features/company -> features/models
 cycle: features/company -> features/plugins
 cycle: features/company -> features/traces
 cycle: features/dock -> features/builtin-browser
-cycle: features/dock -> features/chat
 cycle: features/dock -> features/terminal
 cycle: features/models -> features/ai-create
 cycle: features/models -> features/chat
 cycle: features/plugins -> features/agents
 cycle: features/plugins -> features/ai-create
 cycle: features/plugins -> features/chat
-cycle: features/plugins -> features/settings
 cycle: features/schedules -> features/ai-create
 cycle: features/schedules -> features/models
-cycle: features/settings -> features/builtin-browser
-cycle: features/settings -> features/dock
 cycle: features/terminal -> features/dock
 cycle: features/traces -> features/chat
 features/agents/workbenches-tab.tsx -> features/skills/skill-icon-view.tsx
@@ -52,4 +43,3 @@ features/traces/trace-file-view.tsx -> features/chat/history-loading.tsx
 lib/account-sync/prefs.ts -> features/chat/steer-mode.ts
 lib/account-sync/prefs.ts -> features/dock/dock-launcher-state.ts
 lib/strings.ts -> features/models/model-sort.ts
-rescue/rescue-panel.tsx -> features/harness/harness-history-overlay.tsx

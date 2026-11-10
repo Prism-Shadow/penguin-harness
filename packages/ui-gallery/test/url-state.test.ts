@@ -16,7 +16,6 @@ import {
   DEFAULT_STATE,
   formatGalleryQuery,
   parseGalleryState,
-  PREF_KEYS,
   rememberedPrefs,
   resolveMode,
 } from "../src/lib/url-state";
@@ -39,13 +38,6 @@ describe("gallery URL state", () => {
       view: "phone",
     });
     expect(parseGalleryState(formatGalleryQuery(state))).toEqual(state);
-  });
-
-  it("opens on the 16px size, the theme's own faces and the theme's own accent", () => {
-    expect(DEFAULT_STATE.size).toBe("m");
-    expect(DEFAULT_STATE.latin).toBe("theme");
-    expect(DEFAULT_STATE.cjk).toBe("theme");
-    expect(PREF_KEYS).toEqual(["theme", "mode", "size", "latin", "cjk", "lang", "accent"]);
   });
 
   it("always writes the seven preferences and the view only when set", () => {

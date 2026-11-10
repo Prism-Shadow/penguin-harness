@@ -1,8 +1,8 @@
 /**
  * Dropdown container (controlled): clicking outside collapses it; the panel is absolutely
- * positioned (z-40, per the layering convention — chrome avoids stacking contexts, in-flow
- * menus are z-40, overlays are z-50, and **portaled** popups are z-[60] so they clear an
- * open Modal, matching Select's portal panel). menuClass controls the docking direction and
+ * positioned on the `menu` layer (layers.css: an in-place menu orders only within its window),
+ * and a **portaled** one takes the `popover` layer so it clears an open Modal, matching
+ * Select's portal panel. menuClass controls the docking direction and
  * width. The rows inside are the caller's — the Menu family (`Menu`, `MenuItem`, …) for a plain
  * menu, or any body a picker needs (a search box over a list, a directory browser).
  *
@@ -313,10 +313,10 @@ export function Dropdown({
     };
   }, [open, portal, place, anchorRect]);
 
-  // Portaled panels sit at z-[60], above a Modal's z-50 overlay (a body portal appended
+  // Portaled panels take the `popover` layer, above a Modal's `modal` (a body portal appended
   // after the overlay would otherwise paint UNDER it and be unclickable); in-flow panels
-  // keep the z-40 menu tier — they stack within their host's own context.
-  const panelClass = `ui-glass ${menuPanelClass} ${portal ? "z-[60]" : "z-40"} ${
+  // keep the `menu` layer — they stack within their window.
+  const panelClass = `ui-glass ${menuPanelClass} ${portal ? "z-popover" : "z-menu"} ${
     portal ? "" : "max-h-[70vh]"
   } ${menuClass ?? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"}`;
 
