@@ -119,6 +119,8 @@ export async function writeShippedIndex(prefix: string): Promise<void> {
     }
   }
   await writeFile(path.join(prefix, "index.json"), JSON.stringify(sortIndex(index)));
+}
+
 /** What a package of content declares (core plugin/library.ts); each entry gets the id the shipped plugins use. */
 export interface PluginContent {
   card?: Record<string, unknown>;
