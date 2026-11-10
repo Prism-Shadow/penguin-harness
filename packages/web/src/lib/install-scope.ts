@@ -57,7 +57,8 @@ export type KeyScope = "install" | "browser";
 
 /**
  * One classification rule. `kind: "exact"` matches the key itself; `kind: "family"` matches
- * a key prefix that ends in `.` and covers every id-suffixed key under it.
+ * a key prefix that ends in `.` and covers every id-suffixed key under it. Both are in the
+ * `penguin.` namespace, and the types hold that, and a family's trailing `.`, for every rule.
  *
  * Plain prefix matching would be wrong twice over, which is why the distinction exists:
  * `penguin.sidebarCollapsed` (a preference) is a prefix of
@@ -65,9 +66,17 @@ export type KeyScope = "install" | "browser";
  * covers both `penguin.terminal.theme` (a preference) and `penguin.terminal.page.id`
  * (a terminal id).
  */
-export interface KeyRule {
-  kind: "exact" | "family";
-  key: string;
+export type KeyRule =
+  | (KeyRuleScope & { kind: "exact"; key: `${KeyNamespace}.${string}` })
+  | (KeyRuleScope & { kind: "family"; key: `${KeyNamespace}.${string}.` });
+
+/**
+ * The namespace every key is in. Named apart from the dot so the source holds no quoted
+ * `penguin.` of its own, which install-scope.test.ts's key scan would read as a stored key.
+ */
+type KeyNamespace = "penguin";
+
+interface KeyRuleScope {
   scope: KeyScope;
   /** Why this scope — one line, kept next to the rule so the two cannot drift apart. */
   why: string;
@@ -83,7 +92,7 @@ export interface KeyRule {
  * fails on any this table does not cover.
  *
  * Two `penguin.*` strings in the source are NOT here on purpose:
- *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
+ *   - `penguin.chatRouteApplied.<field>` (features/chat/body/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
  *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's

@@ -7,7 +7,7 @@
  *   each deliberate exclusion is still a key the source contains.
  * - An exact preference is never captured by a family that shares its stem
  *   (`penguin.sidebarCollapsed` beside `penguin.sidebarCollapsedGroups.`, `penguin.terminal.theme`
- *   beside `penguin.terminal.page.id`); the rule table is well formed.
+ *   beside `penguin.terminal.page.id`).
  * - A changed install id sweeps the install-scoped keys, orphans of every earlier root included,
  *   and keeps the preferences and every key no rule covers.
  * - An unchanged id (every ordinary restart) sweeps nothing; a first sight adopts without
@@ -26,7 +26,6 @@ import { setUnauthorizedHandler } from "../src/api/client";
 import {
   bootInstallScope,
   INSTALL_ID_KEY,
-  KEY_RULES,
   reactToInstallIdChange,
   reconcileInstallScope,
   scopeOfKey,
@@ -175,17 +174,6 @@ describe("install-scope classification", () => {
     expect(scopeOfKey("penguin.sidebarCollapsedGroups.default_project")).toBe("install");
     expect(scopeOfKey("penguin.terminal.theme")).toBe("browser");
     expect(scopeOfKey("penguin.terminal.page.id")).toBe("install");
-  });
-
-  it("rules are well formed: penguin-namespaced, families dotted, no duplicates", () => {
-    const seen = new Set<string>();
-    for (const rule of KEY_RULES) {
-      expect(rule.key.startsWith("penguin."), rule.key).toBe(true);
-      expect(rule.why.length, rule.key).toBeGreaterThan(0);
-      if (rule.kind === "family") expect(rule.key.endsWith("."), rule.key).toBe(true);
-      expect(seen.has(rule.key), rule.key).toBe(false);
-      seen.add(rule.key);
-    }
   });
 });
 

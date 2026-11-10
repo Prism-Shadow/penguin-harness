@@ -19,7 +19,7 @@
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
-import { BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
+import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
 import type {
   BackgroundImagePutResponse,
   BackgroundImageResponse,
@@ -75,13 +75,6 @@ import type { BackgroundImageStore, UserDraftsStore } from "../../mechanisms/acc
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
 const DISPLAY_NAME_MAX = 32;
-
-/**
- * Avatar cap, in characters of the data URL as it arrives — the same number the browser
- * measures its re-encode against, so the client and this check can never disagree about what
- * "too large" means. 131072 characters of base64 hold roughly 96 KiB of image.
- */
-const AVATAR_MAX_CHARS = 131072;
 
 /** The three formats the picker offers, all of which every target browser can re-encode. */
 const AVATAR_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;

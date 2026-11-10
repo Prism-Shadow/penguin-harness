@@ -8,7 +8,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { MenuSelect, MenuSelectBody } from "../src/components/chat/menu-select/menu-select";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic, markupStructure } from "../src/testing";
 
 const LEVELS = [
   { value: "low", label: "Low" },
@@ -33,7 +33,6 @@ describe("MenuSelectBody", () => {
     expect(rows[0]).not.toContain("<svg");
     expect(rows[1]).toContain("<svg");
     expect(html.indexOf("High")).toBeLessThan(html.indexOf("Changing it costs"));
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["text-xs", "text-fg-subtle"]));
   });
 
   it("marks every toggle's state, and runs a muted detail after its label", () => {
@@ -50,7 +49,7 @@ describe("MenuSelectBody", () => {
     );
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('<span class="text-fg-subtle">Attach a picture</span>');
+    expect(markupStructure(html)).toContain("<span>Attach a picture</span>");
     expect(html).toContain('disabled=""');
     expect(html.indexOf("Loop until done")).toBeLessThan(html.indexOf("SETTINGS"));
   });

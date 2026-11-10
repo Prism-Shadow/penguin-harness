@@ -1,6 +1,6 @@
 /**
- * 提示弹窗: the package's toast after an action completes, in its four kinds, and one carrying an
- * action after its text, fired from buttons (the Toaster is mounted by the frame).
+ * 提示弹窗: the package's toast after an action completes, in its four kinds, fired from buttons
+ * (the Toaster is mounted by the frame).
  */
 import {
   Button,
@@ -26,15 +26,6 @@ export function ToastsBoard() {
           <Button onClick={() => toastAttention(t.attentionText)}>{t.attention}</Button>
           <Button variant="danger" onClick={() => toastError(t.errorText)}>
             {t.error}
-          </Button>
-          <Button
-            onClick={() =>
-              toastInfo(t.actionText, {
-                action: { label: t.undo, onPress: () => toastSuccess(t.undone) },
-              })
-            }
-          >
-            {t.withAction}
           </Button>
         </div>
       </BoardGroup>

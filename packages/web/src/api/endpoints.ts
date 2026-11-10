@@ -1,9 +1,3 @@
-/**
- * API endpoint wrappers: one function per API.
- * DTO types come from @prismshadow/penguin-server/api (**type import only**, resolved via
- * tsconfig paths to the server contract file types.ts; must not be a value import — server
- * code must not enter the browser bundle).
- */
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -21,8 +15,7 @@ import type {
   AgentDeletionResponse,
   AgentHooksResponse,
   AgentMcpServersResponse,
-  AgentImportRequest,
-  AgentImportResponse,
+  AgentArchiveImportResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -110,6 +103,7 @@ import type {
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
   OrganizationCreateRequest,
+  OrganizationDeleteResponse,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -269,7 +263,7 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import { apiFetch, apiFetchWithMeta, apiUpload } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
@@ -2147,28 +2141,37 @@ export const benchmarkCaseFileUrl = (
   );
 };
 
-// Agent State snapshot export / import ------------------------------------------------------
+// Agent zip export / import ----------------------------------------------------------------
 
-/** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
-export const agentExportUrl = (
+/** The zip export with its parts query; a browser-followed URL, so the proxy prefix is in it (downloadArchive fetches it). */
+export const agentArchiveUrl = (
   projectId: string,
   agentId: string,
+  parts: Record<string, string>,
   machineId: string | null,
 ): string =>
   apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`,
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/archive?${new URLSearchParams(parts).toString()}`,
     machineId,
   );
 
-export const importAgent = (
+/**
+ * Uploads an Agent zip (or an older `.tar.gz`) as it is: a new Agent `agentId`, or with
+ * `overwrite` (owners only) the State of the existing one. A taken id without it is 409
+ * `agent_exists`, the id in `details.agentId`.
+ */
+export const importAgentArchive = (
   projectId: string,
-  agentId: string,
-  body: AgentImportRequest,
+  file: Blob,
+  target: { agentId: string; overwrite: boolean },
   machineId: string | null,
 ) =>
-  apiFetch<AgentImportResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
-    { method: "POST", body, server: machineId },
+  apiUpload<AgentArchiveImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/import?agentId=` +
+      `${encodeURIComponent(target.agentId)}${target.overwrite ? "&overwrite=1" : ""}`,
+    file,
+    machineId,
   );
 
 // Machines (admin only) ----------------------------------------------------------------
@@ -2423,11 +2426,24 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
- * employees' Agents and its desk and ticket Sessions are left as they are.
+ * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
+ * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
+ * well, as far as they still qualify (not built in, employed nowhere else), and the answer
+ * reports every employee; without it the Agents and their Sessions are left as they are.
  */
-export const deleteOrganization = (projectId: string, orgId: string) =>
-  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+export const deleteOrganization = (
+  projectId: string,
+  orgId: string,
+  opts: { agentIds?: readonly string[] } = {},
+) =>
+  apiFetch<OrganizationDeleteResponse>(
+    `${orgBase(projectId, orgId)}${
+      opts.agentIds === undefined
+        ? ""
+        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
+    }`,
+    { method: "DELETE" },
+  );
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
@@ -2885,7 +2901,7 @@ export const registryPluginArchiveUrl = (name: string): string =>
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
-/** What the storage-clearing route takes (the shell's own clear-data command). */
+/** What the storage-clearing route takes (WebApp's own clear-data command). */
 export type BuiltinBrowserStorage = Extract<
   DesktopBrowserCommand,
   { op: "clear-data" }
@@ -3016,4 +3032,5 @@ export const clearBuiltinBrowserData = (
     server: null,
   });
 
+/** The existing server contributions route, read by the single frame provider. */
 export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

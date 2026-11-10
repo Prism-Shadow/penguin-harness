@@ -11,9 +11,14 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
+import { EVOLUTION_DEMO } from "./evolution-demo";
+import type { SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -585,7 +590,6 @@ export const zh = {
 
   /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
-    /** The dock tab's name, also in the dock's menus and the launcher. */
     panelTitle: "浏览器",
     /** The browser's own tab strip (its accessible name). */
     tabs: "标签页",
@@ -1119,7 +1123,7 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
-    } as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -1137,6 +1141,7 @@ export const zh = {
     openDevTools: "打开开发者工具",
     projectOnGitHub: "在 GitHub 上查看项目",
   },
+  /** The rescue surface (src/rescue/): the panel a render error leaves, and safe mode. */
   rescue: {
     title: "界面出错了",
     desc: "页面渲染时抛出错误，应用无法继续显示。可以重新加载，或跳过服务端贡献（插件提供的页面等）后重新加载；需要回退 harness 版本时，打开 Harness 历史。",
@@ -1552,13 +1557,17 @@ export const zh = {
       /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
       placeholder: (reason: string): string =>
         `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
+      /**
+       * Why the proposal fell through, keyed by the server's reason code: one phrase for every
+       * code the contract declares and no other, held by the `satisfies` (and the English
+       * dictionary by `Strings`).
+       */
       reasons: {
         no_default_model: "未配置默认模型",
         model_failed: "模型调用失败",
         unusable_answer: "模型回答不可用",
         no_ascii: "名称里没有可转写的英文",
-      },
+      } satisfies Record<SemanticIdSuggestReason, string>,
       /** A reason a newer server named and this build does not know. */
       reasonUnknown: "原因未知",
     },
@@ -1780,13 +1789,8 @@ export const zh = {
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
     createDirSkillsClear: "不从目录导入",
-    /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
-    createSnapshot: "从快照初始化",
-    createSnapshotPick: "选择快照包",
-    createSnapshotHint:
-      "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
-    createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
-    createSnapshotClear: "移除已选快照包",
+    /** The create dialog's footer line: an Agent from an exported file is the page's 「导入 Agent」. */
+    createFromFileHint: "要从导出的文件新建 Agent？",
     /**
      * The "Create with AI" dialog, a separate surface from the create form above: its title, the
      * lead line, the prompt box's placeholder, the clickable examples and the fixed instruction
@@ -2050,19 +2054,66 @@ export const zh = {
     /** A removal that stopped short: the operating system's reason, and when the rest goes. */
     deleteRetryOnRestart: (error: string): string =>
       `${error}。其余文件会在服务端下次启动时再删除。`,
-    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    /** Agent State section: the State version with the export / replace actions, plus the copyable State path. */
     stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
-    exportSnapshot: "导出快照",
-    importSnapshot: "导入快照",
+    transferDesc:
+      "「导出…」把该 Agent 打成一个 zip；「从文件替换…」用导出的文件替换它的 Agent State，对话、保险柜与 API 密钥保留，替换前先写一份备份快照。",
+    exportOpen: "导出…",
+    replaceOpen: "从文件替换…",
+    exportAgent: "导出 Agent",
+    importAgent: "导入 Agent",
+    exportTitle: (name: string): string => `导出 Agent：${name}`,
+    exportInclude: "包含",
+    exportWorkbenchData: "含其数据",
+    exportSchedulesHint: "导入后会按计划运行",
+    exportTraces: "对话",
+    exportTracesNone: "不含",
+    exportTracesLast: "最近 N 条",
+    exportTracesRange: "日期范围",
+    exportTracesCount: "对话条数",
+    exportTracesFrom: "起始日期",
+    exportTracesTo: "结束日期",
+    exportVaultNote: "保险柜从不进包；配置里直接写的字面值会原样带出。",
+    exportAction: "导出",
+    exporting: "导出中…",
+    replaceTitle: (name: string): string => `从文件替换：${name}`,
+    migrateTitle: "从其他框架迁移",
+    migrateInfo:
+      "Project 的默认 Agent 会在新对话里用 agent-porting 技能读取来源、建好新的 Agent，并说明哪些内容没能迁移。Prompt 只填进输入框，发送由你决定。",
+    migrateFramework: "来源框架",
+    /** The framework list's last choice; the products keep their own names (agent-migration.ts). */
+    migrateOther: "其他",
+    migratePath: "路径",
+    /** The label for 「其他」, where the field is required: there is no default directory to read. */
+    migratePathOther: "路径或说明",
+    /** The migration chat's prompt; `framework` is null for 「其他」. */
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `把这个来源迁移成 PenguinHarness 的一个新 Agent：${source}`
+          : `把 ${framework} 的配置迁移成 PenguinHarness 的一个新 Agent，来源：${source}`,
+        "用 agent-porting 技能完成迁移：",
+        "- 完整读取来源：指令文件、技能、命令、MCP 服务器、钩子、子 Agent 与记忆；只读，不改动来源里的任何文件。",
+        "- 绝不复制密钥、令牌或密码的值，只记下需要填写的键名。",
+        "- 在临时目录里按技能说明的 Agent zip 布局写出新 Agent。",
+        `- 运行 \`penguin agent import <该目录> --project-id ${projectId}\` 导入；id 已被占用时用 --agent-id 换一个。`,
+        "- 最后告诉我：新 Agent 的 id，映射了哪些内容，哪些没能映射及原因，以及需要在保险柜里填写的键。",
+      ].join("\n"),
+    importFileTitle: "导入文件",
+    importFileHint: ".zip；1.0 之前也接受旧的 .tar.gz 快照包",
+    importPick: "选择文件",
+    importAction: "导入",
     importing: "导入中…",
-    importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
-    importConflictTitle: "版本冲突",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `用「${file}」替换整个 Agent State？现有内容都会被快照包取代（Vault 保留），导入前会自动为当前版本存一份快照。`,
-    importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    importExists: (id: string): string => `id ${id} 已存在`,
+    importRename: "改用其他 id",
+    importOverwrite: "覆盖现有 Agent",
+    replaceAction: "替换",
+    overwriteTitle: "替换 Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `用「${file}」替换「${agentId}」的 Agent State？文件里没有的部件、它的对话、保险柜与 API 密钥保留；替换前会先写一份备份快照。`,
+    importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
+      `${overwritten ? "已覆盖" : "已导入"} Agent「${name}」；对话：导入 ${imported} 个，略过已有的 ${skipped} 个`,
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
@@ -2341,7 +2392,7 @@ export const zh = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
     /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
@@ -3409,6 +3460,9 @@ export const zh = {
   },
 
   chat: {
+    workspacePanel: "文件浏览",
+    memoryViewTitle: "记忆",
+    openAgents: "智能体面板",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
@@ -3421,7 +3475,7 @@ export const zh = {
       high: "高",
       xhigh: "极高",
       max: "最高",
-    } as Readonly<Record<string, string>>,
+    } satisfies Record<ThinkingLevelName, string> as Readonly<Record<string, string>>,
     /** Dropdown-row variant of the name above: choosing is where the wire value earns its place, so a menu row annotates the Chinese name with the value the pick will send. Only the composer's own dropdown uses it — a native `<select>` renders the picked option's text on the collapsed control too, which would put the annotation straight back onto a trigger. */
     thinkingLevelMenuName: (name: string, level: string): string => `${name} (${level})`,
     /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
@@ -3769,12 +3823,12 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
         prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
-- id：\`finite_choice_agent\`
+- id：\`${EVOLUTION_DEMO.agentId}\`
 - 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
 - installed_skills：\`[]\`
 
 Benchmark：
-- id：\`contextual-choice-adaptation\`
+- id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
@@ -3789,8 +3843,8 @@ Benchmark：
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
-- test_agent_id：\`finite_choice_agent\`
-- benchmark_id：\`contextual-choice-adaptation\`
+- test_agent_id：\`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
 - runs：\`3\`
 - desired_score：\`>=95\`
@@ -4255,8 +4309,6 @@ Benchmark：
     },
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openAgents: "智能体面板",
-    workspacePanel: "文件浏览",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -4268,7 +4320,6 @@ Benchmark：
     memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
     memoryOpWrite: "写入",
     memoryOpEdit: "编辑",
-    memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
     memoryRowOpen: "查看内容",
@@ -5392,8 +5443,7 @@ Benchmark：
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
       "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
-    askEvaluationDefault: "解释这次评估的结果。",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "解释这次评估的结果",
@@ -5450,8 +5500,7 @@ Benchmark：
     askCaseTitle: "问 AI：这道题",
     askCaseDescription:
       "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
-    askCaseDefault: "解释这道题考什么、怎样才算答好。",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "解释这道题考什么、怎样才算答好",
@@ -5896,13 +5945,37 @@ Benchmark：
     pause: "暂停组织",
     resume: "恢复组织",
     deleteOrg: "删除组织",
-    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgDesc:
+      "把组织移入 Project 的回收目录，默认同时永久删除只受雇于它的 Agent。内置 Agent 与另受雇于其他组织的 Agent 保留。",
     deleteOrgConfirm:
-      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。随组织删除的 Agent 连同它们的全部对话永久删除，无法恢复。保留的 Agent 仍是 Project 的 Agent，工位与工单的对话也保留，但组织不在了，就没有页面再列出它们；旧 CEO 的 Agent 还在时，这个 id 不能用来新建组织。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    /** The confirmation's checkbox; the count is null until the organization's Agents are read. */
+    deleteOrgAgents: (count: number | null) =>
+      count === null ? "同时删除该公司的 Agent" : `同时删除该公司的 Agent（${count} 个）`,
+    deleteOrgWillDelete: (names: string) => `将永久删除：${names}`,
+    deleteOrgWillKeep: (names: string) => `保留：${names}`,
+    deleteOrgKeptBuiltin: (name: string) => `${name}（内置）`,
+    deleteOrgKeptElsewhere: (name: string, orgNames: string) => `${name}（另受雇于 ${orgNames}）`,
+    deleteOrgKeptUnknown: (name: string) => `${name}（无法确认任职）`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `${orgNames} 的员工树无法读取，无法确认谁只受雇于此；修好之前不会删除任何 Agent。`,
+    deleteOrgAgentsLoadFailed:
+      "该组织的 Agent 读取失败。请重试；或者只删除组织，它的 Agent 都会保留。",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) => `；保留了 ${names}（确认之后情况有变）`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `；保留了 ${names}，因为另一个组织的员工树无法读取：${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) => `组织 ${orgId} 已删除，但没有收到应答；列表已重新读取`,
     deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
     deleted: (orgId: string) => `组织 ${orgId} 已删除`,
+    deletedWithAgents: (orgId: string, count: number) =>
+      `组织 ${orgId} 已删除，连同 ${count} 个 Agent`,
+    deleteOrgAgentsFailed: (orgId: string, names: string) =>
+      `组织 ${orgId} 已删除，但这些 Agent 未能删除：${names}`,
     pauseInfo:
-      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
+      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。暂停不会删除任何东西：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {

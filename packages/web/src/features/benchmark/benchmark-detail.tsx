@@ -506,7 +506,7 @@ export function BenchmarkDetail({
           onClose={() => setAskingCaseId(null)}
           title={S.benchmark.askCaseTitle}
           description={S.benchmark.askCaseDescription}
-          question={S.benchmark.askCaseDefault}
+          question={S.benchmark.askCaseExamples.explain.prompt}
           examples={askCaseExamples()}
           tail={askCaseTail(caseAskParams(bm.id, openCase.id, evaluations))}
         />

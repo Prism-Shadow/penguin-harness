@@ -149,7 +149,7 @@ function DropRing() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0 z-10 rounded-md ring-1 ring-inset ring-accent"
+      className="pointer-events-none absolute inset-0 z-raised rounded-md ring-1 ring-inset ring-accent"
     />
   );
 }

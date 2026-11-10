@@ -1,4 +1,5 @@
-import type { WebAppPage } from "./index";
+import type { WebAppPage } from "./page-table";
+import { WebAppPagesProvider, useWebAppPages, useWebAppPagesPending } from "./contributions";
 /**
  * Router: /login is public; all other routes go through the RequireAuth guard (redirects to
  * /login when not authenticated) and are wrapped in ProjectProvider + AppLayout.
@@ -26,6 +27,7 @@ import {
   Navigate,
   Outlet,
   Route,
+  Routes,
   RouterProvider,
   createBrowserRouter,
   createMemoryRouter,
@@ -108,6 +110,32 @@ function RootFrame() {
   );
 }
 
+/** Every shell page, the company-mode ones included: a contributed page mounts both under the
+ * organization (org-routes.tsx) and from the root, its rooted path (contributions.tsx). They stay
+ * below the one data router and its leave guard; keep the router/history identity stable, so a
+ * pending URL does not redirect before its page arrives. */
+export function ShellRoutes() {
+  const pages = useWebAppPages();
+  const pending = useWebAppPagesPending();
+  return (
+    <Routes>
+      {pages
+        .filter((page) => page.frame === "shell")
+        .map(({ id, path, Component }) => (
+          <Route key={id} path={path} element={path === "*" && pending ? null : <Component />} />
+        ))}
+    </Routes>
+  );
+}
+
+/** Bare routes keep their original no-shell provider boundary and read removal live. */
+function BarePage({ id }: { id: string }) {
+  const page = useWebAppPages().find((page) => page.id === id);
+  if (page === undefined) return <Navigate to="/" replace />;
+  const Component = page.Component;
+  return <Component />;
+}
+
 /**
  * What the router shows in place of a route that crashed outside a page body's own boundary (the
  * shell, a guard): the crash notice over the whole window, with Reload and Report.
@@ -134,7 +162,7 @@ function appRoutes(pages: readonly WebAppPage[]) {
             path={path}
             element={
               <RequireAuthBare>
-                <Component />
+                <BarePage id={id} />
               </RequireAuthBare>
             }
           />
@@ -146,11 +174,7 @@ function appRoutes(pages: readonly WebAppPage[]) {
             path nothing else matches lead home, which depends on the mode: company mode
             contributes that page too (path `*`). Settings and user management live in the
             settings dialog now (see SettingsDialog); their old routes fall through to it. */}
-        {pages
-          .filter((page) => page.frame === "shell")
-          .map(({ id, path, Component }) => (
-            <Route key={id} path={path} element={<Component />} />
-          ))}
+        <Route path="*" element={<ShellRoutes />} />
       </Route>
     </Route>,
   );
@@ -179,5 +203,9 @@ export function AppRouter({ initialPath }: AppRouterProps = {}) {
     setReportRoute(() => routePattern(router.state.matches));
     return () => setReportRoute(null);
   }, [router]);
-  return <RouterProvider router={router} />;
+  return (
+    <WebAppPagesProvider>
+      <RouterProvider router={router} />
+    </WebAppPagesProvider>
+  );
 }

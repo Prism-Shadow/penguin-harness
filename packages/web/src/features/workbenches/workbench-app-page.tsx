@@ -118,12 +118,15 @@ export function WorkbenchAppPage() {
   if (safe) return <div role="status">{S.rescue.marker}</div>;
 
   return (
-    <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
+    // A window of its own (`isolate`): its layers order only among themselves, under the
+    // palette and every other overlay in the portal root. The theme's canvas shows through a
+    // page that paints no background of its own.
+    <div className="relative isolate h-full w-full bg-canvas pt-[env(titlebar-area-height,0px)]">
       {/* A list request that fails after the page is up says so over it, rather than leaving
           a frame that quietly stopped following the workbench. */}
       {tab && failure !== null && (
         <div
-          className="absolute inset-x-0 top-[env(titlebar-area-height,0px)] z-10 bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          className="absolute inset-x-0 top-[env(titlebar-area-height,0px)] z-window-overlay bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
           role="status"
         >
           {failure}
@@ -148,7 +151,7 @@ export function WorkbenchAppPage() {
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>
       )}
-      <div className="fixed right-4 bottom-4 z-40">
+      <div className="fixed right-4 bottom-4 z-window-overlay">
         <Button variant="secondary" size="sm" onClick={() => exit[0]!.run()}>
           {S.workbenches.exitFullPageButton}
         </Button>

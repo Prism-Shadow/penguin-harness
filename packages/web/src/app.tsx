@@ -30,6 +30,7 @@ import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
 import type { AppRouterProps } from "./web-app/router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
+import { RescuePalette } from "./rescue/palette";
 import { SafeModeMarker } from "./rescue/safe-mode-marker";
 import { ErrorBoundary } from "./rescue/error-boundary";
 import { RescuePanel } from "./rescue/rescue-panel";
@@ -83,7 +84,13 @@ export function App({
                   <ErrorBoundary fallback={() => null}>
                     <SafeModeMarker />
                   </ErrorBoundary>
-                  {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
+                  {/* The workbench palette's full-page exit (open the rescue panel over
+                      everything): mounted at the root, outside the page tree, so it works on
+                      every route and survives the page that opened the workbench going away. */}
+                  <ErrorBoundary fallback={() => null}>
+                    <RescuePalette />
+                  </ErrorBoundary>
+                  {/* Top toast overlay: portaled to body on the `toast` layer, above dialogs, shared site-wide. */}
                   <Toaster />
                   {/* The problem report opened from a toast, a notice or a crash: one dialog. */}
                   <ReportHost />

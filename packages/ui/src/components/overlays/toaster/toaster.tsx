@@ -12,12 +12,9 @@
  * `ui-notice` hook and the strip's tone colours, and a theme that restyles notices restyles toasts
  * with them. An error toast may carry a problem report (`toastError(text, { report })`, for an
  * error that is a defect rather than the person's to fix): it then holds two presses, its words
- * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached.
- * Any toast may carry one action of the caller's the same way (`toastInfo(text, { action })`, an
- * Undo after something the app did on the person's behalf): its word in brackets after the text,
- * which runs the action and dismisses the toast. The stack is portaled to the body above dialogs
- * and drawers (`z-[100]` over their `z-50`), so a toast raised inside a dialog is still seen; the
- * stack lets the pointer through and only the toasts take it.
+ * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached. The stack is portaled to the body on the `toast` layer, above dialogs and
+ * drawers (`modal`) and their menus (`popover`), so a toast raised inside a dialog is still seen; the stack lets the pointer through and
+ * only the toasts take it.
  *
  * The stack is a polite live region, and it stays mounted while empty: a region inserted together
  * with its first message is often not announced at all.
@@ -33,7 +30,6 @@ import { createPortal } from "react-dom";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { useUiStrings } from "../../../strings";
-import { TextAction } from "../../actions/text-action/text-action";
 import { NoticeStrip } from "../../feedback/notice/notice-strip";
 import type { NoticeStripTone } from "../../feedback/notice/notice-strip";
 import { ReportIssueAction } from "../../report/report-action";
@@ -42,21 +38,12 @@ import type { ErrorReport } from "../../report/error-report";
 /** `attention` is the advisory kind: the write went through, and something in it needs a look. */
 export type ToastKind = "success" | "error" | "info" | "attention";
 
-/** A press the caller puts on its toast, after the text: its word, and what pressing it does. */
-export interface ToastAction {
-  label: string;
-  /** Runs once, as the toast dismisses itself. */
-  onPress: () => void;
-}
-
 export interface ToastItem {
   id: number;
   kind: ToastKind;
   text: string;
   /** An error's problem report, opened from 「[报告问题]」 on the toast. */
   report?: ErrorReport | (() => ErrorReport);
-  /** The caller's press after the text. */
-  action?: ToastAction;
   /** Leaving: plays the exit animation first, and is removed from the list once it has run. */
   leaving?: boolean;
 }
@@ -72,8 +59,8 @@ const DURATION: Readonly<Record<ToastKind, number>> = {
   error: 6000,
 };
 
-/** How long a toast that carries a second press (a report, an action) stays, ms: long enough to reach it. */
-const SECOND_PRESS_DURATION = 10_000;
+/** How long an error toast that carries a report stays, ms: long enough to reach its second press. */
+const REPORT_DURATION = 10_000;
 
 /** The exit animation's length, ms (the web app's `anim-toast-out`). */
 const LEAVE_MS = 160;
@@ -102,40 +89,24 @@ function dismiss(id: number): void {
   }, LEAVE_MS);
 }
 
-function push(kind: ToastKind, text: string, options: ErrorToastOptions = {}): void {
+function push(kind: ToastKind, text: string, report?: ErrorReport | (() => ErrorReport)): void {
   if (!text) return;
   const id = nextId++;
-  const { report, action } = options;
-  const item: ToastItem = {
-    id,
-    kind,
-    text,
-    ...(report !== undefined ? { report } : {}),
-    ...(action !== undefined ? { action } : {}),
-  };
+  const item: ToastItem = report === undefined ? { id, kind, text } : { id, kind, text, report };
   toastStore.setState((s) => ({ items: [...s.items, item] }));
-  const secondPress = report !== undefined || action !== undefined;
-  setTimeout(() => dismiss(id), secondPress ? SECOND_PRESS_DURATION : DURATION[kind]);
+  setTimeout(() => dismiss(id), report === undefined ? DURATION[kind] : REPORT_DURATION);
 }
 
-export interface ToastOptions {
-  /** A press after the text (an Undo): the toast offers it in brackets and stays longer. */
-  action?: ToastAction;
-}
-
-export interface ErrorToastOptions extends ToastOptions {
+export interface ErrorToastOptions {
   /** A serious error's problem report: the toast offers 「[报告问题]」. */
   report?: ErrorReport | (() => ErrorReport);
 }
 
-export const toastSuccess = (text: string, options?: ToastOptions): void =>
-  push("success", text, options);
+export const toastSuccess = (text: string): void => push("success", text);
 export const toastError = (text: string, options?: ErrorToastOptions): void =>
-  push("error", text, options);
-export const toastInfo = (text: string, options?: ToastOptions): void =>
-  push("info", text, options);
-export const toastAttention = (text: string, options?: ToastOptions): void =>
-  push("attention", text, options);
+  push("error", text, options?.report);
+export const toastInfo = (text: string): void => push("info", text);
+export const toastAttention = (text: string): void => push("attention", text);
 
 /** The stack as it is drawn, without the portal: what `Toaster` renders into the body. */
 export function ToastStack({
@@ -153,7 +124,7 @@ export function ToastStack({
       aria-label={strings.notifications}
       aria-live="polite"
       aria-relevant="additions text"
-      className="pointer-events-none fixed inset-x-0 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-[100] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-toast flex flex-col items-center gap-2 px-4"
     >
       <span id={hint} hidden>
         {strings.dismiss}
@@ -163,7 +134,7 @@ export function ToastStack({
           key={t.id}
           className={`max-w-lg rounded-lg bg-overlay ${t.leaving ? "anim-toast-out" : "anim-toast-in"}`}
         >
-          {t.report === undefined && t.action === undefined ? (
+          {t.report === undefined ? (
             <NoticeStrip
               as="button"
               tone={KIND_TONE[t.kind]}
@@ -174,7 +145,7 @@ export function ToastStack({
               <span data-slot="body">{t.text}</span>
             </NoticeStrip>
           ) : (
-            // Two presses cannot nest in one button: the words dismiss, the action after them acts.
+            // Two presses cannot nest in one button: the words dismiss, the action reports.
             <NoticeStrip
               as="div"
               tone={KIND_TONE[t.kind]}
@@ -188,19 +159,7 @@ export function ToastStack({
               >
                 <span data-slot="body">{t.text}</span>
               </button>
-              {t.action !== undefined && (
-                <TextAction
-                  onClick={() => {
-                    onDismiss(t.id);
-                    t.action?.onPress();
-                  }}
-                >
-                  {t.action.label}
-                </TextAction>
-              )}
-              {t.report !== undefined && (
-                <ReportIssueAction report={t.report} onOpen={() => onDismiss(t.id)} />
-              )}
+              <ReportIssueAction report={t.report} onOpen={() => onDismiss(t.id)} />
             </NoticeStrip>
           )}
         </div>

@@ -3,8 +3,8 @@
  *
  * - Given entries in any order, the dialog lists them newest first, and 0.2.10 sorts above 0.2.9.
  * - Given a locale, a note's lines are that language's.
- * - Every shipped entry has 1–5 lines in both languages and a yyyy-mm-dd date, and no version is
- *   listed twice — the one guard on the data file, which the type system cannot hold.
+ * - No shipped version is listed twice: the one rule on the data file the type system cannot
+ *   hold (`ReleaseNote` holds the 1–5 lines per language and the date's shape).
  */
 import { describe, expect, it } from "vitest";
 import { noteLines, releaseNotesNewestFirst, type ReleaseNote } from "../src/lib/release-notes";
@@ -36,14 +36,7 @@ describe("release notes", () => {
     expect(noteLines(entry, "zh")).toEqual(["zh line of 0.2.13"]);
   });
 
-  it("every shipped entry has 1–5 lines per language and a calendar date, and no version twice", () => {
-    for (const entry of RELEASE_NOTES) {
-      expect(entry.zh.length, `${entry.version} zh`).toBeGreaterThanOrEqual(1);
-      expect(entry.zh.length, `${entry.version} zh`).toBeLessThanOrEqual(5);
-      expect(entry.en.length, `${entry.version} en`).toBeGreaterThanOrEqual(1);
-      expect(entry.en.length, `${entry.version} en`).toBeLessThanOrEqual(5);
-      expect(entry.date, entry.version).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    }
+  it("lists no shipped version twice", () => {
     const versions = RELEASE_NOTES.map((entry) => entry.version);
     expect(new Set(versions).size).toBe(versions.length);
   });

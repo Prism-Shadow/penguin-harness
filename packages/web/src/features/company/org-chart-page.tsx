@@ -60,6 +60,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneInk } from "../../lib/tone";
 import { useCompany } from "./company-state";
+import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
@@ -140,6 +141,7 @@ export function OrgChartPage() {
   const { projectId, orgId, org } = useOrg();
   const navigate = useNavigate();
   const company = useCompany();
+  const { reloadAgents } = useProject();
   const { currency } = useTheme();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.chart}` : S.nav.org.chart);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
@@ -354,6 +356,9 @@ export function OrgChartPage() {
       // refreshes for a departure: without this the employee's row stays until one does.
       void company.reloadOrgChart();
       void company.reloadOrgSessions();
+      // The Agent stays, no longer this organization's employee: the Agent list carries every
+      // employment mark the shell shows, so it is read again.
+      void reloadAgents().catch(() => undefined);
     } catch (e) {
       toastApiError(e);
     } finally {

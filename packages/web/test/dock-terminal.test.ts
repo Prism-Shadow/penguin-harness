@@ -20,6 +20,9 @@
  *   its panel goes on listing them; another Session's shell is not touched.
  * - Given a list fetched while this window starts a shell, the stale answer is not applied and
  *   the list is read again.
+ * - Given a workbench tab shown over the Chat window, a dock shortcut first brings Chat back and
+ *   then toggles its dock there; a shortcut that is not taken (a draft's terminal) leaves the
+ *   workbench on screen.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
@@ -30,6 +33,7 @@ let terminal: typeof import("../src/features/dock/dock-terminal");
 let list: typeof import("../src/features/terminal");
 let machines: typeof import("../src/lib/terminal-machines");
 let commands: typeof import("../src/lib/shortcuts/dispatcher");
+let reveal: typeof import("../src/features/dock/dock-reveal");
 
 beforeAll(async () => {
   // Not vi.stubGlobal: the package config unstubs globals before every test, and the stores read
@@ -43,6 +47,7 @@ beforeAll(async () => {
   list = await import("../src/features/terminal");
   machines = await import("../src/lib/terminal-machines");
   commands = await import("../src/lib/shortcuts/dispatcher");
+  reveal = await import("../src/features/dock/dock-reveal");
 });
 
 /** A shell as a server holds it; `sessionId` undefined = a server that records no owner. */
@@ -247,6 +252,43 @@ describe("where no Session owns the docks", () => {
     await terminal.createShell();
 
     expect(fake.requests).toEqual([]);
+  });
+});
+
+describe("a dock shortcut pressed while a workbench tab is shown", () => {
+  let withdraw = () => {};
+  afterEach(() => withdraw());
+  /** The chat page's side: a workbench tab over Chat until the revealer brings Chat back. */
+  function showWorkbench() {
+    const page = { workbenchShown: true };
+    withdraw = reveal.setDockRevealer(() => {
+      page.workbenchShown = false;
+    });
+    return page;
+  }
+  const rightOpen = () => dock.dockViews().some((view) => view.position === "right");
+
+  it("switches to Chat, then toggles its dock there", () => {
+    openConversation();
+    const page = showWorkbench();
+    const before = rightOpen();
+
+    expect(commands.runCommand("dock.toggleRight")).toBe(true);
+
+    expect(page.workbenchShown).toBe(false);
+    expect(rightOpen()).toBe(!before);
+  });
+
+  it("leaves the workbench on screen when the shortcut is not taken", () => {
+    seq += 1;
+    dock.setDockScope(`default_project:draft-${seq}`);
+    terminal.setDockConversation({ sessionId: null, workspace: "/work", machineId: null });
+    const page = showWorkbench();
+
+    expect(commands.runCommand("terminal.toggle")).toBe(false);
+    expect(commands.runCommand("terminal.new")).toBe(false);
+
+    expect(page.workbenchShown).toBe(true);
   });
 });
 

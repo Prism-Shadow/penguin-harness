@@ -1,24 +1,31 @@
-/** Shipped Benchmark packages are copied unchanged, once, without carrying evaluations. */
+/**
+ * Shipped Benchmark packages, as a new Project's provisioning copies them.
+ *
+ * - Given a catalogue of packages, when a Project is provisioned, its benchmarks/ holds the
+ *   example and every package, each with an empty scoreboard: evaluations belong to the Project.
+ * - Every shipped package, whatever the catalogue holds, is copied byte for byte.
+ * - A hot update's packages are the ones a new Project gets.
+ * - Provisioning again writes nothing.
+ * - A directory already under a package's or the example's id is left exactly as it is.
+ * - A write that fails part-way leaves neither its directory nor staging debris, and the error
+ *   reaches the caller.
+ * - Initializing or loading default_agent never writes into benchmarks/.
+ */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import {
   DEFAULT_PROJECT_ID,
   EXAMPLE_BENCHMARK_ID,
   benchmarksDir,
-  isValidId,
   loadAgentState,
   provisionProjectBenchmarks,
-  readBenchmarkManifest,
   readBuiltinBenchmarks,
   usePushedBenchmarkDirectory,
   type BuiltinBenchmark,
 } from "../src/state/index.js";
-const BUILTIN_BENCHMARKS = await readBuiltinBenchmarks();
-const BUILTIN_IDS = BUILTIN_BENCHMARKS.map((bench) => bench.id);
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -49,22 +56,35 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-/** The Benchmark's benchmark_config.toml, as the file holds it. */
-async function readConfig(benchmarkId: string): Promise<Record<string, unknown>> {
-  return parseToml(
-    await fs.readFile(path.join(dir(), benchmarkId, "benchmark_config.toml"), "utf8"),
-  ) as Record<string, unknown>;
+/** The packages of a fixture catalogue: what the build would clone, written by hand. */
+const FIXTURE: Record<string, Record<string, string>> = {
+  "alpha-bench": {
+    "benchmark_config.toml": 'title = "Alpha"\nstatus = "published"\n',
+    "CASE-001-first/statement/README.md": "# Do the first thing\n",
+    "CASE-001-first/rubric/README.md": "- 100 pts: done\n",
+  },
+  "beta-bench": {
+    "benchmark_config.toml": 'title = "Beta"\nstatus = "draft"\nruns = 3\n',
+    "CASE-001-only/statement/README.md": "# Do the only thing\n",
+  },
+};
+
+/** Writes the fixture catalogue under `root` and returns its packages as the catalogue lists them. */
+async function fixtureCatalogue(
+  root = path.join(tmpRoot, "catalogue"),
+): Promise<BuiltinBenchmark[]> {
+  for (const [id, files] of Object.entries(FIXTURE)) {
+    for (const [rel, text] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(root, id, rel)), { recursive: true });
+      await fs.writeFile(path.join(root, id, rel), text);
+    }
+  }
+  return Object.keys(FIXTURE).map((id) => ({ id, directory: path.join(root, id) }));
 }
 
 /** Every entry under `benchmarks/`, staging included, in listing order. */
 async function entries(): Promise<string[]> {
   return (await fs.readdir(dir())).sort(byName);
-}
-
-async function caseIds(benchmarkId: string): Promise<string[]> {
-  return (await fs.readdir(path.join(dir(), benchmarkId)))
-    .filter((n) => n.startsWith("CASE-"))
-    .sort(byName);
 }
 
 /** Every file under `root`, relative path → content and modification time. */
@@ -88,77 +108,63 @@ async function backdate(root: string): Promise<void> {
 }
 
 describe("built-in Benchmarks", () => {
-  it("a new Project's benchmarks/ holds the example and the shipped packages, each with one run per case, no evaluations and at least one case", async () => {
-    expect(BUILTIN_IDS.length).toBeGreaterThan(0);
-    await provision();
+  it("a new Project's benchmarks/ holds the example and every shipped package, each with an empty scoreboard", async () => {
+    const catalogue = await fixtureCatalogue();
 
-    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
-    for (const id of BUILTIN_IDS) {
-      const config = await readConfig(id);
-      expect(["draft", "published"], id).toContain(config.status);
-      expect(Number(config.runs ?? 1), id).toBe(1);
+    await provision(catalogue);
+
+    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...Object.keys(FIXTURE)].sort(byName));
+    for (const { id } of catalogue) {
       const scoreboard = parseYaml(
         await fs.readFile(path.join(dir(), id, "scoreboard.yaml"), "utf8"),
       ) as { evaluations: unknown[] };
       expect(scoreboard.evaluations, id).toEqual([]);
-      expect((await caseIds(id)).length, id).toBeGreaterThan(0);
     }
   });
 
-  it("every Benchmark a new Project starts with is written in the package format, which the manifest reader takes as written", async () => {
+  it("copies every shipped package's manifest and Case files byte for byte, whatever the catalogue holds", async () => {
+    // The default source: the catalogue the build fetched. Nothing here assumes what it holds.
+    const shipped = await readBuiltinBenchmarks();
+
     await provision();
 
-    for (const id of [EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS]) {
-      const manifest = await readBenchmarkManifest(path.join(dir(), id));
-      expect(manifest?.id, id).toBe(id);
-      // TOML metadata uses snake_case; the reader exposes camelCase.
-      const { titleZh, descriptionZh, lastUpdate, ...rest } = manifest!;
-      expect(await readConfig(id), id).toEqual({
-        ...rest,
-        ...(titleZh !== undefined ? { title_zh: titleZh } : {}),
-        ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
-        ...(lastUpdate !== undefined ? { last_update: lastUpdate } : {}),
-      });
-    }
-  });
-
-  it("copies each package's manifest and Case files byte for byte", async () => {
-    await provision();
-    for (const bench of BUILTIN_BENCHMARKS) {
+    for (const bench of shipped) {
       const packaged = await tree(bench.directory);
       const copied = await tree(path.join(dir(), bench.id));
       expect([...copied.keys()].sort()).toEqual([...packaged.keys(), "scoreboard.yaml"].sort());
       for (const [file, value] of packaged) expect(copied.get(file)?.text, file).toBe(value.text);
-      for (const caseId of await caseIds(bench.id)) expect(isValidId(caseId), caseId).toBe(true);
     }
   });
 
   it("uses the packages carried by a hot update", async () => {
     const assets = path.join(tmpRoot, "assets");
-    const source = BUILTIN_BENCHMARKS[0]!;
-    await fs.mkdir(assets);
-    await fs.cp(source.directory, path.join(assets, source.id), { recursive: true });
+    await fs.mkdir(path.join(assets, "alpha-bench"), { recursive: true });
+    await fs.writeFile(path.join(assets, "alpha-bench", "benchmark_config.toml"), 'title = "A"\n');
     usePushedBenchmarkDirectory(assets);
+
     await provision();
-    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, source.id].sort(byName));
-    expect((await tree(path.join(dir(), source.id))).size).toBe(
-      (await tree(source.directory)).size + 1,
-    );
+
+    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, "alpha-bench"].sort(byName));
+    expect(
+      await fs.readFile(path.join(dir(), "alpha-bench", "benchmark_config.toml"), "utf8"),
+    ).toBe('title = "A"\n');
   });
 
   it("provisioning again writes nothing", async () => {
-    await provision();
+    const catalogue = await fixtureCatalogue();
+    await provision(catalogue);
     await backdate(dir());
     const before = await tree(dir());
 
-    await provision();
+    await provision(catalogue);
 
     expect(await tree(dir())).toEqual(before);
-    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
+    expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...Object.keys(FIXTURE)].sort(byName));
   });
 
   it("leaves a directory already under a built-in or the example id exactly as it is", async () => {
-    const mine = path.join(dir(), BUILTIN_IDS[0]!);
+    const catalogue = await fixtureCatalogue();
+    const mine = path.join(dir(), "alpha-bench");
     const example = path.join(dir(), EXAMPLE_BENCHMARK_ID);
     await fs.mkdir(mine, { recursive: true });
     await fs.mkdir(example, { recursive: true });
@@ -167,14 +173,16 @@ describe("built-in Benchmarks", () => {
     await backdate(dir());
     const before = await tree(dir());
 
-    await provision();
+    await provision(catalogue);
 
     const after = await tree(dir());
     for (const [file, stamp] of before) expect(after.get(file), file).toEqual(stamp);
     expect(await fs.readdir(mine)).toEqual(["benchmark_config.toml"]);
     expect(await fs.readdir(example)).toEqual(["scoreboard.yaml"]);
-    for (const id of BUILTIN_IDS.slice(1))
-      expect(["draft", "published"], id).toContain((await readConfig(id)).status);
+    // The package nobody took is still provisioned.
+    expect(await fs.readFile(path.join(dir(), "beta-bench", "benchmark_config.toml"), "utf8")).toBe(
+      FIXTURE["beta-bench"]!["benchmark_config.toml"],
+    );
   });
 
   it("a write that fails part-way leaves neither its directory nor staging debris, and the error reaches the caller", async () => {
@@ -183,7 +191,7 @@ describe("built-in Benchmarks", () => {
       directory: path.join(tmpRoot, "missing-package"),
     };
 
-    await expect(provision([...BUILTIN_BENCHMARKS, broken])).rejects.toThrow();
+    await expect(provision([...(await fixtureCatalogue()), broken])).rejects.toThrow();
 
     expect(await exists(path.join(dir(), "broken-bench"))).toBe(false);
     expect(await exists(path.join(dir(), ".seeding"))).toBe(false);

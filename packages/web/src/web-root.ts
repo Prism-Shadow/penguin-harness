@@ -38,13 +38,14 @@ import { TerminalModule } from "./features/terminal/module";
 import { WorkbenchesModule } from "./features/workbenches/module";
 import { CompanyModule } from "./features/company/module";
 import { BuiltinBrowserModule } from "./features/builtin-browser/module";
-import { PaletteModule } from "./features/palette/module";
 import { SettingsModule } from "./features/settings/module";
 import { SchedulesModule } from "./features/schedules/module";
 import { SessionListModule } from "./features/session-list/module";
 import { ProjectsModule } from "./features/projects/module";
 import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
+import { WorkspaceModule } from "./features/workspace/module";
+import { TracesModule } from "./features/traces/module";
 
 @Module({
   children: [
@@ -63,13 +64,14 @@ import { DockModule } from "./features/dock/module";
     WorkbenchesModule,
     CompanyModule,
     BuiltinBrowserModule,
-    PaletteModule,
     SettingsModule,
     SchedulesModule,
     SessionListModule,
     ProjectsModule,
     MessagingModule,
     DockModule,
+    WorkspaceModule,
+    TracesModule,
   ],
 })
 export class WebRoot {}

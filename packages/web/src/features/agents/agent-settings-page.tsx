@@ -1,7 +1,7 @@
 /**
  * Agent settings page: eleven tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
- * family: Agent State — State version, snapshot export-import and the copyable State
+ * family: Agent State — State version, export / replace from file and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
@@ -16,14 +16,14 @@
  * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
  * switch, Back, a sidebar link and the browser's back button are all navigations that the
  * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
- * tools table's `call_description` included. A snapshot import asks before it replaces the
+ * tools table's `call_description` included. A replace from file asks before it replaces the
  * Agent State.
  *
  * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
  * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
  */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
@@ -41,7 +41,6 @@ import {
   GlyphIcon,
   FieldLabel,
   ICON_SIZE,
-  HiddenFileInput,
   ICONS,
   InfoPopover,
   Input,
@@ -65,7 +64,6 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -97,9 +95,9 @@ import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
-import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { effectiveThinkingLevel } from "../chat/thinking-level";
-import { ThinkingLevelSelect } from "../chat/thinking-level-select";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =
@@ -228,15 +226,8 @@ export function AgentSettingsPage() {
   /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
   const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
 
-  /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
-  const onImported = useCallback(
-    (version: number) => {
-      toastSuccess(S.agent.importDone(version));
-      load();
-      void reloadAgents();
-    },
-    [load, reloadAgents],
-  );
+  /** A replace from file landed (the dialog said so): it overwrote the entire Agent State, so every tab's data needs a refresh. */
+  const onImported = useCallback(() => load(), [load]);
 
   /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
   const onConfigReset = useCallback(() => {
@@ -481,7 +472,7 @@ function OverviewTab({
   data: AgentConfigResponse;
   agentId: string;
   onSave: SaveFn;
-  onImported: (version: number) => void;
+  onImported: () => void;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
 }) {
@@ -491,14 +482,8 @@ function OverviewTab({
   const machineId = useAgentLocation();
   const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  /** A picked snapshot package awaiting the overwrite confirmation: an import replaces the whole Agent State. */
-  const [pendingImport, setPendingImport] = useState<{ name: string; dataBase64: string } | null>(
-    null,
-  );
-  // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [kernelOpen, setKernelOpen] = useState(false);
@@ -550,42 +535,6 @@ function OverviewTab({
     );
   };
 
-  const runImport = async (dataBase64: string, confirm: boolean) => {
-    if (!projectId) return;
-    setImporting(true);
-    setImportError(null);
-    try {
-      const res = await api.importAgent(
-        projectId,
-        agentId,
-        { dataBase64, ...(confirm ? { confirm: true } : {}) },
-        machineId,
-      );
-      setConflict(null);
-      onImported(res.version);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "version_conflict") {
-        setConflict(dataBase64); // resend with confirm: true after confirming
-      } else {
-        setConflict(null);
-        setImportError(apiErrorText(e));
-      }
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setImportError(null);
-    fileToBase64(file).then(
-      (dataBase64) => setPendingImport({ name: file.name, dataBase64 }),
-      () => setImportError(S.common.unknownError),
-    );
-  };
-
   return (
     <div className="space-y-4">
       <Input
@@ -605,9 +554,9 @@ function OverviewTab({
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
           boxes; per user feedback the sections separate with a top rule and the values
-          carry the visual weight): title row with the snapshot transfer actions on the
-          right (export is available to any member; import overwrites the entire Agent
-          State, so it is visible only to owners), labeled value rows below — light
+          carry the visual weight): title row with the transfer actions on the right (export
+          is available to any member; a replace overwrites the entire Agent State, so it is
+          visible only to owners), labeled value rows below — light
           text-xs labels over dark font-semibold values. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -616,26 +565,13 @@ function OverviewTab({
             <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            {projectId && (
-              <a
-                href={api.agentExportUrl(projectId, agentId, machineId)}
-                download
-                className={SNAPSHOT_BUTTON_CLASS}
-              >
-                {S.agent.exportSnapshot}
-              </a>
-            )}
+            <Button size="sm" onClick={() => setExportOpen(true)}>
+              {S.agent.exportOpen}
+            </Button>
             {isOwner && (
-              <label
-                className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput
-                  accept={SNAPSHOT_ACCEPT}
-                  disabled={importing}
-                  onChange={onPickFile}
-                />
-                {importing ? S.agent.importing : S.agent.importSnapshot}
-              </label>
+              <Button size="sm" onClick={() => setReplaceOpen(true)}>
+                {S.agent.replaceOpen}
+              </Button>
             )}
           </div>
         </div>
@@ -666,9 +602,6 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        {importError && (
-          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
-        )}
       </section>
 
       {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
@@ -755,41 +688,24 @@ function OverviewTab({
         )}
       </section>
 
-      {/* Overwrite confirmation, before every import: the package replaces the whole Agent
-          State. An overwrite, not a deletion, so it takes the primary (pencil) tone. A package
-          that is not newer still meets the version-conflict prompt below. */}
-      <ConfirmModal
-        open={pendingImport !== null}
-        title={S.agent.importSnapshot}
-        tone="primary"
-        onClose={() => setPendingImport(null)}
-        onConfirm={() => {
-          if (pendingImport !== null) void runImport(pendingImport.dataBase64, false);
-          setPendingImport(null);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {pendingImport !== null ? S.agent.importConfirmBody(pendingImport.name) : ""}
-        </p>
-      </ConfirmModal>
-
-      {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
-      <ConfirmModal
-        open={conflict !== null}
-        title={S.agent.importConflictTitle}
-        busy={importing}
-        tone="primary"
-        onClose={() => setConflict(null)}
-        onConfirm={() => {
-          if (conflict !== null) void runImport(conflict, true);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
-      </ConfirmModal>
+      {projectId && exportOpen && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={agentId}
+          agentName={data.config.name || agentId}
+          machineId={machineId}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {projectId && replaceOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          replace={{ agentId, name: data.config.name || agentId }}
+          machineId={machineId}
+          onClose={() => setReplaceOpen(false)}
+          onImported={onImported}
+        />
+      )}
 
       {/* Kernel update confirmation: lossless by design, but it still rewrites config fields —
           confirm-first like the sibling reset, with the primary (overwrite) tone rather than
