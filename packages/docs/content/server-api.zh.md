@@ -669,7 +669,7 @@ interface AgentApiKeyInfo {
 | GET | `/api/themes/:id/export` | 任何主题包（内置或导入）的 zip 附件 |
 
 - `ThemePackDto` 是规范化后的清单（`id`、`names`、`version`、`api`、`base`、`modes`、`swatches`、`accent`、`fonts`、`avatar?`）加上 `href` 与 `v`。`v` 是主题包内容的摘要，`href` 为 `/api/themes/<id>/files/index.css?v=<v>`。因此覆盖导入改动了任何内容，两者都会变化，缓存随之失效。
-- 导入在写入任何东西之前先校验。zip 的 `pack.json` 在根目录或唯一的一层顶级目录里。zip 只可含 `tokens.css`、`recipes.css`、`accents.css`、`fonts.css`、`sections/<hook>.css`、`fonts/*.woff2`、`art/*.svg|png|webp`、`README.md`、`LICENSE*` 与 `LICENSES/*.txt`，别无其他。上限为 200 个文件、zip 16 MiB、解压后 24 MiB、样式表合计 512 KiB。每份样式表按 PRFC-0026 的语法解析，存下的是解析器重新生成的文本，从不是上传的原文。之后还要过「干净的底线」的静态规则（R1、R2、R5–R11），一处命中也不许有。
+- 导入在写入任何东西之前先校验。zip 的 `pack.json` 在根目录或唯一的一层顶级目录里。zip 只可含 `tokens.css`、`recipes.css`、`accents.css`、`fonts.css`、`sections/<hook>.css`、`fonts/*.woff2`、`art/*.svg|png|webp`、`README.md`、`LICENSE*` 与 `LICENSES/*.txt`，别无其他。上限为 200 个文件、zip 16 MiB、解压后 24 MiB、样式表合计 512 KiB。每份样式表按 PRFC-0026 的语法解析，存下的是解析器重新生成的文本，从不是上传的原文。之后还要过「干净的底线」的静态规则（R1、R2、R5–R11），一处命中也不许有。对外提供的 `index.css` 以 App 样式表的完整层序声明开头，因此它先于 App 自己的样式表加载时（重新加载后首帧脚本正是这样做的），层序不变。
 - 拒绝：
   - `400` `theme_invalid`：`details` 为 `{file, reason, line?, column?}`，指向第一处被拒的内容。
   - `400` `theme_id_reserved`：用了内置包的 id。

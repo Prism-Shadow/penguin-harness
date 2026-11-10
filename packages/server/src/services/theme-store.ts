@@ -35,6 +35,7 @@ import {
   THEME_PACK_ID,
   builtinExportFiles,
   contractOfBase,
+  layerOrder,
   parseFontsMap,
   parseManifest,
   readPackArchive,
@@ -94,6 +95,27 @@ function webFile(source: WebFiles, rel: string): Uint8Array | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The cascade layers the served app's own stylesheets name, in the order they first name each:
+ * the sheets `index.html` links, read where the build put them. The page's scripts are left out
+ * first — the pre-paint script writes a pack's link from a string, which is no stylesheet of the
+ * app's. An imported pack's stylesheet states this order before anything else (layers.ts).
+ */
+function appLayers(source: WebFiles): string[] {
+  const html = webFile(source, "index.html");
+  if (html === undefined) return [];
+  const page = new TextDecoder().decode(html).replace(/<script\b[\s\S]*?<\/script>/gi, "");
+  const sheets: string[] = [];
+  for (const [tag] of page.matchAll(/<link\b[^>]*>/gi)) {
+    if (!/\brel=["']?stylesheet\b/i.test(tag)) continue;
+    const href = /\bhref=["']?([^"'\s>]+)/i.exec(tag)?.[1];
+    if (href === undefined || !href.startsWith("/") || href.startsWith("//")) continue;
+    const css = webFile(source, href.slice(1).split(/[?#]/)[0]!);
+    if (css !== undefined) sheets.push(new TextDecoder().decode(css));
+  }
+  return layerOrder(sheets.join("\n"));
 }
 
 /** Every file under `dir`, by its `/`-separated path in it. */
@@ -197,20 +219,25 @@ export class ThemeStore {
     return folder;
   }
 
-  /** The theme contract of the served build, read from its base pack. */
+  /**
+   * The theme contract of the served build: the API and token names its base pack declares, the
+   * clean baseline's rules, and the cascade layer order its own stylesheet sets.
+   */
   private contract(source: WebFiles): ThemeContract {
     const manifest = webFile(source, `${BUILTIN_DIR}/${BASE_PACK_ID}/${MANIFEST_FILE}`);
     const tokens = webFile(source, `${BUILTIN_DIR}/${BASE_PACK_ID}/tokens.css`);
-    if (manifest === undefined || tokens === undefined) {
+    const layers = appLayers(source);
+    if (manifest === undefined || tokens === undefined || !layers.includes("ui-theme")) {
       throw new HttpError(
         503,
         "themes_unavailable",
-        "This server's Web App build carries no theme pack sources, so a pack cannot be checked against it.",
+        "This server's Web App build carries no theme pack sources or no stylesheet naming the theme layers, so a pack cannot be checked against it.",
       );
     }
     return {
       ...contractOfBase(manifest, new TextDecoder().decode(tokens)),
       cleanliness: { hits: packRuleHits, says: PACK_RULES },
+      layers,
     };
   }
 

@@ -6,6 +6,9 @@
  * - Given an accepted pack, the served stylesheet carries the tokens, recipes and section skins in
  *   `ui-theme`, the accent presets in `ui-accent` and the faces outside any layer; every url()
  *   naming a pack file points at the pack's files route at its version, and inline images stay.
+ * - Given the app sheet's layer order, the served stylesheet states it first: loaded before the
+ *   app's sheet, as after a reload, it leaves the order the app sheet alone sets, which it would
+ *   not without the statement.
  * - Given the same pack with one value changed, it is served at another version.
  * - Given a pack breaking one rule, it is refused whole, naming the file, the line and why — one
  *   scenario per reason: a remote url(), @import, a prefix test of an input's value, !important, a
@@ -21,8 +24,10 @@
  * - Given stylesheets adding up past 512 KiB, the pack is refused as too large.
  */
 import { describe, expect, it } from "vitest";
-import { ThemePackError, validateThemePack } from "../src/index.js";
+import { ThemePackError, layerOrder, validateThemePack } from "../src/index.js";
 import {
+  APP_LAYERS,
+  APP_SHEET,
   CONTRACT,
   DOODLE_MANIFEST,
   DOODLE_RECIPES,
@@ -64,7 +69,8 @@ describe("validateThemePack", () => {
     const pack = await validateThemePack(doodlePack(), CONTRACT);
     const css = pack.indexCss;
     expect(pack.v).toMatch(/^[0-9a-f]{8}$/);
-    expect(css.startsWith("@font-face{")).toBe(true);
+    // After the layer order (the next scenario), the faces come first, outside any layer.
+    expect(css.startsWith(`@layer ${APP_LAYERS.join(",")};@font-face{`)).toBe(true);
     expect(css).toContain(`url(/api/themes/sketch/files/fonts/hand.woff2?v=${pack.v})`);
     expect(css).toContain(`url(/api/themes/sketch/files/art/empty.svg?v=${pack.v})`);
     expect(css).toContain("url(data:image/png;base64,");
@@ -77,6 +83,18 @@ describe("validateThemePack", () => {
     // What is kept names the pack's files as the pack does, not where the server serves them.
     expect(decode(pack.files.get("fonts.css"))).toContain("url(fonts/hand.woff2)");
     expect(pack.served).toEqual(["index.css", "art/empty.svg", "fonts/hand.woff2"]);
+  });
+
+  it("serves a stylesheet that, loaded before the app's own, leaves the app's layer order", async () => {
+    // The order the compiled app sheet sets, a comment that names a layer not counting.
+    expect(layerOrder(APP_SHEET)).toEqual(APP_LAYERS);
+    const pack = await validateThemePack(doodlePack(), CONTRACT);
+    expect(pack.indexCss.startsWith(`@layer ${APP_LAYERS.join(",")};`)).toBe(true);
+    // After a reload the pre-paint script links the pack's sheet first.
+    expect(layerOrder(pack.indexCss + APP_SHEET)).toEqual(APP_LAYERS);
+    // Without the statement, the pack's layers would open first and sit under Tailwind's.
+    const unordered = await validateThemePack(doodlePack(), { ...CONTRACT, layers: [] });
+    expect(layerOrder(unordered.indexCss + APP_SHEET)).not.toEqual(APP_LAYERS);
   });
 
   it("serves a pack with one value changed at another version", async () => {

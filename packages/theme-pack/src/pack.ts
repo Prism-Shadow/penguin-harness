@@ -9,8 +9,10 @@
  * The served `index.css` wraps the files in the layers the app's stylesheet opened first
  * (`@layer ui-base, ui-theme, ui-accent, ui-font;`): the tokens, the recipes and the section
  * skins in `ui-theme`, over the base; the accent presets in `ui-accent`, over the pack's own dark
- * rules; the `@font-face` rules outside any layer, where layers mean nothing to them. Every
- * `url()` that names a pack file becomes `/api/themes/<id>/files/<path>?v=<v>`.
+ * rules; the `@font-face` rules outside any layer, where layers mean nothing to them. It opens with
+ * the app sheet's whole layer order (ThemeContract's `layers`), so it may load before the app's
+ * sheet, as it does after a reload, without moving a layer. Every `url()` that names a pack file
+ * becomes `/api/themes/<id>/files/<path>?v=<v>`.
  *
  * `v` is a digest of the kept files, so the same content always has the same version — an
  * export imported again lands byte for byte — and a replace that changes anything changes it.
@@ -18,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { checkAsset } from "./assets.js";
 import { generateCss } from "./css-tree.js";
+import { layerStatement } from "./layers.js";
 import { THEME_PACK_LIMITS } from "./limits.js";
 import {
   MANIFEST_FILE,
@@ -43,6 +46,12 @@ export interface ThemeContract {
    * holds each to the hits it has today.
    */
   readonly cleanliness: CleanlinessRules | null;
+  /**
+   * The cascade layers the app's own stylesheet names, in the order it first names them
+   * (layers.ts): the served stylesheet states this order before anything else, so loaded before
+   * the app's sheet, as the pre-paint script loads it, it leaves the order the app's sheet gives.
+   */
+  readonly layers: readonly string[];
 }
 
 /** One stylesheet of a pack as the clean-baseline rules read it. */
@@ -251,6 +260,7 @@ export async function validateThemePack(
   const accents = layered(ordered.filter((path) => path === "accents.css"));
   const fonts = layered(ordered.filter((path) => path === "fonts.css"));
   const indexCss =
+    layerStatement(contract.layers) +
     fonts +
     (theme === "" ? "" : `@layer ui-theme{${theme}}`) +
     (accents === "" ? "" : `@layer ui-accent{${accents}}`);

@@ -7,6 +7,9 @@
  *   try is refused `403 admin_required` without touching the store.
  * - Given an admin's import, it answers the pack with its stylesheet's address, serves that
  *   stylesheet and its drawing with the served-file headers, and tells every signed-in tab.
+ * - Given the app's compiled stylesheet (Tailwind's layers, then the theme's four), a pack's served
+ *   stylesheet linked before it, as the pre-paint script links it after a reload, or after it, as
+ *   a live switch does, leaves the layer order the app sheet alone sets.
  * - Given an id already installed, an import is `409 theme_exists` and changes nothing; with
  *   `replace=1` it replaces the pack at a new version, and one upload is kept.
  * - Given a built-in pack's id, an import is `400 theme_id_reserved` and a removal
@@ -85,7 +88,43 @@ async function servedBuild(): Promise<string> {
   const dir = await makeTempRoot();
   await fsp.cp(FROST_DIR, path.join(dir, "themes", "modern"), { recursive: true });
   await fsp.writeFile(path.join(dir, "themes", "modern", "fonts.json"), "{}\n");
+  await fsp.mkdir(path.join(dir, "assets"));
+  await fsp.writeFile(path.join(dir, "assets", "index-x1.css"), APP_SHEET);
+  await fsp.writeFile(path.join(dir, "index.html"), APP_PAGE);
   return dir;
+}
+
+/**
+ * The app's compiled stylesheet, in the shape a build leaves it: Tailwind's layers first, then
+ * the theme's four, in the order theme.css names them.
+ */
+const APP_SHEET =
+  "/*! tailwindcss */@layer properties{@supports (x:y){*{--tw-x:0}}}@layer theme{:root{--color-white:#fff}}" +
+  "@layer base{*{margin:0}}@layer components;@layer utilities{.p-1{padding:1px}}" +
+  "@layer ui-base{:root{--ui-canvas:#fafafa}}@layer ui-theme{}@layer ui-accent{}@layer ui-font{}";
+
+/** The page that links it, after a pre-paint script whose pack link is a string, not a sheet. */
+const APP_PAGE =
+  "<!doctype html><html><head><script>document.write('<link rel=\"stylesheet\" href=\"/api/themes/'+t+'/files/index.css\">')</script>" +
+  '<link rel="stylesheet" crossorigin href="/assets/index-x1.css"></head><body></body></html>';
+
+/**
+ * The layers a set of stylesheets names, in the page's order of first mention — what fixes their
+ * priority: statements, blocks and imports into a layer count, comments do not (the same reading
+ * the UI package's layer-order test makes of an entry sheet).
+ */
+function layerMentions(...sheets: string[]): string[] {
+  const seen: string[] = [];
+  const mention = /@layer\s+([^{;]+)[{;]|@import\s[^;]*?\blayer\(\s*([\w.-]+)\s*\)/g;
+  for (const css of sheets) {
+    for (const match of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(mention)) {
+      const names = match[1] !== undefined ? match[1].split(",") : [match[2]!];
+      for (const name of names.map((n) => n.trim())) {
+        if (name !== "" && !seen.includes(name)) seen.push(name);
+      }
+    }
+  }
+  return seen;
 }
 
 const MARK_SVG =
@@ -210,6 +249,26 @@ describe("theme packs", () => {
     const svg = await admin.get(art!);
     expect(svg.headers.get("content-type")).toBe("image/svg+xml");
     expect(await svg.text()).toBe(MARK_SVG);
+  });
+
+  it("serves a stylesheet that, linked before the app's own after a reload, leaves the app's layer order", async () => {
+    const { theme } = await imported("paper-layers");
+    const pack = await (await member.get(theme.href)).text();
+    const appAlone = layerMentions(APP_SHEET);
+    expect(appAlone).toEqual([
+      "properties",
+      "theme",
+      "base",
+      "components",
+      "utilities",
+      "ui-base",
+      "ui-theme",
+      "ui-accent",
+      "ui-font",
+    ]);
+    // The pre-paint script writes the pack's link first; a live switch appends it after.
+    expect(layerMentions(pack, APP_SHEET)).toEqual(appAlone);
+    expect(layerMentions(APP_SHEET, pack)).toEqual(appAlone);
   });
 
   it("refuses an installed id unless replace=1, which serves it at a new version and keeps one upload", async () => {

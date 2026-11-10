@@ -8,6 +8,26 @@
 import { zipSync } from "fflate";
 import type { PackFiles, ThemeContract } from "../src/index.js";
 
+/** The layers a compiled app sheet names, in the order it first names them. */
+export const APP_LAYERS = [
+  "properties",
+  "theme",
+  "base",
+  "components",
+  "utilities",
+  "ui-base",
+  "ui-theme",
+  "ui-accent",
+  "ui-font",
+];
+
+/** A compiled app sheet in that order, as Tailwind and theme.css leave it. */
+export const APP_SHEET =
+  "/*! tailwindcss | @layer not-a-layer; */@layer properties{@supports (x:y){*{--tw-x:0}}}" +
+  "@layer theme{:root{--color-white:#fff}}@layer base{*{margin:0}}@layer components;" +
+  "@layer utilities{.p-1{padding:1px}}@layer ui-base{:root{--ui-canvas:#fafafa}}" +
+  "@layer ui-theme{:root[data-theme=x]{--ui-canvas:#eee}}@layer ui-accent{}@layer ui-font{}";
+
 export const CONTRACT: ThemeContract = {
   api: 1,
   tokens: new Set([
@@ -21,6 +41,8 @@ export const CONTRACT: ThemeContract = {
   ]),
   // The clean baseline's rules are the UI package's; the server's suite runs them on imports.
   cleanliness: null,
+  // The order a compiled app sheet names its layers in: Tailwind's, then the theme's four.
+  layers: APP_LAYERS,
 };
 
 const text = (value: string) => new TextEncoder().encode(value);
