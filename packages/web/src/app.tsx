@@ -12,6 +12,8 @@
  * default navigate-to-file, which would silently replace the running app and any unsent draft.
  * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
  * drop on the sidebar do something; it makes it do nothing.
+ * In the desktop shell's window the window's own buttons sit beside the router too
+ * (`WindowChrome`), so every page has them and no crashed route can take them away.
  */
 import { useEffect, type ComponentType } from "react";
 
@@ -38,6 +40,7 @@ import { writeClipboard } from "./lib/clipboard";
 import { ReportEnvironmentSync } from "./lib/report-environment";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./lib/highlight/code-highlight";
+import { WindowChrome } from "./web-app/window-chrome";
 
 /**
  * `Root`: the shell's root component, which `bootWeb()` returns. `initialPath`: mount the app on
@@ -102,6 +105,8 @@ export function App({
                   <UnsavedPrompt />
                   {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
                   <TooltipLayer />
+                  {/* The desktop window's buttons and its band's height; nothing in a browser. */}
+                  <WindowChrome />
                 </LocaleScope>
               </AuthProvider>
             </BackgroundProvider>

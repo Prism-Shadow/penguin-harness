@@ -18,6 +18,7 @@ export type Layer =
   | "modal"
   | "popover"
   | "toast"
+  | "window-controls"
   | "tooltip"
   | "drag-preview";
 

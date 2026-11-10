@@ -31,6 +31,8 @@ export const en: Strings = {
     userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    back: "Back",
+    forward: "Forward",
     collapseGroup: "Collapse",
     expandGroup: "Expand",
     pinGroup: "Pin group",
@@ -47,6 +49,13 @@ export const en: Strings = {
       finance: "Finance",
       handbook: "Handbook",
     },
+  },
+
+  window: {
+    minimize: "Minimize",
+    maximize: "Maximize",
+    restore: "Restore",
+    close: "Close",
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */

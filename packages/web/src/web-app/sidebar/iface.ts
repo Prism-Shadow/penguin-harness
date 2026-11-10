@@ -7,14 +7,18 @@ import type { NavBadge, SidebarMode, SidebarSection } from "../../lib/sidebar-co
 export interface SidebarColumnProps {
   /** Called after a navigation from inside the column: the drawer closes on it. */
   onNavigate?: () => void;
-  /** Present on the pinned column: the fold button that swaps it for the rail. */
+  /**
+   * Present on the pinned column outside the desktop window: the fold button that swaps it for the
+   * rail (in the window the title band's toggle does).
+   */
   onCollapse?: () => void;
   /** Mount with the session search open and focused: the search shortcut pressed on the rail. */
   initialSearchOpen?: boolean;
 }
 
 export interface SidebarRailProps {
-  onExpand: () => void;
+  /** The unfold button on top; absent in the desktop window, whose title band carries the toggle. */
+  onExpand?: () => void;
 }
 
 /** What the layout around the column reads: the phone's drawer button, and which commands apply. */
