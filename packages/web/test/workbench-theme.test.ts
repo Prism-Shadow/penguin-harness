@@ -1,7 +1,10 @@
 /**
  * Carrying the app's appearance into a workbench's page: what is read from the app's own
  * document, and what is stamped on the frame's. What is read includes the names published
- * pages read from before the token contract (the body font stack, the gray scale).
+ * pages read from before the token contract (the body font stack, the gray scale), and for an
+ * imported theme pack the stylesheet the app's head links: its id and accent go in as the app's
+ * root carries them, its link goes in after the components' stylesheet, a replace moves the link
+ * to the new address, and a built-in pack takes it out.
  */
 import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import { describe, expect, it } from "vitest";
@@ -16,6 +19,7 @@ import {
   WORKBENCH_THEME_HREF,
   type WorkbenchTheme,
 } from "../src/lib/workbench-theme";
+import { THEME_PACK_ATTR } from "../src/lib/theme-pack-links";
 
 const appRoot = (classes: string[], fontSize: string, attrs: Record<string, string> = {}) => ({
   classList: { contains: (t: string) => classes.includes(t) },
@@ -185,6 +189,72 @@ describe("workbench theme", () => {
     expect(doc.root.style.colorScheme).toBe("light");
   });
 
+  it("carries an imported pack's id, accent and stylesheet into the frame, after the components' sheet", () => {
+    const v1 = "/api/themes/paper/files/index.css?v=5e1f0c2a";
+    const root = appRoot([], "16px", {
+      "data-theme": "paper",
+      "data-theme-base": "modern",
+      "data-accent": "ink-blue",
+    });
+    const theme = readAppTheme(root, () => "", "", v1);
+    expect(theme.attrs).toEqual({
+      "data-theme": "paper",
+      "data-theme-base": "modern",
+      "data-accent": "ink-blue",
+    });
+    expect(theme.packHref).toBe(v1);
+    // Without its link on the app's head, the id is not one a frame can draw.
+    expect(readAppTheme(root, () => "").attrs["data-theme"]).toBe(INITIAL_THEME_ID);
+
+    const doc = fakeDocument();
+    const components = new FakeElement("link", () => undefined);
+    components.setAttribute(PENGUIN_UI_ATTR, "");
+    doc.head.push(components);
+    applyWorkbenchTheme(doc.document, theme);
+    expect(doc.head[0]).toBe(components);
+    expect(doc.head[1]!.attrs).toEqual({ [THEME_PACK_ATTR]: "paper", href: v1 });
+
+    // Replaced on the server: the same link, at the new address.
+    const v2 = "/api/themes/paper/files/index.css?v=9a7b3c4d";
+    applyWorkbenchTheme(doc.document, { ...theme, packHref: v2 });
+    expect(doc.head).toHaveLength(2);
+    expect(doc.head[1]!.attrs.href).toBe(v2);
+
+    // A built-in pack: the pack's link leaves the frame.
+    const { packHref: _gone, ...builtin } = theme;
+    applyWorkbenchTheme(doc.document, { ...builtin, attrs: { "data-theme": "geek" } });
+    expect(doc.head).toEqual([components]);
+  });
+
+  it("reads the pack the app's head links for its root, and reads again when a replace moves it", () => {
+    const attrs: Record<string, string> = { "data-theme": "paper", "data-theme-base": "modern" };
+    const link = { href: "/api/themes/paper/files/index.css?v=5e1f0c2a" };
+    const doc = {
+      documentElement: appRoot([], "16px", attrs),
+      head: {
+        querySelectorAll: () => [
+          {
+            getAttribute: (name: string) =>
+              name === THEME_PACK_ATTR ? "paper" : name === "href" ? link.href : null,
+          },
+        ],
+      },
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (p: string) => (p === "--ui-fg" ? "#2b2521" : ""),
+        }),
+      },
+      styleSheets: [],
+      baseURI: "http://app.test/",
+    } as unknown as Document;
+    const first = readDocumentTheme(doc);
+    expect(first.attrs["data-theme"]).toBe("paper");
+    expect(first.packHref).toBe(link.href);
+    expect(readDocumentTheme(doc)).toBe(first);
+    link.href = "/api/themes/paper/files/index.css?v=9a7b3c4d";
+    expect(readDocumentTheme(doc).packHref).toBe(link.href);
+  });
+
   it("collects the app's font faces with absolute URLs", () => {
     const face = (src: string) => ({
       type: 5,
@@ -230,12 +300,20 @@ class FakeElement {
   href = "";
   readonly attrs: Record<string, string> = {};
   private text = "";
+  /** Set by the document that holds it: takes it out of the head. */
+  detach: (el: FakeElement) => void = () => undefined;
   constructor(
     readonly tag: string,
     private readonly onWrite: () => void,
   ) {}
   setAttribute(name: string, value: string) {
     this.attrs[name] = value;
+  }
+  getAttribute(name: string) {
+    return this.attrs[name] ?? null;
+  }
+  remove() {
+    this.detach(this);
   }
   get textContent() {
     return this.text;
@@ -280,11 +358,20 @@ function fakeDocument() {
       );
     },
     prepend: (el: FakeElement) => void head.unshift(el),
+    append: (el: FakeElement) => void head.push(el),
+  };
+  const detach = (el: FakeElement) => {
+    const at = head.indexOf(el);
+    if (at >= 0) head.splice(at, 1);
   };
   const document = {
     documentElement: root,
     head: headNode,
-    createElement: (tag: string) => new FakeElement(tag, () => writes.fonts++),
+    createElement: (tag: string) => {
+      const el = new FakeElement(tag, () => writes.fonts++);
+      el.detach = detach;
+      return el;
+    },
   } as unknown as Document;
   return { document, root, classes, attributes, properties, writes, head };
 }

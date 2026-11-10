@@ -223,7 +223,7 @@ export function WorkbenchFrame({
   /** The workbench and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -291,7 +291,7 @@ export function WorkbenchFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
+  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
