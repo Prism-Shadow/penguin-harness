@@ -12,7 +12,8 @@
  * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
+ * ?agentId= to the usage center), "Export" (agent-export-dialog.tsx) and "Delete" (with
+ * confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
  * description and picks what the new Agent starts with — plugins from the library (each one's
@@ -87,14 +88,14 @@ import { agentKey, agentSettingsPath } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
-import { employmentsOf, splitByEmployment } from "./agent-employment";
+import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
+import { isBuiltinAgent } from "../../lib/builtin-agents";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
-import { followAgentDeletion } from "./agent-deletion-progress";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
 import { toastApiError } from "../../lib/toast-api-error";
-
-/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
-const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -214,6 +215,10 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The header's "Import agent" dialog. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The card whose export icon opened the export dialog. */
+  const [exporting, setExporting] = useState<PlacedAgent | null>(null);
   /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
   const [aiOpen, setAiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -443,7 +448,7 @@ export function AgentsPage() {
    * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
   const renderCard = ({ agent: a, on }: PlacedAgent) => {
-    const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
+    const builtin = isBuiltinAgent(a.agentId);
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -664,6 +669,19 @@ export function AgentsPage() {
               className="text-gray-600 dark:text-gray-300"
             />
           </Button>
+          <Button
+            size="icon"
+            title={offReason ?? S.agent.exportAgent}
+            aria-label={S.agent.exportAgent}
+            disabled={!reachable}
+            onClick={() => setExporting({ agent: a, on })}
+          >
+            <GlyphIcon
+              d={ICONS.download}
+              size={ICON_SIZE.iconButton}
+              className="text-gray-600 dark:text-gray-300"
+            />
+          </Button>
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -724,6 +742,10 @@ export function AgentsPage() {
               />
             </div>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.agent.importAgent}
+            </Button>
           </>
         }
       >
@@ -775,7 +797,7 @@ export function AgentsPage() {
             {/* Until the Project has an agent of its own, the list ends in the AI path's call to
               action: the built-in default is not one the user set up. Hidden while searching
               (the list itself is being filtered). */}
-            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
+            {query.trim() === "" && agents.every((a) => isBuiltinAgent(a.agentId)) && (
               <EmptyState
                 title={S.agent.firstAgentTitle}
                 description={S.agent.firstAgentDesc}
@@ -807,8 +829,29 @@ export function AgentsPage() {
           .filter((list) => list.machine.link === "connected")
           .map((list) => ({ value: list.machine.machineId, label: list.machine.label }))}
         onClose={() => setCreateOpen(false)}
+        onImport={() => {
+          setCreateOpen(false);
+          setImportOpen(true);
+        }}
         onCreated={onCreated}
       />
+
+      {projectId && importOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          machineId={null}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+      {projectId && exporting !== null && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={exporting.agent.agentId}
+          agentName={agentDisplayName(exporting.agent)}
+          machineId={exporting.on?.machine.machineId ?? null}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
           fixed tail lands in a new conversation with the Project's default agent, which runs the

@@ -20,6 +20,7 @@
  * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
  * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
  */
+import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
@@ -47,13 +48,12 @@ export const draftSessionsKey = (userId: string, projectId: string): string =>
   `penguin.chatDrafts.${userId}.${projectId}`;
 
 /**
- * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
- * still want to change the model or configure a key first. The actual Session is only created
- * once **the first message is sent** (once created, the model is locked into its meta).
- * Real session ids always start with `session-`, so there's no collision with this constant —
- * nor with parked draft conversations, whose route ids start with `draft-`.
+ * Route id for a draft chat (`/chat/new`), declared in the server's API contract so the desktop
+ * tray opens the same route: the Session is only created once **the first message is sent**
+ * (once created, the model is locked into its meta). Parked draft conversations' route ids start
+ * with `draft-`.
  */
-export const DRAFT_SESSION_ID = "new";
+export { DRAFT_SESSION_ID };
 
 /** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
 export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
