@@ -14,7 +14,7 @@ import {
   type AmspRecord,
 } from "@prismshadow/penguin-core";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 

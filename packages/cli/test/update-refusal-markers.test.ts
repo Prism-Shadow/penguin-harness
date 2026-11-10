@@ -12,7 +12,7 @@
  * (or keep the fragment intact in the new wording).
  */
 import { describe, expect, it } from "vitest";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 const en = getMessages("en").update;
 

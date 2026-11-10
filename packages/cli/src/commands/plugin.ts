@@ -45,10 +45,15 @@ import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginLibraryResponse,
-} from "@prismshadow/penguin-server/api";
-import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
-import { renderTable } from "../table.js";
-import type { Messages } from "../i18n.js";
+} from "@prismshadow/penguin-server/cli";
+import {
+  ApiError,
+  resolveConnection,
+  resolveProjectId,
+  ServerClient,
+} from "@prismshadow/penguin-server/cli";
+import { renderTable } from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 const installedPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;

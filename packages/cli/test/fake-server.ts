@@ -342,6 +342,8 @@ export class FakeServer {
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
+  /** Answering delay per request (0 = instant); lets a `--timeout` budget expire. */
+  latencyMs = 0;
   private readonly subscribers = new Map<string, Subscriber[]>();
   private savedFetch: typeof globalThis.fetch | null = null;
   private savedEnv = new Map<string, string | undefined>();
@@ -1760,6 +1762,11 @@ export class FakeServer {
   }
 
   private async handle(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+    // An optional answering delay: with one set, a request waits it out — slow enough
+    // for a `--timeout` budget to expire.
+    if (this.latencyMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.latencyMs));
+    }
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
     );
@@ -1851,6 +1858,38 @@ export class FakeServer {
         ...(this.defaultModel !== null ? { defaultModel: this.defaultModel } : {}),
         models: [],
       });
+    }
+
+    // Project-level session enumeration (what `penguin session ls` reads): every row,
+    // the activity or created order, an optional agent narrowing and a `before` cursor
+    // — the same contract routes/sessions.ts serves.
+    m = /^\/api\/projects\/([^/]+)\/sessions$/.exec(apiPath);
+    if (m && method === "GET") {
+      const q = url.searchParams;
+      const order = q.get("order") ?? "created";
+      const before = q.get("before");
+      const agentId = q.get("agentId");
+      const keyOf = (s: FakeSessionState): [string, string] =>
+        order === "activity" ? [s.lastActiveAt, s.sessionId] : [s.createdAt, s.sessionId];
+      let sessions: FakeSessionState[] = [...this.sessions.values()];
+      if (agentId !== null) sessions = sessions.filter((s) => s.agentId === agentId);
+      if (before !== null) {
+        const comma = before.indexOf(",");
+        const [bt, bid] = [before.slice(0, comma), before.slice(comma + 1)];
+        const below = (s: FakeSessionState): boolean => {
+          const [t1, id1] = keyOf(s);
+          return t1 < bt || (t1 === bt && id1 < bid);
+        };
+        sessions = sessions.filter(below);
+      }
+      const sorted = sessions
+        .sort((a, b) => {
+          const [ta, ia] = keyOf(a);
+          const [tb, ib] = keyOf(b);
+          return tb.localeCompare(ta) || ib.localeCompare(ia);
+        })
+        .map((s) => this.sessionInfo(s));
+      return this.json({ sessions: sorted });
     }
 
     // Session create

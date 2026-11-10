@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import { formatGroupRows, formatModelRows } from "../src/commands/config.js";
+import { formatGroupRows, formatModelRows } from "../../src/cli/commands/config-format.js";
 
 describe("formatModelRows", () => {
   const cfg: ProjectConfig = {

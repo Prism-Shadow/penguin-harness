@@ -16,7 +16,7 @@ import {
   supervisorDecision,
   waitForReady,
 } from "../src/commands/serve.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 describe("resolvePort (option > env var > default 7364)", () => {
   it("derives DEFAULT_PORT from core's DEFAULT_SERVER_PORT", () => {

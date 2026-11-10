@@ -5,7 +5,7 @@ import {
   parseThinkingLevel,
 } from "../src/thinking-command.js";
 import type { ThinkingConfigSource } from "../src/thinking-command.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 describe("parseThinkingLevel", () => {

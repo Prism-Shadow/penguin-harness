@@ -79,9 +79,10 @@ import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
-import { defaultMessages } from "./i18n.js";
-import type { Messages } from "./i18n.js";
+import { defaultMessages } from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
+import { humanizeTokens } from "@prismshadow/penguin-server/cli";
 /** The ANSI codes the renderer uses; the plain palette maps every code to "" so all writes degrade to uncolored text with no further branching. */
 export interface Palette {
   readonly dim: string;
@@ -162,22 +163,6 @@ function shortId(id: string): string {
 function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string {
   const tid = `tool-${shortId(toolCallId)}`;
   return origin && origin.length > 0 ? `agent-${shortId(origin[origin.length - 1]!)}-${tid}` : tid;
-}
-
-/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
-export function humanizeTokens(n: number): string {
-  const abs = Math.abs(n);
-  if (abs < 1000) return `${n}`;
-  if (abs < 1_000_000) {
-    const v = n / 1000;
-    return `${trimZero(v)}k`;
-  }
-  if (abs < 1_000_000_000) {
-    const v = n / 1_000_000;
-    return `${trimZero(v)}M`;
-  }
-  const v = n / 1_000_000_000;
-  return `${trimZero(v)}B`;
 }
 
 /** Keeps one decimal place but drops a trailing `.0`. */

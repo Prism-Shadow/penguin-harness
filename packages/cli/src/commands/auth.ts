@@ -26,9 +26,9 @@ import {
   sessionFile,
   tokenFromSetCookie,
   writeSession,
-} from "../auth-session.js";
-import { resolveRootOption } from "../root-option.js";
-import type { Messages } from "../i18n.js";
+} from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /**
  * Must match the server's SESSION_COOKIE — the name a login's Set-Cookie carries for a client

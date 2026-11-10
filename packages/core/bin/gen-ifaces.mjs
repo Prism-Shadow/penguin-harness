@@ -141,6 +141,16 @@ const manifests = {};
  */
 let pluginDecl = null;
 
+// Per-project symbol → manifest name (rebound each project; read after the loop for the
+// last project's symbols) and class name → manifest name, across ALL projects: a module class one package imports from
+// another (a resource command contributed from the server package into the CLI's module
+// tree) resolves through the importing project's declaration file, whose symbol is not the
+// source symbol the declaring project registered — the class name is the shared key.
+const moduleNameByClassName = new Map();
+let moduleNameBySymbol = new Map();
+// Children whose symbol has not resolved yet; finished after every project is read.
+const pendingChildren = [];
+
 for (const project of projects) {
   const configPath = path.resolve(project);
   const parsed = ts.getParsedCommandLineOfConfigFile(
@@ -415,7 +425,7 @@ for (const project of projects) {
     };
     visit(sf);
   }
-  const moduleNameBySymbol = new Map();
+  moduleNameBySymbol = new Map();
   /** component class symbol → its interface key: a component's name is its own module. */
   const componentKeyBySymbol = new Map();
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
@@ -428,6 +438,7 @@ for (const project of projects) {
     }
     meta.name = className;
     moduleNameBySymbol.set(sym, meta.name);
+    moduleNameByClassName.set(className, meta.name);
     // `export default class X` names its symbol "default"; the class keeps its own name.
     if (kind === "component")
       componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
@@ -1217,47 +1228,13 @@ for (const project of projects) {
       (m.exports ??= []).push(isym.getName());
     }
     for (const child of meta.children ?? []) {
-      const childName = moduleNameBySymbol.get(child?.$id);
-      if (childName === undefined)
-        errors.push(`${file}: children: an entry is not a @Module or @Component class`);
-      m.children.push(childName ?? "?");
+      // Resolve after every project is read: a child may be a module class this package
+      // imports from another one (its symbol belongs to the importing project's program).
+      m.children.push(child?.$id ?? "?");
+      pendingChildren.push({ m, sym: child?.$id, file });
     }
     if (manifests[m.name]) errors.push(`${file}: module '${m.name}' is defined twice`);
     manifests[m.name] = m;
-  }
-  // Wire every requirement that names no module to the module that will provide it —
-  // the one visible provider declaring that very interface (siblings, or an ancestor's
-  // siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
-  // node depends on, not only which interface, and the booter follows the same choice.
-  {
-    const childOf = new Map();
-    for (const m of Object.values(manifests))
-      for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
-    const visibleOf = (name) => {
-      const out = new Set();
-      const ancestors = new Set();
-      let cur = name;
-      for (;;) {
-        const parent = childOf.get(cur);
-        if (parent === undefined) break;
-        ancestors.add(parent);
-        for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
-        cur = parent;
-      }
-      for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
-      return out;
-    };
-    for (const m of Object.values(manifests)) {
-      if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
-      const visible = visibleOf(m.name);
-      for (const [alias, req] of Object.entries(m.requires)) {
-        if (req.from !== undefined) continue;
-        const declaring = [...visible].filter((v) =>
-          Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
-        );
-        if (declaring.length === 1) req.from = declaring[0];
-      }
-    }
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker
@@ -1274,6 +1251,56 @@ for (const project of projects) {
       continue;
     }
     table[key].slots = slotsOf(symbol, decl);
+  }
+}
+
+// Resolve the deferred children now that every project's module classes are registered.
+for (const { m, sym, file } of pendingChildren) {
+  const childName =
+    (sym && moduleNameBySymbol.get(sym)) ??
+    (sym &&
+      moduleNameByClassName.get(typeof sym.getName === "function" ? sym.getName() : sym.name));
+  if (childName === undefined) {
+    errors.push(`${file}: children: an entry is not a @Module or @Component class`);
+    continue;
+  }
+  const i = m.children.indexOf(sym);
+  if (i === -1) m.children.push(childName);
+  else m.children[i] = childName;
+}
+
+// Wire every requirement that names no module to the module that will provide it —
+// the one visible provider declaring that very interface (siblings, or an ancestor's
+// siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
+// node depends on, not only which interface, and the booter follows the same choice.
+{
+  const childOf = new Map();
+  for (const m of Object.values(manifests))
+    for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
+  const visibleOf = (name) => {
+    const out = new Set();
+    const ancestors = new Set();
+    let cur = name;
+    for (;;) {
+      const parent = childOf.get(cur);
+      if (parent === undefined) break;
+      ancestors.add(parent);
+      for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
+      cur = parent;
+    }
+    for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
+    return out;
+  };
+  for (const m of Object.values(manifests)) {
+    if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
+    const visible = visibleOf(m.name);
+    for (const [alias, req] of Object.entries(m.requires)) {
+      if (req.from !== undefined) continue;
+      const declaring = [...visible].filter((v) =>
+        Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
+      );
+      if (declaring.length === 1) req.from = declaring[0];
+    }
   }
 }
 

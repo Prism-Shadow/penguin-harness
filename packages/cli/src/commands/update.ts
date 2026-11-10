@@ -62,7 +62,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { VERSION, compareVersions, normalizeVersion, userAgent } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
-import type { InstallerSource, Messages } from "../i18n.js";
+import type { InstallerSource, Messages } from "@prismshadow/penguin-server/cli";
 
 // The version helpers live in core (internal/version.ts) so the server's update-check
 // endpoint shares them; re-exported because they are part of this module's public,
