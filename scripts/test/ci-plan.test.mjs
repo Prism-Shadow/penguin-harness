@@ -10,8 +10,8 @@
  * - Given a web edit, when planning CI, then the gallery, landing and desktop are checked too.
  * - Given a web edit, when planning CI, then the web suite runs in two Linux jobs that each run
  *   half of every package's files and build what the web imports, not the web's own bundle nor
- *   the UI package's build, which only that bundle reads; without the web among them, ui and cli
- *   run whole in one job.
+ *   the UI package's build, which only that bundle reads, and neither does the job testing the
+ *   gallery; without the web among them, ui and cli run whole in one job.
  * - Given a server edit, when planning CI, then the server suite runs in two Linux jobs, each half
  *   of its files with the coverage of its half.
  * - Given a core edit, when planning CI, then the shard testing the desktop on macOS and Windows
@@ -38,9 +38,8 @@
  * - Given no changes or only changelog text, when planning CI, then no package jobs are needed.
  * - Given a new package, when planning CI, then it receives tests without editing a shard list.
  * - Given a release requests full validation, when planning CI, then every package and OS runs,
- *   macOS and Windows with the browser and site packages in two halves of a shard of their own,
- *   macOS in no more jobs than the account runs at once (core and the server share one), and the
- *   Windows server suite in shards that together cover it once.
+ *   macOS and Windows with the browser and site packages in a shard of their own (on Windows,
+ *   two halves of it), and the Windows server suite in shards that together cover it once.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -397,11 +396,6 @@ describe("affected CI", { concurrency: false }, () => {
       assert.ok(!selected.has(name("web")), "only a packed app reads the web bundle");
       assert.ok(!selected.has(name("ui")), "nor the UI build that bundle copies");
     }
-    // Outside a full run, macOS has the runners to keep core and the server apart.
-    assert.deepEqual(
-      plan.macos.include.filter((shard) => ["core", "server"].includes(shard.shard)).length,
-      2,
-    );
   });
 
   it("a server edit runs the server suite in two Linux jobs, each with the coverage of its half", () => {
@@ -434,11 +428,14 @@ describe("affected CI", { concurrency: false }, () => {
       assert.ok(!selected.has(name("web")), `${half.shard} does not build the web bundle`);
       assert.ok(!selected.has(name("ui")), `${half.shard} reads the UI package from source`);
     }
-    // The gallery's shard builds the web, which the gallery's own build imports, and the UI build
-    // the web's bundle copies.
-    const desktop = plan.linux.include.find((shard) => shard.packages.includes(name("desktop")));
-    assert.ok(built(desktop.build).has(name("web")));
-    assert.ok(built(desktop.build).has(name("ui")));
+    // The shard testing the gallery builds the gallery and what it imports, not the web's bundle
+    // (the gallery's build reads the web's sources) nor the UI build that bundle copies.
+    const gallery = plan.linux.include.find((shard) => shard.packages.includes(name("ui-gallery")));
+    const selected = built(gallery.build);
+    assert.ok(selected.has(name("ui-gallery")));
+    assert.ok(selected.has(name("server")), "what the web's sources import is built");
+    assert.ok(!selected.has(name("web")));
+    assert.ok(!selected.has(name("ui")));
   });
 
   it("runs the gallery's layout checks in the one Linux job that tests the gallery", () => {
@@ -649,19 +646,8 @@ describe("affected CI", { concurrency: false }, () => {
     for (const matrix of [plan.linux, plan.macos, plan.windows]) {
       assert.deepEqual(members(matrix), expected);
     }
-    // The account runs at most five macOS jobs at once (GitHub's limit for the organisation's
-    // plan): a sixth in one run would wait for a runner. Core and the server share one.
-    const macosJobs =
-      plan.macos.include.length +
-      plan.runtime_matrix.include.filter((entry) => entry.os.startsWith("macos")).length;
-    assert.ok(macosJobs <= 5, `${macosJobs} macOS jobs`);
-    assert.ok(
-      plan.macos.include.some(
-        (shard) => shard.packages.includes(name("core")) && shard.packages.includes(name("server")),
-      ),
-    );
     for (const [matrix, siteShards] of [
-      [plan.macos, ["sites-1", "sites-2"]],
+      [plan.macos, ["sites"]],
       [plan.windows, ["sites-1", "sites-2"]],
     ]) {
       const sites = matrix.include.filter((shard) => shard.shard.startsWith("sites"));

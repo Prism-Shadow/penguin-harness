@@ -304,9 +304,7 @@ jobs:
   # Electron's own Node (ELECTRON_RUN_AS_NODE), resolved from the built desktop bundle:
   # the same module lookup, on the same runtime, that the packaged app's server performs.
   # A macOS terminal regression that once shipped as a silently empty panel fails here.
-  # Browser/site suites run here only in full mode, in two halves; native packages keep platform
-  # coverage. A full run holds the account's five concurrent macOS jobs exactly (the planner's
-  # macOS note in scripts/ci-plan.mjs), so a sixth would wait for a runner rather than save time.
+  # Browser/site suites run here only in full mode; native packages keep platform coverage.
   test-macos:
     needs: plan
     if: needs.plan.outputs.macos_tests == 'true'

@@ -155,18 +155,19 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   const isBundle = (name) =>
     ["web", "ui-gallery", "docs", "landing"].some((p) => name === `${prefix}${p}`);
   // The web's tests run from source too, so a shard testing it builds only what it imports; its
-  // bundle is built by browser-smoke, which runs whenever the web is affected. The other bundles
-  // are built where they are tested: that is the only place a pull request builds them.
+  // bundle is built by browser-smoke, which runs whenever the web is affected, and by the runtime
+  // job, which packs it into the desktop app. No test shard builds it, even where the gallery
+  // depends on the web: the gallery's build reads the web's sources, as the desktop's tests and its
+  // terminal smoke read only the desktop's own build. The other bundles are built where they are
+  // tested: that is the only place a pull request builds them.
   // The UI package is read from source by every package that imports it. Its build is the npm
   // package and the Workbench runtime, and only the web's bundle copies the runtime in, so a build
   // that does not bundle the web leaves the UI package out.
-  // The desktop carries the web bundle by a file mapping, but only a packed app reads it: the
-  // desktop's tests and its terminal smoke read its own build, so a shard testing it builds the
-  // desktop and its dependencies, and the runtime job, which packs the app, builds the web too.
+  const web = `${prefix}web`;
   const ui = `${prefix}ui`;
   const selections = new Map();
-  const withoutUnusedUi = (filters) => {
-    if (!byName.has(ui)) return filters;
+  /** `filters`, minus the web's bundle and the UI package's build where they would select them. */
+  const withoutUnread = (filters) => {
     const key = filters.join(",");
     if (!selections.has(key)) {
       selections.set(
@@ -175,19 +176,20 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       );
     }
     const selected = selections.get(key);
-    return selected.has(ui) && !selected.has(`${prefix}web`) ? [...filters, `!${ui}`] : filters;
+    return [
+      ...filters,
+      ...[web, ui].filter((name) => selected.has(name)).map((name) => `!${name}`),
+    ];
   };
   const build = (names) => {
     if (names.length === 0) return "";
-    const builds = new Set(
-      names.map((name) => (name === `${prefix}web` ? `${name}^...` : `${name}...`)),
-    );
-    return withoutUnusedUi([...builds]).join(",");
+    const builds = new Set(names.map((name) => (name === web ? `${name}^...` : `${name}...`)));
+    return withoutUnread([...builds]).join(",");
   };
   const typecheckBuild = (names) =>
     names.length === 0
       ? ""
-      : withoutUnusedUi([
+      : withoutUnread([
           ...names.map((name) => `${name}^...`),
           ...projects.filter((p) => isBundle(p.name)).map((p) => `!${p.name}`),
         ]).join(",");
@@ -255,20 +257,19 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       ...(ordinary.length ? [command(ordinary, testTask(entry.split))] : []),
     ].join(" && ");
   }
-  // macOS runs at most five jobs at once for the whole account, every run in flight included, so a
-  // full run fits in five: the sites in two halves (as one job they were the longest job of a full
-  // run, 7-8 min), and core and the server in one job, core's suite first and then the server's
-  // (pnpm runs them in dependency order, never side by side). A change that is not a full run has
-  // no sites on macOS, and keeps core and the server apart.
+  // macOS keeps its sites in one job: a full run already fills the account's five concurrent macOS
+  // jobs (four test shards and the runtime build). Split in two halves (measured on this repo's
+  // runners, 2026-11-10), each half still took 6-6.5 min against 7.3 for the whole: the halves pay
+  // the build and each suite's start again, for one more macOS job and core and the server sharing
+  // one to make room for it.
   const macos = [
-    ...(full && core.length && server.length
-      ? [shard("core-server", [...core, ...server])]
-      : [shard("core", core), shard("server", server)]),
+    shard("core", core),
+    shard("server", server),
     shard("rest", nativeRest, {
       smoke: nativeAffected.has(`${prefix}desktop`),
       must_run: "sandbox-seatbelt,sandbox-dsh",
     }),
-    ...halves("sites", sites),
+    shard("sites", sites),
   ].filter((s) => s.packages.length);
   const windows = [
     shard("core", core),
