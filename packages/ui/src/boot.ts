@@ -484,37 +484,67 @@ const P = BOOT_WALLPAPER_PROPERTIES;
  * never seen the server's list paints the base for one frame, and the app switches once the list
  * arrives.
  */
-export const BOOT_SCRIPT =
-  "(function(){try{" +
-  `var d=document.documentElement,s=localStorage,m=s.getItem(${j(K.mode)});` +
-  'if(m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark");' +
-  `var t=s.getItem(${j(K.themeId)}),k=null,i,x;` +
-  `if(${j(THEME_IDS)}.indexOf(t)<0){if(t!==null&&${PACK_ID.toString()}.test(t)){try{var q=JSON.parse(s.getItem(${j(K.themePacks)}));` +
-  `if(Array.isArray(q))for(i=0;i<q.length&&!k;i++){x=q[i];if(x&&typeof x==="object"&&x.id===t&&typeof x.api==="number"&&x.api<=${THEME_API}&&typeof x.v==="string"&&${PACK_VERSION.toString()}.test(x.v))k=x}}catch(e){}}` +
-  `if(!k)t=${j(INITIAL_THEME_ID)}}` +
-  `d.dataset.theme=t;if(k?k.base!=="foundation":${j(onFrost())}.indexOf(t)>=0)d.dataset.themeBase="modern";` +
-  `if(k){try{document.write('<link rel="stylesheet" data-theme-pack="'+t+'" href="/api/themes/'+t+'/files/index.css?v='+k.v+'">')}catch(e){}}` +
-  `var a=s.getItem(${j(K.accent)}),n=${j(ACCENT_PRESET_IDS)}.indexOf(a)>=0;` +
-  `if(!n&&k&&k.accent&&typeof k.accent==="object"&&Array.isArray(k.accent.presets)&&a!==null&&${PRESET_ID.toString()}.test(a))` +
-  `for(i=0;i<k.accent.presets.length;i++){x=k.accent.presets[i];if(x&&typeof x==="object"&&x.id===a)n=true}` +
-  "if(n)d.dataset.accent=a;" +
-  `var l=s.getItem(${j(K.fontLatin)});if(${j(chosenFaces(FONT_LATIN_OPTIONS))}.indexOf(l)>=0)d.dataset.fontLatin=l;` +
-  `var c=s.getItem(${j(K.fontCjk)});if(${j(chosenFaces(FONT_CJK_OPTIONS))}.indexOf(c)>=0)d.dataset.fontCjk=c;` +
-  `var z=s.getItem(${j(K.textSize)}),g=null,o=-1;` +
-  `if(${j(TEXT_SIZES)}.indexOf(z)<0){g=s.getItem(${j(K.fontScale)});o=${j(LEGACY_FONT_SCALES)}.indexOf(g);z=o<0?${j(DEFAULT_TEXT_SIZE)}:${j(LEGACY_FONT_SCALE_SIZES)}[o]}` +
-  `d.style.fontSize=${j(TEXT_SIZE_PX)}[z];` +
-  `if(g!==null){try{if(o>=0)s.setItem(${j(K.textSize)},z);s.removeItem(${j(K.fontScale)})}catch(e){}}` +
-  // The stored background, as `readBackground` and `backgroundLayerStyle` read it, on the boot
-  // layer's properties. Settings that do not parse fall back as a whole, as the reader's do.
-  `var w=s.getItem(${j(B.image)});` +
-  `if(typeof w==="string"&&${BACKGROUND_IMAGE_PATTERN.toString()}.test(w)){` +
-  `var b=null;try{b=JSON.parse(s.getItem(${j(B.settings)}))}catch(e){}if(!b||typeof b!=="object")b={};` +
-  `var r=b.transparency;r=typeof r==="number"&&isFinite(r)?Math.min(100,Math.max(0,r)):${j(DEFAULT_BACKGROUND_SETTINGS.transparency)};` +
-  `var u=${j(BACKGROUND_MODES)}.indexOf(b.mode)<0?${j(DEFAULT_BACKGROUND_SETTINGS.mode)}:b.mode;` +
-  `var p=${j(BACKGROUND_POSITIONS)}.indexOf(b.position)<0?${j(DEFAULT_BACKGROUND_SETTINGS.position)}:b.position;` +
-  `var y=d.style;y.setProperty(${j(P.image)},'url("'+w+'")');` +
-  `y.setProperty(${j(P.size)},u==="tile"||u==="original"?"auto":u);` +
-  `y.setProperty(${j(P.repeat)},u==="tile"?"repeat":"no-repeat");` +
-  `y.setProperty(${j(P.position)},p);y.setProperty(${j(P.opacity)},String(1-r/100));` +
-  'd.dataset.bootWallpaper=""}' +
-  "}catch(e){}})()";
+export const BOOT_SCRIPT = /* @__PURE__ */ prePaint(servedTheme());
+
+/**
+ * The pre-paint script for a page no theme server stands behind — the gallery's static frames:
+ * {@link BOOT_SCRIPT} without the cached-pack branch. Such a page has no `/api/themes` to link a
+ * pack from, so a stored id the build does not ship reads as the theme a browser starts in, and
+ * only a built-in theme's presets are accepted; everything else it paints the same.
+ */
+export const STATIC_BOOT_SCRIPT = /* @__PURE__ */ prePaint(staticTheme());
+
+/** The theme and accent part for a page behind a server: built-in ids, then a cached imported pack. */
+function servedTheme(): string {
+  return (
+    `var t=s.getItem(${j(K.themeId)}),k=null,i,x;` +
+    `if(${j(THEME_IDS)}.indexOf(t)<0){if(t!==null&&${PACK_ID.toString()}.test(t)){try{var q=JSON.parse(s.getItem(${j(K.themePacks)}));` +
+    `if(Array.isArray(q))for(i=0;i<q.length&&!k;i++){x=q[i];if(x&&typeof x==="object"&&x.id===t&&typeof x.api==="number"&&x.api<=${THEME_API}&&typeof x.v==="string"&&${PACK_VERSION.toString()}.test(x.v))k=x}}catch(e){}}` +
+    `if(!k)t=${j(INITIAL_THEME_ID)}}` +
+    `d.dataset.theme=t;if(k?k.base!=="foundation":${j(onFrost())}.indexOf(t)>=0)d.dataset.themeBase="modern";` +
+    `if(k){try{document.write('<link rel="stylesheet" data-theme-pack="'+t+'" href="/api/themes/'+t+'/files/index.css?v='+k.v+'">')}catch(e){}}` +
+    `var a=s.getItem(${j(K.accent)}),n=${j(ACCENT_PRESET_IDS)}.indexOf(a)>=0;` +
+    `if(!n&&k&&k.accent&&typeof k.accent==="object"&&Array.isArray(k.accent.presets)&&a!==null&&${PRESET_ID.toString()}.test(a))` +
+    `for(i=0;i<k.accent.presets.length;i++){x=k.accent.presets[i];if(x&&typeof x==="object"&&x.id===a)n=true}` +
+    "if(n)d.dataset.accent=a;"
+  );
+}
+
+/** The theme and accent part for a page with no theme server: built-in ids and presets only. */
+function staticTheme(): string {
+  return (
+    `var t=s.getItem(${j(K.themeId)});if(${j(THEME_IDS)}.indexOf(t)<0)t=${j(INITIAL_THEME_ID)};` +
+    `d.dataset.theme=t;if(${j(onFrost())}.indexOf(t)>=0)d.dataset.themeBase="modern";` +
+    `var a=s.getItem(${j(K.accent)});if(${j(ACCENT_PRESET_IDS)}.indexOf(a)>=0)d.dataset.accent=a;`
+  );
+}
+
+/** The whole script around one theme part: the mode first, then the theme, the faces, the size, the background. */
+function prePaint(theme: string): string {
+  return (
+    "(function(){try{" +
+    `var d=document.documentElement,s=localStorage,m=s.getItem(${j(K.mode)});` +
+    'if(m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark");' +
+    theme +
+    `var l=s.getItem(${j(K.fontLatin)});if(${j(chosenFaces(FONT_LATIN_OPTIONS))}.indexOf(l)>=0)d.dataset.fontLatin=l;` +
+    `var c=s.getItem(${j(K.fontCjk)});if(${j(chosenFaces(FONT_CJK_OPTIONS))}.indexOf(c)>=0)d.dataset.fontCjk=c;` +
+    `var z=s.getItem(${j(K.textSize)}),g=null,o=-1;` +
+    `if(${j(TEXT_SIZES)}.indexOf(z)<0){g=s.getItem(${j(K.fontScale)});o=${j(LEGACY_FONT_SCALES)}.indexOf(g);z=o<0?${j(DEFAULT_TEXT_SIZE)}:${j(LEGACY_FONT_SCALE_SIZES)}[o]}` +
+    `d.style.fontSize=${j(TEXT_SIZE_PX)}[z];` +
+    `if(g!==null){try{if(o>=0)s.setItem(${j(K.textSize)},z);s.removeItem(${j(K.fontScale)})}catch(e){}}` +
+    // The stored background, as `readBackground` and `backgroundLayerStyle` read it, on the boot
+    // layer's properties. Settings that do not parse fall back as a whole, as the reader's do.
+    `var w=s.getItem(${j(B.image)});` +
+    `if(typeof w==="string"&&${BACKGROUND_IMAGE_PATTERN.toString()}.test(w)){` +
+    `var b=null;try{b=JSON.parse(s.getItem(${j(B.settings)}))}catch(e){}if(!b||typeof b!=="object")b={};` +
+    `var r=b.transparency;r=typeof r==="number"&&isFinite(r)?Math.min(100,Math.max(0,r)):${j(DEFAULT_BACKGROUND_SETTINGS.transparency)};` +
+    `var u=${j(BACKGROUND_MODES)}.indexOf(b.mode)<0?${j(DEFAULT_BACKGROUND_SETTINGS.mode)}:b.mode;` +
+    `var p=${j(BACKGROUND_POSITIONS)}.indexOf(b.position)<0?${j(DEFAULT_BACKGROUND_SETTINGS.position)}:b.position;` +
+    `var y=d.style;y.setProperty(${j(P.image)},'url("'+w+'")');` +
+    `y.setProperty(${j(P.size)},u==="tile"||u==="original"?"auto":u);` +
+    `y.setProperty(${j(P.repeat)},u==="tile"?"repeat":"no-repeat");` +
+    `y.setProperty(${j(P.position)},p);y.setProperty(${j(P.opacity)},String(1-r/100));` +
+    'd.dataset.bootWallpaper=""}' +
+    "}catch(e){}})()"
+  );
+}

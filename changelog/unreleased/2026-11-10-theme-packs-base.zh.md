@@ -25,7 +25,7 @@
 
 ## 首帧
 
-首帧脚本为每套主题写出 `data-theme` 与 `data-theme-base`。存的 id 不是本构建自带的主题时，脚本在 `penguin.themePacks`（浏览器缓存的服务器导入主题包列表）里查同 id 的条目；条目通过校验——主题包 id、本构建实现的主题 API、摘要形式的版本——就在解析期间写入该包样式表的链接，并接受该包的预设。目前还没有任何代码写这个键。`readCachedThemePack` 与 `themePackHref` 让主题状态以同一方式读取。
+首帧脚本为每套主题写出 `data-theme` 与 `data-theme-base`。存的 id 不是本构建自带的主题时，脚本在 `penguin.themePacks`（浏览器缓存的服务器导入主题包列表）里查同 id 的条目；条目通过校验——主题包 id、本构建实现的主题 API、摘要形式的版本——就在解析期间写入该包样式表的链接，并接受该包的预设。目前还没有任何代码写这个键。`readCachedThemePack` 与 `themePackHref` 让主题状态以同一方式读取。画廊的静态框内联 `STATIC_BOOT_SCRIPT`，即去掉缓存主题包分支的同一段脚本：静态站点没有可供链接主题包的服务端。
 
 ## 守卫
 

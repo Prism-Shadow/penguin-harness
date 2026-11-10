@@ -25,7 +25,7 @@ Frost (白领, `modern`) became the base every theme builds on, and Primer, Cons
 
 ## The first frame
 
-The boot script writes `data-theme` and `data-theme-base` for every theme. For a stored id the build does not ship, it looks the id up in `penguin.themePacks`, the browser's copy of the server's imported packs, and when the entry checks out — a pack id, a theme API this build implements, a digest version — it writes the pack's stylesheet link during parsing and accepts the pack's presets. Nothing writes that key yet. `readCachedThemePack` and `themePackHref` give the provider the same reading.
+The boot script writes `data-theme` and `data-theme-base` for every theme. For a stored id the build does not ship, it looks the id up in `penguin.themePacks`, the browser's copy of the server's imported packs, and when the entry checks out — a pack id, a theme API this build implements, a digest version — it writes the pack's stylesheet link during parsing and accepts the pack's presets. Nothing writes that key yet. `readCachedThemePack` and `themePackHref` give the provider the same reading. The gallery's static frames inline `STATIC_BOOT_SCRIPT`, the same script without the cached-pack branch: the static site has no theme server to link a pack from.
 
 ## Guards
 
