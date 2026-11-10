@@ -10,21 +10,23 @@ import {
   type ModelRef,
   addModel,
   effectiveConnection,
-  fastModeProtocol,
-  fixedClientType,
-  fixedClientTypeRefuses,
   formatModelRef,
   getModel,
   loadProjectConfig,
   providerConnectionShape,
-  providerInfo,
   removeModel,
   setDefaultModel,
   setProviderConnection,
   setVisionModel,
+} from "@prismshadow/penguin-core";
+import { fastModeProtocol } from "../../model-catalog/client-protocols.js";
+import {
+  fixedClientType,
+  fixedClientTypeRefuses,
+  providerInfo,
   unaddableModel,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core";
+} from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
 import { resolveRootOption } from "../root-option.js";
 import {
