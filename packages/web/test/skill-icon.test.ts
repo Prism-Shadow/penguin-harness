@@ -1,67 +1,107 @@
+/** @vitest-environment jsdom */
 /**
- * sanitizeSkillIcon unit tests: security checks before inline rendering of a
- * custom Skill icon (raw icon.svg content) — anything containing <script,
- * event attributes (on*=), foreignObject, or any href attribute (not limited
- * to xlink:, case-insensitive, quoted/unquoted forms) is rejected (falls back
- * to the default book icon); a non-<svg> root / missing content is also
- * rejected; a clean line-art SVG passes through as-is (after trim).
+ * Plugin, Skill and hook package icons as the rows and cards draw them: an image the server
+ * serves by URL, never markup in the page.
+ *
+ * - Given a PNG icon, when its tile is drawn, then the tile shows that image as an `<img>` and no
+ *   glyph.
+ * - Given a monochrome SVG icon (`tint`), when it is drawn, then it is a mask of that image
+ *   filled with the text colour, and no image is shown as itself.
+ * - Given an icon whose image does not load, then the kind's glyph is drawn in its place; given
+ *   no icon, the glyph is drawn from the start.
+ * - Given an icon whose SVG carries an `onload` script, when its tile is drawn, then the SVG is
+ *   only ever a URL the page asks for: no element in the document carries the handler, and no SVG
+ *   element is created from it, so there is nothing for the browser to run.
  */
-import { describe, expect, it } from "vitest";
-import { sanitizeSkillIcon } from "../src/features/skills/skill-icon";
+import { act, createElement as h } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+import { ICONS } from "@prismshadow/penguin-ui";
+import type { IconRef } from "@prismshadow/penguin-server/api";
+import { SkillIcon, SkillTile } from "../src/features/skills";
+import { mount, unmountAll } from "./helpers/dom";
 
-const CLEAN =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">' +
-  '<path d="M4 4h16v16H4z" /></svg>';
+afterEach(unmountAll);
 
-describe("sanitizeSkillIcon", () => {
-  it("a clean SVG passes (returned as-is after trim so inline rendering inherits currentColor)", () => {
-    expect(sanitizeSkillIcon(CLEAN)).toBe(CLEAN);
-    expect(sanitizeSkillIcon(`\n  ${CLEAN}\n`)).toBe(CLEAN);
+const PNG: IconRef = { url: "/api/plugins/photo/icon?rev=1a2b3c4d5e6f", tint: false };
+const LINE: IconRef = { url: "/api/plugins/goal/icon?rev=0f1e2d3c4b5a", tint: true };
+
+/** The mask image an element is drawn through ("" when none). */
+const maskOf = (el: HTMLElement): string => String(el.style.maskImage ?? "");
+
+/** The elements of the tile that show something: an image drawn as itself, a mask, a glyph. */
+function drawn(container: HTMLElement) {
+  const images = [...container.querySelectorAll("img")].filter((img) => !img.hidden);
+  const masks = [...container.querySelectorAll<HTMLElement>("span")].filter((el) =>
+    maskOf(el).includes("url("),
+  );
+  const glyph = container.querySelector(`path[d="${ICONS.puzzle}"]`);
+  return { images, masks, glyph };
+}
+
+async function failToLoad(container: HTMLElement): Promise<void> {
+  await act(async () => {
+    for (const img of container.querySelectorAll("img")) img.dispatchEvent(new Event("error"));
+  });
+}
+
+describe("an icon", () => {
+  it("draws a PNG as an image at its URL, and no glyph", async () => {
+    const { container } = await mount(
+      h(SkillTile, { icon: PNG, name: "photo", fallback: ICONS.puzzle }),
+    );
+    const { images, masks, glyph } = drawn(container);
+    expect(images.map((img) => img.getAttribute("src"))).toEqual([PNG.url]);
+    expect(masks).toEqual([]);
+    expect(glyph).toBeNull();
   });
 
-  it("missing / empty string / whitespace falls back to null", () => {
-    expect(sanitizeSkillIcon(undefined)).toBeNull();
-    expect(sanitizeSkillIcon("")).toBeNull();
-    expect(sanitizeSkillIcon("   ")).toBeNull();
+  it("draws a monochrome SVG as a mask in the text colour, not as an image of its own", async () => {
+    const { container } = await mount(
+      h(SkillTile, { icon: LINE, name: "goal", fallback: ICONS.puzzle }),
+    );
+    const { images, masks, glyph } = drawn(container);
+    expect(images).toEqual([]);
+    expect(masks).toHaveLength(1);
+    expect(maskOf(masks[0]!)).toContain(LINE.url);
+    expect(masks[0]!.style.backgroundColor.toLowerCase()).toBe("currentcolor");
+    expect(glyph).toBeNull();
   });
 
-  it("a non-<svg> root is rejected (including arbitrary HTML posing as text)", () => {
-    expect(sanitizeSkillIcon("<div>not svg</div>")).toBeNull();
-    expect(sanitizeSkillIcon("plain text")).toBeNull();
-    expect(sanitizeSkillIcon(`<img src=x>${CLEAN}`)).toBeNull();
-    // <svgfoo…> is not an <svg> root (the tag name must end with whitespace or >).
-    expect(sanitizeSkillIcon('<svgfoo viewBox="0 0 24 24"></svgfoo>')).toBeNull();
+  it.each([
+    ["a PNG", PNG],
+    ["a monochrome SVG", LINE],
+  ])("falls back to the kind's glyph when %s does not load", async (_label, icon) => {
+    const { container } = await mount(
+      h(SkillTile, { icon, name: "broken", fallback: ICONS.puzzle }),
+    );
+    await failToLoad(container);
+    const { images, masks, glyph } = drawn(container);
+    expect(images).toEqual([]);
+    expect(masks).toEqual([]);
+    expect(glyph).not.toBeNull();
   });
 
-  it("containing <script is rejected (case-insensitive)", () => {
-    expect(sanitizeSkillIcon("<svg><script>alert(1)</script></svg>")).toBeNull();
-    expect(sanitizeSkillIcon('<svg><SCRIPT href="x"/></svg>')).toBeNull();
+  it("draws the kind's glyph when there is no icon", async () => {
+    const { container } = await mount(h(SkillIcon, { fallback: ICONS.puzzle }));
+    expect(drawn(container).glyph).not.toBeNull();
+    expect(container.querySelector("img")).toBeNull();
   });
 
-  it("event attributes (on*=) are rejected", () => {
-    expect(sanitizeSkillIcon('<svg onload="alert(1)"><path d="M0 0" /></svg>')).toBeNull();
-    expect(sanitizeSkillIcon('<svg><path d="M0 0" onclick="x()" /></svg>')).toBeNull();
-    expect(sanitizeSkillIcon('<svg><path d="M0 0" ONLOAD = "x()" /></svg>')).toBeNull();
-  });
-
-  it("foreignObject / xlink:href are rejected", () => {
-    expect(sanitizeSkillIcon("<svg><foreignObject><div>x</div></foreignObject></svg>")).toBeNull();
-    expect(sanitizeSkillIcon('<svg><use xlink:href="#evil" /></svg>')).toBeNull();
-  });
-
-  it("any href attribute is rejected (not just xlink:, case-insensitive, single/double/unquoted forms)", () => {
-    expect(
-      sanitizeSkillIcon('<svg><a href="javascript:alert(1)"><path d="M0 0" /></a></svg>'),
-    ).toBeNull();
-    expect(sanitizeSkillIcon('<svg><use HREF="#evil" /></svg>')).toBeNull();
-    expect(sanitizeSkillIcon("<svg><use href='#evil' /></svg>")).toBeNull();
-    expect(sanitizeSkillIcon("<svg><a href=javascript:alert(1)>x</a></svg>")).toBeNull();
-    expect(sanitizeSkillIcon('<svg><use HREF = "#evil" /></svg>')).toBeNull();
-  });
-
-  it("coordinates in path data are not false positives (stroke=none and d attributes with negatives/decimals still pass)", () => {
-    const icon =
-      '<svg viewBox="0 0 24 24"><path d="M2.5 3h6a4 4 0 0 1 4 4v14" fill="none" /></svg>';
-    expect(sanitizeSkillIcon(icon)).toBe(icon);
+  it("never lets a script an SVG icon carries into the page", async () => {
+    const payload = '<svg xmlns="http://www.w3.org/2000/svg" onload="fetch(\'/api/me\')"/>';
+    const url = `data:image/svg+xml,${encodeURIComponent(payload)}`;
+    const { container } = await mount(
+      h("div", null, [
+        h(SkillTile, { key: "as-image", icon: { url, tint: false }, name: "evil" }),
+        h(SkillTile, { key: "as-mask", icon: { url, tint: true }, name: "evil" }),
+      ]),
+    );
+    expect(document.querySelectorAll("[onload]")).toHaveLength(0);
+    // No SVG element at all: neither the payload nor a glyph, since both icons are drawn.
+    expect(container.querySelectorAll("svg")).toHaveLength(0);
+    expect([...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+      url,
+      url,
+    ]);
   });
 });
