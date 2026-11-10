@@ -9,8 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+    "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -18,8 +17,5 @@
   },
   "penguin": {
     "parked": true
-  },
-  "files": [
-    "ifaces.json"
-  ]
+  }
 }

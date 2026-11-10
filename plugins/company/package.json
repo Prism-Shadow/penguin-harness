@@ -3,7 +3,7 @@
   "version": "0.2.18",
   "private": true,
   "type": "module",
-  "description": "Company mode as one functional group: the organization runtime, its HTTP routes and the company pages — server and web halves in one package, temporarily parked under plugins/ until the group's final home is decided.",
+  "description": "Company mode as one functional group: the organization runtime, its HTTP routes and the company pages \u2014 server and web halves in one package, temporarily parked under plugins/ until the group's final home is decided.",
   "exports": {
     "./server": "./src/server/index.ts",
     "./web": "./src/web/index.ts"
@@ -32,11 +32,5 @@
   },
   "penguin": {
     "parked": true
-  },
-  "scripts": {
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
-  },
-  "files": [
-    "ifaces.json"
-  ]
+  }
 }
