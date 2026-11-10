@@ -28,15 +28,23 @@
  * - What a shipped package fails on, an installed one lists through, with the field missing and
  *   one warning: a malformed card field, a quick start naming skills it does not ship, a hook
  *   package without a dated version (the skills still list), a skill without a version
- *   (unversioned, never flagged behind), an unsafe or oversized icon, a skill entry whose name is
- *   not a skill name or not its directory's, a binary file in a skill (left out; the text beside it
- *   installs byte for byte). A safe icon is kept from its `<svg>` root on.
+ *   (unversioned, never flagged behind), an unsafe, oversized or mislabelled icon, a skill entry
+ *   whose name is not a skill name or not its directory's, a binary file in a skill (left out; the
+ *   text beside it installs byte for byte). A clean icon is kept in its own format, SVG or a raster
+ *   image, and every skill of the package wears it.
  * - A package of MCP servers alone is a library plugin: it lists its servers, each with every
  *   vault key its config references — declared ones with their labels first — and whether it
  *   offers OAuth sign-in. A server the resolver refuses, a bad or repeated name and a setup key
  *   nothing references are dropped, one warning each.
  * - readLibraryPackage reads a local directory the way the library will, refusing one without a
  *   release version, or one never built.
+ *
+ * Reading, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin whose card sets `preinstall: false` stays in the library and out of the preinstalled
+ *   set.
+ * - A plugin is found by its name, a skill by its own name together with the plugin that ships
+ *   it; an unknown or illegal name finds nothing.
+ * - A hook package lists the manifest it installs, its points as declared, and every hooks/ file.
  *
  * What kind a package is (libraryParts), by its table: a content package carries Skills, hooks,
  * MCP servers or workbenches and no server modules; a package whose table lists modules is a
@@ -50,10 +58,10 @@ import { parse as parseYaml } from "yaml";
 import {
   comparePluginVersions,
   groupPlugins,
-  isSafeIconSvg,
   libraryParts,
   libraryPlugin,
   libraryPluginPackage,
+  librarySkill,
   loadLibraryPlugins,
   loadPluginGroups,
   loadPreinstalledPlugins,
@@ -243,6 +251,105 @@ describe("shipped packages, on a fixture library", () => {
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
     expect(() => loadLibraryPlugins()).toThrow(/the MCP server "nowhere"/);
+  });
+});
+
+describe("the library's reading, on a fixture library", () => {
+  let root: string | null = null;
+
+  afterEach(async () => {
+    usePushedPluginLibrary(null);
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  /** A host package holding `plugins` (unscoped name → what it declares, and its files); the library is pointed at it. */
+  async function library(
+    plugins: Record<string, { content: PluginContent; files: Record<string, string> }>,
+  ): Promise<void> {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-library-"));
+    const packages = Object.entries(plugins).map(([name, { content, files }]) => [
+      `@penguinharness/${name}`,
+      {
+        ...pluginPackage(
+          { name: `@penguinharness/${name}`, description: `${name}.` },
+          {
+            ...content,
+            card: { shortDescription: "Short.", shortDescriptionZh: "短。", ...content.card },
+          },
+        ),
+        ...files,
+      },
+    ]);
+    await libraryHost(root, Object.fromEntries(packages));
+    usePushedPluginLibrary(root);
+  }
+
+  it("leaves a plugin whose card sets preinstall: false out of the preinstalled set, and keeps it in the library", async () => {
+    await library({
+      auto: {
+        content: { skills: ["auto"] },
+        files: { "skills/auto/SKILL.md": skillFile("auto", "2026.10.01.1") },
+      },
+      manual: {
+        content: { card: { preinstall: false }, skills: ["manual"] },
+        files: { "skills/manual/SKILL.md": skillFile("manual", "2026.10.01.1") },
+      },
+    });
+
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["auto", "manual"]);
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["auto"]);
+  });
+
+  it("finds a plugin, and a skill by its own name with the plugin that ships it; an unknown or illegal name finds nothing", async () => {
+    await library({
+      merged: {
+        content: { skills: ["first", "second"] },
+        files: {
+          "skills/first/SKILL.md": skillFile("first", "2026.10.01.1"),
+          "skills/second/SKILL.md": skillFile("second", "2026.10.01.1"),
+        },
+      },
+    });
+
+    expect(libraryPlugin("merged")?.skills.map((s) => s.name)).toEqual(["first", "second"]);
+    expect(librarySkill("second")?.plugin.name).toBe("merged");
+    // A plugin's name is not a skill's.
+    expect(librarySkill("merged")).toBeUndefined();
+    expect(libraryPlugin("does-not-exist")).toBeUndefined();
+    expect(libraryPlugin("../etc")).toBeUndefined();
+    expect(librarySkill("..")).toBeUndefined();
+  });
+
+  it("reads a hook package: the manifest it installs, with its points as declared, and every hooks/ file", async () => {
+    const hooks = {
+      version: "2026.10.04.1",
+      stop: [{ command: "stop.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
+    };
+    await library({
+      looper: {
+        content: { card: { descriptionZh: "循环。" }, hooks },
+        files: {
+          "hooks/start.mjs": "export {};\n",
+          "hooks/stop.mjs": "export {};\n",
+          "hooks/lib.mjs": "export {};\n",
+        },
+      },
+    });
+
+    const looper = libraryPlugin("looper")!;
+    expect(looper.skills).toEqual([]);
+    expect(looper.hooks?.manifest).toMatchObject({
+      name: "looper",
+      description: "looper.",
+      description_zh: "循环。",
+      version: "2026.10.04.1",
+      stop: hooks.stop,
+      pre_tool_use: [],
+      user_prompt: hooks.user_prompt,
+    });
+    expect(Object.keys(looper.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
   });
 });
 
@@ -445,33 +552,50 @@ describe("packages the operator installed on the server", () => {
     expect(comparePluginVersions(installed.version, skill!.version)).toBe(0);
   });
 
-  it("drops an icon with a script, an event handler or over 64 KiB, and keeps a plain one", async () => {
+  it("drops an icon with a script, an event handler, a link, over 256 KB or mislabelled, and keeps a clean one in its own format", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>\n`;
-    const unsafe = {
-      script: `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
-      handler: `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
-      large: `<svg xmlns="http://www.w3.org/2000/svg"><path d="${"M0 0 ".repeat(14_000)}"/></svg>`,
-      link: `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 2h20v20H2z"/></svg>\n`;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+    const oversized = new Uint8Array(300 * 1024);
+    oversized.set(png);
+    const unsafe: Record<string, [string, string | Uint8Array]> = {
+      script: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+      ],
+      handler: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
+      ],
+      link: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+      ],
+      large: ["art/logo.png", oversized],
+      mislabelled: ["art/logo.png", plain],
     };
     await setUp(
-      ["@acme/plain", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
+      ["@acme/plain", "@acme/photo", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
       Object.fromEntries([
         ["@acme/plain", { ...notes("@acme/plain"), "icon.svg": plain }],
-        ...Object.entries(unsafe).map(([k, svg]) => [
+        ["@acme/photo", { ...notes("@acme/photo"), "icon.png": png }],
+        ...Object.entries(unsafe).map(([k, [file, data]]) => [
           `@acme/${k}`,
-          { ...notes(`@acme/${k}`, { card: { icon: "art/logo.svg" } }), "art/logo.svg": svg },
+          { ...notes(`@acme/${k}`, { card: { icon: file } }), [file]: data },
         ]),
       ]),
     );
     const icons = Object.fromEntries(loadLibraryPlugins().map((p) => [p.name, p.icon]));
-    // Kept from its <svg> root on: the Web App inlines only markup that begins there.
-    expect(icons.plain).toBe(plain.slice(plain.indexOf("<svg")));
+    // A line icon in currentColor takes the text colour; a raster image is drawn as itself.
+    expect(icons.plain).toMatchObject({ format: "svg", tint: true });
+    expect(icons.photo).toEqual({ format: "png", bytes: png, tint: false });
+    // Every skill of the package wears its icon.
+    expect(libraryPlugin("photo")!.skills[0]!.icon).toEqual(icons.photo);
     for (const name of Object.keys(unsafe)) expect(icons[name], name).toBeUndefined();
     // A skill of a package without an icon installs without one (the book glyph).
     expect(libraryPlugin("script")!.skills[0]).not.toHaveProperty("icon");
-    expect(logged(warn)).toContain("is larger than 64 KiB");
-    expect(isSafeIconSvg(unsafe.script)).toBe(false);
+    expect(logged(warn)).toContain("is larger than 256 KB");
+    expect(logged(warn)).toContain("is named as PNG but its bytes are SVG");
   });
 
   it("leaves a binary file out of a skill, and installs the text files beside it as they are, a byte-order mark included", async () => {

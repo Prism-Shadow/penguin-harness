@@ -81,7 +81,7 @@ export function WindowControls({
   return (
     <div
       data-window-drag
-      className="fixed right-0 top-0 z-[100] flex h-[var(--window-band-height,0px)]"
+      className="fixed right-0 top-0 z-window-controls flex h-[var(--window-band-height,0px)]"
     >
       <button
         type="button"

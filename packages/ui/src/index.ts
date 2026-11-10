@@ -12,11 +12,13 @@ export * from "./hooks";
 export * from "./tokens";
 export * from "./strings";
 export * from "./icon-scale";
+export * from "./layers";
 
 // W1 — icons: the glyph registry and its renderer, the chevron, the fixed-grid marks, the
 // spinner, logos and avatars.
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
+export * from "./components/icons/image-icon/image-icon";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
@@ -130,6 +132,7 @@ export * from "./components/overlays/progress-toasts/progress-toasts";
 // `./highlighter` subpath, so no static import of this barrel reaches it.
 export * from "./components/content/prose/prose";
 export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
@@ -298,6 +301,7 @@ export * from "./components/shell/launcher/launcher";
 // pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
 // with the hover actions it shares.
 export * from "./components/shell/app-shell/app-shell";
+export * from "./components/shell/app-window/app-window";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";

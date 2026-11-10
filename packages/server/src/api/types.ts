@@ -500,6 +500,14 @@ export interface BackgroundSettingsDto {
  */
 export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
 
+/**
+ * The avatar cap — a user's own and an employee's — in characters of the data URL as it arrives
+ * (131072 characters of base64 hold roughly 96 KiB of image): the same number the Web App
+ * re-encodes against, so the browser and the server cannot disagree about what "too large"
+ * means.
+ */
+export const AVATAR_MAX_CHARS = 131072;
+
 /** GET /api/me/background-image. */
 export interface BackgroundImageResponse {
   /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
@@ -1411,6 +1419,19 @@ export interface Employment {
 
 export interface AgentsResponse {
   agents: AgentSummary[];
+  /**
+   * The Project's organizations whose `org_chart.yaml` is missing or does not parse; absent when
+   * none. Beyond its CEO, whom such an organization employs is unknown, so `employments` may miss
+   * it — and deleting another organization with its Agents keeps them all (`employment_unknown`).
+   */
+  unreadableCharts?: UnreadableChart[];
+}
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
 }
 
 export interface AgentCreateRequest {
@@ -1435,13 +1456,6 @@ export interface AgentCreateRequest {
    */
   skillsDirectory?: string;
   directorySkills?: string[];
-  /**
-   * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
-   * initialized from the package instead of the default template. Mutually exclusive with
-   * seeding (`plugins` / `skillsDirectory`) — the package carries its own skills and hooks.
-   * Explicit `name` / `description` override the package's values; absent ones keep them.
-   */
-  dataBase64?: string;
 }
 
 export interface AgentCreateResponse {
@@ -2468,10 +2482,33 @@ export interface SessionPatchRequest {
  * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
  * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
  * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
  */
 export interface MessagesLiveTail {
   cursor: string;
   fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
 }
 
 /**
@@ -2841,6 +2878,15 @@ export interface TaskCreateRequest {
    */
   interrupt?: boolean;
   /**
+   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
+   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
+   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
+   * apply), and the response carries `steered: true`; a compaction, which has no Task to
+   * steer, or a run already settling, which takes no more steering, queues it as
+   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
+   */
+  steerIfBusy?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2902,8 +2948,10 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy`, `interrupt` or `steerIfBusy` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+  /** True when `steerIfBusy` gave the input to the running Task as steering (no new Task). */
+  steered?: boolean;
 }
 
 /**
@@ -3857,7 +3905,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  /**
+   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
+   * version was restored — or switched on or off, by its own switch or the Agent's.
+   */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
@@ -4718,19 +4769,49 @@ export interface ScheduleUpsertRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Agent State version and snapshots
+// Agent export and import: the zip is the Agent's directory
 // ---------------------------------------------------------------------------
+//   GET  /api/projects/:projectId/agents/:agentId/archive?<AgentArchiveQuery>
+//        → `<agentId>-<yyyymmdd>.zip` attachment (any member; 413 archive_too_large past the
+//        import caps)
+//   POST /api/projects/:projectId/agents/import?agentId=<id>&overwrite=1, the body the raw
+//        `.zip` (or a `.tar.gz` snapshot package exported before) sent as
+//        `application/octet-stream` → 201 AgentArchiveImportResponse (any member creates;
+//        a taken id is 409 `agent_exists` with `details.agentId`; overwrite is the owner's)
 
-export interface AgentImportRequest {
-  /** Base64 of the snapshot package (tar.gz). */
-  dataBase64: string;
-  /** Explicit confirmation is required when the package version is equal to or lower than the current version, otherwise 409. */
-  confirm?: boolean;
+/**
+ * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
+ * its default: all carried but `schedules`, since an imported task runs on its schedule.
+ * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ */
+export interface AgentArchiveQuery {
+  skills?: "0" | "1";
+  hooks?: "0" | "1";
+  memory?: "0" | "1";
+  workbenches?: "0" | "1";
+  workbenchData?: "0" | "1";
+  schedules?: "0" | "1";
+  /**
+   * Which Sessions' Traces travel, every file of each: none (the default); the last N by
+   * activity, 1–500, a subagent Session following its parent; or those whose date directory
+   * lies in the range, both ends included.
+   */
+  traces?: "none" | `last:${number}` | `${string}..${string}`;
 }
 
-export interface AgentImportResponse {
-  /** Agent State version number after import (taken from the package's value). */
+export interface AgentArchiveImportResponse {
+  agent: Pick<AgentSummary, "agentId" | "name" | "description">;
+  mode: "created" | "overwritten";
+  /** The Agent State version the package carried. */
   version: number;
+  /** Overwrite only: the snapshot of the replaced State, a file name in the Agent's `snapshots/`. */
+  backup?: string;
+  sessions: {
+    /** Sessions whose Traces landed as Sessions of this Agent. */
+    imported: number;
+    /** The package's Sessions this install already has, by id: their Traces were not imported. */
+    skipped: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -4975,6 +5056,19 @@ export interface BenchmarkArchiveImportResponse {
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
 
+/**
+ * An icon, as a listing sends one: where this server serves the image, and how to draw it. An
+ * icon never travels as markup. `url` is a path on this server that carries the image's content
+ * revision (`?rev=`), so it is cached for good; it serves SVG, PNG, JPEG, WebP, GIF or AVIF under
+ * the type its bytes say, sandboxed (`Content-Security-Policy: …; sandbox`, `nosniff`). Draw it
+ * with `<img>`, or — when `tint` is set — as a CSS mask filled with the text colour.
+ */
+export interface IconRef {
+  url: string;
+  /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
+  tint: boolean;
+}
+
 export interface SkillMetadataItem {
   /** Skill directory name (the identity key for install / uninstall / Prompt addressing). */
   name: string;
@@ -4983,12 +5077,13 @@ export interface SkillMetadataItem {
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * Raw icon.svg text from the installed skill directory: the plugin's icon for a library
-   * install (written beside SKILL.md at install time), a custom one for a user-authored skill.
-   * Only installed lists carry it — the library listing's skills share their plugin's icon,
-   * which the plugin item carries once. Absent, the frontend draws the book glyph.
+   * The `icon.<ext>` in the skill's directory: the plugin's icon for a library install (written
+   * beside SKILL.md at install time), a custom one for a user-authored skill. Served at
+   * `GET …/agents/:a/skills/:name/icon` (a directory Skill's at `GET …/dir-skills/icon`). Only
+   * installed and directory lists carry it — the library listing's skills share their plugin's
+   * icon, which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
-  icon?: string;
+  icon?: IconRef;
   /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
@@ -5003,8 +5098,8 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
-  /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
-  icon?: string;
+  /** The plugin's icon, written beside the manifest at install time and served at `GET …/agents/:a/hooks/:name/icon`; absent when there is none (the frontend draws the hook glyph). */
+  icon?: IconRef;
 }
 
 /**
@@ -5041,8 +5136,8 @@ export interface PluginItem {
   hooks: string[];
   /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon SVG (`icon.svg` at the package root, or the card's `icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
-  icon?: string;
+  /** The plugin's icon (`icon.<ext>` at the package root, or the card's `icon` — every built-in plugin ships one; one that will not do is never sent), served at `GET /api/plugins/:plugin/icon`, the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
@@ -5127,6 +5222,28 @@ export interface AgentPluginsInstallResponse {
 }
 
 /**
+ * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
+ * the server, in one request (owner only). Removed in order: the Workbenches whose install
+ * receipt names the plugin, its `tools.mcpServers` entries (`plugin` field), its hook package
+ * (`agent_state/hooks/<name>/`), and every Skill whose name the library plugin contributes (none
+ * when the plugin has left the library). A part that fails is reported in `failed` and the rest
+ * are still removed; nothing is rolled back. Nothing to remove is 404 `plugin_not_installed`.
+ */
+export interface PluginUninstallResponse {
+  removed: {
+    skills: string[];
+    hooks: string[];
+    mcpServers: string[];
+    workbenches: string[];
+  };
+  failed?: Array<{
+    kind: "skill" | "hook" | "mcpServer" | "workbench";
+    name: string;
+    error: string;
+  }>;
+}
+
+/**
  * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
  * identity, target and what keeps it from connecting — never a header, env or oauth value.
  */
@@ -5206,6 +5323,30 @@ export interface WorkbenchArchiveInstallResponse {
   workbench: WorkbenchInfo;
 }
 
+/**
+ * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
+ * included (each says so in `enabled`).
+ */
+export interface WorkbenchesResponse {
+  workbenches: WorkbenchInfo[];
+  /**
+   * The Agent-wide switch: false while `agent_state/workbenches/.disabled` exists, and then no
+   * workbench of the Agent runs, whatever its own switch says. Absent from a server that
+   * predates the switches.
+   */
+  enabled?: boolean;
+}
+
+/**
+ * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
+ * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
+ * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
+ * once; turning it on loads it.
+ */
+export interface WorkbenchEnabledRequest {
+  enabled: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------
@@ -5232,11 +5373,13 @@ export interface PluginIndexEntry {
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own card contribution (in its
-   * ifaces.json) and icon when the package is on this server, over whatever the index row says.
+   * The plugin's icon, served at `GET /api/plugins/registry/icon?name=…` (optional; the card
+   * draws the puzzle piece without it). The listing fills these display fields from the
+   * package's own card contribution (in its ifaces.json) and icon when the package is on this
+   * server, over whatever the index row says. An index document carries an icon as raw SVG text
+   * instead, and only the one embedded in this server is believed (plugin/registry.ts).
    */
-  icon?: string;
+  icon?: IconRef;
   authors: string[];
   /** SPDX license identifier. */
   license: string;
@@ -5495,6 +5638,23 @@ export interface DesktopTrayCommandMessage {
 }
 
 /**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent**. Real session ids always start with `session-`, so there's
+ * no collision; nor with parked draft conversations, whose route ids start with `draft-`.
+ * Shared so the desktop tray's "New Session" opens the same draft route the Web App uses.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/**
+ * The session cookie's name as every non-browser client spells it (a browser's carries the
+ * server's port; auth/middleware.ts): the CLI, a server speaking to a machine it holds, and the
+ * desktop shell that mints its window's session. Shared so they all write the cookie the server
+ * reads.
+ */
+export const SESSION_COOKIE = "penguin_session";
+
+/**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
  * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
  * seam authenticates the cookie and the Origin there and hands the socket to the platform,
@@ -5659,6 +5819,21 @@ export interface HostCommandMessage {
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+export const UPDATE_REFUSAL_MARKERS: readonly string[] = [
+  "runs from a source checkout", // sourceCheckout
+  "Cannot tell how this penguin was installed", // unknownInstall
+  "could not be identified", // npmUnknownManager
+  "does not run on Windows", // windowsUnsupported
+  "cannot run your package manager for you", // windowsGlobalInstall
+];
+
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
   /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
@@ -6356,6 +6531,35 @@ export interface OrganizationSummary {
 
 export interface OrganizationsResponse {
   organizations: OrganizationSummary[];
+}
+
+/**
+ * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
+ * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
+ * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
+ * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
+ * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
+ * Project still employs it, or another organization's chart cannot be read. Every other
+ * employee is kept with its reason. Without the flag the three lists are empty.
+ */
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }
 
 export interface OrgEmployeeItem {

@@ -23,6 +23,7 @@
  * page (guest-frame.ts).
  */
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "../../../ui/src/boot";
+import { LANG_KEY } from "../../../web/src/state/locale-pref";
 
 /** The frame's document, relative to the gallery's base. */
 export const APP_FRAME_PATH = "/app.html";
@@ -36,11 +37,11 @@ export const APP_FRAME = { width: 1280, height: 800 } as const;
 export const PHONE_FRAME = { width: 390, height: 844 } as const;
 
 /**
- * The app's language preference key (`state/locale-pref.ts`). The theme keys are the package's;
- * this one is the app's own, spelled here so the frame script imports nothing of the app, and
- * pinned by a test.
+ * The app's language preference key, read from the app's own `state/locale-pref.ts` (a module
+ * with no imports, so the frame script still pulls in nothing else of the app). The theme keys
+ * are the package's.
  */
-export const APP_LANG_KEY = "penguin.lang";
+export const APP_LANG_KEY = LANG_KEY;
 
 /** Frame URL param → the app storage key the seeding script writes it to. */
 export const SEEDED_KEYS: Readonly<Record<string, string>> = {

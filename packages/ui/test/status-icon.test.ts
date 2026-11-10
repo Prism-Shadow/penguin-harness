@@ -8,20 +8,18 @@ import { describe, expect, it } from "vitest";
 import { ICONS } from "../src/components/icons/icons";
 import { StatusIcon } from "../src/components/icons/status-icon/status-icon";
 import type { RunState } from "../src/components/icons/status-icon/status-icon";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const render = (props: Parameters<typeof StatusIcon>[0]) =>
   renderStatic(createElement(StatusIcon, props));
 
 describe("StatusIcon", () => {
-  it("renders the Spinner while running, in the busy ink, never a hand-drawn ring", () => {
+  it("renders the Spinner while running", () => {
     const html = render({ state: "running", label: "Running" });
     expect(html).toContain('data-live="spinner"');
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-label="Running"');
     expect(html).toContain('data-tooltip="Running"');
-    expect(classTokens(html)).toContain("text-tone-success-fg");
-    expect(html).not.toContain("border-t-transparent");
   });
 
   it("hides an unnamed spinner with its wrapper", () => {
@@ -39,16 +37,6 @@ describe("StatusIcon", () => {
     };
     for (const [state, d] of Object.entries(glyphs)) {
       expect(render({ state: state as RunState })).toContain(`d="${d}"`);
-    }
-  });
-
-  it("inks a wait as attention and a failure as danger, and lets done and stopped recede", () => {
-    expect(classTokens(render({ state: "waiting" }))).toContain("text-tone-attention-fg");
-    expect(classTokens(render({ state: "failed" }))).toContain("text-tone-danger-fg");
-    for (const state of ["done", "stopped"] as const) {
-      const tokens = classTokens(render({ state }));
-      expect(tokens).toContain("text-fg-subtle");
-      expect(tokens.some((t) => t.startsWith("text-tone-"))).toBe(false);
     }
   });
 

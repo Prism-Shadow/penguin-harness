@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The desktop window's title band as the Web App draws it: the window's own buttons
- * (components/layout/window-chrome.tsx) and the app window's band (the app layout's use of it).
- * The desktop shell is faked at its one edge, the bridge its preload hands the page.
+ * (web-app/window-chrome.tsx) and the app window's band (the app layout's use of it).
+ * The desktop shell is faked at its one edge, the bridge its preload hands the page. The layout
+ * mounts with the real sidebar column and rail and no contributed section or mode, and a chat
+ * module that opens no draft.
  *
  * - Given the bridge on Windows, minimize, maximize and close are drawn and each reaches the
  *   bridge; the middle one reads Restore once the bridge reports the window maximized and Maximize
@@ -20,12 +22,18 @@
  */
 import { createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { AppLayout } from "../src/components/layout/app-layout";
-import { WindowChrome } from "../src/components/layout/window-chrome";
+import type { ChatDrafts } from "../src/features/chat";
+import { PagesContext } from "../src/lib/web-app-pages";
+import { AppLayout } from "../src/web-app/app-layout";
+import { webAppDeps } from "../src/web-app/deps";
+import { sidebarDeps, useColumnStateOf, type SidebarDeps } from "../src/web-app/sidebar/deps";
+import { CollapsedRail } from "../src/web-app/sidebar/rail";
+import { Sidebar } from "../src/web-app/sidebar/sidebar";
+import { WindowChrome } from "../src/web-app/window-chrome";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { BackgroundProvider } from "../src/state/background";
-import { CompanyProvider } from "../src/state/company";
+import { CompanyProvider } from "../src/features/company/company-state";
 import { ThemeProvider } from "../src/state/theme";
 import { agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import { button, click, mount, run, unmountAll, waitFor } from "./helpers/dom";
@@ -84,10 +92,48 @@ const named = (name: string) => [...document.querySelectorAll(`[aria-label="${na
 const inBand = (name: string) =>
   band()?.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`) ?? null;
 
+const drafts: ChatDrafts = {
+  newChatId: "new",
+  useParked: () => [],
+  removeParked: () => undefined,
+  forgetSession: () => undefined,
+  prepareNewChat: () => undefined,
+  useNewChat: () => () => undefined,
+};
+const sidebarWith: SidebarDeps = {
+  sections: [],
+  modes: [],
+  badges: [],
+  useModes: () => [],
+  useNotes: () => new Map(),
+  drafts,
+};
+const Layout = webAppDeps.provide(
+  {
+    pages: [],
+    pageRenderers: new Map(),
+    sessionProviders: [],
+    layers: [],
+    userEvents: [],
+    sidebar: {
+      Column: sidebarDeps.provide(sidebarWith, Sidebar),
+      Rail: sidebarDeps.provide(sidebarWith, CollapsedRail),
+      useColumnState: () => useColumnStateOf(sidebarWith),
+    },
+    drafts,
+  },
+  AppLayout,
+);
+const pages = { pages: [], pending: false, quickStarts: [], refresh: async () => null };
+
 async function mountAppWindow() {
   agentServer();
   return mountAgentApp(
-    h(ThemeProvider, null, h(BackgroundProvider, null, h(CompanyProvider, null, h(AppLayout)))),
+    h(
+      PagesContext.Provider,
+      { value: pages },
+      h(ThemeProvider, null, h(BackgroundProvider, null, h(CompanyProvider, null, h(Layout)))),
+    ),
     {
       route: "/home",
       at: "/home",

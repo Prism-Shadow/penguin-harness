@@ -26,6 +26,7 @@
  * in sync afterwards.
  */
 
+@import "./layers.css";
 @import "./wallpaper.css";
 @import "./window-band.css";
 @import "./cursors.css";

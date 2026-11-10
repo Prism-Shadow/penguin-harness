@@ -269,7 +269,7 @@ export function Sheet({
 
   if (!mounted) return null;
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-modal" role="dialog" aria-modal="true" aria-label={title}>
       <div
         ref={scrimRef}
         // ui-scrim: the dimmed layer behind the sheet; a theme may blur the page through it.

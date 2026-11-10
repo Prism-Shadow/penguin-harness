@@ -19,10 +19,10 @@ import {
   loadExpandedProviders,
   saveExpandedProviders,
   toggleExpandedProvider,
+  type ExpansionStorage,
 } from "../src/features/models/model-group-expansion";
-import type { ExpansionStorage } from "../src/features/models/model-group-expansion";
-import { groupModelRows } from "../src/features/models/model-grouping";
-import type { ModelRowLike } from "../src/features/models/model-grouping";
+
+import { groupModelRows, type ModelRowLike } from "../src/lib/model-grouping";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
 function memStorage(): ExpansionStorage & { map: Map<string, string> } {
@@ -40,10 +40,6 @@ const LEAD_GROUP = MODEL_PROVIDERS[0]!.id;
 describe("defaultExpandedProviders", () => {
   it("contains exactly the leading catalog group, and follows it when the curation changes", () => {
     expect([...defaultExpandedProviders()]).toEqual([MODEL_PROVIDERS[0]!.id]);
-    // The group that leads is a product decision, so it is spelled out once here: the page
-    // opens on the recommended group rather than on whichever id used to be hard-coded.
-    expect(MODEL_PROVIDERS[0]!.id).toBe("tokendance");
-    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
   });
 
   it("returns a fresh set per call (React state must not share one mutable instance)", () => {

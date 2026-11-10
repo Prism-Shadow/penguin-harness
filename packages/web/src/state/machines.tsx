@@ -28,8 +28,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
-import type { ReactNode } from "react";
+
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";

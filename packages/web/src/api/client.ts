@@ -418,6 +418,26 @@ async function callOverHttp(method: string, url: string, body: unknown): Promise
 }
 
 /**
+ * POSTs a file as the request body itself to `server` (null: this one). The socket carries JSON
+ * only, so this goes over HTTP; the answer and every refusal read as {@link apiFetch}'s do.
+ */
+export async function apiUpload<T>(path: string, file: Blob, server: string | null): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path, server), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+  } catch {
+    throw new ApiError(0, "network_error", S.errors.networkError);
+  }
+  if (!response.ok) throw await failureOf(response, path, server);
+  return (await response.json()) as T;
+}
+
+/**
  * `fetch`, for the few callers that read the Response themselves (a status they act on, a
  * body they parse): the same request over the socket — opened here when it is not open yet —
  * handed back as a Response. Only the socket's own answers are carried — JSON or empty
