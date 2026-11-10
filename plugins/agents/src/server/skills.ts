@@ -4,6 +4,7 @@
  *   POST     /api/projects/:p/agents/:a/skills/template-placeholder  # insert/migrate the {{SKILLS}} placeholder (any member)
  *   POST     /api/projects/:p/agents/:a/skills/archive    # install one skill from an uploaded zip (any member)
  *   GET      /api/projects/:p/agents/:a/skills/:name/archive  # export one installed skill as a zip (any member)
+ *   GET      /api/projects/:p/agents/:a/skills/:name/icon     # its icon, as an image (any member; http/icon-response.ts)
  *   DELETE   /api/projects/:p/agents/:a/skills/:name      # uninstall (any member)
  * Installing from the library goes through the plugin routes (plugins.ts), which write each
  * of a plugin's skills to agent_state/skills/<name>/. The archive routes are symmetric: POST
@@ -18,6 +19,7 @@ import { strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
   listInstalledSkills,
+  readInstalledIcon,
   removeSkill,
   replaceSkillDirectory,
   skillsDir,
@@ -38,6 +40,18 @@ import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { toSkillItem } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath, skillTooLarge, unzipBounded } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "../errors.js";
+import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { iconResponse } from "../icon-response.js";
+import { agentSkillIconRoute, toSkillItem } from "../../services/plugin-library.js";
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
+  skillTooLarge,
+  unzipBounded,
+} from "../../services/skill-import-limits.js";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";
@@ -162,7 +176,9 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
     projectId: string,
     agentId: string,
   ): Promise<AgentSkillsResponse> => ({
-    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map(toSkillItem),
+    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map((skill) =>
+      toSkillItem(skill, agentSkillIconRoute(projectId, agentId, skill.name)),
+    ),
   });
 
   app.get("/", async (c) => {
@@ -258,6 +274,17 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
         "X-Content-Type-Options": "nosniff",
       },
     });
+  });
+
+  // The icon in the skill's directory, read the way the listing reads it (so an icon.<ext> that
+  // will not do is a 404 here too); `?rev=` is only the listing's cache key.
+  app.get("/:name/icon", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    const dir = path.join(skillsDir(deps.config.root, projectId, agentId), name);
+    return iconResponse(await readInstalledIcon(dir));
   });
 
   app.delete("/:name", async (c) => {

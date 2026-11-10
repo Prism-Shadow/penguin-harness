@@ -3,6 +3,7 @@
  *   GET    /api/projects/:p/agents/:a/hooks               # installed packages (any member)
  *   POST   /api/projects/:p/agents/:a/hooks/archive       # install one package from an uploaded zip (any member)
  *   GET    /api/projects/:p/agents/:a/hooks/:name/archive # export one installed package as a zip (any member)
+ *   GET    /api/projects/:p/agents/:a/hooks/:name/icon    # its icon, as an image (any member; http/icon-response.ts)
  *   DELETE /api/projects/:p/agents/:a/hooks/:name         # uninstall (any member)
  * Whether a Session runs hooks at all is not decided here: that is the Agent-level
  * `hooks.enabled` switch, written through the config route.
@@ -25,6 +26,7 @@ import {
   hooksDir,
   listInstalledHooks,
   parsePluginVersion,
+  readInstalledIcon,
   removeHook,
   replaceSkillDirectory,
 } from "@prismshadow/penguin-core";
@@ -36,6 +38,19 @@ import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { toHookItem } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath } from "@prismshadow/penguin-server/internal";
+import type { AgentHooksResponse, HookItem } from "../../api/types.js";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { PluginsRouteDeps } from "./plugins.js";
+import { HttpError } from "../errors.js";
+import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { iconResponse } from "../icon-response.js";
+import { agentHookIconRoute, toHookItem } from "../../services/plugin-library.js";
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
+} from "../../services/skill-import-limits.js";
 
 /** The hook points a manifest lists commands for. */
 const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"] as const;
@@ -252,7 +267,9 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const installedItems = async (projectId: string, agentId: string): Promise<HookItem[]> =>
-    (await listInstalledHooks(deps.config.root, projectId, agentId)).map(toHookItem);
+    (await listInstalledHooks(deps.config.root, projectId, agentId)).map((hook) =>
+      toHookItem(hook, agentHookIconRoute(projectId, agentId, hook.name)),
+    );
 
   /** The install criterion every per-package route shares, the one listInstalledHooks uses: hooks/<name>/hooks.json exists. Returns the package directory. */
   const requireInstalled = async (
@@ -353,6 +370,17 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         "X-Content-Type-Options": "nosniff",
       },
     });
+  });
+
+  // The icon beside the manifest, read the way the listing reads it; `?rev=` is only the
+  // listing's cache key.
+  app.get("/:name/icon", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    const dir = await requireInstalled(projectId, agentId, name);
+    return iconResponse(await readInstalledIcon(dir));
   });
 
   app.delete("/:name", async (c) => {

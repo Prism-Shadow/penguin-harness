@@ -61,6 +61,21 @@ import {
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
 export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
 
+/**
+ * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
+ * already carries (name, descriptions, icon, version); a plugin without an icon draws the puzzle
+ * piece rather than the book.
+ */
+export function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
+}
+/** The location picker's value for this server: a machine id is never empty. */
+const HERE = "";
+/** A connected machine the Agent can be created on: its id, and its SSH alias to show. */
+export interface LocationChoice {
+  value: string;
+  label: string;
+}
 /** The dialog's form: what Create sends, as typed and picked. */
 interface CreateAgentDraft {
   name: string;
