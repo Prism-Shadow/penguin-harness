@@ -134,6 +134,7 @@ export * from "./components/content/prose/prose";
 export { ProseBlockTrailerProvider } from "./components/content/prose/block-trailer";
 export type { ProseBlockTrailer } from "./components/content/prose/block-trailer";
 export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";

@@ -3,8 +3,9 @@
  * Builds what the package publishes, and the Workbench runtime the Web App carries:
  *
  *   dist/index.js, dist/highlighter.js, dist/chunks/   ES modules for a bundler: React and every npm
- *                                                     dependency stay imports, @prismshadow/a2ui is
- *                                                     bundled, and no module imports CSS
+ *                                                     dependency stay imports, @prismshadow/a2ui and
+ *                                                     @prismshadow/chat-markdown are bundled, and no
+ *                                                     module imports CSS
  *   dist/index.d.ts, dist/highlighter.d.ts             one declaration file per entry, the a2ui
  *                                                     types inlined
  *   dist/styles.css, dist/assets/                      the precompiled stylesheet, KaTeX's woff2
@@ -85,8 +86,15 @@ const REACT_SPECIFIERS = Object.keys(RUNTIME_IMPORTS).filter(
 const RUNTIME_TYPE_PACKAGES = ["@types/react", "@types/react-dom", "csstype"];
 
 const isBare = (spec) => !spec.startsWith(".") && !isAbsolute(spec) && !spec.startsWith("\0");
-/** Bundled into the published JS: the A2UI grammar, a devDependency the tarball never imports. */
-const isBundled = (spec) => spec === "@prismshadow/a2ui" || spec.startsWith("@prismshadow/a2ui/");
+/**
+ * Bundled into the published JS: the A2UI grammar and the chat Markdown dialect, devDependencies
+ * the tarball never imports (the dialect's own micromark packages are the package's dependencies
+ * and stay imports).
+ */
+const isBundled = (spec) =>
+  spec === "@prismshadow/a2ui" ||
+  spec.startsWith("@prismshadow/a2ui/") ||
+  spec === "@prismshadow/chat-markdown";
 
 /** Keeps every npm dependency an import of the published modules. */
 const externalDependencies = {
