@@ -854,6 +854,35 @@ export async function uninstallMcpServer(
   return true;
 }
 
+/**
+ * Removes every `tools.mcpServers` entry whose `plugin` is `plugin`, in one write, and answers
+ * their names in file order; nothing is written when there are none. An entry without that
+ * provenance stays, whatever its name: the user added it. The rest of the file, comments
+ * included, is kept.
+ */
+export async function uninstallPluginMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: string,
+): Promise<string[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const list = doc.getIn(["tools", "mcpServers"]);
+  if (!isSeq(list)) return [];
+  const kept = list.items.filter((item) => !isMap(item) || item.get("plugin") !== plugin);
+  if (kept.length === list.items.length) return [];
+  const removed = list.items
+    .filter((item) => !kept.includes(item))
+    .map((item) => (isMap(item) ? item.get("name") : undefined))
+    .filter((name): name is string => typeof name === "string");
+  list.items = kept;
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+  return removed;
+}
+
 /** One `tools.mcpServers` entry of an Agent, with what stands between it and a connection. */
 export interface InstalledMcpServer {
   entry: MCPServerConfig;
