@@ -146,7 +146,8 @@ export function packRuleHits(sources: readonly ThemeSource[]): PackRuleHit[] {
   const privates = new Map<string, string[]>();
   for (const { rule } of rules) {
     for (const d of rule.declarations) {
-      if (d.name.startsWith("--_")) privates.set(d.name, [...(privates.get(d.name) ?? []), d.value]);
+      if (d.name.startsWith("--_"))
+        privates.set(d.name, [...(privates.get(d.name) ?? []), d.value]);
     }
   }
   const parsed = rules

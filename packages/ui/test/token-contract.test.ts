@@ -906,9 +906,7 @@ describe("the streaming tokens (2026-09-30)", () => {
     };
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
-      expect(theme.values.modes.light.get("--ui-stream-reveal"), theme.id).toBe(
-        expected[theme.id],
-      );
+      expect(theme.values.modes.light.get("--ui-stream-reveal"), theme.id).toBe(expected[theme.id]);
     }
   });
 });

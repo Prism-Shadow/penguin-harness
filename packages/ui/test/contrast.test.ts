@@ -184,6 +184,14 @@ const TINT_SHORTFALLS: readonly TintShortfall[] = [
     until: UNTIL_TINT_FLOORS,
   },
   {
+    theme: "doodle",
+    mode: "dark",
+    pair: "--ui-fg",
+    holds: 10,
+    reason: `${NEAR_WHITE} (10.56:1 on dark paper)`,
+    until: UNTIL_TINT_FLOORS,
+  },
+  {
     theme: "geek",
     mode: "dark",
     pair: "--ui-canvas",

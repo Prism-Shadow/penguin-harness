@@ -178,7 +178,10 @@ const svg = (size, inner) =>
 function stroke(shape, ink) {
   const lines = lineLines(shape);
   if (shape.bitmap) {
-    const data = encodePng(rasterize({ size: shape.size, scale: 2, width: shape.stroke, lines }), ink);
+    const data = encodePng(
+      rasterize({ size: shape.size, scale: 2, width: shape.stroke, lines }),
+      ink,
+    );
     return `image-set(url("data:image/png;base64,${data.toString("base64")}") 2x)`;
   }
   const d = lines.map(({ points, closed }) => polyline(points) + (closed ? "Z" : "")).join("");
@@ -265,7 +268,8 @@ function properties(mode) {
     ["--_glass-surface-focus", url(glass(surface, ink("blue"), mode))],
   ];
   if (mode === "light") {
-    for (const [name, shape] of Object.entries(SHAPES)) props.push([`--_clip-${name}`, clip(shape)]);
+    for (const [name, shape] of Object.entries(SHAPES))
+      props.push([`--_clip-${name}`, clip(shape)]);
     // A pill's drawing on a small square host (a radio's disc): its corners at 50 % each.
     props.push(["--_clip-disc", clip({ ...pill, scale: "half" })]);
   }
@@ -278,9 +282,12 @@ const END = "/* draw-doodle-edges.mjs: end generated block */";
 function block() {
   const rule = (selector, props) =>
     `${selector} {\n${props.map(([name, value]) => `  ${name}: ${value};`).join("\n")}\n}`;
-  return [BEGIN, rule(ROOT, properties("light")), rule(`${ROOT}.dark`, properties("dark")), END].join(
-    "\n",
-  );
+  return [
+    BEGIN,
+    rule(ROOT, properties("light")),
+    rule(`${ROOT}.dark`, properties("dark")),
+    END,
+  ].join("\n");
 }
 
 /**
@@ -298,7 +305,8 @@ const squash = (text) =>
 const text = readFileSync(RECIPES, "utf8");
 const start = text.indexOf(BEGIN);
 const end = text.indexOf(END);
-if (start === -1 || end === -1) throw new Error("recipes.css: the generated block's markers are missing");
+if (start === -1 || end === -1)
+  throw new Error("recipes.css: the generated block's markers are missing");
 const wanted = block();
 if (squash(text.slice(start, end + END.length)) !== squash(wanted)) {
   if (process.argv.includes("--check")) {

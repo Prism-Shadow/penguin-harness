@@ -178,8 +178,7 @@
   /* ---- Typography — families: Shantell Sans for chrome and reading, LXGW WenKai GB Screen
      for Han (its slices cover GB2312; a rarer ideograph falls back to Noto Sans SC, then the
      platform), JetBrains Mono for code ---- */
-  --ui-font-cjk:
-    "LXGW WenKai GB Screen", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
+  --ui-font-cjk: "LXGW WenKai GB Screen", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
   --ui-font-sans:
     "Shantell Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
   --ui-font-ui: var(--ui-font-sans);
