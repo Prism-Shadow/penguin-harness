@@ -155,9 +155,7 @@ async function uploadDirectory(
   }
 }
 
-export function registerPluginCommand(program: Command, t: Messages): void {
-  const plugin = program.command("plugin").description(t.plugin.desc);
-
+export function registerPluginCommand(plugin: Command, t: Messages): void {
   plugin
     .command("list")
     .alias("ls")

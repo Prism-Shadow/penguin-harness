@@ -60,10 +60,8 @@ import {
 import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "../i18n.js";
 
-export function registerRunCommand(program: Command, t: Messages): void {
-  program
-    .command("run")
-    .description(t.run.desc)
+export function registerRunCommand(run: Command, t: Messages): void {
+  run
     .requiredOption("-m, --message <message>", t.run.message)
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)

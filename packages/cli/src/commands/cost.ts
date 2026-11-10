@@ -33,10 +33,8 @@ function formatCost(cost: number | null, hasUncosted: boolean, t: Messages): str
   return hasUncosted ? `${value}+` : value;
 }
 
-export function registerCostCommand(program: Command, t: Messages): void {
-  program
-    .command("cost")
-    .description(t.cost.desc)
+export function registerCostCommand(cost: Command, t: Messages): void {
+  cost
     .option("--days <n>", t.cost.days)
     .option("--from <date>", t.cost.from)
     .option("--to <date>", t.cost.to)

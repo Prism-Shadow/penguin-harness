@@ -685,6 +685,23 @@ A theme pack is a folder with a `pack.json` manifest and a few stylesheets (PRFC
 - Packs live under the data root at `themes/<id>/`, and each upload is kept at `themes/archives/`. They are not synced to machines.
 - Every import, replace and removal sends `themes_changed` to every signed-in user's event stream.
 
+## Plugin-Contributed CLI Commands
+
+A plugin may contribute commands to the `penguin` CLI. The commands live in the server's tree with the rest of the plugin, so the server is the one that knows them, and the CLI reaches them through two routes: one lists them, the other runs one. Listing is open to any signed-in user; running a plugin's code is an admin operation.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/cli/commands` | Every plugin command, with its package: `{commands: [{package, key, summary}]}` — `key` is the command path (`a.b.c` answers `penguin a b c ARGS`) and `summary` carries one line per language |
+| POST | `/api/cli/commands/run` | Admin only. Parses `args` against one package's commands and answers with what they printed and their exit code |
+
+The run request is `{package, args, language, prog}`: `package` is the plugin package as the listing names it, `args` the arguments as they would follow the program name, `language` (`"en"` or `"zh"`) for the summaries and the command's own text, and `prog` the program name usage lines print (`penguin`, or `penguin exec <plugin>`). The answer is `{exitCode, stdout, stderr}`.
+
+Each run builds a fresh command program from the named package's commands alone: every command sits on the node its key locates, described by its summary in the requested language, and `args` is parsed against that program. With no arguments the run prints the package's help and exits 0; a usage error is reported as commander prints it, with commander's own exit code; the command's own failure comes back as exit code 1 with its message on stderr. Output is buffered, not streamed: everything the command writes through its context, and what the program prints for help and usage errors, arrives in the response when the run ends. A run never escapes into the server — a command that fails leaves the server and its other routes untouched.
+
+Errors: `403` `admin_required` when the caller is not an admin, `400` `bad_request` for a body that is not shaped as above, and `404` `unknown_package` when no plugin of that name contributes CLI commands.
+
+The CLI itself dispatches on this listing: a first word that names none of the CLI's own commands is matched against the listed keys, one package answering runs, and two or more answering is reported with one `penguin exec <package> …` line per candidate — see [penguin exec](/cli#penguin-exec).
+
 ## Schedules
 
 The paths below omit the `/api/projects/:projectId` prefix.

@@ -318,9 +318,7 @@ function registerApiCommands(agent: Command, t: Messages): void {
     });
 }
 
-export function registerAgentCommand(program: Command, t: Messages): void {
-  const agent = program.command("agent").description(t.agent.desc);
-
+export function registerAgentCommand(agent: Command, t: Messages): void {
   agent
     .command("ls")
     .description(t.agent.lsDesc)

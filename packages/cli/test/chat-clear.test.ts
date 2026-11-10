@@ -56,7 +56,7 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, getMessages("en"));
+    registerChatCommand(program.command("chat"), getMessages("en"));
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       // Racing against `done` keeps a REPL that errors out early from hanging the test.

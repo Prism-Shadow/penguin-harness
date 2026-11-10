@@ -22,7 +22,7 @@ The body carries the design repository's text. Where an RFC has pending revision
 
 ## Numbering
 
-Numbers and filenames carry over from the design repository unchanged. Two drafts share the number `0005` — PRFC-0005-mechanisms-not-implementations.md and PRFC-0005-plugin-versioning.md — two independent design lines that each took the number before either landed; they are distinct documents, not revisions of one another. The number `0013` is retired: the HMR RFC was drafted as PRFC-0013 and renumbered to PRFC-0002 before it landed.
+Numbers and filenames carry over from the design repository unchanged. Two drafts share the number `0005` — PRFC-0005-mechanisms-not-implementations.md and PRFC-0005-plugin-versioning.md — two independent design lines that each took the number before either landed; they are distinct documents, not revisions of one another. The number `0013` is retired: the HMR RFC was drafted as PRFC-0013 and renumbered to PRFC-0002 before it landed. The number `0024` was drafted once as PRFC-0024-cli-resolution and withdrawn before landing, its subject folded into [PRFC-0023](PRFC-0023-harness-meta.md); the number has been taken up again by CLI Modules, a different document.
 
 ## Index
 
@@ -48,4 +48,7 @@ Numbers and filenames carry over from the design repository unchanged. Two draft
 | [PRFC-0018-amsp.md](PRFC-0018-amsp.md) | AMSP and Agent API | landed |
 | [PRFC-0019-rsi-toolkits.md](PRFC-0019-rsi-toolkits.md) | RSI Toolkits | landed |
 | [PRFC-0020-agent-workbench.md](PRFC-0020-agent-workbench.md) | Agent Workbench: app naming, plugin distribution, and product support | landed |
+| [PRFC-0021-distros.md](PRFC-0021-distros.md) | Distro Channels: the shared vocabulary of how the harness reaches a machine | draft |
 | [PRFC-0022-rfc-invariant.md](PRFC-0022-rfc-invariant.md) | RFC Invariants: a permanent section for what must always hold | draft |
+| [PRFC-0023-harness-meta.md](PRFC-0023-harness-meta.md) | Harness Meta: every data root carries the record of its harness | draft |
+| [PRFC-0024-cli-modules.md](PRFC-0024-cli-modules.md) | CLI Modules: a command is a contribution to the process that owns it | draft |

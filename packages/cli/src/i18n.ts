@@ -1,4 +1,5 @@
 import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import type { CliCommandMessages } from "@prismshadow/penguin-core/cli";
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 /**
@@ -35,7 +36,7 @@ export function resolveLanguage(): Language {
   return v === "zh" ? "zh" : "en";
 }
 
-export interface Messages {
+export interface Messages extends CliCommandMessages {
   // —— Command/option help descriptions ——
   cliDescription: string;
   versionDesc: string;

@@ -786,6 +786,27 @@ penguin config lang en
 
 设置 CLI 的界面语言（`en` 或 `zh`），方式是把 `PENGUIN_LANG` 写入你的 shell 启动文件。在交互式终端里，命令随后会提议打开一个新 shell 让设置生效；否则会打印让设置生效的方法。Windows 上命令会拒绝执行，因为没有 POSIX shell 启动文件可写。
 
+## penguin exec
+
+在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
+
+```bash
+penguin exec <包> [args...]
+```
+
+不属于 CLI 自有命令的词，在 CLI 报未知命令之前先到插件里查证：server 的插件命令列表与之比对，恰有一个包命中即运行，运行打印的内容与退出码就是调用者的。server 未在运行时保持不动——查询只问已在运行的 server，无人应答时命令行交回 CLI 自己的解析。
+
+两个及以上插件命中同样的词即歧义：报告逐候选列出一行可直接复制执行的 `penguin exec <包> …`（原 argv 按 shell 转义）并以退出码 2 结束，什么都不运行。点名插件即可消解。
+
+`penguin exec` 是无歧义的形式：被点名的插件是唯一候选。npm 全名永远可解析；短名（`@scope/name` → `name`）在恰好一个贡献者携带它时可用；两个插件都携带的短名报错并列出全名。无参数时打印该插件的帮助。server 未在运行时会被启动，与任何需要 server 的命令一样。
+
+```bash
+penguin exec my-plugin deploy --prod
+penguin exec @scope/my-plugin -- deploy --help   # -- 把所有选项交给插件
+```
+
+要把选项交给插件而非 CLI，在插件自己的参数之前放 `--`，如上第二行。
+
 ## penguin server / penguin web
 
 同一个服务进程的两个入口。`server` 以无界面方式运行服务。`web` 还会等服务就绪，打印 URL 并打开浏览器。
