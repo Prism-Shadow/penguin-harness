@@ -11,13 +11,14 @@
  *   machine, a name it does not list and a remote registry have no readme.
  * - A package on this machine describes itself in the listing over what its row says (its card
  *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
- *   them; an icon that is not a plain SVG is never sent.
+ *   them. An icon is named by the URL the registry serves it at — the embedded row's SVG or the
+ *   package's own file, as an image — and one that is not a plain SVG is neither named nor served.
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
- * - A remote entry never carries an icon (the page inlines it as SVG): the HTTP registry drops
- *   it and keeps the rest of the row, and so does the route for a document a previous App
- *   fetched and parked.
+ * - A remote entry never carries an icon (this server would serve it as its own image): the HTTP
+ *   registry drops it and keeps the rest of the row, and so does the route for a document a
+ *   previous App fetched and parked.
  * - A published index may be slow or down without emptying the page: the cache and the
  *   tolerant merge beside the builtin catalogue.
  * - Nor without holding it: a document past its TTL is served at once while the refresh runs
@@ -38,7 +39,7 @@ import { promisify } from "node:util";
 import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
 import type { LibraryContributions } from "@prismshadow/penguin-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginIndexEntry, PluginIndexResponse } from "../src/api/types.js";
+import type { PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,
@@ -49,7 +50,7 @@ import {
   mergeIndexes,
   parsePluginIndex,
 } from "../src/plugin/registry.js";
-import type { PluginRegistry } from "../src/plugin/registry.js";
+import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
@@ -57,7 +58,14 @@ import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
 
-const VALID_ENTRY: PluginIndexEntry = {
+/** A listing's rows as the index wrote them, but for the icon, which the listing names by URL. */
+const withoutIcons = (entries: readonly { icon?: unknown }[]) =>
+  entries.map(({ icon: _icon, ...row }) => row);
+
+/** The first bytes of a PNG: as much of one as its format is told by. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+
+const VALID_ENTRY: IndexDocumentEntry = {
   name: "@example/penguin-plugin-demo",
   version: "1.0.0",
   description: "A demo plugin.",
@@ -110,8 +118,8 @@ describe("httpPluginRegistry", () => {
     expect(entries).toEqual([VALID_ENTRY]);
   });
 
-  it("drops a remote entry's icon, an SVG the page would inline, and keeps the rest of the row", async () => {
-    const described: PluginIndexEntry = {
+  it("drops a remote entry's icon, an SVG this server would serve as its own, and keeps the rest of the row", async () => {
+    const described: IndexDocumentEntry = {
       ...VALID_ENTRY,
       title: "Demo",
       titleZh: "示例",
@@ -397,7 +405,7 @@ describe("the registry routes", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toEqual(await builtinPluginRegistry().index());
+    expect(withoutIcons(body.plugins)).toEqual(withoutIcons(await builtinPluginRegistry().index()));
   });
 
   it("requires auth, then serves a listed entry's readme from the package on this machine", async () => {
@@ -441,7 +449,7 @@ describe("the registry routes", () => {
 });
 
 /** A registry whose index() the test drives: counts calls, and can be made to fail. */
-function stubRegistry(source: string, entries: PluginIndexEntry[]) {
+function stubRegistry(source: string, entries: IndexDocumentEntry[]) {
   const state = { calls: 0, fail: null as string | null };
   const registry: PluginRegistry = {
     source,
@@ -490,8 +498,8 @@ describe("cachedRegistry", () => {
 
   it("answers a read past the TTL at once with the document in hand, and a later read with the refreshed one", async () => {
     const fresh = { ...VALID_ENTRY, version: "2.0.0" };
-    let answer!: (entries: PluginIndexEntry[]) => void;
-    const refreshed = new Promise<PluginIndexEntry[]>((resolve) => {
+    let answer!: (entries: IndexDocumentEntry[]) => void;
+    const refreshed = new Promise<IndexDocumentEntry[]>((resolve) => {
       answer = resolve;
     });
     let calls = 0;
@@ -548,7 +556,7 @@ describe("cachedRegistry", () => {
 });
 
 describe("mergeIndexes", () => {
-  const remoteEntry: PluginIndexEntry = {
+  const remoteEntry: IndexDocumentEntry = {
     ...VALID_ENTRY,
     name: "@example/penguin-plugin-remote",
   };
@@ -596,7 +604,7 @@ describe("the published index source", () => {
 describe("the route's own merge", () => {
   // Called directly rather than through the App: the auth gate is app.ts's and is covered
   // above, and what these assert is which sources reach the response body.
-  const published: PluginIndexEntry = {
+  const published: IndexDocumentEntry = {
     ...VALID_ENTRY,
     name: "@example/penguin-plugin-published",
   };
@@ -652,7 +660,9 @@ describe("the route's own merge", () => {
       );
       const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
       const first = await read(routes);
-      expect(first.plugins).toEqual(await builtinPluginRegistry().index());
+      expect(withoutIcons(first.plugins)).toEqual(
+        withoutIcons(await builtinPluginRegistry().index()),
+      );
       expect(first.pending).toEqual([url]);
       expect(first.failures).toEqual([]);
 
@@ -669,7 +679,9 @@ describe("the route's own merge", () => {
         throw fetchFailed("ETIMEDOUT");
       });
       const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
-      expect((await read(routes)).plugins).toEqual(await builtinPluginRegistry().index());
+      expect(withoutIcons((await read(routes)).plugins)).toEqual(
+        withoutIcons(await builtinPluginRegistry().index()),
+      );
       // The fetch spends its attempts behind the answer.
       await vi.runAllTimersAsync();
       const fetched = remote.calls.length;
@@ -685,27 +697,38 @@ describe("the route's own merge", () => {
     });
   });
 
-  it("with no published source configured, lists the builtin entries alone", async () => {
+  it("with no published source configured, lists the builtin entries alone, each icon served as an image", async () => {
     const routes = pluginRegistryRoutes({ indexUrl: null });
     const res = await routes.request("/");
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toEqual(await builtinPluginRegistry().index());
+    const index = await builtinPluginRegistry().index();
+    expect(withoutIcons(body.plugins)).toEqual(withoutIcons(index));
     expect(body.failures).toEqual([]);
     expect(body.pending).toEqual([]);
+    for (const [i, entry] of body.plugins.entries()) {
+      expect(entry.icon, entry.name).toEqual({
+        url: expect.stringMatching(/^\/api\/plugins\/registry\/icon\?name=.+&rev=[0-9a-f]{12}$/),
+        tint: true,
+      });
+      const served = await routes.request(entry.icon!.url.replace("/api/plugins/registry", ""));
+      expect(served.headers.get("content-type"), entry.name).toBe("image/svg+xml");
+      expect(served.headers.get("content-security-policy"), entry.name).toContain("sandbox");
+      expect(await served.text(), entry.name).toBe(index[i]!.icon);
+    }
   });
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
     // A published row that carries only English and no icon, for a package an admin installed
     // into the data root's prefix with its own card and icon.svg; and one installed with
     // neither, which keeps its row's text and the puzzle piece.
-    const installedHere: PluginIndexEntry = {
+    const installedHere: IndexDocumentEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
       title: "Old title",
       titleZh: "旧名称",
     };
-    const bare: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-bare" };
-    const elsewhere: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-away" };
+    const bare: IndexDocumentEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-bare" };
+    const elsewhere: IndexDocumentEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-away" };
     const prefix = await mkdtemp(path.join(tmpdir(), "penguin-prefix-"));
     try {
       await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
@@ -731,7 +754,7 @@ describe("the route's own merge", () => {
           },
         }),
       );
-      await writeFile(path.join(dir, "icon.svg"), '<svg viewBox="0 0 24 24"></svg>\n');
+      await writeFile(path.join(dir, "icon.png"), PNG);
       const bareDir = path.join(prefix, "node_modules", "@example", "penguin-plugin-bare");
       await mkdir(bareDir, { recursive: true });
       await writeFile(
@@ -751,18 +774,28 @@ describe("the route's own merge", () => {
           descriptionZh: "一个示例插件。",
           shortDescription: "Demo.",
           shortDescriptionZh: "示例。",
-          icon: '<svg viewBox="0 0 24 24"></svg>\n',
+          icon: {
+            url: expect.stringMatching(
+              /^\/api\/plugins\/registry\/icon\?name=%40example%2Fpenguin-plugin-here&rev=/,
+            ),
+            tint: false,
+          },
         },
         bare,
         elsewhere,
       ]);
+      const served = await routes.request(
+        body.plugins[0]!.icon!.url.replace("/api/plugins/registry", ""),
+      );
+      expect(served.headers.get("content-type")).toBe("image/png");
+      expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG);
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }
   });
 
-  it("never sends the icon of a package on this machine that is not a plain SVG", async () => {
-    const entry: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-risky" };
+  it("neither names nor serves the icon of a package on this machine that is not a plain SVG", async () => {
+    const entry: IndexDocumentEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-risky" };
     const prefix = await mkdtemp(path.join(tmpdir(), "penguin-prefix-"));
     try {
       await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
@@ -786,6 +819,8 @@ describe("the route's own merge", () => {
       });
       const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
       expect(body.plugins).toEqual([{ ...entry, shortDescription: "Risky." }]);
+      const served = await routes.request(`/icon?name=${encodeURIComponent(entry.name)}`);
+      expect(served.status).toBe(404);
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }

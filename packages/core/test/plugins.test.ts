@@ -28,9 +28,10 @@
  * - What a shipped package fails on, an installed one lists through, with the field missing and
  *   one warning: a malformed card field, a quick start naming skills it does not ship, a hook
  *   package without a dated version (the skills still list), a skill without a version
- *   (unversioned, never flagged behind), an unsafe or oversized icon, a skill entry whose name is
- *   not a skill name or not its directory's, a binary file in a skill (left out; the text beside it
- *   installs byte for byte). A safe icon is kept from its `<svg>` root on.
+ *   (unversioned, never flagged behind), an unsafe, oversized or mislabelled icon, a skill entry
+ *   whose name is not a skill name or not its directory's, a binary file in a skill (left out; the
+ *   text beside it installs byte for byte). A clean icon is kept in its own format, SVG or a raster
+ *   image, and every skill of the package wears it.
  * - A package of MCP servers alone is a library plugin: it lists its servers, each with every
  *   vault key its config references — declared ones with their labels first — and whether it
  *   offers OAuth sign-in. A server the resolver refuses, a bad or repeated name and a setup key
@@ -57,7 +58,6 @@ import { parse as parseYaml } from "yaml";
 import {
   comparePluginVersions,
   groupPlugins,
-  isSafeIconSvg,
   libraryParts,
   libraryPlugin,
   libraryPluginPackage,
@@ -552,33 +552,50 @@ describe("packages the operator installed on the server", () => {
     expect(comparePluginVersions(installed.version, skill!.version)).toBe(0);
   });
 
-  it("drops an icon with a script, an event handler or over 64 KiB, and keeps a plain one", async () => {
+  it("drops an icon with a script, an event handler, a link, over 256 KB or mislabelled, and keeps a clean one in its own format", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>\n`;
-    const unsafe = {
-      script: `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
-      handler: `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
-      large: `<svg xmlns="http://www.w3.org/2000/svg"><path d="${"M0 0 ".repeat(14_000)}"/></svg>`,
-      link: `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+    const plain = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 2h20v20H2z"/></svg>\n`;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+    const oversized = new Uint8Array(300 * 1024);
+    oversized.set(png);
+    const unsafe: Record<string, [string, string | Uint8Array]> = {
+      script: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+      ],
+      handler: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><path d="M0 0"/></svg>`,
+      ],
+      link: [
+        "art/logo.svg",
+        `<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/t.png"/></svg>`,
+      ],
+      large: ["art/logo.png", oversized],
+      mislabelled: ["art/logo.png", plain],
     };
     await setUp(
-      ["@acme/plain", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
+      ["@acme/plain", "@acme/photo", ...Object.keys(unsafe).map((k) => `@acme/${k}`)],
       Object.fromEntries([
         ["@acme/plain", { ...notes("@acme/plain"), "icon.svg": plain }],
-        ...Object.entries(unsafe).map(([k, svg]) => [
+        ["@acme/photo", { ...notes("@acme/photo"), "icon.png": png }],
+        ...Object.entries(unsafe).map(([k, [file, data]]) => [
           `@acme/${k}`,
-          { ...notes(`@acme/${k}`, { card: { icon: "art/logo.svg" } }), "art/logo.svg": svg },
+          { ...notes(`@acme/${k}`, { card: { icon: file } }), [file]: data },
         ]),
       ]),
     );
     const icons = Object.fromEntries(loadLibraryPlugins().map((p) => [p.name, p.icon]));
-    // Kept from its <svg> root on: the Web App inlines only markup that begins there.
-    expect(icons.plain).toBe(plain.slice(plain.indexOf("<svg")));
+    // A line icon in currentColor takes the text colour; a raster image is drawn as itself.
+    expect(icons.plain).toMatchObject({ format: "svg", tint: true });
+    expect(icons.photo).toEqual({ format: "png", bytes: png, tint: false });
+    // Every skill of the package wears its icon.
+    expect(libraryPlugin("photo")!.skills[0]!.icon).toEqual(icons.photo);
     for (const name of Object.keys(unsafe)) expect(icons[name], name).toBeUndefined();
     // A skill of a package without an icon installs without one (the book glyph).
     expect(libraryPlugin("script")!.skills[0]).not.toHaveProperty("icon");
-    expect(logged(warn)).toContain("is larger than 64 KiB");
-    expect(isSafeIconSvg(unsafe.script)).toBe(false);
+    expect(logged(warn)).toContain("is larger than 256 KB");
+    expect(logged(warn)).toContain("is named as PNG but its bytes are SVG");
   });
 
   it("leaves a binary file out of a skill, and installs the text files beside it as they are, a byte-order mark included", async () => {

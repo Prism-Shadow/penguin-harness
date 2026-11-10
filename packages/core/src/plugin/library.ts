@@ -53,7 +53,7 @@ export interface PluginCard {
   shortDescriptionZh?: string;
   /** A category id (see PLUGIN_CATEGORIES); absent or unknown → the Other group. */
   category?: string;
-  /** Path of an `.svg` inside the package; absent → `icon.svg` at the package root when there is one. */
+  /** Path of an image inside the package (SVG, PNG, JPEG, WebP, GIF or AVIF, at most 256 KB); absent → `icon.<ext>` at the package root when there is one. */
   icon?: string;
   /** Whether default_agent gets the plugin at creation; absent = true for a shipped plugin, always false for one an operator installed. */
   preinstall?: boolean;

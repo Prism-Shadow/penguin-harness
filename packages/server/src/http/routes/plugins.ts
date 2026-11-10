@@ -5,7 +5,9 @@
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
  *   GET    /api/plugins/:plugin/readme                    # a library plugin's README.md, from its package root (404 without one)
  *   GET    /api/plugins/:plugin/archive                   # a library plugin's package as a zip, for another server to import
+ *   GET    /api/plugins/:plugin/icon                      # a library plugin's icon, as an image (http/icon-response.ts)
  *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries, the published ones, and the server modules an admin installed from a link or a zip
+ *   GET    /api/plugins/registry/icon?name=…              # one listed entry's icon, as an image
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
@@ -35,6 +37,7 @@ import { Hono } from "hono";
 import fs from "node:fs/promises";
 import {
   agentDir,
+  iconImage,
   McpServerNameTakenError,
   WorkbenchNameTakenError,
   assertPluginWorkbenchesInstallable,
@@ -48,7 +51,7 @@ import {
   readPackageJson,
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
-import type { NpmPackage } from "@prismshadow/penguin-core";
+import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
@@ -77,7 +80,12 @@ import {
   withoutIcon,
   NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
-import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
+import type {
+  CachedRegistry,
+  IndexDocumentEntry,
+  IndexSnapshot,
+  PluginRegistry,
+} from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
@@ -97,9 +105,12 @@ export interface PluginsRouteDeps {
   manager: ManagerIface;
   library: PluginLibrary;
 }
-import { HttpError } from "../errors.js";
+import { errorBody, HttpError } from "../errors.js";
+import { iconRef, iconResponse } from "../icon-response.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
 import {
+  agentHookIconRoute,
+  agentSkillIconRoute,
   pluginFiles,
   resolveLibraryPlugins,
   toAgentMcpServerItem,
@@ -173,6 +184,16 @@ export function pluginLibraryRoutes(library: PluginLibrary): Hono<AppEnv> {
     const zip = await zipPluginPackage(pkg.dir, unscopedName(pkg.packageName));
     return pluginArchiveResponse(zip, pkg.packageName, pkg.version);
   });
+  // The plugin's icon, as the listing names it (`?rev=` is only its cache key). Any member: it is
+  // what the listing already shows.
+  app.get("/:plugin/icon", (c) => {
+    const pluginName = c.req.param("plugin");
+    const plugin = library.get(pluginName);
+    if (!plugin) {
+      throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
+    }
+    return iconResponse(plugin.icon);
+  });
   return app;
 }
 
@@ -194,8 +215,8 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
       listInstalledWorkbenches(root, projectId, agentId),
     ]);
     return c.json({
-      skills: skills.map(toSkillItem),
-      hooks: hooks.map(toHookItem),
+      skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
+      hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
       mcpServers: servers.map(toAgentMcpServerItem),
       workbenches,
     } satisfies AgentPluginsInstallResponse);
@@ -235,8 +256,8 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     return c.json(
       {
         workbenches,
-        skills: skills.map(toSkillItem),
-        hooks: hooks.map(toHookItem),
+        skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
+        hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
         mcpServers: servers.map(toAgentMcpServerItem),
       } satisfies AgentPluginsInstallResponse,
       201,
@@ -356,9 +377,9 @@ export interface PluginRoutesOptions {
 async function prefixEntries(
   prefix: string | null,
   listed: ReadonlySet<string>,
-): Promise<PluginIndexEntry[]> {
+): Promise<IndexDocumentEntry[]> {
   if (prefix === null) return [];
-  const entries: PluginIndexEntry[] = [];
+  const entries: IndexDocumentEntry[] = [];
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
@@ -404,17 +425,48 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     return { entries: [...entries, ...own], failures, pending };
   };
 
+  /**
+   * One listed entry as the page reads it. A package on this machine describes itself: its own
+   * card and icon win over what an index row says, so an installed package's card shows its icon
+   * and both languages even where its index row carries neither. The icon is named by the route
+   * below; an index row's own (raw SVG, kept only from the embedded index) is read the way a
+   * package's icon file is, so one that will not do is not named at all.
+   */
+  const described = async (
+    entry: IndexDocumentEntry,
+    here: readonly PluginBase[],
+  ): Promise<{ entry: PluginIndexEntry; icon?: IconImage }> => {
+    const { icon: rowIcon, ...row } = entry;
+    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here);
+    const icon = ownIcon ?? (rowIcon !== undefined ? indexRowIcon(rowIcon) : undefined);
+    const route = `/api/plugins/registry/icon?name=${encodeURIComponent(entry.name)}`;
+    return {
+      entry: { ...row, ...display, ...(icon !== undefined ? { icon: iconRef(route, icon) } : {}) },
+      ...(icon !== undefined ? { icon } : {}),
+    };
+  };
+
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
-    // A package on this machine describes itself: its own card and icon win over what an index
-    // row says, so an installed package's card shows its icon and both
-    // languages even where its index row carries neither.
     const here = bases();
-    const plugins = await Promise.all(
-      entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map(
+      (d) => d.entry,
     );
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
+  });
+  // A listed entry's icon, by the listing's rule: only entries this deployment lists, by a
+  // package name, as for the readme below.
+  app.get("/icon", async (c) => {
+    const name = c.req.query("name");
+    if (name === undefined || name === "") {
+      return c.json(errorBody("bad_request", "name is required"), 400);
+    }
+    const { entries } = await listing();
+    const entry = PACKAGE_NAME.test(name) ? entries.find((e) => e.name === name) : undefined;
+    const icon = entry === undefined ? undefined : (await described(entry, bases())).icon;
+    if (icon === undefined) return c.json(errorBody("not_found", "no such plugin icon"), 404);
+    return iconResponse(icon);
   });
   app.get("/readme", async (c) => {
     const name = c.req.query("name");
@@ -470,6 +522,12 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     return pluginArchiveResponse(zip, name, version);
   });
   return app;
+}
+
+/** An index row's raw SVG icon, read like an `icon.svg` file: none when it will not do. */
+function indexRowIcon(svg: string): IconImage | undefined {
+  const checked = iconImage(new TextEncoder().encode(svg), "icon.svg");
+  return "icon" in checked ? checked.icon : undefined;
 }
 
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {

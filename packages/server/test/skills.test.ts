@@ -220,13 +220,19 @@ describe("skills api", () => {
     const body = (await res.json()) as AgentSkillsResponse;
     const both = skillNamesOf("data-analysis", "software-development");
     expect(body.skills.map((s) => s.name)).toEqual(both);
-    // The installed list likewise passes through the short description and the icon — the
-    // plugin's, written as icon.svg beside SKILL.md on install (a skill has none of its own).
+    // The installed list likewise passes through the short description and names the icon — the
+    // plugin's, written as icon.svg beside SKILL.md on install (a skill has none of its own) —
+    // by the route that serves it.
     const installed = body.skills.find((s) => s.name === "web-design")!;
     expect(installed.shortDescription).toBeTruthy();
     const pluginIcon = librarySkill("web-design")!.plugin.icon;
     expect(pluginIcon).toBeDefined();
-    expect(installed.icon).toBe(pluginIcon);
+    expect(installed.icon).toEqual({
+      url: expect.stringMatching(
+        new RegExp(`^/api/projects/${projectId}/agents/bare_agent/skills/web-design/icon\\?rev=`),
+      ),
+      tint: true,
+    });
 
     // The on-disk content matches the library's SKILL.md verbatim (including frontmatter),
     // and the icon beside it is the plugin's.
@@ -238,9 +244,8 @@ describe("skills api", () => {
     expect(
       await fs.readFile(
         path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg"),
-        "utf8",
       ),
-    ).toBe(pluginIcon);
+    ).toEqual(Buffer.from(pluginIcon!.bytes));
 
     // Member uninstalls one skill: 204, the whole skills/<name>/ directory disappears, and the list is updated.
     expect((await member.delete(`${url}/web-design`)).status).toBe(204);
@@ -317,12 +322,12 @@ describe("skills api", () => {
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
     // The installed list likewise passes through the Chinese and short descriptions
-    // (listInstalledSkills parses these from the on-disk frontmatter) and the icon each
+    // (listInstalledSkills parses these from the on-disk frontmatter) and names the icon each
     // install wrote beside SKILL.md — its plugin's.
     for (const skill of body.skills) {
       expect(skill.shortDescription, skill.name).toBeTruthy();
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-      expect(skill.icon, skill.name).toBe(librarySkill(skill.name)!.plugin.icon);
+      expect(skill.icon?.url, skill.name).toContain(`/skills/${skill.name}/icon?rev=`);
     }
 
     // Manual install from the library still works for a preinstall:false skill.
