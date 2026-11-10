@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** feat
 - **Scope:** `ui-gallery`
+- **PR:** [#1528](https://github.com/Prism-Shadow/penguin-harness/pull/1528)
 
 [中文版](2026-11-10-theme-packs-gallery.zh.md)
 
