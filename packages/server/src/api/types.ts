@@ -3819,6 +3819,11 @@ export type ServerEvent =
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
   /**
+   * The server's imported theme packs changed (one was imported, replaced or removed): every
+   * signed-in tab re-reads `GET /api/themes`. No payload; on the user channel of everyone online.
+   */
+  | { type: "themes_changed" }
+  /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what
@@ -5446,6 +5451,116 @@ export interface LanguageSummary {
 /** GET /api/languages: every language this App's plugins contributed, by id. */
 export interface LanguageIndexResponse {
   languages: LanguageSummary[];
+}
+
+// ---------------------------------------------------------------------------
+// Theme packs (per server: an admin imports, every account picks; PRFC-0026)
+// ---------------------------------------------------------------------------
+//   GET    /api/themes                  → ThemePacksResponse (any user): the imported packs
+//                                         only, in the order they were installed; the client
+//                                         ships its built-in packs itself
+//   GET    /api/themes/:id/files/<path> → one file the pack serves (any user): its `index.css`,
+//                                         a font or a drawing; 404 for anything else
+//   POST   /api/themes[?replace=1]      → 201 ThemePackImportResponse (admin). The body is the
+//                                         raw zip sent as `application/octet-stream`. Refusals:
+//                                         400 `theme_invalid` (details: ThemeInvalidDetails),
+//                                         400 `theme_id_reserved`, 409 `theme_exists` (details:
+//                                         `themeId`) unless `replace=1`, 413 `theme_too_large`,
+//                                         422 `theme_api_unsupported`, 503 `themes_unavailable`
+//   DELETE /api/themes/:id              → 204 (admin); 400 `theme_builtin`, 404 `theme_not_found`
+//   GET    /api/themes/:id/export       → the pack as a zip attachment (any user), built-in or
+//                                         imported; 404 `theme_not_found`
+// Every write tells every signed-in tab with `themes_changed` on the user event stream.
+
+/** A theme mode, as a manifest names it. */
+export type ThemePackMode = "light" | "dark";
+
+/**
+ * What a pack builds on: `modern`, Frost's token values and its hook recipes (the root carries
+ * `data-theme-base="modern"`); `foundation`, Frost's values only, as the fallback for a name the
+ * pack leaves out.
+ */
+export type ThemePackBase = "modern" | "foundation";
+
+/** The three colours a picker draws for a pack in one mode, as hex. */
+export interface ThemePackSwatch {
+  canvas: string;
+  ink: string;
+  accent: string;
+}
+
+/** One accent preset a pack offers: the `data-accent` id its `accents.css` declares, and its dot. */
+export interface ThemePackAccentPreset {
+  id: string;
+  swatch: string;
+}
+
+/**
+ * An imported pack as the picker and the pre-paint cache read it: its normalised manifest
+ * (`pack.json`), plus where its stylesheet is served and at which version. `v` is a digest of
+ * the pack's content, so it changes when a replace changes anything and a cached stylesheet
+ * misses; `href` is `/api/themes/<id>/files/index.css?v=<v>`, which the browser builds from `id`
+ * and `v` itself before the first paint.
+ */
+export interface ThemePackDto {
+  /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */
+  id: string;
+  names: { zh: string; en: string };
+  /** The pack's own semver. */
+  version: string;
+  /** The theme API the pack targets; a build implementing a lower one lists it and never loads it. */
+  api: number;
+  base: ThemePackBase;
+  /** The modes the pack declares; a mode it leaves out renders from the base. */
+  modes: ThemePackMode[];
+  swatches: Record<ThemePackMode, ThemePackSwatch>;
+  accent: {
+    /** The theme's own accent per mode: what `neutral` paints. */
+    own: Record<ThemePackMode, string>;
+    /** The presets, in the picker's order. */
+    presets: ThemePackAccentPreset[];
+  };
+  /** The family each stack puts first. */
+  fonts: { sans: string; ui: string; mono: string; cjk: string; display: string };
+  /** The built-in Agent-avatar variant the pack shows, when it shows its own. */
+  avatar?: string;
+  href: string;
+  /** Hex, 8–64 characters. */
+  v: string;
+}
+
+/** GET /api/themes. */
+export interface ThemePacksResponse {
+  themes: ThemePackDto[];
+}
+
+/** POST /api/themes: the pack as it is now installed. */
+export interface ThemePackImportResponse {
+  theme: ThemePackDto;
+}
+
+/** The codes the theme-pack routes refuse with, beside the shared `admin_required`. */
+export type ThemePackErrorCode =
+  | "theme_invalid"
+  | "theme_id_reserved"
+  | "theme_exists"
+  | "theme_too_large"
+  | "theme_api_unsupported"
+  | "theme_builtin"
+  | "theme_not_found"
+  | "themes_unavailable";
+
+/**
+ * `details` of a 400 `theme_invalid`: the first thing the validator refused, so a designer can go
+ * to it. `file` is the entry's path inside the pack (`recipes.css`, `fonts/hand.woff2`, the
+ * entry a zip may not hold); `line` and `column` (1-based, decimal strings) are present when the
+ * refusal points into a stylesheet or the manifest.
+ */
+export interface ThemeInvalidDetails {
+  file: string;
+  reason: string;
+  line?: string;
+  column?: string;
 }
 
 // ---------------------------------------------------------------------------
