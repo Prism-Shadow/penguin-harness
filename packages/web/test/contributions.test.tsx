@@ -250,9 +250,7 @@ describe("contributedPagesOf", () => {
     expect(merged[3]).not.toHaveProperty("parent");
     expect(merged[3]).not.toHaveProperty("title");
     expect(merged[3]).not.toHaveProperty("icon");
-    const html = renderToStaticMarkup(
-      createElement(ThemeProvider, null, createElement(merged[2]!.Component)),
-    );
+    const html = renderToStaticMarkup(h(ThemeProvider, null, h(merged[2]!.Component)));
     expect(html).toContain('title="Hello World"');
   });
 

@@ -22,12 +22,12 @@ import { ProseBlockTrailerProvider, type ProseBlockTrailer } from "@prismshadow/
 import * as api from "../../api/endpoints";
 import { ChatSessionContext } from "../../lib/chat-session";
 import { useFileRendererRules } from "../../lib/file-renderers";
-import { chatDeps } from "./deps";
+import { chatDeps, type ChatDeps } from "./deps";
 import { replyFilesOf } from "./reply-files";
 
 const ReplyTrailerContext = createContext<ProseBlockTrailer | null>(null);
 
-const EMPTY_RENDERERS: ReadonlyMap<string, never> = new Map();
+const EMPTY_RENDERERS: ChatDeps["fileRenderers"] = new Map();
 
 export function ReplyFilesProvider({ children }: { children: ReactNode }) {
   const rules = useFileRendererRules();
