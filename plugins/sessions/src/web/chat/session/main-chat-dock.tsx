@@ -1,18 +1,20 @@
-import { agentSettingsPath as agentPagePath } from "../../../lib/agent-location";
 import { useCallback } from "react";
 import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { useDockMount, closedDockView, dockViews } from "@prismshadow/penguin-web/internal";
 import type { ChatDockState } from "./main-dock-context";
 import { terminalApiSupported } from "@penguinharness/plugin-terminal/web";
-
-||||||| parent of 7928f07045 (plugins: regroup terminal into plugins/terminal (server, web, host wiring, hmr shims))
 import type { useMainChatActions } from "./main-chat-actions";
 
 /**
  * An Agent's settings page, on one tab: this server's Agent, or with `machineId` the Agent of
  * that id on that machine, which the page reads and writes over there (`?machine=`).
  */
-export { agentSettingsPath as agentPagePath } from "../../../lib/agent-location";
+export function agentPagePath(agentId: string, machineId: string | null, tab: string): string {
+  const params = new URLSearchParams();
+  if (machineId !== null) params.set("machine", machineId);
+  params.set("tab", tab);
+  return `/agents/${encodeURIComponent(agentId)}?${params.toString()}`;
+}
 
 /** Exact consecutive main ChatPage statements 165..170; called once, in original order. */
 export function useMainChatDock(scope: ReturnType<typeof useMainChatActions>) {
@@ -58,6 +60,8 @@ export function useMainChatDock(scope: ReturnType<typeof useMainChatActions>) {
     views.find((view) => view.position === "bottom") ?? null,
     closedDockView("bottom"),
   );
+  const terminalSupported = terminalApiSupported();
+
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
   // settings page, on the memory tab — the page of the Agent on the machine the conversation
   // is on.
@@ -101,6 +105,7 @@ export function useMainChatDock(scope: ReturnType<typeof useMainChatActions>) {
     views,
     rightMount,
     bottomMount,
+    terminalSupported,
     openMemorySettings,
     chatDock,
   };

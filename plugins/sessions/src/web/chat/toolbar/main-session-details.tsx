@@ -19,9 +19,6 @@ import { OutlineMenuButton } from "../conversation-outline";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { DockToggles } from "../dock-toggles";
-
-||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
-||||||| parent of f96bcb0c45 (sessions: fix mangled dock imports and expose VersionStamp via internal)
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { SessionIdRow } from "../session/main-chat-helpers";

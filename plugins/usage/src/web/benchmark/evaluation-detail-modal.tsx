@@ -23,6 +23,7 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Modal,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
@@ -30,13 +31,13 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { SettingsDialog } from "@prismshadow/penguin-web/internal";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
 import type { Currency } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/benchmark/evaluation-detail-modal.tsx
 import { AskAiModal } from "./ask-ai-modal";
 import { evaluationLabel } from "./benchmark-metrics";
-import { askEvaluationExamples, askEvaluationTail } from "./benchmark-prompts";
-import type { AskEvaluationParams } from "./benchmark-prompts";
-import { toastApiError } from "../../lib/toast-api-error";
+import {
+  askEvaluationExamples,
+  askEvaluationTail,
+  type AskEvaluationParams,
+} from "./benchmark-prompts";
 
 /** How agent-evaluation records a Harbor trial in a run's `session_id`: it is no Session. */
 const TRIAL_PREFIX = "harbor:";
@@ -234,7 +235,7 @@ export function EvaluationDetailModal({
       onClose();
       navigate(`/chat/${encodeURIComponent(sessionId)}`);
     } catch (e) {
-      toastApiError(e);
+      toastError(apiErrorText(e));
     }
   };
   const label = evaluationLabel(evaluation);

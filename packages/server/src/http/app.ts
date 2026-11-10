@@ -13,30 +13,13 @@ import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "@penguinharness/plugin-settings/server";
 import type { Access } from "@penguinharness/plugin-projects/server";
-
-||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
+import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { Settings } from "@penguinharness/plugin-settings/server";
 
-||||||| parent of 4828df32ae (projects: mechanism and repos move into plugin-projects)
-||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
-||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
-
-/**
- * The assembled business surface: one request in, one response (or a decline) out.
- *
- * `fetchAs` is the same surface entered as a user already established by other means — the
- * API socket (socket/serve.ts), whose handshake the runtime authenticated and whose owner it
- * checked before the platform ever saw the socket. Those requests carry no cookie, so the
- * gate in front of the routes is not the cookie one but "this user": the routes themselves,
- * their authorization and their errors are identical.
- */
+/** The assembled business surface: one request in, one response (or a decline) out. */
 @Interface()
 export abstract class Http {
   abstract fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
-  abstract fetchAs(
-    userId: string,
-    request: Opaque<"Request", Request>,
-  ): Promise<Opaque<"Response", Response>>;
 }
 
 export interface HttpSlots {
@@ -64,54 +47,8 @@ export class HttpModule {
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
-  @Use() private readonly users!: Users;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
-    const routes = [...(contributions.routes ?? [])]
-      .map((c) => ({
-        id: c.id,
-        prefix: c.data.prefix as string,
-        auth: c.data.auth as "user" | "token" | "none",
-        order: c.data.order as number,
-        app: c.code as Hono<AppEnv>,
-      }))
-      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-
-    // The HTTP surface, gated on the cookie; and the same surface once per socket user,
-    // gated on that user — assembled lazily, since most users never open a socket, and kept,
-    // since the one who did opens it on every page load. Hono copies a group's routes into
-    // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
-    const asUser = new Map<string, Hono<AppEnv>>();
-    const enteredAs = (userId: string): Hono<AppEnv> => {
-      let app = asUser.get(userId);
-      if (app === undefined) {
-        app = this.assemble(routes, async (c, next) => {
-          const user = this.users.findById(userId);
-          if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
-          c.set("user", user);
-          // The handshake does not say how the cookie behind it was minted, so the most
-          // demanding kind is assumed; the routes whose answer turns on the kind never reach
-          // here, the socket declines them for HTTP (api/types.ts sessionKindPath).
-          c.set("sessionVia", "password");
-          await next();
-        });
-        asUser.set(userId, app);
-      }
-      return app;
-    };
-    this.http = {
-      fetch: (request: Request) => Promise.resolve(cookieGated.fetch(request)),
-      fetchAs: (userId: string, request: Request) =>
-        Promise.resolve(enteredAs(userId).fetch(request)),
-    };
-  }
-
-  /** The whole surface behind one gate: error handling, logging, body cap, JSON-only writes, the runtime-prefix decline, then every group in order. */
-  private assemble(
-    routes: { prefix: string; auth: "user" | "token" | "none"; order: number; app: Hono<AppEnv> }[],
-    gate: MiddlewareHandler<AppEnv>,
-  ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;
     const app = new Hono<AppEnv>();
@@ -132,14 +69,6 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
-    // Every JSON answer under the API — this server's own and those it relays from a machine —
-    // carries a validator and answers a caller who holds it with a 304 (json-validators.ts), and
-    // is compressed for a caller that asks (json-compression.ts). Inside the request line, so it
-    // logs the 304; compression outside the validator, so it encodes what the validator kept.
-    for (const scope of ["/api/*", "/server/*"]) {
-      app.use(scope, jsonCompression());
-      app.use(scope, jsonValidators());
-    }
     // The same header the host layer puts ahead of its copies of these two checks (src/app.ts):
     // their refusals answer before the Agent API's group runs, and a browser caller must read the
     // code, not a CORS failure.
@@ -164,34 +93,44 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
-    const origins = originRule(this.config);
-    app.use("/api/*", sameOriginWrites(origins));
-    // A machine's API is reached through this server (machines/proxy.ts), with this server's
-    // cookie: the same question, asked here because the hop drops the Origin.
-    app.use("/server/*", sameOriginWrites(origins));
-    app.use("/api/*", jsonOnlyWrites(origins));
+    app.use("/api/*", jsonOnlyWrites);
 
-    // A group's own auth declaration applies to both HTTP and socket calls, independent of order.
-    const authenticate = gate;
+    const routes = [...(contributions.routes ?? [])]
+      .map((c) => ({
+        id: c.id,
+        prefix: c.data.prefix as string,
+        auth: c.data.auth as "user" | "token" | "none",
+        order: c.data.order as number,
+        app: c.code as Hono<AppEnv>,
+      }))
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    // Protected routes: cookie -> auth_session -> user. Built once, mounted per group, and
+    // run once per request: prefixes nest (/api/projects, /api/projects/:projectId/members),
+    // so a request can pass several mounts, and the first is the one that authenticates.
+    const authenticate = authMiddleware(this.auth, this.config.trustProxy);
     const authenticateToken = authMiddleware(this.auth, this.config.trustProxy, {
       apiTokenOnly: true,
     });
-    const once: MiddlewareHandler<AppEnv> = (c, next) =>
+    const gate: MiddlewareHandler<AppEnv> = (c, next) =>
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
         ? authenticate(c, next)
         : next();
-    // Only an actual Bearer may exchange credentials: a cookie an earlier user gate already
-    // authenticated (a Remote one included) must not skip this transport check.
+    // A Remote cookie carries token authority too, but only an actual Bearer may exchange
+    // credentials. An earlier user gate must not let that cookie skip this transport check.
     const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
       c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
         ? next()
         : authenticateToken(c, next);
     for (const r of routes) {
-      // Each group keeps its own gate, including protected prefixes outside /api.
-      if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, once);
+      // The gate sits on each group that asked for it, not once on `/api/*` ahead of the
+      // first such group: a contributor picks its own prefix and order, and `auth` has to
+      // mean the same thing wherever the group lands — a public group ordered after a
+      // protected one stays public, and a protected group outside /api (the machine proxy
+      // at /server/) is still protected. The gate is also what puts the user on the context.
+      if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, gate);
       if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
       app.route(r.prefix, r.app);
     }
-    return app;
+    this.http = { fetch: (request: Request) => Promise.resolve(app.fetch(request)) };
   }
 }

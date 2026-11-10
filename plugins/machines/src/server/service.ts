@@ -53,6 +53,9 @@ import type {
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
 import { readServerLock } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+import type { Traces } from "@prismshadow/penguin-server/internal";
+import type { LiveStreams } from "@prismshadow/penguin-server/internal";
 import { SESSION_COOKIE } from "@prismshadow/penguin-server/internal";
 import http from "node:http";
 import {

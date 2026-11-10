@@ -22,6 +22,7 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
@@ -32,13 +33,10 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/benchmark/benchmark-detail-page.tsx
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
-import { useBenchmarksAcross } from "./benchmark-sources";
+import { fetchBenchmarks } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
-import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -172,33 +170,47 @@ export function BenchmarkDetailPage() {
   const { machineIds, machineLabels } = useSessions();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  // The route's Benchmark is one of the Project the page was opened in: a Project switch leaves
-  // for the new Project's Benchmarks rather than asking that Project about this id.
-  const switchedAway = useLeaveOnProjectSwitch(projectId, "/benchmark");
 
+  const [benchmark, setBenchmark] = useState<MergedBenchmark | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
+  const [missing, setMissing] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [using, setUsing] = useState(false);
 
-  // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
-  // it whole — merged over this server and the machines it holds, each joining as it answers —
-  // and picks its own out of it. Not in the answers so far is only "missing" once no machine is
-  // still out: it may be a Benchmark a machine alone holds.
-  const listed = useBenchmarksAcross(switchedAway ? null : projectId, machineIds);
-  const benchmark: MergedBenchmark | null =
-    benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
-  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
-  const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
-  const error = listed.error === null ? null : apiErrorText(listed.error);
-
   useDocumentTitle(benchmark?.title ?? S.benchmark.title);
+
+  // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
+  // it whole — merged over this server and the machines it holds — and picks its own out of it.
+  const machinesKey = machineIds.join(",");
+  useEffect(() => {
+    if (!projectId || benchmarkId === "") return;
+    let cancelled = false;
+    setBenchmark(null);
+    setError(null);
+    setMissing(false);
+    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
+      .then((merged) => {
+        if (cancelled) return;
+        const found = merged.find((b) => b.id === benchmarkId) ?? null;
+        setBenchmark(found);
+        setMissing(found === null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, benchmarkId, machinesKey]);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.
   useEffect(() => {
-    if (!projectId || switchedAway) return;
+    if (!projectId) return;
     let cancelled = false;
     api
-      .getModels(projectId, null)
+      .getModels(projectId)
       .then((res) => {
         if (!cancelled) setModels(res);
       })
@@ -206,11 +218,9 @@ export function BenchmarkDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, switchedAway]);
+  }, [projectId]);
 
-  // Switched away: nothing of the Benchmark renders (its cases would be asked of the new
-  // Project) while the navigation above takes the page to the list.
-  if (!projectId || switchedAway) return null;
+  if (!projectId) return null;
 
   /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
   const machineNameOf = (machineId: string | null): string | null =>
@@ -240,7 +250,7 @@ export function BenchmarkDetailPage() {
         benchmark.id,
       );
     } catch (e) {
-      toastApiError(e);
+      toastError(apiErrorText(e));
     }
   };
 

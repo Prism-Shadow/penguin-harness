@@ -282,9 +282,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const modelId = stringOr(r.model_id);
   const provider = stringOr(r.provider);
   const thinkingLevel = stringOr(r.thinking_level);
-  // The Agent State version is a build number on older scoreboards and a version label
-  // (a semver string) on newer ones; both are valid, and the label is shown as written.
-  const version = nonNegativeIntegerOr(r.version) ?? stringOr(r.version);
+  const version = nonNegativeIntegerOr(r.version);
   if (
     typeof time !== "string" ||
     time === "" ||
@@ -295,7 +293,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
     !provider ||
     !thinkingLevel ||
     version === undefined ||
-    (typeof version === "number" && version < 1) ||
+    version < 1 ||
     !Array.isArray(r.cases) ||
     r.cases.length === 0
   ) {

@@ -1,6 +1,35 @@
-import { setDockScope } from "@prismshadow/penguin-web/internal";
+import { backgroundStyle, useBackground } from "../state/background";
+/**
+ * The app's layout route: the UI package's `AppShell` bound to the app's state.
+ * - >=md: the navigation column holds the pinned sidebar (Project / new chat / nav / Session list /
+ *   user config), or the rail while it is folded, beside the page;
+ * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
+ *   sidebar in a drawer.
+ * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
+ * transform would trap the menus it opens); the package's components say how.
+ */
+import { useEffect, useState } from "react";
+import { Outlet } from "react-router";
+import {
+  AppShell,
+  Drawer,
+  MobileTopBar,
+  Notice,
+  UpdateDot,
+} from "@prismshadow/penguin-ui";
+import * as api from "../api/endpoints";
+import { nagsAboutInitialPassword } from "../lib/account-menu";
+import { S } from "../lib/strings";
+import { onCommand } from "../lib/shortcuts/dispatcher";
+import { useWebAppLayers } from "./index";
+import { webAppDeps } from "./deps";
+import { useAuth } from "../state/auth";
+import { useCompletionNotifications } from "../state/use-completion-notifications";
+import { useTrayLocale } from "../state/use-tray-locale";
+import { ChangePasswordDialog } from "../components/account/change-password-dialog";
+import { AppInfoDialog } from "../components/account/app-info-dialog";
 
-||||||| parent of 1f7deee5ed (web features ai-create/audio move into plugin-sessions and dock into plugin-terminal)
+import { setDockScope } from "@prismshadow/penguin-web/internal";
 import { FindBar } from "../components/find/find-bar";
 
 /**
@@ -16,7 +45,6 @@ function pinnedSidebarOnScreen(): boolean {
 export function AppLayout() {
   const background = useBackground();
   const { user, desktopMode, sessionVia } = useAuth();
-  const { pathname } = useLocation();
   const { sidebar, drafts } = webAppDeps.useDeps();
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
@@ -186,13 +214,7 @@ export function AppLayout() {
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* A page that crashes says so here, and leaves the sidebar working: going to another
-            page gives the body another chance. The recovery panel (error details, safe reload,
-            harness history) stands in for the bare crash notice — the same fallback the shell
-            root uses, so a broken server contribution is recoverable in place. */}
-        <ErrorBoundary key={pathname} fallback={(error) => <RescuePanel error={error} />}>
-          <Outlet />
-        </ErrorBoundary>
+        <Outlet />
       </main>
       {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
           mounted once here, outside every page, so navigating never remounts or re-parents

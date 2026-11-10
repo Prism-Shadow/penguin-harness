@@ -1,16 +1,26 @@
+/**
+ * Pure rules of the conversation's own context menu (features/chat/stream-selection-menu.tsx):
+ * when a secondary click in the message stream opens the app's menu instead of the browser's,
+ * which rows it offers — a web link's, the selection's, or both — where it hangs when the
+ * keyboard asked for it, and what an excerpt becomes once it is added to the conversation.
+ * Kept free of the DOM so they can be tested in this package's node-only vitest environment.
+ */
+import { isLongPressPointer, type AnchorRect } from "@prismshadow/penguin-ui";
+
 import type { ExcerptReference } from "@prismshadow/penguin-web/internal";
 
-||||||| parent of 7436f01c47 (selection-menu and internal: workspace-tree read via projects face)
-
-/**
- * What the rules need to know about a gesture and the selection it found: the copy rule's
- * request (`onEditable` naming the field the gesture landed on), and where and how it happened.
- */
-export interface SelectionMenuRequest extends SelectionCopyRequest {
+/** What the rules need to know about a gesture and the selection it found. */
+export interface SelectionMenuRequest {
+  /** The document's selected text at the gesture (`Selection.toString()`); "" when nothing is selected. */
+  selectedText: string;
+  /** How many ranges the selection holds (`Selection.rangeCount`). */
+  rangeCount: number;
   /** Both ends of the selection's first range lie inside the message stream. */
   firstRangeInStream: boolean;
   /** The pointer behind the gesture ("mouse", "pen", "touch"), or "" when the keyboard asked. */
   pointerType: string;
+  /** The gesture landed on an editable field (an input, a textarea, contenteditable). */
+  onEditable: boolean;
 }
 
 /**
@@ -25,13 +35,12 @@ export interface SelectionMenuRequest extends SelectionCopyRequest {
  *   lies inside the stream: the text such a selection reads is every range's text, so one
  *   range in the composer would ride into the clipboard and into the excerpt, and putting the
  *   highlight back afterwards can only restore the one range that was captured.
- * Past the pointer and the stream's bounds it is the copy rule itself (selection-copy.ts), so
- * every selection the menu's Copy row acts on is one ⌘C would copy the same way.
  */
 export function opensSelectionMenu(request: SelectionMenuRequest): boolean {
   if (isLongPressPointer(request.pointerType)) return false;
-  if (!request.firstRangeInStream) return false;
-  return takesSelectionCopy(request);
+  if (request.onEditable) return false;
+  if (request.rangeCount !== 1 || !request.firstRangeInStream) return false;
+  return request.selectedText.trim() !== "";
 }
 
 /** One row of the selection menu. */

@@ -1,12 +1,33 @@
+/**
+ * One workbench page as the whole app: /app/:projectId/:agentId/:workbenchId[/:tabKey] — the
+ * tab that key names, or the workbench's first tab without one.
+ *
+ * No sidebar, no chat, no tab strip — the page fills the window, which is what
+ * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
+ * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
+ * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
+ * on the same Agent’s workbench tab. The route sits outside the app shell (no ProjectProvider), so the exit
+ * remembers the Project and Agent the way the shell does — its localStorage keys — before
+ * navigating.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import {
+  appPageTab,
+  WORKBENCH_UPDATED_EVENT,
+  workbenchTabsOf,
+  type WorkbenchTab,
 } from "@prismshadow/penguin-web/internal";
 import { rememberSelection } from "@prismshadow/penguin-web/internal";
 import { AppPalette } from "@prismshadow/penguin-web/internal";
 import { openUserEvents } from "@prismshadow/penguin-web/internal";
-
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
-  const safe = useSafeMode();
   const params = useParams();
   const projectId = params["projectId"] ?? "";
   const agentId = params["agentId"] ?? "";
@@ -22,10 +43,6 @@ export function WorkbenchAppPage() {
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
   useEffect(() => {
-    if (safe) {
-      setTab(null);
-      return;
-    }
     let alive = true;
     const load = async () => {
       try {
@@ -47,7 +64,7 @@ export function WorkbenchAppPage() {
     // stream open (and raises the event above) is not mounted: without a stream of its own,
     // a page shown as the whole app would never notice its workbench being edited or removed.
     const conn = openUserEvents({
-      onRecord: () => undefined,
+      onOmniMessage: () => undefined,
       onServerEvent: (ev) => {
         if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
         if (ev.projectId === projectId && ev.agentId === agentId) void load();
@@ -58,7 +75,7 @@ export function WorkbenchAppPage() {
       window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
       conn.close();
     };
-  }, [safe, projectId, agentId, workbenchId, tabKey, machineId]);
+  }, [projectId, agentId, workbenchId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -89,10 +106,6 @@ export function WorkbenchAppPage() {
     ],
     [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
   );
-
-  usePaletteActions(exit);
-
-  if (safe) return <div role="status">{S.rescue.marker}</div>;
 
   return (
     <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
@@ -130,6 +143,7 @@ export function WorkbenchAppPage() {
           {S.workbenches.exitFullPageButton}
         </Button>
       </div>
+      <AppPalette extra={exit} />
     </div>
   );
 }

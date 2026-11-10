@@ -1,8 +1,256 @@
+import type {
+  AdminPasswordResetRequest,
+  AdminUserCreateRequest,
+  AdminUserCreateResponse,
+  AdminUsersResponse,
+  AgentApiKeyCreateRequest,
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentApiUpdateRequest,
+  AgentConfigResponse,
+  AgentConfigUpdateRequest,
+  AgentCreateRequest,
+  AgentCreateResponse,
+  AgentHooksResponse,
+  AgentMcpServersResponse,
+  AgentImportRequest,
+  AgentImportResponse,
+  AgentKernelUpdateResponse,
+  AgentPluginsInstallResponse,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentSkillsResponse,
+  AgentsResponse,
+  AgentVaultConfigDto,
+  ApprovalDecisionRequest,
+  AuthLoginRequest,
+  AuthResponse,
+  BenchmarkArchiveImportRequest,
+  BenchmarkArchiveImportResponse,
+  BenchmarkCasesResponse,
+  BenchmarkCreateRequest,
+  BenchmarkCreateResponse,
+  BenchmarksResponse,
+  CaseMaterial,
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
+  DefaultModelResponse,
+  DefaultModelUpdateRequest,
+  DesktopPrivacyPane,
+  DesktopUpdateStatusResponse,
+  DirAccessResponse,
+  DirectorySkillsResponse,
+  DirListResponse,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  FeishuBindingPutRequest,
+  FeishuBindingResponse,
+  FeishuTestRequest,
+  FeishuTestResponse,
+  FilesCreateRequest,
+  FilesMoveRequest,
+  FilesStatRequest,
+  FilesStatResponse,
+  FilesWriteRequest,
+  GoalResponse,
+  InstallResponse,
+  MachinesResponse,
+  McpServerTestResponse,
+  MemberAddRequest,
+  MemberAddResponse,
+  MembersResponse,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryImportRequest,
+  MemoryImportResponse,
+  MemoryOverviewResponse,
+  MemoryScopeExport,
+  MeResponse,
+  MessagesResponse,
+  MessagingBindingsResponse,
+  MessagingChannel,
+  MessagingTestMessageResponse,
+  ModelBalanceResponse,
+  ModelOAuthCodeResponse,
+  ModelOAuthStartRequest,
+  ModelOAuthStartResponse,
+  ModelOAuthStatusResponse,
+  PlatformAuthFlowStatusResponse,
+  PlatformAuthStartResponse,
+  PlatformModelSyncResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  MachinesUseResponse,
+  SshHostRequest,
+  SshHostResponse,
+  SshHostsResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncRequest,
+  PresetSyncResponse,
+  ProviderConnectionUpdate,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  OrganizationCreateRequest,
+  OrganizationDetail,
+  OrganizationPatchRequest,
+  OrganizationSettings,
+  OrganizationsResponse,
+  OrgCalendarResponse,
+  OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMemberRequest,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
+  OrgChannelPatchRequest,
+  OrgChannelReadRequest,
+  OrgChannelsResponse,
+  OrgChartResponse,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgEmployeePatchRequest,
+  OrgFinanceResponse,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
+  OrgHandbookResponse,
+  OrgHireRequest,
+  OrgSessionsResponse,
+  OrgTicketAttachRequest,
+  OrgTicketBlockRequest,
+  OrgTicketCreateRequest,
+  OrgTicketDetail,
+  OrgTicketMoveRequest,
+  OrgTicketProgressRequest,
+  OrgTicketsResponse,
+  OrgTicketStartRequest,
+  OrgTicketStartResponse,
+  OrgTicketUpdateRequest,
+  PasswordChangeRequest,
+  PluginFilesResponse,
+  PluginInstallRequest,
+  PluginLibraryResponse,
+  PrefsResponse,
+  ProjectCreateRequest,
+  ProjectCreateResponse,
+  ProjectSchedulesResponse,
+  ProjectsResponse,
+  ProjectUpdateRequest,
+  ProjectUpdateResponse,
+  QQBindingPutRequest,
+  QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
+  QQTestRequest,
+  QQTestResponse,
+  RecalledMessageResponse,
+  RestartResponse,
+  RetryNowResponse,
+  ScheduleItem,
+  SchedulesResponse,
+  ScheduleUpsertRequest,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
+  ProxyProbeProvider,
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
+  ServerSettingsResponse,
+  ServerSettingsUpdateRequest,
+  SessionCategory,
+  SessionContextResponse,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchResponse,
+  ArchivedSessionsQuery,
+  ArchivedSessionsResponse,
+  SessionCreateRequest,
+  SessionCreateResponse,
+  SessionForkRequest,
+  SessionForkResponse,
+  SessionPatchRequest,
+  SessionProcessesResponse,
+  SessionResponse,
+  PluginIndexResponse,
+  PluginConfigResponse,
+  PluginConfigActionResponse,
+  PluginConfigUpdateRequest,
+  LanguageIndexResponse,
+  PluginReadmeResponse,
+  SessionsResponse,
+  SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchRequest,
+  SessionsBatchResponse,
+  SessionTracesResponse,
+  SkillArchiveInstallRequest,
+  SteerRequest,
+  SubagentMessageResponse,
+  TaskCreateRequest,
+  TaskCreateResponse,
+  TelegramBindingPutRequest,
+  TelegramBindingResponse,
+  TelegramTestRequest,
+  TelegramTestResponse,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceImportRequest,
+  TraceImportResponse,
+  UiPrefs,
+  UpdateCheckResponse,
+  UpdateJobStatus,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
+  DesktopTrayPatch,
+  DesktopTrayStatusResponse,
+  HookArchiveInstallRequest,
+  UsageErrorKind,
+  UsageErrorsClearResponse,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupBy,
+  UsageModelTotals,
+  UsageResponse,
+  VaultResponse,
+  VaultUpdateRequest,
+  InstalledPluginsResponse,
+  PluginArchiveImportRequest,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  WorkbenchInfo,
+  WorkbenchVersion,
+  VersionRollbackResponse,
+  VersionResponse,
+  WeChatBindingPutRequest,
+  WeChatBindingResponse,
+  WeChatScanPollResponse,
+  WeChatScanStartResponse,
+  WeChatTestResponse,
+  WorkspaceFilesResponse,
+  WorkspaceSearchResponse,
+  ContributionsResponse,
+  BuiltinBrowserHistoryResponse,
+  BuiltinBrowserImportRequest,
+  BuiltinBrowserImportResult,
+  BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserSettings,
+  BuiltinBrowserStatus,
+  BuiltinBrowserTab,
+  BrowserBackend,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
+  DesktopBrowserCommand,
+} from "@prismshadow/penguin-server/api";
+import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type { RunRequest } from "@prismshadow/amsp";
 import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "@prismshadow/penguin-web/internal";
 
@@ -37,20 +285,6 @@ export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 export const putPrefs = (prefs: UiPrefs) =>
   apiFetch<PrefsResponse>("/api/me/prefs", { method: "PUT", body: prefs });
 
-/** Every unsent draft the account keeps (lib/account-sync caches them in the browser). */
-export const getDrafts = () => apiFetch<DraftsResponse>("/api/me/drafts");
-
-/** Writes drafts by key; `null` removes one. */
-export const patchDrafts = (body: DraftsPatchRequest) =>
-  apiFetch<void>("/api/me/drafts", { method: "PATCH", body });
-
-/** The account's background image; its id also rides on the prefs, so a browser asks only when it changed. */
-export const getBackgroundImage = () =>
-  apiFetch<BackgroundImageResponse>("/api/me/background-image");
-
-export const putBackgroundImage = (body: BackgroundImageRequest) =>
-  apiFetch<BackgroundImagePutResponse>("/api/me/background-image", { method: "PUT", body });
-
 // Admin user management (admin only) -----------------------------------------------------
 
 export const adminListUsers = () => apiFetch<AdminUsersResponse>("/api/admin/users");
@@ -77,17 +311,19 @@ export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/adm
  */
 
 /** Every loaded plugin that declares a configuration, with its schema and masked values (admin). */
-export const adminGetPluginConfig = (server: string | null) =>
+export const adminGetPluginConfig = (server: string | null = null) =>
   apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { server });
 
 /** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
-export const adminPutPluginConfig = (body: PluginConfigUpdateRequest, server: string | null) =>
-  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body, server });
+export const adminPutPluginConfig = (
+  body: PluginConfigUpdateRequest,
+  server: string | null = null,
+) => apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body, server });
 
 /** Runs one settings group's action (admin): what a deployment must DO on the machine, once. */
 export const adminRunPluginConfigAction = (
   body: { name: string; action: string },
-  server: string | null,
+  server: string | null = null,
 ) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
     method: "POST",
@@ -148,7 +384,7 @@ export const removeMember = (projectId: string, username: string) =>
   );
 
 /** New-chat defaults ([default_chat]): member-readable prefill for the draft page. */
-export const getChatDefaults = (projectId: string, machineId: string | null) =>
+export const getChatDefaults = (projectId: string, machineId: string | null = null) =>
   apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
     server: machineId,
   });
@@ -176,7 +412,7 @@ export const putCommandPolicy = (
 
 // Model configuration -------------------------------------------------------------------
 
-export const getModels = (projectId: string, machineId: string | null) =>
+export const getModels = (projectId: string, machineId: string | null = null) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
     server: machineId,
   });
@@ -340,54 +576,36 @@ export const syncPlatformModels = (projectId: string) =>
 
 // Vault environment variables (Agent-level) -------------------------------------------------------
 
-export const getVault = (projectId: string, agentId: string, machineId: string | null) =>
+export const getVault = (projectId: string, agentId: string) =>
   apiFetch<VaultResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
-    { server: machineId },
   );
 
-export const putVault = (
-  projectId: string,
-  agentId: string,
-  body: VaultUpdateRequest,
-  machineId: string | null,
-) =>
+export const putVault = (projectId: string, agentId: string, body: VaultUpdateRequest) =>
   apiFetch<VaultResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
-    { method: "PUT", body, server: machineId },
+    { method: "PUT", body },
   );
 
 /** Inserts the {{VAULT}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Vault section verbatim when one is present (idempotent, owner-only). */
-export const insertVaultPlaceholder = (
-  projectId: string,
-  agentId: string,
-  machineId: string | null,
-) =>
+export const insertVaultPlaceholder = (projectId: string, agentId: string) =>
   apiFetch<AgentVaultConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault/template-placeholder`,
-    { method: "POST", body: {}, server: machineId },
+    { method: "POST", body: {} },
   );
 
 /** Inserts the {{SKILLS}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Skills section verbatim when one is present (idempotent). */
-export const insertSkillsPlaceholder = (
-  projectId: string,
-  agentId: string,
-  machineId: string | null,
-) =>
+export const insertSkillsPlaceholder = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills/template-placeholder`,
-    { method: "POST", body: {}, server: machineId },
+    { method: "POST", body: {} },
   );
 
 /** Inserts the {{SCHEDULES}} placeholder into the agent's prompt template (idempotent, owner-only; Schedules has no legacy section to migrate). */
-export const insertSchedulesPlaceholder = (
-  projectId: string,
-  agentId: string,
-  machineId: string | null,
-) =>
+export const insertSchedulesPlaceholder = (projectId: string, agentId: string) =>
   apiFetch<AgentSchedulesConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules/template-placeholder`,
-    { method: "POST", body: {}, server: machineId },
+    { method: "POST", body: {} },
   );
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
@@ -399,26 +617,24 @@ const memoryBase = (projectId: string, agentId: string) =>
 const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}/files`;
 
-export const getMemoryOverview = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId), { server: machineId });
-
-/** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
-export const insertMemoryPlaceholder = (
+export const getMemoryOverview = (
   projectId: string,
   agentId: string,
-  machineId: string | null,
-) =>
+  machineId: string | null = null,
+) => apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId), { server: machineId });
+
+/** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
+export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
   apiFetch<MemoryOverviewResponse>(`${memoryBase(projectId, agentId)}/template-placeholder`, {
     method: "POST",
     body: {},
-    server: machineId,
   });
 
 export const getMemoryFiles = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey), {
     server: machineId,
@@ -429,7 +645,7 @@ export const getMemoryFile = (
   agentId: string,
   scopeKey: string,
   name: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<MemoryFileResponse>(
     `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
@@ -441,11 +657,9 @@ export const deleteMemoryFile = (
   agentId: string,
   scopeKey: string,
   name: string,
-  machineId: string | null,
 ) =>
   apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
     method: "DELETE",
-    server: machineId,
   });
 
 const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
@@ -457,15 +671,8 @@ const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =
  * would save the error body as a file (the skills tab hit the same wall). The server still sets
  * Content-Disposition, for anyone opening the URL directly.
  */
-export const exportMemoryScope = (
-  projectId: string,
-  agentId: string,
-  scopeKey: string,
-  machineId: string | null,
-) =>
-  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, {
-    server: machineId,
-  });
+export const exportMemoryScope = (projectId: string, agentId: string, scopeKey: string) =>
+  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`);
 
 /** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
@@ -473,38 +680,35 @@ export const importMemoryScope = (
   agentId: string,
   scopeKey: string,
   body: MemoryImportRequest,
-  machineId: string | null,
 ) =>
   apiFetch<MemoryImportResponse>(`${memoryScopeBase(projectId, agentId, scopeKey)}/import`, {
     method: "POST",
     body,
-    server: machineId,
   });
 
 // Agent & its configuration ----------------------------------------------------------------
 
 /**
- * A project's Agents on one server: a machine's (`machineId`) or this server's (null). Agents
- * are per-server, so a Session created on one can only name an Agent that exists there.
+ * A project's Agents. With a machine, THAT machine's — Agents are per-server, so a Session
+ * created on one can only name an Agent that exists there.
  */
-export const listAgents = (projectId: string, machineId: string | null) =>
-  apiFetch<AgentsResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
-    server: machineId,
-  });
+export const listAgents = (projectId: string, machineId?: string | null) =>
+  apiFetch<AgentsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
-/** Creates an Agent on this server, or with `machineId` on that machine — where it then lives. */
-export const createAgent = (
-  projectId: string,
-  body: AgentCreateRequest,
-  machineId: string | null,
-) =>
+export const createAgent = (projectId: string, body: AgentCreateRequest) =>
   apiFetch<AgentCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
     method: "POST",
     body,
-    server: machineId,
   });
 
-export const getAgentConfig = (projectId: string, agentId: string, machineId: string | null) =>
+export const getAgentConfig = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config`,
     { server: machineId },
@@ -514,7 +718,7 @@ export const putAgentConfig = (
   projectId: string,
   agentId: string,
   body: AgentConfigUpdateRequest,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config`,
@@ -522,33 +726,24 @@ export const putAgentConfig = (
   );
 
 /** Probes one MCP Server entry's reachability (server-side connect + tool discovery; nothing is saved). */
-export const testAgentMcpServer = (
-  projectId: string,
-  agentId: string,
-  body: MCPServerConfig,
-  machineId: string | null,
-) =>
+export const testAgentMcpServer = (projectId: string, agentId: string, body: MCPServerConfig) =>
   apiFetch<McpServerTestResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/mcp-test`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body },
   );
 
 /** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
-export const resetAgentConfig = (projectId: string, agentId: string, machineId: string | null) =>
+export const resetAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
-    { method: "POST", server: machineId },
+    { method: "POST" },
   );
 
 /** Smart-merge the config up to the current defaults generation (customizations kept and reported); non-destructive sibling of resetAgentConfig. */
-export const kernelUpdateAgentConfig = (
-  projectId: string,
-  agentId: string,
-  machineId: string | null,
-) =>
+export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentKernelUpdateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
-    { method: "POST", server: machineId },
+    { method: "POST" },
   );
 
 // An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
@@ -557,65 +752,48 @@ const agentApiBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
 
 /** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
-export const getAgentApi = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { server: machineId });
+export const getAgentApi = (projectId: string, agentId: string) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
 
 /** Changes the given settings and keeps the rest (owner only). */
-export const putAgentApi = (
-  projectId: string,
-  agentId: string,
-  body: AgentApiUpdateRequest,
-  machineId: string | null,
-) =>
-  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), {
-    method: "PUT",
-    body,
-    server: machineId,
-  });
+export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
 
 /** Mints a key (owner only): the answer is the one place the secret is ever shown. */
 export const createAgentApiKey = (
   projectId: string,
   agentId: string,
   body: AgentApiKeyCreateRequest,
-  machineId: string | null,
 ) =>
   apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
     method: "POST",
     body,
-    server: machineId,
   });
 
 /** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
-export const deleteAgentApiKey = (
-  projectId: string,
-  agentId: string,
-  keyId: string,
-  machineId: string | null,
-) =>
+export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
   apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
     method: "DELETE",
-    server: machineId,
+  });
+
+/**
+ * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
+ * the public runs route's, and the answer the same AMSP event stream, handed back unread for
+ * `readSse` (or the same JSON refusal, as an ApiError).
+ */
+export const tryAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: RunRequest,
+  opts: { signal?: AbortSignal } = {},
+) =>
+  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
+    method: "POST",
+    body,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
 // Session ---------------------------------------------------------------------
-
-/** Paging and filters of {@link listSessions}. */
-export interface ListSessionsOptions {
-  /** Rows to skip, in creation order. Exclusive with `before`. */
-  offset?: number;
-  limit: number;
-  /** `activity`: last activity first, ties by id descending (code-point order) — the sidebar's order. Omitted: creation order. */
-  order?: "created" | "activity";
-  /** Activity order only: rows strictly below this key — the last row of the previous page. */
-  before?: ActivityKey;
-  category?: SessionCategory;
-  /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
-  workspaceGroup?: string;
-  withCounts?: boolean;
-  /** The user's own rows only: an organization's desk, ticket and sub-sessions leave the page and the totals together (the development list's contract). */
-  excludeOrg?: boolean;
-}
 
 /**
  * Optional paging (absent = full unfiltered list): the store requests `limit+1` per page to
@@ -631,13 +809,27 @@ export interface ListSessionsOptions {
 export const listSessions = (
   projectId: string,
   agentId: string,
-  opts: ListSessionsOptions | undefined,
+  opts?: {
+    /** Rows to skip, in creation order. Exclusive with `before`. */
+    offset?: number;
+    limit: number;
+    /** `activity`: last activity first, ties by id descending (code-point order) — the sidebar's order. Omitted: creation order. */
+    order?: "created" | "activity";
+    /** Activity order only: rows strictly below this key — the last row of the previous page. */
+    before?: ActivityKey;
+    category?: SessionCategory;
+    /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
+    workspaceGroup?: string;
+    withCounts?: boolean;
+    /** The user's own rows only: an organization's desk, ticket and sub-sessions leave the page and the totals together (the development list's contract). */
+    excludeOrg?: boolean;
+  },
   /**
    * Which machine to ask. This path is NOT session-scoped, so nothing about it can be routed
    * from an id — it asks a server which Sessions IT has, and only the caller knows which
-   * servers are worth asking. null means this server.
+   * servers are worth asking. Omitted (or null) means this one.
    */
-  machineId: string | null,
+  machineId?: string | null,
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}` +
@@ -651,7 +843,7 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
-    { server: machineId },
+    { server: machineId ?? null },
   );
 };
 
@@ -669,17 +861,17 @@ export const listSessions = (
 export const batchSessions = (
   projectId: string,
   requests: SessionBatchPageRequest[],
-  machineId: string | null,
+  machineId?: string | null,
 ) =>
   apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
     method: "POST",
     body: { requests } satisfies SessionsBatchRequest,
-    server: machineId,
+    server: machineId ?? null,
   });
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
- * Browses directories. With a null machine, this server's own filesystem; with one, THAT
+ * Browses directories. With no machine, this server's own filesystem; with one, THAT
  * machine's — listed by this server over ssh, so picking a workspace on another machine
  * needs no second login to that machine's own server.
  *
@@ -689,12 +881,12 @@ export const batchSessions = (
  */
 export const listDirs = (
   projectId: string,
-  path: string,
-  machineId: string | null,
+  path = "",
+  machineId?: string | null,
   opts?: { places?: boolean },
 ) => {
   const places = opts?.places === true ? "&places=1" : "";
-  return machineId === null
+  return machineId === undefined || machineId === null
     ? apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}${places}`,
       )
@@ -719,10 +911,9 @@ export const requestDirAccess = (projectId: string, path: string) =>
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
  * creation would offer to install. `path` must be absolute.
  */
-export const listDirectorySkills = (projectId: string, path: string, machineId: string | null) =>
+export const listDirectorySkills = (projectId: string, path: string) =>
   apiFetch<DirectorySkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
-    { server: machineId },
   );
 
 /**
@@ -741,13 +932,13 @@ export const createSession = async (
   projectId: string,
   agentId: string,
   body: SessionCreateRequest,
-  machineId: string | null,
+  machineId?: string | null,
 ) => {
   const created = await apiFetch<SessionCreateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body, server: machineId ?? null },
   );
-  rememberSessionMachine(created.session.sessionId, machineId);
+  rememberSessionMachine(created.session.sessionId, machineId ?? null);
   return created;
 };
 
@@ -779,16 +970,10 @@ export const deleteSession = (sessionId: string) =>
 
 // The archive page (Settings › Archived chats) -------------------------------------------
 
-/**
- * The archive page's groups — one Workspace of one Project each — with their counts, newest
- * first: this server's and the machines' (`servers` narrows it to one side).
- */
-export const listArchivedSessionGroups = (
-  query: ArchivedSessionsQuery = {},
-  servers?: ArchivedSessionGroupServers,
-) =>
+/** The archive page's groups — one Workspace of one Project each — with their counts, newest first. */
+export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
   apiFetch<ArchivedSessionGroupsResponse>("/api/me/archived-sessions/groups", {
-    query: { q: query.q, source: query.source, projectId: query.projectId, servers },
+    query: { q: query.q, source: query.source, projectId: query.projectId },
   });
 
 /**
@@ -975,22 +1160,6 @@ export const sendMessagingTestMessage = (sessionId: string, channel: MessagingCh
     { method: "POST", body: {} },
   );
 
-/**
- * Which servers this one can see have a bot's connection enabled — this server and the
- * Project's machines, each asked by this server — and which machines could not be asked. Asked
- * before turning a bot on, so it is never connected in two places; it names servers, never a
- * conversation. Always this server's own answer: the path names no Session to route by.
- */
-export const getMessagingAccountHolders = (
-  projectId: string,
-  channel: MessagingChannel,
-  accountId: string,
-) =>
-  apiFetch<MessagingAccountHoldersResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/messaging/account-holders`,
-    { query: { channel, accountId }, server: null },
-  );
-
 /** Windowed history request: the newest N units (tail), or the N units before a cursor. */
 export type MessagesPageQuery =
   { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
@@ -1029,16 +1198,14 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
 export const getGoal = (sessionId: string) =>
   apiFetch<GoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`);
 
-/** `machineId` names the Session's machine where the id map may not know it (an API try run); omitted, the path routes itself. */
 export const postApproval = (
   sessionId: string,
   toolCallId: string,
   body: ApprovalDecisionRequest,
-  machineId?: string | null,
 ) =>
   apiFetch<void>(
     `/api/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(toolCallId)}`,
-    { method: "POST", body, ...(machineId !== undefined ? { server: machineId } : {}) },
+    { method: "POST", body },
   );
 
 /**
@@ -1052,12 +1219,10 @@ export const postToolCallBackground = (sessionId: string, toolCallId: string) =>
     { method: "POST", body: {} },
   );
 
-/** `machineId` as on {@link postApproval}. */
-export const postAbort = (sessionId: string, machineId?: string | null) =>
+export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",
     body: {},
-    ...(machineId !== undefined ? { server: machineId } : {}),
   });
 
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
@@ -1126,13 +1291,6 @@ export const recallFollowUp = (sessionId: string, followUpId: string) =>
     `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
     { method: "DELETE" },
   );
-
-/** Send one waiting message now — the follow-up `followUpId` names or the steering `steerId` names: the run stops and it goes out first (202; 409 follow_up_started / not_pending once it is no longer waiting). */
-export const postInterrupt = (sessionId: string, body: InterruptRequest) =>
-  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
-    method: "POST",
-    body,
-  });
 
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).
@@ -1344,23 +1502,8 @@ export const getUsage = (
 
 // Agent deletion & Workspace files --------------------------------------------------
 
-/**
- * Deletes an Agent. The answer carries the background removal of its files to follow; a server
- * from before that removal moved to the background answers 204 once everything is gone, which
- * reads as undefined here.
- */
-export const deleteAgent = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<AgentDeleteResponse | undefined>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}`,
-    { method: "DELETE", server: machineId },
-  );
-
-/** Where a delete's background removal stands (404 `agent_deletion_not_found` once it is unknown). */
-export const getAgentDeletion = (projectId: string, deletionId: string, machineId: string | null) =>
-  apiFetch<AgentDeletionResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agent-deletions/${encodeURIComponent(deletionId)}`,
-    { server: machineId },
-  );
+export const deleteAgent = (projectId: string, agentId: string) =>
+  apiFetch<void>(`/api/projects/${projectId}/agents/${agentId}`, { method: "DELETE" });
 
 export const listWorkspaceFiles = (sessionId: string, path: string) =>
   apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, { query: { path } });
@@ -1566,27 +1709,23 @@ export const statSessionFiles = (sessionId: string, paths: string[]) =>
 
 // Scheduled tasks ----------------------------------------------------------------------
 
-export const listSchedules = (projectId: string, agentId: string, machineId: string | null) =>
+export const listSchedules = (projectId: string, agentId: string) =>
   apiFetch<SchedulesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules`,
-    { server: machineId },
   );
 
 /** Every agent's scheduled tasks in the Project, each stamped with its agent: what the session list's marks read. */
-export const listProjectSchedules = (projectId: string, machineId: string | null) =>
-  apiFetch<ProjectSchedulesResponse>(`/api/projects/${encodeURIComponent(projectId)}/schedules`, {
-    server: machineId,
-  });
+export const listProjectSchedules = (projectId: string) =>
+  apiFetch<ProjectSchedulesResponse>(`/api/projects/${encodeURIComponent(projectId)}/schedules`);
 
 export const createSchedule = (
   projectId: string,
   agentId: string,
   body: ScheduleUpsertRequest & { name: string },
-  machineId: string | null,
 ) =>
   apiFetch<ScheduleItem>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body },
   );
 
 export const updateSchedule = (
@@ -1594,31 +1733,24 @@ export const updateSchedule = (
   agentId: string,
   name: string,
   body: ScheduleUpsertRequest,
-  machineId: string | null,
 ) =>
   apiFetch<ScheduleItem>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
-    { method: "PUT", body, server: machineId },
+    { method: "PUT", body },
   );
 
-export const deleteSchedule = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-) =>
+export const deleteSchedule = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
-    { method: "DELETE", server: machineId },
+    { method: "DELETE" },
   );
 
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
-export const getPluginLibrary = (machineId: string | null) =>
-  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId });
+export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plugins");
 
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
@@ -1633,22 +1765,15 @@ export const getLibraryPluginReadme = (plugin: string) =>
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
  * refreshed installed lists.
  */
-export const getAgentPlugins = (projectId: string, agentId: string, machineId: string | null) =>
+export const getAgentPlugins = (projectId: string, agentId: string) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { server: machineId },
   );
 
-/** With `machineId`, installs from THAT machine's library onto its Agent. */
-export const installAgentPlugins = (
-  projectId: string,
-  agentId: string,
-  names: string[],
-  machineId: string | null,
-) =>
+export const installAgentPlugins = (projectId: string, agentId: string, names: string[]) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
+    { method: "POST", body: { names } satisfies PluginInstallRequest },
   );
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
@@ -1661,49 +1786,41 @@ export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/language
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
-export const getAgentSkills = (projectId: string, agentId: string, machineId: string | null) =>
+export const getAgentSkills = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { server: machineId },
   );
 
-export const getAgentHooks = (projectId: string, agentId: string, machineId: string | null) =>
+export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
-    { server: machineId },
   );
 
 /** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
-export const getAgentMcpServers = (projectId: string, agentId: string, machineId: string | null) =>
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
   apiFetch<AgentMcpServersResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
-    { server: machineId },
   );
 
 /** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
-export const uninstallAgentMcpServer = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-) =>
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/mcp-servers/${encodeURIComponent(name)}`,
-    { method: "DELETE", server: machineId },
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
-export const uninstallAgentHook = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-) =>
+export const uninstallAgentHook = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/${encodeURIComponent(name)}`,
-    { method: "DELETE", server: machineId },
+    { method: "DELETE" },
   );
 
 /** Installs one hook package from an uploaded zip (base64); 409 hook_exists unless overwrite; 201 returns the latest installed list. */
@@ -1711,63 +1828,40 @@ export const installAgentHookArchive = (
   projectId: string,
   agentId: string,
   body: HookArchiveInstallRequest,
-  machineId: string | null,
 ) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/archive`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body },
   );
 
 /** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
-export const agentHookArchiveUrl = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-): string =>
-  apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/hooks/${encodeURIComponent(name)}/archive`,
-    machineId,
-  );
+export const agentHookArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/hooks/${encodeURIComponent(name)}/archive`;
 
 /** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
 export const installAgentSkillArchive = (
   projectId: string,
   agentId: string,
   body: SkillArchiveInstallRequest,
-  machineId: string | null,
 ) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/archive`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body },
   );
 
 /** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
-export const agentSkillArchiveUrl = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-): string =>
-  apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/skills/${encodeURIComponent(name)}/archive`,
-    machineId,
-  );
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
 
-export const removeAgentSkill = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-) =>
+export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/${encodeURIComponent(name)}`,
-    { method: "DELETE", server: machineId },
+    { method: "DELETE" },
   );
 
 // Benchmarks (scores, manual creation and deletion) -------------------------------------------
@@ -1780,20 +1874,20 @@ export const removeAgentSkill = (
  * server and each machine it holds, then merges the answers (lib/benchmark-merge.ts). The path
  * is not Session-scoped, so nothing about it can be routed from an id — the machine is passed.
  */
-export const listBenchmarks = (projectId: string, machineId: string | null) =>
+export const listBenchmarks = (projectId: string, machineId?: string | null) =>
   apiFetch<BenchmarksResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`, {
-    server: machineId,
+    server: machineId ?? null,
   });
 
 export const listBenchmarkCases = (
   projectId: string,
   benchmarkId: string,
-  machineId: string | null,
+  machineId?: string | null,
 ) =>
   apiFetch<BenchmarkCasesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
       `/cases`,
-    { server: machineId },
+    { server: machineId ?? null },
   );
 
 /** Creates a Benchmark by hand (owner only); the server writes the on-disk layout. 409 `benchmark_exists` on a taken id. */
@@ -1825,11 +1919,11 @@ export const importBenchmarkArchive = (projectId: string, body: BenchmarkArchive
 export const benchmarkArchiveUrl = (
   projectId: string,
   benchmarkId: string,
-  machineId: string | null,
+  machineId?: string | null,
 ): string =>
   apiUrl(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}/archive`,
-    machineId,
+    machineId ?? null,
   );
 
 const benchmarkCaseFilesPath = (
@@ -1848,11 +1942,11 @@ export const listBenchmarkCaseFiles = (
   caseId: string,
   path: string,
   material: CaseMaterial,
-  machineId: string | null,
+  machineId?: string | null,
 ) =>
   apiFetch<WorkspaceFilesResponse>(
     benchmarkCaseFilesPath(projectId, benchmarkId, caseId, material),
-    { query: { path }, server: machineId },
+    { query: { path }, server: machineId ?? null },
   );
 
 export const benchmarkCaseFileUrl = (
@@ -1861,7 +1955,7 @@ export const benchmarkCaseFileUrl = (
   caseId: string,
   path: string,
   material: CaseMaterial,
-  options: { download?: boolean; preview?: boolean; machineId: string | null },
+  options?: { download?: boolean; preview?: boolean; machineId?: string | null },
 ): string => {
   const base = `${benchmarkCaseFilesPath(
     projectId,
@@ -1872,34 +1966,22 @@ export const benchmarkCaseFileUrl = (
   return (
     // A browser-followed URL (an <img> src, a download link), so the proxy prefix has to be
     // IN it — there is no request here for a routing rule to act on.
-    apiUrl(base, options.machineId) +
-    (options.download ? "&download=1" : "") +
-    (options.preview && !options.download ? "&preview=1" : "")
+    apiUrl(base, options?.machineId ?? null) +
+    (options?.download ? "&download=1" : "") +
+    (options?.preview && !options.download ? "&preview=1" : "")
   );
 };
 
 // Agent State snapshot export / import ------------------------------------------------------
 
 /** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
-export const agentExportUrl = (
-  projectId: string,
-  agentId: string,
-  machineId: string | null,
-): string =>
-  apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`,
-    machineId,
-  );
+export const agentExportUrl = (projectId: string, agentId: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`;
 
-export const importAgent = (
-  projectId: string,
-  agentId: string,
-  body: AgentImportRequest,
-  machineId: string | null,
-) =>
+export const importAgent = (projectId: string, agentId: string, body: AgentImportRequest) =>
   apiFetch<AgentImportResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
-    { method: "POST", body, server: machineId },
+    { method: "POST", body },
   );
 
 // Machines (admin only) ----------------------------------------------------------------
@@ -2006,23 +2088,6 @@ export const connectMachine = (projectId: string, machineId: string) =>
     { method: "POST", body: {} },
   );
 
-/**
- * Retry while the server brings a machine back: its next attempt now, or a new streak after the
- * automatic attempts stopped (200, the list — not a job).
- */
-export const reconnectMachine = (projectId: string, machineId: string) =>
-  apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/reconnect`,
-    { method: "POST", body: {} },
-  );
-
-/** Stop retrying: the server stops bringing that machine back until a Retry (200, the list). */
-export const stopReconnectingMachine = (projectId: string, machineId: string) =>
-  apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/stop-reconnecting`,
-    { method: "POST", body: {} },
-  );
-
 /** Restarts that machine's server so what runs there matches what is on its disk (202, a job). */
 export const restartMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
@@ -2062,9 +2127,7 @@ export const uninstallMachine = (projectId: string, machineId: string, removeDat
 
 // Version & self-update ----------------------------------------------------------------
 
-/** This server's version report, or, given a machine's id, that machine's (its OS for a report). */
-export const getVersion = (machine?: string) =>
-  apiFetch<VersionResponse>("/api/version", machine === undefined ? {} : { server: machine });
+export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 /** Push a kept version back (admin); the swap follows the 202. */
@@ -2100,13 +2163,6 @@ export const restartServer = () =>
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
-
-/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
-export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
-
-/** Runs one host command; the host answers with its own UI (a dialog, the updater). The id is the host's word — this build need not know it. */
-export const runHostCommand = (command: string) =>
-  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
@@ -2465,7 +2521,11 @@ const workbenchesBase = (projectId: string, agentId: string) =>
  * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
  * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
  */
-export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
+export const getWorkbenches = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<{ workbenches: WorkbenchInfo[] }>(workbenchesBase(projectId, agentId), {
     server: machineId,
   });
@@ -2474,7 +2534,7 @@ export const reloadWorkbench = (
   projectId: string,
   agentId: string,
   workbenchId: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<{ workbench: WorkbenchInfo }>(
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/reload`,
@@ -2484,7 +2544,7 @@ export const getWorkbenchHistory = (
   projectId: string,
   agentId: string,
   workbenchId: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<{ versions: WorkbenchVersion[] }>(
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/history`,
@@ -2496,41 +2556,18 @@ export const rollbackWorkbench = (
   agentId: string,
   workbenchId: string,
   revision: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<{ workbench: WorkbenchInfo }>(
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
-  );
-/** Imports one workbench's source from an uploaded zip (base64) and loads it; 409 `workbench_exists` on a taken id unless overwrite; 201 returns the workbench as its load left it. */
-export const installWorkbenchArchive = (
-  projectId: string,
-  agentId: string,
-  body: WorkbenchArchiveInstallRequest,
-  machineId: string | null,
-) =>
-  apiFetch<WorkbenchArchiveInstallResponse>(`${workbenchesBase(projectId, agentId)}/archive`, {
-    method: "POST",
-    body,
-    server: machineId,
-  });
-/** Zip download URL for one workbench's source (server sets Content-Disposition attachment); the export round-trips through installWorkbenchArchive. */
-export const workbenchArchiveUrl = (
-  projectId: string,
-  agentId: string,
-  workbenchId: string,
-  machineId: string | null,
-): string =>
-  apiUrl(
-    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/archive`,
-    machineId,
   );
 /** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
 export const removeWorkbench = (
   projectId: string,
   agentId: string,
   workbenchId: string,
-  machineId: string | null,
+  machineId: string | null = null,
 ) =>
   apiFetch<void>(`${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}`, {
     method: "DELETE",
@@ -2549,7 +2586,7 @@ const pluginsPath = (projectId: string) =>
  * `server` reads a machine's own list through this server's tunnel — what it actually runs —
  * and null reads this server's, which holds the Project's tables for the whole fleet.
  */
-export const getInstalledPlugins = (projectId: string, server: string | null) =>
+export const getInstalledPlugins = (projectId: string, server: string | null = null) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), { server });
 /** Admin only; applied without a restart where the runtime can re-assemble the App. */
 export const putInstalledPlugins = (projectId: string, plugins: readonly string[]) =>

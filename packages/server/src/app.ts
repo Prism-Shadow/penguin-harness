@@ -57,16 +57,9 @@ import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "@penguinharness/plugin-db/server";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "@penguinharness/plugin-db/server";
-
-||||||| parent of e167a8c271 (db core becomes plugins/db (@penguinharness/plugin-db, parked platform group like company): packages/db publishing shape is gone, server/machines/tests read the face)
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
-
-||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
-||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
 import { jsonOnlyWrites } from "./auth/middleware.js";
-
-||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "@penguinharness/plugin-terminal/server";
@@ -197,8 +190,6 @@ export interface ServerBoot {
    * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
   instance: Instance<PlatformApi>;
-  /** The host's message port as state; index.ts fills it when a port exists. */
-  shellFrames: ShellFrames;
   /**
    * The tree the running App serves — read through `instance` each time, so a plugin
    * change's re-assembly is seen without any push. A generation that has no tree to answer
@@ -351,8 +342,6 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  const shellFrames = newShellFrames();
-  hmr.resources.register(HMR_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -375,10 +364,7 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree(
-    { config, db, channels, hmr, control: ctl, desktop, instance, shellFrames },
-    tree,
-  );
+  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
   return booted;
 }
 
@@ -424,7 +410,6 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
-    shellFrames: boot.shellFrames,
     get authService() {
       return authService();
     },
@@ -538,8 +523,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
-  app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
+  app.use("/api/*", jsonOnlyWrites);
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group

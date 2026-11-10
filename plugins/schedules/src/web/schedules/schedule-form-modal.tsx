@@ -49,8 +49,6 @@ import { useProject } from "@prismshadow/penguin-web/internal";
 import { ModelCatalogSelect } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import { sameModelRef } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/schedules/schedule-form-modal.tsx
 import { itemModelRef } from "./schedule-upsert";
 
 /** ISO → datetime-local input value (local timezone, minute precision); returns "" when missing/invalid. */
@@ -124,8 +122,6 @@ function SessionSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
-  /** The machine the Agent lives on: its Sessions are there. */
-  const machineId = useAgentLocation();
 
   // Load lazily on first open, then keep the snapshot; a failed fetch degrades to an empty
   // list (the user can still see the currently-bound id on the trigger and cancel out).
@@ -133,7 +129,7 @@ function SessionSelect({
     if (!open || sessions !== null) return;
     let cancelled = false;
     api
-      .listSessions(projectId, agentId, undefined, machineId)
+      .listSessions(projectId, agentId)
       .then((res) => {
         if (!cancelled) setSessions(res.sessions);
       })
@@ -280,8 +276,6 @@ function ScheduleFormDialog({
 }: ScheduleFormModalProps) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  /** The machine the Agent lives on (null: this server): its models, Workspaces and tasks. */
-  const machineId = useAgentLocation();
   // A submit rejection that isn't attributable to one field, under the form.
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -311,7 +305,7 @@ function ScheduleFormDialog({
     if (!projectId) return;
     let cancelled = false;
     api
-      .getModels(projectId, machineId)
+      .getModels(projectId)
       .then((res) => {
         if (cancelled) return;
         setModels(res.models);
@@ -326,7 +320,7 @@ function ScheduleFormDialog({
     return () => {
       cancelled = true;
     };
-  }, [projectId, machineId]);
+  }, [projectId]);
 
   const set = (patch: Partial<FormState>) => {
     setFormError((p) => (p ? null : p));
@@ -361,9 +355,8 @@ function ScheduleFormDialog({
     };
     setBusy(true);
     try {
-      if (form.editing !== null) {
-        await api.updateSchedule(projectId, agentId, form.editing, body, machineId);
-      } else await api.createSchedule(projectId, agentId, { name, ...body }, machineId);
+      if (form.editing !== null) await api.updateSchedule(projectId, agentId, form.editing, body);
+      else await api.createSchedule(projectId, agentId, { name, ...body });
       toastSuccess(S.schedule.toastSaved);
       // Saved: nothing is unsaved, so the dialog closes without asking.
       onClose();
@@ -506,8 +499,6 @@ function ScheduleFormDialog({
                       workspace={form.workspace}
                       onChange={(workspace) => set({ workspace })}
                       agentId={agentId}
-                      // A machine's Agent runs its tasks there: the Workspace is browsed on it alone.
-                      {...(machineId !== null ? { machineId, chooseMachine: false } : {})}
                       variant="form"
                     />
                   </div>

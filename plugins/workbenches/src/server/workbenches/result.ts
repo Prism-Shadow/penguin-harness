@@ -1,4 +1,4 @@
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { WorkbenchResult } from "../mechanism.js";
 
 

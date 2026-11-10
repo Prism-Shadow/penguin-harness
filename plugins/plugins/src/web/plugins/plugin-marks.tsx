@@ -47,7 +47,6 @@ export function StatusMark({ status, hint }: { status: PluginStatus; hint: strin
   return (
     <span
       className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
-      data-testid="plugin-status"
       data-tooltip={hint}
       data-tooltip-content="text"
       data-tooltip-extra
@@ -62,27 +61,20 @@ export function StatusMark({ status, hint }: { status: PluginStatus; hint: strin
   );
 }
 
-/**
- * The hover sentence of a row's status. A library status counted with Agents on a machine out of
- * reach says how many it counted as last seen: the status stands while the machine is away, and
- * the sentence is where that is admitted.
- */
+/** The hover sentence of a row's status. */
 export function statusHint(
   row: PluginRow,
   status: PluginStatus,
   usage: LibraryUsage | null,
 ): string {
   const mod = row.module;
-  const lastSeen = usage?.lastSeen?.length ?? 0;
-  const seen = (hint: string) =>
-    lastSeen > 0 ? `${hint}${S.plugins.statusHint.lastSeenOn(lastSeen)}` : hint;
   switch (status) {
     case "update":
-      return seen(S.plugins.statusHint.update(usage?.behind.length ?? 0));
+      return S.plugins.statusHint.update(usage?.behind.length ?? 0);
     case "installed":
       return mod !== undefined
         ? S.plugins.statusHint.moduleInstalled
-        : seen(S.plugins.statusHint.libraryInstalled);
+        : S.plugins.statusHint.libraryInstalled;
     case "available":
       return mod !== undefined
         ? S.plugins.statusHint.moduleAvailable

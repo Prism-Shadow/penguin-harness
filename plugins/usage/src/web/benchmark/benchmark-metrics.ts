@@ -63,7 +63,7 @@ export interface EvaluationLabelLike {
   /** The Agent under test; null or absent on records written before Benchmarks left the Agent. */
   agentId?: string | null;
   /** On the record and deliberately outside the key: a version is a point on a series, not a series. */
-  version?: number | string;
+  version?: number;
   /** On the record and deliberately outside the key — see evaluationLabel. */
   provider?: string;
   modelId?: string;

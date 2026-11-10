@@ -9,9 +9,6 @@ import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core
 import { openDatabase } from "@penguinharness/plugin-db/server";
 import { migrate } from "@penguinharness/plugin-db/server";
 import { SCHEMA_SQL } from "@penguinharness/plugin-db/server";
-
-||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
-||||||| parent of e167a8c271 (db core becomes plugins/db (@penguinharness/plugin-db, parked platform group like company): packages/db publishing shape is gone, server/machines/tests read the face)
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SessionSandbox } from "../src/api/types.js";
@@ -165,7 +162,7 @@ describe("the snapshot on the Session's row", () => {
     try {
       db.exec(SCHEMA_SQL);
       db.exec("ALTER TABLE sessions DROP COLUMN sandbox");
-      stampThrough(db, "2026-09-16-company-mode-desk-notices");
+      db.exec("PRAGMA user_version = 8");
       migrate(db, { swapPath: true });
       const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
       expect(cols.some((c) => c.name === "sandbox")).toBe(true);

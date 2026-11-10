@@ -1,8 +1,43 @@
+/**
+ * Workbench tabs beside Chat, and the page a workbench tab shows.
+ *
+ * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts); the frame
+ * is that UI in an iframe served from the workbench's own `ui/` folder, plus a thin bar
+ * with the workbench's version, its load error when the current files do not boot, a
+ * reload, and a history fold with one restore button per recorded version. The list
+ * refetches when the server announces `workbench_updated` for this Agent, so an Agent
+ * editing its own workbench sees the tab update (the iframe keys on `uiRev`).
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import {
+  forwardFrameKeys,
+  PAGE_FRAME_SANDBOX,
+  readDocumentTheme,
+  themeWorkbenchFrame,
+} from "@prismshadow/penguin-web/internal";
+import {
+  FILL_APP_MESSAGE,
+  settleActiveTab,
+  WORKBENCH_UPDATED_EVENT,
+  workbenchAppPath,
+  workbenchNoticesOf,
+  workbenchTabsOf,
+  workbenchUiUrl,
+  type WorkbenchNotice,
+  type WorkbenchTab,
+  type WorkbenchUpdatedDetail,
 } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
-
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -12,7 +47,6 @@ export function useWorkbenchTabs(
   selectionKey = "",
   initialTab: string | null = null,
 ) {
-  const safe = useSafeMode();
   const scope = JSON.stringify([projectId, agentId, machineId]);
   const selectionScope = JSON.stringify([scope, selectionKey]);
   const [loaded, setLoaded] = useState<{
@@ -35,13 +69,13 @@ export function useWorkbenchTabs(
   const asked = useRef(0);
   const refresh = useCallback(async () => {
     const mine = ++asked.current;
-    if (safe || projectId === null || agentId === null) {
+    if (projectId === null || agentId === null) {
       setLoaded({ scope, tabs: [], notices: [] });
       return;
     }
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
-      if (asked.current !== mine || isSafeMode()) return;
+      if (asked.current !== mine) return;
       setLoaded({
         scope,
         tabs: workbenchTabsOf(res.workbenches, machineId),
@@ -50,7 +84,7 @@ export function useWorkbenchTabs(
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
-  }, [safe, projectId, agentId, machineId, scope]);
+  }, [projectId, agentId, machineId, scope]);
 
   useEffect(() => {
     void refresh();
@@ -68,9 +102,7 @@ export function useWorkbenchTabs(
     return () => window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
   }, [projectId, agentId, refresh]);
 
-  const visibleTabs = safe ? [] : tabs;
-  const visibleNotices = safe ? [] : notices;
-  const settled = settleActiveTab(active, visibleTabs);
+  const settled = settleActiveTab(active, tabs);
   // A tab that is gone is forgotten, not merely filtered: kept, the raw id would pull the
   // frame back over the chat the moment a workbench of the same id reappears — which is what
   // an Agent rewriting its folder (delete, then write) looks like from here.
@@ -78,14 +110,7 @@ export function useWorkbenchTabs(
     if (loaded?.scope === scope && active !== null && settled === null) setActiveRaw(null);
   }, [active, settled, loaded, scope, setActiveRaw]);
   const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
-  return {
-    tabs: visibleTabs,
-    notices: visibleNotices,
-    active: settled,
-    activeTab,
-    setActive: setActiveRaw,
-    refresh,
-  };
+  return { tabs, notices, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
@@ -418,13 +443,14 @@ export function WorkbenchFrame({
           <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.noHistory}</p>
         ) : (
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {versions.map((v, i) => {
-              // A restore records an old revision again: only its newest entry is the current one.
-              const current = i === versions.findIndex((w) => w.revision === tab.revision);
+            {versions.map((v) => {
+              const current = v.revision === tab.revision;
               return (
-                <li key={v.commit} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                <li key={v.revision} className="flex items-center gap-3 px-3 py-1.5 text-xs">
                   <span className="font-mono">{v.revision}</span>
                   <span className="text-gray-500">{formatDateTime(v.savedAt)}</span>
+                  {v.version !== null && <span className="text-gray-500">v{v.version}</span>}
+                  <span className="text-gray-400">{S.workbenches.fileCount(v.files.length)}</span>
                   <span className="flex-1" />
                   {current ? (
                     <span className={toneInk.success}>{S.workbenches.current}</span>

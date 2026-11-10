@@ -83,7 +83,7 @@ import type {
   LLMOutcome,
   ModelRequestContext,
   ModelRef,
-  OmniMessage,
+  AmspRecord,
   ModelEntry,
   ProjectConfig,
   ProviderConnection,

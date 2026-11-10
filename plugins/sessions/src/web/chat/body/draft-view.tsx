@@ -1,14 +1,93 @@
-import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
-import { effectiveThinkingLevel } from "../../model-picker";
-
-||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/chat/body/draft-view.tsx
+/**
+ * Draft view (/chat/new): the pre-persistence form of a new
+ * conversation, before any Session exists. The page around the input card is the start
+ * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
+ * shortcuts below it); this module keeps the draft itself. Before sending,
+ * this is where Agent / Workspace / approval mode / Model are all
+ * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
+ * directory selection (the menu browses server-side directories, and the current
+ * path can be edited directly); the model picker lives in the input card's bottom
+ * toolbar, left of the send button (with a vendor logo). The Session is only
+ * created when **the first message is sent**; once created, Agent / Workspace /
+ * Model are locked in via meta, and only approval mode remains editable (in the
+ * session-mode input area).
+ *
+ * Draft auto-cache (storage and validation in draft-cache.ts; keys are isolated by
+ * "user × Project", #68): the four selections are saved as soon as they change;
+ * body text is keystroke-frequent and deferred/coalesced (if there's an unsaved
+ * change before unmount, one final write is flushed) — closing and returning to
+ * the page resumes where you left off; on successful send the cache clears, except
+ * the model selection, which carries over as the next conversation's default
+ * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
+ * The one thing that does not resume is a prompt a "Create with AI" surface composed
+ * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
+ * or sending it clears the slot exactly as a send would (see dropAiPrefill).
+ * Every "New chat" entry point first rewrites the slot to the model carry-over and staged
+ * skills, releasing whatever else an earlier visit left in the cache (prepareNewChatDraft,
+ * new-chat.ts), then names in route state only what it is about: an Agent group's "+" or
+ * an Agent card names its Agent, a Workspace group's "+" its path ("" = temporary
+ * workspace), and the plain "New chat" names nothing. A direct visit or refresh keeps the
+ * cache. Precedence per field: route state > draft cache > the Project's new-chat defaults
+ * ([default_chat]) > built-in fallback (for the Agent: default_agent, then the first —
+ * newChatAgentId); the model default already flows through models.defaultModel.
+ *
+ * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
+ * the change up: the project-settings dialog strips the cached pins (next visits reseed
+ * from the fresh defaults) and dispatches a same-tab chat-defaults-changed event that a
+ * MOUNTED draft answers by resetting Agent / Workspace / approval mode / Model in
+ * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
+ * always survive.
+ */
+import { browserState, adoptBrowserSession } from "@penguinharness/plugin-browser/web";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useLocation, useNavigate } from "react-router";
+import type {
+  AgentModelConfigDto,
+  AgentSummary,
+  ApprovalMode,
+  ChatDefaultsDto,
+  ModelRefDto,
+  ModelsResponse,
+  SessionCreateRequest,
+  SessionSandbox,
+  SkillMetadataItem,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
+import { toastError } from "@prismshadow/penguin-ui";
+import { AgentSelect } from "@penguinharness/plugin-agents/web";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { rememberSessionMachine } from "@prismshadow/penguin-web/internal";
+import { cachedMachineAgents, rememberMachineAgents } from "@prismshadow/penguin-web/internal";
+import { machineLink, remoteAgentsEmpty, type MachineLink } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { useAuth } from "@prismshadow/penguin-web/internal";
+import { useProject } from "@prismshadow/penguin-web/internal";
+import { useSessions } from "@prismshadow/penguin-web/internal";
+import { ChatInput, type ComposerControl } from "../chat-input";
+import { APPROVAL_MODES } from "../approval-mode";
+import { adoptDockScope, setDockCwd } from "@prismshadow/penguin-web/internal";
+import { StartDashboard } from "../start-dashboard";
+import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "../draft-cache";
+import {
+  DRAFT_FLUSH_EVENT,
+  getDraftSession,
+  removeDraftSession,
+  saveDraftSession,
+} from "../draft-sessions";
+import {
+  CHAT_DEFAULTS_CHANGED_EVENT,
+  chatDefaultsChangedDetail,
+  type ChatDefaultsChangedDetail,
+} from "../chat-defaults-event";
+import { newChatAgentId } from "../new-chat";
+import { onPluginConfigSaved } from "@prismshadow/penguin-web/internal";
+import { effectiveThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
 import { FilesPanelToggle } from "../dock-toggles";
-
-||||||| parent of f96bcb0c45 (sessions: fix mangled dock imports and expose VersionStamp via internal)
 import { sameModelRef } from "@penguinharness/plugin-models/web";
-
-||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -78,7 +157,7 @@ export function DraftView({
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
   const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
-  const { add, remove } = useSessions();
+  const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
   // type allows null), it's better to disable caching entirely than to read/write a
@@ -128,15 +207,11 @@ export function DraftView({
     workspaceMachine === null
       ? null
       : machineLink(machines.state, machines.settled, workspaceMachine);
-  // The draft's docks belong to no Session yet, so they offer no terminal; the Workspace
-  // chosen here is still theirs (the Files panel, the sidebar's "browse files"). "" is the
-  // temporary Workspace, whose directory the server only creates with the Session.
+  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
+  // temporary Workspace, whose directory the server only creates with the Session, so
+  // that case falls back to home (setDockCwd's null).
   useEffect(() => {
-    setDockConversation({
-      sessionId: null,
-      workspace: workspace || null,
-      machineId: workspaceMachine,
-    });
+    setDockCwd(workspace || null, workspaceMachine);
     onWorkspaceChange?.(workspace, workspaceMachine);
   }, [workspace, workspaceMachine, onWorkspaceChange]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
@@ -177,10 +252,8 @@ export function DraftView({
   const defaultsFromEventRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
-    // This server's defaults, the block every machine is synced from; a draft on a machine
-    // takes its models and its Agent's thinking level from that machine (`models`, getAgentConfig).
     api
-      .getChatDefaults(projectId, null)
+      .getChatDefaults(projectId)
       .then((res) => {
         if (!cancelled && !defaultsFromEventRef.current) setChatDefaults(res);
       })
@@ -368,7 +441,7 @@ export function DraftView({
   useEffect(
     () =>
       onPluginConfigSaved("sandbox", () => {
-        void api.getChatDefaults(projectId, null).then(
+        void api.getChatDefaults(projectId).then(
           (res) => {
             setChatDefaults((prev) => ({
               ...(prev ?? {}),
@@ -405,20 +478,12 @@ export function DraftView({
   // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
   // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
-  /**
-   * The draft's Agent once the list on offer carries it. Nothing is asked about an id the cache
-   * or the route named until then: a cached id may be one this Project does not have (deleted
-   * since, or written while another Project's Agents were on screen), and the request would only
-   * come back "This agent no longer exists."
-   */
-  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
-  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     setAgentThinkingLevel(null);
-    if (!resolvedAgentId) return;
+    if (!agentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, resolvedAgentId, workspaceMachine)
+      .getAgentConfig(projectId, agentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -426,7 +491,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, resolvedAgentId, workspaceMachine]);
+  }, [projectId, agentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -451,20 +516,40 @@ export function DraftView({
         )
         .catch((e: unknown) => {
           setAgentThinkingLevel(rollback);
-          toastApiError(e);
+          toastError(apiErrorText(e));
         });
     },
     [projectId, agentId, workspaceMachine],
   );
 
-  // Skills installed on the selected Agent, on the picked folder's machine (candidates for the
-  // input area's skills dropdown). `skillsLoaded` gates the example task, so its `[use_skills]`
-  // pinning does not depend on network timing.
-  const { skills: agentSkills, loaded: skillsLoaded } = useAgentSkills(
-    projectId,
-    resolvedAgentId,
-    workspaceMachine,
-  );
+  // Skills installed on the currently selected Agent (candidates for the input
+  // area's skills dropdown): switching Agents first clears the list (which also
+  // clears the selection in the input area), then refetches; a fetch failure is
+  // silently treated as no skills. Clearing preserves the reference when already
+  // empty (doesn't swap in a new array): swapping the reference on the very first
+  // mount render would trigger ChatInput's pruning effect and wrongly clear the
+  // quick-invoke preselection.
+  const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
+  /** Whether the skills fetch for the current Agent has settled — the example task waits for it so its `[use_skills]` pinning doesn't silently depend on network timing. */
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
+  useEffect(() => {
+    setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
+    setSkillsLoaded(false);
+    if (!agentId) return;
+    let cancelled = false;
+    api
+      .getAgentSkills(projectId, agentId, workspaceMachine)
+      .then((res) => {
+        if (!cancelled) setAgentSkills(res.skills);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setSkillsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, agentId, workspaceMachine]);
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
@@ -670,15 +755,6 @@ export function DraftView({
   // a racing navigation. A ref rather than state — the composer disables its own send button
   // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
-  // Whether this draft's page is still the one open: the first send's round trips can outlast
-  // it, and a new draft of the same Project would reuse its dock scope.
-  const openRef = useRef(true);
-  useEffect(() => {
-    openRef.current = true;
-    return () => {
-      openRef.current = false;
-    };
-  }, []);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
@@ -688,9 +764,6 @@ export function DraftView({
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       const browserScope = browserState().scope;
-      // The draft's own docks, named now: the send takes round trips, and the user may be on
-      // another conversation by the time it has a Session to hand them to.
-      const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -727,21 +800,19 @@ export function DraftView({
         discardDraft();
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
-        // instead (dock-state.ts). Only someone still on this draft is taken to the new
-        // Session; whoever moved to another conversation stays there, and the Session waits
-        // in the sidebar.
-        if (adoptDockScope(dockScope, res.sessionId, openRef.current))
-          navigate(`/chat/${res.sessionId}`, { replace: true });
+        // instead (dock-state.ts).
+        adoptDockScope(res.sessionId);
+        navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
-        // The Session was created but its first Task was refused or failed (postTask failed):
-        // discard it — out of the list first, then off the server (unstarted-session.ts says why
-        // in that order) — or every resend would pile up another empty Session in the sidebar.
+        // The Session was created but the first message failed to send (postTask failed): delete
+        // this empty Session, otherwise every resend attempt would create another one, piling up
+        // empty sessions with no messages in the sidebar (best-effort cleanup).
         if (createdId) {
           await adoptBrowserSession(createdId, browserScope);
-          void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
+          void api.deleteSession(createdId).catch(() => undefined);
         }
-        toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});
+        toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
         return false;
       } finally {
         sendingRef.current = false;
@@ -759,7 +830,6 @@ export function DraftView({
       // the Session on this server.
       workspaceMachine,
       add,
-      remove,
       discardDraft,
       navigate,
     ],
@@ -784,6 +854,8 @@ export function DraftView({
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
 
+  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     onAgentChange?.(resolvedAgentId, workspaceMachine);
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
@@ -791,12 +863,6 @@ export function DraftView({
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
   const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
-  // Goal mode's plugin check, against the Agent the Session will be created for, on the server
-  // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
-  const goalPlugin = useMemo(
-    () => (resolvedAgentId ? goalPluginGate(projectId, resolvedAgentId, workspaceMachine) : null),
-    [projectId, resolvedAgentId, workspaceMachine],
-  );
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
@@ -830,7 +896,6 @@ export function DraftView({
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
-        goalPlugin={goalPlugin}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}

@@ -1,7 +1,18 @@
+/**
+ * Unit tests for the Session title policy layer (the generation logic lives in
+ * core `session.generateTitle`; a fake implementation is injected here):
+ * the immediate user-input fallback (persisted synchronously, before the LLM
+ * resolves), the LLM replacement, manual renames winning over both, retry while
+ * the fallback is still standing, usage accounted as token usage, and silent
+ * failure.
+ * The Chinese conversation/title fixtures are intentional: a Session title must
+ * follow the conversation language (zh chat → zh title), including the fallback
+ * path that derives the title from the user input itself.
+ */
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
+import type { OmniMessage, SessionTitleResult } from "@prismshadow/penguin-core";
 import { openDatabase } from "@penguinharness/plugin-db/server";
-
-||||||| parent of 3a2aa5e3bc (db core (database/schema/migrations) becomes packages/db (@prismshadow/penguin-db); repos stay with server; server reads the new package)
-||||||| parent of e167a8c271 (db core becomes plugins/db (@penguinharness/plugin-db, parked platform group like company): packages/db publishing shape is gone, server/machines/tests read the face)
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
@@ -64,7 +75,7 @@ describe("title-generator", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
   let channels: ChannelHub;
-  let recorded: AmspRecord[];
+  let recorded: OmniMessage[];
 
   const makeGenerator = (): TitleGenerator =>
     new TitleGenerator({

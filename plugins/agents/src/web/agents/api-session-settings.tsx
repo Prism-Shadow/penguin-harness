@@ -14,15 +14,13 @@ import {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { useInstantSetting } from "../../lib/instant-setting";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
+import * as api from "@prismshadow/penguin-web/internal";
+import { apiErrorText } from "@prismshadow/penguin-web/internal";
+import { useInstantSetting } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { toneInk } from "@prismshadow/penguin-web/internal";
+import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
 import { WorkspaceSelect } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/agents/api-session-settings.tsx
 
 interface ApiSettingsProps {
   projectId: string;
@@ -42,8 +40,6 @@ export function ApiConcurrencySettings({
   onBusy,
 }: ApiSettingsProps) {
   const form = useFormDraft({ limit: String(settings.maxConcurrentRuns) });
-  /** The machine the Agent lives on, where its API settings are; null for this server. */
-  const machineId = useAgentLocation();
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   useSaving(busy, form.scope);
@@ -56,12 +52,7 @@ export function ApiConcurrencySettings({
     onBusy(true);
     setSaveError(null);
     try {
-      const response = await api.putAgentApi(
-        projectId,
-        agentId,
-        { maxConcurrentRuns: limit },
-        machineId,
-      );
+      const response = await api.putAgentApi(projectId, agentId, { maxConcurrentRuns: limit });
       onSaved(response);
       form.adopt({ limit: String(response.api.maxConcurrentRuns) });
     } catch (e) {
@@ -130,8 +121,6 @@ export function ApiSessionSettings({
 }: ApiSettingsProps) {
   const [defaultThinking, setDefaultThinking] = useState<string | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  /** The machine the Agent lives on (null: this server): its models, defaults and Workspaces. */
-  const machineId = useAgentLocation();
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -139,9 +128,9 @@ export function ApiSessionSettings({
     setDefaultThinking(null);
     setLoadError(null);
     void Promise.all([
-      api.getModels(projectId, machineId),
-      api.getAgentConfig(projectId, agentId, machineId),
-      api.getChatDefaults(projectId, machineId),
+      api.getModels(projectId),
+      api.getAgentConfig(projectId, agentId),
+      api.getChatDefaults(projectId),
     ]).then(
       (res) => {
         if (!cancelled) {
@@ -158,12 +147,12 @@ export function ApiSessionSettings({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, machineId]);
+  }, [projectId, agentId]);
 
   const write = useInstantSetting<AgentApiUpdateRequest>({}, async (patch) => {
     onBusy(true);
     try {
-      onSaved(await api.putAgentApi(projectId, agentId, patch, machineId));
+      onSaved(await api.putAgentApi(projectId, agentId, patch));
     } finally {
       onBusy(false);
     }
@@ -227,8 +216,6 @@ export function ApiSessionSettings({
             agentId={agentId}
             workspace={value.workspace ?? ""}
             onChange={(workspace) => void write.set({ workspace: workspace || null })}
-            // A machine's Agent runs its API sessions there: the Workspace is browsed on it alone.
-            {...(machineId !== null ? { machineId, chooseMachine: false } : {})}
             variant="form"
             disabled={locked}
           />

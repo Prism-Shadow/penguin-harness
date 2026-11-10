@@ -1,6 +1,16 @@
+/**
+ * fetch wrapper: JSON request/response, unified errors -> ApiError,
+ * same-origin cookie auth (credentials: same-origin; CSRF relies on SameSite=Lax + JSON
+ * Content-Type, see server README).
+ *
+ * When the session becomes invalid (server 401, e.g. database rebuilt, cookie expired),
+ * notifies AuthProvider to clear the current user, letting the route guard redirect to the
+ * login page — instead of each page popping its own "unauthorized" error.
+ */
+import type { ErrorDetails } from "@prismshadow/penguin-server/api";
+import { S } from "../lib/strings";
+import { apiUrl } from "../lib/server-context";
 import { machineForPath } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of aa043678b9 (session cluster: nine lib files (chat-session, activity, grouping, machines, merge, order, row-contributions, seen, source-mark) move to plugin-sessions web/lib; host reads via internal)
 
 /**
  * Unified API error: carries the HTTP status code and server error code (server error body
@@ -46,22 +56,6 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 /** 401/409 from auth endpoints themselves are business failures (e.g. wrong password) and must not trigger a global logout. */
 function isAuthEndpoint(path: string): boolean {
   return path.startsWith("/api/auth/");
-}
-
-/**
- * Paths of this server that never ride the socket (see apiFetchWithMeta): the runtime's own
- * routes — auth, the install-id probe, the hot channel — and those whose answer depends on the
- * kind of session (sessionKindPath), which the socket would only answer 421 for; and
- * `/api/me`, which is where the cookie's own session facts come from.
- */
-function httpOnly(path: string): boolean {
-  return (
-    path === "/api/me" ||
-    path === "/api/install" ||
-    path.startsWith("/api/hmr/") ||
-    isAuthEndpoint(path) ||
-    sessionKindPath(path)
-  );
 }
 
 export interface ApiFetchOptions {
@@ -124,37 +118,23 @@ interface ErrorEnvelope {
   error?: { code?: string; message?: string; details?: unknown };
 }
 
-/** The headers a proxy names itself in on an answer it produced: only an HTTP answer can carry one. */
-const PROXY_HEADERS = ["via", "proxy-agent", "x-squid-error"];
-
 /**
  * The error for an answer that is not the server's: no JSON came back, so something between the
  * page and the server answered in its place. Every answer the server gives is JSON, its errors
  * included; a web page is a dev server or reverse proxy that did not forward the request, and a
  * gateway status or a proxy's own header is an HTTP proxy that could not reach the server.
- *
- * It reads the facts both transports hand back — the status, the content type, and whether a
- * proxy named itself — so a page a socket carried as text is judged here exactly as one read off
- * a Response is.
  */
-function notTheServerAnswer(status: number, contentType: string, proxyNamed: boolean): ApiError {
-  const type = contentType.split(";")[0]!.trim();
-  const proxied = [502, 503, 504].includes(status) || proxyNamed;
-  const message = proxied
-    ? S.errors.notTheServer.proxy(status)
-    : type === "text/html"
-      ? S.errors.notTheServer.page(status)
-      : S.errors.notTheServer.other(status, type);
-  return new ApiError(status, "not_the_server", message);
-}
-
-/** {@link notTheServerAnswer} for an answer read off a Response, whose headers a proxy may have marked. */
 function notTheServer(response: Response): ApiError {
-  return notTheServerAnswer(
-    response.status,
-    response.headers.get("content-type") ?? "",
-    PROXY_HEADERS.some((name) => response.headers.has(name)),
-  );
+  const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
+  const proxied =
+    [502, 503, 504].includes(response.status) ||
+    ["via", "proxy-agent", "x-squid-error"].some((name) => response.headers.has(name));
+  const message = proxied
+    ? S.errors.notTheServer.proxy(response.status)
+    : type === "text/html"
+      ? S.errors.notTheServer.page(response.status)
+      : S.errors.notTheServer.other(response.status, type);
+  return new ApiError(response.status, "not_the_server", message);
 }
 
 /**
@@ -218,220 +198,30 @@ export async function apiFetchWithMeta<T>(
     if (qs) url += `?${qs}`;
   }
 
-  const method = options.method ?? "GET";
-  // Over the socket, except what stays on HTTP by design: the auth routes and `/api/me` are
-  // the runtime's (the socket answers them 421), and `/api/me` is also where the cookie's own
-  // session facts come from — the socket knows only the user.
-  const wantsSocket = target !== null || !httpOnly(path);
-  let answer: Answer | null;
-  if (wantsSocket) {
-    // Every path but the runtime's own goes on the socket, and no `isOpen()` test stands in
-    // front of it: a call made while the socket is down waits in api/socket.ts for the next
-    // handshake (call()) instead of opening a fetch beside it. That matters past the obvious:
-    // each such fetch is one of the browser's six connections to this origin, so a page that
-    // fell back per call queued on its own fallbacks — the stall a reconnecting socket left
-    // behind. What the call awaits is the answer, as before; nothing here waits on a handshake
-    // of its own.
-    answer = await callOverSocket(method, url, options.body, target);
-    // What the socket does not carry still goes by fetch: a download it declines (415), a
-    // route it answers 421 for, and a read the server never answered — callOverSocket's own
-    // retry rule, for a frame that was sent on a live socket that then went quiet.
-    if (answer === null || answer.status === 415 || answer.status === 421)
-      answer = await callOverHttp(method, url, options.body);
-  } else {
-    answer = await callOverHttp(method, url, options.body);
-  }
-
-  if (answer.status < 200 || answer.status >= 300) {
-    let code = "http_error";
-    let message: string = S.common.unknownError;
-    const body = answer.body as {
-      error?: { code?: string; message?: string; details?: unknown };
-    } | null;
-    if (body !== null && typeof body === "object") {
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
-    }
-    // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
-    // are not signed in over there, which says nothing about the session here. Treating it
-    // as a local logout is how clicking a remote host in a picker bounced the window to the
-    // login page of a server it was still perfectly signed in to.
-    const fromThisServer = target === null;
-    if (answer.status === 401 && fromThisServer && !isAuthEndpoint(path)) {
-      apiSocket.identityChanged();
-      onUnauthorized?.();
-    }
-    throw new ApiError(
-      answer.status,
-      code,
-      message,
-      answer.retryAfterSeconds,
-      detailsOf(body?.error?.details),
-    );
-  }
-
-  // What passes through here tells the socket who the page is: a `/api/me` answer names the
-  // user, a sign-in or sign-out changes it. The socket never has to be told by anyone else.
-  if (target === null) {
-    if (path === "/api/me") {
-      apiSocket.identityIs((answer.body as { user?: { userId?: string } })?.user?.userId ?? null);
-    } else if (isAuthEndpoint(path)) {
-      apiSocket.identityChanged();
-    }
-  }
-
-  const headerDate = Date.parse(answer.date ?? "");
-  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
-  return {
-    data: (answer.status === 204 ? undefined : answer.body) as T,
-    serverNowMs,
-    etag: answer.etag,
-  };
-}
-
-/**
- * What either transport reduces a response to: the status, the parsed body (null when empty),
- * and the three headers a caller reads — `Date` (the server's clock), `Retry-After` (how long
- * a refusal asks it to wait) and `ETag` (the version a Workspace file write produced).
- */
-interface Answer {
-  status: number;
-  body: unknown;
-  date: string | null;
-  retryAfterSeconds: number | undefined;
-  etag: string | null;
-}
-
-/** `Retry-After` as whole seconds, when it is given in that form. */
-const retryAfterOf = (value: string | null | undefined): number | undefined =>
-  value != null && /^\d+$/.test(value) ? Number(value) : undefined;
-
-/**
- * Whether an unanswered read is asked again over HTTP. Not when it was for a MACHINE and the
- * socket kept carrying frames while it waited: the hub forwards both transports through the
- * same route and the same held connection to that machine, so the HTTP copy waits on exactly
- * what the socket call waited on — and a page asks a machine about every Agent at once, so
- * each such copy is one more browser connection held open on a silent machine (the sessions
- * list's two dozen of them exhausted the browser: ERR_INSUFFICIENT_RESOURCES). A quiet socket
- * is the transport's own failure, and HTTP is the way around it.
- */
-function retriesOverHttp(err: SocketTimeoutError, method: string, onMachine: boolean): boolean {
-  return isReadMethod(method) && !(onMachine && err.socketLive);
-}
-
-/** The socket transport; null when the socket dropped before answering (the caller then fetches). */
-async function callOverSocket(
-  method: string,
-  url: string,
-  body: unknown,
-  target: string | null,
-): Promise<Answer | null> {
-  let res: SocketCallResult;
-  try {
-    res = await apiSocket.call(method, url, body !== undefined ? { body } : {});
-  } catch (err) {
-    // A read the server never answered (socket.ts ANSWER_TIMEOUT_MS, warned about there) is
-    // asked again over HTTP: nothing was changed by asking, and a page waiting on it would
-    // otherwise wait for good — unless it is a machine's read on a live socket, which HTTP
-    // would only ask again of the same silent machine (retriesOverHttp). A write is not
-    // repeated — it may have landed.
-    if (err instanceof SocketTimeoutError) {
-      if (retriesOverHttp(err, method, target !== null)) return null;
-      if (isReadMethod(method)) throw new ApiError(0, "machine_no_answer", S.errors.networkError);
-    }
-    // The socket closed under the call, or there was no socket to be had at all (the call is
-    // refused then, before any frame goes out). A lost answer is a lost answer whichever
-    // transport lost it, so this is not retried blindly: the frame may have been delivered and
-    // acted on — report it as a network error.
-    throw new ApiError(0, "network_error", S.errors.networkError);
-  }
-  // The socket frames a `text/*` answer as its text (server/src/socket/serve.ts answerOnce), so
-  // a page — or whatever else in front of a machine answered — arrives here as a string body
-  // instead of as a Response the HTTP path would have read itself. The one rule (see
-  // notTheServerAnswer) judges it: the type names a page, and a gateway status names a proxy.
-  // What a socket answer cannot show is a proxy's own header — only content-type, retry-after
-  // and etag come back with it — so proxying rests on the status alone here, 502/503/504 (the
-  // HTTP side still reads the header). A JSON-labelled body keeps its own reading, the one
-  // answerOnce gives it: parsed when it parses, carried as its raw text when it does not.
-  const contentType = res.headers["content-type"] ?? "";
-  if (typeof res.body === "string" && !contentType.includes("json")) {
-    throw notTheServerAnswer(res.status, contentType, false);
-  }
-  return {
-    status: res.status,
-    body: res.body ?? null,
-    date: res.headers.date ?? null,
-    retryAfterSeconds: retryAfterOf(res.headers["retry-after"]),
-    etag: res.headers.etag ?? null,
-  };
-}
-
-const isReadMethod = (method: string): boolean => method === "GET" || method === "HEAD";
-
-async function callOverHttp(method: string, url: string, body: unknown): Promise<Answer> {
   let response: Response;
   try {
-    response = await fetch(url, {
-      method,
-      credentials: "same-origin",
-      ...(body !== undefined
-        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-        : {}),
-    });
+    response = await fetch(url, requestInit(options));
   } catch {
     throw new ApiError(0, "network_error", S.errors.networkError);
   }
-  const date = response.headers.get("date");
-  const retryAfterSeconds = retryAfterOf(response.headers.get("retry-after"));
+
+  if (!response.ok) throw await failureOf(response, path, target);
+
+  const headerDate = Date.parse(response.headers.get("date") ?? "");
+  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
   const etag = response.headers.get("etag");
-  if (response.status === 204) return { status: 204, body: null, date, retryAfterSeconds, etag };
+
+  if (response.status === 204) return { data: undefined as T, serverNowMs, etag };
   const text = await response.text();
-  if (!text) {
-    if (!response.ok) throw notTheServer(response);
-    return { status: response.status, body: undefined, date, retryAfterSeconds, etag };
-  }
-  let parsed: unknown;
+  if (!text) return { data: undefined as T, serverNowMs, etag };
+  let data: T;
   try {
-    parsed = JSON.parse(text);
+    data = JSON.parse(text) as T;
   } catch {
+    // A success status with no JSON: a dev server or reverse proxy answered with its own page.
     throw notTheServer(response);
   }
-  return { status: response.status, body: parsed, date, retryAfterSeconds, etag };
-}
-
-/**
- * `fetch`, for the few callers that read the Response themselves (a status they act on, a
- * body they parse): the same request over the socket — opened here when it is not open yet —
- * handed back as a Response. Only the socket's own answers are carried — JSON or empty
- * bodies, no request body; anything else stays a plain fetch. Same-origin credentials, as
- * every API call here.
- */
-export async function apiRequest(url: string, init: { method?: string } = {}): Promise<Response> {
-  const path = url.split("?")[0] ?? url;
-  const local = !url.startsWith("/server/");
-  // The same socket-first rule as apiFetchWithMeta (see there), and the same refusal when
-  // there is no socket to be had — api/socket.ts rejects that call, and a rejected call reads
-  // as the network error the fetch below never got to raise.
-  if (!(local && httpOnly(path))) {
-    try {
-      const res = await apiSocket.call(init.method ?? "GET", url);
-      if (res.status !== 415 && res.status !== 421) {
-        const empty = res.body === null || res.status === 204 || res.status === 304;
-        return new Response(empty ? null : JSON.stringify(res.body), {
-          status: res.status,
-          headers: { "content-type": "application/json", ...res.headers },
-        });
-      }
-    } catch (err) {
-      // An unanswered read goes over HTTP under callOverSocket's rule; anything else is a lost connection.
-      const retry =
-        err instanceof SocketTimeoutError && retriesOverHttp(err, init.method ?? "GET", !local);
-      if (!retry) {
-        throw new TypeError("network error"); // what fetch throws when the connection is lost
-      }
-    }
-  }
-  return fetch(url, { ...init, credentials: "same-origin" });
+  return { data, serverNowMs, etag };
 }
 
 export interface ApiFetchStreamOptions {
@@ -440,8 +230,6 @@ export interface ApiFetchStreamOptions {
   body?: unknown;
   /** Aborting it closes the connection; the call then rejects with the abort's reason. */
   signal?: AbortSignal;
-  /** Which machine answers, as on {@link ApiFetchOptions.server}. */
-  server?: string | null;
 }
 
 /**
@@ -455,7 +243,7 @@ export async function apiFetchStream(
   path: string,
   options: ApiFetchStreamOptions = {},
 ): Promise<Response> {
-  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
+  const target = machineForPath(path);
   let response: Response;
   try {
     response = await fetch(apiUrl(path, target), requestInit(options));

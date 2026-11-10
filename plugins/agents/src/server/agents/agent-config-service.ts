@@ -44,32 +44,10 @@ import type {
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentConfigDto,
-  AgentConfigUpdateRequest,
-  AgentKernelUpdateResponse,
-  AgentModelConfigDto,
-  AgentCompactionConfigDto,
-  AgentMemoryConfigDto,
-  AgentHooksConfigDto,
-  AgentSchedulesConfigDto,
-  AgentSkillsConfigDto,
-  AgentVaultConfigDto,
-  VaultEntryInfo,
-  VaultResponse,
-  VaultUpdateRequest,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import {
-  badRequest,
-  optionalBoolean,
-  optionalEnum,
-  optionalNumber,
-  optionalString,
-} from "../http/validate.js";
+import type { AgentConfigDto, AgentConfigUpdateRequest, AgentKernelUpdateResponse, AgentModelConfigDto, AgentCompactionConfigDto, AgentMemoryConfigDto, AgentHooksConfigDto, AgentSchedulesConfigDto, AgentSkillsConfigDto, AgentVaultConfigDto, VaultEntryInfo, VaultResponse, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest, optionalBoolean, optionalEnum, optionalNumber, optionalString } from "@prismshadow/penguin-server/internal";
 import { maskApiKey } from "@penguinharness/plugin-projects/server";
-
-||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/server/src/services/agent-config-service.ts
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";

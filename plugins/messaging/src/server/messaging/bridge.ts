@@ -1,5 +1,5 @@
-import type { OmniMessage } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import type { AmspRecord } from "@prismshadow/amsp";
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
 import type { MessagingBindingRow } from "../repos/messaging-bindings.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "@prismshadow/penguin-server/internal";

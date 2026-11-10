@@ -1,13 +1,41 @@
+/**
+ * Message stream container: renders the ChatItem list; auto-sticks to the
+ * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
+ * the bottom resumes it (see stream-follow.ts for the exact rule).
+ * StreamRenderContext threads the pending-approval map and approval callback down to tool
+ * cards at any nesting depth. Text selected in the stream, and a web link in it, get the app's
+ * own context menu (Copy / Add to conversation; open the link or copy its address — see
+ * stream-selection-menu.tsx).
+ */
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import {
+  A2uiActionsProvider,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+} from "@prismshadow/penguin-ui";
+import { S } from "@prismshadow/penguin-web/internal";
+import type { ChatItem } from "@prismshadow/penguin-web/internal";
+import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
+import type { TaskStats } from "@prismshadow/penguin-web/internal";
+import type { PendingApproval } from "./use-session-stream";
+import { MessageItem } from "./message-item";
+import { interactiveReplyIndex } from "./a2ui-reply";
+import { WorkspaceLinksProvider } from "@prismshadow/penguin-web/internal";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom, type StreamFollow } from "./stream-follow";
 
-||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/chat/message-stream.tsx
-
-import { SessionWorkGroup, isWorkItem } from "./work-group";
-import { ElidedBodiesContext } from "./elided-body";
-import { HistoryTransferLine } from "./history-loading";
-import { createStreamFollow, followToBottom, stickToBottom } from "./stream-follow";
-import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "@prismshadow/penguin-web/internal";
@@ -20,8 +48,8 @@ import { FindRevealContext, useRegionRevealed } from "@prismshadow/penguin-web/i
  */
 export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
 
-/** No reply yet: the read-only actions a first render starts from. */
-const NO_ACTIONS: ReadonlyMap<number, A2uiActions> = new Map();
+/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
+const NO_FILL = (): void => {};
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -64,12 +92,6 @@ export interface StreamRenderContext {
    */
   onRetry?: () => Promise<void>;
   /**
-   * Opens a failed or retrying model request's details — 「[详情]」 on its line: a report to copy
-   * or to file as a GitHub issue. On every level (a subagent's request fails the same way). The
-   * action does not render if this isn't wired up.
-   */
-  onShowFailure?: (failure: RequestFailure) => void;
-  /**
    * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
    * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
    * doesn't render and links keep opening a new tab if this isn't wired up. Must be stable:
@@ -94,43 +116,21 @@ export interface StreamRenderContext {
    * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
    * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
    * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
-   * multi-select's answers in progress across a reload. Honored for the main conversation only,
-   * and there for the latest reply with nothing said after it (see a2ui-reply.ts); every other
-   * reply gets the same language with input off, no drafts, and the text of the message that
-   * answered it, which its blocks read their answers back from (a2ui-answered.ts). Must keep its
-   * identity while its inputs do: the blocks read it through context, past the memoized
-   * Markdown, so a fresh object per render would re-render every block on every stream frame.
+   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
+   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
+   * language with input off and no drafts. Must keep its identity while its inputs do: the
+   * blocks read it through context, past the memoized Markdown, so a fresh object per render
+   * would re-render every block on every stream frame.
    */
   a2uiActions?: A2uiActions;
-  /**
-   * Unfolds the values a history window carried folded (a tool's output, a long argument, a
-   * thinking block) when their row is opened. Absent, a folded row keeps its preview.
-   */
-  bodies?: ElidedBodies;
-}
-
-/**
- * Whether the image items right behind this one belong to the same message: a prompt the person
- * wrote (its text arrives first, its images as separate items behind it), or the first image of a
- * prompt that had no text. A harness input or a source block that renders as a banner carries no
- * images of its own.
- */
-function takesImages(item: ChatItem): boolean {
-  if (item.kind === "user_image") return true;
-  if (item.kind !== "user_text" || item.sender === "harness") return false;
-  const body = parseUserMessageBody(item.text);
-  return body !== null && body.backgroundDone !== true;
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
 export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRenderContext }) {
   // Split into segments first — group (consecutive thinking + tool calls) or single (everything
   // else) — then render. ActivityGroup needs to know whether it's the last segment (current turn
-  // still in progress) to decide its default expanded/collapsed state. A prompt's images arrive as
-  // image items right behind its text; they join the prompt's segment, so the message draws them
-  // as one row above its text with one footer, the way the composer showed them.
-  type Seg =
-    { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem; images?: string[] };
+  // still in progress) to decide its default expanded/collapsed state.
+  type Seg = { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem };
   const segs: Seg[] = [];
   let run: ChatItem[] = [];
   const flushRun = () => {
@@ -143,11 +143,6 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
     if (isWorkItem(item)) run.push(item);
     else {
       flushRun();
-      const prev = segs[segs.length - 1];
-      if (item.kind === "user_image" && prev?.type === "single" && takesImages(prev.item)) {
-        (prev.images ??= []).push(item.imageUrl);
-        continue;
-      }
       segs.push({ type: "single", item });
     }
   }
@@ -155,17 +150,15 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   // A reply's choice or form takes input only as the main conversation's open question
   // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
-  // reply gets the same language with input off and the message that answered it
-  // (a2ui-answered.ts). The model mutates the items in place, so this is derived on every
-  // render; each reply keeps last render's actions object while its answer and language do,
-  // so its blocks do not re-render on every stream frame.
+  // reply gets the same language with input off, derived once per actions object so both
+  // values keep their identity across stream frames.
   const live = ctx.a2uiActions;
   const liveReply =
     live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
-  const keptActions = useRef(NO_ACTIONS);
-  const still =
-    live === undefined ? undefined : readOnlyActions(keptActions.current, items, live.lang);
-  if (still !== undefined) keptActions.current = still;
+  const still = useMemo<A2uiActions | undefined>(
+    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
+    [live],
+  );
 
   // The stream's last item, the one place the line a run ended on may offer Retry. The ended
   // Task's own stats row can settle after it; anything else that follows — a message, a new
@@ -187,20 +180,11 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       // answers, the question's reply changes a context value rather than its place in the
       // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
       // the blocks of a reply whose value changed re-render.
-      <A2uiActionsProvider
-        key={seg.item.id}
-        value={seg.item === liveReply ? live : still.get(seg.item.id)!}
-      >
+      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
         <MessageItem item={seg.item} ctx={ctx} />
       </A2uiActionsProvider>
     ) : (
-      <MessageItem
-        key={seg.item.id}
-        item={seg.item}
-        ctx={ctx}
-        last={seg.item === tail}
-        {...(seg.images !== undefined ? { images: seg.images } : {})}
-      />
+      <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} last={seg.item === tail} />
     );
 
   /**
@@ -280,22 +264,9 @@ export interface OlderHistoryControls {
   loading: boolean;
   /** The last backfill failed (retry row); null = fine. */
   error: string | null;
-  /** What the failed backfill threw: a defect (not the reader's to fix) offers 「[报告问题]」. */
-  errorCause?: unknown;
   /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
   prependedCount: number;
   onLoad: () => void;
-  /**
-   * Reads running behind the transcript: an older window coming over (its progress replaces the
-   * spinner), and the rest of the conversation syncing behind the first paint (a line in the
-   * row while nothing else is in it). Absent or null for a Session on this server.
-   */
-  transfer?: Pick<HistoryTransfer, "older" | "fill">;
-  /**
-   * A window was loaded because the reader scrolled up past the Tasks the conversation opened
-   * on: only then does reaching the beginning say so. Absent = true (every window counts).
-   */
-  beyondTail?: boolean;
 }
 
 /** Distance from the top (px) at which scrolling starts fetching the previous history window. */
@@ -444,7 +415,7 @@ export function MessageStream({
     follow.hold(menuOpen);
     if (menuOpen) return;
     const el = scrollRef.current;
-    if (el && !returningRef.current) followToBottom(el, follow);
+    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
     syncJump();
     // syncJump is recreated per render; the effect keys on the menu's open state only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -457,9 +428,7 @@ export function MessageStream({
   // Every snap goes through stickToBottom, which reports the landed position to the follow
   // model synchronously — the snap's async scroll event otherwise races late content growth
   // and could misinitialize follow as "parked above the bottom" right after entering a
-  // conversation (see stream-follow.ts). A following view's snap goes through followToBottom,
-  // which first judges the live position, so a scroll the browser has applied but not yet
-  // reported (a key, the scrollbar, a find or outline jump) is never undone.
+  // conversation (see stream-follow.ts).
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
@@ -485,7 +454,7 @@ export function MessageStream({
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && !returningRef.current) followToBottom(el, follow);
+    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
     if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
@@ -504,7 +473,7 @@ export function MessageStream({
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       lastHeightRef.current = el.scrollHeight;
-      if (!returningRef.current) followToBottom(el, follow);
+      if (follow.snaps && !returningRef.current) stickToBottom(el, follow);
       syncJump();
     });
     ro.observe(el);
@@ -513,28 +482,6 @@ export function MessageStream({
     if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
     // syncJump is recreated per render; the observer only needs the stable follow object.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [follow]);
-
-  // The wheel is heard natively, by a listener that is not passive and never prevents the
-  // default. React registers its wheel handlers as passive, and the browser then scrolls on the
-  // compositor first and tells the page up to a frame later: a stream commit in between would
-  // still follow, and its snap would pull the view back down under the reader's first upward
-  // tick. A blocking listener makes the browser hand the page the first wheel event of a gesture
-  // before it scrolls (the rest of the gesture stays asynchronous), so follow is off before the
-  // view moves.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      follow.wheel(e.deltaY);
-      if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
-      syncJump();
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-    // cancelReturn and syncJump are recreated per render but read only refs, state setters and
-    // the stable follow object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
 
@@ -594,13 +541,6 @@ export function MessageStream({
     syncJump();
   };
 
-  // A read behind the transcript says so in the row (an older window loading, or the sync behind
-  // the first paint); a failure keeps the row's retry. The row itself stands only where there
-  // is history above, so a conversation that fits one window never gains or loses it.
-  const reading =
-    older !== undefined &&
-    (older.loading || (older.error === null && (older.transfer?.fill ?? null) !== null));
-
   return (
     <div className="relative h-full min-h-0">
       <div
@@ -617,6 +557,11 @@ export function MessageStream({
         onContextMenu={selectionMenu.hostProps.onContextMenu}
         onKeyDown={selectionMenu.hostProps.onKeyDown}
         onScroll={onScroll}
+        onWheel={(e) => {
+          follow.wheel(e.deltaY);
+          if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
+          syncJump();
+        }}
         onTouchStart={(e) => {
           const t = e.touches[0];
           if (t) follow.touchStart(t.clientY);
@@ -631,45 +576,29 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
-          {/* Top-of-history affordance: spinner while the previous window loads, a notice with
-              Retry after a failure, and — once at least one window was backfilled — a quiet
+          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
+              row after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
               nothing — scrolling near the top triggers the fetch by itself — but the row keeps
               its height the moment there IS history above: a spinner that took space only
               while spinning pushed the transcript down by its own height, and the prepend's
               anchoring could not give that back. */}
           {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
-            <div className="flex min-h-7 items-center justify-center">
-              {reading ? (
-                <HistoryTransferLine
-                  loading={older.loading}
-                  older={older.transfer?.older ?? null}
-                  fill={older.transfer?.fill ?? null}
-                />
+            <div className="flex h-7 items-center justify-center">
+              {older.loading ? (
+                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+                  <Spinner size="sm" label={S.common.loading} />
+                  {S.chat.loadingEarlier}
+                </span>
               ) : older.error !== null ? (
-                // A notice line like the transcript's others, the error in it and Retry after it
-                // — not a red sentence that is itself the button. A press that starts no load
-                // (the stream is rebuilding after a reconnect) leaves Retry pressable.
-                <MessageBubble
-                  variant="notice"
-                  actions={
-                    <>
-                      <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
-                      {isSeriousError(older.errorCause) && (
-                        <ReportIssueAction
-                          report={() =>
-                            exceptionReport(older.errorCause, {
-                              what: "earlier messages of the conversation could not be loaded",
-                            })
-                          }
-                        />
-                      )}
-                    </>
-                  }
+                <button
+                  type="button"
+                  onClick={older.onLoad}
+                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 >
-                  {S.chat.loadEarlierFailed(older.error)}
-                </MessageBubble>
-              ) : !older.hasMore && older.prependedCount > 0 && older.beyondTail !== false ? (
+                  {S.chat.loadEarlierRetry}
+                </button>
+              ) : !older.hasMore && older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>
@@ -683,9 +612,7 @@ export function MessageStream({
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
               <FindRevealContext.Provider value={revealedForFind}>
-                <ElidedBodiesContext.Provider value={ctx.bodies ?? null}>
-                  <MessageItems items={items} ctx={ctx} />
-                </ElidedBodiesContext.Provider>
+                <MessageItems items={items} ctx={ctx} />
               </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}

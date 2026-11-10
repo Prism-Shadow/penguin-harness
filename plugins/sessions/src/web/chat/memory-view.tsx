@@ -1,5 +1,35 @@
+/**
+ * The Memory tab's content (the dock provides the shell — features/dock): two levels, modeled
+ * by memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
+ * agent-settings memory tab reads — with a marker on topics this conversation changed; a
+ * topic's detail is the memory's content rendered like the file viewer (Markdown,
+ * frontmatter stripped — the header already shows those fields). A file deleted after being
+ * changed simply leaves the list (buildMemoryList); the unavailable note below only covers
+ * the race where the file disappears between the listing load and the click.
+ *
+ * Entry routes by origin: a memory-changes card row lands directly on that memory's detail;
+ * entering through the panel toggle lands on the list. Management (add / edit / delete)
+ * stays on the agent-settings tab — the list header links there — so this view never
+ * duplicates the bridge-modal flows.
+ */
+import { useEffect, useState } from "react";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Md,
+  SkeletonList,
+  bodyWithoutFrontmatter,
+} from "@prismshadow/penguin-ui";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
+import {
+  type MemoryChangeRow,
+  type MemoryLocateTarget,
+  memoryRowKey,
 } from "@prismshadow/penguin-web/internal";
-
 
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import {

@@ -36,8 +36,6 @@ import {
   offPeakAt,
   offPeakScheduledRefs,
 } from "@prismshadow/penguin-core/model-catalog";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/server/src/services/usage-service.ts
 import type {
   UsageModelSums,
   UsageGroupModelSums,

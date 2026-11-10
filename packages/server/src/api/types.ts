@@ -3,7 +3,7 @@
  * frontend SPA (single source of truth).
  *
  * These field definitions are authoritative for the Web API contract. Conventions:
- *   - DTO fields use camelCase; OmniMessage keeps the core protocol as-is (snake_case shell),
+ *   - DTO fields use camelCase; AmspRecord keeps the core protocol as-is (snake_case shell),
  *     no conversion;
  *   - This file holds only types, no implementation; exposed to the frontend via package
  *     exports `"./api"` for type-only import;
@@ -15,10 +15,10 @@
  */
 import type {
   CompactionMode,
-  OmniMessage,
+  AmspRecord,
   SessionSource,
   ToolCallPayload,
-} from "@prismshadow/penguin-core/omnimessage";
+} from "@prismshadow/amsp";
 import type {
   MCPServerConfig,
   ThinkingLevelName,
@@ -2337,7 +2337,7 @@ export interface TracePosition {
 }
 
 /** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
-export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition };
 
 export interface SessionForkRequest {
   /** The final root assistant text record of the completed Task to keep. */
@@ -2386,7 +2386,7 @@ export interface SessionPatchRequest {
  *   - `cursor`: the Session channel's most recently assigned SSE event id
  *     (`<epoch>-<seq>`); every event published up to and including this id is already
  *     reflected in `fragments`.
- *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *   - `fragments`: one synthetic `partial_* start` AmspRecord per open streaming
  *     fragment, whose payload carries the full accumulated content so far (text/thinking
  *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
  *     the original `origin` chain preserved.
@@ -2401,7 +2401,7 @@ export interface SessionPatchRequest {
  */
 export interface MessagesLiveTail {
   cursor: string;
-  fragments: OmniMessage[];
+  fragments: AmspRecord[];
 }
 
 /**
@@ -3283,7 +3283,7 @@ export interface MessagingTestMessageResponse {
 }
 
 // ---------------------------------------------------------------------------
-// SSE server events (OmniMessage uses the default event, only server_event here)
+// SSE server events (AmspRecord uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */
@@ -3292,7 +3292,7 @@ export type ServerEvent =
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | { type: "approval_request"; toolCall: AmspRecord<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
       type: "task_state";
@@ -3555,7 +3555,7 @@ export interface SessionContextResponse extends SessionContextParts {
 }
 
 export interface TraceEventsResponse {
-  events: OmniMessage[];
+  events: AmspRecord[];
   offset: number;
   limit: number;
   /**
@@ -4891,15 +4891,6 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 
-||||||| parent of d6be2d5885 (workbench DTOs live in api types; mechanism imports them from api)
-  WorkbenchInfo,
-  WorkbenchVersion,
-  WorkbenchRequest,
-  WorkbenchResponse,
-
-  WorkbenchRecord,
-||||||| parent of 76b96d65fd (api types take workbench face)
-
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
 
@@ -5066,36 +5057,6 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
-/**
- * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
- * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
- * seam authenticates the cookie and the Origin there and hands the socket to the platform,
- * which serves the protocol as the signed-in user (server: socket/ref.ts). Shared so the Web
- * App and anything else that speaks to another server spell the address the same way.
- */
-export const API_SOCKET_PATH = "/api/socket";
-
-/**
- * Paths whose answer depends on the KIND of session behind the request — the desktop shell's
- * own window (`sessionVia === "desktop"`: its update, tray and privacy relays, folder access,
- * revealing a file) or a first-login link (a password change without the old password). The
- * socket's handshake does not say how the cookie behind it was minted, so these are made over
- * HTTP: the socket answers them 421 `not_on_socket` and the Web App never sends them there.
- */
-export function sessionKindPath(pathname: string): boolean {
-  return (
-    pathname === "/api/me/password" ||
-    pathname === "/api/desktop" ||
-    pathname.startsWith("/api/desktop/") ||
-    /^\/api\/projects\/[^/]+\/dirs\/access$/.test(pathname) ||
-    (pathname.startsWith("/api/") && pathname.endsWith("/reveal"))
-  );
-}
-/** The API socket's address. No id is involved: the handshake's cookie names the user. */
-export function apiSocketPath(): string {
-  return API_SOCKET_PATH;
-}
-
 // Desktop folder access (desktop mode, macOS)
 //
 // macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
@@ -5153,80 +5114,6 @@ export interface DesktopOpenPrivacySettingsMessage {
 }
 
 /**
- * A native action the host process can run on the page's behalf — what the desktop shell's
- * application menu used to offer, reached from the command palette instead (the menu bar
- * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
- *
- * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
- * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
- * someone reading a console error has to be told a key. Naming it here makes it findable.
- * It stays a HOST command, run by the shell on its own window: the page is a plain browser
- * environment with no bridge of its own, and adding one for this was rejected
- * (packages/desktop/src/main.ts).
- *
- * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
- * writes it. What this list holds is the ids this build has its OWN words for, so the page
- * can show a better label than the host sent (translated, with search terms). An id absent
- * here is still offered, still runnable, and shown in the host's words.
- */
-export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
-export type HostCommand = (typeof HOST_COMMANDS)[number];
-
-/**
- * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
- * that predates `offers` knows. That page looks every id up in a table of its own and
- * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
- * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
- * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
- */
-export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
-
-/**
- * One command the host offers, carrying the words to show for it.
- *
- * The words travel WITH the command because the three programs involved ship apart: the
- * shell reaches users through an installer, the server and the page through a hot push. A
- * page that could only render commands it already had words for made the offer list pointless
- * — a host could never offer anything new — and reading words it did not have blanked it.
- *
- * `command` is opaque to both server and page: the host decides what it means and the host
- * runs it. Neither side validates it against a list of its own; the only question either asks
- * is whether the host offered it.
- */
-export interface HostCommandOffer {
-  command: string;
-  label: string;
-  /** The same words in Chinese. A host with only one language sends it in both. */
-  labelZh: string;
-}
-
-/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
-export interface HostCommandsMessage {
-  type: "host-commands";
-  commands: HostCommandOffer[];
-}
-
-/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
-export interface HostCommandsResponse {
-  /**
-   * The offered ids this build also has words for, and nothing else.
-   *
-   * For pages older than `offers`, which look up every id in a table of their own: an id
-   * they have never heard of throws while they build the palette, and a throw there blanks
-   * the App. So this field stays conservative and the new field carries everything.
-   */
-  commands: HostCommand[];
-  /** Everything the host offers, in the host's words. What a current page renders. */
-  offers: HostCommandOffer[];
-}
-
-/** Server → shell: run one. `POST /api/command/:command` sends it. */
-export interface HostCommandMessage {
-  type: "host-command";
-  command: string;
-}
-
-/**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
@@ -5280,45 +5167,6 @@ export interface UpdateJobStatus {
 export interface RestartResponse {
   restarting: boolean;
   reason?: "no_supervisor";
-}
-
-/**
- * What the API socket this server holds to one machine is doing (machines/machine-sockets.ts) —
- * the fact behind `MachineInfo.socket`. `since` is the instant the state was entered, so the
- * Machines page can say how long a machine has been dialling, failing or connected instead of
- * sending someone to the browser console for it.
- */
-export interface MachineSocketFact {
-  /**
-   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
-   * when the machine answered the handshake with a status (a program predating the socket),
-   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
-   * the dial did not complete or a socket that was up closed.
-   *
-   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
-   * swaps its platform and never the process that takes the upgrade, so the machine reports the
-   * current build and still has no socket: it is not running this server's version, which a remote
-   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
-   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
-   * completes: a
-   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
-   */
-  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
-  /** When that state was entered (ISO). */
-  since: string;
-  /** The transport's own words where there are any: a refusal's status, a dial's error. */
-  detail?: string;
-}
-
-/**
- * One machine's event, as the machines aggregate stream carries it
- * (`GET /api/projects/:projectId/machines/events`): the machine's own `ServerEvent`, with the
- * machine it came from — one stream carries many machines, and the tag is what keeps their
- * events apart (docs: /docs/server-api § "One event stream per machine").
- */
-export interface MachineEvent {
-  machineId: string;
-  event: ServerEvent;
 }
 
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
@@ -5399,15 +5247,6 @@ export interface MachineInfo {
    */
   keepConnected?: true;
   /**
-   * The API socket this server holds to that machine — connected, dialling, refused or failed,
-   * and since when (machines/machine-sockets.ts). Null for `local`, and until a stream has
-   * asked for a socket at all. A fact about one process on THIS side, like `connection` and
-   * for the same reason: it says the socket exists and what it is doing, never that the far
-   * side is answering. The Machines page reads it so a stuck stream does not have to be found
-   * in the browser console.
-   */
-  socket: MachineSocketFact | null;
-  /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
    * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
@@ -5473,12 +5312,6 @@ export interface MachineSkippedModel {
   /** The far side's error code (`model_not_addable`, `model_not_routable`). */
   code: string;
   reason: string;
-  /**
-   * The entry is one of this server's built-in models for its group, which the machine refused
-   * as not addable: the machine's build does not list it yet, so updating the machine, then
-   * syncing again, carries it. Absent for any other refusal.
-   */
-  builtInHere?: true;
 }
 
 /** A model entry that takes `variable` from this server's environment. */
@@ -5491,30 +5324,17 @@ export interface MachineEnvOnly {
 
 /**
  * A machine this server keeps connected, while it is being brought back. Attempts back off
- * from 15 s, doubling, and stop after `maxAttempts` failures in a row — or after the first, when
- * ssh refused in a way no retry fixes, or when a person asks to stop
- * (`POST …/machines/:machineId/stop-reconnecting`) — until a person asks for a Retry
- * (`POST …/machines/:machineId/reconnect`). After three failures in a row the connection check
- * runs on its own, and its answer is what the page shows as the explanation.
+ * from 5 s, doubling to a 5-minute cap, so a machine that is down for a day costs a probe every
+ * five minutes; after three failures in a row the connection check runs on its own, and its
+ * answer is what the page shows as the explanation.
  */
 export interface MachineReconnect {
-  /** When this streak began: the moment the machine was found not connected, or the Retry that began it again. */
+  /** When this streak began: the moment the machine was found not connected. */
   since: string;
   /** Attempts that failed in this streak; 0 while the first is still to run or running. */
   attempts: number;
-  /** How many failures in a row end the streak: the page says "attempt n of this". */
-  maxAttempts: number;
-  /** When the next attempt runs; null while one is running, and once the streak stopped. */
+  /** When the next attempt runs; null while one is running. */
   nextAt: string | null;
-  /**
-   * The streak stopped, and nothing runs until a person asks for a Retry, which begins a new
-   * one: `attempts` — `maxAttempts` failed in a row; `ssh` — ssh refused in a way retrying
-   * cannot fix (a host key unknown or changed, an unusable key file, a key refused, a broken
-   * ssh config), said by `sshReason`; `cancelled` — a person stopped it. An attempt that was
-   * under way when it was stopped runs out: it may still connect the machine, and its failure
-   * is the `lastError`.
-   */
-  gaveUp?: "attempts" | "ssh" | "cancelled";
   /** The last attempt's failure in the far side's words; null before the first one fails. */
   lastError: string | null;
   /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */
@@ -7060,6 +6880,13 @@ export interface InstalledPlugin {
    * is false and no `error` is reported for it.
    */
   here: boolean;
+  /**
+   * The skills this enabled code plugin declares on the server's skills slot, metadata only —
+   * installable onto an Agent through the plugin install route, by this package name. Present
+   * only while the process runs the package; a plugin no Project lists contributes nothing, so
+   * its skills stop being offered — what "disabled" means for a skill's source.
+   */
+  skills?: SkillMetadataItem[];
 }
 
 /** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
@@ -7229,12 +7056,7 @@ export interface BrowserExtensionPairingResponse {
   code: string;
   /** ISO time the code stops working. */
   expiresAt: string;
-  /**
-   * The address the browser reaches this server at, which the extension pairs with: the public
-   * origin (scheme, host and port; from the forwarded headers when the server trusts a proxy).
-   * Null only from an older server, which echoed the request's `Origin` and had none to echo for
-   * a call that carried no `Origin`.
-   */
+  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
   origin: string | null;
 }
 

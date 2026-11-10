@@ -20,13 +20,8 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
-
-import { Badge, ConfirmModal, Pager, toastSuccess } from "@prismshadow/penguin-ui";
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/usage/errors-panel.tsx
 import { Empty } from "./usage-charts";
 import { toneInk } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/usage/errors-panel.tsx
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
@@ -246,7 +241,7 @@ export function ErrorsPanel({
       // refetched rather than patched here; that also restores page 0 from the new snapshot.
       onCleared();
     } catch (e) {
-      toastApiError(e);
+      toastError(apiErrorText(e));
     } finally {
       setClearing(false);
     }

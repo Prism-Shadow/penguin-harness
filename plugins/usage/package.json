@@ -35,5 +35,11 @@
   },
   "penguin": {
     "parked": true
-  }
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json --project ../../plugins/machines/tsconfig.json --project ../../plugins/plugins/tsconfig.json --project ../../plugins/workbenches/tsconfig.json --project ../../plugins/models/tsconfig.json --project ../../plugins/browser/tsconfig.json --project ../../plugins/messaging/tsconfig.json --project ../../plugins/agents/tsconfig.json --project ../../plugins/projects/tsconfig.json --project ../../plugins/sessions/tsconfig.json --project ../../plugins/settings/tsconfig.json --project ../../plugins/usage/tsconfig.json --project ../../plugins/schedules/tsconfig.json --project ../../plugins/sandbox/tsconfig.json --out ifaces.json"
+  },
+  "files": [
+    "ifaces.json"
+  ]
 }

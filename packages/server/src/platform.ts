@@ -196,15 +196,7 @@ import {
   UsageStore,
 } from "@penguinharness/plugin-usage/server";
 import { FileReveal, WorkspaceFiles } from "@penguinharness/plugin-projects/server";
-
-||||||| parent of 51c7559ed6 (sandbox capability becomes plugins/sandbox (six files: service, dimensions, settings store/policy/status); host and siblings read the plugin face; server exposes the compile-time config seam)
 import { OrgCache } from "@penguinharness/plugin-company/server";
-
-||||||| parent of 1cb626529b (messaging: mechanism and repos move into plugin-messaging)
-||||||| parent of 66b8653cb4 (agents: mechanism and repo move into plugin-agents)
-||||||| parent of d428b22b95 (settings/identity: mechanisms and repos move into plugin-settings)
-||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
-||||||| parent of d82f3c928e (organization mechanism declaration (OrgCache) moves to plugin-company server; host platform and org repos read the plugin face)
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
@@ -239,39 +231,17 @@ export class Startup {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
-  @Use() private readonly projectConfig!: ProjectConfigStore;
-  @Use() private readonly agents!: AgentLifecycle;
 
   async setup() {
-    // Every Project's config through the server's read path once, before anything opens one:
-    // its one-time migrations (core's, and the server's own that need the catalog) write back
-    // there, and a Session the schedulers resume reads its file with core's loader, which runs
-    // only core's. A failure must not block the boot; each file is read again, and written
-    // back, at its next read through the server. Goes with the migrations at 0.3.0.
-    await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
-      this.errors.record({ source: "process", err, code: "config_migration_failed" });
-    });
-    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; and
-    // company mode's scheduler, with the same lifetime and the same startup rule (reconcile
-    // once, no backfill), only active while this App is. Neither first pass is on the boot
-    // path: a pass can fire a missed slot, and a fire can reach the network (a model's
-    // credential refresh) before it is queued — the port is announced and local pages are
-    // served without waiting on it. Each pass still runs, here, as the platform comes up.
-    void this.scheduler.start().catch((err: unknown) => {
-      this.errors.record({ source: "process", err, code: "scheduler_start_failed" });
-    });
-    void this.orgScheduler.start().catch((err: unknown) => {
-      this.errors.record({ source: "process", err, code: "org_scheduler_start_failed" });
-    });
+    // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
+    await this.scheduler.start();
+    // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
+    // no backfill), only active while this App is.
+    await this.orgScheduler.start();
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
-    });
-    // Deleted Agents whose files a stopped process had not finished removing: removed now, in
-    // the background, the way the delete itself removes them.
-    void this.agents.resumeDeletions().catch((err: unknown) => {
-      this.errors.record({ source: "process", err, code: "agent_purge_failed" });
     });
     // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
     // so this App booting hands the same build on to any machine still carrying a different
@@ -420,17 +390,6 @@ export class SessionRuntimeModule {}
 export class SettingsModule {}
 
 /**
- * What an account keeps on the server beside its preferences: unsent drafts and the custom
- * background image. A group of its own rather than part of the settings group, so a stand-in
- * for the settings store does not have to stand in for these too.
- */
-@Module({
-  children: [UserDraftsRepo, BackgroundImagesRepo],
-  exports: [UserDraftsStore, BackgroundImageStore],
-})
-export class AccountDataModule {}
-
-/**
  * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
  * that stands in for the settings group replaces the store, not the schema-and-watch layer
  * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
@@ -495,7 +454,6 @@ export class WorkspaceModule {}
     MessagingBindingsRepo,
     MessagingConversationsRepo,
     MessagingModule,
-    MessagingAccountsModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
 })
@@ -514,11 +472,9 @@ export class MessagingHubModule {}
     HttpModule,
     WebModule,
     InstallRoutes,
-    HandshakeRoutes,
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
-    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
@@ -526,13 +482,14 @@ export class MessagingHubModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    PluginSkillsProvider,
     PluginCliCommandsProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
-  exports: [Http, WebShell, UpdateCheck],
+  exports: [Http, WebShell, UpdateCheck, PluginSkills],
 })
 export class ApiModule {}
 
@@ -547,7 +504,6 @@ export class WorkbenchesModule {}
   children: [
     RuntimeModule,
     SettingsModule,
-    AccountDataModule,
     PluginConfigModule,
     IdentityModule,
     ProjectsModule,
@@ -559,15 +515,11 @@ export class WorkbenchesModule {}
     MessagingHubModule,
     CompanyModule,
     ApiModule,
-    PluginLibraryModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     TerminalRelay,
-    SessionForwardRoutes,
-    HistoryRoutes,
-    HistoryLinesRoutes,
     WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,

@@ -48,7 +48,7 @@ import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
 import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
-import { watchBenchmarkCases } from "./benchmark-sources";
+import { fetchBenchmarkCases } from "./benchmark-sources";
 import {
   benchmarkDescription,
   evaluationLabel,
@@ -383,27 +383,26 @@ export function BenchmarkDetail({
   /** The case whose Ask AI dialog is open; kept as an id so it cannot outlive its case dialog. */
   const [askingCaseId, setAskingCaseId] = useState<string | null>(null);
 
-  // Another Benchmark starts over; a copy found on one more machine asks again with the Cases on
-  // screen kept, each copy's Cases joining as it answers.
   useEffect(() => {
     setCaseStatements(null);
     setCaseError(null);
     setOpenCaseId(null);
     setOpenEvaluationIndex(null);
     setAskingCaseId(null);
-  }, [projectId, bm.id]);
-  useEffect(
-    () =>
-      watchBenchmarkCases(projectId, bm, ({ cases, error }) => {
-        if (cases !== null) {
-          setCaseStatements(cases);
-          setCaseError(null);
-        } else if (error !== null) setCaseError(apiErrorText(error));
-      }),
+    let cancelled = false;
+    fetchBenchmarkCases(projectId, bm)
+      .then((cases) => {
+        if (!cancelled) setCaseStatements(cases);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setCaseError(apiErrorText(error));
+      });
+    return () => {
+      cancelled = true;
+    };
     // The machines are part of what the read asks; the key keeps a re-render from re-asking.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, bm.id, machinesKey],
-  );
+  }, [projectId, bm.id, machinesKey]);
 
   // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
   // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.

@@ -1,9 +1,33 @@
+/**
+ * The chat page's session statistics: the elapsed reading the header chips and the details card
+ * share, and the details card's list of totals.
+ *
+ * The list reads the way the Trace view's overview does: the same labels, number formats and
+ * breakdown rows (components/ui/stat-hint.tsx), and a breakdown only ever behind a circled "?"
+ * right of its total. Total Tokens keeps its cache hit rate inline in parentheses — a rate is a
+ * reading of its own, not a part of the total — and puts its three usage parts behind the "?";
+ * Cost puts its priced parts there, Elapsed its model API and tool components.
+ */
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import type { CostParts } from "@prismshadow/penguin-server/api";
+import {
+  CostPartsRows,
+  ElapsedSplitRows,
+  StatHint,
+  TokenPartsRows,
+} from "@prismshadow/penguin-web/internal";
+import type { UsageParts } from "@prismshadow/penguin-web/internal";
+import {
+  cacheHitRate,
+  formatPercent,
+  humanizeDuration,
+  humanizeDurationLive,
 } from "@prismshadow/penguin-web/internal";
 import { liveSessionElapsedMs, sessionElapsedBreakdown } from "@prismshadow/penguin-web/internal";
 import type { TaskStatsTracker } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { Currency } from "@prismshadow/penguin-web/internal";
-
 
 interface ElapsedSource {
   stats: TaskStatsTracker;

@@ -7,9 +7,8 @@
  * one image from the Trace record, so a page costs its text and the browser fetches each
  * picture as it draws it. The parameterless full read is left alone.
  *
- * URL: `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
- * (under `/api/amsp/v1/sessions` on the Agent API's own pages: each door references its own
- * route), where (file, ordinal) is the record's `tracePosition`; without `i` it names the record's
+ * URL: `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`,
+ * where (file, ordinal) is the record's `tracePosition`; without `i` it names the record's
  * `image_url`, with `i` the tool output's `images[k]`. A Trace record never changes, so the
  * route answers it as immutable.
  *
@@ -20,13 +19,10 @@
  */
 import type {
   ImageUrlPayload,
-  OmniMessage,
+  AmspRecord,
   ToolCallOutputPayload,
 } from "@prismshadow/penguin-core";
 import type { HistoryMessage, TracePosition } from "@prismshadow/penguin-server/api";
-
-import type { ImageUrlPayload, AmspRecord, ToolCallOutputPayload } from "@prismshadow/penguin-core";
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/server/src/services/trace-images.ts
 
 /** Image types the trace-image route serves (core's own supported set). */
 const REFERENCED_IMAGE_MIMES: ReadonlySet<string> = new Set([
@@ -47,18 +43,10 @@ function referableImage(url: string): { mime: string; dataStart: number } | null
   return REFERENCED_IMAGE_MIMES.has(mime) ? { mime, dataStart: comma + 1 } : null;
 }
 
-/** Where the Web App's Session routes are served: the default base of an image reference. */
-export const SESSION_ROUTES_BASE = "/api/sessions";
-
-/** The route URL of one image slot of the record at `at` (`slot` = index into a tool output's `images`), under `base`. */
-export function traceImageUrl(
-  sessionId: string,
-  at: TracePosition,
-  slot?: number,
-  base: string = SESSION_ROUTES_BASE,
-): string {
+/** The route URL of one image slot of the record at `at` (`slot` = index into a tool output's `images`). */
+export function traceImageUrl(sessionId: string, at: TracePosition, slot?: number): string {
   const query = `file=${at.fileIndex}&ordinal=${at.ordinal}${slot !== undefined ? `&i=${slot}` : ""}`;
-  return `${base}/${encodeURIComponent(sessionId)}/trace-image?${query}`;
+  return `/api/sessions/${encodeURIComponent(sessionId)}/trace-image?${query}`;
 }
 
 /**
@@ -67,11 +55,7 @@ export function traceImageUrl(
  * messages carry no position and stay inline. The input is never mutated; a message with
  * nothing to replace is returned as is.
  */
-export function withImagesByReference(
-  sessionId: string,
-  msg: HistoryMessage,
-  base: string = SESSION_ROUTES_BASE,
-): HistoryMessage {
+export function withImagesByReference(sessionId: string, msg: HistoryMessage): HistoryMessage {
   const at = msg.tracePosition;
   if (at === undefined || msg.type !== "model_msg") return msg;
   const kind = (msg.payload as { type?: string }).type;
@@ -80,10 +64,7 @@ export function withImagesByReference(
     if (typeof payload.image_url !== "string" || referableImage(payload.image_url) === null) {
       return msg;
     }
-    return {
-      ...msg,
-      payload: { ...payload, image_url: traceImageUrl(sessionId, at, undefined, base) },
-    };
+    return { ...msg, payload: { ...payload, image_url: traceImageUrl(sessionId, at) } };
   }
   if (kind === "tool_call_output") {
     const payload = msg.payload as ToolCallOutputPayload;
@@ -92,7 +73,7 @@ export function withImagesByReference(
     const images = payload.images.map((image, k) => {
       if (typeof image !== "string" || referableImage(image) === null) return image;
       replaced = true;
-      return traceImageUrl(sessionId, at, k, base);
+      return traceImageUrl(sessionId, at, k);
     });
     if (replaced) return { ...msg, payload: { ...payload, images } };
   }

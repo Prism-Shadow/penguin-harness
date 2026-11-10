@@ -19,7 +19,43 @@ import {
   stripLeadingMarkerBlocks,
   userText,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/amsp";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { SessionRow } from "@prismshadow/penguin-server/internal";
+import { vaultRoutes } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
+import type { Settings } from "@prismshadow/penguin-server/internal";
+import type { LiveStreams } from "@prismshadow/penguin-server/internal";
+import type { Auth } from "@prismshadow/penguin-server/internal";
+import type { AgentApi } from "@prismshadow/penguin-server/internal";
+import { assertWorkspaceAllowed } from "@prismshadow/penguin-server/internal";
+import { isGoalOutcome } from "@prismshadow/penguin-server/internal";
+import { deleteSessionTree } from "@prismshadow/penguin-server/internal";
+import type { SessionDeletionDeps } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { sseEndpoint, streamRevocation } from "@prismshadow/penguin-server/internal";
+import { badRequest, listingViewOfRequest, optionalEnum, optionalSessionListPagingQuery, optionalString, paginationQuery, parseNonNegativeInt, pathParam, positiveIntParam, readJson, requireEnum, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import { normalizePenguinGoOrigin } from "@prismshadow/penguin-server/internal";
+import type { ChannelHub } from "@prismshadow/penguin-server/internal";
+import type { PreviewTokenSigner } from "@prismshadow/penguin-server/internal";
+import type { ActivityCursor, SessionListOrder, SessionListPaging, SessionService } from "@prismshadow/penguin-server/internal";
+import { assertAttachmentBudget, attachFilesToInput, parseAttachmentPart, readRecalledFiles, removeAttachments } from "@prismshadow/penguin-server/internal";
+import type { TaskAttachment } from "@prismshadow/penguin-server/internal";
+import { INLINE_IMAGE_MAX_BYTES, INLINE_IMAGE_MAX_MB, toAttachmentLimits } from "@prismshadow/penguin-server/internal";
+import type { AttachmentLimits } from "@prismshadow/penguin-server/internal";
+import { Channels, Config, Desktop } from "@prismshadow/penguin-server/internal";
+import { platformAuthRoutes } from "@prismshadow/penguin-server/internal";
+import { commandPolicyRoutes } from "@prismshadow/penguin-server/internal";
+import { ArchivedSessionsService } from "@prismshadow/penguin-server/internal";
+import { PreviewTokens } from "@prismshadow/penguin-server/internal";
+import type { Access, ModelOAuth, ProjectConfigStore, ProjectEvents } from "@prismshadow/penguin-server/internal";
+import type { PlatformAuth } from "@prismshadow/penguin-server/internal";
+import type { Schedules, SessionDrivers, SessionIndex, SessionOrigins } from "@prismshadow/penguin-server/internal";
+import type { ErrorLog, UsageQueries } from "@prismshadow/penguin-server/internal";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-server/internal";
+import type { FileReveal, WorkspaceFiles } from "@prismshadow/penguin-server/internal";
 import type {
   ApprovalMode,
   FilesStatResponse,
@@ -48,17 +84,17 @@ import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
 import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import { withImagesByReference } from "@penguinharness/plugin-usage/server";
-import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import type { SessionRow } from "@prismshadow/penguin-server/internal";
 
-import { vaultRoutes } from "@prismshadow/penguin-server/internal";
 
-import type { AgentConfig, AgentLifecycle } from "@prismshadow/penguin-server/internal";
-import type { Settings } from "@prismshadow/penguin-server/internal";
-import type { LiveStreams } from "@prismshadow/penguin-server/internal";
-import type { Auth } from "@prismshadow/penguin-server/internal";
-import type { AgentApi } from "@prismshadow/penguin-server/internal";
+
+
+
+
+
+
+
+
+
 
 import type { OrgService } from "@penguinharness/plugin-company/server";
 
@@ -105,6 +141,35 @@ function parseSandboxPick(body: unknown): Partial<SessionSandbox> | undefined {
 }
 
 /** The four approval modes (shared with the chat-defaults route's validation). */
+export interface SessionsRouteDeps {
+  agentConfigService: AgentConfig;
+  channels: ChannelHub;
+  config: ServerConfig;
+  manager: SessionManager;
+  messaging: MessagingBridge;
+  previewTokens: PreviewTokenSigner;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  /** Tells everyone who can see the Project about a change the list could not otherwise learn of. */
+  projectEvents: ProjectEvents;
+  serverSettingsRepo: Settings;
+  sessionService: SessionService;
+  sessionSources: SessionOrigins;
+  sessionsRepo: SessionIndex;
+  traceService: Traces;
+  workspaceFiles: WorkspaceFiles;
+  /** Whether this server was spawned by the desktop shell — half of the reveal route's gate. */
+  desktopMode: boolean;
+  /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
+  fileReveal: FileReveal;
+  /** The registry that ends a Session stream when the session behind it is revoked. */
+  liveStreams: LiveStreams;
+  /** Re-validates the session behind an open stream, once per heartbeat. */
+  auth: Auth;
+  /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
+  drivers?: SessionDrivers;
+}
+
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "allow-all",
   "deny-all",

@@ -22,9 +22,6 @@ import { ICON_SIZE, MenuItem, SearchInput } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { filterSkills, localizedShortText } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 1c6504848e (sessions: fill internal gaps, rewire host web imports, fix star conflicts)
-||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
 import { SkillIcon } from "./skill-icon-view";
 
 /** A bulk-row action: a plain text button, sized to sit inside the panel's chrome without competing with the rows. */

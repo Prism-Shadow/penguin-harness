@@ -1,7 +1,28 @@
+/**
+ * The task-completion notification's opt-in, and the OS permission it depends on
+ * (state/use-completion-notifications.ts is the only reader of both).
+ *
+ * Two separate facts decide whether a notification can be shown, and neither implies the
+ * other: the user asked for notifications (stored here, `penguin.notifications`, registered
+ * as a browser preference in lib/install-scope.ts), and the platform granted permission to
+ * show them. A browser reports the second as `Notification.permission`, and it starts at
+ * "default" — no code path grants it, and on macOS a window that never calls
+ * `requestPermission()` is not even listed in System Settings → Notifications.
+ *
+ * THE PROMPT IS TIED TO THE SWITCH, never to a page load. `requestPermission()` opens the
+ * system dialog, an unexpected dialog is reflexively dismissed, and a dismissal is not a
+ * question the platform asks twice: once denied, later calls resolve "denied" without
+ * prompting and the only way back is the system's own settings. So permission is asked for
+ * at the moment the user turns the preference on — an action that already says yes — and
+ * the preference is stored only if that request came back granted.
+ *
+ * The store follows features/dock/dock-launcher-state.ts: a module-level version counter
+ * read through `useSyncExternalStore`, with the value itself read separately, so the
+ * settings row and the app-wide hook stay in step without either owning the state.
+ */
+
 import { PENGUIN_LOGO_URL } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 53df88c5aa (settings/pref cluster: settings-request, settings-sections, notification-pref, instant-setting move to plugin-settings web/lib; host reads via internal):packages/web/src/lib/notification-pref.ts
 
 /** localStorage key of the opt-in; only NOTIFICATIONS_ON counts as on. */
 export const NOTIFICATIONS_KEY = "penguin.notifications";
@@ -60,35 +81,21 @@ export function readNotificationsEnabled(storage?: NotificationStorage | null): 
   return cache;
 }
 
-function notify(): void {
-  version += 1;
-  for (const listener of listeners) listener();
-}
-
-/**
- * Stores the opt-in and tells everything rendering from it. Never touches OS permission. Without
- * an explicit storage this is a user's choice: cached and carried to the account.
- */
+/** Stores the opt-in and tells everything rendering from it. Never touches OS permission. */
 export function writeNotificationsEnabled(
   enabled: boolean,
   storage?: NotificationStorage | null,
 ): void {
-  const value = enabled ? NOTIFICATIONS_ON : NOTIFICATIONS_OFF;
+  const target = storage === undefined ? defaultStorage() : storage;
   try {
-    if (storage === undefined) writeCached(NOTIFICATIONS_KEY, value);
-    else storage?.setItem(NOTIFICATIONS_KEY, value);
+    target?.setItem(NOTIFICATIONS_KEY, enabled ? NOTIFICATIONS_ON : NOTIFICATIONS_OFF);
   } catch {
     // Private-mode storage failures only cost persistence; this session still updates.
   }
   if (storage === undefined) cache = enabled;
-  notify();
+  version += 1;
+  for (const listener of listeners) listener();
 }
-
-// The account's choice replaced the cached one: the next read takes it from the cache.
-subscribeAccountApplied(() => {
-  cache = null;
-  notify();
-});
 
 /** A platform's answer, plus the case where it has no Notification API to answer with. */
 export type NotificationAccess = NotificationPermission | "unsupported";
@@ -159,7 +166,7 @@ export async function enableNotifications(
 }
 
 /** What the settings row has to say under the switch, or null when it has nothing to add. */
-export type NotificationHint = "unsupported" | "denied" | "dismissed" | "notAllowedHere" | null;
+export type NotificationHint = "unsupported" | "denied" | "dismissed" | null;
 
 /**
  * The hint for a platform state. `asked` is whether a request has answered in this session,
@@ -167,19 +174,9 @@ export type NotificationHint = "unsupported" | "denied" | "dismissed" | "notAllo
  * where every first visit starts, and nothing to report — from a prompt closed without an
  * answer, which is a request that failed and has to say so. Without that line the switch
  * springs back to off with no explanation, which reads as a control that does nothing.
- *
- * `wanted` is the account's preference. A browser that was never asked, under an account that
- * wants notifications, shows the switch off (this browser will show none) and says why: the
- * preference came from another browser, and turning the switch on here is the gesture that asks.
  */
-export function notificationHintFor(
-  access: NotificationAccess,
-  asked: boolean,
-  wanted = false,
-): NotificationHint {
+export function notificationHintFor(access: NotificationAccess, asked: boolean): NotificationHint {
   if (access === "unsupported") return "unsupported";
   if (access === "denied") return "denied";
-  if (access !== "default") return null;
-  if (asked) return "dismissed";
-  return wanted ? "notAllowedHere" : null;
+  return access === "default" && asked ? "dismissed" : null;
 }

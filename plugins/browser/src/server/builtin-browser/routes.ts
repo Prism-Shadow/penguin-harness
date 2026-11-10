@@ -57,8 +57,6 @@ import { requireHuman } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { HttpError, errorBody } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
-
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/server/src/builtin-browser/routes.ts
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
 import { BrowserUnavailableError } from "./service.js";
@@ -142,8 +140,6 @@ export interface BrowserRouteDeps {
   driverOf?(sessionId: string): Actor | null;
   /** The extension pairing; absent, the server offers no chrome and the extension routes 404. */
   pairing?: ExtensionPairing;
-  /** Whether the forwarded headers name the public origin (config.trustProxy). */
-  trustProxy?: boolean;
 }
 
 const adminRequired = () =>
@@ -213,9 +209,7 @@ export function builtinBrowserRoutes(
     const minted = pairing.mint(userId);
     return c.json({
       ...minted,
-      // The address the extension is to pair with is the one the browser is on. Not the
-      // request's `Origin`: a call over the API socket carries none, and a relay may rewrite it.
-      origin: publicOriginOf(c, deps.trustProxy ?? false),
+      origin: c.req.header("origin") ?? null,
     } satisfies BrowserExtensionPairingResponse);
   });
 

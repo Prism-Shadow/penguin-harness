@@ -1,3 +1,70 @@
+/**
+ * The plugins a PROJECT asks for, and which of them this process is actually running:
+ *
+ *   GET    /                      this Project's list, joined with what the process runs,
+ *                                 plus which plugins the build ships (any member)
+ *   POST   / { specifier,         npm-install the package if this server runs it and the build
+ *            machineId? }         does not ship it, add it to this Project's shared table — or
+ *                                 to that machine's own table — and apply (admin). The specifier
+ *                                 is a registry name, or an https link to a git repository or a
+ *                                 tarball (plugin/source.ts), which installs here only
+ *   POST   /archive               install an uploaded package zip on this server (admin); 409
+ *          { dataBase64,          plugin_exists when another version is installed, unless
+ *            overwrite? }         `overwrite`
+ *   PUT    / { plugins }          rewrite this Project's shared table, and apply (admin)
+ *   DELETE /?specifier=…          drop it from every table of this Project — or, with
+ *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin);
+ *                                 the package leaves the disk once nothing lists it here
+ *
+ * WHAT A TABLE LISTS is server modules: a package of Skills, hooks or MCP servers alone is the
+ * library's (core lists every package of the prefix that carries them), installed into Agents
+ * rather than loaded, so installing one writes no table. And a package from a link or a zip is
+ * listed in THIS machine's own table, never the shared one: another machine handed its name
+ * would fetch whatever the registry has under that name.
+ *
+ * WHAT IS REFUSED after the fact: the prefix resolves before the shipped plugins, so a package
+ * under the name of a module the build ships would replace it for every Project — a zip saying
+ * so is refused before it installs, and a link (whose name npm reads) is removed again; so is a
+ * package that turns out to be no plugin at all. The refusal says that its install scripts have
+ * already run.
+ *
+ * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
+ * package name → requirement, Cargo's `[dependencies]` shape, plus a `[plugins.<machineId>]`
+ * table for what one machine runs besides — PluginTables in core),
+ * beside its models — because machines are lent to Projects, so a Project's list is what
+ * says which machines a plugin has to reach (PRFC-0010). The data root's old `plugins.json`
+ * is not read any more, deliberately without a migration: a deployment that had one starts
+ * with no plugins until each Project asks again.
+ *
+ * WHAT ACTUALLY RUNS is the CLOSURE — the union over this root's Projects — because loading
+ * is per process: there is one module tree. So a plugin any Project asks for is in the tree,
+ * and what it contributes is visible to all of them. A row here is therefore "this Project
+ * asked for it" joined with "the process has it", which are two different facts.
+ *
+ * APPLYING. A write asks the App to re-assemble itself (the platform's own `Reassembly`,
+ * hmr/platform.ts): the new create() reads the closure and imports what it names — no
+ * process restart, ptys and connections delivered across it exactly as a push delivers
+ * them. What a push does not deliver, this does not either: agent runs in flight are
+ * stopped and pending approvals denied, in EVERY Project, because there is one tree. The
+ * page says so before an admin applies a change. The edit itself travels with the
+ * re-assembly (ReassemblyChange): written in its queue, so two admins' edits of one file
+ * never interleave, and undone when the new tree fails to boot — the previous App is
+ * restored on the previous list, and the answer is "did not take".
+ */
+import { Hono } from "hono";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type {
+  InstalledPlugin,
+  InstalledPluginsResponse,
+  PluginInstallOutcome,
+  UnsatisfiedPlugin,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
@@ -23,8 +90,6 @@ import {
   pluginsPrefix,
   readInstalledVersion,
   type InstalledPackage,
-
-||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
 } from "../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../plugin/source.js";
 import { parsePluginArchive } from "../services/plugin-archive.js";
@@ -32,7 +97,6 @@ import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../plugin/host.
 import type { PluginSkills } from "../plugin/skills.js";
 import { toSkillItem } from "@prismshadow/penguin-server/internal";
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
-
 import type { Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "@prismshadow/penguin-server/internal";
 
@@ -51,6 +115,11 @@ export interface InstalledPluginsDeps {
   };
   projectConfig: ProjectConfigStore;
   access: Access;
+  /**
+   * The skills the enabled code plugins contribute, by package specifier (plugin/skills.ts),
+   * metadata only — what an active row offers as installable onto an Agent.
+   */
+  contributed: () => Promise<ReadonlyMap<string, SkillMetadataItem[]>>;
   /**
    * Writes the change and re-assembles the App on it. Answers whether the running tree is
    * the new one; false when its boot failed (the change is then undone and the previous
@@ -102,6 +171,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       ]),
     ];
     const { loaded, skipped, unsatisfied } = deps.running();
+    const contributed = await deps.contributed();
     const bases = pluginBases(deps.root, deps.assetsDir());
     // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
     // asked for. What the package declares is read from its files; whether the process holds
@@ -135,6 +205,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       const unmet = where.here ? unsatisfied.get(specifier) : undefined;
       const active = where.here && loaded.has(specifier) && unmet?.disabled !== true;
       const failure = where.here ? skipped.get(specifier) : undefined;
+      // The installable list: only what the process actually runs, so a plugin that stopped
+      // running (left out, failed to load) stops offering its skills with it.
+      const skills = active ? contributed.get(specifier) : undefined;
       plugins.push({
         specifier,
         active,
@@ -145,6 +218,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         ...(unmet !== undefined
           ? { unsatisfied: { disabled: unmet.disabled, reason: unmet.reason } }
           : {}),
+        ...(skills !== undefined ? { skills } : {}),
         ...where,
       });
     }
@@ -202,13 +276,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** What a package in this server's prefix is, by its table (core plugin/kinds.ts): a library plugin (Skills, hooks, MCP servers or workbenches), server modules, or both. */
+  /** What a package in this server's prefix carries: skills, hooks or MCP servers (the library's), server modules (a table's). */
   const kindsOf = (name: string): { library: boolean; modules: boolean } => {
-    const parts = libraryParts(installedPackageDir(pluginsPrefix(deps.root), name));
-    return {
-      library: parts.skills || parts.hooks || parts.mcp || parts.workbenches,
-      modules: parts.modules,
-    };
+    const dir = installedPackageDir(pluginsPrefix(deps.root), name);
+    return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
   };
 
   /** The machine a verb is scoped to — its own table — or null for the shared table. */
@@ -328,7 +399,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         installed.name,
         400,
         "not_a_plugin",
-        `${installed.name} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry (a package without an ifaces.json was never built: its build runs penguin-gen-ifaces).`,
+        `${installed.name} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (\`penguin.mcp_servers\`) nor the ifaces.json of server modules.`,
       );
     }
     return kinds;
@@ -534,9 +605,11 @@ export class InstalledPluginRoutes {
   @Use() private readonly machines!: Machines;
   @Use() private readonly db!: Db;
   @Use() private readonly packages!: PluginPackages;
+  @Use() private readonly pluginSkills!: PluginSkills;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
+    const pluginSkills = this.pluginSkills;
     this.routes = installedPluginRoutes({
       root: this.config.root,
       machineId: new MachinesRepo(this.db as unknown as DatabaseSync).ownId(),
@@ -551,6 +624,15 @@ export class InstalledPluginRoutes {
           // A host registered by a generation older than this record has none to give.
           unsatisfied: typeof host.unsatisfied === "function" ? host.unsatisfied() : new Map(),
         };
+      },
+      // The contributed skills are the enabled code plugins' own files, projected through the
+      // shared allowlist like every skill listing (plugin-library.ts).
+      contributed: async () => {
+        const out = new Map<string, SkillMetadataItem[]>();
+        for (const { specifier, skills } of await pluginSkills.list()) {
+          out.set(specifier, skills.map(toSkillItem));
+        }
+        return out;
       },
       projectConfig: this.projectConfig,
       access: this.access,

@@ -15,9 +15,6 @@
 import { useMemo } from "react";
 import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { BOOK_ICON } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 1c6504848e (sessions: fill internal gaps, rewire host web imports, fix star conflicts)
-||||||| parent of 4a61fbc4a2 (sessions: fix web deps and rewire remaining single-level out-of-frame imports)
 import { sanitizeSkillIcon } from "./skill-icon";
 
 /**

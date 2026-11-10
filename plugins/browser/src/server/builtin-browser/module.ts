@@ -27,10 +27,7 @@ import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-server/internal";
 import type { Channels, Clock, Db, Desktop, Log, Paths } from "@prismshadow/penguin-server/internal";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import { ensureInstallId } from "@prismshadow/penguin-server/internal";
-
-||||||| parent of 34ff1c7f7a (workbenches/workspace/plugins mechanisms and browser-extensions repo move into their plugins)
 import type { Users } from "@prismshadow/penguin-server/internal";
-
 import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-server/internal";
 import { shellPortOf } from "@prismshadow/penguin-server/internal";
@@ -121,7 +118,6 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly sessions!: SessionIndex;
-  @Use() private readonly config!: Config;
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
@@ -183,7 +179,6 @@ export class BuiltinBrowserRoutes {
         return user === null ? null : { userId: user.userId, isAdmin: user.isAdmin };
       },
       pairing,
-      trustProxy: this.config.trustProxy,
     });
     this.pairRoutes = extensionPairRoutes(pairing);
     this.gate = {

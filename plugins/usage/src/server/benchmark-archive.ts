@@ -1,5 +1,45 @@
+/**
+ * A Benchmark package as a zip, both ways: reading the one a member uploads to the Evaluation
+ * Center, and packing a Benchmark's directory for the Export button on its page.
+ *
+ * The package is what core's benchmark-manifest.ts defines: `benchmark_config.toml` and every
+ * `CASE-*` tree. Everything else in a Benchmark's directory belongs to that copy and never travels:
+ * `scoreboard.yaml` (its evaluation records), the `.jobs/` Harbor trials, any other entry whose
+ * name starts with a dot, and symlinks. Packing leaves them out. An upload carrying one of them at
+ * its top level — or anything else that is neither `benchmark_config.toml` nor a `CASE-*`
+ * directory — is refused, naming the entry, rather than trimmed: such a zip is a copy of
+ * someone's directory, not a package. A dot-entry inside a case (a `.DS_Store`) is no part of the
+ * package either; it is skipped on the way in, as it is on the way out. A link or other special
+ * file is refused wherever it is: fflate hands every entry back as plain bytes, so the type is
+ * read from the central directory.
+ *
+ * Both directions hold the same caps — 1000 files, 5MB a file and 20MB inflated (the declared
+ * sizes, checked before anything inflates), 14MB zipped — and the same manifest rules (core's
+ * checkBenchmarkManifest on top of what the list reads), so whatever Export produces, Import
+ * takes back. Nothing in a package is ever executed: it is Markdown and the small files its cases
+ * name.
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { strFromU8, zipSync } from "fflate";
+import { parse as parseToml } from "smol-toml";
+import {
+  BENCHMARK_MANIFEST,
+  BenchmarkManifestError,
+  checkBenchmarkManifest,
+  isValidId,
+  parseBenchmarkManifest,
+  type BenchmarkManifest,
+} from "@prismshadow/penguin-core";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_BENCHMARK_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
+  unzipBounded,
 } from "@prismshadow/penguin-server/internal";
-
 
 /** A case's directory: `CASE-` and the id alphabet, the create route's rule for a case id. */
 const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;
@@ -8,16 +48,17 @@ const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;
 const CASE_READMES = ["statement/README.md", "rubric/README.md"] as const;
 
 /**
- * The time every exported entry carries: fixed, so that exporting an unchanged Benchmark again
- * gives the same bytes. A zip stores local time, and fflate reads it off this Date in the zone
- * the process is in when it zips, so the Date is built from local fields at that moment —
- * 1980-01-01, the format's first day, then reads back as itself in every time zone. One built
- * once at load would read as 1979, which fflate refuses, after the zone moved west of the one
- * it was built in.
+ * A control character, NUL above all: no disk takes NUL in a name, and a name holding any other
+ * one never lists as it is (a newline splits it, an escape sequence redraws the terminal).
  */
-function packageMtime(): Date {
-  return new Date(1980, 0, 1);
-}
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
+
+/**
+ * The time every exported entry carries: fixed, so that exporting an unchanged Benchmark again
+ * gives the same bytes. Built from local fields because a zip stores local time — 1980-01-01, the
+ * format's first day, reads back as itself in every time zone.
+ */
+const PACKAGE_MTIME = new Date(1980, 0, 1);
 
 /** Code-unit order: the same on every machine, whatever its locale. */
 function byName(a: { name: string }, b: { name: string }): number {
@@ -52,6 +93,43 @@ function declaredId(text: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * The entries a zip records as something other than a regular file or a directory — a symbolic
+ * link above all. Only the central directory says so: a Unix zipper (host 3) keeps the entry's
+ * `st_mode` in the high half of its external attributes. An archive made elsewhere records no type
+ * there, and its entries are plain files. The directory is not re-validated here; this runs after
+ * fflate has read the same archive without complaint.
+ */
+function specialEntries(zip: Uint8Array): string[] {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  // The end-of-central-directory record: 22 bytes, then a comment of up to 64KB, at the very end.
+  let end = -1;
+  for (let i = zip.byteLength - 22; i >= Math.max(0, zip.byteLength - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return [];
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  const found: string[] = [];
+  for (let n = 0; n < count && at + 46 <= zip.byteLength; n++) {
+    if (view.getUint32(at, true) !== 0x02014b50) break;
+    const host = view.getUint8(at + 5);
+    const utf8 = (view.getUint16(at + 8, true) & 0x800) !== 0;
+    const nameLength = view.getUint16(at + 28, true);
+    const extraLength = view.getUint16(at + 30, true);
+    const commentLength = view.getUint16(at + 32, true);
+    const type = (view.getUint32(at + 38, true) >>> 16) & 0o170000;
+    if (host === 3 && type !== 0 && type !== 0o100000 && type !== 0o040000) {
+      found.push(strFromU8(zip.subarray(at + 46, at + 46 + nameLength), !utf8));
+    }
+    at += 46 + nameLength + extraLength + commentLength;
+  }
+  return found;
 }
 
 /**
@@ -257,7 +335,7 @@ export async function packBenchmark(
       await walk(path.join(benchDir, entry.name), entry.name);
     }
   }
-  const zip = zipSync(out, { mtime: packageMtime() });
+  const zip = zipSync(out, { mtime: PACKAGE_MTIME });
   if (zip.byteLength > MAX_ARCHIVE_BYTES) throw tooLarge();
   return zip;
 }

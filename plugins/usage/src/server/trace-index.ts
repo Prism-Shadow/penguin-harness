@@ -45,15 +45,12 @@ import {
   normalizeSessionSource,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { AmspRecord } from "@prismshadow/amsp";
 import type { TraceFileRow, TraceSessionRow } from "@prismshadow/penguin-server/internal";
 import { TraceIndexRepo } from "./repos/trace-index.js";
 import { cacheable, statMtime } from "@prismshadow/penguin-server/internal";
 import { readTraceHead } from "@prismshadow/penguin-server/internal";
 import { fallbackTitle } from "@prismshadow/penguin-server/internal";
-
-import type { AmspRecord } from "@prismshadow/penguin-core";
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/server/src/services/trace-index.ts
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-server/internal";
@@ -177,8 +174,6 @@ export class TraceIndexService implements TraceIndex {
   /** Reconciles every Agent of a Project (the subagent-pointer resolver's miss path). */
   async reconcileProject(projectId: string, opts: { force?: boolean } = {}): Promise<void> {
     for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
-      // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.
-      if (agentId.startsWith(".")) continue;
       await this.reconcileAgent(projectId, agentId, opts);
     }
   }

@@ -10,10 +10,7 @@ import { useState } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { ModelSelect } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 9a016a892e (web features admin/skills/semantic-id/model-picker move into their plugins):packages/web/src/features/model-picker/model-select.tsx
 import { sameModelRef } from "@penguinharness/plugin-models/web";
-
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";
 

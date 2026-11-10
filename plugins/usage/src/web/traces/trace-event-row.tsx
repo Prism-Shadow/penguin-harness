@@ -1,13 +1,11 @@
 /**
- * Trace event row (shared): timestamp + type icon + one pill naming the record (its kind, and the
- * role where a kind's role varies: `text (user)`, `text (assistant)`), toned by the record's
- * family (a `model_msg` neutral, an `event_msg` attention) + one-line summary; expanding
- * **renders** the content (text/thinking and session_meta's system prompt go through Markdown,
- * tool arguments/output go through a code block, token_usage goes through a bucket table,
- * session_meta goes through a field table — the Session's every field — and its system prompt)
- * instead of dumping raw JSON; a `status` other than `completed` (a request's end, a tool
- * result, a compaction or MCP connect end) is shown in the bottom-right of the expanded area — a
- * record that completed carries no mark.
+ * Trace event row (shared): timestamp + type icon + type badge + one-line
+ * summary; expanding **renders** the content (text/thinking and session_meta's
+ * system prompt go through Markdown, tool arguments/output go through a code
+ * block, token_usage goes through a bucket table, session_meta goes through a
+ * field table + tool definitions) instead of dumping raw JSON;
+ * the stop reason (stop_reason / status) is shown in the bottom-right of the
+ * expanded area.
  * Linked highlighting with the timeline — a matched row only gets a
  * background color, never an outline; only one row lights up at a time (each
  * row has its own unique rowKey, so adjacent messages at the same timestamp
@@ -19,41 +17,24 @@ import {
   Fold,
   GlyphIcon,
   ICONS,
-  Pill,
   REHYPE_PLUGINS,
   REMARK_PLUGINS,
   RequiredMark,
   ZoomableImage,
+  type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-import type { ToneName } from "@prismshadow/penguin-ui";
+
 import ReactMarkdown from "react-markdown";
 import { S } from "@prismshadow/penguin-web/internal";
-import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import type { AmspRecord } from "@prismshadow/amsp";
 import { formatTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { stopReasonTone } from "@prismshadow/penguin-web/internal";
 
-import type { AmspRecord } from "@prismshadow/amsp";
-||||||| parent of c0976c916f (plugins: regroup browser, usage and schedules into plugins/ (server, web, host wiring)):packages/web/src/features/traces/trace-event-row.tsx
-
-/**
- * A record family's pill tone, so the two families read apart at a glance down a round's rows:
- * the model's conversation (`model_msg`) neutral, the harness's events (`event_msg`) attention.
- */
-function familyTone(type: AmspRecord["type"]): ToneName {
-  return type === "event_msg" ? "attention" : "neutral";
-}
-
-/** The kinds whose role varies, so their pill names it: a text or an image is the user's or the model's. */
-const ROLE_KINDS: ReadonlySet<string> = new Set(["text", "inline_data"]);
-
-/**
- * What a row's pill says: the record's kind, plus its role for the kinds whose role varies —
- * `text (user)`, `text (assistant)`, `inline_data (user)`; every other kind is bare.
- */
-function kindLabel(msg: AmspRecord): string {
-  const p = msg.payload as { type?: string; role?: unknown };
-  const kind = p.type ?? msg.type;
-  return ROLE_KINDS.has(kind) && typeof p.role === "string" ? `${kind} (${p.role})` : kind;
+/** An event type as a badge: the session header stands out as a neutral solid tag. */
+export function typeBadge(type: string): BadgeStyle {
+  if (type === "session_meta") return { tone: "neutral", variant: "solid" };
+  if (type === "model_msg") return { tone: "neutral" };
+  return { tone: "attention" };
 }
 
 /**
@@ -71,9 +52,6 @@ const TYPE_ICON: Record<string, string> = {
   token_usage: ICONS.barChart,
   request_begin: ICONS.arrowRightCentered,
   request_end: ICONS.arrowLeftCentered,
-  // A Task's pair: it starts, and it reached its end (however it ended — the records inside say).
-  task_begin: ICONS.play,
-  task_end: ICONS.target,
   approval_decision: ICONS.shieldCheck,
   compaction_begin: ICONS.compress,
   compaction_end: ICONS.compress,
@@ -104,8 +82,7 @@ export function summarizeEvent(msg: AmspRecord): string {
     case undefined:
       return "";
     case "text":
-      // The role is on the row's pill.
-      return String(p["text"] ?? "").slice(0, 120);
+      return `${String(p["role"])}: ${String(p["text"] ?? "").slice(0, 120)}`;
     case "thinking":
       return String(p["thinking"] ?? "").slice(0, 120);
     case "image_url":
@@ -124,9 +101,6 @@ export function summarizeEvent(msg: AmspRecord): string {
       const ses = p["session"] as { total?: number } | undefined;
       return `request.total=${req?.total ?? 0} session.total=${ses?.total ?? 0}`;
     }
-    case "request_begin":
-      // The level the request went out at; a Trace written before the field records none.
-      return typeof p["thinking_level"] === "string" ? `thinking_level=${p["thinking_level"]}` : "";
     case "request_end":
       return `status=${String(p["status"])}`;
     case "approval_decision":
@@ -184,9 +158,10 @@ export function summarizeEvent(msg: AmspRecord): string {
   }
 }
 
-/** The record's `status` (request_end, tool_call_output, compaction_end, mcp_connect_end); undefined if absent. */
-function statusOf(msg: AmspRecord): string | undefined {
-  return (msg.payload as { status?: string }).status;
+/** Stop reason (a model message's stop_reason / request_end's status); undefined if absent. */
+function stopReasonOf(msg: AmspRecord): string | undefined {
+  const p = msg.payload as { stop_reason?: string; status?: string };
+  return p.stop_reason ?? p.status;
 }
 
 const codeBlock =
@@ -234,7 +209,6 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     // The Session's source as the record carries it; a Trace from before the source was
     // required has none and shows the empty dash.
     ["source", String(p.source ?? "")],
-    ["provider", String(p.provider ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
     // Legacy metas only: current traces no longer record a thinking level (it is a
@@ -436,19 +410,16 @@ export function EventRow({
   rowKey,
   matched,
   onHighlight,
-  summary,
 }: {
   msg: AmspRecord;
   /** This row's unique identifier (the scroll target for timeline jumps, and also the basis for "only one row lights up"). */
   rowKey: string;
   matched: boolean;
   onHighlight?: (h: { ts: string; rowKey: string } | null) => void;
-  /** A summary the row's context computed in place of the record's own (a thinking-level change). */
-  summary?: string;
 }) {
   const [open, setOpen] = useState(false);
   const payloadType = (msg.payload as { type?: string }).type ?? msg.type;
-  const status = statusOf(msg);
+  const stopReason = stopReasonOf(msg);
   return (
     <li data-trace-row={rowKey}>
       <button
@@ -466,23 +437,10 @@ export function EventRow({
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />
-        {/* The file's head is not a stream record: it stands out as a solid tag. */}
-        <span className="shrink-0">
-          {msg.type === "session_meta" ? (
-            <Badge tone="neutral" variant="solid" size="sm">
-              {payloadType}
-            </Badge>
-          ) : (
-            <Pill tone={familyTone(msg.type)}>{kindLabel(msg)}</Pill>
-          )}
-        </span>
-        {msg.origin && msg.origin.length > 0 && (
-          <Badge variant="solid" size="sm">
-            origin
-          </Badge>
-        )}
+        <Badge {...typeBadge(msg.type)}>{payloadType}</Badge>
+        {msg.origin && msg.origin.length > 0 && <Badge variant="solid">origin</Badge>}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-          {summary ?? summarizeEvent(msg)}
+          {summarizeEvent(msg)}
         </span>
       </button>
       {/* The body folds under the theme's layout motion, and is built only while it shows: a
@@ -492,11 +450,10 @@ export function EventRow({
         {() => (
           <div className="border-t border-gray-100 bg-gray-50/60 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/40">
             <EventBody msg={msg} />
-            {/* Status, bottom-right, only when the record did not complete: completed is the
-                absence of a mark. */}
-            {status !== undefined && status !== "completed" && (
+            {/* Stop reason: bottom-right */}
+            {stopReason && (
               <div className="mt-1.5 flex justify-end">
-                <Badge tone={statusTone(status)}>{status}</Badge>
+                <Badge tone={stopReasonTone(stopReason)}>{stopReason}</Badge>
               </div>
             )}
           </div>

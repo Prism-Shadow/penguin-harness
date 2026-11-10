@@ -1,11 +1,9 @@
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { agentDisplayName } from "../../state/project";
+import { S } from "@prismshadow/penguin-web/internal";
+import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { pillClass } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 6a033814d0 (Fix round two: schedules face for workbenches, machines web exports, useMachines ambiguity):packages/web/src/features/agents/agent-select.tsx
 import { employeesLast, isEmployee } from "./agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */

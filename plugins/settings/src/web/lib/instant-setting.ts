@@ -1,7 +1,22 @@
+/**
+ * An instant control's write — a switch, a standalone select — the way every settings surface
+ * does it: the control shows the new value at once, the write carries that one value, and a
+ * refused write puts the stored value back and says why in a toast. A silent snap-back would
+ * leave the user wondering whether the click registered.
+ *
+ * `stored` is the caller's: the value the server last confirmed. `write` sends one value and
+ * moves `stored` to the server's answer (adopting the response is the caller's business, since
+ * the answer usually carries more than this one value). While the write is in flight the control
+ * shows the value it was flipped to; once it settles it shows `stored` again — the new value on
+ * success, the old one on failure.
+ *
+ * An instant control is never part of a form's draft and never makes the form dirty: on a page
+ * that mixes switches with a typed form, the switch writes its own value alone and the typed
+ * draft beside it stays as it was.
+ */
+import { useState } from "react";
 import { toastError } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
-
-||||||| parent of 53df88c5aa (settings/pref cluster: settings-request, settings-sections, notification-pref, instant-setting move to plugin-settings web/lib; host reads via internal):packages/web/src/lib/instant-setting.ts
 
 export interface InstantSetting<T> {
   /** What the control shows: the value being written, else the stored one. */
@@ -24,7 +39,7 @@ export function useInstantSetting<T>(
       await write(next);
       return true;
     } catch (e) {
-      toastApiError(e);
+      toastError(apiErrorText(e));
       return false;
     } finally {
       setPending(null);

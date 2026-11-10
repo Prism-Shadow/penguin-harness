@@ -1,5 +1,9 @@
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { Snapshots } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { badRequest } from "@prismshadow/penguin-server/internal";
+
+
 
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */

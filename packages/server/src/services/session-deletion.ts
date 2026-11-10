@@ -1,6 +1,24 @@
+/**
+ * Deleting a Session: the one path DELETE /api/sessions/:id and the archive page's batch delete
+ * share, so a Session goes the same way whichever surface the user deleted it from.
+ *
+ * A Session takes its subagent children with it. A child is listed nowhere — its parent's Agent
+ * panel is the only door to it — so one left behind would be a conversation nobody can reach,
+ * still holding its Trace files and its index row. The children are read from the `subagent`
+ * pointer records of the parent's Trace (Traces.subagentChildren) once the parent's own runs have
+ * stopped, since a run still in flight could spawn another; core spawns children one level deep,
+ * and the walk recurses anyway, behind the same depth backstop the history read uses.
+ *
+ * Only the children a Session spawned itself are its own. A fork copies its source's history,
+ * the source's pointer records with it, so its Trace names children that still belong to the
+ * source — and that the source's history still shows. A pointer recorded before the Session was
+ * created is one of those copies, and the child it names is left where it is.
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { scratchpadDir } from "@prismshadow/penguin-core";
+import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
 import type { Traces } from "@penguinharness/plugin-usage/server";
-
-||||||| parent of e002d64d3e (usage: observability and traces mechanisms, their repos and message-window move into plugin-usage)
 
 /** What deleting a Session reaches. */
 export interface SessionDeletionDeps {
@@ -16,8 +34,6 @@ export interface SessionDeletionDeps {
   /** Closes and drops the Session's messaging bindings (no-op when unbound). */
   unbindMessaging(sessionId: string): void;
   sources: Pick<SessionOrigins, "delete">;
-  /** Every user's unsent drafts of the Session (its composer, its form answers). */
-  drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
 
 /** The Session to delete: its id, where its files live, and when it was created. */
@@ -38,8 +54,8 @@ const MAX_CHILD_DEPTH = 4;
 /**
  * Deletes `row` and every subagent child below it: each one's running work is aborted first
  * (new Tasks are refused with 409 meanwhile, so nothing recreates the Trace under the deletion),
- * then its Trace files, its scratchpad, its index row, its messaging bindings, its source
- * entry and every user's drafts of it go. Children are deleted before their parent. `onDeleted` hears each id as it goes, so a
+ * then its Trace files, its scratchpad, its index row, its messaging bindings and its source
+ * entry go. Children are deleted before their parent. `onDeleted` hears each id as it goes, so a
  * failure part-way still announces what is already gone.
  */
 export async function deleteSessionTree(
@@ -115,8 +131,6 @@ async function deleteOne(
     deps.unbindMessaging(row.sessionId);
     // Session ids are never reused, so a stale entry would never be matched; dropped anyway.
     deps.sources.delete(row.sessionId);
-    // A draft of a Session that is gone has nowhere to be sent, in any user's browser.
-    deps.drafts.deleteBySession(row.sessionId);
     onDeleted(row.sessionId);
   } finally {
     deps.manager.endSessionDeletion(row.sessionId);

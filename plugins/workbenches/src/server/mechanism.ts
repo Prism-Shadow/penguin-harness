@@ -1,102 +1,86 @@
+/**
+ * Workbenches: code an Agent keeps in its own directory and the server boots as a module
+ * tree of its own — the same manifests and the same tree check the platform's plugins go
+ * through (`package.json#penguin.modules` + the default export of `index.ts`). Two
+ * interfaces cross the boundary:
+ *
+ * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
+ *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
+ *   the way the SDK does it, a small state document, a log line.
+ * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
+ *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
+ *   (served from its `ui/` folder) calls.
+ *
+ * `Workbenches` is the platform-side mechanism the routes drive: list, reload, dispatch,
+ * serve a UI file, and the version history every successful load appends to — which is
+ * what makes an Agent's own edits to its workbench reversible.
+ */
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type {
+  WorkbenchInfo,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchTab,
+  WorkbenchTabRenderer,
+  WorkbenchVersion,
+} from "@prismshadow/penguin-server/api";
+export type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchTabRenderer, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 
-/** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
 /**
- * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a
- * manifest `renderer.iframe.src` is a path inside the workbench folder, under `ui/`; in a
- * `WorkbenchInfo` it is the URL that file is served from.
+ * One item of what `WorkbenchHost.run` sends: the SDK builds these with `userText("…")`, but a
+ * workbench has no package to import that from — its types come from the harness, and so does
+ * nothing at run time. An object, so an image or a file is a new optional member later.
  */
-  id: string;
-  /** Unique within the workbench; the tab's stable name (it appears in the full-page URL). */
-  key: string;
-  title: string;
-  titleZh?: string;
-  renderer: WorkbenchTabRenderer;
+export interface WorkbenchInput {
+  text: string;
 }
-  id: string;
-  name: string;
-  version: string | null;
-  /** git's tree id (12 hex) of the folder's source: what history records. */
-  revision: string;
-  /** Content revision of `ui/`: the cache key of the workbench's pages. Null when it has no `ui/`. */
-  uiRev: string | null;
-  /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
-  tabs: WorkbenchTab[];
-  loadedAt: string;
-  /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
+
+/** The latest task's final answer; idle alone does not mean a task succeeded. */
+export interface WorkbenchResult {
+  status: "running" | "completed" | "failed";
+  text: string;
   error: string | null;
+}
+
+/** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
+@Interface()
+export abstract class WorkbenchMain {
+  abstract handle(request: WorkbenchRequest): Promise<WorkbenchResponse>;
+}
+
+/** What the server publishes into a workbench tree as module `Host`. */
+@Interface()
+export abstract class WorkbenchHost {
+  /** The Agents of this Project — who `createSession` can be asked to open a Session of. */
+  abstract listAgents(): { agentId: string }[];
   /**
-   * What loaded but is probably not what its author meant, each with the edit that settles it
-   * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
+   * Opens a Session of an Agent of this Project — the workbench's own Agent when `agentId`
+   * is absent. The SDK's `agent.createSession`.
    */
-  hints: string[];
-}
-/**
- * What the HTML of a compiled page is served with: the page runtime's import map and its
- * stylesheet, each a file of the runtime (`…/workbenches/:id/sdk/ui/<file>`).
- */
-  /** Bare specifier → the runtime file it loads. */
-  stylesheet: string;
-}
-/** A file of a workbench's pages, as `uiFile` finds it. */
-  /** Absolute path: a file under `ui/`, or the `.js` a TSX page compiled to under `.build/`. */
-  path: string;
+  abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
   /**
-   * Set on an HTML page of a workbench whose pages are compiled: the runtime its import map
-   * names. Null on every file served exactly as it is on disk.
+   * Runs one turn in a Session of this Project, new or existing — the SDK's `session.run`.
+   * `input` is a list of items like the SDK's, each one `{ text }` today; it reaches the
+   * Agent as a message from the server, not from a person. A Session that is busy takes it as a queued follow-up
+   * (`queued: true`) instead of refusing it. Resolves once the turn has started; watch it
+   * with `sessionResult`.
    */
-  compiled: WorkbenchUiRuntime | null;
+  abstract run(
+    sessionId: string,
+    input: WorkbenchInput[],
+  ): Promise<{ sessionId: string; queued: boolean }>;
+  /** `idle` / `running` / … of a Session of this Project. */
+  abstract sessionStatus(sessionId: string): string;
+  /** The Session's generated or user-edited title; null until one is available. */
+  abstract sessionTitle(sessionId: string): string | null;
+  /** A snapshot, not a wait: running until the latest task ends, then its final answer or failure. No tool or thinking messages. */
+  abstract sessionResult(sessionId: string): Promise<WorkbenchResult>;
+  /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
+  abstract getState(): unknown;
+  abstract setState(state: unknown): Promise<void>;
+  abstract log(message: string): void;
 }
-/** A file of this server's page runtime, with a strong validator of its bytes. */
-  body: Uint8Array;
-  etag: string;
-}
-/** A version of a workbench: a commit of the Agent State repository that changed its folder. */
-  /** The folder's revision at that commit (`WorkbenchInfo.revision` when it was loaded). */
-  revision: string;
-  /** The commit (12 hex) in `<agentDir>/agent_state.git`. */
-  commit: string;
-  savedAt: string;
-}
-||||||| parent of d6be2d5885 (workbench DTOs live in api types; mechanism imports them from api)
-/** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
-/**
- * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a
- * manifest `renderer.iframe.src` is a path inside the workbench folder, under `ui/`; in a
- * `WorkbenchInfo` it is the URL that file is served from.
- */
-  id: string;
-  /** Unique within the workbench; the tab's stable name (it appears in the full-page URL). */
-  key: string;
-  title: string;
-  titleZh?: string;
-  renderer: WorkbenchTabRenderer;
-}
-  id: string;
-  name: string;
-  version: string | null;
-  /** Content revision of the whole folder (what history records). */
-  revision: string;
-  /** Content revision of `ui/`: the cache key of the workbench's pages. Null when it has no `ui/`. */
-  uiRev: string | null;
-  /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
-  tabs: WorkbenchTab[];
-  loadedAt: string;
-  /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
-  error: string | null;
-  /**
-   * What loaded but is probably not what its author meant, each with the edit that settles it
-   * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
-   */
-  hints: string[];
-}
-  revision: string;
-  savedAt: string;
-  name: string;
-  version: string | null;
-  uiRev: string | null;
-  /** The files of that version (relative paths), for display. */
-  files: string[];
-}
+
 @Interface()
 export abstract class Workbenches {
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
@@ -107,26 +91,13 @@ export abstract class Workbenches {
     workbenchId: string,
     request: WorkbenchRequest,
   ): Promise<WorkbenchResponse>;
-  /**
-   * A file of the workbench's `ui/`: the one on disk, else — for a `.js` a TSX page compiles
-   * to — what the serving instance emitted. Null when absent or unsafe.
-   */
+  /** Absolute path of a file under the workbench's `ui/`, or null when absent/unsafe. */
   abstract uiFile(
     projectId: string,
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<WorkbenchUiFile | null>;
-  /**
-   * A file of the page runtime this server serves compiled pages with (React and the shared
-   * components), under a workbench that exists; null otherwise.
-   */
-  abstract uiRuntimeFile(
-    projectId: string,
-    agentId: string,
-    workbenchId: string,
-    rel: string,
-  ): Promise<WorkbenchUiRuntimeFile | null>;
+  ): Promise<string | null>;
   abstract history(
     projectId: string,
     agentId: string,
@@ -138,21 +109,6 @@ export abstract class Workbenches {
     workbenchId: string,
     revision: string,
   ): Promise<WorkbenchInfo>;
-  /**
-   * Deletes the folder, state included, and records the removal; its earlier versions are no
-   * longer listed. The instance goes with it.
-   */
+  /** Deletes the folder and its recorded versions; the instance goes with them. */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
-  /**
-   * Lets go of everything held for one Agent before its folder is deleted or its State is
-   * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A
-   * later listing takes them up again, so an Agent whose deletion is then refused loses nothing.
-   */
-  abstract releaseAgent(projectId: string, agentId: string): Promise<void>;
-  /**
-   * Runs `work` (an Agent State import) with the Agent's workbenches released as by
-   * `releaseAgent` and kept so until it settles: a request for them meanwhile waits for the end
-   * instead of watching or loading the directory being replaced.
-   */
-  abstract whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T>;
 }
