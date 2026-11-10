@@ -190,6 +190,15 @@ export function button(name: string): HTMLButtonElement {
   return found;
 }
 
+/** The row of an open menu whose visible text is `label`. */
+export function menuItem(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (row) => row.textContent?.trim() === label,
+  );
+  if (found === undefined) throw new Error(`no menu row ${JSON.stringify(label)}`);
+  return found;
+}
+
 /** Whether a button with that name is on screen. */
 export function hasButton(name: string): boolean {
   return [...document.querySelectorAll("button")].some(

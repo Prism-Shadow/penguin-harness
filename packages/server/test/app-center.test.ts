@@ -32,6 +32,8 @@
  *   over 256 KB, the workbench has no shortcut, its load hints name the problem, and its icon is
  *   not found.
  * - Given an icon's bytes change, its URL changes, and the new URL serves the new bytes.
+ * - Given a workbench whose declaration names an icon, its own row in the workbench list names
+ *   it too, shown in the App Center or not, at the URL its shortcut gets once it is shown.
  * - Given a workbench without an icon, or an unknown workbench, the icon is not found; a user
  *   outside the Project gets the access error.
  *
@@ -54,8 +56,8 @@
  * - Given a body without a boolean `show`, an unknown workbench, or a package.json that is not a
  *   JSON object, nothing is written and the answer says which.
  *
- * Only the switch, the held load and the bad icons' hints load workbenches, each on an Agent of
- * its own, so listing the others never compiles them.
+ * Only the switch, the held load, the bad icons' hints and the icon row load workbenches, each on
+ * an Agent of its own, so listing the others never compiles them.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -82,6 +84,7 @@ const SWITCHER = "switcher";
 const BUILDER = "builder";
 const GALLERY = "gallery";
 const BAD_ICONS = "badicons";
+const ICON_ROW = "iconrow";
 
 const tab = (key: string, title: string, titleZh?: string) => ({
   id: `demo.${key}`,
@@ -375,6 +378,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       [BUILDER, "Builder"],
       [GALLERY, "Gallery"],
       [BAD_ICONS, "Bad icons"],
+      [ICON_ROW, "Icon row"],
     ] as const) {
       const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId, name });
       expect(made.status, await made.text()).toBe(201);
@@ -649,6 +653,30 @@ describe("the App Center", { timeout: 30_000 }, () => {
     const fresh = await owner.get(after);
     expect(fresh.status).toBe(200);
     expect(Buffer.from(await fresh.arrayBuffer())).toEqual(redrawn);
+  });
+
+  it("names the declared icon on the workbench's own row, shown or not, at the URL its shortcut gets", async () => {
+    await writeWorkbench(
+      t.root,
+      ICON_ROW,
+      "badge",
+      packageJson({ tabs: [tab("main", "Badge")], appCenter: { show: false, icon: "ui/icon.svg" } }),
+      { "index.ts": HANDLER, "ui/icon.svg": ICON },
+    );
+    const base = `/api/projects/${PROJECT}/agents/${ICON_ROW}/workbenches`;
+    const listed = (await (await owner.get(base)).json()) as { workbenches: WorkbenchInfo[] };
+    const icon = listed.workbenches.find((w) => w.id === "badge")?.icon;
+    expect(icon).toEqual({
+      url: expect.stringMatching(new RegExp(`^${iconRoute(ICON_ROW, "badge")}\\?rev=[0-9a-f]{12}$`)),
+      tint: false,
+    });
+    const served = await owner.get(icon!.url);
+    expect(served.status).toBe(200);
+    expect(await served.text()).toBe(ICON);
+
+    const res = await owner.patch(`${base}/badge/app-center`, { show: true });
+    expect((await res.json()) as { workbench: WorkbenchInfo }).toMatchObject({ workbench: { icon } });
+    expect((await shortcutOf(ICON_ROW, "badge"))?.icon).toEqual(icon);
   });
 
   it("finds no icon for a workbench without one or an unknown workbench, and refuses a user outside the Project", async () => {

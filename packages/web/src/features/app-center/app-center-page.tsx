@@ -5,9 +5,10 @@
  * this page starts no build.
  *
  * - The arrangement is the viewer's own: they drag tiles to reorder them and onto one another to
- *   make folders, and it is kept with their account, per Project (arrangement.ts). A new app is
- *   appended, one that went away drops out, and a folder left with one app dissolves. Restoring
- *   the default order asks first.
+ *   make folders, or make one from the "New folder" dialog (the header's button, the grid's
+ *   menu, a tile's "Move to…"), and it is kept with their account, per Project (arrangement.ts).
+ *   A new app is appended, one that went away drops out, and a folder goes only once it is
+ *   empty. Restoring the default order asks first.
  * - A click (or Enter) opens the app windowed, over the grid, in this page's own window stack
  *   (`?app=<agentId>/<workbenchId>`, so Back closes it); the tile's menu also opens it full
  *   screen, the full page whose exit comes back here.
@@ -29,6 +30,8 @@ import {
   ConfirmModal,
   ContextMenu,
   EmptyState,
+  GlyphIcon,
+  ICONS,
   NoticeStrip,
   PageHeader,
   Skeleton,
@@ -51,6 +54,7 @@ import {
   arrange,
   dissolveFolder,
   findItem,
+  groupApps,
   layoutOf,
   makeFolder,
   moveBeside,
@@ -67,6 +71,7 @@ import {
 import { BuildErrorDialog } from "./build-error-dialog";
 import { FolderNameDialog } from "./folder-name-dialog";
 import { FolderPanel } from "./folder-panel";
+import { NewFolderDialog } from "./new-folder-dialog";
 import { AppMenu, FolderMenu, GridMenu, type GridActions } from "./tile-menus";
 import { useTileDrag, type Drop, type Dragged } from "./tile-drag";
 import { useAppCenter } from "./use-app-center";
@@ -117,6 +122,8 @@ export function AppCenterPage() {
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
   const [restoring, setRestoring] = useState(false);
+  /** The new-folder dialog's starting pick, while it is open. */
+  const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
   const grid = useMemo(
     () => (shortcuts === null ? null : arrange(shortcuts, layout)),
@@ -202,6 +209,7 @@ export function AppCenterPage() {
               )
               .then(reload, toastApiError),
           openFolder: (folder) => setOpenFolderId(folder.id),
+          newFolder: (app) => setNewFolderPicked(app === null ? [] : [app.id]),
           renameFolder: setRenaming,
           dissolveFolder: (folder) => commit(dissolveFolder(grid, folder.id)),
           restoreDefault: () => setRestoring(true),
@@ -228,6 +236,15 @@ export function AppCenterPage() {
         ) ?? null);
 
   const create = <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} />;
+  const headerActions = (
+    <>
+      <Button size="sm" onClick={() => setNewFolderPicked([])}>
+        <GlyphIcon d={ICONS.folderPlus} />
+        {S.appCenter.newFolderAction}
+      </Button>
+      {create}
+    </>
+  );
 
   return (
     <WindowStack className="h-full">
@@ -237,7 +254,7 @@ export function AppCenterPage() {
             <PageHeader
               title={S.appCenter.title}
               description={S.appCenter.description}
-              {...(grid !== null && grid.length > 0 ? { actions: create } : {})}
+              {...(grid !== null && grid.length > 0 ? { actions: headerActions } : {})}
             />
             {error !== null && (
               <NoticeStrip tone="danger">
@@ -346,6 +363,17 @@ export function AppCenterPage() {
           if (renaming !== null && grid !== null) commit(renameFolder(grid, renaming.id, name));
         }}
       />
+      {grid !== null && (
+        <NewFolderDialog
+          picked={newFolderPicked}
+          grid={grid}
+          titleOf={titleOf}
+          onClose={() => setNewFolderPicked(null)}
+          onCreate={(name, apps) =>
+            commit(groupApps(grid, apps, { id: newFolderId(grid), name }))
+          }
+        />
+      )}
       <BuildErrorDialog
         error={
           errorOf === null

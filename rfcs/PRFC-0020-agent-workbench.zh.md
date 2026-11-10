@@ -3,7 +3,7 @@
 [English](PRFC-0020-agent-workbench.md)
 
 > **来源**：设计仓 [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) 的 `rfcs/PRFC-0020-agent-workbench.md`——落地于默认分支 `main`（提交 [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)）。
-> **修订**：v1.2.0（应用中心改为个人排列的桌面，取自设计 PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
+> **修订**：v1.3.0（应用中心改为个人排列的桌面，取自设计 PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)）；本面的约定见 [README.zh.md](README.zh.md)，逐版本改动记在文末 `## Changes`。
 
 - Feature Name: `agent_workbench`
 - Start Date: 2026-10-14
@@ -49,7 +49,7 @@
 | 根模块 / 类型 | `Workbench`、`WorkbenchPackage`、`WorkbenchHost`、`WorkbenchMain` |
 | 平台机制 | `Workbenches`、`WorkbenchService`、`WorkbenchRoutes` |
 | 标签贡献 | `WebModule.sessionTabs`；由应用清单提供 `id`、`key`、`title`、可选 `titleZh` 与 renderer |
-| 应用中心 | 清单 `penguin.appCenter`；`WorkbenchInfo.appCenter`、`AppCenterShortcut`、`AppCenterLayout`；Project 级 `GET /api/projects/:projectId/app-center` 与 `PUT …/app-center/layout`（见「应用中心」） |
+| 应用中心 | 清单 `penguin.appCenter`；`WorkbenchInfo.appCenter` 与 `icon`、`AppCenterShortcut`、`AppCenterLayout`；Project 级 `GET /api/projects/:projectId/app-center` 与 `PUT …/app-center/layout`（见「应用中心」） |
 | 样式 | `/workbench-ui.css`、`--wb-*` 变量与 `wb-*` 类；共享样式遵守 HTML 的 `[hidden]` |
 | 更新 / 删除事件 | `workbench_updated { projectId, agentId, workbench }`、`workbench_removed { projectId, agentId, workbenchId }` |
 
@@ -104,7 +104,7 @@ HTTP 前缀为 `/api/projects/:projectId/agents/:agentId/workbenches`，按已�
 | `icon` | 可选，`ui/` 下的相对路径（不得含 `..`，不超过 256 KB），格式为 SVG、PNG、JPEG、WebP、GIF 或 AVIF，按文件头识别且须与扩展名相符（`.jpg` / `.jpeg` 皆为 JPEG）；经 `GET /:id/app-center/icon` 提供；缺省为按 id 着色的首字母块 |
 | `tab` | 可选，打开时选中的标签页 `key`；缺省首个标签页 |
 
-对象不合规（类型不对、`icon` 越界、超限或文件头与扩展名不符、`tab` 不是已有标签页）记为加载提示（`hints`）而非错误：应用照常加载，只是不出现在应用中心。解析结果为 `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`，未声明时缺省。
+对象不合规（类型不对、`icon` 越界、超限或文件头与扩展名不符、`tab` 不是已有标签页）记为加载提示（`hints`）而非错误：应用照常加载，只是不出现在应用中心。解析结果为 `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`，未声明时缺省；声明的图标检查通过时，`WorkbenchInfo.icon?: IconRef` 以与快捷入口相同的方式给出它（见下文），无论是否显示，设置页的行首即显示该图标。
 
 Agent 编写应用时写入该键（`penguin-plugin` Skill 的目录约定，以及 `web-design` Skill 问过「Workbench 还是独立应用」之后）。用户在设置页工作台行的开关经 `PATCH /:id/app-center { show }` 改写它：服务端只改 `penguin.appCenter.show`（没有该对象时新建 `{ show }`），以 2 空格缩进加末尾换行重写 `package.json`，其余键原样保留；监视器随之重载，加载照常提交一个版本，应答 `{ workbench }`；权限同重载与删除。`package.json` 不是 JSON 对象时应答 409 `workbench_manifest_invalid`，文件不动。开关与 Agent 同时改写这份文件时后写者胜，监视器加载落盘的那份。插件更新替换源码时连同该键一并覆盖。
 
@@ -143,7 +143,7 @@ interface AppCenterLayout {
 }
 ```
 
-`PUT /api/projects/:projectId/app-center/layout { layout: AppCenterLayout | null }`（Project 成员）写入并应答 `{ layout }`，`null` 删除该 Project 的条目（恢复默认排列）；`PUT /api/me/prefs` 带 `appCenterLayouts` 时 400。校验只看形状，不合规整体 400、不落库：至多 500 项；app 键至多 200 个字符、恰含一个 `/` 且两侧非空；分组 id 为 `[A-Za-z0-9_-]{1,32}`，名称去首尾空白后非空、至多 40 个字符（存去空白后的值），每组 1–500 个 app 键；全体至多 1000 个 app 键，app 键与分组 id 各不重复。服务端不拿排列去比对现有应用，写入时顺带删去已不存在的 Project 的条目；存下的值读出时不合规即作 `null`。排列落到网格上由 Web App 完成：排列未提到的应用按服务端顺序追加在末尾，已消失的应用移出，只剩一个应用的分组解散为该应用、空分组去掉，此后的写入存下这一结果。
+`PUT /api/projects/:projectId/app-center/layout { layout: AppCenterLayout | null }`（Project 成员）写入并应答 `{ layout }`，`null` 删除该 Project 的条目（恢复默认排列）；`PUT /api/me/prefs` 带 `appCenterLayouts` 时 400。校验只看形状，不合规整体 400、不落库：至多 500 项；app 键至多 200 个字符、恰含一个 `/` 且两侧非空；分组 id 为 `[A-Za-z0-9_-]{1,32}`，名称去首尾空白后非空、至多 40 个字符（存去空白后的值），每组 1–500 个 app 键；全体至多 1000 个 app 键，app 键与分组 id 各不重复。服务端不拿排列去比对现有应用，写入时顺带删去已不存在的 Project 的条目；存下的值读出时不合规即作 `null`。排列落到网格上由 Web App 完成：排列未提到的应用按服务端顺序追加在末尾，已消失的应用移出，分组只要还有应用（一个也算）就保留、空了才去掉，此后的写入存下这一结果。经页面「新建分组」对话框建的分组装入其中勾选的应用（按网格顺序），位于其中第一个应用的位置。
 
 `penguin-support` 的 Support 应用声明 `appCenter: { show: true, icon: "ui/icon.svg" }` 并递增 `penguin.version`，已装副本因此出现一次更新提示。
 
@@ -206,3 +206,8 @@ PR [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595) 的设计不
 - 新增：`workbench_building` 事件、应用中心启动的监视、图标路由 `GET /:id/app-center/icon` 及其响应头，以及按文件头识别的图标格式。
 - 新增：按账号与 Project 存于 `ui_prefs.appCenterLayouts` 的 `AppCenterLayout` 与 `PUT /api/projects/:projectId/app-center/layout`；列表在 `shortcuts` 之外应答 `layout`。
 - 新增：2026-11-09 的 Status 补记。
+
+### v1.3.0
+
+- 改动：排列中的分组空了才去掉，只有一个应用的分组保留。
+- 新增：`WorkbenchInfo.icon`（以 `IconRef` 给出声明的图标，无论是否显示），以及「新建分组」对话框所建分组的位置。

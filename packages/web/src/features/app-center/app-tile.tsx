@@ -9,7 +9,7 @@
  *   opens, and its menu shows the error.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
- *   icon it would go into. Neither moves anything.
+ *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
  *
  * A state never changes a tile's box: the ring and the marks are laid over the icon's square,
  * which is the same 56 px in every state.
@@ -153,7 +153,13 @@ export function AppTile({
       ? S.appCenter.failedTip(title, shortcut.agentName)
       : S.appCenter.tileTip(title, shortcut.agentName);
   return (
-    <li className="relative" data-app={app.id} data-build={shortcut.build} {...drag}>
+    <li
+      className="relative"
+      data-app={app.id}
+      data-build={shortcut.build}
+      data-drop={mark ?? undefined}
+      {...drag}
+    >
       {(mark === "before" || mark === "after") && <DropLine side={mark} />}
       <ContextMenu label={title} items={menuItems} width={MENU_PX}>
         {(target) => (
@@ -222,7 +228,7 @@ export function FolderTile({
 }) {
   const count = folder.apps.length;
   return (
-    <li className="relative" data-folder={folder.id} {...drag}>
+    <li className="relative" data-folder={folder.id} data-drop={mark ?? undefined} {...drag}>
       {(mark === "before" || mark === "after") && <DropLine side={mark} />}
       <ContextMenu label={folder.name} items={menuItems} width={MENU_PX}>
         {(target) => (

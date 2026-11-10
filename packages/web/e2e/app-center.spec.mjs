@@ -6,9 +6,12 @@
  *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
  *   comes back to the App Center. The Show in the App Center switch on the workbench's row
  *   takes the tile off (the empty page offers Create with AI) and puts it back.
- * - With three workbenches of a fresh account's Agent: dragging one tile onto another makes a
- *   folder, which opens as a panel over the grid; the menu moves a tile backward; the arrangement
- *   outlives a reload; restoring the default order asks first and then clears it.
+ * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
+ *   middle of another rings the target while it hovers and makes a folder on release, which
+ *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
+ *   reload; restoring the default order asks first and then clears it.
+ * - The header's New folder makes a folder of the apps checked in its dialog, under the name
+ *   typed there, at the first checked app's place.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
@@ -148,12 +151,19 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   }
   expect(await names()).toEqual(APPS);
 
-  // Gamma dropped on the middle of Alpha: a folder of the two, in Alpha's place.
+  // Gamma dragged by the pointer onto the middle of Alpha: while it hovers, Alpha wears the ring
+  // of a drop into it; on release, a folder of the two, in Alpha's place.
   const item = (id) => grid.locator(`li[data-app="default_agent/${id}"]`);
-  const box = await item("alpha").boundingBox();
-  await item("gamma").dragTo(item("alpha"), {
-    targetPosition: { x: box.width / 2, y: box.height / 2 },
-  });
+  const from = await item("gamma").boundingBox();
+  const to = await item("alpha").boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+  // A browser repeats dragover while the pointer rests; Playwright's drag sends the last one with
+  // the next input, so a one-pixel nudge delivers it.
+  await page.mouse.move(to.x + to.width / 2 + 1, to.y + to.height / 2);
+  await expect(item("alpha")).toHaveAttribute("data-drop", "into");
+  await page.mouse.up();
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
@@ -190,4 +200,36 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
       name: "Beta",
     }),
   ).toBeVisible({ timeout: 30_000 });
+});
+
+test("the header's New folder makes a folder of the checked apps at the first one's place", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  await page.goto(`${BASE}/apps`);
+  const grid = page.getByRole("list", { name: "App Center" });
+  const names = () =>
+    grid
+      .locator(":scope > li")
+      .evaluateAll((items) =>
+        items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
+      );
+  await expect.poll(names).toEqual(APPS);
+
+  await page.getByRole("button", { name: "New folder", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New folder" });
+  const create = dialog.getByRole("button", { name: "Create" });
+  // The starting name is selected: typing replaces it.
+  await page.keyboard.type("Pair");
+  await expect(dialog.getByRole("textbox", { name: "Folder name" })).toHaveValue("Pair");
+  await expect(create).toBeDisabled();
+  await dialog.getByRole("checkbox", { name: /^Gamma/ }).check();
+  await dialog.getByRole("checkbox", { name: /^Beta/ }).check();
+  await create.click();
+  await expect.poll(names).toEqual(["Alpha", "Pair"]);
+
+  // Kept with the account.
+  await page.reload();
+  await expect.poll(names).toEqual(["Alpha", "Pair"]);
 });

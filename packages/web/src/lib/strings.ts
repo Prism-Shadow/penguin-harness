@@ -1225,14 +1225,20 @@ export const zh = {
     /** An import whose files were written but did not load: the load's own error follows. */
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** The row's switch: whether the workbench has a shortcut in the App Center. */
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
     showInAppCenter: "显示在应用中心",
     showInAppCenterHint:
       "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
-    /** The row's pill while the switch is on. */
-    inAppCenter: "应用中心",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "应用中心",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "打开",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "更多",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "历史版本",
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
@@ -1243,7 +1249,7 @@ export const zh = {
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench 并打开「显示在应用中心」后，它就会出现在这里。",
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「应用中心」开关后，它就会出现在这里。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -1259,8 +1265,10 @@ export const zh = {
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
     folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
     folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
-    /** The name a folder is given when two tiles are dropped together. */
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "新建分组",
     menu: {
       open: "打开",
       openFullScreen: "全屏打开",
@@ -1274,12 +1282,13 @@ export const zh = {
       rename: "重命名",
       dissolve: "解散分组",
       restoreDefault: "恢复默认排列",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "新建分组…",
       /** The first row of the "Move to…" page, back to the menu. */
       back: "返回",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "移入分组",
       newFolderWith: "与其组成新分组",
-      noDestination: "没有可移入的分组或应用",
     },
     restoreTitle: "恢复默认排列",
     restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",
@@ -1287,6 +1296,12 @@ export const zh = {
     renameTitle: "重命名分组",
     folderNameLabel: "分组名称",
     folderNameHint: "最多 40 个字符",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "新建分组",
+    newFolderApps: "放入的应用",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `在「${name}」中，选中后移入新分组`,
+    newFolderCreate: "创建",
     errorTitle: (title: string) => `${title} 加载失败`,
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",

@@ -136,8 +136,8 @@ export const en: GalleryStrings = {
     apps: {
       title: "App Center",
       description:
-        "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), and a folder holding two apps.",
-      how: "Sidebar › App Center; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
+        "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
+      how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
     },
     plugins: {
       title: "Plugins",

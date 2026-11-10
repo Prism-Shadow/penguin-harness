@@ -27,7 +27,7 @@ import {
   topDialog,
 } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
-import { button, click, dialogs, pickFile, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, dialogs, menuItem, pickFile, unmountAll, waitFor } from "./helpers/dom";
 
 const info = (id: string, name: string): WorkbenchInfo => ({
   id,
@@ -174,7 +174,8 @@ describe("the Workbenches tab's archives", () => {
     ) {
       saved.push(this.download);
     });
-    await click(button(`${en.workbenches.exportWorkbench} Support`));
+    await click(button(`${en.workbenches.more} Support`));
+    await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => saved.length === 1);
     expect(saved).toEqual(["support-v1.zip"]);
     const download = server
@@ -186,7 +187,8 @@ describe("the Workbenches tab's archives", () => {
   it("says why the server refused an export, and saves nothing", async () => {
     await openTab({ archiveRefusal: { status: 413, code: "workbench_too_large" } });
     const click_ = vi.spyOn(HTMLAnchorElement.prototype, "click");
-    await click(button(`${en.workbenches.exportWorkbench} Support`));
+    await click(button(`${en.workbenches.more} Support`));
+    await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => toasts("error").length === 1);
     expect(toasts("error")).toEqual([en.errors.byCode.workbench_too_large]);
     expect(click_).not.toHaveBeenCalled();

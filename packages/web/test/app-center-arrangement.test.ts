@@ -4,11 +4,15 @@
  *
  * - With no layout, the grid is the server's order.
  * - A stored layout keeps its order and folders; an app it names that is no longer listed drops
- *   out, a listed app it does not name is appended in the server's order, and a folder left with
- *   one app dissolves into it in the folder's place (an empty one goes).
+ *   out, a listed app it does not name is appended in the server's order, and a folder keeps
+ *   its place while it holds an app — one app is enough — and goes once it is empty.
  * - Dropping an app beside another moves it there, inside a folder when the target is in one; a
  *   folder never goes into a folder. Dropping onto an app makes a folder of the two in that
- *   app's place; onto a folder adds to its end. Taking an app out puts it right after its folder.
+ *   app's place; onto a folder adds to its end. Taking an app out puts it right after its folder,
+ *   and taking out the last one leaves no empty folder behind.
+ * - Grouping the apps a viewer picked makes one folder of them in the grid's order, at the first
+ *   one's place; a picked app leaves the folder it was in, and a folder emptied that way gives
+ *   the new folder its place.
  * - Forward and backward step an item within the grid or its folder, and go nowhere at the ends.
  * - Ungrouping puts a folder's apps in its place; the stored layout round-trips the grid.
  * - A drop on a tile's leading or trailing quarter goes beside it, the middle half into it; where
@@ -26,6 +30,7 @@ import {
   moveIntoFolder,
   moveToEnd,
   newFolderId,
+  groupApps,
   renameFolder,
   stepItem,
   takeOutOfFolder,
@@ -71,14 +76,14 @@ describe("arrange", () => {
     ]);
   });
 
-  it("dissolves a folder left with one app into it, in the folder's place, and drops an empty one", () => {
+  it("keeps a folder left with one app in its place, and drops an empty one", () => {
     const layout = stored([
       { type: "folder", id: "f1", name: "Work", apps: ["a1/gone", "a1/two"] },
       { type: "folder", id: "f2", name: "Old", apps: ["a1/also-gone"] },
       { type: "app", app: "a1/one" },
     ]);
     expect(outline(arrange(shortcuts(), layout))).toEqual([
-      "a1/two",
+      "Work[a1/two]",
       "a1/one",
       "a1/three",
       "a1/four",
@@ -158,19 +163,44 @@ describe("moves", () => {
     expect(outline(moveIntoFolder(withFolder(), "f1", "f1"))).toEqual(outline(withFolder()));
   });
 
-  it("takes an app out to right after its folder, and a folder left with one dissolves", () => {
-    expect(outline(takeOutOfFolder(withFolder(), "a1/three"))).toEqual([
+  it("takes an app out to right after its folder, which keeps its one app; the last one out leaves no folder", () => {
+    const one = takeOutOfFolder(withFolder(), "a1/three");
+    expect(outline(one)).toEqual(["a1/one", "Work[a1/two]", "a1/three", "a1/four"]);
+    expect(outline(takeOutOfFolder(one, "a1/two"))).toEqual(LISTED);
+  });
+
+  it("groups the picked apps in the grid's order at the first one's place, out of their folders", () => {
+    const made = { id: "f9", name: "Picked" };
+    expect(outline(groupApps(withFolder(), ["a1/four", "a1/one"], made))).toEqual([
+      "Picked[a1/one, a1/four]",
+      "Work[a1/two, a1/three]",
+    ]);
+    // The first picked app sits in a folder that keeps an app: the new one comes right after it.
+    expect(outline(groupApps(withFolder(), ["a1/four", "a1/three"], made))).toEqual([
       "a1/one",
-      "a1/two",
+      "Work[a1/two]",
+      "Picked[a1/three, a1/four]",
+    ]);
+    // A folder emptied by the pick gives the new one its place.
+    expect(outline(groupApps(withFolder(), ["a1/three", "a1/two"], made))).toEqual([
+      "a1/one",
+      "Picked[a1/two, a1/three]",
+      "a1/four",
+    ]);
+    // One app is a folder too.
+    expect(outline(groupApps(plain(), ["a1/two"], made))).toEqual([
+      "a1/one",
+      "Picked[a1/two]",
       "a1/three",
       "a1/four",
     ]);
+    expect(outline(groupApps(plain(), ["a1/gone"], made))).toEqual(LISTED);
   });
 
-  it("moves an item to the end, out of its folder", () => {
+  it("moves an item to the end, out of its folder, which keeps its other app", () => {
     expect(outline(moveToEnd(withFolder(), "a1/two"))).toEqual([
       "a1/one",
-      "a1/three",
+      "Work[a1/three]",
       "a1/four",
       "a1/two",
     ]);

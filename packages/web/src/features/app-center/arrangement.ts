@@ -5,8 +5,8 @@
  * - With no layout the grid is the server's order.
  * - A stored app that is no longer listed drops out; a listed app the layout does not name is
  *   appended at the end, in the server's order.
- * - A folder keeps its place; one left with a single app dissolves into that app, in the
- *   folder's place, and an empty one goes. This holds after every move as well.
+ * - A folder keeps its place, with however many apps it holds; one left empty goes. A folder of
+ *   one app is kept (the new-folder dialog makes one), and this holds after every move as well.
  * - Folders do not nest: a folder dropped beside an app inside a folder lands beside that folder.
  *
  * An item's id is its app key (`<agentId>/<workbenchId>`, which always holds a `/`) or its
@@ -68,11 +68,9 @@ export function arrange(
   return out;
 }
 
-/** What a folder holding `apps` becomes: itself, its one app, or nothing. */
+/** What a folder holding `apps` becomes: itself, or nothing once it is empty. */
 function folded(id: string, name: string, apps: GridApp[]): GridItem[] {
-  if (apps.length === 0) return [];
-  if (apps.length === 1) return [apps[0]!];
-  return [{ type: "folder", id, name, apps }];
+  return apps.length === 0 ? [] : [{ type: "folder", id, name, apps }];
 }
 
 /** The layout that stores this grid. */
@@ -112,7 +110,7 @@ export function findItem(grid: readonly GridItem[], id: string): GridItem | null
   return null;
 }
 
-/** Folders that hold one app become that app; empty ones go. */
+/** Empty folders go. */
 function normalize(grid: readonly GridItem[]): GridItem[] {
   return grid.flatMap((item) =>
     item.type === "folder" ? folded(item.id, item.name, item.apps) : [item],
@@ -222,6 +220,38 @@ export function makeFolder(
   if (onto === undefined || onto.type !== "app") return [...grid];
   rest[at] = { type: "folder", id: folder.id, name: folder.name, apps: [onto, item] };
   return normalize(rest);
+}
+
+/**
+ * Makes a folder of the apps `ids` names, wherever each sits now, in the grid's order: an app in
+ * another folder leaves it. The folder takes the place of the first of them — its own place at
+ * the top of the grid, or, for an app in a folder, that folder's place when the folder is left
+ * empty and the place right after it otherwise. With none of the ids in the grid, nothing changes.
+ */
+export function groupApps(
+  grid: readonly GridItem[],
+  ids: readonly string[],
+  folder: { id: string; name: string },
+): GridItem[] {
+  const picked = new Set(ids);
+  const apps = grid
+    .flatMap((item) => (item.type === "app" ? [item] : item.apps))
+    .filter((app) => picked.has(app.id));
+  const first = apps[0];
+  if (first === undefined) return [...grid];
+  const made: GridFolder = { type: "folder", id: folder.id, name: folder.name, apps };
+  const out: GridItem[] = [];
+  for (const item of grid) {
+    if (item.type === "app") {
+      if (item.id === first.id) out.push(made);
+      else if (!picked.has(item.id)) out.push(item);
+      continue;
+    }
+    const kept = item.apps.filter((app) => !picked.has(app.id));
+    if (kept.length > 0) out.push({ ...item, apps: kept });
+    if (item.apps.some((app) => app.id === first.id)) out.push(made);
+  }
+  return out;
 }
 
 /** Takes an app out of its folder and puts it right after that folder. */

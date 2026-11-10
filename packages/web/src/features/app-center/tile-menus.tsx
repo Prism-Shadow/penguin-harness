@@ -2,8 +2,9 @@
  * What the App Center's context menus hold: an app tile's, a folder tile's, and the grid's own
  * for its empty space. Every arrangement the pointer makes by dragging is here too, so the
  * keyboard (Shift+F10, the ContextMenu key) and touch (press and hold) reach all of it: "Move
- * to…" puts an app into a folder or makes a new folder with another app, and forward / backward
- * step an item through the grid or its folder.
+ * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
+ * folder with another app, and forward / backward step an item through the grid or its folder.
+ * The empty space's menu opens the new-folder dialog too.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page
@@ -49,6 +50,8 @@ export interface GridActions {
   viewInSettings: (app: GridApp) => void;
   removeFromAppCenter: (app: GridApp) => void;
   openFolder: (folder: GridFolder) => void;
+  /** Opens the new-folder dialog, with this app picked (null: none). */
+  newFolder: (picked: GridApp | null) => void;
   renameFolder: (folder: GridFolder) => void;
   dissolveFolder: (folder: GridFolder) => void;
   restoreDefault: () => void;
@@ -137,6 +140,11 @@ export function AppMenu({
           onSelect={() => setPage("main")}
         />
         <MenuSeparator />
+        <MenuItem
+          glyph={ICONS.folderPlus}
+          label={S.appCenter.menu.newFolder}
+          onSelect={act(close, () => actions.newFolder(app))}
+        />
         {folders.length > 0 && <MenuLabel>{S.appCenter.menu.toFolders}</MenuLabel>}
         {folders.map((folder) => (
           <MenuItem
@@ -165,9 +173,6 @@ export function AppMenu({
             />
           );
         })}
-        {folders.length === 0 && partners.length === 0 && (
-          <MenuItem label={S.appCenter.menu.noDestination} disabled />
-        )}
       </div>
     );
   }
@@ -267,7 +272,16 @@ export function FolderMenu({
   );
 }
 
-/** The grid's empty space: the one arrangement-wide action. */
+/** The grid's empty space: a new folder, and restoring the default order. */
 export function GridMenu({ actions, close }: { actions: GridActions; close: () => void }) {
-  return <RestoreRow actions={actions} close={close} />;
+  return (
+    <>
+      <MenuItem
+        glyph={ICONS.folderPlus}
+        label={S.appCenter.menu.newFolder}
+        onSelect={act(close, () => actions.newFolder(null))}
+      />
+      <RestoreRow actions={actions} close={close} />
+    </>
+  );
 }

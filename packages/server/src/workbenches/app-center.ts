@@ -214,11 +214,19 @@ async function buildOf(
 
 const segment = encodeURIComponent;
 
-/** A shortcut's icon: the workbench's icon route with the image's revision, and how to draw it. */
-const iconOf = (base: string, icon: { rev: string; tint: boolean }): IconRef => ({
-  url: `${base}/app-center/icon?rev=${icon.rev}`,
-  tint: icon.tint,
-});
+/**
+ * The declared icon as a listing sends it — on a shortcut and on the workbench's own row alike:
+ * the workbench's icon route with the image's revision, and how to draw it.
+ */
+export function appCenterIconRef(
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  icon: { rev: string; tint: boolean },
+): IconRef {
+  const base = `/api/projects/${segment(projectId)}/agents/${segment(agentId)}/workbenches/${segment(workbenchId)}`;
+  return { url: `${base}/app-center/icon?rev=${icon.rev}`, tint: icon.tint };
+}
 
 /** The shortcut a shown declaration makes: its titles, icon URL, the page it opens, its build. */
 function shortcutOf(
@@ -232,7 +240,6 @@ function shortcutOf(
   const first = tabs[0];
   const titleZh = appCenter.titleZh ?? first?.titleZh;
   const tab = appCenter.tab ?? first?.key;
-  const base = `/api/projects/${segment(projectId)}/agents/${segment(agent.agentId)}/workbenches/${segment(workbenchId)}`;
   const page = `/app/${segment(projectId)}/${segment(agent.agentId)}/${segment(workbenchId)}`;
   return {
     agentId: agent.agentId,
@@ -240,7 +247,9 @@ function shortcutOf(
     workbenchId,
     title: appCenter.title ?? first?.title ?? manifest.name,
     ...(titleZh !== undefined ? { titleZh } : {}),
-    ...(manifest.icon !== undefined ? { icon: iconOf(base, manifest.icon) } : {}),
+    ...(manifest.icon !== undefined
+      ? { icon: appCenterIconRef(projectId, agent.agentId, workbenchId, manifest.icon) }
+      : {}),
     path: appCenter.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
     ...(tab !== undefined ? { tab } : {}),
     ...build,

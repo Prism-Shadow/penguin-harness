@@ -229,6 +229,11 @@ export interface WorkbenchInfo {
   hints: string[];
   /** What the current package.json declares for the App Center; absent when nothing, or nothing valid (a hint says why). */
   appCenter?: WorkbenchAppCenter;
+  /**
+   * The icon that declaration names, shown in the App Center or not: the same `IconRef` its
+   * shortcut carries (the icon route with the image's revision). Absent without one that reads clean.
+   */
+  icon?: IconRef;
 }
 
 /**

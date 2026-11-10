@@ -64,6 +64,7 @@ import type {
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import {
   agentShortcuts,
+  appCenterIconRef,
   AppCenterManifestInvalid,
   readAppCenterIcon,
   readAppCenterManifest,
@@ -365,7 +366,7 @@ export class WorkbenchService implements Workbenches {
         current && current.folder.revision === folder.revision
           ? current
           : await this.load(projectId, agentId, folder);
-      out.push(this.info(folder.id, fresh));
+      out.push(this.info(projectId, agentId, folder.id, fresh));
     }
     // Folders that went away drop their instances.
     const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
@@ -379,7 +380,7 @@ export class WorkbenchService implements Workbenches {
 
   async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
-    return this.info(workbenchId, await this.load(projectId, agentId, folder));
+    return this.info(projectId, agentId, workbenchId, await this.load(projectId, agentId, folder));
   }
 
   /**
@@ -695,7 +696,8 @@ export class WorkbenchService implements Workbenches {
     return this.load(projectId, agentId, folder);
   }
 
-  private info(id: string, l: Loaded): WorkbenchInfo {
+  private info(projectId: string, agentId: string, id: string, l: Loaded): WorkbenchInfo {
+    const { icon } = l.appCenter;
     return {
       id,
       name: l.folder.pkg.name,
@@ -707,6 +709,7 @@ export class WorkbenchService implements Workbenches {
       error: l.error,
       hints: hintsOf(l),
       ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
+      ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, id, icon) } : {}),
     };
   }
 
@@ -914,7 +917,7 @@ export class WorkbenchService implements Workbenches {
       hints: hintsOf(next),
     });
     this.loaded.set(k, next);
-    this.notify(projectId, agentId, this.info(folder.id, next));
+    this.notify(projectId, agentId, this.info(projectId, agentId, folder.id, next));
     return next;
   }
 

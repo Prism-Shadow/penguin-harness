@@ -1092,14 +1092,20 @@ export const en: Strings = {
     importLoadFailedToast: (error: string): string =>
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** The row's switch: whether the workbench has a shortcut in the App Center. */
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
     showInAppCenter: "Show in the App Center",
     showInAppCenterHint:
       "Show a shortcut to this workbench in the App Center. This rewrites its package.json and is recorded as a version.",
-    /** The row's pill while the switch is on. */
-    inAppCenter: "App Center",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "App Center",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "Open",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "More",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "Version history",
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
@@ -1110,7 +1116,7 @@ export const en: Strings = {
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
-      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and turns on “Show in the App Center”, it appears here.",
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “App Center” switch on, it appears here.",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -1127,8 +1133,10 @@ export const en: Strings = {
     folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
     folderName: (name: string, count: number) =>
       `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
-    /** The name a folder is given when two tiles are dropped together. */
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "New folder",
     menu: {
       open: "Open",
       openFullScreen: "Open full screen",
@@ -1142,12 +1150,13 @@ export const en: Strings = {
       rename: "Rename",
       dissolve: "Ungroup",
       restoreDefault: "Restore default order",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "New folder…",
       /** The first row of the "Move to…" page, back to the menu. */
       back: "Back",
       /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
       toFolders: "Into a folder",
       newFolderWith: "Into a new folder with",
-      noDestination: "No folder or app to move it to",
     },
     restoreTitle: "Restore default order",
     restoreBody:
@@ -1156,6 +1165,12 @@ export const en: Strings = {
     renameTitle: "Rename folder",
     folderNameLabel: "Folder name",
     folderNameHint: "Up to 40 characters",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "New folder",
+    newFolderApps: "Apps to put in it",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `In “${name}”; picking it moves it to the new folder`,
+    newFolderCreate: "Create",
     errorTitle: (title: string) => `${title} failed to load`,
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",

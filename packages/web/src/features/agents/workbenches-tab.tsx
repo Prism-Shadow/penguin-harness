@@ -7,34 +7,29 @@
  * Export downloads the source as a zip that imports back unchanged. Every action is
  * member-level, matching the workbench routes, and goes to the server the Agent lives on.
  *
- * A row of an Agent on this server also carries the App Center switch, which commits on click:
- * it rewrites `penguin.appCenter.show` in the workbench's package.json, and the reload that
- * follows records it as a version. While the write is in flight the switch shows where it is
- * going; the row then reads back what the file says, with an "App Center" pill while it is on.
- * The App Center lists this server's Agents only, so a machine's Agent has no switch.
+ * A row says what its controls do: "Open" is a text button, and the rest — reload, version
+ * history, export, remove — are the rows of its "More" menu (workbench-row.tsx). A row of an
+ * Agent on this server also carries the App Center switch, labelled "App Center", which commits
+ * on click: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the reload
+ * that follows records it as a version. While the write is in flight the switch shows where it is
+ * going; the row then reads back what the file says. The App Center lists this server's Agents
+ * only, so a machine's Agent has no switch.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
   Button,
   ConfirmModal,
-  DownloadIcon,
-  GlyphIcon,
   HelpFold,
   HiddenFileInput,
-  IconButton,
-  ICONS,
-  ICON_SIZE,
   ListRow,
   SettingsList,
   SettingsEmpty,
   Modal,
   NoticeStrip,
   SkeletonList,
-  Switch,
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -49,10 +44,10 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
-import { SkillTile } from "../skills/skill-icon-view";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
 import { UPLOAD_LABEL_CLASS } from "./skills-tab";
+import { AppCenterToggle, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
 
 /** A zip waiting on the overwrite confirm: the payload to resend with `overwrite`, and the id it would replace. */
 interface PendingOverwrite {
@@ -189,34 +184,26 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                 <ListRow
                   key={workbench.id}
                   as="li"
-                  leading={<SkillTile name={workbench.id} fallback={ICONS.anvil} />}
+                  leading={<WorkbenchMark workbench={workbench} />}
                   title={title}
                   description={workbench.error ?? workbench.id}
-                  meta={
-                    inAppCenter || workbench.version ? (
-                      <span className="flex items-center gap-2">
-                        {inAppCenter && <Badge size="sm">{S.workbenches.inAppCenter}</Badge>}
-                        {workbench.version && <span>v{workbench.version}</span>}
-                      </span>
-                    ) : undefined
-                  }
+                  {...(workbench.version ? { meta: `v${workbench.version}` } : {})}
                   trailing={
                     <>
                       {machineId === null && (
-                        <Switch
+                        <AppCenterToggle
+                          title={title}
                           checked={
                             flipping?.workbenchId === workbench.id ? flipping.show : inAppCenter
                           }
                           disabled={busy}
                           onChange={(show) => flipAppCenter(workbench.id, show)}
-                          aria-label={`${S.workbenches.showInAppCenter} ${title}`}
-                          title={S.workbenches.showInAppCenterHint}
                         />
                       )}
                       {first && (
-                        <IconButton
-                          label={`${S.workbenches.open} ${title}`}
-                          title={S.workbenches.open}
+                        <Button
+                          size="sm"
+                          aria-label={`${S.workbenches.open} ${title}`}
                           onClick={() =>
                             void navigate("/chat/new", {
                               state: {
@@ -234,26 +221,18 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                             })
                           }
                         >
-                          <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
-                        </IconButton>
+                          {S.workbenches.openAction}
+                        </Button>
                       )}
-                      <IconButton
-                        label={`${S.workbenches.reload} ${title}`}
-                        title={S.workbenches.reload}
+                      <WorkbenchRowMenu
+                        title={title}
                         disabled={busy}
-                        onClick={() =>
+                        onReload={() =>
                           void act(() =>
                             api.reloadWorkbench(projectId, agentId, workbench.id, machineId),
                           )
                         }
-                      >
-                        <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
-                      </IconButton>
-                      <IconButton
-                        label={`${S.workbenches.history} ${title}`}
-                        title={S.workbenches.history}
-                        disabled={busy}
-                        onClick={() =>
+                        onHistory={() =>
                           void act(async () =>
                             setHistory({
                               workbench,
@@ -268,26 +247,9 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
                             }),
                           )
                         }
-                      >
-                        <GlyphIcon d={ICONS.history} size={ICON_SIZE.iconButton} />
-                      </IconButton>
-                      <IconButton
-                        label={`${S.workbenches.exportWorkbench} ${title}`}
-                        title={S.workbenches.exportWorkbench}
-                        disabled={busy}
-                        onClick={() => void exportWorkbench(workbench)}
-                      >
-                        <DownloadIcon size={ICON_SIZE.iconButton} />
-                      </IconButton>
-                      <IconButton
-                        label={`${S.workbenches.remove} ${title}`}
-                        title={S.workbenches.remove}
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => setConfirm({ workbench })}
-                      >
-                        <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-                      </IconButton>
+                        onExport={() => void exportWorkbench(workbench)}
+                        onRemove={() => setConfirm({ workbench })}
+                      />
                     </>
                   }
                 />

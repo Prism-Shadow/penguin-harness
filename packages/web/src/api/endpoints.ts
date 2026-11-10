@@ -2763,12 +2763,13 @@ const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
  * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
- * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
+ * the workbenches of an Agent that only a machine has are asked of THAT machine's server, and the
+ * list's icons are re-rooted onto it (api/machine-icons.ts).
  */
 export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<{ workbenches: WorkbenchInfo[] }>(workbenchesBase(projectId, agentId), {
     server: machineId,
-  });
+  }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /** Re-import the folder now (the server also does this whenever a file changes). */
 export const reloadWorkbench = (
   projectId: string,

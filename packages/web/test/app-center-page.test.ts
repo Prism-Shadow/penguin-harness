@@ -13,7 +13,11 @@
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
  *   write the server refuses puts the grid back to what is stored.
  * - A folder is renamed and ungrouped from its menu; "Move to…" makes one from the keyboard; an
- *   app dragged out of the open folder onto its backdrop leaves the folder.
+ *   app dragged out of the open folder onto its backdrop leaves the folder. A folder keeps its
+ *   one app, and goes once the last app leaves it.
+ * - The header's New folder opens a dialog: the name starts as "New folder", selected, and
+ *   Create waits for a checked app; the folder is made of the checked apps at the first one's
+ *   place. "New folder…" in a tile's "Move to…" opens it with that app checked.
  * - Restoring the default order asks first, and only the confirmation clears the layout.
  * - The menus open on right-click, Shift+F10 and the ContextMenu key; Esc closes one and hands
  *   focus back to its tile. A right-click outside the App Center keeps the browser's own menu.
@@ -31,6 +35,7 @@ import {
   AGENT_ID,
   PROJECT_ID,
   agentServer,
+  buttonIn,
   mountAgentApp,
   topDialog,
   whereIs,
@@ -171,6 +176,30 @@ async function drag(from: Element, to: HTMLElement, x: number): Promise<void> {
     to.dispatchEvent(dragEvent("dragover", x));
     to.dispatchEvent(dragEvent("drop", x));
     from.dispatchEvent(dragEvent("dragend"));
+  });
+  await settle();
+}
+
+/** The new-folder dialog's checkbox for the app titled `title`. */
+const appBox = (title: string) =>
+  [...topDialog().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+    (box) => spoken(box.closest("label")!).startsWith(title),
+  )!;
+/** The titles of the apps checked in the new-folder dialog, in its order. */
+const checkedApps = () =>
+  [...topDialog().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    .filter((box) => box.checked)
+    .map((box) => spoken(box.closest("label")!.querySelector(".truncate")!));
+
+/** Drags an app of the open folder out onto the folder's backdrop. */
+async function dragOut(id: string): Promise<void> {
+  const scrim = document.querySelector(".ui-scrim")!;
+  await act(async () => {
+    topDialog().querySelector(`li[data-app="${id}"]`)!.dispatchEvent(dragEvent("dragstart"));
+  });
+  await act(async () => {
+    scrim.dispatchEvent(dragEvent("dragover", 5));
+    scrim.dispatchEvent(dragEvent("drop", 5));
   });
   await settle();
 }
@@ -335,18 +364,62 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
     [...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"]),
   ).toEqual([key("board"), key("notes")]);
 
-  // Dragged out onto the backdrop, an app leaves the folder; a folder of one dissolves.
-  const scrim = document.querySelector(".ui-scrim")!;
-  await act(async () => {
-    panel.querySelector(`li[data-app="${key("notes")}"]`)!.dispatchEvent(dragEvent("dragstart"));
-  });
-  await act(async () => {
-    scrim.dispatchEvent(dragEvent("dragover", 5));
-    scrim.dispatchEvent(dragEvent("drop", 5));
-  });
-  await settle();
-  expect(order()).toEqual([key("board"), key("notes")]);
+  // Dragged out onto the backdrop, an app leaves the folder, which keeps its one app.
+  await dragOut(key("notes"));
+  expect(order()).toEqual([`folder:${en.appCenter.newFolder}`, key("notes")]);
   expect(document.querySelector(".ui-scrim")).toBeNull();
+
+  // The last app out leaves no folder behind.
+  await click(folderButton(en.appCenter.newFolder));
+  await dragOut(key("board"));
+  expect(order()).toEqual([key("board"), key("notes")]);
+});
+
+it("makes a folder of the apps checked in the header's New folder, at the first one's place", async () => {
+  const { server } = await open([workbench("board"), workbench("notes"), workbench("todo")]);
+  await click(button(en.appCenter.newFolderAction));
+  const dialog = topDialog();
+  const name = dialog.querySelector<HTMLInputElement>('input:not([type="checkbox"])')!;
+  // The starting name is selected, so typing replaces it.
+  expect(name.value).toBe(en.appCenter.newFolder);
+  expect([name.selectionStart, name.selectionEnd]).toEqual([0, name.value.length]);
+  expect(checkedApps()).toEqual([]);
+  expect(buttonIn(dialog, en.appCenter.newFolderCreate).disabled).toBe(true);
+
+  await click(appBox("Todo"));
+  await click(appBox("Notes"));
+  await type(name, "Daily");
+  await click(buttonIn(dialog, en.appCenter.newFolderCreate));
+  expect(order()).toEqual([key("board"), "folder:Daily"]);
+  expect(server.appCenterLayout()?.items).toEqual([
+    { type: "app", app: key("board") },
+    { type: "folder", id: expect.any(String), name: "Daily", apps: [key("notes"), key("todo")] },
+  ]);
+});
+
+it("opens New folder… from a tile's Move to… with that app checked, and keeps a folder of one", async () => {
+  const layout: AppCenterLayout = {
+    v: 1,
+    items: [{ type: "folder", id: "fwork", name: "Work", apps: [key("todo"), key("board")] }],
+  };
+  const { server } = await open([workbench("board"), workbench("notes"), workbench("todo")], {
+    layout,
+  });
+  await rightClick(tileButton(key("notes")));
+  await click(menuItem(en.appCenter.menu.moveTo));
+  await click(menuItem(en.appCenter.menu.newFolder));
+  expect(checkedApps()).toEqual(["Notes"]);
+  // An app in a folder says which; picking it takes it out of there.
+  expect(appBox("Todo").closest("label")?.textContent).toContain(
+    en.appCenter.newFolderInFolder("Work"),
+  );
+  await click(buttonIn(topDialog(), en.appCenter.newFolderCreate));
+  expect(order()).toEqual(["folder:Work", `folder:${en.appCenter.newFolder}`]);
+  expect(server.appCenterLayout()?.items[1]).toMatchObject({
+    type: "folder",
+    name: en.appCenter.newFolder,
+    apps: [key("notes")],
+  });
 });
 
 it("asks before restoring the default order, and only the confirmation clears the layout", async () => {

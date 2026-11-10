@@ -3,7 +3,7 @@
 [中文版](PRFC-0020-agent-workbench.zh.md)
 
 > **Source**: `rfcs/PRFC-0020-agent-workbench.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
-> **Rev**: v1.2.0 (the App Center as a personal home screen, from design PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
+> **Rev**: v1.3.0 (the App Center as a personal home screen, from design PR [#425](https://github.com/Prism-Shadow/penguin-harness-design/pull/425)); the conventions for this surface are in [README.md](README.md), and changes from version to version are recorded in `## Changes` at the end.
 
 - Feature Name: `agent_workbench`
 - Start Date: 2026-10-14
@@ -49,7 +49,7 @@ After an app starts a round of an Agent task, it needs to read the result out. `
 | Root module / types | `Workbench`, `WorkbenchPackage`, `WorkbenchHost`, `WorkbenchMain` |
 | Platform machinery | `Workbenches`, `WorkbenchService`, `WorkbenchRoutes` |
 | Tab contribution | `WebModule.sessionTabs`; provided by the app manifest with `id`, `key`, `title`, optional `titleZh`, and a renderer |
-| App Center | Manifest `penguin.appCenter`; `WorkbenchInfo.appCenter`, `AppCenterShortcut`, `AppCenterLayout`; the Project-level `GET /api/projects/:projectId/app-center` and `PUT …/app-center/layout` (see "App Center") |
+| App Center | Manifest `penguin.appCenter`; `WorkbenchInfo.appCenter` and `icon`, `AppCenterShortcut`, `AppCenterLayout`; the Project-level `GET /api/projects/:projectId/app-center` and `PUT …/app-center/layout` (see "App Center") |
 | Styles | `/workbench-ui.css`, `--wb-*` variables and `wb-*` classes; shared styles honor HTML's `[hidden]` |
 | Update / removal events | `workbench_updated { projectId, agentId, workbench }`, `workbench_removed { projectId, agentId, workbenchId }` |
 
@@ -104,7 +104,7 @@ An app declares in the `penguin` block of its own `package.json` whether it appe
 | `icon` | Optional relative path under `ui/` (no `..`; at most 256 KB) to an SVG, PNG, JPEG, WebP, GIF or AVIF file, recognised by its bytes, which must agree with its extension (`.jpg` and `.jpeg` are both JPEG); served by `GET /:id/app-center/icon`; defaults to a letter tile coloured by id |
 | `tab` | Optional key of the tab to open; defaults to the first tab |
 
-An object that does not hold up (a wrong type, an `icon` out of bounds, over the limit or whose bytes disagree with its extension, a `tab` that is not one of the app's tabs) is a load hint (`hints`), not an error: the app loads as usual and only has no App Center shortcut. The parsed result is `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`, absent when nothing is declared.
+An object that does not hold up (a wrong type, an `icon` out of bounds, over the limit or whose bytes disagree with its extension, a `tab` that is not one of the app's tabs) is a load hint (`hints`), not an error: the app loads as usual and only has no App Center shortcut. The parsed result is `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`, absent when nothing is declared; when it names an icon that reads clean, `WorkbenchInfo.icon?: IconRef` names it the way the shortcut does (below), shown or not, and the settings row leads with it.
 
 The Agent writes the key when it writes an app (the `penguin-plugin` Skill's layout conventions, and after the `web-design` Skill has asked "Workbench or a standalone app"). The switch on the app's row in the settings page rewrites it through `PATCH /:id/app-center { show }`: the server changes only `penguin.appCenter.show` (creating `{ show }` when there is no object), rewrites `package.json` with 2-space indentation and a final newline, and leaves every other key as it was; the watcher reloads, the load commits a version as usual, and the answer is `{ workbench }`; the permission is that of reload and removal. A `package.json` that is not a JSON object is answered 409 `workbench_manifest_invalid` and left untouched. When the switch and the Agent rewrite the file at the same time the last writer wins, and the watcher loads whatever landed. A plugin update that replaces the sources overwrites the key along with them.
 
@@ -143,7 +143,7 @@ interface AppCenterLayout {
 }
 ```
 
-`PUT /api/projects/:projectId/app-center/layout { layout: AppCenterLayout | null }` (Project members) stores it and answers `{ layout }`; `null` removes the Project's entry (restore the default order), and `PUT /api/me/prefs` answers 400 to `appCenterLayouts`. Only the shape is checked, and a write that does not hold up is refused whole with 400 and stores nothing: at most 500 items; an app key is at most 200 characters with exactly one `/` and both sides non-empty; a folder id is `[A-Za-z0-9_-]{1,32}`, a folder name is non-empty once trimmed and at most 40 characters (stored trimmed), and a folder holds 1–500 app keys; at most 1,000 app keys in all, with no app key and no folder id twice. The server does not compare a layout with the apps there are, and drops the entries of Projects that no longer exist when it writes; a stored value that does not hold up reads as `null`. The Web App lays a layout over the grid: an app the layout does not name is appended in the server's order, an app that is gone drops out, a folder left with one app dissolves into it and an empty one goes, and the next write stores the result.
+`PUT /api/projects/:projectId/app-center/layout { layout: AppCenterLayout | null }` (Project members) stores it and answers `{ layout }`; `null` removes the Project's entry (restore the default order), and `PUT /api/me/prefs` answers 400 to `appCenterLayouts`. Only the shape is checked, and a write that does not hold up is refused whole with 400 and stores nothing: at most 500 items; an app key is at most 200 characters with exactly one `/` and both sides non-empty; a folder id is `[A-Za-z0-9_-]{1,32}`, a folder name is non-empty once trimmed and at most 40 characters (stored trimmed), and a folder holds 1–500 app keys; at most 1,000 app keys in all, with no app key and no folder id twice. The server does not compare a layout with the apps there are, and drops the entries of Projects that no longer exist when it writes; a stored value that does not hold up reads as `null`. The Web App lays a layout over the grid: an app the layout does not name is appended in the server's order, an app that is gone drops out, a folder stays while it holds an app (one is enough) and goes once it is empty, and the next write stores the result. A folder made from the page's new-folder dialog holds the apps checked there, in the grid's order, at the place of the first of them.
 
 The `penguin-support` Support app declares `appCenter: { show: true, icon: "ui/icon.svg" }` and raises `penguin.version`, so installed copies show one update.
 
@@ -206,3 +206,8 @@ Other reusable Agent apps can be distributed under the same plugin convention; n
 - Added: the `workbench_building` event, the App Center's watchers, the icon route `GET /:id/app-center/icon` with its headers, and the icon formats told apart by their bytes.
 - Added: `AppCenterLayout`, kept per account and Project in `ui_prefs.appCenterLayouts`, and `PUT /api/projects/:projectId/app-center/layout`; the list answers `layout` beside `shortcuts`.
 - Added: a Status note for 2026-11-09.
+
+### v1.3.0
+
+- Changed: a folder of the arrangement goes only once it is empty; a folder of one app stays.
+- Added: `WorkbenchInfo.icon` (the declared icon as an `IconRef`, shown or not), and where a folder made from the new-folder dialog goes.
