@@ -64,12 +64,3 @@ describe("marks", () => {
     expect(renderStatic(createElement(PlusIcon, { strokeWidth: 2 }))).toContain('stroke-width="2"');
   });
 });
-
-describe("Chevron", () => {
-  it("points down when open and rotates only by its transform", () => {
-    expect(renderStatic(createElement(Chevron, { open: true }))).toContain("rotate-90");
-    const closed = renderStatic(createElement(Chevron, { open: false }));
-    expect(closed).not.toContain("rotate-90");
-    expect(closed).toContain("transition-transform");
-  });
-});

@@ -2,7 +2,7 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch/delete, tasks/steer/compact/switch-model/abort, SSE stream,
- * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
+ * messages, agents, their packages and their public API settings, projects, usage, schedules, the admin settings,
  * organizations and their channels, the plugins installed on the server, and — through
  * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
@@ -323,6 +323,23 @@ export class FakeServer {
   /** Every secret POST …/api/keys minted, in order: short and obviously fake, never key-shaped. */
   readonly mintedSecrets: string[] = [];
   private nextKeyOrdinal = 1;
+  /**
+   * The Agent package routes: the bytes GET …/agents/:a/archive serves, every raw body POST
+   * …/agents/import was sent, and how the import answers one (given its query).
+   */
+  agentArchive = {
+    exported: new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    uploads: [] as Uint8Array[],
+    answer: (query: URLSearchParams): { status?: number; body: unknown } => ({
+      body: {
+        agent: { agentId: query.get("agentId") ?? "imported", name: "Imported" },
+        mode: "created",
+        version: 1,
+        sessions: { imported: 0, skipped: [] },
+      },
+    }),
+  };
+
   /**
    * The built-in browser (`/api/builtin-browser/*`): answers each request from its method, its
    * path below that prefix, its query and its body. The default is what a server outside the
@@ -1890,6 +1907,18 @@ export class FakeServer {
         ...(this.defaultModel !== null ? { defaultModel: this.defaultModel } : {}),
         models: [],
       });
+    }
+
+    m = /^\/api\/projects\/[^/]+\/agents\/(?:([^/]+)\/archive|import)$/.exec(apiPath);
+    if (m && method === "GET") {
+      return new Response(this.agentArchive.exported, {
+        headers: { "content-disposition": `attachment; filename="${m[1]}-20261109.zip"` },
+      });
+    }
+    if (m) {
+      this.agentArchive.uploads.push(init?.body as Uint8Array);
+      const answer = this.agentArchive.answer(url.searchParams);
+      return this.json(answer.body, answer.status ?? 201);
     }
 
     // Session create
