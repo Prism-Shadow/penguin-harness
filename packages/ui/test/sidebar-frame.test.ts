@@ -1,10 +1,19 @@
 /**
  * The pinned sidebar's frame and its pieces (src/components/shell/sidebar-frame/), and the page
- * row on the navigation column (NavRow on the muted surface): one column whose scroll area is the
- * only block that shrinks, a page nav whose pinned entries stay above the part that folds under
- * its toggle (through the shared `Fold`), entries that carry a pin toggle, drag as a whole and
- * surface under the theme's reveal when they have just moved between the areas, a list header
- * whose label is the eyebrow rung, and the column's washes in place of surface steps.
+ * row on the navigation column (NavRow on the muted surface).
+ *
+ * - Given fixed entries (New chat and the favourites), the frame stands them between the
+ *   switcher and the scroll area, never inside the element that scrolls; the scroll area holds
+ *   exactly what it is given. (That a scroll leaves them in place and draws a line at the
+ *   boundary without moving anything, how far apart the rows stand across that boundary, and
+ *   how a short column gives way are measured in a real engine:
+ *   packages/ui-gallery/e2e/sidebar-favorites.spec.mjs.)
+ * - Given no fixed entries, the column keeps an empty gap under the switcher, and no fixed nav.
+ * - The fold folds through the shared `Fold`; with nothing to fold it draws nothing at all, and
+ *   with a drop target it is ringed only while a drag it would take is over it.
+ * - Entries carry a star toggle, drag as a whole, and move between the areas without a reveal.
+ * - The list header's label is the eyebrow rung, and the column takes washes in place of
+ *   surface steps.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -46,21 +55,35 @@ const frame = (props: Partial<Parameters<typeof SidebarFrame>[0]> = {}) =>
       switcher: createElement("span", null, "Project"),
       account: createElement("span", null, "Account"),
       children: createElement("span", null, "List"),
+      findRegion: "sessions",
       ...props,
     }),
   );
 
+/** The scroll area's own markup: the element that scrolls (it carries the find region) and all it holds. */
+const SCROLL_AREA =
+  /<div data-find-region="sessions" class="[^"]*">(.*?)<\/div><div class="shrink-0 border-t/;
+
 describe("SidebarFrame", () => {
-  it("stacks the switcher, the scroll area and the account row", () => {
-    const html = frame();
-    expect(markupStructure(html)).toContain("<div><span>List</span></div>");
-    expect(markupStructure(html)).toContain("<div><span>Account</span></div>");
+  it("stands the fixed entries between the switcher and the scroll area, never inside what scrolls", () => {
+    const fixed = createElement(
+      "div",
+      null,
+      createElement("button", { type: "button" }, "New chat"),
+      createElement("a", { href: "/agents" }, "Agents"),
+    );
+    const html = frame({ pinned: fixed });
+    expect(html.indexOf("Project")).toBeLessThan(html.indexOf("New chat"));
+    expect(html.indexOf('href="/agents"')).toBeLessThan(html.indexOf("data-find-region"));
+    // The scroll area holds exactly the list it was given: nothing of the fixed block.
+    expect(SCROLL_AREA.exec(html)?.[1]).toBe("<span>List</span>");
+    expect(html.indexOf("data-find-region")).toBeLessThan(html.indexOf("Account"));
   });
 
-  it("shows a pinned entry under the switcher", () => {
-    expect(markupStructure(frame({ pinned: createElement("span", null, "New chat") }))).toContain(
-      "<div><span>New chat</span></div>",
-    );
+  it("keeps an empty gap under the switcher with no fixed entries", () => {
+    const html = frame();
+    expect(html).toMatch(/<div class="[^"]*"><\/div><div data-find-region="sessions"/);
+    expect(html).not.toContain("<nav");
   });
 
   it("names the mode switch's group and the fold button from the caller's words", () => {
@@ -103,7 +126,7 @@ describe("SidebarNavGroup", () => {
   });
 });
 
-describe("SidebarNavGroup's pinned entries and drop targets", () => {
+describe("SidebarNavGroup with nothing to fold, and as a drop target", () => {
   const nav = (props: Partial<Parameters<typeof SidebarNavGroup>[0]> = {}) =>
     renderStatic(
       createElement(SidebarNavGroup, {
@@ -115,28 +138,14 @@ describe("SidebarNavGroup's pinned entries and drop targets", () => {
         ...props,
       }),
     );
-  const agents = createElement("a", { href: "/agents" }, "Agents");
-
-  it("draws the pinned entries above the fold, in the same navigation", () => {
-    expect(nav({ pinned: agents })).toMatch(
-      /^<nav class="[^"]*"><a href="\/agents">Agents<\/a><div class="[^"]*"><div data-layout-motion="true"/,
-    );
-  });
-
-  it("keeps the pinned entries shown and reachable while the rest is folded", () => {
-    const html = nav({ collapsed: true, pinned: agents });
-    expect(html).toContain('href="/agents"');
-    expect(html).not.toContain('href="/usage"');
-    expect(html).toContain('aria-expanded="false"');
-  });
-
-  it("draws neither the fold nor its toggle with nothing to fold", () => {
-    const html = nav({ foldable: false, pinned: agents });
-    expect(markupStructure(html)).toBe('<nav><a href="/agents">Agents</a></nav>');
+  it("draws nothing at all with nothing to fold: no rows, no toggle, no empty landmark", () => {
+    expect(nav({ foldable: false })).toBe("");
   });
 
   it("rings the fold and its toggle band while a drag it would take is over them, and only then", () => {
-    expect(nav({ drop: dropTarget(true) })).toContain(`</button>${DROP_RING}</div></nav>`);
+    expect(nav({ drop: dropTarget(true) })).toContain(`</button>${DROP_RING}</nav>`);
+    expect(nav({ drop: dropTarget(false) })).not.toContain("ring-accent");
+    expect(nav()).not.toContain("ring-accent");
   });
 });
 
