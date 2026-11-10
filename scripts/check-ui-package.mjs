@@ -21,6 +21,8 @@
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import
  *    map does not resolve, every module its declarations import is in its types tree, and those
  *    types give the same `tsc` results with the options the server compiles a page with.
+ * 7. `styles.css` names the theme layers first in cascade order: `ui-base`, `ui-theme`,
+ *    `ui-accent`, `ui-font`.
  *
  * Run after `pnpm --filter @prismshadow/penguin-ui build`, with the root LICENSE copied into
  * packages/ui/ as the release does before it publishes. Linux and macOS (it unpacks with `tar`).
@@ -408,6 +410,25 @@ try {
     ...unresolved,
     ...verdict(pageResult),
   ]);
+
+  // --- the theme layers --------------------------------------------------------------------
+  // A layer's place is where the sheet first names it, so the built sheet must name the four
+  // theme layers first in cascade order: the base under the packs, the presets over them, the
+  // font pairing last. (packages/ui/test/cascade-layers.test.ts holds the sources to it.)
+  const layerOrder = [];
+  for (const m of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/@layer\s+([^{;]+)[{;]/g)) {
+    for (const layer of m[1].split(",").map((s) => s.trim())) {
+      if (layer.startsWith("ui-") && !layerOrder.includes(layer)) layerOrder.push(layer);
+    }
+  }
+  const wantLayers = ["ui-base", "ui-theme", "ui-accent", "ui-font"];
+  check(
+    7,
+    "styles.css names the theme layers in cascade order",
+    layerOrder.join(",") === wantLayers.join(",")
+      ? []
+      : [`styles.css names ${layerOrder.join(", ")}; want ${wantLayers.join(", ")}`],
+  );
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

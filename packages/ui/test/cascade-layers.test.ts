@@ -11,14 +11,16 @@
  * - theme.css names the four layers, in order, before anything it imports;
  * - no stylesheet under src/ but theme.css opens `ui-base` or `ui-theme`, and only a pack's
  *   index.css serves a file into one;
- * - the built sheet (`dist/styles.css`, what the package publishes and the Web App's bundle
- *   mirrors) names the four first in that order.
+ * - each entry sheet that compiles the themes — the Web App's, the gallery's and the published
+ *   `styles.css`'s — names the four first in that order once every `@import` is followed the way
+ *   the compiler inlines it. (`scripts/check-ui-package.mjs` reads the built `dist/styles.css`
+ *   for the same order.)
  */
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { UI_LAYERS, scanSourceRoots, stripCssComments, unscannedRoots } from "../src/testing";
-import { PACKAGE_DIR, REPO_ROOT, SRC_DIR } from "./helpers/paths";
+import { PACKAGE_DIR, REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
 
 /**
  * Every layer a sheet names, in the order it first names each: a statement (`@layer a, b;`), a
@@ -37,6 +39,64 @@ function layerMentions(css: string): string[] {
 }
 
 const ui = (names: readonly string[]) => names.filter((name) => name.startsWith("ui-"));
+
+/** The package's own stylesheet specifiers (`exports`), as a consumer's import names them. */
+const PACKAGE_STYLES: readonly (readonly [prefix: string, dir: string])[] = [
+  ["@prismshadow/penguin-ui/theme.css", join(SRC_DIR, "theme.css")],
+  ["@prismshadow/penguin-ui/fonts.css", join(SRC_DIR, "fonts", "index.css")],
+  ["@prismshadow/penguin-ui/themes/", join(SRC_DIR, "themes") + "/"],
+];
+
+/** Where an `@import` lands, or null for a stylesheet outside the package (Tailwind, fontsource). */
+function resolveImport(specifier: string, from: string): string | null {
+  if (specifier.startsWith(".")) return resolve(dirname(from), specifier);
+  for (const [prefix, target] of PACKAGE_STYLES) {
+    if (specifier === prefix) return target;
+    if (prefix.endsWith("/") && specifier.startsWith(prefix)) {
+      return target + specifier.slice(prefix.length);
+    }
+  }
+  return null;
+}
+
+/**
+ * Every layer a sheet names, in the order the compiled sheet first names each, following its
+ * imports the way the compiler inlines them: an import into a layer names that layer where it
+ * stands, then the imported sheet's own mentions follow in place.
+ */
+function layerOrderThrough(
+  entry: string,
+  read: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): string[] {
+  const seen: string[] = [];
+  const name = (layer: string) => {
+    if (layer !== "" && !seen.includes(layer)) seen.push(layer);
+  };
+  const event = /@import\s+["']([^"']+)["']([^;]*);|@layer\s+([^{;]+)[{;]/g;
+  const walk = (path: string, depth: number) => {
+    if (depth > 16) throw new Error(`${path}: imports nest deeper than 16`);
+    for (const match of stripCssComments(read(path)).matchAll(event)) {
+      if (match[3] !== undefined) {
+        for (const layer of match[3].split(",")) name(layer.trim());
+        continue;
+      }
+      const into = /\blayer\(\s*([\w.-]+)\s*\)/.exec(match[2]!)?.[1];
+      if (into !== undefined) name(into);
+      const target = resolveImport(match[1]!, path);
+      if (target !== null) walk(target, depth + 1);
+    }
+  };
+  walk(entry, 0);
+  return seen;
+}
+
+/** The entry sheets that compile the theme packs into one stylesheet each. */
+const GALLERY_STYLES = join(REPO_ROOT, "packages", "ui-gallery", "src", "styles.css");
+const ENTRIES: Readonly<Record<string, string>> = {
+  web: join(WEB_DIR, "src", "styles.css"),
+  published: join(PACKAGE_DIR, "scripts", "styles.entry.css"),
+  ...(existsSync(GALLERY_STYLES) ? { gallery: GALLERY_STYLES } : {}),
+};
 
 describe("the theme layers", () => {
   it("are named by theme.css, in cascade order, before anything it imports", () => {
@@ -86,12 +146,30 @@ describe("the theme layers", () => {
     ).toEqual([]);
   });
 
-  it("open in cascade order in the built sheet", () => {
-    const built = join(PACKAGE_DIR, "dist", "styles.css");
-    expect(
-      existsSync(built),
-      "dist/styles.css is missing — run `pnpm --filter @prismshadow/penguin-ui build` first",
-    ).toBe(true);
-    expect(ui(layerMentions(readFileSync(built, "utf8")))).toEqual([...UI_LAYERS]);
+  it("are named in the order the imports put them — the walk is exercised on the trap it guards", () => {
+    // A foundation sheet imported ahead of the statement opens ui-theme first, and the statement
+    // can no longer put ui-base under it.
+    const files: Record<string, string> = {
+      "/x/entry.css": '@import "tailwindcss";\n@import "./theme.css";\n@import "./pack/index.css";',
+      "/x/theme.css": '@import "./early.css";\n@layer ui-base, ui-theme, ui-accent, ui-font;',
+      "/x/early.css": "@layer ui-theme { .a { color: red } }",
+      "/x/pack/index.css": '@import "./tokens.css" layer(ui-base);',
+      "/x/pack/tokens.css": ":root { --ui-canvas: #fff; }",
+    };
+    const read = (path: string) => files[path] ?? "";
+    expect(ui(layerOrderThrough("/x/entry.css", read))).toEqual([
+      "ui-theme",
+      "ui-base",
+      "ui-accent",
+      "ui-font",
+    ]);
+    files["/x/theme.css"] = '@layer ui-base, ui-theme, ui-accent, ui-font;\n@import "./early.css";';
+    expect(ui(layerOrderThrough("/x/entry.css", read))).toEqual([...UI_LAYERS]);
   });
+
+  for (const [name, entry] of Object.entries(ENTRIES)) {
+    it(`${name}: names the four layers first in cascade order, through every import`, () => {
+      expect(ui(layerOrderThrough(entry))).toEqual([...UI_LAYERS]);
+    });
+  }
 });
