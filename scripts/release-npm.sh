@@ -82,6 +82,8 @@ case "$cmd" in
     pnpm --filter @prismshadow/penguin-server gen:ifaces
     pnpm --filter @prismshadow/penguin-server exec vitest run \
       test/plugin-registry.test.ts test/version.test.ts test/deploy-same-build.test.ts
+    # The same for the CLI's table, which its command module imports.
+    pnpm --filter @prismshadow/penguin-cli gen:ifaces
     pnpm --filter @prismshadow/penguin-cli exec vitest run test/version.test.ts
     ;;
   *)

@@ -22,7 +22,7 @@
 
 ## 编号
 
-编号与文件名原样沿用设计仓。两份草案同占 `0005` 号——PRFC-0005-mechanisms-not-implementations.md 与 PRFC-0005-plugin-versioning.md——两条独立的设计线在各自落地前先后占了同一个号；它们是两份不同的文档，不是同一份的两个修订。`0013` 号已退役：HMR RFC 曾以 PRFC-0013 起草，落地前改号为 PRFC-0002。
+编号与文件名原样沿用设计仓。两份草案同占 `0005` 号——PRFC-0005-mechanisms-not-implementations.md 与 PRFC-0005-plugin-versioning.md——两条独立的设计线在各自落地前先后占了同一个号；它们是两份不同的文档，不是同一份的两个修订。`0013` 号已退役：HMR RFC 曾以 PRFC-0013 起草，落地前改号为 PRFC-0002。`0024` 号曾以 PRFC-0024-cli-resolution 起草、落地前撤销（其主体并入 [PRFC-0023](PRFC-0023-harness-meta.md)）；现由 CLI Modules 重新启用，是一份不同的文档。
 
 ## 索引
 
@@ -51,3 +51,4 @@
 | [PRFC-0021-distros.md](PRFC-0021-distros.md) | 发行通道：harness 抵达一台机器的共用词表 | 草案 |
 | [PRFC-0022-rfc-invariant.md](PRFC-0022-rfc-invariant.md) | RFC Invariants：一个永久节，写下必须一直成立的性质 | 草案 |
 | [PRFC-0023-harness-meta.md](PRFC-0023-harness-meta.md) | Harness Meta：每个数据根都带着自己那份 harness 记录 | 草案 |
+| [PRFC-0024-cli-modules.md](PRFC-0024-cli-modules.md) | CLI Modules：命令是归属于拥有它的进程的贡献 | 草案 |

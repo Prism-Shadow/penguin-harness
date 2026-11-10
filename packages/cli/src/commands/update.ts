@@ -559,10 +559,8 @@ function refusalMessage(plan: Extract<UpdatePlan, { action: "refuse" }>, t: Mess
   }
 }
 
-export function registerUpdateCommand(program: Command, t: Messages): void {
-  program
-    .command("update")
-    .description(t.update.desc)
+export function registerUpdateCommand(update: Command, t: Messages): void {
+  update
     .option("--check", t.update.check)
     .option("--release <tag>", t.update.releaseOpt)
     .option("-y, --yes", t.update.yes)

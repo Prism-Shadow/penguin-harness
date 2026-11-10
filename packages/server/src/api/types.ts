@@ -7128,6 +7128,40 @@ export interface ContributionsResponse {
   sessionTabs: WebContribution[];
 }
 
+/** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
+export interface PluginCliCommandInfo {
+  /** The plugin package that contributes it — what `penguin exec` names. */
+  package: string;
+  /** `a.b.c`: the argv segments it answers (`penguin a b c ARGS`). */
+  key: string;
+  /** Its one-line summary, per language. */
+  summary: { en: string; zh: string };
+}
+
+/** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
+export interface PluginCliCommandsResponse {
+  commands: PluginCliCommandInfo[];
+}
+
+/** POST /api/cli/commands/run: runs argv against one plugin's commands on the server. */
+export interface PluginCliCommandRunRequest {
+  /** The plugin package, as the listing names it. */
+  package: string;
+  /** The arguments, as they would follow the program name. */
+  args: string[];
+  /** The language the caller resolved, for the summaries and the command's own text. */
+  language: "en" | "zh";
+  /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
+  prog: string;
+}
+
+/** What one run printed, and its exit code. */
+export interface PluginCliCommandRunResponse {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 /**
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is

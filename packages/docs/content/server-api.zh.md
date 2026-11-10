@@ -654,6 +654,23 @@ interface AgentApiKeyInfo {
 
 列表不带语法：一份语法有几十到几百 KB，只有对话中真正出现的语言才值得抓取。语法响应缓存一小时——它不换新 App 就不会变，而新 App 意味着一次新的页面加载。别名与文件扩展名必须*先于*语法到达：Shiki 只有在语法加载之后才会注册它自带的别名，而决定是否加载语法的，正是代码块的 info string。语法是数据而非代码：这条路径上不会执行插件提供的任何东西。
 
+## 插件提供的 CLI 命令
+
+插件可以向 `penguin` CLI 贡献命令。命令与插件的其他部分一起住在 server 的模块树里，因此知道它们的是 server，CLI 通过两条路由触达：一条列出，另一条运行。列出对任何已登录用户开放；运行插件的代码是管理员操作。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行 |
+| POST | `/api/cli/commands/run` | 仅管理员。将 `args` 对一个包的命令解析，应答它们打印的内容与退出码 |
+
+运行请求是 `{package, args, language, prog}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。应答是 `{exitCode, stdout, stderr}`。
+
+每次运行都只用被点名包的命令新建一个命令程序：每条命令位于其 key 定位的节点上、以所请求语言的 summary 作描述，`args` 对这个程序解析。无参数时打印该包的帮助并以 0 退出；用法错误按 commander 的原样报出、带 commander 自己的退出码；命令自身失败以退出码 1 返回、消息在 stderr 上。输出是缓冲的，不作流式传输：命令通过 context 写下的一切，以及程序为帮助与用法错误打印的一切，在运行结束时随应答一次到达。一次运行不会波及 server——失败的命令不影响 server 与它的其他路由。
+
+错误：调用者非管理员时 `403` `admin_required`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
+
+CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包> …`——见 [penguin exec](/cli#penguin-exec)。
+
 ## 定时任务
 
 下面的路径省略了 `/api/projects/:projectId` 前缀。

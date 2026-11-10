@@ -48,6 +48,7 @@ import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
+import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -511,6 +512,7 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    PluginCliCommandsProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,

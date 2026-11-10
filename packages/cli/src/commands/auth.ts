@@ -88,9 +88,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-export function registerAuthCommand(program: Command, t: Messages): void {
-  const auth = program.command("auth").description(t.auth.desc);
-
+export function registerAuthCommand(auth: Command, t: Messages): void {
   auth
     .command("login")
     .description(t.auth.loginDesc)
