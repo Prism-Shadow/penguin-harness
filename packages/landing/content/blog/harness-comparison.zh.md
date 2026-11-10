@@ -6,7 +6,7 @@ author: "Zhihao Liu (Prism Shadow AI)"
 excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
 ---
 
-本文介绍如何使用 PenguinHarness 0.2.19 组织不同 Harness 的对比实验。实验从五个公开 Benchmark 中筛选出 50 道测试题，将模型固定为 DeepSeek-V4.1-Flash-1017，思考强度设为 max，对 PenguinHarness、DSH、Pi 和 Codex 各测 3 轮。下文将依次介绍 Benchmark 构建与实验规则、实验流程，以及实测结果与分析。
+本文介绍如何使用 PenguinHarness 0.2.19 组织不同 Harness 的对比实验。实验从五个公开 Benchmark 中筛选出 50 道测试题，将模型固定为 DeepSeek-V4.1-Flash-1017，思考强度设为 max，对 PenguinHarness、DSH、Pi 和 Codex 各测 3 轮。下文将依次介绍 Benchmark 构建与实验规则、实验流程、Web 界面的实验启动方式以及实验结果与分析。
 
 ## 1. Benchmark 与实验设置
 
@@ -97,7 +97,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 每道测试题在容器内的执行与判分相互独立，具体流程如图 3 所示。Agent 在容器的 /app 目录下读取代码、修改文件并调用工具；待 Agent 进程退出后，判分脚本才进入 /app 目录运行验收测试，仅根据最终结果判分——测试全部通过得 100 分，任一测试未通过得 0 分。
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1370" alt="图 3 单道题目的容器执行与判分流程" /><figcaption>图 3 单道题目的容器执行与判分流程</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/05-trial-execution.png" width="2880" height="1370" alt="图 3 单题的容器执行与判分流程" /><figcaption>图 3 单题的容器执行与判分流程</figcaption></figure>
 
 以 Sec E 的 CASE-008 为例：容器内预置了一套存在多处逻辑与计算缺陷的漂移监测程序，要求 Agent 在 25 分钟、200 次请求内完成修复，结束后由验收脚本运行 pytest 评分。在该题的三轮测试中，Codex 修改后的代码均未通过 pytest，三轮皆为 0 分；Pi 通过两轮；DSH 与 PenguinHarness 则三轮全部通过测试，得 100 分。
 
@@ -105,7 +105,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 每个 Harness 在 50 道题上运行三轮、共测试 150 次，总体均分与样本标准差的计算方式如图 4 所示：
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2090" alt="图 4 总体均分与样本标准差的计算方法" /><figcaption>图 4 总体均分与样本标准差的计算方法</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2090" alt="图 4 平均分与标准差的计算方法" /><figcaption>图 4 平均分与标准差的计算方法</figcaption></figure>
 
 API 费用、运行时间与 Token 用量则先按单轮 50 道题累加，再跨三轮取平均值；其中 Token 用量按计费方式拆分为非缓存输入、缓存读取与模型输出三类分别统计。
 

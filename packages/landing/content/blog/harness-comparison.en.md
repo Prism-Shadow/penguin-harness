@@ -6,7 +6,7 @@ author: "Zhihao Liu (Prism Shadow AI)"
 excerpt: "We hold the model and thinking effort fixed and compare PenguinHarness, DSH, Pi and Codex on 50 tasks from five benchmarks over three runs. We examine pass rates, repeatability and resource use, and show how to organize and reproduce the evaluation with PenguinHarness."
 ---
 
-This post describes how to use PenguinHarness 0.2.19 to organize a comparison of different Harnesses. We selected 50 tasks from five public benchmarks, fixed the model to DeepSeek-V4.1-Flash-1017 with thinking effort set to max, and tested PenguinHarness, DSH, Pi and Codex over 3 runs each. We cover the benchmark construction and experiment rules, the evaluation workflow, and the results and analysis.
+This post describes how to use PenguinHarness 0.2.19 to organize a comparison of different Harnesses. We selected 50 tasks from five public benchmarks, fixed the model to DeepSeek-V4.1-Flash-1017 with thinking effort set to max, and tested PenguinHarness, DSH, Pi and Codex over 3 runs each. We cover the benchmark construction and experiment rules, the evaluation workflow, how to launch the experiment from the web interface, and the results and analysis.
 
 ## 1. Benchmarks and experiment settings
 
@@ -105,7 +105,7 @@ Consider CASE-008 in Sec E. Its container includes a drift-monitoring program wi
 
 Each Harness runs the 50 tasks three times, for 150 attempts in total. Figure 4 shows how we calculate the overall mean and sample standard deviation:
 
-<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2090" alt="Figure 4: Calculating the overall mean and sample standard deviation" /><figcaption>Figure 4: Calculating the overall mean and sample standard deviation</figcaption></figure>
+<figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/harness-comparison/06-statistics-method.png" width="2880" height="2090" alt="Figure 4: Calculating the mean and standard deviation" /><figcaption>Figure 4: Calculating the mean and standard deviation</figcaption></figure>
 
 API cost, execution time and token use are first summed across the 50 tasks in each run, then averaged across the three runs. Token use is counted separately in three billing categories: non-cached input, cache reads and model output.
 

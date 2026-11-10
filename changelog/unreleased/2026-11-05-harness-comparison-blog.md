@@ -17,3 +17,4 @@ Added Chinese and English experiment blog posts comparing PenguinHarness, DSH, P
 - Updated all ten diagrams to the manuscript's selected figures.
 - Described the three-step reproduction workflow, the subset comparison, Pass@3, and per-task changes behind equal overall scores.
 - Replaced the resource-use discussion with the DSH storage-engine example comparing conventional and randomized self-tests.
+- Updated the introduction to mention launching experiments from the web interface, and refreshed the execution, statistics and task-stability figures and captions.
