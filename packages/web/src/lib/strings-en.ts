@@ -1043,10 +1043,18 @@ export const en: Strings = {
   workbenches: {
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
-    empty: "This Agent has no workbenches yet.",
-    agentTabDesc:
-      "Manage this Agent’s workbenches: open an app, reload it, review its versions or remove it.",
     open: "Open workbench",
+    /** The Agent-wide switch on the Plugins tab, and what it does. */
+    enableAll: "Enable workbenches",
+    enableAllHint:
+      "With it off, none of this agent's workbenches run: they leave the chat page and the App Center, and their pages stop opening. Each workbench keeps its own switch, its data and its versions, and turning this back on restores them as they were.",
+    /** One workbench's own switch (its accessible name). */
+    enableOne: (name: string) => `Enable ${name}`,
+    /** Why a workbench's switch is greyed: the Agent-wide one is off. */
+    offByAll: "Enable workbenches is off. Turn it on first.",
+    /** The full-page route of a switched-off workbench. */
+    offPage:
+      "This workbench is turned off. You can turn it on under Plugins in the agent's settings.",
     noMatches: "No matching agents.",
     searchAgents: "Search agents",
 
@@ -1736,9 +1744,7 @@ export const en: Strings = {
     tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
-    tabSkills: "Skills",
-    tabWorkbenches: "Workbenches",
-    tabHooks: "Hooks",
+    tabPlugins: "Plugins",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     tabApi: "API",
@@ -1939,6 +1945,9 @@ export const en: Strings = {
     importAgent: "Import agent",
     exportTitle: (name: string): string => `Export agent: ${name}`,
     exportInclude: "Include",
+    exportSkills: "Skills",
+    exportHooks: "Hooks",
+    exportWorkbenches: "Workbenches",
     exportWorkbenchData: "With their data",
     exportSchedulesHint: "They run on their schedule once imported",
     exportTraces: "Conversations",
@@ -3116,13 +3125,70 @@ export const en: Strings = {
       "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the agent's plugins and the parts each brought, the agent's own parts last. */
+  agentPlugins: {
+    tabDesc:
+      "The plugins installed on this agent, and the skills, hooks, MCP servers and workbenches each one brought. Uninstalling a plugin removes all of its parts at once. Parts you made or imported yourself are listed last.",
+    /** Appended to the description for a member. */
+    readOnlyHint:
+      "Only the Project owner can use the switches, edit the skills prompt or uninstall a plugin.",
+    importAction: "Import",
+    importMenu: "What to import",
+    importSkill: "Skill",
+    importHook: "Hook package",
+    importWorkbench: "Workbench",
+    importChatOrZip: "Upload a zip, or have the agent import it in a chat",
+    importZip: "Upload a zip",
+    browseLibrary: "Browse plugin library",
+    installedTitle: "Installed plugins",
+    empty: "No plugins on this agent yet. Select Browse plugin library to add one.",
+    ownTitle: "Not from a plugin",
+    /** What a plugin brought to this agent, beside its name: "3 skills, hooks, 1 workbench". */
+    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
+      [
+        skills === 0 ? "" : skills === 1 ? "1 skill" : `${skills} skills`,
+        hooks ? "hooks" : "",
+        mcp === 0 ? "" : mcp === 1 ? "1 MCP server" : `${mcp} MCP servers`,
+        workbenches === 0 ? "" : workbenches === 1 ? "1 workbench" : `${workbenches} workbenches`,
+      ]
+        .filter((part) => part !== "")
+        .join(", "),
+    /** A plugin's status on this agent, and what it means on hover. */
+    status: {
+      installed: "Installed",
+      update: "Update available",
+      incomplete: "Incomplete",
+      "not-in-library": "Not in library",
+    },
+    statusHint: {
+      installed: "Every part of this plugin is here.",
+      update: "The plugin library has a newer version. Select Update to get it.",
+      incomplete: "Some parts of this plugin are missing. Select Update to put them back.",
+      "not-in-library":
+        "An admin removed this plugin from the plugin library, so it cannot be updated.",
+    },
+    /** The parts the uninstall confirmation lists, one per line. */
+    partSkill: (name: string) => `Skill: ${name}`,
+    partHook: (name: string) => `Hook package: ${name}`,
+    partMcp: (name: string) => `MCP server: ${name}`,
+    partWorkbench: (name: string) => `Workbench: ${name}`,
+    uninstallBody: (plugin: string, agent: string) =>
+      `These parts of ${plugin} will be deleted from ${agent}, local edits included:`,
+    uninstallWorkbenchData:
+      "A workbench's data and versions are deleted with it. To stop using one for now, turn its switch off instead.",
+    /** A part the server could not remove, and why; the rest were removed. */
+    failedPart: (name: string, error: string) => `${name} (${error})`,
+    uninstallPartly: (plugin: string, failed: string) =>
+      `Uninstalled ${plugin}, but these parts could not be deleted: ${failed}`,
+    updatedToast: (plugin: string, agent: string) => `Updated ${plugin} on ${agent}`,
+    /** An MCP server row: what keeps it from connecting, and where it is edited. */
+    mcpNeedsSetup: "Needs setup",
+    mcpNeedsSignIn: "Needs sign-in",
+    mcpEdit: "Edit in Tools",
+  },
+
+  /** An agent's hook packages on its Plugins tab (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
-    agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
-    agentTabEmpty: "No hook packages installed yet",
-    /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
     exportHook: "Export",
@@ -3204,17 +3270,14 @@ export const en: Strings = {
     skillCount: (n: number): string => (n === 1 ? "1 skill" : `${n} skills`),
     /** The plugin library's per-agent update button, and the confirm buttons of every update dialog. */
     updateAction: "Update",
-    /** Settings Skills tab: toast after uninstalling one skill. */
+    /** Toast after uninstalling one skill from an agent. */
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
-    /** Agent settings "Skills" tab (installed list + import modal). */
-    agentTabDesc:
-      "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
-    agentTabEmpty: "No skills installed yet",
+    /** An agent's Skills on its Plugins tab (rows + import modal). */
     exportSkill: "Export",
     importSkill: "Import skill",
     importChatTitle: "Recommended: install by chatting with the agent",
@@ -6385,6 +6448,9 @@ Scenarios:
       machine_no_answer: "The machine didn't answer.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",
+      plugin_not_installed: "Nothing of this plugin is left on this agent.",
+      workbench_disabled:
+        "This workbench is turned off. You can turn it on under Plugins in the agent's settings.",
       machine_answered: "The machine's answer could not be used; try again.",
       trace_changed: "The conversation's Trace kept changing while it was read; try again.",
       internal: "The server hit an internal error. Please try again shortly.",

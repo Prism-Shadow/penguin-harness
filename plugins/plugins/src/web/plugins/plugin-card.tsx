@@ -14,6 +14,13 @@
  *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover) /
  *   Update. Installing a plugin with a stdio MCP server on an Agent that lacks it asks first,
  *   showing the command it runs on this server, and an update's confirmation shows it too (the
+ *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover, for
+ *   the Project owner, whose alone an uninstall is) / Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
+ *   after the Agent's name, every action on such a row going to that machine. A machine out of
+ *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
+ *   installs have not been answered yet keeps its row too, its Install held until they are.
+ *   Installing a plugin with a stdio MCP server on an Agent that lacks it asks first, showing the
+ *   command it runs on the Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
  *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
  *   which writes those values into the Agent's vault.
@@ -36,6 +43,8 @@ import {
   ICONS,
   ICON_SIZE,
   Modal,
+  Pill,
+  Skeleton,
   StatusIcon,
   UpdateDot,
   toastError,
@@ -641,8 +650,9 @@ export function PluginCard(props: PluginCardProps) {
 
 /**
  * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
- * one with it shows "Installed", switching to "Uninstall" on hover (the same button carries the
- * uninstall); a copy the server lists as behind additionally shows "Update" (reinstall =
+ * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
+ * same button carries the uninstall, which the server takes from the owner alone) and a plain
+ * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
  * update). Install and uninstall go through the page's optimistic updates, rolling back on
  * failure. Where the Agent carries the plugin's MCP servers, marks beside its name say what
  * they wait for — vault values, a sign-in — and a Project owner gets Set up for the values.
@@ -711,6 +721,10 @@ export function InstallRow({
       )}
       {installed ? (
         // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button carries the uninstall action).
+      {installed && !isOwner ? (
+        <Pill tone="success">{S.skills.installed}</Pill>
+      ) : installed ? (
+        // carries the uninstall action) — not on a held row, whose button does nothing.
         <Button
           size="sm"
           variant="ghost"

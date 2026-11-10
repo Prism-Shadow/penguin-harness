@@ -4,6 +4,39 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
+/**
+ * Agent settings page: nine tabs —
+ * Overview (name/description form + two ruled sections in the skills import modal's
+ * family: Agent State — State version, export / replace from file and the copyable State
+ * path — and Kernel — the defaults generation with its update / restore-defaults
+ * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
+ * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: the
+ * Agent's plugins with their Skills, hook packages, MCP servers and workbenches, and its own),
+ * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
+ * the Agent's public API, kept by this server).
+ * Save = PUT config (sends only the changed keys; YAML comments are preserved
+ * server-side).
+ * Every form tab follows the settings commit model: its typed fields are a draft
+ * (`useFormDraft`) that only Save writes, Save is live only while the draft changed and is
+ * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
+ * switch, Back, a sidebar link and the browser's back button are all navigations that the
+ * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
+ * tools table's `call_description` included. A replace from file asks before it replaces the
+ * Agent State.
+ * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
+ * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
+ * While the machine cannot be asked, the page says why instead of showing anything stale.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import type {
+  AgentConfigDto,
+  AgentConfigResponse,
+  AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
+} from "@prismshadow/penguin-server/api";
+import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
   normalizeRuntime,
   runtimeDraftOf,
@@ -16,15 +49,24 @@ import {
 
 import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
 
+import { PluginsTab } from "./plugins-tab";
+import { MemoryTab } from "./memory-tab";
+import { kernelTabLabel } from "./kernel-labels";
+import { VaultTab } from "./vault-tab";
+import { SchedulesTab } from "./schedules-tab";
+import { ApiTab } from "./api-tab";
+import { McpServersSection } from "./mcp-servers-section";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
+import { toastApiError } from "../../lib/toast-api-error";
 
 type TabKey =
   | "overview"
   | "prompt"
   | "runtime"
   | "tools"
-  | "skills"
-  | "hooks"
-  | "workbenches"
+  | "plugins"
   | "memory"
   | "vault"
   | "schedules"
@@ -34,14 +76,27 @@ type TabKey =
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
  * validated against the live TABS keys — not a hardcoded list — so newly added tabs
  * deep-link without touching this helper; missing/unknown values fall back to the default.
+ * An alias names the tab that took a retired one's place.
  */
 export function resolveTabKey<K extends string>(
   raw: string | null,
   tabs: ReadonlyArray<{ key: K }>,
   fallback: K,
+  aliases: Readonly<Record<string, K>> = {},
 ): K {
-  return tabs.some((t) => t.key === raw) ? (raw as K) : fallback;
+  const key = raw !== null && Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
+  return tabs.some((t) => t.key === key) ? (key as K) : fallback;
 }
+
+/**
+ * The tabs the Plugins tab replaced. Bookmarks and the docs still link to them, so they stay
+ * aliases for good rather than for a while.
+ */
+const RETIRED_TABS: Readonly<Record<string, TabKey>> = {
+  skills: "plugins",
+  hooks: "plugins",
+  workbenches: "plugins",
+};
 
 export function AgentSettingsPage() {
   // Read inside the component: after a language switch remount, this picks up the current dictionary.
@@ -50,9 +105,7 @@ export function AgentSettingsPage() {
     { key: "prompt", label: S.agent.tabPrompt },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
-    { key: "skills", label: S.agent.tabSkills },
-    { key: "hooks", label: S.agent.tabHooks },
-    { key: "workbenches", label: S.agent.tabWorkbenches },
+    { key: "plugins", label: S.agent.tabPlugins },
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
@@ -69,11 +122,12 @@ export function AgentSettingsPage() {
   const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
 
   // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
-  // missing or unknown values fall back to "overview"). A switch only writes the address, so
+  // missing or unknown values fall back to "overview", a retired tab opens the one that took
+  // its place). A switch only writes the address, so
   // it is a navigation: while the open tab holds unsaved edits the app's leave guard asks
   // before it happens, and the tab on screen never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview");
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", RETIRED_TABS);
   /** The machine the Agent lives on (`?machine=`); null for this server. */
   const machineId = machineInSearch(searchParams);
   /**
@@ -292,10 +346,12 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "workbenches" && (
-            <WorkbenchesTab key={`${projectId}:${agentId}`} agentId={agentId} />
+          {tab === "plugins" && (
+            <PluginsTab
+              key={`${projectId}:${machineId ?? ""}:${agentId}`}
+              agentId={agentId}
+              onConfigChanged={refreshConfig}
+            />
           )}
           {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "schedules" && (

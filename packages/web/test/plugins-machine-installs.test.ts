@@ -10,6 +10,8 @@
  *   and the row reads Installed from the machine's answer; this server's `helper` gets nothing.
  * - A plugin the machine's library does not have is refused there, and the row goes back to
  *   Install.
+ * - Uninstalling from the machine's Agent is one request for the whole plugin, to that machine,
+ *   and no request for any of its parts; the row goes back to Install.
  * - A machine being brought back keeps the rows of the Agents it was last seen with, in their
  *   place, every button held with the reason; nothing is asked of it. With nothing remembered of
  *   it, it has no row.
@@ -21,7 +23,14 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import { rememberMachineAgents } from "../src/lib/machine-cache";
-import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, topDialog } from "./helpers/agent-app";
+import {
+  AGENT_ID,
+  PROJECT_ID,
+  agentServer,
+  buttonIn,
+  mountAgentApp,
+  topDialog,
+} from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, unmountAll, waitFor } from "./helpers/dom";
 
@@ -110,6 +119,23 @@ describe("installing a library plugin on a machine's Agent", () => {
     expect(server.skillsOn(null, AGENT_ID)).toEqual([]);
     await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
     expect(offers(en.skills.install, AGENT_ID)).toBe(true);
+  });
+
+  it("uninstalls from the machine's Agent with one request for the whole plugin, and none per part", async () => {
+    const server = await openInstalls([GPU]);
+    await waitFor(
+      () => rows().length === 2 && !button(`${en.skills.install} ${MACHINE_HELPER}`).disabled,
+    );
+    await click(button(`${en.skills.install} ${MACHINE_HELPER}`));
+    await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
+    await click(button(`${en.skills.uninstall} ${MACHINE_HELPER}`));
+    await click(buttonIn(topDialog(), en.skills.uninstall));
+    await waitFor(() => offers(en.skills.install, MACHINE_HELPER));
+    const deletes = server.fetch.requests.filter((r) => r.method === "DELETE");
+    expect(deletes.map((r) => [r.machine, r.path])).toEqual([
+      ["gpu1", `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/plugins/charts`],
+    ]);
+    expect(server.skillsOn("gpu1", AGENT_ID)).toEqual([]);
   });
 
   it("goes back to Install when the machine's library does not have the plugin", async () => {

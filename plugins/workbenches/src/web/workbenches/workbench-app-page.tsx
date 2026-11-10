@@ -18,6 +18,7 @@ import { useShortcutLabel } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import {
   appPageTab,
+  runningWorkbenches,
   WORKBENCH_UPDATED_EVENT,
   workbenchTabsOf,
   type WorkbenchTab,
@@ -39,6 +40,8 @@ export function WorkbenchAppPage() {
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
+  /** The workbench is listed but switched off: it serves no page, and the page says why. */
+  const [off, setOff] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
@@ -48,7 +51,12 @@ export function WorkbenchAppPage() {
       try {
         const res = await api.getWorkbenches(projectId, agentId, machineId);
         if (!alive) return;
-        setTab(appPageTab(workbenchTabsOf(res.workbenches, machineId), workbenchId, tabKey));
+        const running = runningWorkbenches(res);
+        setOff(
+          res.workbenches.some((w) => w.id === workbenchId) &&
+            !running.some((w) => w.id === workbenchId),
+        );
+        setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
         setFailure(null);
       } catch (err) {
         if (alive) setFailure(err instanceof Error ? err.message : String(err));
@@ -136,7 +144,7 @@ export function WorkbenchAppPage() {
           <span>
             {tab === undefined && failure === null
               ? S.workbenches.loadingPage
-              : (failure ?? S.workbenches.noSuchPage)}
+              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
           </span>
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>

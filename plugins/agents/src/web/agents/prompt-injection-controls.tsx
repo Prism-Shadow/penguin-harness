@@ -2,7 +2,56 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
+/**
+ * Shared enable-switch (and, where the feature has one, prompt) controls for the skills and
+ * hooks switches of the Plugins tab and for the Vault / Schedules tabs, mirroring the Memory tab's layout: an enable-switch card
+ * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
+ * never drags an unfinished prompt edit along), an amber alert when the template lacks the
+ * feature's section placeholder — with one-click insert, or one-click migration when the
+ * template still carries the legacy hardcoded section — and an editable prompt section (mono
+ * textarea + placeholder-chip reference + Save and Reset). On the three prompt features
+ * the toggle and prompt govern prompt injection only — the feature itself keeps working with
+ * the switch off (vault values still reach subprocesses, tasks still fire, skills stay
+ * invocable). Hooks is the one switch-only feature: its packages are scripts run at the loop's
+ * hook points rather than text in the context, so it supplies no prompt strings and gets the
+ * card alone — and its switch does govern behavior, deciding whether a new Session assembles
+ * any hooks at all.
+ * Exposed as a hook returning render slots because the pieces straddle the host tab's own
+ * content: the switch and alert sit above it, the prompt editor below. The hook owns the config
+ * state; the tab seeds it via `applyConfig` from the getAgentConfig response it loads in
+ * parallel with its own data. `canEdit` carries the host tab's permission model (owner-only on
+ * every tab that uses it).
+ * The prompt is a typed form (the settings commit model): a draft against the stored prompt
+ * that only Save writes, Save live only while the two differ, Reset to put the stored text back,
+ * and leaving the tab with unsaved edits asks first. The switch and the placeholder insert write
+ * the config at once and move the stored prompt the draft is compared with; what is being typed
+ * stays as typed.
+ */
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import type {
+  AgentConfigDto,
+  AgentHooksConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
+} from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Card,
+  InfoPopover,
+  Notice,
+  Textarea,
+  ToggleRow,
+  toastSuccess,
+  useFormDraft,
+} from "@prismshadow/penguin-ui";
+import type { ToggleRowVariant } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -64,6 +113,7 @@ export function usePromptInjection({
   feature,
   strings,
   canEdit,
+  toggleVariant = "card",
   onConfigChanged,
 }: {
   agentId: string;
@@ -71,6 +121,8 @@ export function usePromptInjection({
   strings: ToggleStrings | PromptInjectionStrings;
   /** The host tab's permission model: false renders everything read-only (switch disabled, buttons hidden, prompt not saveable). */
   canEdit: boolean;
+  /** The switch's frame: a card of its own (the default), or a row in the host's ruled list of switches. */
+  toggleVariant?: ToggleRowVariant;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: (() => void) | undefined;
 }): {
@@ -188,7 +240,7 @@ export function usePromptInjection({
 
   const toggleCard = state !== null && (
     <ToggleRow
-      variant="card"
+      variant={toggleVariant}
       label={strings.enable}
       info={strings.enableHint}
       checked={state.enabled}

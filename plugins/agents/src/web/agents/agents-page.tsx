@@ -15,6 +15,45 @@ import { STAT_ICONS } from "@prismshadow/penguin-web/internal";
 import { DRAFT_SESSION_ID, prepareNewChatDraft } from "@prismshadow/penguin-web/internal";
 import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { mergeAgents, type AgentSource } from "@prismshadow/penguin-web/internal";
+/**
+ * Agents list page: entry point for creating,
+ * deleting, and editing Agents. Laid out as GitHub-repo-list-style single-column compact rows:
+ * one horizontal band of "info | 30-day activity sparkline | button group" per row.
+ * Info column has three lines: title line (small avatar + bold name + agentId); single-line
+ * truncated description; and a stats line — icon + number only (Session count / tool count) plus
+ * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
+ * tool / skill / hook / workbench / memory / vault-key / schedule counts deep-link to the settings
+ * page's matching tab (?tab=tools|plugins|memory|vault|schedules; skills, hook packages and
+ * workbenches are all on Plugins) and appear in the settings tabs' order. A workbench counts
+ * whether or not it is switched on, as a Skill or a hook package counts whatever its switch says:
+ * the count is what the Plugins tab lists.
+ * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
+ * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
+ * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
+ * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
+ * ?agentId= to the usage center), "Export" (agent-export-dialog.tsx) and "Delete" (with
+ * confirmation; built-in Agents show a
+ * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
+ * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
+ * description and picks what the new Agent starts with — plugins from the library (each one's
+ * skills, hook package and MCP servers), and Skills from a project directory's .agents/skills or
+ * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
+ * server asks before the Agent is created, showing the command it runs on this server.
+ * A machine's Agents are that machine's own (lib/agent-location.ts), and they sit in the same
+ * list as this server's, the way the sidebar mixes machine Workspaces with local ones: one order
+ * for all (lib/machine-agent-lists.ts `mixAgents`), each machine card named `[SSH: alias]` after
+ * the Agent's name as a machine's Workspace group is. Every control on such a card acts on that
+ * machine — its settings page there, a new chat in its temporary workspace, its delete. A machine
+ * out of reach keeps what it was last seen holding on the list, greyed, every control off, with
+ * the reason beside the tag and on each control. A connected machine's cards show what it last
+ * answered from the first paint, greyed and inert without the plug until it answers in this page
+ * load (lib/machine-agent-lists.ts); back on the page later they are live at once.
+ * The list is read again after a delete or a kernel update with the old one on screen: the
+ * skeleton only stands in while no list of the Project has arrived yet. A delete answers once the
+ * Agent has left every list; its files are removed in the background, on a progress card that
+ * appears when that takes a while (agent-deletion-progress.ts).
+ */
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useSessions } from "@prismshadow/penguin-web/internal";
 
@@ -275,13 +314,12 @@ export function AgentsPage() {
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
-   * page lands directly on the matching tab (unknown keys fall back to Overview there, so
-   * "skills" is harmless until the Skills tab ships).
+   * page lands directly on the matching tab — the Skill, hook package and workbench counts on
+   * the Plugins tab, where all three are listed.
    */
   const openSettingsTab = (
     agentId: string,
-    tab:
-      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
+    tab: "overview" | "tools" | "vault" | "schedules" | "plugins" | "memory",
     machineId: string | null = null,
   ) => {
     // The current Agent is one of THIS server's: a machine's Agent never becomes it.
@@ -503,10 +541,10 @@ export function AgentsPage() {
             {(
               [
                 ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                ["plugins", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                ["plugins", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
                 [
-                  "workbenches",
+                  "plugins",
                   ICONS.anvil,
                   a.workbenchCount ?? 0,
                   S.workbenches.count(a.workbenchCount ?? 0),
@@ -527,7 +565,8 @@ export function AgentsPage() {
               ] as const
             ).map(([tab, glyph, count, label]) => (
               <button
-                key={tab}
+                // Three counts open the Plugins tab, so the tab is no key; each count's glyph is.
+                key={glyph}
                 type="button"
                 className={STAT_LINK_CLASS}
                 disabled={!reachable}

@@ -79,6 +79,21 @@ export function workbenchNoticesOf(workbenches: readonly WorkbenchInfo[]): Workb
     .map((w) => ({ workbenchId: w.id, error: w.error, hints: w.hints ?? [] }));
 }
 
+/**
+ * The workbenches that run, out of an Agent's list: none while the Agent-wide switch is off, and
+ * of the rest each only while its own switch is on. A switched-off workbench is still listed by
+ * the server (its settings row needs it) but loads nothing, so nothing outside the settings may
+ * offer it: no tab, no notice, no full page. A server older than the switches sends neither
+ * flag, and everything it lists runs.
+ */
+export function runningWorkbenches(list: {
+  workbenches: readonly WorkbenchInfo[];
+  enabled?: boolean;
+}): WorkbenchInfo[] {
+  if (list.enabled === false) return [];
+  return list.workbenches.filter((w) => w.enabled !== false);
+}
+
 export function workbenchTabsOf(
   workbenches: readonly WorkbenchInfo[],
   machineId: string | null = null,
