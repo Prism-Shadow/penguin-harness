@@ -2,6 +2,7 @@
 title: "设计 Agent，就是思考怎么把人吃掉"
 date: 2026-11-09
 category: perspectives
+author: 南冥有一鱼 (PrismShadow AI)
 excerpt: "从 DeepSeek 的 Super-agent 架构看 Agent 系统的演进方向：通过事件驱动、双层 Router/Worker 架构和 Watchdog Agent 接管原本由人在运行阶段负责的反馈分诊、多窗口调度与异常排查，再通过 PenguinHarness 进一步接管评测与调优阶段，最终走向 Agent 的自进化。"
 ---
 
@@ -9,9 +10,11 @@ excerpt: "从 DeepSeek 的 Super-agent 架构看 Agent 系统的演进方向：�
 
 其实现在单任务 Coding Agent 的能力已经足够强了，写代码、跑测试越来越自主化，不需要人手把手盯着。现在限制多个 Agent 并行干活来提效的，主要是**人的注意力**——因为一个人同时最多只能专注于三到五个 Agent，没法切换不同的聊天窗口给十几个 Agent 发指令。
 
-所以现在设计 Agent 系统，一个方向是提升人机交互的效率，比如对 Agent 的执行过程和结果做各种直观的看板或可视化插件；**另一个方向，就是一步步吃掉原来由人负责的部分。**
+所以现在设计 Agent 系统，大体有两个方向：**一个方向是提升人机交互的效率；另一个方向，就是一步步吃掉原来由人负责的部分。**
 
-Super-agent 走的就是第二条路：**直接在干活的 Agent 上面再加一层系统**，把原本由人来做的接收信息、分配任务和异常排查全部接管过来。具体来说，我觉得它有三部分比较好的设计，下面我们逐个分析一下：
+第一个方向，是对 Agent 的执行过程和结果做各种直观的看板或可视化插件——比如 PenguinHarness 里的 **Agent 专属工作台**（如数据仪表盘、工单看板）和 **A2UI 可视化组件**，把满屏的文字对话变成一目了然的图表与状态面板，从而降低人在单个任务上消耗的注意力。
+
+而 Super-agent 走的是第二个方向：**直接在干活的 Agent 上面再加一层系统**，把原本由人来做的接收信息、分配任务和异常排查全部接管过来。具体来说，我觉得它有三部分比较好的设计，下面我们逐个分析一下：
 
 <figure class="post-figure" data-widget="super-agent-architecture"><ol class="fig-steps"><li>事件驱动：监听群聊与 GitHub 消息，通过代码规则 + 模型两级过滤，后台静默复现 Bug 并提交 PR</li><li>双层架构：上层常驻 Router 维护全局上下文并分派任务，下层隔离的 Worker 并发执行具体任务</li><li>Watchdog 巡检：外部独立定时控制回路，由模型检查各 Worker 实质进展，识别死循环或方向跑偏并介入修复</li></ol><figcaption>Super-agent 的三部分核心设计：用事件驱动、双层 Router/Worker 架构和 Watchdog 接管运行阶段原本由人负责的环节。</figcaption></figure>
 

@@ -2,6 +2,7 @@
 title: "Designing Agents Is Thinking About How to Absorb the Human Role"
 date: 2026-11-09
 category: perspectives
+author: 南冥有一鱼 (PrismShadow AI)
 excerpt: "What DeepSeek's Super-agent architecture reveals about where agent systems are heading: event-driven triggers, a two-tier Router/Worker architecture, and an external Watchdog Agent take over the human runtime work of triage, session routing, and babysitting, while PenguinHarness pushes the same principle into evaluation and tuning for agent self-evolution."
 ---
 
@@ -9,9 +10,11 @@ The DeepSeek team recently shared their internal exploration of a **Super-agent*
 
 Single-task coding agents are already strong enough today: writing code and running tests has become increasingly autonomous, without needing a human watching every step. What bottlenecks running many agents in parallel is no longer the model's execution ability, but **human attention** — one person can stay focused on at most three to five agents at a time, and cannot keep switching across a dozen chat windows to issue prompts.
 
-So when we design agent systems today, one direction is to make human-agent interaction more efficient, such as building visual dashboards or workbench plugins around agent runs and outputs; **the other direction is to progressively absorb the parts of the workflow still handled by humans.**
+So when we design agent systems today, there are broadly two directions: **one direction is to make human-agent interaction more efficient; the other is to progressively absorb the parts of the workflow still handled by humans.**
 
-Super-agent takes the second path: **it adds a system layer directly above the working agents**, taking over information intake, task routing, and anomaly recovery that people previously did by hand. Specifically, three parts of its design stand out:
+The first direction builds intuitive dashboards or visual plugins around agent runs and outputs — such as PenguinHarness's **Agent Workbenches** (like data dashboards and ticket boards) and **A2UI visual blocks**, turning walls of chat text into at-a-glance charts and status panels to reduce the attention a person spends on any single task.
+
+Super-agent takes the second direction: **it adds a system layer directly above the working agents**, taking over information intake, task routing, and anomaly recovery that people previously did by hand. Specifically, three parts of its design stand out:
 
 <figure class="post-figure" data-widget="super-agent-architecture"><ol class="fig-steps"><li>Event-Driven: listens to group chat and GitHub streams with a two-tier filter (code rules + LLM), silently reproducing bugs in the background and opening PRs when a fix works</li><li>Two-Tier Architecture: an always-on upper Router maintains global context and dispatches tasks to isolated lower-layer Workers running concurrently</li><li>Watchdog Loop: an external timer-driven Watchdog Agent inspects each Worker's semantic progress, detects dead loops or goal drift, and steps in to recover</li></ol><figcaption>The three core mechanisms of Super-agent: event-driven triggers, a two-tier Router/Worker architecture, and an external Watchdog take over the human runtime loop.</figcaption></figure>
 
