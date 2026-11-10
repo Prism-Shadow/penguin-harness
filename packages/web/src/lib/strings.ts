@@ -1212,8 +1212,37 @@ export const zh = {
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
-    importAction: "导入 zip",
-    importTitle: "导入工作台",
+    /** The tab's header button, and the title of the dialog it opens (features/agents/chat-or-zip-import-dialog.tsx). */
+    importAction: "导入工作台",
+    importChatTitle: "推荐：让 Agent 在对话中导入",
+    importChatWhy:
+      "Agent 会通读来源、审查页面与服务端代码，再把工作台装到该 Agent 上并重新加载，比直接上传更可靠。",
+    importSourceLabel: "工作台来源",
+    importSourceHint: "支持网页 / GitHub 仓库或目录 / 本地路径 / 其他生态的安装命令 / 一段描述",
+    importSourcePlaceholder: "https://…、git 仓库、/path/to/workbench 或一段描述",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<来源>",
+    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string => `请阅读这个网页，并导入其中的工作台：${s}。`,
+      repoUrl: (s: string): string =>
+        `请获取这个仓库或目录（git clone 或直接抓取），找到其中含 package.json 的工作台目录并导入：${s}。`,
+      localPath: (s: string): string => `请直接读取这个本地路径下的工作台文件并导入：${s}。`,
+      command: (s: string): string =>
+        `这是一条其他生态的安装命令，请不要直接执行：先解读它会安装什么，从对应的仓库或注册表获取相同内容，再作为工作台导入：${s}。`,
+      reference: (s: string): string =>
+        `请根据这个引用或描述找到对应的来源（仓库、插件市场或文档页），并导入为工作台：${s}。`,
+    },
+    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "安装前先完整阅读来源中的每一个文件。工作台的页面在应用内运行，服务端处理器在本服务器上运行，所以要审查它有没有外传数据、运行用不到的命令或访问自身目录之外的内容；发现任何可疑之处就停下来告诉我，不要安装。",
+        `确认安全后，按 penguin-plugin Skill 的包布局（package.json 的 penguin.modules、index.ts 与 ui/）整理它，放进 Project「${projectId}」中 Agent「${agentId}」的 agent_state/workbenches/<id>/ 目录（目录名即工作台 id），重新加载并确认加载成功，最后向我说明它做什么、带来哪些页面。`,
+      ].join("\n"),
+    importCopyPrompt: "复制 Prompt",
+    importOpenChat: "打开新对话",
+    importUploadTitle: "上传工作台 zip",
     importUploadDesc:
       "zip 根目录为 package.json，或仅含一个内含它的顶层目录（目录名即工作台 id）；不含 state.json、隐藏文件与 node_modules。",
     importUploadAction: "选择 zip 文件",

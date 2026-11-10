@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * The Skills, Hooks and Benchmark import dialogs under the settings commit model: the Agent
- * settings page's Import skill (features/agents/skills-tab.tsx) and Import hook
- * (features/agents/hooks-tab.tsx), and the Evaluation Center's Import benchmark
- * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
- * dialog's draft; every scenario runs on all three.
+ * The Skills, Hooks, Workbenches and Benchmark import dialogs under the settings commit model:
+ * the Agent settings page's Import skill (features/agents/skills-tab.tsx), Import hook
+ * (features/agents/hooks-tab.tsx) and Import workbench (features/agents/workbenches-tab.tsx),
+ * and the Evaluation Center's Import benchmark (features/benchmark/benchmark-import-modal.tsx).
+ * In each, what the source field holds is the dialog's draft; every scenario runs on all four.
  *
  * - Closing with a source typed asks first, and "keep editing" keeps it; a source typed back to
  *   empty is no change, and the dialog closes at once.
@@ -26,6 +26,7 @@ import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { SkillsTab } from "../src/features/agents/skills-tab";
 import { HooksTab } from "../src/features/agents/hooks-tab";
+import { WorkbenchesTab } from "../src/features/agents/workbenches-tab";
 import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,
@@ -107,6 +108,14 @@ const DIALOGS: ImportDialog[] = [
     openChat: en.hooks.importOpenChat,
     uploading: en.hooks.importUploading,
     archive: "/hooks/archive",
+  },
+  {
+    name: "Import workbench",
+    open: () => openFromTab(h(WorkbenchesTab, { agentId: AGENT_ID }), en.workbenches.importAction),
+    source: en.workbenches.importSourceLabel,
+    openChat: en.workbenches.importOpenChat,
+    uploading: en.workbenches.importUploading,
+    archive: "/workbenches/archive",
   },
   {
     name: "Import benchmark",

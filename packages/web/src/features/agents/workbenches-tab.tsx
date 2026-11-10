@@ -1,14 +1,15 @@
 /**
  * Agent settings page "Workbenches" tab: the Agent's own workbenches, broken and handler-only
  * packages included. Each row opens, reloads, shows the history of, exports or removes one; the
- * files are the truth, so the list is read again after every action. "Import zip" uploads a
- * workbench's source the way the Hooks tab's upload takes a hook package back: a taken id
- * (409 `workbench_exists`) asks before overwriting, and an overwrite keeps the workbench's data.
+ * files are the truth, so the list is read again after every action. "Import workbench" opens
+ * the Skills tab's dialog (chat-or-zip-import-dialog.tsx): a chat in which this Agent reviews and
+ * installs a workbench from a pasted source (workbench-import.ts), or an upload of a workbench's
+ * source as a zip, where a taken id (409 `workbench_exists`) asks before overwriting, and an
+ * overwrite keeps the workbench's data.
  * Export downloads the source as a zip that imports back unchanged. Every action is
  * member-level, matching the workbench routes, and goes to the server the Agent lives on.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
@@ -17,7 +18,6 @@ import {
   DownloadIcon,
   GlyphIcon,
   HelpFold,
-  HiddenFileInput,
   IconButton,
   ICONS,
   ICON_SIZE,
@@ -31,11 +31,9 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
 import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -44,13 +42,8 @@ import { localizedText } from "../../lib/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
-import { UPLOAD_LABEL_CLASS } from "./skills-tab";
-
-/** A zip waiting on the overwrite confirm: the payload to resend with `overwrite`, and the id it would replace. */
-interface PendingOverwrite {
-  dataBase64: string;
-  workbenchId: string;
-}
+import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
+import { buildWorkbenchImportPrompt } from "./workbench-import";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
 function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
@@ -326,120 +319,22 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
           : S.workbenches.removeConfirm}
       </ConfirmModal>
       {importOpen && (
-        <WorkbenchImportDialog
-          projectId={projectId}
+        <ChatOrZipImportDialog
+          title={S.workbenches.importAction}
+          strings={S.workbenches}
+          buildPrompt={(source) => buildWorkbenchImportPrompt(source, projectId, agentId)}
           agentId={agentId}
-          machineId={machineId}
+          accept=".zip"
+          upload={async (body) =>
+            (await api.installWorkbenchArchive(projectId, agentId, body, machineId)).workbench
+          }
+          conflictCode="workbench_exists"
+          // The answer names the id it found taken.
+          conflictName={(err) => err.details?.workbenchId}
           onClose={() => setImportOpen(false)}
           onImported={(workbench) => void imported(workbench)}
         />
       )}
     </div>
-  );
-}
-
-/**
- * The "Import workbench" dialog: one zip upload. Nothing is typed in it, so closing asks nothing,
- * but no way of closing works while an upload is in flight. A 409 `workbench_exists` opens the
- * overwrite confirm over the dialog, for the id the answer's `details.workbenchId` names (the
- * picked file's stem covers an answer without it); cancelling returns to the dialog.
- */
-function WorkbenchImportDialog({
-  projectId,
-  agentId,
-  machineId,
-  onClose,
-  onImported,
-}: {
-  projectId: string;
-  agentId: string;
-  machineId: string | null;
-  onClose: () => void;
-  /** A zip landed, as its load left the workbench: the tab closes the dialog and reads the list again. */
-  onImported: (workbench: WorkbenchInfo) => void;
-}) {
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
-
-  const upload = async (dataBase64: string, fallbackId: string, overwrite: boolean) => {
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const { workbench } = await api.installWorkbenchArchive(
-        projectId,
-        agentId,
-        { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
-        machineId,
-      );
-      setOverwriting(null);
-      onImported(workbench);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.code === "workbench_exists") {
-        setOverwriting({ dataBase64, workbenchId: err.details?.workbenchId ?? fallbackId });
-      } else {
-        setOverwriting(null);
-        setUploadError(apiErrorText(err));
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploadError(null);
-    const fallbackId = file.name.replace(/\.zip$/i, "");
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      // Strip the data:…;base64, prefix.
-      void upload(dataUrl.slice(dataUrl.indexOf(",") + 1), fallbackId, false);
-    };
-    reader.onerror = () => setUploadError(S.common.unknownError);
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <>
-      <Modal
-        open
-        title={S.workbenches.importTitle}
-        onClose={() => {
-          if (!uploading) onClose();
-        }}
-        widthClass="sm:max-w-lg"
-      >
-        <p className="text-xs text-fg-muted">{S.workbenches.importUploadDesc}</p>
-        <label
-          className={`${UPLOAD_LABEL_CLASS} mt-2.5 ${uploading ? "pointer-events-none opacity-60" : ""}`}
-        >
-          <HiddenFileInput accept=".zip" disabled={uploading} onChange={onPickFile} />
-          {uploading ? S.workbenches.importUploading : S.workbenches.importUploadAction}
-        </label>
-        {uploadError !== null && (
-          <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{uploadError}</p>
-        )}
-      </Modal>
-      <ConfirmModal
-        open={overwriting !== null}
-        title={S.workbenches.importOverwriteTitle}
-        tone="primary"
-        confirmLabel={S.workbenches.importOverwriteAction}
-        cancelLabel={S.common.cancel}
-        busy={uploading}
-        onClose={() => setOverwriting(null)}
-        onConfirm={() => {
-          if (overwriting !== null)
-            void upload(overwriting.dataBase64, overwriting.workbenchId, true);
-        }}
-      >
-        <p className="text-sm text-fg-muted">
-          {overwriting !== null ? S.workbenches.importOverwriteBody(overwriting.workbenchId) : ""}
-        </p>
-      </ConfirmModal>
-    </>
   );
 }
