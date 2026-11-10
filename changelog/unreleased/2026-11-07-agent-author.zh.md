@@ -11,11 +11,12 @@
 
 ## 创建路径
 
-- Web App 的**创建 Agent**对话框发送 `author: user`，从快照初始化时也一样，快照包自带的作者被替换。
+- Web App 的**创建 Agent**对话框发送 `author: user`。
 - `POST /api/projects/:projectId/agents` 接受 `author`，缺省为 `user`。其他取值在创建任何东西之前即以 400 拒绝。
 - `penguin agent create` 新增 `--author <user|agent|company>`。不带该选项时，在对话中运行（设置了 `PENGUIN_SESSION_ID`）即发送 `agent`，否则不发送，由服务端记为 `user`。取值不认识时在发出任何请求之前以退出码 1 结束。
 - 公司模式为新组织的 CEO 和招聘时新建的员工写入 `company`。招聘已有的 Agent 不改变它的作者。
 - **用 AI 创建**所运行的 `agent-initialization` 技能会在新建的 Agent 里写入 `author: agent`，校验时也检查它；**用 AI 创建**对话框的固定说明同样要求这样做。
+- 导入的 Agent 保留包里自带的 `author`。在对话中从其他编程工具迁移 Agent 的 `agent-porting` 技能，会在它导入的包里写入 `author: agent`。
 
 ## 读取与编辑
 

@@ -9,6 +9,7 @@
  */
 import fs from "node:fs/promises";
 import { isMap, isScalar, parseDocument, parse as parseYaml } from "yaml";
+import type { Document } from "yaml";
 import {
   AGENT_AUTHORS,
   agentAuthorOf,
@@ -359,10 +360,18 @@ export class AgentConfigService implements AgentConfig {
     agentId: string,
     config: NonNullable<AgentConfigUpdateRequest["config"]>,
   ): Promise<void> {
-    const cfg = config as unknown as Record<string, unknown>;
     const yamlPath = systemConfigPath(this.root, projectId, agentId);
     const doc = parseDocument(await fs.readFile(yamlPath, "utf8"));
+    AgentConfigService.applyConfigFields(doc, config);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+  }
 
+  /** A config write's checks and edits on `doc`: each provided key is checked (400) and set. */
+  static applyConfigFields(
+    doc: Document,
+    config: NonNullable<AgentConfigUpdateRequest["config"]>,
+  ): void {
+    const cfg = config as unknown as Record<string, unknown>;
     const setIfProvided = (path: string[], value: unknown): void => {
       if (value !== undefined) doc.setIn(path, value);
     };
@@ -448,8 +457,6 @@ export class AgentConfigService implements AgentConfig {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
-
-    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
   }
 
   /**

@@ -258,7 +258,7 @@ export function ContextGauge({
               maxWidth: PANEL_MAX_WIDTH,
               maxHeight: PANEL_MAX_HEIGHT,
             }}
-            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-popover overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel
               sessionId={sessionId}

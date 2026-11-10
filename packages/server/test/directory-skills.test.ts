@@ -5,13 +5,14 @@
  *   from; a `.claude` that is a symlink to `.agents` offers nothing twice; `.agents` wins a
  *   name both layouts carry.
  * - Passed over rather than offered: a Skill with no frontmatter, a symlinked Skill directory,
- *   an unsafe name, one past the size caps. `SKILL.md` and `icon.svg` are read only when they
+ *   an unsafe name, one past the size caps. `SKILL.md` and the icon are read only when they
  *   are regular files the Skill directory owns, so a symlink cannot hand back a file outside
  *   it, and one unreadable Skill does not take the rest of the directory with it.
  * - An empty directory is an empty list; a relative path, a missing directory and an outsider
  *   are refused.
- * - Creating an Agent installs the picked names, files and icon included, a directory Skill
- *   shadowing a library Skill of the same name; a picked Skill that is gone is a 404 with no
+ * - A Skill's own icon, in any image format, is named by a URL under the listing's checks that
+ *   serves it; creating an Agent installs the picked names, files and icon included, a directory
+ *   Skill shadowing a library Skill of the same name; a picked Skill that is gone is a 404 with no
  *   Agent created; a relative skillsDirectory and half of the directory pair are refused.
  *
  * One app and one Project for the file; every case works in a scratch directory and Agents of
@@ -53,12 +54,16 @@ describe("directory skills api", () => {
   const writeSkill = async (
     layout: string,
     name: string,
-    opts: { description?: string; files?: Record<string, string>; icon?: string } = {},
+    opts: {
+      description?: string;
+      files?: Record<string, string>;
+      icon?: [name: string, data: string | Uint8Array];
+    } = {},
   ) => {
     const target = path.join(dir, layout, name);
     await fs.mkdir(target, { recursive: true });
     await fs.writeFile(path.join(target, "SKILL.md"), skillMd(name, opts.description));
-    if (opts.icon) await fs.writeFile(path.join(target, "icon.svg"), opts.icon);
+    if (opts.icon) await fs.writeFile(path.join(target, opts.icon[0]), opts.icon[1]);
     for (const [rel, data] of Object.entries(opts.files ?? {})) {
       await fs.mkdir(path.dirname(path.join(target, rel)), { recursive: true });
       await fs.writeFile(path.join(target, rel), data);
@@ -233,11 +238,19 @@ describe("directory skills api", () => {
     expect((await outsider.get(listUrl(dir))).status).toBe(404);
   });
 
-  it("installs the picked directory Skills at creation, files and icon included", async () => {
+  it("names a Skill's own icon by a URL that serves it, and installs it with the Skill at creation", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
     await writeSkill(".agents/skills", "alpha", {
-      icon: "<svg/>",
+      icon: ["icon.png", png],
       files: { "reference/api.md": "aux body\n" },
     });
+    const offered = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
+    const icon = offered.skills.find((s) => s.name === "alpha")!.icon!;
+    expect(icon.tint).toBe(false);
+    const served = await owner.get(icon.url);
+    expect(served.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(png);
+    expect((await outsider.get(icon.url)).status).toBe(404);
     await writeSkill(".claude/skills", "beta");
     const created = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "dir_agent",
@@ -251,7 +264,9 @@ describe("directory skills api", () => {
     expect(await fs.readFile(path.join(installed, "alpha", "SKILL.md"), "utf8")).toBe(
       skillMd("alpha"),
     );
-    expect(await fs.readFile(path.join(installed, "alpha", "icon.svg"), "utf8")).toBe("<svg/>");
+    expect(new Uint8Array(await fs.readFile(path.join(installed, "alpha", "icon.png")))).toEqual(
+      png,
+    );
     expect(await fs.readFile(path.join(installed, "alpha", "reference", "api.md"), "utf8")).toBe(
       "aux body\n",
     );

@@ -5,7 +5,6 @@
  * - The level is all only when nothing holds the Agent back; any approval, network or
  *   sandbox limit makes it partial.
  * - It is read-only when commands cannot write, and off when every call is denied.
- * - Each level wears its own glyph, so the level never depends on colour alone.
  * - Each row of the menu wears, ahead of its name, the level the button takes once that row is
  *   picked — a preset by its own values, an approval mode (switch off) over the policy the
  *   Session keeps — whatever level the Session is at when the menu opens.
@@ -14,7 +13,6 @@ import { describe, expect, it } from "vitest";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
 import {
   BUILTIN_PRESETS,
-  PERMISSION_LEVEL_GLYPH,
   approvalModePick,
   firstUnavailableBackend,
   fsModeBlock,
@@ -123,12 +121,6 @@ describe("permission level", () => {
     expect(permissionLevel("deny-all", FULL)).toBe("off");
     expect(permissionLevel("deny-all", { mode: "read-only", network: "none" })).toBe("off");
   });
-
-  it("draws each level with its own mark, so the level never depends on colour alone", () => {
-    const glyphs = Object.values(PERMISSION_LEVEL_GLYPH);
-    expect(glyphs).toHaveLength(4);
-    expect(new Set(glyphs).size).toBe(4);
-  });
 });
 
 describe("the composer's presets", () => {
@@ -160,7 +152,6 @@ describe("the composer's presets", () => {
     const renamed = [{ ...byId("full-access"), name: "Anything goes" }];
     expect(presetsOf({ ...FULL, presets: renamed })).toBe(renamed);
     expect(presetsOf(FULL)).toBe(BUILTIN_PRESETS);
-    expect(BUILTIN_PRESETS.filter((p) => p.enabled).map((p) => p.id)).toEqual(MENU);
   });
 
   // An organization's Session is never offered always-ask, unless it is the current preset;

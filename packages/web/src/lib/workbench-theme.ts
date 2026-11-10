@@ -6,7 +6,14 @@
  * Rather than recompute the theme (two copies of one fact), the app copies what it has already
  * resolved onto the frame's root: the light/dark class, the theme attributes, every token of
  * the UI package's contract (`TOKEN_NAMES`) and the root font size, and into its head the
- * `@font-face` rules of the faces the app bundles. public/workbench-ui.css — injected first in
+ * `@font-face` rules of the faces the app bundles.
+ *
+ * The frame is see-through: the root also gets `data-workbench-frame`, on which both stylesheets
+ * a page can carry leave its body unpainted (a page's own background still wins), and the app's
+ * `color-scheme` as an inline style. A browser paints an opaque canvas under a frame whose
+ * document's color scheme differs from the frame element's, so the two must agree for the theme's
+ * page surface — the Frost sheet, a wallpaper, Console's paper — to show through as it does under
+ * the chat. public/workbench-ui.css — injected first in
  * the frame's head, so the page's own rules still win — maps the workbench's stable `--wb-*`
  * names onto those tokens. A page that hardcodes its colours keeps them; a page that writes plain
  * HTML, or uses the `--wb-*` (or `--ui-*`) names, follows the app through a theme, mode, accent
@@ -20,6 +27,8 @@
  * Reading the app's theme is cached per appearance (the root's class, attributes and font size),
  * and a frame that already carries a theme is not stamped with it again, so re-applying on every
  * appearance change and every frame load costs a lookup, not a style resolution.
+ *
+ * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
 import {
   DEFAULT_THEME_ID,
@@ -29,6 +38,15 @@ import {
   type ThemeId,
 } from "@prismshadow/penguin-ui";
 
+/**
+ * What a framed page may do. Same-origin on purpose — it is what lets the theme and the key
+ * forwarding below reach into the frame — so this is no confinement: the page is trusted
+ * code the server serves (a workflow's `ui/`, an installed plugin's page), framed to keep
+ * its document apart from the app's, not to keep it from the app's API.
+ */
+export const PAGE_FRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads";
+
 /** Where the base stylesheet is served from (packages/web/public). */
 export const WORKBENCH_THEME_HREF = "/workbench-ui.css";
 
@@ -37,6 +55,9 @@ export const PENGUIN_UI_ATTR = "data-penguin-ui";
 
 /** Marks the frame's `<style>` that holds the copied `@font-face` rules. */
 export const WORKBENCH_FONTS_ATTR = "data-workbench-fonts";
+
+/** Marks a page's root as shown in the app's frame, where its body is left unpainted. */
+export const WORKBENCH_FRAME_ATTR = "data-workbench-frame";
 
 /**
  * Names copied before the token contract reached the frame, kept because pages may read them:
@@ -263,6 +284,8 @@ export function applyWorkbenchTheme(doc: Document, theme: WorkbenchTheme): void 
   if (!root) return;
   root.classList.toggle("dark", theme.dark);
   root.classList.toggle("light", !theme.dark);
+  root.setAttribute(WORKBENCH_FRAME_ATTR, "");
+  root.style.colorScheme = theme.dark ? "dark" : "light";
   for (const name of WORKBENCH_THEME_ATTRS) {
     const value = theme.attrs[name];
     if (value === undefined) root.removeAttribute(name);

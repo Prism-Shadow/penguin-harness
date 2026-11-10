@@ -3,7 +3,7 @@
  * builtin-browser.ts applies them to the <webview> guests it hosts.
  *
  * Everything here is mechanism: which guests may attach and with what preferences, which
- * navigations a guest may make, the user agent sites see, how a relayed frame is read, which
+ * navigations a guest may make, the user agents pages see, how a relayed frame is read, which
  * permission prompts a page gets, which relayed commands type and how their guest takes the
  * window's keyboard focus first, the guests' right-click menu, and how a tab's load is added up
  * from its processes. What the browser does with its pages — the page scripts, the tab registry,
@@ -131,6 +131,98 @@ export function plainChromeUserAgent(userAgent: string): string {
     .replace(/(\(KHTML, like Gecko\))(?:\s+(?!Chrome\/)\S+)+(?=\s+Chrome\/)/, "$1")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+/**
+ * Google's sign-in: its account pages, and the hop a finished sign-in sets YouTube's cookies
+ * through on its way back.
+ */
+const GOOGLE_SIGN_IN_HOSTS: ReadonlySet<string> = new Set([
+  "accounts.google.com",
+  "accounts.youtube.com",
+]);
+
+/** Whether `url` is a page of Google's sign-in. */
+export function isGoogleSignInUrl(url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return (protocol === "https:" || protocol === "http:") && GOOGLE_SIGN_IN_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** The two user agents a guest presents, both made from Electron's own. */
+export interface GuestUserAgents {
+  /** Chrome's (plainChromeUserAgent): what every page but Google's sign-in sees. */
+  chrome: string;
+  /** Electron's own, unmodified: what Google's sign-in sees. */
+  electron: string;
+}
+
+export function guestUserAgents(electronUserAgent: string): GuestUserAgents {
+  return { chrome: plainChromeUserAgent(electronUserAgent), electron: electronUserAgent };
+}
+
+/**
+ * The user agent a tab presents while its main frame is at `url`, in its requests and in its
+ * pages' `navigator.userAgent` alike. Google's sign-in refuses a browser that claims to be
+ * Chrome while its other signals are not Chrome's ("This browser or app may not be secure"),
+ * whether or not its client hints name "Google Chrome", and refuses a Chromium that claims to
+ * be Firefox; it lets Electron in when Electron says what it is. So its pages see Electron's
+ * own user agent, and every other page keeps Chrome's. Client hints stay Chromium's own on
+ * every page: they agree with both.
+ */
+export function userAgentForPage(url: string, agents: GuestUserAgents): string {
+  return isGoogleSignInUrl(url) ? agents.electron : agents.chrome;
+}
+
+/**
+ * The headers a main-frame request goes out with. Chromium writes a navigation's User-Agent as
+ * it creates the navigation, before `did-start-navigation`, where the tab takes the user agent
+ * of the page it is going to (userAgentForPage); so the request still names the one the tab is
+ * leaving, and takes the tab's. A User-Agent that is neither of the guest's (an override sent
+ * over DevTools) and every other header, the client hints included, go as they are. Null when
+ * nothing changes.
+ */
+export function navigationRequestHeaders(
+  headers: Readonly<Record<string, string>>,
+  tabUserAgent: string,
+  agents: GuestUserAgents,
+): Record<string, string> | null {
+  const name = Object.keys(headers).find((key) => key.toLowerCase() === "user-agent");
+  if (name === undefined) return null;
+  const sent = headers[name];
+  if (sent === tabUserAgent || (sent !== agents.chrome && sent !== agents.electron)) return null;
+  return { ...headers, [name]: tabUserAgent };
+}
+
+/**
+ * How many times in a row a tab's navigation may start over at a redirect (restartsAtRedirect)
+ * before redirects are followed as they come: a chain that bounces across the sign-in boundary
+ * forever would be started over forever, where Chromium's own redirect limit ends it.
+ */
+export const MAX_SIGN_IN_RESTARTS = 4;
+
+/**
+ * Whether a redirect starts its navigation over at the redirect's target. A page's
+ * `navigator.userAgent` can only change as its navigation starts: changed later, Chromium reloads
+ * the page the tab is leaving. So a main-frame redirect into or out of Google's sign-in would
+ * land with the user agent of the address the navigation started at: Chrome's on the sign-in,
+ * which refuses it, or Electron's on the site after it. Starting over at the target gives the
+ * navigation the right one from its start. Only web targets are started over; anything else is
+ * Chromium's to refuse, as before.
+ */
+export function restartsAtRedirect(
+  redirect: { url: string; isMainFrame: boolean; tabUserAgent: string; restarts: number },
+  agents: GuestUserAgents,
+): boolean {
+  return (
+    redirect.isMainFrame &&
+    redirect.restarts < MAX_SIGN_IN_RESTARTS &&
+    isOpenableUrl(redirect.url) &&
+    userAgentForPage(redirect.url, agents) !== redirect.tabUserAgent
+  );
 }
 
 /** Electron's `clearStorageData` storage names (WebSQL is gone from Chromium, and from the list). */

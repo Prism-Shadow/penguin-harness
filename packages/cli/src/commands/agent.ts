@@ -4,6 +4,7 @@
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--author <a>]
  *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *   penguin agent export <agent-id> … / penguin agent import <source> …   (./agent-archive.ts)
  *   penguin agent api status  --agent-id <id> [--project-id <id>] [--json] [--server <url>]
  *   penguin agent api enable  --agent-id <id> [--open | --no-open] [--approve <mode>] …
  *   penguin agent api disable --agent-id <id> …
@@ -50,6 +51,7 @@ import type {
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
+import { registerAgentArchiveCommands } from "./agent-archive.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
@@ -392,5 +394,6 @@ export function registerAgentCommand(program: Command, t: Messages): void {
       process.stdout.write(`${t.agent.created(res.agent.agentId, projectId)}\n`);
     });
 
+  registerAgentArchiveCommands(agent, t);
   registerApiCommands(agent, t);
 }

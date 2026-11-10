@@ -23,7 +23,7 @@ import {
   orderModelGroups,
   saveModelGroupOrder,
   type ModelGroupOrderStorage,
-} from "../src/features/models/model-group-order";
+} from "../src/lib/model-group-order";
 
 import {
   allGroupKeys,
@@ -31,7 +31,7 @@ import {
   orderModelsLikeLibrary,
   visibleChatModels,
   type ModelRowLike,
-} from "../src/features/models/model-grouping";
+} from "../src/lib/model-grouping";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; group-order.test.ts convention). */
 function memStorage(): ModelGroupOrderStorage & { map: Map<string, string> } {

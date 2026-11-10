@@ -6,11 +6,13 @@
  *
  * The projections are allowlists rather than strip-these spreads, so a field added to the
  * library types is withheld from the API until someone adds it here on purpose; skill bodies
- * and hook scripts never travel in a listing.
+ * and hook scripts never travel in a listing, and neither does an icon's image: a listing names
+ * the route that serves it (http/icon-response.ts).
  */
 import { needsSignIn } from "@prismshadow/penguin-core";
 import type {
   HookManifest,
+  IconImage,
   InstalledMcpServer,
   LibraryPlugin,
   PluginMcpServer,
@@ -25,6 +27,7 @@ import type {
   SkillMetadataItem,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
+import { iconRef } from "../http/icon-response.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 
 /**
@@ -45,8 +48,28 @@ export function resolveLibraryPlugins(
   });
 }
 
-/** A skill as the API describes it — the library side, the installed side and the directory side all carry these fields. `icon` travels when the caller passes one: installed lists do, the library listing does not (see toPluginItem). */
-export function toSkillItem(skill: SkillMetadata & { icon?: string }): SkillMetadataItem {
+const segment = encodeURIComponent;
+
+/** Where a library plugin's icon is served (any signed-in user, like the listing). */
+export const libraryIconRoute = (plugin: string): string => `/api/plugins/${segment(plugin)}/icon`;
+
+/** Where an installed Skill's icon is served (Project members). */
+export const agentSkillIconRoute = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${segment(projectId)}/agents/${segment(agentId)}/skills/${segment(name)}/icon`;
+
+/** Where an installed hook package's icon is served (Project members). */
+export const agentHookIconRoute = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${segment(projectId)}/agents/${segment(agentId)}/hooks/${segment(name)}/icon`;
+
+/**
+ * A skill as the API describes it — the library side, the installed side and the directory side
+ * all carry these fields. Its icon travels, by URL, when the caller names the route serving it:
+ * installed and directory lists do, the library listing does not (see toPluginItem).
+ */
+export function toSkillItem(
+  skill: SkillMetadata & { icon?: IconImage },
+  iconRoute?: string,
+): SkillMetadataItem {
   return {
     name: skill.name,
     description: skill.description,
@@ -54,7 +77,9 @@ export function toSkillItem(skill: SkillMetadata & { icon?: string }): SkillMeta
     ...(skill.shortDescriptionZh !== undefined
       ? { shortDescriptionZh: skill.shortDescriptionZh }
       : {}),
-    ...(skill.icon !== undefined ? { icon: skill.icon } : {}),
+    ...(skill.icon !== undefined && iconRoute !== undefined
+      ? { icon: iconRef(iconRoute, skill.icon) }
+      : {}),
     version: skill.version,
   };
 }
@@ -68,15 +93,15 @@ export function hookEvents(manifest: HookManifest): string[] {
   ];
 }
 
-/** An installed hook package as the API describes it: the manifest without its scripts, plus the icon installed beside it. */
-export function toHookItem(hook: HookManifest & { icon?: string }): HookItem {
+/** An installed hook package as the API describes it: the manifest without its scripts, plus the icon installed beside it, by the URL `iconRoute` serves it at. */
+export function toHookItem(hook: HookManifest & { icon?: IconImage }, iconRoute: string): HookItem {
   return {
     name: hook.name,
     description: hook.description,
     ...(hook.description_zh !== undefined ? { descriptionZh: hook.description_zh } : {}),
     version: hook.version,
     events: hookEvents(hook),
-    ...(hook.icon !== undefined ? { icon: hook.icon } : {}),
+    ...(hook.icon !== undefined ? { icon: iconRef(iconRoute, hook.icon) } : {}),
   };
 }
 
@@ -155,7 +180,7 @@ export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
  * A library plugin as the listing describes it: its manifest's display fields (each only when the
  * package carries it), its npm version, and each part's dated version (every skill's, the hook
  * package's) for the update dialog to name what changes. Its skills go without their icon: it is
- * the plugin's, sent once on the plugin itself.
+ * the plugin's, named once on the plugin itself.
  */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
   return {
@@ -175,13 +200,15 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     ...(plugin.license !== undefined ? { license: plugin.license } : {}),
     ...(plugin.homepage !== undefined ? { homepage: plugin.homepage } : {}),
     ...(plugin.repository !== undefined ? { repository: plugin.repository } : {}),
-    skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
+    skills: plugin.skills.map((skill) => toSkillItem(skill)),
     ...(plugin.workbenches
       ? { workbenches: plugin.workbenches.map(({ name, version }) => ({ name, version })) }
       : {}),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),
-    ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
+    ...(plugin.icon !== undefined
+      ? { icon: iconRef(libraryIconRoute(plugin.name), plugin.icon) }
+      : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
   };

@@ -1,6 +1,6 @@
 /**
  * What the shell binds into its root component (lib/module-deps.tsx): the page table, the
- * session providers, the layers, the user event handlers, the sidebar the layout mounts and the
+ * renderers a server-contributed page may name, the session providers, the layers, the user event handlers, the sidebar the layout mounts and the
  * chat drafts its New chat command opens. Kept apart
  * from module.ts so the router and the sidebar can read it without importing the module class,
  * which only the composition root does.
@@ -26,6 +26,8 @@ export interface WebAppLayer {
 
 export interface WebAppDeps {
   pages: readonly WebAppPage[];
+  /** By name: what a server-contributed page's `builtin` renderer resolves to (web-app/contributions.tsx). */
+  pageRenderers: ReadonlyMap<string, ComponentType>;
   /** Outermost first. */
   sessionProviders: readonly WebAppSessionProvider[];
   layers: readonly WebAppLayer[];

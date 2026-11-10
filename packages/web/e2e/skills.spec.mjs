@@ -4,8 +4,8 @@
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "Agent 自进化 / 办公效率 / 软件开发 / AI 应用开发", falling back to
- *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
- *   sanitized then inlined, not the book fallback), with metadata showing the plugin's npm
+ *   English by default); cards carry a custom icon (the plugin's icon.svg, served by URL and drawn
+ *   as a mask in the text colour, never inlined; not the book fallback), with metadata showing the plugin's npm
  *   version, its install status and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
@@ -137,15 +137,21 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await expect(page.getByRole("button", { name: "快捷调用 data-analysis" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "快捷调用 use-claude-code" })).toBeDisabled();
 
-  // Card icon: the DTO icon (icon.svg in the plugin's skill directory) is sanitized and rendered
-  // inline (an aria-hidden wrapper + svg); builtin plugins each carry a custom icon, not the book
-  // fallback. The card root = the nearest rounded-md ancestor of the name element (the new card
+  // Card icon: the DTO names the plugin's icon by URL, and a monochrome one is drawn as a mask in
+  // the text colour (an aria-hidden span over a hidden <img> of the same URL, which reports a
+  // failed load); builtin plugins each carry a custom icon, not the book fallback, and none is
+  // inlined as an <svg> of its own. The card root = the nearest rounded-md ancestor of the name element (the new card
   // layout has the icon spanning two rows on the left, with the name and short description as
   // separate text columns, so it can no longer be located by "the innermost div containing the name").
   const creationCard = page
     .getByText("default-rsi-toolkit", { exact: true })
     .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
-  await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
+  await expect(
+    creationCard.locator(
+      'span[aria-hidden] > img[hidden][src*="/api/plugins/default-rsi-toolkit/icon?rev="]',
+    ),
+  ).toHaveCount(1);
+  await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(0);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
 
   // Clicking the section header folds it: aria-expanded flips, and the section's content

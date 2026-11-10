@@ -78,7 +78,7 @@
     position: fixed;
     right: 20px;
     bottom: calc(20px + env(safe-area-inset-bottom));
-    z-index: 30;
+    z-index: var(--layer-window-overlay);
     display: grid;
     width: 44px;
     height: 44px;

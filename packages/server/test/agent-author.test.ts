@@ -6,8 +6,9 @@
  * - Given a create request with no author, the new Agent's config says `user`; given
  *   `author: agent`, it says `agent`; given any other value, the request is refused and no Agent
  *   is created.
- * - Given a create seeded from a snapshot whose Agent was `company`, the new Agent is `user`:
- *   the package says who made its source, not this Agent.
+ * - Given an import, the Agent keeps the author its package carries: an export of a `company`
+ *   Agent stays `company`, and a hand-written package (the agent-porting Skill's, over the
+ *   template) that names `agent` is `agent`; one that names none reads `user`.
  * - Given company mode hiring a new Agent, that Agent is `company`; hiring an existing Agent
  *   leaves its author as it was.
  * - Given a config without the field, the list and the config view both read `user`, and the
@@ -22,6 +23,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentDir, systemConfigPath } from "@prismshadow/penguin-core";
 import type { AgentConfigResponse, AgentsResponse } from "../src/api/types.js";
@@ -116,13 +118,20 @@ describe("an Agent's author", () => {
     await expect(fs.access(agentDir(t.root, PROJECT, "by_robot"))).rejects.toThrow();
   });
 
-  it("records `user` for an Agent seeded from a snapshot of a company Agent", async () => {
+  it("keeps the author an imported package carries", async () => {
+    const importAs = async (agentId: string, bytes: Uint8Array) =>
+      (await api.upload(`${AGENTS}/import?agentId=${agentId}`, bytes)).status;
     expect(await create({ agentId: "exported", author: "company" })).toBe(201);
-    const exported = await api.get(`${AGENTS}/exported/export`);
+    const exported = await api.get(`${AGENTS}/exported/archive`);
     expect(exported.status).toBe(200);
-    const dataBase64 = Buffer.from(await exported.arrayBuffer()).toString("base64");
-    expect(await create({ agentId: "from_snapshot", dataBase64 })).toBe(201);
-    expect(await configAuthor("from_snapshot")).toBe("user");
+    expect(await importAs("from_export", new Uint8Array(await exported.arrayBuffer()))).toBe(201);
+    const handWritten = (config: string) =>
+      zipSync({ "ported/agent_state/system_config.yaml": strToU8(config) });
+    expect(await importAs("ported", handWritten("name: Ported\nauthor: agent\n"))).toBe(201);
+    expect(await importAs("ported_plain", handWritten("name: Ported\n"))).toBe(201);
+    expect(await configAuthor("from_export")).toBe("company");
+    expect(await configAuthor("ported")).toBe("agent");
+    expect(await configAuthor("ported_plain")).toBe("user");
   });
 
   it("records `company` for an Agent a hire creates, and keeps an existing hire's author", async () => {

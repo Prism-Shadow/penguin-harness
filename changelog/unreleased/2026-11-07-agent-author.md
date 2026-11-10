@@ -11,11 +11,12 @@ Every Agent now records who created it in a top-level `author` key in `system_co
 
 ## Creation paths
 
-- The Web App's **Create agent** dialog sends `author: user`, including when the Agent starts from a snapshot. A package's own author is replaced.
+- The Web App's **Create agent** dialog sends `author: user`.
 - `POST /api/projects/:projectId/agents` takes `author`, which defaults to `user`. Any other value is refused with 400 before anything is created.
 - `penguin agent create` gained `--author <user|agent|company>`. Without the flag it sends `agent` when it runs inside a conversation (`PENGUIN_SESSION_ID` is set), and sends nothing otherwise, which the server records as `user`. An unknown value exits 1 before any request.
 - Company mode writes `company` for the CEO of a new organization and for a hire it creates. Hiring an existing Agent keeps that Agent's author.
 - The `agent-initialization` skill, which **Create with AI** runs, writes `author: agent` into the Agent it creates and checks for it when it validates. The fixed instructions of the **Create with AI** dialog ask for the same.
+- An imported Agent keeps the `author` its package carries. The `agent-porting` skill, which migrates an agent from another coding tool in a chat, writes `author: agent` into the package it imports.
 
 ## Reading and editing
 

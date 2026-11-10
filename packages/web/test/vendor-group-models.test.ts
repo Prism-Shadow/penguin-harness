@@ -3,32 +3,23 @@
  *
  * Its entries persist no `client_type`, so MMSP places each one by the vendor family its
  * model id begins with; an id of no known family is a model that never starts. The page
- * therefore offers no add-model entry point on such a group, and marks a row that cannot route
- * with the way out: moving it into a custom group, where a protocol can be picked or detected.
- * A protocol set on the group (its settings) routes its models too, so the card judges the
- * protocol a row is actually used with.
+ * therefore marks a row that cannot route with the way out: moving it into a custom group,
+ * where a protocol can be picked or detected. A protocol set on the group (its settings) routes
+ * its models too, so the card judges the protocol a row is actually used with. (Which groups
+ * offer an add-model entry point at all is the group header's, in model-group-header.test.ts.)
  *
- * vitest runs node-only here, so the card is rendered to static markup and the group header's
- * add entry point is checked through the action set group-header.ts decides (the header lives
- * inside the page component and needs a fetch, a Project and localStorage).
+ * - Given a hand-added id in a vendor group, the way out is a custom group; given a group
+ *   protocol, a routable id, a blank id or a group that picks its protocol, there is none.
+ * - Given such a row, its card warns, and offers the move to its owner only.
+ * - Given a routable row, or a row outside a vendor group, its card is unmarked.
+ *
+ * vitest runs node-only here, so the card is rendered to static markup.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-  MODEL_PROVIDERS,
-  isAddableGroup,
-  isVendorGroup,
-  unroutableVendorModel,
-} from "@prismshadow/penguin-server/model-catalog";
-import { groupHeaderActions } from "../src/features/models/group-header";
 import { ModelCard, unroutableFix, type RowState } from "../src/features/models/models-page";
-
-import { S, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { S } from "../src/lib/strings";
 
 const noop = () => {};
 
@@ -115,83 +106,5 @@ describe("a card for a row its vendor group cannot route", () => {
     for (const html of [byId, byPin, inCustom]) {
       expect(html).not.toContain(S.models.vendorRowUnroutable);
     }
-  });
-});
-
-describe("the ways the page can open the add-model dialog", () => {
-  const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/features/models/models-page.tsx"),
-    "utf8",
-  );
-  /** Every call that OPENS add mode (setAddingTo(null) closes it and is not one of these). */
-  const openers = [...source.matchAll(/setAddingTo\((?!null\))([^)]*)\)/g)].map((m) => m[1]);
-
-  it("are exactly three, none of which can name a vendor group", () => {
-    // A fourth would be a new way into the state this change closed, so it has to be read
-    // here rather than discovered as a bug report. The three: the "no models at all" empty
-    // state, which opens custom; the group header's Add model action, which the header only
-    // carries where group-header.ts puts it; and a brand-new group, whose name is rejected
-    // when it collides with a built-in id.
-    expect([...openers].sort()).toEqual(['"custom"', "group.provider.id", "name"].sort());
-    expect(source).toContain('case "addModel":');
-    expect(source).toContain("MODEL_PROVIDERS.some((p) => p.id === trimmed)");
-    for (const p of MODEL_PROVIDERS.filter((provider) => isVendorGroup(provider.id))) {
-      const actions = groupHeaderActions(p, {
-        isOwner: true,
-        keyStored: true,
-        balancePinned: false,
-      });
-      expect(actions, p.id).not.toContain("addModel");
-    }
-  });
-
-  it("leave the page's other group actions in place (only adding a model is closed off)", () => {
-    // A vendor group still takes a speed test and its settings, where its group key is set —
-    // the rule is about what may be written into the group, not about reaching it.
-    expect(source).toContain("setSpeedFor(group.provider.id)");
-    expect(source).toContain("setSettingsFor(group.provider.id)");
-    for (const p of MODEL_PROVIDERS.filter((provider) => isVendorGroup(provider.id))) {
-      const actions = groupHeaderActions(p, {
-        isOwner: true,
-        keyStored: true,
-        balancePinned: false,
-      });
-      expect(actions, p.id).toContain("speedTest");
-      expect(actions, p.id).toContain("settings");
-    }
-  });
-});
-
-describe("the predicate the page reads", () => {
-  it("names the groups that route by model id alone", () => {
-    expect(isVendorGroup("deepseek")).toBe(true);
-    expect(isVendorGroup("custom")).toBe(false);
-    expect(isVendorGroup("openrouter")).toBe(false);
-    expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
-    expect(unroutableVendorModel("custom", "qwen/qwen3.8-flash-next")).toBe(false);
-    // Whether a model may be added at all is the wider rule: most gateways take none either,
-    // while the three that list a fraction of what they serve do.
-    expect(isAddableGroup("deepseek")).toBe(false);
-    expect(isAddableGroup("fireworks")).toBe(false);
-    expect(isAddableGroup("openrouter")).toBe(true);
-    expect(isAddableGroup("custom")).toBe(true);
-  });
-});
-
-describe("copy", () => {
-  it("carries the warning and its way out in both dictionaries", () => {
-    for (const dict of [zh, en]) {
-      const m = dict.models;
-      for (const text of [
-        m.vendorRowUnroutable,
-        m.moveToCustomGroup,
-        m.testNotRoutable,
-        // The server's refusal is localized by code, not by relaying its English message.
-        dict.errors.byCode.model_not_routable,
-      ]) {
-        expect(text.length).toBeGreaterThan(0);
-      }
-    }
-    expect(zh.models.moveToCustomGroup).not.toBe(en.models.moveToCustomGroup);
   });
 });
