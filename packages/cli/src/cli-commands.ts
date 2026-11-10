@@ -49,7 +49,6 @@ import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
 import { registerSessionCommand } from "./commands/session.js";
 import { registerPluginCommand } from "./commands/plugin.js";
-import { registerOrgCommand } from "./commands/org.js";
 import { registerBrowserCommand } from "./commands/browser.js";
 import { registerServerCommand, registerWebCommand } from "./commands/serve.js";
 import { registerResetPasswordCommand } from "./commands/reset-password.js";
@@ -187,32 +186,6 @@ export class PluginCommand {
     this.command = {
       register: (command, ctx) => {
         registerPluginCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
-/** `penguin org`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.org",
-        key: "org",
-        summary: {
-          en: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
-          zh: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
-        },
-      },
-    ],
-  },
-})
-export class OrgCommand {
-  @Bind("cli.org") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerOrgCommand(node(command), ctx.messages);
       },
     };
   }
@@ -484,7 +457,6 @@ export interface CliCommandsSlots {
     PluginCommand,
     CostCommand,
     ScheduleCommand,
-    OrgCommand,
     BrowserCommand,
     ServerCommand,
     ServerResetAdminPasswordCommand,
