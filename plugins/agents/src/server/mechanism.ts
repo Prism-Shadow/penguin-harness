@@ -4,6 +4,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "@penguinharness/plugin-agents/server";
 import type {
+  AgentAuthor,
   AgentConfigUpdateRequest,
   AgentDeletionInfo,
   AgentKernelUpdateResponse,
@@ -27,6 +28,8 @@ import type {
   WorkspaceFileReadOptions,
 } from "@penguinharness/plugin-projects/server";
 import type { AgentListItem } from "@penguinharness/plugin-agents/server";
+} from "../services/workspace-files-service.js";
+import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,
@@ -44,6 +47,7 @@ export abstract class AgentConfig {
   ): Promise<{
     name?: string;
     description?: string;
+    author: AgentAuthor;
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
@@ -54,6 +58,12 @@ export abstract class AgentConfig {
     agentId: string,
     req: AgentConfigUpdateRequest,
   ): Promise<void>;
+  /** Writes `author` only into a config that has none; false when it had one or there is no config. */
+  abstract stampMissingAuthor(
+    projectId: string,
+    agentId: string,
+    author: AgentAuthor,
+  ): Promise<boolean>;
   abstract resetConfig(projectId: string, agentId: string): Promise<void>;
   abstract kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse>;
   abstract insertTemplatePlaceholder(
@@ -184,11 +194,7 @@ export abstract class AgentLifecycle {
   abstract createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    skillNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: AgentPackage,
+    creation?: AgentCreation,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

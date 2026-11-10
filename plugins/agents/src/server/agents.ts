@@ -9,6 +9,20 @@ import type { ErrorLog } from "@prismshadow/penguin-server/internal";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
 import type { AgentApi } from "@prismshadow/penguin-server/internal";
+/**
+ * Agent routes:
+ * GET|POST /api/projects/:p/agents, DELETE /:agentId (owner only), and
+ * GET /api/projects/:p/agent-deletions/:deletionId (owner only), how far a delete's background
+ * removal has got.
+ * The list is the union of DB entries and directory scan results, including active
+ * Session count, total Session count, config last-modified time, the Agent's author, whether
+ * its API switch is on, and the organizations of the Project that employ it. Listing first
+ * gives an employee without an author `author: company` (agent-author-migration.ts).
+ * An employed Agent is not deleted: DELETE answers 409 `agent_employed`, naming each
+ * organization and title, until the employee has left every one of them. The whole delete
+ * chain, that guard included, is services/agent-deletion.ts, which the organization delete
+ * runs too for the employees it takes with it.
+ */
 import { Hono } from "hono";
 import { OrgService } from "@penguinharness/plugin-company/server";
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
@@ -19,6 +33,37 @@ import { settleWithin, requireProjectDir } from "@prismshadow/penguin-server/int
 import { refuseBuiltinDeletion } from "./agents/agent-service.js";
 import { readArchiveBase64 } from "./agent-transfer.js";
 
+import { AGENT_AUTHORS } from "@prismshadow/penguin-core";
+  AgentCreateResponse,
+  AgentDeleteResponse,
+  AgentDeletionResponse,
+  AgentsResponse,
+  AgentSummary,
+} from "../../api/types.js";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { OrgService } from "../../runtime/organization/service.js";
+import { HttpError } from "../errors.js";
+  badRequest,
+  optionalEnum,
+  optionalString,
+  optionalStringArray,
+  readJson,
+  requireProjectDir,
+  requireString,
+  requireValidId,
+} from "../validate.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionService } from "../../services/session-service.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
+import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
+import type { Access } from "../../mechanisms/projects.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
+import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
+import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
@@ -61,6 +106,11 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Defensive id validation: don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    // One read of the Project's organizations for every Agent's employments, and for the
+    // organizations whose chart cannot be read (who they employ is unknown) — before the
+    // Agents are read, so an employee the migration just stamped lists with its new author.
+    const { employments, unreadableCharts } = await deps.orgService.employmentCensus(projectId);
+    await migrateEmployeeAuthors(deps.agentConfigService, projectId, Object.keys(employments));
     const items = await deps.agentService.listAgents(projectId);
     // One query for the whole list: which Agents have their API switch on (this server's web.db).
     const apiEnabled = new Set(deps.agentApi.enabledAgents(projectId));
@@ -99,6 +149,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       maxLen: 2000,
       label: "description",
     });
+    const author = optionalEnum(body, "author", AGENT_AUTHORS);
     // Library plugins to seed the new Agent with (the create dialog's picker); unknown names
     // are rejected before the Agent directory exists.
     const plugins = optionalStringArray(body, "plugins");
@@ -120,14 +171,13 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // process's cwd instead of being rejected.
       directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
-    const item = await deps.agentService.createAgent(
-      projectId,
-      agentId,
-      name,
-      description,
-      plugins,
-      directory,
-    );
+    const item = await deps.agentService.createAgent(projectId, agentId, {
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(author !== undefined ? { author } : {}),
+      ...(plugins !== undefined ? { plugins } : {}),
+      ...(directory !== undefined ? { directory } : {}),
+    });
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,

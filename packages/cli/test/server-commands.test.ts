@@ -321,6 +321,31 @@ describe("penguin agent / project", () => {
       plugins: ["software-development", "goal"],
     });
     expect(out()).toContain(t.agent.created("helper", "default_project"));
+    // Outside a session the CLI names no author: the server records the person.
+    expect(create?.body?.author).toBeUndefined();
+  });
+
+  it("agent create inside a session names the agent as the author, unless --author says otherwise", async () => {
+    process.env.PENGUIN_SESSION_ID = "session-2026-11-07-10-00-00-ab12cd34";
+    expect(await cli(["agent", "create", "--agent-id", "made_by_agent"])).toBe(0);
+    expect(await cli(["agent", "create", "--agent-id", "for_a_person", "--author", "user"])).toBe(
+      0,
+    );
+    const authors = server.requests
+      .filter((r) => r.method === "POST" && r.path.endsWith("/agents"))
+      .map((r) => [r.body?.agentId, r.body?.author]);
+    expect(authors).toEqual([
+      ["made_by_agent", "agent"],
+      ["for_a_person", "user"],
+    ]);
+  });
+
+  it("agent create refuses an unknown --author before sending anything", async () => {
+    expect(await cli(["agent", "create", "--agent-id", "x", "--author", "robot"])).toBe(1);
+    expect(stderr.join("")).toContain(t.agent.createAuthorInvalid("robot"));
+    expect(server.requests.some((r) => r.method === "POST" && r.path.endsWith("/agents"))).toBe(
+      false,
+    );
   });
 
   it("project ls lists the reachable projects", async () => {

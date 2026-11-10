@@ -2,7 +2,7 @@ import type { ModelGroupSort } from "@penguinharness/plugin-models/web";
 
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -1759,6 +1759,25 @@ export const zh = {
     listTitle: "Agents",
     searchPlaceholder: "搜索 Agent：id / 名称 / 描述",
     searchEmpty: "没有匹配的 Agent",
+    /** The list's grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Agent 分组方式",
+    groupBy: { author: "按作者分组", none: "不分组" },
+    /** The section titles of the grouping by author, in the order the list shows them. */
+    authorGroups: {
+      user: "用户创建",
+      agent: "智能体创建",
+      company: "公司模式创建",
+    } satisfies Record<AgentAuthor, string>,
+    /** A group header's count. */
+    agentCount: (n: number): string => `${n} 个 Agent`,
+    /** The Overview tab's author select: its label, its options and what the "?" beside it says. */
+    authorLabel: "作者",
+    authors: { user: "用户", agent: "智能体", company: "公司模式" } satisfies Record<
+      AgentAuthor,
+      string
+    >,
+    authorInfo:
+      "这个 Agent 是怎么来的：用户手动创建、智能体在对话中创建，或在公司模式中创建。智能体列表可以按它分组。",
     create: "创建 Agent",
     createTitle: "创建 Agent",
     id: "Agent id",
@@ -1843,7 +1862,7 @@ export const zh = {
     aiCreateTail: [
       "请使用 agent-initialization 技能，在当前 Project 中按上面的描述新建一个智能体：",
       "- 上面给了 agent id 就用它，否则取一个简短的语义 id（小写字母开头，可含数字、下划线或连字符）；目标目录已存在时停下来告诉我，不要覆盖。",
-      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，把角色与行为规则写进它的 agent_state/AGENTS.md。",
+      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，并把 author 设为 agent（由智能体创建），把角色与行为规则写进它的 agent_state/AGENTS.md。",
       "- 只从插件库（default_agent 已安装的技能目录）复制它真正需要的技能，不要多装。",
       "- 不要改动其他智能体；完成后按技能要求做校验。",
       "最后告诉我：新智能体的 id、安装了哪些技能，以及怎样开始和它对话（Agents 页该智能体卡片上的「新建对话」）。",
@@ -2120,7 +2139,7 @@ export const zh = {
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
-      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称、描述与作者。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
     /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
     kernelTitle: "内核",
@@ -2135,7 +2154,7 @@ export const zh = {
     kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
-      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、作者、版本号与 MCP Server 不受影响。确认继续？",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
         ? `内核已更新至 ${version}，${advanced} 个设置页跟进新默认`

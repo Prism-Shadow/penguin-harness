@@ -7,6 +7,16 @@
  * directly via the CLI.
  * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
  * then write name/description into system_config.yaml (parseDocument preserves the
+ * The list is the union of "DB index ∪ directory scan", held to the one rule every Agent route
+ * applies: an Agent exists while `agents/<id>/agent_state/system_config.yaml` does. Unmanaged
+ * directories found are backfilled into the DB — this handles Agents created directly via the
+ * CLI — and an index row whose folder no longer has that file is not listed, so a listed Agent
+ * can always be opened and deleted.
+ * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
+ * and route at once) and its contents are removed in the background, the removal reporting how
+ * far it got; a server that stops mid-removal resumes it at its next start.
+ * Create: initialize Agent State via core's `createAgent` under the creator's id, then
+ * write name/description/author into system_config.yaml (parseDocument preserves the
  * template's comments).
  */
 import fs from "node:fs/promises";
@@ -55,6 +65,19 @@ import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
 import type { AgentIndex } from "@prismshadow/penguin-server/internal";
 
+import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
+import { migrateWorkbenches } from "../workbenches/migrate.js";
+import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
+import { isTopicFileName } from "./memory-service.js";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
+import { resolveLibraryPlugins } from "./plugin-library.js";
+import type { PluginLibrary } from "../plugin/library-module.js";
+import { resolveDirectorySkills } from "./directory-skills.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
+import type { AgentIndex } from "../mechanisms/projects.js";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
@@ -127,6 +150,8 @@ export interface AgentListItem {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent (system_config.yaml `author`; missing or unknown = `user`). */
+  author: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the later of system_config.yaml / AGENTS.md mtime. */
   updatedAt?: string;
@@ -150,6 +175,21 @@ export interface AgentListItem {
   pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
+}
+
+/** What a new Agent starts with, besides its id. Every field is optional. */
+export interface AgentCreation {
+  /** Display name; the id when omitted (an imported package keeps its own instead). */
+  name?: string;
+  description?: string;
+  /** Who is creating it; `user` when omitted. An imported package keeps its own. */
+  author?: AgentAuthor;
+  /** Library plugin names to install into it. */
+  plugins?: readonly string[];
+  /** Skills to import from a directory the creator picked. */
+  directory?: { path: string; names: readonly string[] };
+  /** An Agent package (the import route's) to start from instead of the default template. */
+  archive?: AgentPackage;
 }
 
 @Component()
@@ -682,16 +722,18 @@ export class AgentService implements AgentLifecycle {
    * description and version instead of the template's, and its Traces land once the State is
    * in. An invalid package fails the whole creation inside the same cleanup window, leaving no
    * empty Agent behind.
+   *
+   * `author` says how this Agent came to be, `user` when the creator names none, and is written
+   * into a template-made Agent. An imported Agent keeps the package's own `author` (none reads
+   * as `user`): an import moves an existing Agent, it does not make a new one.
    */
   async createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    pluginNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: AgentPackage,
+    creation: AgentCreation = {},
   ): Promise<AgentListItem> {
+    const { name, description, plugins: pluginNames, directory, archive } = creation;
+    const author = creation.author ?? "user";
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
@@ -725,7 +767,11 @@ export class AgentService implements AgentLifecycle {
         await this.snapshots.importArchive(projectId, agentId, archive, { preSnapshot: false });
       } else {
         await this.agentConfig.updateConfig(projectId, agentId, {
-          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+          config: {
+            name: displayName,
+            ...(description !== undefined ? { description } : {}),
+            author,
+          },
         });
       }
       for (const plugin of librarySeed) {
@@ -760,6 +806,7 @@ export class AgentService implements AgentLifecycle {
       agentId,
       name: cardName,
       ...(cardDescription !== undefined ? { description: cardDescription } : {}),
+      author: meta.author,
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
