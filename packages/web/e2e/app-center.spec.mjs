@@ -24,7 +24,10 @@ const SUPPORT = "/agents/penguin_support?tab=plugins";
 /** The Plugins tab of Support's Agent, with the plugin group that holds the workbench unfolded. */
 async function openSupportRow(page) {
   await page.goto(`${BASE}${SUPPORT}`);
-  await page.locator('button[aria-expanded="false"]').filter({ hasText: /1 workbench/ }).click();
+  await page
+    .locator('button[aria-expanded="false"]')
+    .filter({ hasText: /1 workbench/ })
+    .click();
 }
 
 test("the App Center opens Support windowed and full screen, and its switch takes the tile off and back", async ({

@@ -136,7 +136,13 @@ function WorkbenchAppCenterSwitch({
   const projectId = currentProject?.projectId ?? null;
   const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
     if (!projectId) return;
-    const res = await api.setWorkbenchAppCenter(projectId, options.agentId, workbench.id, show, null);
+    const res = await api.setWorkbenchAppCenter(
+      projectId,
+      options.agentId,
+      workbench.id,
+      show,
+      null,
+    );
     options.onSwitched(res.workbench);
   });
   return (

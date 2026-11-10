@@ -54,7 +54,9 @@ export function WorkbenchMark({
   // A monochrome icon is a line drawing: it takes the tile's tint, as a skill's icon does.
   if (icon === undefined) return tile(pluginIcon);
   if (icon.tint) return tile(icon);
-  return <ImageIcon icon={icon} size={MARK_PX} className="rounded-lg" fallback={tile(pluginIcon)} />;
+  return (
+    <ImageIcon icon={icon} size={MARK_PX} className="rounded-lg" fallback={tile(pluginIcon)} />
+  );
 }
 
 /** A switch with its word beside it, in one `<label>`, so a click on the word flips it too. */
