@@ -28,5 +28,11 @@
   },
   "penguin": {
     "parked": true
-  }
+  },
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "files": [
+    "ifaces.json"
+  ]
 }
