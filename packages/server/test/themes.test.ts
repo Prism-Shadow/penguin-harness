@@ -1,0 +1,370 @@
+/**
+ * Theme packs over HTTP (`/api/themes`, PRFC-0026): an admin imports per server, every account
+ * lists, loads and exports. The server's Web App build is a fixture folder carrying one built-in
+ * pack's sources (Frost, the base), as the UI package's Vite plugin writes them.
+ *
+ * - Given a member, they list the packs, load a pack's files and export it, and every write they
+ *   try is refused `403 admin_required` without touching the store.
+ * - Given an admin's import, it answers the pack with its stylesheet's address, serves that
+ *   stylesheet and its drawing with the served-file headers, and tells every signed-in tab.
+ * - Given an id already installed, an import is `409 theme_exists` and changes nothing; with
+ *   `replace=1` it replaces the pack at a new version, and one upload is kept.
+ * - Given a built-in pack's id, an import is `400 theme_id_reserved` and a removal
+ *   `400 theme_builtin`; an id nothing installed is `404`.
+ * - Given a pack the validator refuses, the import is `400 theme_invalid` naming the file, line,
+ *   column and reason, and nothing is stored.
+ * - Given a pack for a newer theme API, `422`; an upload past 16 MiB, `413`; a build carrying no
+ *   pack sources to check against, `503`.
+ * - Given a path the pack's installed.json does not list — its manifest, its readme, its record,
+ *   or a way out of its folder — the files route answers `404`.
+ * - Given an installed pack exported and imported again, the stored files are identical, and so
+ *   are they when the kept upload is gone and the export zips what is stored.
+ * - Given a built-in pack exported, it is in the shape an import takes; imported as it is, it is
+ *   refused as reserved, and renamed, it imports.
+ * - Given the desktop app, the person at it is the admin and may import.
+ */
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { zipSync } from "fflate";
+import { readPackArchive } from "@prismshadow/penguin-theme-pack";
+import type { ServerEvent, ThemePackImportResponse, ThemePacksResponse } from "../src/api/types.js";
+import { userChannelKey } from "../src/http/routes/events.js";
+import {
+  apiClient,
+  createDesktopApp,
+  createTestApp,
+  desktopLoginCookie,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+  type TestApp,
+} from "./helpers.js";
+
+const text = (value: string) => new TextEncoder().encode(value);
+const decode = (bytes: Uint8Array | undefined) => new TextDecoder().decode(bytes);
+
+/** The served build's sources of Frost, the base: what the contract is read from. */
+const BASE_MANIFEST = {
+  api: 1,
+  id: "modern",
+  names: { zh: "白领", en: "Frost" },
+  version: "1.0.0",
+  base: "modern",
+  modes: ["light", "dark"],
+  swatches: {
+    light: { canvas: "#fafafa", ink: "#232527", accent: "#232527" },
+    dark: { canvas: "#1b1c1e", ink: "#e4e4e5", accent: "#f5f5f6" },
+  },
+  accent: { own: { light: "#232527", dark: "#f5f5f6" }, presets: [] },
+  fonts: {
+    sans: "MiSans",
+    ui: "MiSans",
+    mono: "JetBrains Mono Variable",
+    cjk: "MiSans",
+    display: "MiSans",
+  },
+};
+const BASE_FILES: Record<string, string> = {
+  "pack.json": JSON.stringify(BASE_MANIFEST, null, 2),
+  "index.css": '@import "./tokens.css" layer(ui-base);\n@import "./recipes.css" layer(ui-base);\n',
+  "tokens.css":
+    "/* Frost on the bare root. */\n:root {\n  --ui-canvas: #fafafa;\n  --ui-fg: #232527;\n}\n:root.dark {\n  --ui-canvas: #1b1c1e;\n}\n",
+  "recipes.css":
+    ':root[data-theme-base="modern"] .ui-glass {\n  background: var(--ui-canvas);\n}\n',
+  "fonts.css": '@import "../../fonts/misans/misans.css";\n',
+  "fonts.json": "{}\n",
+};
+
+const MARK_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 4h8" stroke="currentColor"/></svg>';
+
+/** A small pack: paper tokens, one recipe drawing its art, a readme. */
+function packFiles(
+  id: string,
+  overrides: Record<string, string | null> = {},
+): Record<string, string> {
+  const files: Record<string, string | null> = {
+    "pack.json": JSON.stringify({
+      ...BASE_MANIFEST,
+      id,
+      names: { zh: "纸页", en: "Paper" },
+      fonts: { ...BASE_MANIFEST.fonts },
+    }),
+    "tokens.css": `:root[data-theme="${id}"] { --ui-canvas: #f6f1e7; }\n:root[data-theme="${id}"].dark { --ui-canvas: #1c1a17; }\n`,
+    "recipes.css": `:root[data-theme="${id}"] .ui-empty [data-slot="art"] { background-image: url("art/mark.svg"); }\n`,
+    "art/mark.svg": MARK_SVG,
+    "README.md": "# Paper\n",
+    ...overrides,
+  };
+  return Object.fromEntries(
+    Object.entries(files).filter((entry): entry is [string, string] => entry[1] !== null),
+  );
+}
+
+const zipOf = (files: Record<string, string>, folder = "") =>
+  zipSync(
+    Object.fromEntries(Object.entries(files).map(([rel, body]) => [`${folder}${rel}`, text(body)])),
+  );
+
+describe("theme packs", () => {
+  let t: TestApp;
+  let webDist: string;
+  let admin: ReturnType<typeof apiClient>;
+  let member: ReturnType<typeof apiClient>;
+  let memberId: string;
+
+  const themesDir = () => path.join(t.root, "themes");
+  /** Every stored file of a pack, by path, its install record left out. */
+  async function stored(id: string): Promise<Map<string, string>> {
+    const dir = path.join(themesDir(), id);
+    const out = new Map<string, string>();
+    for (const entry of await fsp.readdir(dir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const abs = path.join(entry.parentPath, entry.name);
+      const rel = path.relative(dir, abs).split(path.sep).join("/");
+      if (rel !== "installed.json") out.set(rel, await fsp.readFile(abs, "utf8"));
+    }
+    return out;
+  }
+  /** The server events a user's channel carries from now on. */
+  function inbox(userId: string): ServerEvent[] {
+    const events: ServerEvent[] = [];
+    t.deps.channels.get(userChannelKey(userId)).subscribe((evt) => {
+      if (evt.event === "server_event") events.push(JSON.parse(evt.data) as ServerEvent);
+    });
+    return events;
+  }
+  async function imported(id: string, files = packFiles(id)): Promise<ThemePackImportResponse> {
+    const res = await admin.upload("/api/themes", zipOf(files, `${id}/`));
+    expect(res.status, await res.clone().text()).toBe(201);
+    return (await res.json()) as ThemePackImportResponse;
+  }
+
+  beforeAll(async () => {
+    webDist = await makeTempRoot();
+    for (const [rel, body] of Object.entries(BASE_FILES)) {
+      const abs = path.join(webDist, "themes", "modern", rel);
+      await fsp.mkdir(path.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, body);
+    }
+    t = await createTestApp({ config: { webDist } });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const signedIn = await provisionUser(t.app, "reader");
+    member = apiClient(t.app, signedIn.cookie);
+    memberId = signedIn.user.userId;
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  it("lets a member list, load and export, and refuses their writes without touching the store", async () => {
+    const { theme } = await imported("paper-read");
+    const before = await stored("paper-read");
+    const list = (await (await member.get("/api/themes")).json()) as ThemePacksResponse;
+    expect(list.themes.map((pack) => pack.id)).toContain("paper-read");
+    expect((await member.get(theme.href)).status).toBe(200);
+    expect((await member.get("/api/themes/paper-read/export")).status).toBe(200);
+    for (const res of [
+      await member.upload("/api/themes", zipOf(packFiles("paper-other"))),
+      await member.upload("/api/themes?replace=1", zipOf(packFiles("paper-read"))),
+      await member.delete("/api/themes/paper-read"),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("admin_required");
+    }
+    expect(fs.existsSync(path.join(themesDir(), "paper-other"))).toBe(false);
+    expect(await stored("paper-read")).toEqual(before);
+  });
+
+  it("answers an import with the pack, serves its files with their headers, and tells every tab", async () => {
+    const adminEvents = inbox("admin");
+    const memberEvents = inbox(memberId);
+    const { theme } = await imported("paper-serve");
+    expect(theme).toMatchObject({ id: "paper-serve", base: "modern", names: { en: "Paper" } });
+    expect(theme.href).toBe(`/api/themes/paper-serve/files/index.css?v=${theme.v}`);
+    for (const events of [adminEvents, memberEvents]) {
+      expect(events.filter((e) => e.type === "themes_changed")).toHaveLength(1);
+    }
+    const css = await admin.get(theme.href);
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toBe("text/css; charset=utf-8");
+    expect(css.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(css.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    expect(css.headers.get("content-security-policy")).toBe("sandbox; default-src 'none'");
+    expect(css.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    const body = await css.text();
+    expect(body).toContain("@layer ui-theme{");
+    const art = /url\((\/api\/themes\/paper-serve\/files\/art\/mark\.svg\?v=[0-9a-f]+)\)/.exec(
+      body,
+    )?.[1];
+    expect(art).toBe(`/api/themes/paper-serve/files/art/mark.svg?v=${theme.v}`);
+    const svg = await admin.get(art!);
+    expect(svg.headers.get("content-type")).toBe("image/svg+xml");
+    expect(await svg.text()).toBe(MARK_SVG);
+  });
+
+  it("refuses an installed id unless replace=1, which serves it at a new version and keeps one upload", async () => {
+    const { theme: first } = await imported("paper-swap");
+    const before = await stored("paper-swap");
+    const again = await admin.upload("/api/themes", zipOf(packFiles("paper-swap")));
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { details: unknown } }).error.details).toEqual({
+      themeId: "paper-swap",
+    });
+    expect(await stored("paper-swap")).toEqual(before);
+
+    const changed = packFiles("paper-swap", {
+      "tokens.css": ':root[data-theme="paper-swap"] { --ui-canvas: #eeeeee; }\n',
+    });
+    const res = await admin.upload("/api/themes?replace=1", zipOf(changed));
+    expect(res.status).toBe(201);
+    const { theme: second } = (await res.json()) as ThemePackImportResponse;
+    expect(second.v).not.toBe(first.v);
+    expect(await (await admin.get(second.href)).text()).toContain("#eee");
+    const list = (await (await admin.get("/api/themes")).json()) as ThemePacksResponse;
+    expect(list.themes.filter((pack) => pack.id === "paper-swap")).toEqual([second]);
+    const archives = fs
+      .readdirSync(path.join(themesDir(), "archives"))
+      .filter((name) => name.startsWith("paper-swap-"));
+    expect(archives).toHaveLength(1);
+  });
+
+  it("refuses a built-in id on import and on removal, and answers 404 for an id nothing installed", async () => {
+    const reserved = await admin.upload("/api/themes", zipOf(packFiles("modern")));
+    expect(reserved.status).toBe(400);
+    expect(((await reserved.json()) as { error: { code: string } }).error.code).toBe(
+      "theme_id_reserved",
+    );
+    const builtin = await admin.delete("/api/themes/modern");
+    expect(((await builtin.json()) as { error: { code: string } }).error.code).toBe(
+      "theme_builtin",
+    );
+    expect((await admin.delete("/api/themes/nothing-here")).status).toBe(404);
+    expect((await admin.get("/api/themes/nothing-here/export")).status).toBe(404);
+  });
+
+  it("refuses a pack the validator refuses, naming where, and stores nothing", async () => {
+    const res = await admin.upload(
+      "/api/themes",
+      zipOf(
+        packFiles("paper-bad", {
+          "recipes.css": `\n:root[data-theme="paper-bad"] .ui-edge { color: red !important; }\n`,
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as {
+      error: { code: string; details: Record<string, string> };
+    };
+    expect(error.code).toBe("theme_invalid");
+    expect(error.details).toMatchObject({
+      file: "recipes.css",
+      line: "2",
+      reason: "!important is refused",
+    });
+    expect(error.details.column).toMatch(/^\d+$/);
+    expect(fs.existsSync(path.join(themesDir(), "paper-bad"))).toBe(false);
+    const list = (await (await admin.get("/api/themes")).json()) as ThemePacksResponse;
+    expect(list.themes.some((pack) => pack.id === "paper-bad")).toBe(false);
+  });
+
+  it("answers 422 for a newer theme API, 413 past 16 MiB, and 503 when the build carries no pack sources", async () => {
+    const newer = packFiles("paper-new", {
+      "pack.json": JSON.stringify({ ...BASE_MANIFEST, id: "paper-new", api: 2 }),
+    });
+    expect((await admin.upload("/api/themes", zipOf(newer))).status).toBe(422);
+    const big = new Uint8Array(16 * 1024 * 1024 + 1);
+    big.set([0x50, 0x4b, 0x03, 0x04]);
+    const tooLarge = await admin.upload("/api/themes", big);
+    expect(tooLarge.status).toBe(413);
+    expect(((await tooLarge.json()) as { error: { code: string } }).error.code).toBe(
+      "theme_too_large",
+    );
+    const sources = path.join(webDist, "themes");
+    await fsp.rename(sources, `${sources}.off`);
+    try {
+      const unavailable = await admin.upload("/api/themes", zipOf(packFiles("paper-later")));
+      expect(unavailable.status).toBe(503);
+    } finally {
+      await fsp.rename(`${sources}.off`, sources);
+    }
+  });
+
+  it.each([
+    "pack.json",
+    "README.md",
+    "installed.json",
+    "tokens.css",
+    "../paper-files/installed.json",
+    "%2e%2e/archives",
+    "art/../installed.json",
+  ])("serves no %s from a pack's folder", async (rel) => {
+    if (!fs.existsSync(path.join(themesDir(), "paper-files"))) await imported("paper-files");
+    expect((await member.get(`/api/themes/paper-files/files/${rel}`)).status).toBe(404);
+  });
+
+  it("stores the same files when an export is imported again, kept upload or not", async () => {
+    await imported("paper-trip");
+    const original = await stored("paper-trip");
+    const exported = new Uint8Array(
+      await (await admin.get("/api/themes/paper-trip/export")).arrayBuffer(),
+    );
+    expect((await admin.delete("/api/themes/paper-trip")).status).toBe(204);
+    expect((await admin.upload("/api/themes", exported)).status).toBe(201);
+    expect(await stored("paper-trip")).toEqual(original);
+
+    for (const name of fs.readdirSync(path.join(themesDir(), "archives"))) {
+      if (name.startsWith("paper-trip-")) fs.rmSync(path.join(themesDir(), "archives", name));
+    }
+    const fresh = new Uint8Array(
+      await (await admin.get("/api/themes/paper-trip/export")).arrayBuffer(),
+    );
+    expect((await admin.upload("/api/themes?replace=1", fresh)).status).toBe(201);
+    expect(await stored("paper-trip")).toEqual(original);
+  });
+
+  it("exports a built-in pack in import shape, refused as it is and imported once renamed", async () => {
+    const res = await member.get("/api/themes/modern/export");
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="modern-1.0.0.zip"');
+    const zip = new Uint8Array(await res.arrayBuffer());
+    const files = readPackArchive(zip);
+    expect([...files.keys()].sort()).toEqual(["pack.json", "recipes.css", "tokens.css"]);
+    expect(decode(files.get("tokens.css"))).toContain("/* Frost on the bare root. */");
+    expect(decode(files.get("recipes.css"))).toContain(':root[data-theme="modern"] .ui-glass');
+    expect((await admin.upload("/api/themes", zip)).status).toBe(400);
+
+    // The rename the RFC describes: the id in pack.json, and the id in the selectors.
+    const renamed: Record<string, string> = {};
+    for (const [rel, bytes] of files) {
+      renamed[rel] = decode(bytes).replaceAll('[data-theme="modern"]', '[data-theme="mine"]');
+    }
+    const manifest = JSON.parse(renamed["pack.json"]!) as Record<string, unknown>;
+    renamed["pack.json"] = JSON.stringify({
+      ...manifest,
+      id: "mine",
+      names: { zh: "我的", en: "Mine" },
+    });
+    const { theme } = await imported("mine", renamed);
+    expect(theme.id).toBe("mine");
+  });
+});
+
+describe("theme packs on the desktop app", () => {
+  it("lets the person at the app import, as its admin", async () => {
+    const webDist = await makeTempRoot();
+    for (const [rel, body] of Object.entries(BASE_FILES)) {
+      const abs = path.join(webDist, "themes", "modern", rel);
+      await fsp.mkdir(path.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, body);
+    }
+    const desktop = await createDesktopApp({ config: { webDist } });
+    try {
+      const client = apiClient(desktop.app, await desktopLoginCookie(desktop.app));
+      expect((await client.upload("/api/themes", zipOf(packFiles("desk-paper")))).status).toBe(201);
+    } finally {
+      await desktop.cleanup();
+    }
+  });
+});
