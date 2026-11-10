@@ -19,6 +19,7 @@
  * The rules §3 leaves to review — two badges per row, spacing steps per kind of child, nesting
  * across components, copy voice — are not here; the frontend skill carries them.
  */
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { THEME_MODES } from "../src/tokens";
 import {
@@ -28,6 +29,7 @@ import {
   LABEL_COMPONENTS,
   PAGE_HEADER_COMPONENTS,
   TABULAR_COMPONENTS,
+  THEMES_DIR,
   allowlistProblems,
   analyzeFile,
   analyzePack,
@@ -36,7 +38,9 @@ import {
   matchesPolicyPath,
   modeDeclarations,
   packFolders,
+  packRuleHits,
   parseClassToken,
+  readPackSources,
   scanSourceRoots,
   unscannedRoots,
 } from "../src/testing";
@@ -44,6 +48,7 @@ import type {
   DeslopAllowlist,
   DeslopPolicy,
   DeslopRule,
+  PackRule,
   SourceFile,
   ThemeFileAnalysis,
 } from "../src/testing";
@@ -149,6 +154,73 @@ describe("de-slop rules over packages/ui/src", () => {
         ).toEqual([]);
       });
     }
+  }
+});
+
+describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () => {
+  /**
+   * What each built-in pack's stylesheets held when the rules came in, by pack file and rule: a
+   * pack may lose a hit, never gain one, and an entry shrinks in the change that removes a hit. A
+   * pack not listed here — every pack after these three — holds none.
+   */
+  const HELD: Readonly<Record<string, Partial<Record<PackRule, number>>>> = {
+    // Console: its tree's `└` and block marks on a step's mark slot, its label and notice set
+    // on the small rung, its own row and field spacing, and its mono, tracked, crisp chart.
+    "geek/recipes.css": { R5: 3, R7: 15, R9: 7 },
+    // Frost, the base: its dialog, menu, shell, tree and field spacing and its tight display
+    // tracking, the floating notice's shadows, the area fade under a line, the tab bar's ease.
+    "modern/recipes.css": { R7: 14, R8: 3, R9: 2, R11: 1 },
+  };
+
+  const probe = (css: string) =>
+    packRuleHits([{ file: "recipes.css", css, layer: "ui-theme" }]).map((hit) => hit.rule);
+
+  it("recognise each shape they refuse, and pass the ones they allow — exercised on known sources", () => {
+    const x = ':root[data-theme="x"]';
+    expect(probe(`${x} .ui-frame { background-image: url("art/paper.png"); }`)).toEqual(["R1"]);
+    expect(probe(`${x} .ui-glass { background-image: url("art/slip.png"); }`)).toEqual([]);
+    expect(probe(`${x} .ui-frame { clip-path: polygon(0 0, 100% 0, 50% 100%); }`)).toEqual(["R1"]);
+    expect(probe(`${x} .row::before { content: ""; border-left: 2px solid; }`)).toEqual(["R5"]);
+    expect(probe(`${x} .ui-tree [data-depth]::before { content: ""; }`)).toEqual([]);
+    expect(probe(`${x} .row::after { content: none; }`)).toEqual([]);
+    expect(probe(`${x} [aria-current="page"] { outline: 2px solid; color: red; }`)).toEqual([
+      "R6",
+      "R8",
+    ]);
+    expect(probe(`${x} .ui-activity:not([data-state="error"]) .mark { color: red; }`)).toEqual([]);
+    expect(probe(`${x} .ui-activity[data-state="done"] .label { transform: none; }`)).toEqual([
+      "R6",
+    ]);
+    expect(probe(`${x} .title { font-size: 1.1rem; padding-inline: 2px; }`)).toEqual(["R7", "R7"]);
+    expect(probe(`${x} .ui-notice { box-shadow: 0 1px 0 red; }`)).toEqual(["R8"]);
+    expect(probe(`${x} button:focus-visible { outline: 2px solid; }`)).toEqual([]);
+    expect(
+      probe(`${x} .ui-chart rect { fill: url(#hatch); filter: blur(1px); stroke: red; }`),
+    ).toEqual(["R9", "R9"]);
+    expect(probe(`${x}.dark .row { color: red; }`)).toEqual(["R10"]);
+    expect(probe(`${x} .row { color: blue; } ${x}.dark .row { color: red; }`)).toEqual([]);
+    expect(probe(`${x} .row:hover { transition: color 150ms; }`)).toEqual(["R11"]);
+    expect(probe(`${x} .ui-live { animation-duration: 1s; }`)).toEqual([]);
+    expect(probe(`${x} { --ui-canvas: #fff; }`)).toEqual([]);
+    expect(probe("@keyframes x-wobble { from { padding: 1px; } }")).toEqual([]);
+  });
+
+  for (const id of packFolders()) {
+    it(`${id}: adds nothing the rules refuse past what it held when they came in`, () => {
+      const hits = packRuleHits(readPackSources(join(THEMES_DIR, id)));
+      const counts: Record<string, Partial<Record<PackRule, number>>> = {};
+      for (const hit of hits) {
+        const file = (counts[`${id}/${hit.file}`] ??= {});
+        file[hit.rule] = (file[hit.rule] ?? 0) + 1;
+      }
+      const held = Object.fromEntries(
+        Object.entries(HELD).filter(([file]) => file.startsWith(`${id}/`)),
+      );
+      expect(
+        counts,
+        hits.map((hit) => `\n  ${id}/${hit.file}:${hit.line} ${hit.rule} ${hit.found}`).join(""),
+      ).toEqual(held);
+    });
   }
 });
 
