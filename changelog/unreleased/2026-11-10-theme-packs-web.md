@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** feat
 - **Scope:** `web`
+- **PR:** [#1530](https://github.com/Prism-Shadow/penguin-harness/pull/1530)
 
 [中文版](2026-11-10-theme-packs-web.zh.md)
 
