@@ -1462,13 +1462,6 @@ export interface AgentCreateRequest {
    */
   skillsDirectory?: string;
   directorySkills?: string[];
-  /**
-   * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
-   * initialized from the package instead of the default template. Mutually exclusive with
-   * seeding (`plugins` / `skillsDirectory`) — the package carries its own skills and hooks.
-   * Explicit `name` / `description` override the package's values; absent ones keep them.
-   */
-  dataBase64?: string;
 }
 
 export interface AgentCreateResponse {
@@ -4781,19 +4774,49 @@ export interface ScheduleUpsertRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Agent State version and snapshots
+// Agent export and import: the zip is the Agent's directory
 // ---------------------------------------------------------------------------
+//   GET  /api/projects/:projectId/agents/:agentId/archive?<AgentArchiveQuery>
+//        → `<agentId>-<yyyymmdd>.zip` attachment (any member; 413 archive_too_large past the
+//        import caps)
+//   POST /api/projects/:projectId/agents/import?agentId=<id>&overwrite=1, the body the raw
+//        `.zip` (or a `.tar.gz` snapshot package exported before) sent as
+//        `application/octet-stream` → 201 AgentArchiveImportResponse (any member creates;
+//        a taken id is 409 `agent_exists` with `details.agentId`; overwrite is the owner's)
 
-export interface AgentImportRequest {
-  /** Base64 of the snapshot package (tar.gz). */
-  dataBase64: string;
-  /** Explicit confirmation is required when the package version is equal to or lower than the current version, otherwise 409. */
-  confirm?: boolean;
+/**
+ * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
+ * its default: all carried but `schedules`, since an imported task runs on its schedule.
+ * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ */
+export interface AgentArchiveQuery {
+  skills?: "0" | "1";
+  hooks?: "0" | "1";
+  memory?: "0" | "1";
+  workbenches?: "0" | "1";
+  workbenchData?: "0" | "1";
+  schedules?: "0" | "1";
+  /**
+   * Which Sessions' Traces travel, every file of each: none (the default); the last N by
+   * activity, 1–500, a subagent Session following its parent; or those whose date directory
+   * lies in the range, both ends included.
+   */
+  traces?: "none" | `last:${number}` | `${string}..${string}`;
 }
 
-export interface AgentImportResponse {
-  /** Agent State version number after import (taken from the package's value). */
+export interface AgentArchiveImportResponse {
+  agent: Pick<AgentSummary, "agentId" | "name" | "description">;
+  mode: "created" | "overwritten";
+  /** The Agent State version the package carried. */
   version: number;
+  /** Overwrite only: the snapshot of the replaced State, a file name in the Agent's `snapshots/`. */
+  backup?: string;
+  sessions: {
+    /** Sessions whose Traces landed as Sessions of this Agent. */
+    imported: number;
+    /** The package's Sessions this install already has, by id: their Traces were not imported. */
+    skipped: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -41,7 +41,7 @@ Nothing. A folder left in the old place because its id is taken is named in the 
 
 ### Lifetime
 
-The Workbench maintainers keep this code and the link until the next major version (1.0), and remove them in that release's preparation: `packages/server/src/workbenches/migrate-state.ts`, its call in `migrateWorkbenches` (`migrate.ts`) and `test/workbench-state-migration.test.ts`, and, with the Workflow conversion already gone at 0.3, `migrateWorkbenches` itself with every await of it (`workbenches/service.ts`, `services/agent-service.ts`, `http/routes/plugins.ts`, `http/routes/agent-transfer.ts`). None of this goes with the Workflow conversion at 0.3. The 1.0 removal step also deletes a link left at `<agentDir>/workbenches` whose target is `agent_state/workbenches`, so nothing outlives the code. The backup is never removed by code.
+The Workbench maintainers keep this code and the link until the next major version (1.0), and remove them in that release's preparation: `packages/server/src/workbenches/migrate-state.ts`, its call in `migrateWorkbenches` (`migrate.ts`) and `test/workbench-state-migration.test.ts`, and, with the Workflow conversion already gone at 0.3, `migrateWorkbenches` itself with every await of it (`workbenches/service.ts`, `services/agent-service.ts`, `http/routes/plugins.ts`, `http/routes/agent-archive.ts`). None of this goes with the Workflow conversion at 0.3. The 1.0 removal step also deletes a link left at `<agentDir>/workbenches` whose target is `agent_state/workbenches`, so nothing outlives the code. The backup is never removed by code.
 
 ## Compatibility
 

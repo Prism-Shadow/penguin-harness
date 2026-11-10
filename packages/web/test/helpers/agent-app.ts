@@ -29,7 +29,10 @@
  * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
  * one read fail as an unreachable server does ({@link AgentServer.failNext}); one request, of
  * any server, can be held on its own ({@link AgentServer.holdNext}), and what was answered so far
- * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
+ * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too,
+ * and an Agent zip export downloads; an import (the fake reads no zip) creates the Agent its
+ * query names, refuses a taken id with 409 `agent_exists` unless it says `overwrite`, and refuses
+ * that to a member ({@link agentServer}'s `role`).
  *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
  * answers them masked, and the state switch turns one on or off. This server answers which
@@ -302,15 +305,21 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** The signed-in user's role in the Project (by default its owner). */
+    role?: "owner" | "member";
+    /** The Skills this server's Agent already has installed (by default none). */
+    skills?: string[];
     /** The keys the Agent's API holds; a DELETE of one removes it. */
     apiKeys?: AgentApiKeyInfo[];
     /** This server's organizations (by default none); their employees join its Agents. */
     organizations?: FakeOrganization[];
   } = {},
 ): AgentServer {
-  /** Installed Skill names by `<machine or "">/<agent>`. */
-  const installs = new Map<string, string[]>();
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  /** Installed Skill names by `<machine or "">/<agent>`. */
+  const installs = new Map<string, string[]>(
+    options.skills ? [[installKey(null, AGENT_ID), options.skills]] : [],
+  );
   const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
@@ -562,7 +571,7 @@ export function agentServer(
       const project = (projectId: string, name: string) => ({
         projectId,
         name,
-        role: "owner",
+        role: options.role ?? "owner",
         ownerUserId: "admin",
         createdAt: "2026-01-01T00:00:00Z",
       });
@@ -750,6 +759,26 @@ export function agentServer(
       const agentId = decodeURIComponent(localAgent[1]!);
       localAgentIds = localAgentIds.filter((id) => id !== agentId);
       return new Response(null, { status: 204 });
+    }
+    if (path === `/api/projects/${PROJECT_ID}/agents/import` && method === "POST") {
+      const id = request.query.get("agentId") ?? "";
+      const overwrite = request.query.get("overwrite") === "1";
+      if (overwrite && options.role === "member") return apiError(403, "forbidden");
+      if (!overwrite && localAgentIds.includes(id)) {
+        const error = { code: "agent_exists", message: id, details: { agentId: id } };
+        return json({ error }, 409);
+      }
+      if (!localAgentIds.includes(id)) localAgentIds = [...localAgentIds, id];
+      const mode = overwrite ? "overwritten" : "created";
+      return json(
+        { agent: summaryOf(id), mode, version: 1, sessions: { imported: 2, skipped: ["s1"] } },
+        201,
+      );
+    }
+    if (path === `${AGENT_PATH}/archive` && method === "GET") {
+      return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+        headers: { "content-disposition": `attachment; filename*=UTF-8''${AGENT_ID}-20261109.zip` },
+      });
     }
     if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path === `/api/projects/${PROJECT_ID}/app-center` && method === "GET") {
