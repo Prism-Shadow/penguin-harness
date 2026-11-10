@@ -221,33 +221,6 @@
     line to 4px 0.45px,
     close
   );
-  --_clip-ball: shape(
-    from 50% 0.47%,
-    line to 62.73% 2.48%,
-    line to 74.55% 7.47%,
-    line to 85.86% 14.14%,
-    line to 92.52% 25.45%,
-    line to 98.95% 36.88%,
-    line to 100.48% 50%,
-    line to 97.42% 62.71%,
-    line to 92.95% 74.79%,
-    line to 85.19% 85.19%,
-    line to 75.4% 94%,
-    line to 63.21% 99.29%,
-    line to 50% 100.88%,
-    line to 37.1% 98.13%,
-    line to 25.41% 92.6%,
-    line to 13.92% 86.08%,
-    line to 6.73% 74.98%,
-    line to 1.08% 63.11%,
-    line to -0.34% 50%,
-    line to 2.39% 37.24%,
-    line to 5.84% 24.51%,
-    line to 13.89% 13.89%,
-    line to 25.31% 7.24%,
-    line to 37.06% 1.71%,
-    close
-  );
   --_clip-disc: shape(
     from 48.71% 1.74%,
     line to 50% 0.36%,
@@ -361,6 +334,8 @@
   :root[data-theme="doodle"] .ui-glass:not([data-glass])[data-slot="composer"]:focus-within {
     border-image-source: var(--_glass-surface-focus);
   }
+  /* A round slip (the launcher's ball and its fan) keeps its round fill under the drawn circle,
+     unclipped: the ball holds its caption, which sits outside it. */
   :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
     background-color: var(--ui-overlay);
     background-clip: padding-box;
@@ -406,10 +381,6 @@
       .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
       clip-path: var(--_clip-box);
     }
-    :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
-      background-clip: border-box;
-      clip-path: var(--_clip-ball);
-    }
     /* A clip cuts whatever the box paints: a menu opened in place inside the box, and a focus
        ring. So while a menu is open in it, and while something a person presses holds keyboard
        focus, the box keeps its own corner and a padding-box fill under the line instead, and the
@@ -418,8 +389,7 @@
     :root[data-theme="doodle"]
       .ui-edge:focus-visible:not(
         :where(input:not([type="checkbox"], [type="radio"]), textarea, select)
-      ),
-    :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full):focus-visible {
+      ) {
       border-radius: revert-layer;
       background-clip: padding-box;
       clip-path: none;

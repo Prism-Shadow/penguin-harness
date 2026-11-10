@@ -17,7 +17,8 @@
  *   its size in an `image-set`, rendered from the points by `raster-strokes.mjs` — because a
  *   9-slice of an SVG is re-rasterised for every slice of every box on every repaint and a
  *   bitmap's is copied; the rarer shapes stay SVG, which is smaller.
- * - `--_clip-<shape>`: the same outline as a `clip-path: shape()`, pushed outward by half the pen
+ * - `--_clip-<shape>`: the same outline as a `clip-path: shape()` (every shape but the ball, which
+ *   is laid over a round fill and holds a caption outside itself), pushed outward by half the pen
  *   plus a quarter pixel so the line's outer half is never cut. Every point is placed where the
  *   9-slice stretch puts it — a corner's points in fixed px from their edge, a run's in a
  *   percentage plus a px term — so the box's own background ends under the line at every size,
@@ -268,8 +269,10 @@ function properties(mode) {
     ["--_glass-surface-focus", url(glass(surface, ink("blue"), mode))],
   ];
   if (mode === "light") {
-    for (const [name, shape] of Object.entries(SHAPES))
-      props.push([`--_clip-${name}`, clip(shape)]);
+    // The ball is laid unclipped over a round fill (it holds a caption outside itself).
+    for (const [name, shape] of Object.entries(SHAPES)) {
+      if (name !== "ball") props.push([`--_clip-${name}`, clip(shape)]);
+    }
     // A pill's drawing on a small square host (a radio's disc): its corners at 50 % each.
     props.push(["--_clip-disc", clip({ ...pill, scale: "half" })]);
   }
