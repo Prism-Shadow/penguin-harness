@@ -33,7 +33,7 @@
 - 主题包存在数据根的 `themes/<id>/`，每个包含：
   - 规范化的 `pack.json`；
   - 重新生成的样式表；
-  - 合成的 `index.css`：样式表放进 `ui-theme` 与 `ui-accent` 层，包内 `url()` 改写为 `/api/themes/<id>/files/<path>?v=<v>`。文件开头先声明所提供的 App 样式表的完整层序（Tailwind 的各层在前，然后是主题的四层），从 `index.html` 所链接的样式表读出。重新加载后首帧脚本先挂主题包的链接，这条声明让两种先后顺序下的层序相同；
+  - 合成的 `index.css`：样式表放进 `ui-theme` 与 `ui-accent` 层，包内 `url()` 改写为 `/api/themes/<id>/files/<path>?v=<v>`。它不含任何属于提供它的构建的内容。提供时在前面加上 App 样式表的完整层序（Tailwind 的各层在前，然后是主题的四层），每个构建从 `index.html` 所链接的样式表读一次。重新加载后首帧脚本先挂主题包的链接，这条声明让两种先后顺序下的层序相同。列表与提供时用的 `v` 把这一次序合进内容摘要，构建改变了次序，每个包的地址都随之改变；
   - 字体与插画；
   - `installed.json`，对外只提供其 `files` 所列的文件。
 - 每次上传的原 zip 留在 `themes/archives/<id>-<version>-<sha8>.zip`。

@@ -33,7 +33,7 @@ An admin can import a theme pack as a zip, and every account on that server can 
 - Packs live under the data root at `themes/<id>/`. Each holds:
   - the normalised `pack.json`;
   - the re-emitted stylesheets;
-  - the assembled `index.css`, with the stylesheets in `ui-theme` and `ui-accent` and every pack `url()` rewritten to `/api/themes/<id>/files/<path>?v=<v>`. It opens with the served app stylesheet's whole layer order (Tailwind's layers, then the theme's four), read from the stylesheets `index.html` links. The pre-paint script links a picked pack before the app's sheet after a reload, and the statement keeps the layer order the same either way;
+  - the assembled `index.css`, with the stylesheets in `ui-theme` and `ui-accent` and every pack `url()` rewritten to `/api/themes/<id>/files/<path>?v=<v>`. It holds nothing of the build that serves it. It is served with the app stylesheet's whole layer order in front (Tailwind's layers, then the theme's four), read once per build from the stylesheets `index.html` links. After a reload the pre-paint script links a picked pack before the app's sheet, and the statement keeps the layer order the same either way. The `v` a pack is listed and served at mixes that order into the content digest, so a build that changes the order moves every pack's address;
   - the fonts and drawings;
   - `installed.json`, whose `files` list is the only thing ever served.
 - Each upload is kept at `themes/archives/<id>-<version>-<sha8>.zip`.

@@ -10,6 +10,9 @@
  * - Given the app's compiled stylesheet (Tailwind's layers, then the theme's four), a pack's served
  *   stylesheet linked before it, as the pre-paint script links it after a reload, or after it, as
  *   a live switch does, leaves the layer order the app sheet alone sets.
+ * - Given a new build whose sheet sets another layer order, every pack is listed and served at a
+ *   new address with the new order in front, and the stored file is untouched: the order is the
+ *   build's, never the pack's. Back on the first build, the first address returns.
  * - Given an id already installed, an import is `409 theme_exists` and changes nothing; with
  *   `replace=1` it replaces the pack at a new version, and one upload is kept.
  * - Given a built-in pack's id, an import is `400 theme_id_reserved` and a removal
@@ -242,10 +245,11 @@ describe("theme packs", () => {
     expect(css.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     const body = await css.text();
     expect(body).toContain("@layer ui-theme{");
-    const art = /url\((\/api\/themes\/paper-serve\/files\/art\/mark\.svg\?v=[0-9a-f]+)\)/.exec(
+    // A drawing is addressed by the pack's content alone: its bytes are no build's.
+    const art = /url\((\/api\/themes\/paper-serve\/files\/art\/mark\.svg\?v=[0-9a-f]{8})\)/.exec(
       body,
     )?.[1];
-    expect(art).toBe(`/api/themes/paper-serve/files/art/mark.svg?v=${theme.v}`);
+    expect(art).toBeDefined();
     const svg = await admin.get(art!);
     expect(svg.headers.get("content-type")).toBe("image/svg+xml");
     expect(await svg.text()).toBe(MARK_SVG);
@@ -269,6 +273,31 @@ describe("theme packs", () => {
     // The pre-paint script writes the pack's link first; a live switch appends it after.
     expect(layerMentions(pack, APP_SHEET)).toEqual(appAlone);
     expect(layerMentions(APP_SHEET, pack)).toEqual(appAlone);
+  });
+
+  it("serves the order a new build sets at a new address, and leaves what is stored as it was", async () => {
+    const { theme: before } = await imported("paper-rebuilt");
+    const kept = path.join(themesDir(), "paper-rebuilt", "index.css");
+    const keptBytes = await fsp.readFile(kept);
+    expect(layerMentions(keptBytes.toString())).toEqual(["ui-theme"]);
+    // A new Web App build whose sheet names one more layer first, under a new content-named file.
+    const rebuilt = `@layer reset{*{box-sizing:border-box}}${APP_SHEET}`;
+    await fsp.writeFile(path.join(webDist, "assets", "index-x2.css"), rebuilt);
+    await fsp.writeFile(path.join(webDist, "index.html"), APP_PAGE.replace("index-x1", "index-x2"));
+    try {
+      const list = (await (await member.get("/api/themes")).json()) as ThemePacksResponse;
+      const after = list.themes.find((pack) => pack.id === "paper-rebuilt")!;
+      expect(after.v).not.toBe(before.v);
+      expect(after.href).toBe(`/api/themes/paper-rebuilt/files/index.css?v=${after.v}`);
+      const pack = await (await member.get(after.href)).text();
+      expect(layerMentions(pack, rebuilt)).toEqual(layerMentions(rebuilt));
+      expect(layerMentions(rebuilt)[0]).toBe("reset");
+      expect(await fsp.readFile(kept)).toEqual(keptBytes);
+    } finally {
+      await fsp.writeFile(path.join(webDist, "index.html"), APP_PAGE);
+    }
+    const restored = (await (await member.get("/api/themes")).json()) as ThemePacksResponse;
+    expect(restored.themes.find((pack) => pack.id === "paper-rebuilt")?.v).toBe(before.v);
   });
 
   it("refuses an installed id unless replace=1, which serves it at a new version and keeps one upload", async () => {

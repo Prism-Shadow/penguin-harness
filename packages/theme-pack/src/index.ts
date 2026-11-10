@@ -35,7 +35,7 @@ export {
   type ThemeContract,
   type ValidatedThemePack,
 } from "./pack.js";
-export { layerOrder, layerStatement } from "./layers.js";
+export { layerOrder, layerStatement, servedVersion } from "./layers.js";
 export {
   BASE_PACK_ID,
   FONTS_MAP_FILE,

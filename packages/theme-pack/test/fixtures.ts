@@ -41,8 +41,6 @@ export const CONTRACT: ThemeContract = {
   ]),
   // The clean baseline's rules are the UI package's; the server's suite runs them on imports.
   cleanliness: null,
-  // The order a compiled app sheet names its layers in: Tailwind's, then the theme's four.
-  layers: APP_LAYERS,
 };
 
 const text = (value: string) => new TextEncoder().encode(value);

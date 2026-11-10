@@ -9,18 +9,12 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { builtinExportFiles, validateThemePack } from "@prismshadow/penguin-theme-pack";
-import { UI_LAYERS } from "../src/testing";
 import { THEME_API, TOKEN_NAMES } from "../src/tokens";
 import { builtinPackIds, builtinThemesDir, packFolderFiles } from "../src/vite-plugin";
 
 // The built-in packs predate the clean baseline's rules: deslop.test.ts holds each to the hits it
 // has today, which only shrink, where an import is held to none.
-const contract = {
-  api: THEME_API,
-  tokens: new Set<string>(TOKEN_NAMES),
-  cleanliness: null,
-  layers: UI_LAYERS,
-};
+const contract = { api: THEME_API, tokens: new Set<string>(TOKEN_NAMES), cleanliness: null };
 
 describe("the built-in packs, exported", () => {
   it.each(builtinPackIds())("%s passes the validator an import goes through", async (id) => {

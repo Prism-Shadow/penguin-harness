@@ -6,9 +6,10 @@
  * - Given an accepted pack, the served stylesheet carries the tokens, recipes and section skins in
  *   `ui-theme`, the accent presets in `ui-accent` and the faces outside any layer; every url()
  *   naming a pack file points at the pack's files route at its version, and inline images stay.
- * - Given the app sheet's layer order, the served stylesheet states it first: loaded before the
- *   app's sheet, as after a reload, it leaves the order the app sheet alone sets, which it would
- *   not without the statement.
+ * - Given the app sheet's layer order, the kept stylesheet holds none of it (it is the build's,
+ *   and the server puts it in front as it serves): alone, loaded before the app's sheet as after a
+ *   reload, it would move the app's layers; behind the app's statement it leaves the order the app
+ *   sheet alone sets. The served version moves with that order and only with it.
  * - Given the same pack with one value changed, it is served at another version.
  * - Given a pack breaking one rule, it is refused whole, naming the file, the line and why — one
  *   scenario per reason: a remote url(), @import, a prefix test of an input's value, !important, a
@@ -24,7 +25,13 @@
  * - Given stylesheets adding up past 512 KiB, the pack is refused as too large.
  */
 import { describe, expect, it } from "vitest";
-import { ThemePackError, layerOrder, validateThemePack } from "../src/index.js";
+import {
+  ThemePackError,
+  layerOrder,
+  layerStatement,
+  servedVersion,
+  validateThemePack,
+} from "../src/index.js";
 import {
   APP_LAYERS,
   APP_SHEET,
@@ -69,8 +76,8 @@ describe("validateThemePack", () => {
     const pack = await validateThemePack(doodlePack(), CONTRACT);
     const css = pack.indexCss;
     expect(pack.v).toMatch(/^[0-9a-f]{8}$/);
-    // After the layer order (the next scenario), the faces come first, outside any layer.
-    expect(css.startsWith(`@layer ${APP_LAYERS.join(",")};@font-face{`)).toBe(true);
+    // The faces first, outside any layer; the build's layer order is the server's to put in front.
+    expect(css.startsWith("@font-face{")).toBe(true);
     expect(css).toContain(`url(/api/themes/sketch/files/fonts/hand.woff2?v=${pack.v})`);
     expect(css).toContain(`url(/api/themes/sketch/files/art/empty.svg?v=${pack.v})`);
     expect(css).toContain("url(data:image/png;base64,");
@@ -85,16 +92,20 @@ describe("validateThemePack", () => {
     expect(pack.served).toEqual(["index.css", "art/empty.svg", "fonts/hand.woff2"]);
   });
 
-  it("serves a stylesheet that, loaded before the app's own, leaves the app's layer order", async () => {
+  it("keeps a stylesheet the app sheet's layer statement, put in front, lets load first unharmed", async () => {
     // The order the compiled app sheet sets, a comment that names a layer not counting.
     expect(layerOrder(APP_SHEET)).toEqual(APP_LAYERS);
     const pack = await validateThemePack(doodlePack(), CONTRACT);
-    expect(pack.indexCss.startsWith(`@layer ${APP_LAYERS.join(",")};`)).toBe(true);
-    // After a reload the pre-paint script links the pack's sheet first.
-    expect(layerOrder(pack.indexCss + APP_SHEET)).toEqual(APP_LAYERS);
-    // Without the statement, the pack's layers would open first and sit under Tailwind's.
-    const unordered = await validateThemePack(doodlePack(), { ...CONTRACT, layers: [] });
-    expect(layerOrder(unordered.indexCss + APP_SHEET)).not.toEqual(APP_LAYERS);
+    // After a reload the pre-paint script links the pack's sheet first: alone, it would open its
+    // layers ahead of the app's, under Tailwind's; behind the app's statement it leaves the order.
+    expect(layerOrder(pack.indexCss + APP_SHEET)).not.toEqual(APP_LAYERS);
+    const served = layerStatement(layerOrder(APP_SHEET)) + pack.indexCss;
+    expect(layerOrder(served + APP_SHEET)).toEqual(APP_LAYERS);
+    // The address moves with the order a build puts in front, and only with it.
+    expect(servedVersion(pack.v, APP_LAYERS)).toBe(servedVersion(pack.v, [...APP_LAYERS]));
+    expect(servedVersion(pack.v, ["reset", ...APP_LAYERS])).not.toBe(
+      servedVersion(pack.v, APP_LAYERS),
+    );
   });
 
   it("serves a pack with one value changed at another version", async () => {
