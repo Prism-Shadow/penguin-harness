@@ -1,8 +1,13 @@
 /**
- * The app window (src/components/shell/app-shell/), the folded rail (rail/) and the phone's top
- * bar (mobile-top-bar/): the shell's slots are the ones its theme recipes select on, its column
- * folds under the theme's layout motion, and every icon-only entry carries its name and a styled
- * hint rather than a native title.
+ * The app window (src/components/shell/app-shell/), the folded rail (rail/), the phone's top
+ * bar (mobile-top-bar/) and the desktop window's band controls (window-band/): the shell's slots
+ * are the ones its theme recipes select on, its column folds under the theme's layout motion, and
+ * every icon-only entry carries its name and a styled hint rather than a native title.
+ *
+ * - Given a band, the window lays it across its top before the columns, as a strip that drags the
+ *   window and holds the caller's controls; without one there is no band slot at all.
+ * - Given the window maximized, the middle window button shows the restore drawing; otherwise the
+ *   maximize one.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -10,6 +15,7 @@ import { ICONS } from "../src/components/icons/icons";
 import type { NavRowLinkProps } from "../src/components/navigation/nav-list/nav-list";
 import { NAV_FILL } from "../src/components/navigation/nav-list/nav-list";
 import { AppShell } from "../src/components/shell/app-shell/app-shell";
+import { WindowControls } from "../src/components/shell/window-band/window-band";
 import { MobileTopBar } from "../src/components/shell/mobile-top-bar/mobile-top-bar";
 import {
   Rail,
@@ -48,6 +54,36 @@ describe("AppShell", () => {
   it("mounts its overlays beside the columns, in no slot", () => {
     const html = shell({ overlays: text("Dialog") });
     expect(html).toMatch(/<span>Page<\/span><\/div><span>Dialog<\/span><\/div>$/);
+  });
+
+  it("lays a given band across its top, before the columns, as a strip that drags the window", () => {
+    const html = shell({ band: text("Controls") });
+    expect(html).toContain('data-window-band=""');
+    expect(html).toMatch(
+      /<div data-slot="band" data-window-drag="true"[^>]*><span>Controls<\/span><\/div><aside data-slot="nav"/,
+    );
+  });
+});
+
+describe("WindowControls", () => {
+  const controls = (maximized: boolean) =>
+    renderStatic(
+      createElement(WindowControls, {
+        maximized,
+        labels: { minimize: "Minimize", maximize: "Maximize", restore: "Restore", close: "Close" },
+        onMinimize: () => {},
+        onToggleMaximize: () => {},
+        onClose: () => {},
+      }),
+    );
+
+  it("draws the middle button as what it will do: maximize, or restore once maximized", () => {
+    const restored = controls(false);
+    expect(restored).toContain(`d="${ICONS.square}"`);
+    expect(restored).not.toContain(`d="${ICONS.squareStack}"`);
+    const maximized = controls(true);
+    expect(maximized).toContain(`d="${ICONS.squareStack}"`);
+    expect(maximized).not.toContain(`d="${ICONS.square}"`);
   });
 });
 

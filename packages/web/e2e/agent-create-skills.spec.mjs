@@ -104,10 +104,15 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
     "web-design",
   ]);
 
-  // The Skills tab shows the same two.
-  await page.goto(`${BASE}/agents/seeded_agent?tab=skills`);
-  await expect(page.getByText("penguin-sdk", { exact: true })).toBeVisible();
-  await expect(page.getByText("web-design", { exact: true })).toBeVisible();
+  // The Plugins tab lists them under the plugins they came from: each plugin's row folds its
+  // parts away, so every row is opened first.
+  await page.goto(`${BASE}/agents/seeded_agent?tab=plugins`);
+  const folded = page.locator('[data-slot="head"] > button[aria-expanded="false"]');
+  await expect(folded.first()).toBeVisible();
+  while ((await folded.count()) > 0) await folded.first().click();
+  // A Skill's row, not the plugin's title above it.
+  await expect(page.locator("li").getByText("penguin-sdk", { exact: true })).toBeVisible();
+  await expect(page.locator("li").getByText("web-design", { exact: true })).toBeVisible();
 
   // —— Creating without picking anything leaves a plain Agent ——
   await page.goto(`${BASE}/agents`);

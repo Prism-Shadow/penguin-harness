@@ -593,3 +593,101 @@ html.dark .fig-svg .fig-terminal {
   fill: var(--site-gray-900);
   stroke: var(--site-gray-600);
 }
+
+/* ---------- Side-by-side repository directory trees in blog prose ---------- */
+.post-tree-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin: 1.25rem 0;
+}
+@media (min-width: 640px) {
+  .post-tree-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.25rem;
+  }
+}
+.post-tree-card {
+  min-width: 0;
+}
+.post-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.375rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--site-gray-200);
+}
+html.dark .post-tree-head {
+  border-color: var(--site-gray-800);
+}
+.post-tree-repo {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--site-gray-900);
+}
+html.dark .post-tree-repo {
+  color: var(--site-gray-100);
+}
+.post-tree-tag {
+  font-size: 12px;
+  color: var(--site-gray-500);
+}
+html.dark .post-tree-tag {
+  color: var(--site-gray-400);
+}
+.post-tree-body {
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+.post-tree-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+.post-tree-path {
+  white-space: pre;
+  color: var(--site-gray-700);
+}
+html.dark .post-tree-path {
+  color: var(--site-gray-300);
+}
+.post-tree-branch {
+  color: var(--site-gray-400);
+  user-select: none;
+}
+html.dark .post-tree-branch {
+  color: var(--site-gray-600);
+}
+.post-tree-dir {
+  font-weight: 600;
+  color: var(--site-gray-900);
+}
+html.dark .post-tree-dir {
+  color: var(--site-gray-100);
+}
+.post-tree-note {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 12px;
+  color: var(--site-gray-500);
+}
+html.dark .post-tree-note {
+  color: var(--site-gray-400);
+}
+.post-tree-harm {
+  color: #dc2626;
+  font-weight: 500;
+}
+html.dark .post-tree-harm {
+  color: #f87171;
+}

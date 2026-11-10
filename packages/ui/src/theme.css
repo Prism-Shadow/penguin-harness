@@ -11,8 +11,9 @@
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
  * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
- * with, which icon set a `ui-glyph` shows until a theme says, and (animations.css) the entrance
- * and exit classes the components name. Token VALUES live only in
+ * with, which icon set a `ui-glyph` shows until a theme says, (animations.css) the entrance
+ * and exit classes the components name, and (window-band.css) the desktop window's title band
+ * and the inset card it frames the main column as. Token VALUES live only in
  * `themes/*.css`, and so do the user's accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
  * `ACCENT_PRESETS`).
  *
@@ -27,6 +28,7 @@
 
 @import "./layers.css";
 @import "./wallpaper.css";
+@import "./window-band.css";
 @import "./cursors.css";
 @import "./animations.css";
 

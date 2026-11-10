@@ -28,6 +28,8 @@
  * modal           a dialog, a drawer, a sheet, the lightbox and the command palette with their scrim
  * popover         a portaled menu, select, picker or popover — above a dialog it was opened from
  * toast           the toasts and progress cards
+ * window-controls the desktop window's own buttons in its title band, over every dialog so the
+ *                 window can always be minimised, maximised and closed
  * tooltip         the hover hint, over everything it can describe
  * drag-preview    what follows the pointer through a drag (a dock's drop targets, a ticket card)
  *
@@ -48,8 +50,9 @@
   --layer-modal: 90;
   --layer-popover: 100;
   --layer-toast: 110;
-  --layer-tooltip: 120;
-  --layer-drag-preview: 130;
+  --layer-window-controls: 120;
+  --layer-tooltip: 130;
+  --layer-drag-preview: 140;
 }
 
 /* `z-<layer>` utilities, each reading its custom property directly (`inline`). */
@@ -66,6 +69,7 @@
   --z-index-modal: var(--layer-modal);
   --z-index-popover: var(--layer-popover);
   --z-index-toast: var(--layer-toast);
+  --z-index-window-controls: var(--layer-window-controls);
   --z-index-tooltip: var(--layer-tooltip);
   --z-index-drag-preview: var(--layer-drag-preview);
 }

@@ -477,7 +477,7 @@ export function FindBar() {
       data-presence="enter"
       data-side="top"
       onKeyDown={onPanelKeyDown}
-      className="fixed right-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-menu flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+      className="fixed right-3 top-[calc(var(--window-band-height,0px)+0.75rem)] z-menu flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
     >
       {/* The control row is the shared one the Markdown reader's find opens too; Enter and F3
           step (Shift backward) as a browser's find bar does. */}

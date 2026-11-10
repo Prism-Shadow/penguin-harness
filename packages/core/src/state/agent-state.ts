@@ -299,8 +299,8 @@ export async function provisionProjectAgents(opts?: {
  * the current library version.
  *
  * Exact semantics: only the identity fields of the existing file are preserved — `name`,
- * `description` and the Agent State `version` (an invalid or missing version normalizes
- * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `description`, `author` and the Agent State `version` (an invalid or missing version
+ * normalizes to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
  * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
  * outside the default schema are dropped, and YAML comments are not
@@ -329,6 +329,8 @@ export async function resetSystemConfigToDefaults(
   const next: SystemConfig = {
     ...(typeof prev.name === "string" ? { name: prev.name } : {}),
     ...(typeof prev.description === "string" ? { description: prev.description } : {}),
+    // Kept as written, an unknown value included: who made the Agent is not a default.
+    ...(prev.author !== undefined ? { author: prev.author } : {}),
     ...defaultSystemConfig(),
     version: agentStateVersion(prev),
   };
@@ -852,6 +854,35 @@ export async function uninstallMcpServer(
   list.items.splice(index, 1);
   await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
   return true;
+}
+
+/**
+ * Removes every `tools.mcpServers` entry whose `plugin` is `plugin`, in one write, and answers
+ * their names in file order; nothing is written when there are none. An entry without that
+ * provenance stays, whatever its name: the user added it. The rest of the file, comments
+ * included, is kept.
+ */
+export async function uninstallPluginMcpServers(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: string,
+): Promise<string[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const file = systemConfigPath(root, projectId, agentId);
+  const doc = parseDocument(await fs.readFile(file, "utf8"));
+  const list = doc.getIn(["tools", "mcpServers"]);
+  if (!isSeq(list)) return [];
+  const kept = list.items.filter((item) => !isMap(item) || item.get("plugin") !== plugin);
+  if (kept.length === list.items.length) return [];
+  const removed = list.items
+    .filter((item) => !kept.includes(item))
+    .map((item) => (isMap(item) ? item.get("name") : undefined))
+    .filter((name): name is string => typeof name === "string");
+  list.items = kept;
+  await atomicWriteFile(file, doc.toString(), { followSymlinks: true });
+  return removed;
 }
 
 /** One `tools.mcpServers` entry of an Agent, with what stands between it and a connection. */

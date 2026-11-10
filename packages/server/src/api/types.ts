@@ -1354,10 +1354,19 @@ export interface PluginUpdateRef {
   version: string;
 }
 
+/**
+ * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
+ * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
+ * hire (`company`). A config without the field, or with any other value, reads as `user`.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
 export interface AgentSummary {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent, as its config reads (absent there = `user`); the Agents page groups by it. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the larger mtime of system_config.yaml / AGENTS.md (unset if stat fails). */
   updatedAt?: string;
@@ -1440,6 +1449,12 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Who is creating the Agent; omitted = `user`. The Web App's dialog sends `user`, the CLI
+   * sends `agent` when it runs inside a Session. Written into the new Agent's config. (An
+   * imported Agent keeps the `author` its package carries: the import moves an Agent.)
+   */
+  author?: AgentAuthor;
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
@@ -1572,6 +1587,8 @@ export interface AgentHooksConfigDto {
 export interface AgentConfigDto {
   name?: string;
   description?: string;
+  /** The effective author: the stored value, `user` when the field is missing or unknown. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
   /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
@@ -1641,6 +1658,7 @@ export interface AgentConfigUpdateRequest {
   config?: {
     name?: string;
     description?: string;
+    author?: AgentAuthor;
     systemPrompt?: string;
     maxTurns?: number;
     model?: AgentModelConfigDto;
@@ -3905,7 +3923,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  /**
+   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
+   * version was restored — or switched on or off, by its own switch or the Agent's.
+   */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
@@ -5219,6 +5240,28 @@ export interface AgentPluginsInstallResponse {
 }
 
 /**
+ * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
+ * the server, in one request (owner only). Removed in order: the Workbenches whose install
+ * receipt names the plugin, its `tools.mcpServers` entries (`plugin` field), its hook package
+ * (`agent_state/hooks/<name>/`), and every Skill whose name the library plugin contributes (none
+ * when the plugin has left the library). A part that fails is reported in `failed` and the rest
+ * are still removed; nothing is rolled back. Nothing to remove is 404 `plugin_not_installed`.
+ */
+export interface PluginUninstallResponse {
+  removed: {
+    skills: string[];
+    hooks: string[];
+    mcpServers: string[];
+    workbenches: string[];
+  };
+  failed?: Array<{
+    kind: "skill" | "hook" | "mcpServer" | "workbench";
+    name: string;
+    error: string;
+  }>;
+}
+
+/**
  * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
  * identity, target and what keeps it from connecting — never a header, env or oauth value.
  */
@@ -5296,6 +5339,30 @@ export interface WorkbenchArchiveInstallRequest {
 /** 201 of the workbench archive import: the workbench as its load left it (`error` set when the files do not load). */
 export interface WorkbenchArchiveInstallResponse {
   workbench: WorkbenchInfo;
+}
+
+/**
+ * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
+ * included (each says so in `enabled`).
+ */
+export interface WorkbenchesResponse {
+  workbenches: WorkbenchInfo[];
+  /**
+   * The Agent-wide switch: false while `agent_state/workbenches/.disabled` exists, and then no
+   * workbench of the Agent runs, whatever its own switch says. Absent from a server that
+   * predates the switches.
+   */
+  enabled?: boolean;
+}
+
+/**
+ * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
+ * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
+ * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
+ * once; turning it on loads it.
+ */
+export interface WorkbenchEnabledRequest {
+  enabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -39,6 +39,9 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The desktop window's title band: back and forward through the pages visited. */
+    back: "后退",
+    forward: "前进",
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
@@ -55,6 +58,14 @@ export const zh = {
       finance: "财务",
       handbook: "手册",
     },
+  },
+
+  /** The desktop window's own buttons, which the page draws at the title band's right end. */
+  window: {
+    minimize: "最小化",
+    maximize: "最大化",
+    restore: "向下还原",
+    close: "关闭",
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
@@ -1172,9 +1183,17 @@ export const zh = {
   workbenches: {
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
-    empty: "这个 Agent 还没有工作台。",
-    agentTabDesc: "管理这个 Agent 的工作台，可打开应用、重新加载、查看历史版本或移除。",
     open: "打开工作台",
+    /** The Agent-wide switch on the Plugins tab, and what it does. */
+    enableAll: "启用工作台",
+    enableAllHint:
+      "关闭后，这个 Agent 的所有工作台都会停用：对话页和应用中心不再显示它们，页面也打不开。每个工作台的开关、数据和历史版本都会保留，重新打开即恢复原样。",
+    /** One workbench's own switch (its accessible name). */
+    enableOne: (name: string) => `启用 ${name}`,
+    /** Why a workbench's switch is greyed: the Agent-wide one is off. */
+    offByAll: "「启用工作台」已关闭，先打开它",
+    /** The full-page route of a switched-off workbench. */
+    offPage: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",
 
@@ -1756,6 +1775,25 @@ export const zh = {
     listTitle: "Agents",
     searchPlaceholder: "搜索 Agent：id / 名称 / 描述",
     searchEmpty: "没有匹配的 Agent",
+    /** The list's grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Agent 分组方式",
+    groupBy: { author: "按作者分组", none: "不分组" },
+    /** The section titles of the grouping by author, in the order the list shows them. */
+    authorGroups: {
+      user: "用户创建",
+      agent: "智能体创建",
+      company: "公司模式创建",
+    } satisfies Record<AgentAuthor, string>,
+    /** A group header's count. */
+    agentCount: (n: number): string => `${n} 个 Agent`,
+    /** The Overview tab's author select: its label, its options and what the "?" beside it says. */
+    authorLabel: "作者",
+    authors: { user: "用户", agent: "智能体", company: "公司模式" } satisfies Record<
+      AgentAuthor,
+      string
+    >,
+    authorInfo:
+      "这个 Agent 是怎么来的：用户手动创建、智能体在对话中创建，或在公司模式中创建。智能体列表可以按它分组。",
     create: "创建 Agent",
     createTitle: "创建 Agent",
     id: "Agent id",
@@ -1840,7 +1878,7 @@ export const zh = {
     aiCreateTail: [
       "请使用 agent-initialization 技能，在当前 Project 中按上面的描述新建一个智能体：",
       "- 上面给了 agent id 就用它，否则取一个简短的语义 id（小写字母开头，可含数字、下划线或连字符）；目标目录已存在时停下来告诉我，不要覆盖。",
-      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，把角色与行为规则写进它的 agent_state/AGENTS.md。",
+      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，并把 author 设为 agent（由智能体创建），把角色与行为规则写进它的 agent_state/AGENTS.md。",
       "- 只从插件库（default_agent 已安装的技能目录）复制它真正需要的技能，不要多装。",
       "- 不要改动其他智能体；完成后按技能要求做校验。",
       "最后告诉我：新智能体的 id、安装了哪些技能，以及怎样开始和它对话（Agents 页该智能体卡片上的「新建对话」）。",
@@ -1862,9 +1900,7 @@ export const zh = {
     tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
-    tabSkills: "技能",
-    tabWorkbenches: "工作台",
-    tabHooks: "钩子",
+    tabPlugins: "插件",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     tabApi: "API",
@@ -2063,6 +2099,10 @@ export const zh = {
     importAgent: "导入 Agent",
     exportTitle: (name: string): string => `导出 Agent：${name}`,
     exportInclude: "包含",
+    /** The parts an export can include that have no tab of their own (they share the Plugins tab). */
+    exportSkills: "技能",
+    exportHooks: "钩子",
+    exportWorkbenches: "工作台",
     exportWorkbenchData: "含其数据",
     exportSchedulesHint: "导入后会按计划运行",
     exportTraces: "对话",
@@ -2115,7 +2155,7 @@ export const zh = {
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
-      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称、描述与作者。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
     /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
     kernelTitle: "内核",
@@ -2130,7 +2170,7 @@ export const zh = {
     kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
-      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、作者、版本号与 MCP Server 不受影响。确认继续？",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
         ? `内核已更新至 ${version}，${advanced} 个设置页跟进新默认`
@@ -3294,13 +3334,68 @@ export const zh = {
       "插件可能带有 MCP 服务器：stdio 服务器是 Agent 会话开始时在本服务器上运行的命令，远程服务器是本服务器会去连接的地址。",
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the Agent's plugins and the parts each brought, the Agent's own parts last. */
+  agentPlugins: {
+    tabDesc:
+      "这个 Agent 装了哪些插件，以及每个插件带来的技能、钩子、MCP 服务器和工作台。卸载插件会一次删掉它的全部部件。你自己创建或导入的部件列在最后。",
+    /** Appended to the description for a member. */
+    readOnlyHint: "开关、技能提示词和卸载插件只有 Project 所有者可以操作。",
+    importAction: "导入",
+    importMenu: "导入什么",
+    importSkill: "技能",
+    importHook: "钩子包",
+    importWorkbench: "工作台",
+    importChatOrZip: "上传 zip，或在对话中让 Agent 导入",
+    importZip: "上传 zip",
+    browseLibrary: "浏览插件库",
+    installedTitle: "已装插件",
+    empty: "这个 Agent 还没有装插件。点「浏览插件库」挑一个装上。",
+    ownTitle: "不属于插件",
+    /** What a plugin brought to this Agent, beside its name: "3 个技能、钩子、1 个工作台". */
+    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
+      [
+        skills > 0 ? `${skills} 个技能` : "",
+        hooks ? "钩子" : "",
+        mcp > 0 ? `${mcp} 个 MCP 服务器` : "",
+        workbenches > 0 ? `${workbenches} 个工作台` : "",
+      ]
+        .filter((part) => part !== "")
+        .join("、"),
+    /** A plugin's status on this Agent, and what it means on hover. */
+    status: {
+      installed: "已安装",
+      update: "可更新",
+      incomplete: "不完整",
+      "not-in-library": "不在插件库",
+    },
+    statusHint: {
+      installed: "这个插件的部件都在。",
+      update: "插件库里有更新的版本。点「更新」换成新版本。",
+      incomplete: "这个插件少了一些部件。点「更新」把它们装回来。",
+      "not-in-library": "管理员已把这个插件从插件库中删除，所以无法更新。",
+    },
+    /** The parts the uninstall confirmation lists, one per line. */
+    partSkill: (name: string) => `技能：${name}`,
+    partHook: (name: string) => `钩子包：${name}`,
+    partMcp: (name: string) => `MCP 服务器：${name}`,
+    partWorkbench: (name: string) => `工作台：${name}`,
+    uninstallBody: (plugin: string, agent: string) =>
+      `将从 ${agent} 删除 ${plugin} 的以下部件，本地改动也会一起删除：`,
+    uninstallWorkbenchData:
+      "工作台的数据和历史版本会一起删除。只想暂时不用的话，关掉它的开关即可。",
+    /** A part the server could not remove, and why; the rest were removed. */
+    failedPart: (name: string, error: string) => `${name}（${error}）`,
+    uninstallPartly: (plugin: string, failed: string) =>
+      `${plugin} 已卸载，但这些部件没能删除：${failed}`,
+    updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /** An MCP server row: what keeps it from connecting, and where it is edited. */
+    mcpNeedsSetup: "待设置",
+    mcpNeedsSignIn: "需登录",
+    mcpEdit: "去「工具」编辑",
+  },
+
+  /** An Agent's hook packages on its Plugins tab (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
-    agentTabDesc:
-      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
-    agentTabEmpty: "尚未安装任何钩子包",
-    /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "启用钩子的开关仅 Project owner 可用。",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
     exportHook: "打包导出",
@@ -3384,16 +3479,13 @@ export const zh = {
     skillCount: (n: number): string => `${n} 个技能`,
     /** The plugin library's per-Agent update button, and the confirm buttons of every update dialog. */
     updateAction: "更新",
-    /** Settings Skills tab: toast after uninstalling one skill. */
+    /** Toast after uninstalling one skill from an Agent. */
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
-    /** Agent settings "Skills" tab (installed list + import modal). */
-    agentTabDesc:
-      "该 Agent 已安装的技能（agent_state/skills/，文件即事实来源）：元数据注入系统提示词，正文由模型按需读取；卸载会删除整个技能目录。",
-    agentTabEmpty: "尚未安装任何技能",
+    /** An Agent's Skills on its Plugins tab (rows + import modal). */
     exportSkill: "打包导出",
     importSkill: "导入技能",
     importChatTitle: "推荐：让 Agent 在对话中安装",
@@ -6629,6 +6721,8 @@ Benchmark：
       machine_no_answer: "机器没有回应。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      plugin_not_installed: "这个 Agent 上已经没有这个插件的任何部件。",
+      workbench_disabled: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
       machine_answered: "机器给出的应答无法使用，请重试。",
       trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",
