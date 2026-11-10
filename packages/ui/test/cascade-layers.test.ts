@@ -149,22 +149,26 @@ describe("the theme layers", () => {
   it("are named in the order the imports put them — the walk is exercised on the trap it guards", () => {
     // A foundation sheet imported ahead of the statement opens ui-theme first, and the statement
     // can no longer put ui-base under it.
+    // Keyed by resolved path, so the walk finds them on any platform's path syntax.
+    const at = (file: string) => resolve("/x", file);
     const files: Record<string, string> = {
-      "/x/entry.css": '@import "tailwindcss";\n@import "./theme.css";\n@import "./pack/index.css";',
-      "/x/theme.css": '@import "./early.css";\n@layer ui-base, ui-theme, ui-accent, ui-font;',
-      "/x/early.css": "@layer ui-theme { .a { color: red } }",
-      "/x/pack/index.css": '@import "./tokens.css" layer(ui-base);',
-      "/x/pack/tokens.css": ":root { --ui-canvas: #fff; }",
+      [at("entry.css")]:
+        '@import "tailwindcss";\n@import "./theme.css";\n@import "./pack/index.css";',
+      [at("theme.css")]: '@import "./early.css";\n@layer ui-base, ui-theme, ui-accent, ui-font;',
+      [at("early.css")]: "@layer ui-theme { .a { color: red } }",
+      [at("pack/index.css")]: '@import "./tokens.css" layer(ui-base);',
+      [at("pack/tokens.css")]: ":root { --ui-canvas: #fff; }",
     };
     const read = (path: string) => files[path] ?? "";
-    expect(ui(layerOrderThrough("/x/entry.css", read))).toEqual([
+    expect(ui(layerOrderThrough(at("entry.css"), read))).toEqual([
       "ui-theme",
       "ui-base",
       "ui-accent",
       "ui-font",
     ]);
-    files["/x/theme.css"] = '@layer ui-base, ui-theme, ui-accent, ui-font;\n@import "./early.css";';
-    expect(ui(layerOrderThrough("/x/entry.css", read))).toEqual([...UI_LAYERS]);
+    files[at("theme.css")] =
+      '@layer ui-base, ui-theme, ui-accent, ui-font;\n@import "./early.css";';
+    expect(ui(layerOrderThrough(at("entry.css"), read))).toEqual([...UI_LAYERS]);
   });
 
   for (const [name, entry] of Object.entries(ENTRIES)) {
