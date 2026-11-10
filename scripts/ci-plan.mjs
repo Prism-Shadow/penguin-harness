@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lockfileImporters } from "./ci-lockfile.mjs";
 
 const prefix = "@prismshadow/penguin-";
 /**
@@ -14,6 +15,18 @@ const prefix = "@prismshadow/penguin-";
  */
 const WINDOWS_SERVER_SHARDS = 3;
 const isCatalogReadme = (file) => /^(?:plugins\/)?README(?:\.zh)?\.md$/.test(file);
+/**
+ * Root files no package builds or tests read, each run by one CI job: a change to one selects
+ * that job (the plan's flag, or null for the style job, which runs in every plan) rather than the
+ * whole workspace. Every consumer is in the comment; a file that gains another one leaves here.
+ */
+const CI_ONLY = new Map([
+  // style runs both in every run: `node --test scripts/test/ci-plan.test.mjs …` in ci.yml.
+  ["scripts/test/ci-plan.test.mjs", null],
+  ["scripts/test/ci-gate.test.mjs", null],
+  // The npm job's steps: npm packaging walks `stamp` and `test-smoke`; release.yml runs the rest.
+  ["scripts/release-npm.sh", "packaging"],
+]);
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const command = (names, task) =>
   `pnpm ${names.map((name) => `--filter ${quote(name)}`).join(" ")} ${task}`;
@@ -46,31 +59,66 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     }
   }
   const seeds = new Set();
+  /** The packages a lockfile change reached: their resolved dependencies are not what they were. */
+  const relocked = new Set();
   const add = (name) => {
     if (byName.has(name)) seeds.add(name);
+  };
+  /**
+   * The packages whose tests read the on-disk plugins, including ones no package imports: the
+   * server's suite reads the shipped library (its package is the library's host), core's runs the
+   * plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them, and the
+   * A2UI grammar's suite reads the a2ui Skill and its bundled checker.
+   */
+  const addPluginReaders = () => {
+    for (const name of ["core", "server", "docs", "landing"]) add(`${prefix}${name}`);
+    add("@prismshadow/a2ui");
+  };
+  /** The file's text at a revision, or null where it does not exist. */
+  const show = (rev, file) => {
+    try {
+      return run("git", ["show", `${rev}:${file}`]);
+    } catch {
+      return null;
+    }
   };
   for (const file of files) {
     const owner = projects.find((project) => file.startsWith(`${project.dir}/`));
     if (owner) add(owner.name);
-    else if (/^(changelog\/|\.agents\/|\.github\/[^/]+\.md$|CHANGELOG(?:\.zh)?\.md$)/.test(file)) {
+    else if (
+      /^(changelog\/|rfcs\/|\.agents\/|\.github\/[^/]+\.md$|CHANGELOG(?:\.zh)?\.md$)/.test(file)
+    ) {
+      // Documentation (the RFCs are checked by their own workflow, check-rfcs.yml).
       continue;
     } else if (isCatalogReadme(file)) {
       // The catalog READMEs are documentation: nothing a package builds or tests reads them.
       continue;
+    } else if (CI_ONLY.has(file)) {
+      // Read by one CI job alone, which the plan below selects for it; no package reads it.
+      continue;
+    } else if (file === "pnpm-lock.yaml") {
+      // The packages whose resolved dependencies changed, or the whole workspace when the change
+      // reaches every package (scripts/ci-lockfile.mjs).
+      const lock = lockfileImporters(show(base, file), show("HEAD", file));
+      const owners = (lock.importers ?? []).map((dir) => projects.find((p) => p.dir === dir));
+      if (lock.whole || owners.some((project) => !project)) {
+        full = true;
+        reason = lock.whole ?? "pnpm-lock.yaml names an importer that is not a workspace package";
+      } else {
+        for (const project of owners) {
+          add(project.name);
+          relocked.add(project.name);
+        }
+        // What a plugin resolves is what its scripts run with, wherever they are read from.
+        if (owners.some((project) => project.dir.startsWith("plugins/"))) addPluginReaders();
+      }
     } else {
       // Shared scripts/config/lockfile, deleted packages, and unknown paths fail open
       // to full validation rather than silently omitting their consumers.
       full = true;
       reason = `Shared or unclassified input changed: ${file}`;
     }
-    if (file.startsWith("plugins/")) {
-      // These tests read the on-disk plugins, including ones no package imports: the server's
-      // suite reads the shipped library (its package is the library's host), core's runs the
-      // plugins' own scripts (goal's hooks, the porting Skill's), docs and landing list them,
-      // and the A2UI grammar's suite reads the a2ui Skill and its bundled checker.
-      for (const name of ["core", "server", "docs", "landing"]) add(`${prefix}${name}`);
-      add("@prismshadow/a2ui");
-    }
+    if (file.startsWith("plugins/")) addPluginReaders();
     if (file === "packages/web/index.html") add(`${prefix}ui`);
   }
   const affected = new Set(
@@ -112,6 +160,9 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   // The UI package is read from source by every package that imports it. Its build is the npm
   // package and the Workbench runtime, and only the web's bundle copies the runtime in, so a build
   // that does not bundle the web leaves the UI package out.
+  // The desktop carries the web bundle by a file mapping, but only a packed app reads it: the
+  // desktop's tests and its terminal smoke read its own build, so a shard testing it builds the
+  // desktop and its dependencies, and the runtime job, which packs the app, builds the web too.
   const ui = `${prefix}ui`;
   const selections = new Map();
   const withoutUnusedUi = (filters) => {
@@ -131,7 +182,6 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     const builds = new Set(
       names.map((name) => (name === `${prefix}web` ? `${name}^...` : `${name}...`)),
     );
-    if (names.includes(`${prefix}desktop`)) builds.add(`${prefix}web...`);
     return withoutUnusedUi([...builds]).join(",");
   };
   const typecheckBuild = (names) =>
@@ -173,9 +223,11 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   // The web suite is the longest on Linux (over 300 files, each importing the app graph afresh),
   // so it runs there in two halves; ui and cli ride along, half of their files each. Windows
   // splits its full-run sites the same way: as one job they were the longest job of a full run.
+  // The server suite runs in two halves on Linux too, dealt by weight like the Windows shards: whole,
+  // with coverage on two workers, it was the longest Linux job of a server change (4.5-6 min).
   const linux = [
     shard("core", core),
-    shard("server", server),
+    ...halves("server", server),
     ...(webCli.includes(`${prefix}web`) ? halves("web", webCli) : [shard("web-cli", webCli)]),
     // `gallery`: the component library's browser layout checks run in the job that tests the
     // gallery, beside its unit suite, rather than lengthening browser-smoke.
@@ -203,17 +255,20 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       ...(ordinary.length ? [command(ordinary, testTask(entry.split))] : []),
     ].join(" && ");
   }
-  // macOS keeps its sites in one job: a full run already waits for macOS runners (its four test
-  // shards and a runtime build exceed the account's concurrent macOS jobs), so a sixth job would
-  // queue rather than save time.
+  // macOS runs at most five jobs at once for the whole account, every run in flight included, so a
+  // full run fits in five: the sites in two halves (as one job they were the longest job of a full
+  // run, 7-8 min), and core and the server in one job, core's suite first and then the server's
+  // (pnpm runs them in dependency order, never side by side). A change that is not a full run has
+  // no sites on macOS, and keeps core and the server apart.
   const macos = [
-    shard("core", core),
-    shard("server", server),
+    ...(full && core.length && server.length
+      ? [shard("core-server", [...core, ...server])]
+      : [shard("core", core), shard("server", server)]),
     shard("rest", nativeRest, {
       smoke: nativeAffected.has(`${prefix}desktop`),
       must_run: "sandbox-seatbelt,sandbox-dsh",
     }),
-    shard("sites", sites),
+    ...halves("sites", sites),
   ].filter((s) => s.packages.length);
   const windows = [
     shard("core", core),
@@ -242,6 +297,9 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     plugins: full || files.some((file) => file.startsWith("plugins/") && !isCatalogReadme(file)),
     packaging:
       full ||
+      files.some((file) => CI_ONLY.get(file) === "packaging") ||
+      // The npm path builds and packs with what the lockfile resolves.
+      files.includes("pnpm-lock.yaml") ||
       files.some(
         (file) =>
           /^(packages|plugins)\/[^/]+\/(package\.json|tsup\.config\.[^/]+|vite\.config\.[^/]+)$/.test(
@@ -252,7 +310,11 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
           ),
       ),
     installer: full || has("cli") || files.some((file) => /(^|\/)install\.(sh|ps1)$/.test(file)),
-    runtime: full || files.some((file) => file.startsWith("packages/desktop/")),
+    // The app electron-builder packs is the desktop with the dependencies it resolves.
+    runtime:
+      full ||
+      files.some((file) => file.startsWith("packages/desktop/")) ||
+      relocked.has(`${prefix}desktop`),
     runtime_matrix: {
       include: [
         { os: "ubuntu-latest", platform: "--linux" },
