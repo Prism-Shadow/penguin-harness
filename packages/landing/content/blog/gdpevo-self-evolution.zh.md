@@ -83,41 +83,41 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 打开左侧导航栏的 Models 页面，找到实验所要使用的模型 DeepSeek V4.1 Flash，填入对应的 API Key 并点击 Save 保存。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-model-api-key.webp" width="2280" height="1600" alt="在 Models 页面的 Model settings 弹窗中配置 DeepSeek V4.1 Flash 的 API Key" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-model-api-key.webp" width="2280" height="1600" alt="在 Models 页面的 Model settings 弹窗中配置 DeepSeek V4.1 Flash 的 API Key" />
 
 ### 第二步：新建主控 Agent
 
 进入左侧的 Agents 页面，点击右上角的 Create manually，设置智能体的名称和 ID。接着在下方的插件下拉框中搜索 skill，勾选本次实验使用的 skilladam-rsi-toolkit，也可以同时勾选 skillopt-rsi-toolkit、trace-rsi-toolkit 和 openskill-rsi-toolkit 以便后续对比不同算法，最后点击 Create 完成创建。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中设置智能体名称与 ID 并搜索勾选自进化工具包插件" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-create-agent.webp" width="2160" height="1760" alt="在 Create agent 弹窗中设置智能体名称与 ID 并搜索勾选自进化工具包插件" />
 
 ### 第三步：进入对话并选择模型
 
 创建完成后，在 Agents 列表中找到刚刚创建的智能体卡片，点击右侧的 New chat 进入它的对话界面。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-agent-new-chat.webp" width="2127" height="898" alt="在 Agents 列表中点击新建智能体卡片右侧的 New chat 按钮" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-agent-new-chat.webp" width="2127" height="898" alt="在 Agents 列表中点击新建智能体卡片右侧的 New chat 按钮" />
 
 进入对话界面后，在输入框下方将模型选为 DeepSeek V4.1 Flash，并将思考强度调为 max。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-configure-model.webp" width="1676" height="830" alt="在对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-configure-model.webp" width="1676" height="830" alt="在对话界面选定 DeepSeek V4.1 Flash 模型与 max 思考强度" />
 
 ### 第四步：挂载工具包并启动
 
 在聊天输入框中输入 / 呼出命令菜单并选择 skilladam-rsi-toolkit 将其挂载到当前对话，随后在指令中说明 RSI 工具包名称、目标 Benchmark、训练迭代轮数、测试重复轮数、模型、思考强度与 Docker 并发上限。其中训练迭代轮数与测试重复轮数均可按需指定，例如训练迭代设为 2 轮，测试重复默认设为 3 轮，也可改为 5 轮或 6 轮。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-slash-skill.webp" width="1636" height="1035" alt="在聊天输入框中输入斜杠呼出命令菜单并选择 skilladam-rsi-toolkit" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-slash-skill.webp" width="1636" height="1035" alt="在聊天输入框中输入斜杠呼出命令菜单并选择 skilladam-rsi-toolkit" />
 
 如果只评测单个子 Benchmark，例如 service-ticket-resolution，在聊天框输入：
 
 > 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 的 service-ticket-resolution Benchmark 上开展自进化实验，训练迭代 2 轮，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-launch-single.webp" width="1615" height="495" alt="挂载 skilladam-rsi-toolkit 并输入单个子 Benchmark 的自进化实验启动指令" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-single.webp" width="1615" height="495" alt="挂载 skilladam-rsi-toolkit 并输入单个子 Benchmark 的自进化实验启动指令" />
 
 如果直接评测 GDPEVO Essential 系列的全部六个子 Benchmark，在聊天框输入：
 
 > 使用 skilladam-rsi-toolkit，在 GDPEVO Essential 系列的全部六个 Benchmark 上开展自进化实验，训练迭代 2 轮，测试重复 3 轮。模型使用 DeepSeek V4.1 Flash，思考强度 max，Docker 并发上限 4。
 
-<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-screenshots/gdpevo-launch-all.webp" width="1615" height="458" alt="挂载 skilladam-rsi-toolkit 并输入 GDPEVO Essential 全系列六个子 Benchmark 的启动指令" />
+<img class="my-4 rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/gdpevo-launch-all.webp" width="1615" height="458" alt="挂载 skilladam-rsi-toolkit 并输入 GDPEVO Essential 全系列六个子 Benchmark 的启动指令" />
 
 评测其他自进化算法时，只需将挂载的 RSI 工具包和指令中的 skilladam-rsi-toolkit 替换为 skillopt-rsi-toolkit、trace-rsi-toolkit 或 openskill-rsi-toolkit。
 
