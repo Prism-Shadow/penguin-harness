@@ -15,15 +15,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isMap, isSeq, parseDocument, parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { YAMLSeq } from "yaml";
-import {
-  libraryPluginPackage,
-  loadPreinstalledPlugins,
-  parseSkillFrontmatter,
-  type HookCommand,
-  type HookManifest,
-  type LibraryPlugin,
-  type SkillMetadata,
-} from "../plugins/index.js";
+import { libraryPluginPackage, loadPreinstalledPlugins } from "../plugin/library-reader.js";
+import type { HookManifest, LibraryPlugin } from "../plugin/library-reader.js";
+import type { HookCommand } from "../plugin/library.js";
+import { parseSkillFrontmatter } from "../plugin/skill-frontmatter.js";
+import type { SkillMetadata } from "../plugin/skill-frontmatter.js";
 import type { MCPServerConfig, ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
 import {
   PLUGIN_ROOT_REF,

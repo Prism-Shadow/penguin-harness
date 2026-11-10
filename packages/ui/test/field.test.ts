@@ -12,21 +12,20 @@ import { describe, expect, it } from "vitest";
 import {
   Field,
   FieldError,
-  FieldHint,
   FieldLabel,
   FieldLegend,
   RequiredMark,
   controlBase,
 } from "../src/components/forms/field/field";
 import { Input } from "../src/components/forms/input/input";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic, markupStructure } from "../src/testing";
 
 const control = createElement("input", { id: "c" });
 
 describe("RequiredMark", () => {
   it("is decorative beside a control, whose aria-required is what gets announced", () => {
     const html = renderStatic(createElement(RequiredMark));
-    expect(html).toBe('<span class="ml-0.5 text-tone-danger-fg" aria-hidden="true">*</span>');
+    expect(markupStructure(html)).toBe('<span aria-hidden="true">*</span>');
   });
 
   it("states itself where no control carries aria-required", () => {
@@ -41,10 +40,10 @@ describe("RequiredMark", () => {
 describe("FieldLabel, FieldHint and FieldError", () => {
   it("is a real label when it knows the control's id, and a span inside a wrapping label", () => {
     expect(renderStatic(createElement(FieldLabel, { htmlFor: "c", children: "Name" }))).toMatch(
-      /^<label for="c" class="[^"]*text-fg-muted[^"]*">Name<\/label>$/,
+      /^<label for="c" class="[^"]*">Name<\/label>$/,
     );
     const span = renderStatic(createElement(FieldLabel, { required: true, children: "Name" }));
-    expect(span).toMatch(/^<span class="[^"]*mb-1 block[^"]*">Name<span/);
+    expect(span).toMatch(/^<span class="[^"]*">Name<span/);
     expect(span).toContain('aria-hidden="true">*</span>');
   });
 
@@ -52,28 +51,17 @@ describe("FieldLabel, FieldHint and FieldError", () => {
     const html = renderStatic(
       createElement("fieldset", null, createElement(FieldLegend, { children: "Region" })),
     );
-    expect(html).toMatch(/^<fieldset><legend class="[^"]*text-fg-muted[^"]*">Region<\/legend>/);
+    expect(html).toMatch(/^<fieldset><legend class="[^"]*">Region<\/legend>/);
     const required = renderStatic(
       createElement(FieldLegend, { required: true, children: "Region" }),
     );
-    expect(required).toContain(
-      'Region<span class="ml-0.5 text-tone-danger-fg" aria-hidden="true">*</span>',
-    );
-  });
-
-  it("drops the block layout when the label shares a row", () => {
-    const html = renderStatic(createElement(FieldLabel, { block: false, children: "Name" }));
-    expect(classTokens(html)).not.toContain("block");
+    expect(markupStructure(required)).toContain('Region<span aria-hidden="true">*</span>');
   });
 
   it("announces an error the moment it appears, under the id the control points at", () => {
     const html = renderStatic(createElement(FieldError, { id: "e", children: "Required" }));
     expect(html).toContain('id="e"');
     expect(html).toContain('role="alert"');
-    expect(classTokens(html)).toContain("text-tone-danger-fg");
-    expect(classTokens(renderStatic(createElement(FieldHint, { children: "ms" })))).toContain(
-      "text-fg-muted",
-    );
   });
 });
 

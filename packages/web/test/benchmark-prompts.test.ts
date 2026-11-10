@@ -9,27 +9,26 @@
  *   full matrix without offering an optimization; the Optimize tail carries every input the
  *   agent-optimization Skill requires; a note or focus text goes before the tail, a blank one
  *   is left out.
- * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill and the
- *   three inputs every toolkit takes, none of the default loop's Skills or knobs, and pins the
- *   evaluations to the baseline's provider and model only when it is given both.
- * - The Evaluate tail, one for every Benchmark (Harbor or not), takes the model under test from
- *   the evaluator's own Session, since an agent stores none: in both dictionaries it names the
- *   Environment lines that carry the provider and the model id in the system prompt core renders.
+ * - An RSI toolkit's tail (any method but the default) names the toolkit's own Skill, the tested
+ *   agent, the Benchmark, the test-set repetitions and the tested model, and stays general: none
+ *   of the default loop's Skills or knobs, no runs per case, no smoke budget and no scoreboard
+ *   rule, which are each toolkit's own Skill's to state.
+ * - Every tail that tests the agent names the tested model the dialog picked, in both
+ *   dictionaries, and the Evaluate tail no longer sends the evaluator to its own Environment for
+ *   it: the conversation's model is not the model under test.
  * - The evaluation dialog's Ask AI question carries the facts on screen, every case and the
  *   Session of every run, and names no Skill to run; the case dialog's names both material
- *   paths and the latest runs; each box opens on the default question, which leads its examples.
+ *   paths and the latest runs.
  * - Case ids pad the position to three digits, a Benchmark lives at the Project level, and a
  *   runs count is 1..MAX_RUNS.
  */
 import { describe, expect, it } from "vitest";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
-import { S, zh } from "../src/lib/strings";
+import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
   MAX_RUNS,
-  askCaseExamples,
   askCaseTail,
-  askEvaluationExamples,
   askEvaluationTail,
   benchmarkCreateTail,
   benchmarkPath,
@@ -67,6 +66,8 @@ describe("evaluateTail / buildEvaluatePrompt", () => {
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
     runs: 2,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
   };
 
   it("carries every input the agent-evaluation Skill requires", () => {
@@ -104,10 +105,12 @@ describe("evaluateTail / buildEvaluatePrompt", () => {
   };
 
   for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: tests on the evaluator's own model, read from the Environment lines core renders`, () => {
+    it(`${locale}: tests on the picked model, not on the evaluator's own`, () => {
       const tail = dict.benchmark.evaluateTail(params);
+      expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+      expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
       for (const placeholder of ["{{PROVIDER}}", "{{MODEL_ID}}"])
-        expect(tail).toContain(`\`${environmentLabel(placeholder)}\``);
+        expect(tail).not.toContain(`\`${environmentLabel(placeholder)}\``);
     });
   }
 
@@ -124,6 +127,8 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
     runs: 2,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
     roundLimit: 3,
     targetScore: 85,
   };
@@ -134,6 +139,8 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     expect(tail).toContain("`report-writer`");
     expect(tail).toContain("`report-writing-v1`");
     expect(tail).toMatch(/runs[：:] ?`2`/);
+    expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+    expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
     expect(tail).toMatch(/desired_score[：:] ?`>=85`/);
     expect(tail).toMatch(/candidate_round_limit[：:] ?`3`/);
     expect(tail).toContain("scoreboard.yaml");
@@ -152,45 +159,40 @@ describe("optimizeTail / buildOptimizePrompt", () => {
 
 describe("rsiOptimizeTail (a toolkit other than the default)", () => {
   const params = {
-    skill: "opro-rsi-toolkit",
+    skill: "skillopt-rsi-toolkit",
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
-    runs: 2,
+    testRepetitions: 3,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
   };
-  // The toolkit measures through its own evaluation reference and runs its paper's budget: the
-  // default loop's Skills and knobs would send it down the other procedure.
-  const DEFAULT_LOOP = [
+  // The toolkit's own Skill says how it trains, tests, budgets and records: the default loop's
+  // Skills and knobs, or a protocol of the tail's own, would contradict it.
+  const NOT_THE_TAILS = [
     "agent-evaluation",
     "agent-optimization",
     "run_subagent",
     "desired_score",
     "candidate_round_limit",
+    "scoreboard.yaml",
   ];
 
   for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: names the toolkit's Skill and the three inputs every toolkit takes`, () => {
+    it(`${locale}: names the Skill, the tested agent, the Benchmark, the repetitions and the tested model`, () => {
       const tail = dict.benchmark.rsiOptimizeTail(params);
-      expect(tail).toContain("`opro-rsi-toolkit`");
+      expect(tail).toContain("`skillopt-rsi-toolkit`");
       expect(tail).toContain("`report-writer`");
-      expect(tail).toContain("`report-writing-v1`");
       expect(tail).toContain("`benchmarks/report-writing-v1/`");
-      expect(tail).toMatch(/runs[：:] ?`2`/);
-      expect(tail).toContain("scoreboard.yaml");
-      for (const marker of DEFAULT_LOOP) expect(tail).not.toContain(marker);
+      expect(tail).toMatch(/test_repetitions[：:] ?`3`/);
+      expect(tail).toMatch(/provider[：:] ?`deepseek`/);
+      expect(tail).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
     });
 
-    it(`${locale}: pins the baseline's provider and model only when given both`, () => {
-      const pinned = dict.benchmark.rsiOptimizeTail({
-        ...params,
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-      });
-      expect(pinned).toMatch(/provider[：:] ?`deepseek`/);
-      expect(pinned).toMatch(/model_id[：:] ?`deepseek-v4-pro`/);
-      expect(dict.benchmark.rsiOptimizeTail(params)).not.toMatch(/provider|model_id/);
-      // Half a pair is no pair: the toolkit stops on one rather than guessing the other half.
-      const half = dict.benchmark.rsiOptimizeTail({ ...params, provider: "deepseek" });
-      expect(half).not.toMatch(/provider|model_id/);
+    it(`${locale}: leaves the protocol to the toolkit's Skill`, () => {
+      const tail = dict.benchmark.rsiOptimizeTail(params);
+      expect(tail).not.toMatch(/^- runs[：:]/m);
+      expect(tail).not.toMatch(/smoke|冒烟/);
+      for (const marker of NOT_THE_TAILS) expect(tail).not.toContain(marker);
     });
   }
 });
@@ -274,12 +276,6 @@ describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {
     expect(tail).not.toContain("agent-optimization");
     expect(tail).not.toContain("run_subagent");
   });
-
-  it("leads the examples with the default question the box opens on", () => {
-    // The leading example IS that question, so a reader who tried another example can bring
-    // it back with one click.
-    expect(askEvaluationExamples()[0]?.prompt).toBe(S.benchmark.askEvaluationDefault);
-  });
 });
 
 describe("askCaseTail (the case dialog's Ask AI question)", () => {
@@ -314,10 +310,6 @@ describe("askCaseTail (the case dialog's Ask AI question)", () => {
     expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/rubric/README.md`");
     expect(tail).not.toContain("ses-b1");
     expect(tail).not.toContain("64.7");
-  });
-
-  it("leads the examples with the default question the box opens on", () => {
-    expect(askCaseExamples()[0]?.prompt).toBe(S.benchmark.askCaseDefault);
   });
 });
 

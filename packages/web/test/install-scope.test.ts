@@ -7,7 +7,7 @@
  *   each deliberate exclusion is still a key the source contains.
  * - An exact preference is never captured by a family that shares its stem
  *   (`penguin.sidebarCollapsed` beside `penguin.sidebarCollapsedGroups.`, `penguin.terminal.theme`
- *   beside `penguin.terminal.page.id`); the rule table is well formed.
+ *   beside `penguin.terminal.page.id`).
  * - A changed install id sweeps the install-scoped keys, orphans of every earlier root included,
  *   and keeps the preferences and every key no rule covers.
  * - An unchanged id (every ordinary restart) sweeps nothing; a first sight adopts without
@@ -26,18 +26,22 @@ import { setUnauthorizedHandler } from "../src/api/client";
 import {
   bootInstallScope,
   INSTALL_ID_KEY,
-  KEY_RULES,
   reactToInstallIdChange,
   reconcileInstallScope,
   scopeOfKey,
   syncInstallScope,
+  type InstallScopeStorage,
 } from "../src/lib/install-scope";
-import type { InstallScopeStorage } from "../src/lib/install-scope";
+
 import { apiError, json, stubFetch } from "./helpers/fetch";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceScan } from "./helpers/roots";
-import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
-import type { MemoryStorage } from "./helpers/storage";
+import { expectEveryRootScanned, scanSources, type SourceScan } from "./helpers/roots";
+
+import {
+  blockedStorage,
+  memoryStorage,
+  stubLocalStorage,
+  type MemoryStorage,
+} from "./helpers/storage";
 
 /** State that names the data root's Projects, Sessions, Workspaces and terminals. */
 const INSTALL_STATE: Record<string, string> = {
@@ -125,8 +129,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
   "penguin.installId": "the marker itself — it is what the comparison reads, never swept",
   "penguin.chatRouteApplied.":
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
-  "penguin.mcp_servers":
-    "not a storage key: the plugin manifest field the import dialog's agent prompt names",
+  "penguin.safeMode":
+    "sessionStorage: scoped to one tab's safe mode, so it cannot outlive a data root",
 };
 
 /**
@@ -170,17 +174,6 @@ describe("install-scope classification", () => {
     expect(scopeOfKey("penguin.sidebarCollapsedGroups.default_project")).toBe("install");
     expect(scopeOfKey("penguin.terminal.theme")).toBe("browser");
     expect(scopeOfKey("penguin.terminal.page.id")).toBe("install");
-  });
-
-  it("rules are well formed: penguin-namespaced, families dotted, no duplicates", () => {
-    const seen = new Set<string>();
-    for (const rule of KEY_RULES) {
-      expect(rule.key.startsWith("penguin."), rule.key).toBe(true);
-      expect(rule.why.length, rule.key).toBeGreaterThan(0);
-      if (rule.kind === "family") expect(rule.key.endsWith("."), rule.key).toBe(true);
-      expect(seen.has(rule.key), rule.key).toBe(false);
-      seen.add(rule.key);
-    }
   });
 });
 

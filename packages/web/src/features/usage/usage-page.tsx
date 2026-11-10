@@ -42,9 +42,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
@@ -62,7 +60,7 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */

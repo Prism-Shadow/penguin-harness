@@ -39,7 +39,7 @@ export const en: Strings = {
     advanced: "Advanced",
     design: "How It Works",
     reference: "Reference",
-  } as Record<string, string>,
+  },
 
   doc: {
     toc: "On this page",

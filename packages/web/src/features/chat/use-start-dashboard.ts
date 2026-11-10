@@ -8,7 +8,7 @@ import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { useFreshRead } from "../../lib/use-fresh-read";
 
-export { useRsiToolkits } from "../benchmark/use-rsi-toolkits";
+export { useRsiToolkits } from "../../lib/use-rsi-toolkits";
 
 /** The last Benchmark list read per Project in this page load. */
 const benchmarkLists = new Map<string, BenchmarkSummary[]>();

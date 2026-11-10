@@ -32,7 +32,10 @@ import type {
   DesktopTrayStatus,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
+  HostCommand,
+  HostCommandOffer,
 } from "../api/types.js";
+import { LEGACY_HOST_COMMANDS } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
@@ -156,6 +159,47 @@ export class DesktopService {
   requestPrivacySettings(pane: DesktopPrivacyPane): boolean {
     if (!this.privacySettingsSender) return false;
     this.privacySettingsSender(pane);
+    return true;
+  }
+
+  // --- host commands offered to the page -------------------------------------
+  //
+  // The host's list, as the host wrote it: ids this server does not interpret, each with the
+  // words to show. Judging them against a list of its own would put this server between a
+  // shell and a page that both understand a command it does not.
+  private offers: HostCommandOffer[] = [];
+  private commandSender: ((command: string) => void) | null = null;
+
+  /** Everything the host offers, in the host's words. */
+  getCommandOffers(): HostCommandOffer[] {
+    return this.offers;
+  }
+
+  /**
+   * The offered ids the legacy page knows — the pinned `LEGACY_HOST_COMMANDS`, not this
+   * build's own vocabulary: a page older than `offers` looks every id up in a table of its
+   * own and throws on a miss, so a new id rides in `offers` alone until that page is gone.
+   */
+  getCommands(): HostCommand[] {
+    return this.offers
+      .map((offer) => offer.command)
+      .filter((command): command is HostCommand =>
+        (LEGACY_HOST_COMMANDS as readonly string[]).includes(command),
+      );
+  }
+
+  setCommands(offers: HostCommandOffer[]): void {
+    this.offers = offers;
+  }
+
+  onCommand(sender: (command: string) => void): void {
+    this.commandSender = sender;
+  }
+
+  /** True once handed to the host. Whether the id is one to run is the caller's check: it is the host's word (`getCommandOffers`), not this service's. */
+  requestCommand(command: string): boolean {
+    if (!this.commandSender) return false;
+    this.commandSender(command);
     return true;
   }
 }

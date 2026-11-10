@@ -578,7 +578,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `DELETE …/mcp-servers/:name` 移除指定的条目，无论它是怎么装上的，返回 204；Agent 没有这个名称时返回 404 `unknown_mcp_server`。任何成员都可以调用，就像任何成员都能通过 `PUT …/config` 改写整个列表一样。
 - `GET …/hooks` 返回每个已安装钩子包的名称、描述、版本、钩子点和插件图标。
 - `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
-- `GET /api/plugins` 按分类返回插件库的全部插件：插件的 npm `version`、npm 包名 `package` 与 `source`（随构建发布的为 `builtin`，管理员安装到服务端的为 `installed`）、各 Skill 的元数据（每个 Skill 带自己的日期 `version`）、钩子点，以及钩子包的 `hookVersion`。插件库会列出服务端插件前缀中所有在 `package.json` 旁带 `skills/` 或 `hooks/`、或在 `penguin.mcp_servers` 中声明了 MCP 服务器的包；与构建自带插件同名时以构建自带的为准。插件还带上包里声明的展示字段——`title`、`titleZh`、`author`、`license`、`homepage`、`repository`——包里有才带，`description` 可以为空。`mcpServers` 列出插件声明的 MCP 服务器，没有时为 `[]`：`{name, transport, target, setup, oauth, signIn}`，其中 `setup` 是服务器需要的 Vault 键（`{key, label?, labelZh?, help?}`），`oauth` 表示它是否用 OAuth 登录，`signIn` 表示它因没有自己的 `Authorization` 请求头而需要登录；不包含任何请求头或 `env` 的值。
+- `GET /api/plugins` 按分类返回插件库的全部插件：插件的 npm `version`、npm 包名 `package` 与 `source`（随构建发布的为 `builtin`，管理员安装到服务端的为 `installed`）、各 Skill 的元数据（每个 Skill 带自己的日期 `version`）、钩子点，以及钩子包的 `hookVersion`。插件库会列出服务端插件前缀中构建产物 `ifaces.json` 向插件库贡献了 Skill、钩子包、MCP 服务器或 Workbench 的所有包；仍以已退场的 `penguin` 块书写、没有 `ifaces.json` 的包不列出，服务端日志记一行；与构建自带插件同名时以构建自带的为准。插件还带上包里声明的展示字段——`title`、`titleZh`、`author`、`license`、`homepage`、`repository`——包里有才带，`description` 可以为空。`mcpServers` 列出插件声明的 MCP 服务器，没有时为 `[]`：`{name, transport, target, setup, oauth, signIn}`，其中 `setup` 是服务器需要的 Vault 键（`{key, label?, labelZh?, help?}`），`oauth` 表示它是否用 OAuth 登录，`signIn` 表示它因没有自己的 `Authorization` 请求头而需要登录；不包含任何请求头或 `env` 的值。
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情弹窗的文件浏览器用的就是这个路由。
 - `GET /api/plugins/:plugin/readme` 返回插件库插件包根目录的 `README.md`，供详情弹窗使用。插件不带 README 时返回 404 `readme_not_found`，插件库里没有的名字返回 404 `unknown_plugin`。
 - `GET /api/plugins/:plugin/archive` 把插件库插件的包目录打成 zip 下载：不含 `node_modules/`，放在顶层目录 `<name>/` 下，文件名为 `<name>-v<version>.zip`，另一台服务端可以原样导入。超出导入上限的包返回 413 `plugin_too_large`，插件库里没有的名字返回 404 `unknown_plugin`。
@@ -636,12 +636,12 @@ interface AgentApiKeyInfo {
 | PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
 
-- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `package.json` 的 `penguin` 块与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
+- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `ifaces.json` 中声明的卡片与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
 - 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json`。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。列表中没有的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。`GET …/archive` 与插件库的导出路由一样，把本机上一个已列出的包打成 zip 下载；包不在本机上时返回 `404` `plugin_not_here`。
 - `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?, unsatisfied?}`：`active` 表示进程已加载并运行这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。运行中的构建缺少这个包所依赖的槽位、模块或接口，因而无法完整运行它时，`unsatisfied` 为 `{disabled, reason}`：`disabled` 为 true 表示整个包被停用，此时 `active` 为 false；为 false 表示包仍在运行，只是这份构建没有槽位可接的那部分贡献没有生效。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败、也不属于 `unsatisfied` 时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
 - 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据、包名后的 `npm:` 或 `file:` 别名，以及指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`），都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill、钩子或 MCP 服务器的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。
-- `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，内容须是插件——带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中的 MCP 服务器且插件库能原样读取，或带服务端模块的 `ifaces.json`。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
+- `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，并带 `ifaces.json`：包须已构建（没有它的 zip 会被拒绝，并提示以 `penguin-gen-ifaces` 构建），其表须向插件库贡献插件库能原样读取的 Skill、钩子包、MCP 服务器或 Workbench，或列出服务端模块。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
 - 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 
@@ -694,12 +694,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ## 组织（公司模式）
 
-以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写。没有任何路由会删除组织：`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
+以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写；只有 Project 的所有者可以删除组织。暂停（`status: paused`）让组织停下来，同时保留它的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/` | 列出组织 / 创建组织 |
-| GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
+| GET / PATCH / DELETE | `/:orgId` | 组织概览 / 修改组织设置 / 删除组织（仅所有者） |
 | GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
 | POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | 修改员工 / 将员工移出组织 |
@@ -737,6 +737,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
 - `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
+- `DELETE /:orgId` 仅限所有者（成员得到 403）。它把组织目录移入 Project 的回收目录 `organizations/.trash/<orgId>-<时间>/`，移回原处即可恢复。带 `?deleteAgents=1&agentIds=a,b` 时（`agentIds` 是调用方确认框列出的待删 Agent），随后把列出的每名员工的 Agent（包括 CEO 的）永久删除，与 `DELETE /api/projects/:projectId/agents/:agentId` 删除单个 Agent 完全一样。带 `deleteAgents=1` 却没有 `agentIds` 时返回 400，什么都不删除。返回 200 `{orgId, deletedAgents: [{agentId, deletion}], keptAgents: [{agentId, reason}], failedAgents: [{agentId, code, message}]}`。没有删除的员工都保留并注明 `reason`：`builtin`；本 Project 另一个组织也雇用它时为 `employed_elsewhere`；另一个组织的 `org_chart.yaml` 无法读取期间，所有员工都为 `employment_unknown`，这些组织列在响应的 `unreadableCharts` 中（`GET /agents` 在列表旁也带同一字段）；不在 `agentIds` 里时为 `not_confirmed`，例如确认框显示之后才招募的员工。`agentIds` 中不是本组织员工的 id 会被忽略。删除被拒绝的 Agent（文件夹被其他程序占用，或期间又被招募）连同错误列在 `failedAgents` 中，其余 Agent 照常删除。不带这个参数时三个列表都为空，员工全部保留为 Agent。
 
 组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
 
@@ -895,7 +896,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`，`live=run` 则要求它的运行接续形式；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /history-lines` 是本服务端读取已连接机器上 Session 所用的接口（经 API 套接字调用；每个服务端都为自己的 Session 应答）。它恰好接受 `tailLimit=n`、`before=<游标>&limit=n`、`full=1`、`body=<ref>`、`fill=only[&file=<键>]` 之一，另可带 `budget=<字节>`（窗口的字节预算，按图片引用、正文折叠后的形态计，窗口展开的子 Agent 会话记录一并计入）、`fill=1`（交付窗口后继续发送该 Session 的其余各行）与 `have=`（base64url 编码的 JSON：每个 Trace 文件的 inode 与设备号（十进制字符串）、创建时间、调用方持有的每一段 `[lo, hi)` 及其首尾的散列，以及只持有一部分的行）。流在读取任何内容之前就开始并发出节拍。随后依次为 `window`（`/messages` 随记录附带的信封、该 Session 及其子 Agent 会话的 Trace 文件、窗口在其上的布局、重记录的折叠形态与各阶段总量；超过一帧时改为若干 `window-part`，各段文本拼接即其 JSON）、`lines` 与 `part`（只发整行，最新的段在前，超过一帧的单行拆成若干片，每片注明所属行的起点）、`ready`、只持有一部分的行的余下部分（只有窗口自身的轻行才在 `ready` 之前发）、重行与补齐部分，最后是 `done`。每个事件至多 32 KiB 文本。inode 相同、且双方都知道创建时间时创建时间也相同，才是调用方复制的那个文件（设备号从不比较，创建时间等于变更时间的视为未知）；不是同一文件，或大小、区段边界、序号、锚点不符时，标为 `reset` 并从头重发；只持有一部分的行若不符，只把该行整行重发。流开始后才发现无法应答的（`body` 的 ref 不指向该 Session 的行）以 `error` 事件结束。早于这条路由的服务端在套接字上答 `421` `not_on_socket`。无权读取该 Session 的管理员（本服务端读取机器所用的身份）在这里与 `trace-body` 上得到 `403` `session_forbidden`，拒绝因此不会被当成删除；其他无权读取的用户与所有 Session 路由一样得到 `404` `session_not_found`。
 - `GET /trace-body?ref=` 以流的形式取回历史窗口折叠掉的一个值（超过 16 KiB 的工具输出、图片、工具调用参数中的长字符串或思考文本，由 `elided` 条目的 `ref` 指明），事件为 `progress`、`part`（`{windowId, offset, text, last}`）与 `done`。ref 本身不授权任何读取：只有其 Agent 与 Session 都是合法 id，且其 Session 就是该 Session 或其历史展开所及的子 Agent 会话时才应答，行从该 Session 自身索引定位到的文件中读取；其余一律 404 `trace_body_not_found`。
@@ -926,6 +927,29 @@ interface MessagesResponse {
 
 `cursor` 和 `fragments` 在 Trace 读取开始之前一并原子捕获。先连接事件流的客户端（见[推荐的客户端模式](#推荐的客户端模式)）在历史之后应用它们：游标的 epoch 与已缓冲 SSE 事件的 epoch 一致时，丢弃所有 seq 不高于游标的缓冲 partial 事件，因为 `fragments` 已经包含那些内容。接着客户端把 `fragments` 送入正常的 reducer，再重放缓冲中剩下的部分。游标从不丢弃缓冲中的完整消息；那些交给常规的重叠去重处理。Session 空闲时不返回 `live`。
 
+#### 运行接续：`live=run`
+
+要把一次进行中的运行按流式的原样接着显示下去的客户端（如 CLI 的 `chat`），在完整读取或尾窗读取上加 `live=run`。此时不论 Session 是否在运行都附带 `live`，并多出两个与 `cursor` 在同一 tick 内捕获的字段：
+
+```ts
+interface RunFormLive {
+  cursor: string;
+  fragments: AmspRecord[];
+  // The Session's status at the cursor.
+  status: "idle" | "running" | "compacting";
+  // The current run's records (one Task with the Tasks a stop hook or a goal loop continues
+  // it with, or one compaction outside a Task) in publish order: each streamed fragment's
+  // deltas folded into its `partial_* start`, its `stop` and complete message as published.
+  // Empty while idle.
+  records: AmspRecord[];
+  // How many of the run's oldest records the server no longer holds (it keeps 8 MiB per run);
+  // absent when none.
+  omitted?: number;
+}
+```
+
+`messages` 随之截至当前运行的首条记录之前，这次运行只在 `records` 里出现一次；从运行中途开始的窗口不含它的任何记录。运行进行中不再追加暂存输入，因为运行的记录已经带着它。读取期间才开始的运行同样在其首条记录处截断，它的记录从事件流上到达。客户端先订阅、后读取，依次渲染 `messages`、`records` 与事件流上的事件：同一 epoch 下 seq 不高于游标的记录事件与 `task_state` 一律跳过，因为 `messages`、`records` 与 `status` 已经包含它们的内容；其余服务端事件（含审批请求）照常处理，无需重叠去重。`before` 页忽略 `live=run`；早于运行接续的服务端在响应中不带 `status`。
+
 ### 分叉
 
 `tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
@@ -936,7 +960,7 @@ interface MessagesResponse {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -951,8 +975,9 @@ interface MessagesResponse {
 | POST | `/compact` | 开始上下文压缩：202 |
 | POST | `/switch-model` | 在本 Session 内切换模型：202；从未运行过的 Session 返回 200 与更新后的 Session |
 
-- `POST /tasks` 响应 `{sessionId, queued?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
+- `POST /tasks` 响应 `{sessionId, queued?, steered?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
+- `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。

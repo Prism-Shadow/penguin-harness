@@ -52,8 +52,7 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AiCreateModal, pickDefaultAgent } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
 import {
   benchmarkDescription,
   latestWithDelta,
@@ -320,7 +319,7 @@ export function BenchmarkCard({
             title={S.benchmark.deleteBenchmark}
             aria-label={S.benchmark.deleteBenchmark}
             onClick={onDelete}
-            className={masked ? "relative z-10" : undefined}
+            className={masked ? "relative z-raised" : undefined}
           >
             <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
           </Button>

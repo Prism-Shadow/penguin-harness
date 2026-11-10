@@ -76,7 +76,7 @@ import {
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, AmspRecord } from "@prismshadow/penguin-core";
-import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";

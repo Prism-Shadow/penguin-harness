@@ -59,16 +59,19 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Plugins are the exception to the snapshot rule: in a workspace checkout core's loader reads
-the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
-no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
-skill, a changed SKILL.md, a changed `package.json` — is live in `pnpm dev` and in the test
-suites at once. A plugin's own version is its npm version (`package.json`, bumped by the
-release); the date versions (`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent.
-Any change under `skills/<name>/` must raise that skill's `version` in its SKILL.md
-frontmatter, and any change to the hook scripts or the `penguin.hooks` commands must raise
-`penguin.hooks.version` in `package.json`: those versions are how installed copies learn they are
-behind, and CI fails a pull request that changed a part without raising it
+Plugins are the exception to the snapshot rule: in a workspace checkout the library's loader
+reads the repo's `plugins/<name>/` directories directly, not pnpm's injected copies, so an edit
+to a plugin's files — a changed SKILL.md, a changed hook script — is live in `pnpm dev` and in
+the test suites at once. What a plugin declares (its card, its skills, its hook commands, its
+MCP servers) lives in its `src/index.ts` and reaches the loader through the `ifaces.json` the
+plugin's `build` writes: `pnpm -r build` builds every plugin and `pnpm dev` builds the content
+plugins first, and after changing a declaration you run that plugin's `build` again. A plugin's
+own version is its npm version (`package.json`, bumped by the release); the date versions
+(`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent. Any change under
+`skills/<name>/` must raise that skill's `version` in its SKILL.md frontmatter, and any change
+to the hook scripts or to the commands of the hooks contribution in `src/index.ts` must raise
+that contribution's `version`: those versions are how installed copies learn they are behind,
+and CI fails a pull request that changed a part without raising it
 (`scripts/check-plugin-versions.mjs`).
 
 Dev entry points that touch data default to separate data roots, kept apart from the
@@ -133,6 +136,7 @@ single data directory (`~/.penguin/data`) and a single message format (AMSP reco
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
 | [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP records (their types, guards, builders and markers, which core re-exports), the Agent API's wire types, and a zero-dependency client for Node and browsers |
+| [`packages/a2ui`](../packages/a2ui) | `@prismshadow/a2ui` | The A2UI grammar of a reply's rich blocks (catalog, validation, scoring, text fallback, fill texts), with no dependencies: the Web App's components, the CLI, the messaging bridge and the a2ui Skill's checker share it |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each (`plugins/<name>` is `@penguinharness/<name>`): Agent plugins — skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) — which `packages/core` depends on and loads; and server plugins a Project asks for on the Plugins page (its `[plugins]` table), such as the sandbox backends |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |

@@ -22,8 +22,15 @@
  * `ApiTryView` is the section for one state, with no state of its own; the reducer and the
  * driver behind `ApiTryPanel` live in api-try-log.ts.
  */
-import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+
 import {
   ApprovalButtons,
   Button,

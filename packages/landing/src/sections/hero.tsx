@@ -227,10 +227,10 @@ export function Hero() {
               delay={380}
               listClassName="gap-x-5 gap-y-1.5"
             >
-              {BENCHMARKS.map((benchmark, index) => (
+              {BENCHMARKS.map((benchmark) => (
                 <li key={benchmark.href}>
                   <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
-                    {S.hero.benchmarkKinds[index]}
+                    {S.hero.benchmarkKinds[benchmark.kind]}
                     <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                   </ExternalLink>
                 </li>

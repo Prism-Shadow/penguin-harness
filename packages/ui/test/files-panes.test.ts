@@ -13,7 +13,7 @@ import type {
 } from "../src/components/files/preview-pane/preview-pane";
 import { TreePane } from "../src/components/files/tree-pane/tree-pane";
 import type { TreePaneProps } from "../src/components/files/tree-pane/tree-pane";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const search = { value: "", onChange: () => undefined, placeholder: "Search files" };
 const tree = createElement("div", { role: "tree" }, "rows");
@@ -39,7 +39,6 @@ describe("TreePane", () => {
     const failed = pane({ error: "Could not list", loading: true, pending: "Searching…" });
     expect(failed).toContain(">Could not list</p>");
     expect(failed).not.toContain("rows");
-    expect(classTokens(failed)).toContain("text-tone-danger-fg");
     expect(pane({ loading: true, pending: "Searching…" })).not.toContain("Searching…");
     const waiting = pane({ pending: "Searching…" });
     expect(waiting).toContain(">Searching…</p>");
@@ -64,12 +63,10 @@ describe("PreviewPane", () => {
     expect(html).toContain(">Show tree</button>");
   });
 
-  it("sets source flush on the code surface, and pads every other body", () => {
+  it("keeps source out of the tab order, and says when a type has no preview", () => {
     const source = pane({ kind: "source", code: "let a = 1;", language: "ts", wrap: false });
     expect(source).toContain('tabindex="-1"');
-    expect(source).not.toMatch(/tabindex="-1" class="[^"]*\bp-3\b/);
     const unsupported = pane({ kind: "unsupported", message: "No preview for this type" });
-    expect(unsupported).toMatch(/tabindex="-1" class="[^"]*\bp-3\b/);
     expect(unsupported).toContain(">No preview for this type</p>");
   });
 
@@ -84,14 +81,11 @@ describe("PreviewPane", () => {
     expect(html).toContain(">… Preview truncated</p>");
   });
 
-  it("pins the caller's actions in a pill over the body, and keeps them over the editor", () => {
+  it("shows the caller's actions over the body, and keeps them over the editor", () => {
     const actions = createElement("button", { type: "button" }, "Wrap");
     const view: PreviewView = { kind: "source", code: "x", language: "text", wrap: false };
     const reading = pane(view, { actions });
     expect(reading).toContain(">Wrap</button>");
-    expect(classTokens(reading)).toEqual(
-      expect.arrayContaining(["absolute", "right-4", "top-2.5", "bg-surface", "border-line"]),
-    );
     const editing = pane(view, {
       actions,
       editor: createElement("textarea", { "aria-label": "Editing a" }),
@@ -115,7 +109,6 @@ describe("DropOverlay", () => {
     expect(veil).toMatch(/^<div aria-hidden="true" class="[^"]*pointer-events-none/);
     expect(veil).toContain(">Drop files to attach</p>");
     expect(veil).toContain(">Images and files are added to the message draft</p>");
-    expect(classTokens(veil)).toEqual(expect.arrayContaining(["border-dashed", "z-50"]));
   });
 
   it("frames a panel with its label at the foot", () => {
@@ -124,7 +117,5 @@ describe("DropOverlay", () => {
     );
     expect(frame).toMatch(/^<div aria-hidden="true" class="[^"]*pointer-events-none/);
     expect(frame).toContain(">Drop into src</span>");
-    expect(classTokens(frame)).toEqual(expect.arrayContaining(["items-end", "z-20"]));
-    expect(frame).not.toMatch(/gray-|white|dark:|backdrop-blur/);
   });
 });

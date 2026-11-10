@@ -1,6 +1,6 @@
 /**
- * The Plugins page's quick start for a library plugin: the demo its package.json declares
- * (`penguin.quick_start`), or — for a third-party plugin that declares none — its first skill
+ * The Plugins page's quick start for a library plugin: the demo its card declares
+ * (`quickStart`), or — for a third-party plugin that declares none — its first skill
  * invoked by name; nothing for a plugin with neither. A quick start only ever writes a draft, so
  * the draft cache has to carry goal mode for a demo that is a goal.
  */

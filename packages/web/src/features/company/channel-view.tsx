@@ -49,8 +49,9 @@ import {
   NoticeStrip,
   Skeleton,
   toastSuccess,
+  type ChannelSender,
 } from "@prismshadow/penguin-ui";
-import type { ChannelSender } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -58,13 +59,13 @@ import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useCompany, useCompanyEvents } from "../../state/company";
+import { useCompany, useCompanyEvents } from "./company-state";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { createStreamFollow, stickToBottom } from "../chat";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
@@ -94,8 +95,10 @@ import {
   joinedElsewhere,
   lastMessageId,
   messageCount,
+  type ChannelDay,
+  type StreamItem,
 } from "./channel-stream";
-import type { ChannelDay, StreamItem } from "./channel-stream";
+
 import { parsePrincipal } from "./principals";
 import { toastApiError } from "../../lib/toast-api-error";
 
@@ -686,7 +689,7 @@ export function ChannelView() {
                 type="button"
                 aria-label={S.chat.jumpToLatest}
                 onClick={jumpToLatest}
-                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+                className={`anim-pop absolute bottom-3 left-1/2 z-raised inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
               >
                 {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
                 <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />

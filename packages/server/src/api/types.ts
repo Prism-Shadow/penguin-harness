@@ -500,6 +500,14 @@ export interface BackgroundSettingsDto {
  */
 export const BACKGROUND_IMAGE_MAX_CHARS = 1024 * 1024;
 
+/**
+ * The avatar cap — a user's own and an employee's — in characters of the data URL as it arrives
+ * (131072 characters of base64 hold roughly 96 KiB of image): the same number the Web App
+ * re-encodes against, so the browser and the server cannot disagree about what "too large"
+ * means.
+ */
+export const AVATAR_MAX_CHARS = 131072;
+
 /** GET /api/me/background-image. */
 export interface BackgroundImageResponse {
   /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
@@ -1411,6 +1419,19 @@ export interface Employment {
 
 export interface AgentsResponse {
   agents: AgentSummary[];
+  /**
+   * The Project's organizations whose `org_chart.yaml` is missing or does not parse; absent when
+   * none. Beyond its CEO, whom such an organization employs is unknown, so `employments` may miss
+   * it — and deleting another organization with its Agents keeps them all (`employment_unknown`).
+   */
+  unreadableCharts?: UnreadableChart[];
+}
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
 }
 
 export interface AgentCreateRequest {
@@ -2468,10 +2489,33 @@ export interface SessionPatchRequest {
  * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
  * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
  * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
  */
 export interface MessagesLiveTail {
   cursor: string;
   fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
 }
 
 /**
@@ -2841,6 +2885,15 @@ export interface TaskCreateRequest {
    */
   interrupt?: boolean;
   /**
+   * Steer instead of 409 when a Task is in progress: decided under the Session lock, so one
+   * request suffices whatever the Session is doing. Idle starts the Task; a running Task takes
+   * the input as steering, as POST /steer gives it (the steering mirror, recall and hand-back
+   * apply), and the response carries `steered: true`; a compaction, which has no Task to
+   * steer, or a run already settling, which takes no more steering, queues it as
+   * `queueIfBusy` does (`queued: true`). Exclusive with `interrupt` and `goal` (400).
+   */
+  steerIfBusy?: boolean;
+  /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
    * them) and the Session's installed `goal` hook package drives round after round until the
@@ -2902,8 +2955,10 @@ export interface SessionSwitchModelRequest {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
-  /** True when `queueIfBusy` or `interrupt` enqueued the input instead of starting it (absent/false: the task started). */
+  /** True when `queueIfBusy`, `interrupt` or `steerIfBusy` enqueued the input instead of starting it (absent/false: the task started). */
   queued?: boolean;
+  /** True when `steerIfBusy` gave the input to the running Task as steering (no new Task). */
+  steered?: boolean;
 }
 
 /**
@@ -4777,8 +4832,8 @@ export interface BenchmarkEvaluation {
   provider: string;
   /** Thinking level read from the unchanged Target Agent configuration. */
   thinkingLevel: string;
-  /** Agent State version number under test. */
-  version: number;
+  /** Agent State version under test: a build number, or a version label such as a semver string. */
+  version: number | string;
   /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
   /** Model-written average of known Case costs; null when every Case cost is unknown. */
@@ -5008,14 +5063,14 @@ export interface HookItem {
 }
 
 /**
- * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
- * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * One library plugin as the listing describes it: its package.json's npm fields and its card
+ * contribution, plus what it ships (skill bodies and scripts are never sent).
  * Every field but the identity, the version and the contents is optional: a field the package
  * does not carry is missing here, and the page says so rather than inventing one.
  */
 export interface PluginItem {
   name: string;
-  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  /** Display name (the card's `title`, `titleZh`); absent → the page shows `name`. */
   title?: string;
   titleZh?: string;
   /** English one-liner (package.json `description`); "" when the package carries none. */
@@ -5039,13 +5094,13 @@ export interface PluginItem {
   workbenches?: Array<{ name: string; version: string }>;
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or the card's `icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
-  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
+  /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
-  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
+  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }
 
@@ -5186,6 +5241,26 @@ export interface SkillArchiveInstallRequest {
   overwrite?: boolean;
 }
 
+/**
+ * POST /api/projects/:p/agents/:a/workbenches/archive: import one workbench's source from an
+ * uploaded zip. Layout: package.json at the zip root (its `name` is then the id), or under exactly
+ * one top-level directory (the directory name is then the id); source only — `state.json`, dot
+ * entries and `node_modules/` are refused. An id whose folder has a package.json is 409
+ * `workbench_exists` (`details.workbenchId` names it) unless `overwrite`. GET
+ * …/workbenches/:id/archive is the matching export, which round-trips through this POST.
+ */
+export interface WorkbenchArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace the source of a workbench with that id (its state.json stays) instead of answering 409. */
+  overwrite?: boolean;
+}
+
+/** 201 of the workbench archive import: the workbench as its load left it (`error` set when the files do not load). */
+export interface WorkbenchArchiveInstallResponse {
+  workbench: WorkbenchInfo;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------
@@ -5213,8 +5288,8 @@ export interface PluginIndexEntry {
   shortDescriptionZh?: string;
   /**
    * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own package.json (its `penguin`
-   * block) and icon when the package is on this server, over whatever the index row says.
+   * listing fills these display fields from the package's own card contribution (in its
+   * ifaces.json) and icon when the package is on this server, over whatever the index row says.
    */
   icon?: string;
   authors: string[];
@@ -5475,6 +5550,23 @@ export interface DesktopTrayCommandMessage {
 }
 
 /**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent**. Real session ids always start with `session-`, so there's
+ * no collision; nor with parked draft conversations, whose route ids start with `draft-`.
+ * Shared so the desktop tray's "New Session" opens the same draft route the Web App uses.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/**
+ * The session cookie's name as every non-browser client spells it (a browser's carries the
+ * server's port; auth/middleware.ts): the CLI, a server speaking to a machine it holds, and the
+ * desktop shell that mints its window's session. Shared so they all write the cookie the server
+ * reads.
+ */
+export const SESSION_COOKIE = "penguin_session";
+
+/**
  * The API socket (PRFC-0011): one WebSocket per tab, every frame a call to an existing
  * endpoint. It has its own upgrade route, {@link API_SOCKET_PATH}: the runtime's websocket
  * seam authenticates the cookie and the Origin there and hands the socket to the platform,
@@ -5561,10 +5653,99 @@ export interface DesktopOpenPrivacySettingsMessage {
 }
 
 /**
+ * A native action the host process can run on the page's behalf — what the desktop shell's
+ * application menu used to offer, reached from the command palette instead (the menu bar
+ * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ *
+ * `open-devtools` is the same story one step further: the shell's View menu toggles DevTools
+ * and the shell binds F12 to it, but neither is visible with the menu bar hidden — so
+ * someone reading a console error has to be told a key. Naming it here makes it findable.
+ * It stays a HOST command, run by the shell on its own window: the page is a plain browser
+ * environment with no bridge of its own, and adding one for this was rejected
+ * (packages/desktop/src/main.ts).
+ *
+ * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
+ * writes it. What this list holds is the ids this build has its OWN words for, so the page
+ * can show a better label than the host sent (translated, with search terms). An id absent
+ * here is still offered, still runnable, and shown in the host's words.
+ */
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+export const LEGACY_HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+
+/**
+ * One command the host offers, carrying the words to show for it.
+ *
+ * The words travel WITH the command because the three programs involved ship apart: the
+ * shell reaches users through an installer, the server and the page through a hot push. A
+ * page that could only render commands it already had words for made the offer list pointless
+ * — a host could never offer anything new — and reading words it did not have blanked it.
+ *
+ * `command` is opaque to both server and page: the host decides what it means and the host
+ * runs it. Neither side validates it against a list of its own; the only question either asks
+ * is whether the host offered it.
+ */
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommandOffer[];
+}
+
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
+  commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: string;
+}
+
+/**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+export const UPDATE_REFUSAL_MARKERS: readonly string[] = [
+  "runs from a source checkout", // sourceCheckout
+  "Cannot tell how this penguin was installed", // unknownInstall
+  "could not be identified", // npmUnknownManager
+  "does not run on Windows", // windowsUnsupported
+  "cannot run your package manager for you", // windowsGlobalInstall
+];
+
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
   /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
@@ -6262,6 +6443,35 @@ export interface OrganizationSummary {
 
 export interface OrganizationsResponse {
   organizations: OrganizationSummary[];
+}
+
+/**
+ * DELETE /api/projects/:projectId/organizations/:orgId (200). The organization goes to the
+ * Project's trash either way. With `?deleteAgents=1&agentIds=a,b` — the Agents the caller's
+ * confirmation listed for deletion (`deleteAgents=1` without `agentIds` is a 400) — each of its
+ * employees' Agents (its CEO included) that is listed there is then deleted for good, exactly as
+ * `DELETE …/agents/:agentId` deletes one, unless it is built in, another organization of the
+ * Project still employs it, or another organization's chart cannot be read. Every other
+ * employee is kept with its reason. Without the flag the three lists are empty.
+ */
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
 }
 
 export interface OrgEmployeeItem {

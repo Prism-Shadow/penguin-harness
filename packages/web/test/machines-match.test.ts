@@ -9,8 +9,8 @@ import {
   fuzzyMatch,
   highlightSegments,
   matchMachines,
+  type MachineLike,
 } from "../src/features/machines/machines-match";
-import type { MachineLike } from "../src/features/machines/machines-match";
 
 const machine = (alias: string): MachineLike => ({ id: `ssh:${alias}`, alias });
 

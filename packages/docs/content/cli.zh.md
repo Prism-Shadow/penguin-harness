@@ -96,6 +96,8 @@ penguin chat [options]
 
 使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们；要换模型，在恢复后的对话里使用 `/switch-model`。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
 
+对话会显示其 Session 的每一次运行，不论由谁发起。恢复的 Session 可能仍在运行，例如启动其 Task 的终端已经关闭：对话先显示历史，再显示这次运行已有的内容，并跟随到运行结束，然后才给出提示符。对话停在提示符时，别处（Web App 或另一个终端）发起的运行也照此显示，连同它的输入。显示运行期间，输入即插话，Ctrl-C 中断，运行等待的审批在对话里询问，`/exit` 离开对话而运行继续。Session 压缩期间发出的消息排在压缩之后运行。接续正在进行的运行需要同一版本的服务端；服务端较旧时，对话以暗色一行提示，此后只显示历史和此后的实时输出。
+
 在终端里，REPL 会用 OSC 133 语义提示符序列标记它的提示符，也就是 shell 为终端集成输出的那组序列：`> ` 提示符前后分别是 `A` 和 `B`，提交的 Prompt 开始一轮时是 `C`，该轮结束时是 `D;0`（出错结束时是 `D;1`）。支持这些序列的终端可以在提示符之间跳转、选中某一轮的输出；在自己的终端里运行对话的程序也能据此判断对话已回到提示符。其他终端会忽略它们；只有 stdin 与 stdout 都是终端且 `TERM` 不是 `dumb` 时才会输出。这些标记仅供参考：模型输出未经过滤就写到终端，同样可能含有这些序列。
 
 ### REPL 内命令
@@ -325,7 +327,7 @@ penguin project ls
 在服务端安装和移除插件，这是管理员的操作：CLI 用服务端的本地 API token 发起调用，这个 token 代表管理员，因此 Agent 可以在对话中审阅插件后自行安装。每个命令都支持 `--project-id`（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`）、`--json` 和 `--server`。
 
 - `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如不是插件包目录的路径、`http:` 链接或指向仓库中某个文件夹的链接，服务端会拒绝。只含 Skill、钩子或 MCP Server 的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
-- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。CLI 先用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `penguin.mcp_servers` 中声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。包须已构建：服务端读取的是它的 `ifaces.json`，所以先运行包的构建（`npm install`，然后 `npm run build`，即运行 `penguin-gen-ifaces`）；没有 `ifaces.json` 的目录在发送任何内容之前即被拒绝。CLI 随后用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `src/index.ts` 中以 `mcpServers` 贡献声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
 - `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
 - `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子 / MCP Server 插件。
 

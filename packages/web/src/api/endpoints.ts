@@ -1,9 +1,3 @@
-/**
- * API endpoint wrappers: one function per API.
- * DTO types come from @prismshadow/penguin-server/api (**type import only**, resolved via
- * tsconfig paths to the server contract file types.ts; must not be a value import — server
- * code must not enter the browser bundle).
- */
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -109,6 +103,7 @@ import type {
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
   OrganizationCreateRequest,
+  OrganizationDeleteResponse,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -224,6 +219,8 @@ import type {
   UpdateProfileResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
+  HostCommand,
+  HostCommandsResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -238,6 +235,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchArchiveInstallRequest,
+  WorkbenchArchiveInstallResponse,
   WorkbenchInfo,
   WorkbenchVersion,
   VersionRollbackResponse,
@@ -267,8 +266,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam } from "../lib/session-grouping";
-import type { ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -2365,6 +2363,13 @@ export const restartServer = () =>
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
 
+/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
+export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
+
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). The id is the host's word — this build need not know it. */
+export const runHostCommand = (command: string) =>
+  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
+
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
 
@@ -2411,11 +2416,24 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
- * employees' Agents and its desk and ticket Sessions are left as they are.
+ * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
+ * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
+ * well, as far as they still qualify (not built in, employed nowhere else), and the answer
+ * reports every employee; without it the Agents and their Sessions are left as they are.
  */
-export const deleteOrganization = (projectId: string, orgId: string) =>
-  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+export const deleteOrganization = (
+  projectId: string,
+  orgId: string,
+  opts: { agentIds?: readonly string[] } = {},
+) =>
+  apiFetch<OrganizationDeleteResponse>(
+    `${orgBase(projectId, orgId)}${
+      opts.agentIds === undefined
+        ? ""
+        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
+    }`,
+    { method: "DELETE" },
+  );
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
@@ -2759,6 +2777,29 @@ export const rollbackWorkbench = (
     `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
   );
+/** Imports one workbench's source from an uploaded zip (base64) and loads it; 409 `workbench_exists` on a taken id unless overwrite; 201 returns the workbench as its load left it. */
+export const installWorkbenchArchive = (
+  projectId: string,
+  agentId: string,
+  body: WorkbenchArchiveInstallRequest,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchArchiveInstallResponse>(`${workbenchesBase(projectId, agentId)}/archive`, {
+    method: "POST",
+    body,
+    server: machineId,
+  });
+/** Zip download URL for one workbench's source (server sets Content-Disposition attachment); the export round-trips through installWorkbenchArchive. */
+export const workbenchArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+): string =>
+  apiUrl(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/archive`,
+    machineId,
+  );
 /** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
 export const removeWorkbench = (
   projectId: string,
@@ -2850,7 +2891,7 @@ export const registryPluginArchiveUrl = (name: string): string =>
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
-/** What the storage-clearing route takes (the shell's own clear-data command). */
+/** What the storage-clearing route takes (WebApp's own clear-data command). */
 export type BuiltinBrowserStorage = Extract<
   DesktopBrowserCommand,
   { op: "clear-data" }
@@ -2980,3 +3021,6 @@ export const clearBuiltinBrowserData = (
     body: { storages, ...scope },
     server: null,
   });
+
+/** The existing server contributions route, read by the single frame provider. */
+export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");

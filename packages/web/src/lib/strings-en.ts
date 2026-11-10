@@ -5,7 +5,11 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State).
  */
-import type { PeakWindows } from "../features/models/model-grouping";
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
+import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
+import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -15,13 +19,13 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
-    models: "Models",
-    machines: "Machines",
     plugins: "Plugins",
     usage: "Cost Center",
     traces: "Trajectories",
-    benchmark: "Evaluation Center",
-    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    /** The work-mode switch above the switcher row, and its default option (the other options are the contributed modes' own). */
+    workMode: "Work mode",
+    modeDev: "Development",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the pages use their own titles, PageData.title).
     lastConversation: "Last conversation",
     // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
     userSettings: "User settings",
@@ -34,7 +38,7 @@ export const en: Strings = {
     /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
     pinEntry: "Add to favorites",
     unpinEntry: "Remove from favorites",
-    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
+    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "Overview",
       chart: "Org Chart",
@@ -987,7 +991,7 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
-    } as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -1000,6 +1004,27 @@ export const en: Strings = {
         ? "↑↓ to select · Enter to run"
         : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
+    installCli: "Install 'penguin' command…",
+    checkUpdates: "Check for desktop updates…",
+    checkingUpdates: "Checking for updates…",
+    openDevTools: "Open DevTools",
+    projectOnGitHub: "Project on GitHub",
+  },
+  rescue: {
+    title: "Something broke the page",
+    desc: "A page threw an error while rendering, and the app cannot go on drawing it. Reload, or reload without what the server contributes (pages from plugins and the like); to roll the harness version back, open the harness history.",
+    reload: "Reload",
+    reloadSafe: "Reload without contributions",
+    safeNote:
+      "Safe mode is already on: every server contribution was skipped, so this error comes from the app itself.",
+    paletteHint: (palette: string | null): string =>
+      palette === null
+        ? "The command palette still works."
+        : `Press ${palette} to open the command palette.`,
+    marker: "Safe mode: server contributions are off",
+    leave: "Leave safe mode",
+    enterAction: "Enter safe mode (skip server contributions)",
+    leaveAction: "Leave safe mode (load server contributions)",
   },
   modelPicker: {
     groups: "Model groups",
@@ -1030,7 +1055,7 @@ export const en: Strings = {
     current: "current",
     restore: "Restore",
     restoreTitle: "Restore version",
-    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    /** History holds the versions that loaded, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
       `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
@@ -1048,11 +1073,27 @@ export const en: Strings = {
         ? "Open the command palette to get back to the workbench."
         : `Press ${palette} for the command palette to get back to the workbench.`,
     noSuchPage: "This workbench does not exist or has no page.",
-    removeConfirm: "Delete this workbench and all its recorded versions?",
+    removeConfirm:
+      "Delete this workbench and its data? Its past versions will no longer be listed.",
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    fileCount: (n: number) => `${n} files`,
+    importAction: "Import zip",
+    importTitle: "Import workbench",
+    importUploadDesc:
+      "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Workbench imported",
+    importOverwriteTitle: "Overwrite existing workbench",
+    importOverwriteBody: (name: string): string =>
+      `The workbench "${name}" already exists. Overwriting replaces its source; its data (state.json) stays. Versions that loaded can still be restored from History; local edits that never loaded are lost. Continue?`,
+    /** An import whose files were written but did not load: the load's own error follows. */
+    importLoadFailedToast: (error: string): string =>
+      `The workbench was imported, but it failed to load: ${error}`,
+    importOverwriteAction: "Overwrite",
+    /** The row's icon button: downloads the workbench's source as a zip. */
+    exportWorkbench: "Export",
   },
   harnessHistory: {
     title: "Harness history",
@@ -2052,8 +2093,8 @@ export const en: Strings = {
     deleteGroup: "Delete group",
     deleteGroupTitle: "Delete group",
     deleteGroupConfirm: (label: string, n: number): string =>
-      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
-    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
+      `Delete the group “${label}”? ${n === 1 ? "Its 1 model and its" : `Its ${n} models and their`} API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n === 1 ? "1 model" : `${n} models`})`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncNewPresets: "Add new models",
@@ -2125,7 +2166,7 @@ export const en: Strings = {
     speedTestStop: "Stop speed test",
     speedTestTitle: "Speed test",
     speedTestConfirm: (n: number): string =>
-      `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
+      `This sends one real request to ${n === 1 ? "the model in this group" : `each of the ${n} models in this group, one at a time,`} to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
@@ -2153,7 +2194,7 @@ export const en: Strings = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
     protocolUnset: "Select protocol",
@@ -2488,7 +2529,8 @@ export const en: Strings = {
     importTitle: "Import memories",
     importWhy:
       "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importFile: (name: string, count: number): string =>
+      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
@@ -2501,9 +2543,9 @@ export const en: Strings = {
     importEmptyFile: "This file carries no memories.",
     importConfirmTitle: "Confirm the import",
     importWillOverwrite: (names: string[]): string =>
-      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be overwritten: ${names.join(", ")}`,
     importWillRemove: (names: string[]): string =>
-      `${names.length} memories will be deleted: ${names.join(", ")}`,
+      `${names.length === 1 ? "1 memory" : `${names.length} memories`} will be deleted: ${names.join(", ")}`,
     importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
     importIrreversible: "This cannot be undone.",
     importDone: (added: number, overwritten: number, removed: number): string =>
@@ -2951,7 +2993,7 @@ export const en: Strings = {
         `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
     },
     importPromptTail: (projectId: string) =>
-      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
+      `A PenguinHarness plugin is an npm package: its package.json (npm's fields: name, version, description), its \`src/index.ts\`, whose decorator declares what the plugin carries — its card, its \`skills/<name>/SKILL.md\`, its MCP servers — and the \`ifaces.json\` its build writes from that, which is what the server reads. Whatever the source, before installing anything, read its package.json, its src/index.ts and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder (built first: \`npm install && npm run build\`) — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as the module's \`mcpServers\` entries, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
     importUploadDesc:
       "package.json at the zip root or in one top-level folder; exclude node_modules.",
     importUploadAction: "Choose a zip file",
@@ -3190,6 +3232,9 @@ export const en: Strings = {
   },
 
   chat: {
+    workspacePanel: "Files",
+    memoryViewTitle: "Memory",
+    openAgents: "Agents panel",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
@@ -3202,7 +3247,7 @@ export const en: Strings = {
       high: "high",
       xhigh: "xhigh",
       max: "max",
-    },
+    } satisfies Record<ThinkingLevelName, string>,
     /** English has no trigger/menu split to make: the name above already IS the wire value, so a menu row annotating it would only repeat itself. Taking just the name (the second parameter is dropped) is how this locale says "same text on every surface". */
     thinkingLevelMenuName: (name: string): string => name,
     thinkingSwitchTitle: "Switch thinking level",
@@ -3517,12 +3562,12 @@ When done, open index.html in a browser and self-test once.`,
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
-- id: \`finite_choice_agent\`
+- id: \`${EVOLUTION_DEMO.agentId}\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
 - installed_skills: \`[]\`
 
 Benchmark:
-- id: \`contextual-choice-adaptation\`
+- id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
@@ -3537,8 +3582,8 @@ Scenarios:
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
-- test_agent_id: \`finite_choice_agent\`
-- benchmark_id: \`contextual-choice-adaptation\`
+- test_agent_id: \`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
 - runs: \`3\`
 - desired_score: \`>=95\`
@@ -3997,9 +4042,6 @@ Scenarios:
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openAgents: "Agents panel",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -4009,7 +4051,6 @@ Scenarios:
     memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
     memoryOpWrite: "Wrote",
     memoryOpEdit: "Edited",
-    memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
     memoryRowOpen: "View content",
@@ -5100,8 +5141,7 @@ Scenarios:
     askEvaluationTitle: "Ask AI about this evaluation",
     askEvaluationDescription:
       "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
-    askEvaluationDefault: "Explain this evaluation's result.",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "Explain this evaluation's result",
@@ -5127,7 +5167,7 @@ Scenarios:
       benchmarkId: string;
       time: string;
       label: string;
-      version: number;
+      version: number | string;
       provider: string;
       modelId: string;
       thinkingLevel: string;
@@ -5162,8 +5202,7 @@ Scenarios:
     askCaseTitle: "Ask AI about this case",
     askCaseDescription:
       "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
-    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "Explain what this case tests and what a strong answer looks like",
@@ -5303,20 +5342,30 @@ Scenarios:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-evaluation plugin (Agent Evaluation) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
+      "The model this conversation runs on, the Project's default model unless changed; it fans out the runs, scores and records, and is not the model under test",
+    testedModel: "Tested agent's model",
+    testedModelHint:
+      "The tested agent runs on this model in every test, at the thinking level it is configured with; preset to the model of its latest evaluation on this Benchmark, else the Project's default",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
     evaluateNotePlaceholder:
       "e.g. This round checks what the last optimization actually changed; watch the two citation cases",
-    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+    evaluateTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider: string;
+      modelId: string;
+    }): string =>
       "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
-      `- runs: \`${p.runs}\`\n\n` +
+      `- runs: \`${p.runs}\`\n` +
+      `- provider: \`${p.provider}\`\n` +
+      `- model_id: \`${p.modelId}\`\n\n` +
       "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill. " +
-      "The tested model is this conversation's own: read `Provider` and `Model ID` from your Environment once, before the first `run_subagent`, and pass them as `provider` and `model_id` in every request. " +
-      "An agent stores no model, so look for none in the tested agent's files, the Project configuration or the server; if your Environment lacks either line, stop and ask me. " +
+      "The tested model is the provider and model above, which need not be the model this conversation runs on: pass them as `provider` and `model_id` in every request. " +
       "The thinking level is the one the tested agent is configured with. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
@@ -5333,7 +5382,7 @@ Scenarios:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
     sessionModelHint:
-      "The model that analyzes and edits, the Project's default model unless changed; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
+      "The model that runs the method, reads the results and edits, the Project's default model unless changed; it is not the model under test",
     optimizeRunsHint: "How many times every case runs per candidate version, averaged",
     roundLimitField: "Round limit",
     roundLimitHint: "One change per round; a round counts once its evaluation is complete",
@@ -5343,13 +5392,15 @@ Scenarios:
     focusPlaceholder:
       "e.g. Focus on citation rules and format compliance; leave the writing style alone",
     noBaseline:
-      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it on the Evaluate tab first.",
+      "The selected tested agent has no baseline score on this model in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it on the Evaluate tab first, with the same model.",
     baselineLine: (score: string, target: number): string =>
       `Current baseline ${score} · target ${target}`,
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
+      provider: string;
+      modelId: string;
       roundLimit: number;
       targetScore: number;
     }): string =>
@@ -5357,10 +5408,12 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n` +
+      `- provider: \`${p.provider}\`\n` +
+      `- model_id: \`${p.modelId}\`\n` +
       `- desired_score: \`>=${p.targetScore}\`\n` +
       `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
       "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent`, saying in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
-      "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
+      "the Reference is the tested agent's complete evaluation of its current Agent State on the provider and model above, and every candidate is evaluated on that same provider, model_id and thinking_level; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
     methodField: "Method",
@@ -5371,7 +5424,10 @@ Scenarios:
     methodsNone:
       "The plugin library has no self-evolution toolkit; optimizing with the default loop",
     methodBudgetHint:
-      "This method sets its own budget: the paper's defaults reduced to a smoke profile, unless Focus says otherwise",
+      "This method follows its own Skill: the data it trains and tests on and its budget, unless Focus says otherwise",
+    testRepetitionsField: "Test-set repetitions",
+    testRepetitionsHint:
+      "How many complete times each reported State, the baseline and the final one, is tested on the test set",
     methodOptimizerHint: (skill: string): string =>
       `The one that runs the method and edits the Test Agent; needs the ${skill} Skill`,
     methodMissingSkill: (plugin: string, skill: string): string =>
@@ -5380,27 +5436,21 @@ Scenarios:
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
-      runs: number;
-      provider?: string;
-      modelId?: string;
-    }): string => {
-      const pinned =
-        p.provider && p.modelId
-          ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
-          : "";
-      return (
-        `Use the \`${p.skill}\` Skill to run its method on the Test Agent against its frozen Benchmark.\n\n` +
-        `- test_agent_id: \`${p.targetAgentId}\`\n` +
-        `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
-        `- runs: \`${p.runs}\`\n` +
-        pinned +
-        "\n" +
-        (pinned !== "" ? "Evaluate with exactly this provider and model. " : "") +
-        "Run the method the way its paper does, at the Skill's smoke budget unless I set one above; ask me only for inputs the method requires and I have not given. " +
-        "Measure the baseline and every candidate through the Skill's own evaluation reference, keep the Test Agent's runtime fixed, record every complete evaluation in `scoreboard.yaml` under the same label, " +
-        "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
-      );
-    },
+      testRepetitions: number;
+      provider: string;
+      modelId: string;
+    }): string =>
+      `Use the \`${p.skill}\` Skill to run its method on the Test Agent, starting from this Benchmark.\n\n` +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- test_repetitions: \`${p.testRepetitions}\`\n` +
+      `- provider: \`${p.provider}\`\n` +
+      `- model_id: \`${p.modelId}\`\n\n` +
+      "Run the method as the Skill defines it: the data it trains and tests on, its budget, how it measures and what it records are the Skill's to decide. " +
+      "The Test Agent runs on exactly this provider and model, at the thinking level it is configured with. " +
+      "`test_repetitions` is how many complete times each State you report, the baseline and the final one, is tested on the test set. " +
+      "Ask me only for inputs the method requires and I have not given, " +
+      "and finish by reporting the baseline score, the final score, the retained version and what the method changed.",
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
     importChatTitle: "Import with an agent",
@@ -5464,10 +5514,9 @@ Scenarios:
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */
   company: {
-    /** The mode switch (top-left of the sidebar, above the Project switcher) and its two options. */
-    workMode: "Work mode",
-    modeDev: "Development",
     modeCompany: "Company",
+    modeDev: "Development",
+    workMode: "Work mode",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
      * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
@@ -5593,13 +5642,41 @@ Scenarios:
     resume: "Resume organization",
     deleteOrg: "Delete organization",
     deleteOrgDesc:
-      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+      "Moves the organization to the Project's trash and, by default, permanently deletes the agents only it employs. Built-in agents and agents another organization also employs are kept.",
     deleteOrgConfirm:
-      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. An agent deleted with it is gone for good, with all of its conversations. An agent that is kept stays in the Project with its desk and ticket conversations, but with the organization gone no page lists them any more; while the old CEO's agent exists, the id cannot be used for a new organization. To stop an organization without losing anything, pause it instead.",
+    /** The confirmation's checkbox; the count is null until the organization's Agents are read. */
+    deleteOrgAgents: (count: number | null) =>
+      count === null
+        ? "Also delete this company's agents"
+        : `Also delete this company's agents (${count})`,
+    deleteOrgWillDelete: (names: string) => `Will be deleted permanently: ${names}`,
+    deleteOrgWillKeep: (names: string) => `Will be kept: ${names}`,
+    deleteOrgKeptBuiltin: (name: string) => `${name} (built-in)`,
+    deleteOrgKeptElsewhere: (name: string, orgNames: string) =>
+      `${name} (also employed by ${orgNames})`,
+    deleteOrgKeptUnknown: (name: string) => `${name} (employment unknown)`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `The chart of ${orgNames} cannot be read, so nobody is known to work only here; no agent is deleted until it is fixed.`,
+    deleteOrgAgentsLoadFailed:
+      "The organization's agents could not be read. Retry, or delete the organization alone and keep all of its agents.",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) =>
+      `; kept ${names}, as they changed after the confirmation was shown`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `; kept ${names} because another organization's chart could not be read: ${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) =>
+      `Organization ${orgId} deleted, though its answer did not arrive; the lists were read again`,
     deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
     deleted: (orgId: string) => `Organization ${orgId} deleted`,
+    deletedWithAgents: (orgId: string, count: number) =>
+      `Organization ${orgId} deleted, with ${count === 1 ? "1 agent" : `${count} agents`}`,
+    deleteOrgAgentsFailed: (orgId: string, names: string) =>
+      `Organization ${orgId} deleted, but these agents could not be deleted: ${names}`,
     pauseInfo:
-      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
+      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. Pausing deletes nothing: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {
@@ -6293,6 +6370,7 @@ Scenarios:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
+      workbench_too_large: "This workbench's source exceeds the export limits.",
       benchmark_busy:
         "This Benchmark is being evaluated: a run under its .jobs/ has not finished, and overwriting it now would let that evaluation go on writing into the new copy. Overwrite it once the evaluation ends.",
       file_not_found: "This file no longer exists.",

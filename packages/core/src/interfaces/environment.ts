@@ -75,7 +75,7 @@ export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
   /**
-   * Provenance: the plugin whose install wrote this entry (its `penguin.mcp_servers`). Absent
+   * Provenance: the plugin whose install wrote this entry (its `mcpServers` contribution). Absent
    * on an entry the user added. Uninstalling or reinstalling that plugin touches exactly the
    * entries carrying its name.
    */
@@ -160,9 +160,10 @@ export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
  * user-facing pickers (many models cannot disable thinking; see the web picker's
  * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
  * argument inherits the parent Session's effective level, so a parent genuinely running
- * without a level still passes that down.
+ * without a level still passes that down. The element type keeps `"none"` out at compile time.
+ * This is the one selectable ladder: project-config's DEFAULT_CHAT_THINKING_LEVELS is this list.
  */
-export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
+export const SUBAGENT_THINKING_LEVELS: readonly Exclude<ThinkingLevelName, "none">[] = [
   "low",
   "medium",
   "high",

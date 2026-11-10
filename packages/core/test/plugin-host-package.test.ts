@@ -1,13 +1,17 @@
 /**
- * The plugin library's host package, where a pushed platform lives (plugins/index.ts).
+ * The plugin library's host package, where a pushed platform lives (plugin/library-host.ts).
  *
- * Two fixed starting points, each walked upward to the first package.json naming a plugin
- * package: the installation the loader sits in, then the installation of the running program
- * (`process.argv[1]`). A hot-pushed platform bundle sits in a data root's store, where nothing
- * above it is a package, so the loader must not look at import, and its plugins are the ones
- * installed with the program that booted it. Pinned by bundling the loader into a
- * package-less scratch directory and running node against it, the way the far side of a push
- * does.
+ * The library a push carried comes first, then the host package an embedder named
+ * (useLibraryHost — the server names its own), then two fixed starting points, each walked upward
+ * to the first package.json naming a plugin package: the installation the loader sits in, then
+ * the installation of the running program (`process.argv[1]`). A hot-pushed platform bundle sits
+ * in a data root's store, where nothing above it is a package, so the loader must not look at
+ * import, and its plugins are the ones installed with the program that booted it. Pinned by
+ * bundling the loader into a package-less scratch directory and running node against it, the way
+ * the far side of a push does.
+ *
+ * - With no host anywhere the bundle still loads, and the library call fails naming every place.
+ * - A named host is the library, whatever is installed beside the program; a push outranks it.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -16,10 +20,23 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { pluginPackage, skillFile } from "./helpers/plugin-packages.js";
 
-const LOADER = path.resolve(import.meta.dirname, "../src/plugins/index.ts");
-const GOAL_PLUGIN = path.resolve(import.meta.dirname, "../../../plugins/goal");
-const HUMANIZER_PLUGIN = path.resolve(import.meta.dirname, "../../../plugins/humanizer");
+const SRC = path.resolve(import.meta.dirname, "../src/plugin");
+
+/** A built plugin package of one skill named like it, written at `dir`. */
+function plugin(dir: string, name: string): void {
+  const files = {
+    ...pluginPackage({ name: `@penguinharness/${name}` }, { skills: [name] }),
+    [`skills/${name}/SKILL.md`]: skillFile(name, "2026.10.01.1"),
+  };
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  }
+}
+const GOAL_PLUGIN = (dir: string) => plugin(dir, "goal");
+const HUMANIZER_PLUGIN = (dir: string) => plugin(dir, "humanizer");
 
 /** A package.json anywhere above `dir` would make the scratch directory a host package. */
 function packageJsonAbove(dir: string): string | null {
@@ -57,12 +74,22 @@ describe("the plugin library's host package", () => {
     // The store a push lands in: `<root>/hmr/store/platform/<sha>.mjs`, nothing above it a package.
     bundle = path.join(scratch, "root", "hmr", "store", "platform", "platform.mjs");
     fs.mkdirSync(path.dirname(bundle), { recursive: true });
+    // The library's three entry points, as the platform bundle carries them.
+    const entry = path.join(scratch, "loader.ts");
+    fs.writeFileSync(
+      entry,
+      [
+        `export { loadLibraryPlugins } from ${JSON.stringify(path.join(SRC, "library-reader.ts"))};`,
+        `export { useLibraryHost, usePushedPluginLibrary } from ${JSON.stringify(path.join(SRC, "library-host.ts"))};`,
+      ].join("\n"),
+    );
     // Compiled with the push's own options (scripts/push-bundle.mjs) rather than a hand-written
     // copy of them: only those carry the banner that declares the `require` a bundled CommonJS
     // dependency reaches for, and the loader — through @prismshadow/skills — now bundles one
     // (`yaml`), which without the banner dies at import with "Dynamic require of "process" is
     // not supported".
-    await compilePushBundle(pushBundleOptions(LOADER, bundle));
+    await compilePushBundle(pushBundleOptions(entry, bundle));
+    fs.rmSync(entry);
   });
 
   afterAll(() => {
@@ -91,9 +118,7 @@ describe("the plugin library's host package", () => {
       path.join(lib, "package.json"),
       JSON.stringify({ name: "host", dependencies: { "@penguinharness/goal": "*" } }),
     );
-    fs.cpSync(GOAL_PLUGIN, path.join(lib, "node_modules", "@penguinharness", "goal"), {
-      recursive: true,
-    });
+    GOAL_PLUGIN(path.join(lib, "node_modules", "@penguinharness", "goal"));
     const program = path.join(lib, "dist", "serve.mjs");
     fs.writeFileSync(program, script(bundle));
     expect(run(program)).toEqual({ loaded: true, names: ["goal"] });
@@ -119,15 +144,11 @@ describe("the plugin library's host package", () => {
       path.join(app, "package.json"),
       JSON.stringify({ name: "app", dependencies: { "@penguinharness/goal": "*" } }),
     );
-    fs.cpSync(GOAL_PLUGIN, path.join(app, "node_modules", "@penguinharness", "goal"), {
-      recursive: true,
-    });
+    GOAL_PLUGIN(path.join(app, "node_modules", "@penguinharness", "goal"));
     // The program's installation is a host too, of a different plugin: were it chosen, the
     // library would read that one instead.
     const other = path.join(scratch, "other");
-    fs.cpSync(HUMANIZER_PLUGIN, path.join(other, "node_modules", "@penguinharness", "humanizer"), {
-      recursive: true,
-    });
+    HUMANIZER_PLUGIN(path.join(other, "node_modules", "@penguinharness", "humanizer"));
     fs.writeFileSync(
       path.join(other, "package.json"),
       JSON.stringify({ name: "other", dependencies: { "@penguinharness/humanizer": "*" } }),
@@ -150,14 +171,8 @@ describe("the plugin library's host package", () => {
         dependencies: { "@penguinharness/goal": "*", "@penguinharness/humanizer": "*" },
       }),
     );
-    for (const [name, from] of [
-      ["goal", GOAL_PLUGIN],
-      ["humanizer", HUMANIZER_PLUGIN],
-    ] as const) {
-      fs.cpSync(from, path.join(pushed, "node_modules", "@penguinharness", name), {
-        recursive: true,
-      });
-    }
+    GOAL_PLUGIN(path.join(pushed, "node_modules", "@penguinharness", "goal"));
+    HUMANIZER_PLUGIN(path.join(pushed, "node_modules", "@penguinharness", "humanizer"));
     const program = path.join(lib, "dist", "serve-pushed.mjs");
     fs.writeFileSync(
       program,
@@ -173,5 +188,32 @@ console.log(JSON.stringify({ loaded: true, names: [before.join(","), carried.joi
     );
     // The program's own library, then the pushed one, then back again once it is unset.
     expect(run(program)).toEqual({ loaded: true, names: ["goal", "goal,humanizer", "goal"] });
+  });
+
+  it("reads the host an embedder named over the one installed beside the program, and a push over both", () => {
+    // The server names its own package; here an embedder names one holding only humanizer,
+    // while the program's installation (above) holds goal.
+    const named = path.join(scratch, "named");
+    fs.mkdirSync(named, { recursive: true });
+    fs.writeFileSync(
+      path.join(named, "package.json"),
+      JSON.stringify({ name: "embedder", dependencies: { "@penguinharness/humanizer": "*" } }),
+    );
+    HUMANIZER_PLUGIN(path.join(named, "node_modules", "@penguinharness", "humanizer"));
+    const pushed = path.join(scratch, "root", "hmr", "assets", ".unpacked", "library");
+    const program = path.join(scratch, "install", "lib", "dist", "serve-named.mjs");
+    fs.writeFileSync(
+      program,
+      `
+import { loadLibraryPlugins, useLibraryHost, usePushedPluginLibrary } from ${JSON.stringify(pathToFileURL(bundle).href)};
+const names = () => loadLibraryPlugins().map((p) => p.name).sort().join(",");
+useLibraryHost(${JSON.stringify(named)});
+const own = names();
+usePushedPluginLibrary(${JSON.stringify(pushed)});
+const carried = names();
+console.log(JSON.stringify({ loaded: true, names: [own, carried] }));
+`,
+    );
+    expect(run(program)).toEqual({ loaded: true, names: ["humanizer", "goal,humanizer"] });
   });
 });

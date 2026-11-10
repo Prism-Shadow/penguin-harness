@@ -2,7 +2,7 @@
  * The global dispatcher (src/lib/shortcuts/dispatcher.ts): handler order, the declined-command
  * path, and the window listener fed a fake event — it runs the bound global command, prevents the
  * default only when handled, keeps a repeat from the browser without re-running, and leaves an
- * already-prevented event alone.
+ * already-prevented event alone; behind an open dialog only the palette's toggle runs.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -95,13 +95,14 @@ describe("the window listener", () => {
     expect(repeat.defaultPrevented).toBe(true);
     // A repeat of a chord nothing answers is left to the browser, like its first press.
     expect(
-      fire({ code: "KeyP", key: "p", ctrlKey: true, altKey: true, repeat: true }).defaultPrevented,
+      fire({ code: "KeyP", key: "P", ctrlKey: true, shiftKey: true, repeat: true })
+        .defaultPrevented,
     ).toBe(false);
   });
 
   it("leaves a chord with no handler, a focus-scoped chord and an already-prevented event to their defaults", () => {
-    // palette.toggle is bound to Ctrl+Alt+P but nothing answers it yet.
-    expect(fire({ code: "KeyP", key: "p", ctrlKey: true, altKey: true }).defaultPrevented).toBe(
+    // palette.toggle is bound to Ctrl+Shift+P but nothing answers it yet.
+    expect(fire({ code: "KeyP", key: "P", ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(
       false,
     );
     // editor.save is editor-scoped: the editor's own handler decides it, never the window.
@@ -126,5 +127,19 @@ describe("the window listener", () => {
     open = false;
     expect(fire({ code: "Backquote", key: "`", ctrlKey: true }).defaultPrevented).toBe(true);
     expect(toggled).toBe(1);
+  });
+
+  it("still opens the palette over an open dialog, the way back when the UI is stuck", () => {
+    let palette = 0;
+    let toggled = 0;
+    unregisters.push(onCommand("palette.toggle", () => void palette++));
+    unregisters.push(onCommand("terminal.toggle", () => void toggled++));
+    setShortcutBlocker(() => true);
+    expect(fire({ code: "KeyP", key: "P", ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(palette).toBe(1);
+    expect(fire({ code: "Backquote", key: "`", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(toggled).toBe(0);
   });
 });

@@ -34,8 +34,9 @@ import {
   runtimeDraftOf,
   runtimeErrors,
   runtimeUpdateOf,
+  type RuntimeDraft,
 } from "../src/features/agents/runtime-form";
-import type { RuntimeDraft } from "../src/features/agents/runtime-form";
+
 import { AGENT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, dialogs, field, type, unmountAll, waitFor } from "./helpers/dom";
 
