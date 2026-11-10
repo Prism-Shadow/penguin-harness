@@ -2,7 +2,9 @@
  * A whole pack, checked: the manifest, every stylesheet against the grammar, every font and
  * drawing by its bytes, and the pack's budgets. What comes back is the pack as the server keeps
  * it — the normalised manifest, the re-emitted stylesheets, the binaries as uploaded — plus the
- * one stylesheet the browser loads and the version it is served at.
+ * one stylesheet the browser loads and the version it is served at. Past the grammar, the
+ * stylesheets are held to the clean baseline's static rules the build hands in (ThemeContract's
+ * `cleanliness`), with no hit allowed.
  *
  * The served `index.css` wraps the files in the layers the app's stylesheet opened first
  * (`@layer ui-base, ui-theme, ui-accent, ui-font;`): the tokens, the recipes and the section
@@ -33,6 +35,38 @@ export interface ThemeContract {
   readonly api: number;
   /** The contract's `--ui-*` names, the custom properties a pack may set beside its own. */
   readonly tokens: ReadonlySet<string>;
+  /**
+   * The clean baseline's static rules (06 「干净的底线」, R1, R2, R5–R11), which a pack is held to
+   * with no hit allowed: the UI package's own table (`@prismshadow/penguin-ui/pack-rules`), the one
+   * its de-slop suite runs over the built-in packs, handed in by the build so the two cannot
+   * drift. `null` checks the grammar alone: the built-in packs predate the rules and the UI suite
+   * holds each to the hits it has today.
+   */
+  readonly cleanliness: CleanlinessRules | null;
+}
+
+/** One stylesheet of a pack as the clean-baseline rules read it. */
+export interface CleanlinessSource {
+  /** The path in the pack. */
+  readonly file: string;
+  readonly css: string;
+  /** The layer the file is served in. */
+  readonly layer: string | null;
+}
+
+/** What one rule found in one rule of a stylesheet. */
+export interface CleanlinessHit {
+  /** The rule's code, `R1` … `R11`. */
+  readonly rule: string;
+  readonly file: string;
+  readonly line: number;
+  readonly found: string;
+}
+
+/** The clean-baseline rules: every hit in a pack's stylesheets, and what each rule says. */
+export interface CleanlinessRules {
+  readonly hits: (sources: readonly CleanlinessSource[]) => readonly CleanlinessHit[];
+  readonly says: Readonly<Record<string, string>>;
 }
 
 export interface ValidatedThemePack {
@@ -174,6 +208,24 @@ export async function validateThemePack(
       checked.has("accents.css") ? "accents.css" : MANIFEST_FILE,
       `pack.json lists the accent preset ${missing}, which accents.css does not declare`,
     );
+  }
+
+  // The clean baseline reads the stylesheets as the browser will receive them — re-emitted,
+  // with nothing a second parser could read another way — in the layers they are served in.
+  // `@font-face` rules are faces, not looks, and are not among them.
+  if (contract.cleanliness !== null) {
+    const sources = [...checked]
+      .filter(([path]) => path !== "fonts.css")
+      .map(([file, sheet]) => ({
+        file,
+        css: sheet.css,
+        layer: file === "accents.css" ? "ui-accent" : "ui-theme",
+      }));
+    const [hit] = contract.cleanliness.hits(sources);
+    if (hit !== undefined) {
+      const says = contract.cleanliness.says[hit.rule] ?? "a clean-baseline rule";
+      throw invalid(hit.file, `${hit.rule}, ${says}: ${hit.found}`);
+    }
   }
 
   for (const path of assets.sort()) await checkAsset(path, files.get(path)!);

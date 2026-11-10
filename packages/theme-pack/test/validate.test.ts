@@ -15,6 +15,9 @@
  *   the pack's own names.
  * - Given a pack written against a newer theme API, it is refused as unsupported.
  * - Given a preset pack.json lists and accents.css never declares, the pack is refused.
+ * - Given the build's clean-baseline rules, they read the stylesheets as re-emitted, in their
+ *   layers, the faces left out, and their first hit refuses the pack, naming the rule, what it says
+ *   and what it found (the rules themselves run in the server's suite, over real imports).
  * - Given stylesheets adding up past 512 KiB, the pack is refused as too large.
  */
 import { describe, expect, it } from "vitest";
@@ -190,6 +193,33 @@ describe("validateThemePack", () => {
     const err = await refusal(doodlePack({ "pack.json": JSON.stringify(manifest) }));
     expect(err.problem.file).toBe("accents.css");
     expect(err.problem.reason).toContain("chalk");
+  });
+
+  it("hands the build's clean-baseline rules what the browser will receive, and refuses on their first hit", async () => {
+    const seen: { file: string; css: string; layer: string | null }[] = [];
+    const rules = {
+      hits: (sources: readonly { file: string; css: string; layer: string | null }[]) => {
+        seen.push(...sources);
+        return [{ rule: "R7", file: "recipes.css", line: 1, found: ".ui-edge { padding: 4px }" }];
+      },
+      says: { R7: "the type and spacing scale moves only through tokens" },
+    };
+    const refused = await validateThemePack(doodlePack(), { ...CONTRACT, cleanliness: rules }).then(
+      () => null,
+      (e: unknown) => e as ThemePackError,
+    );
+    expect(refused?.problem).toEqual({
+      file: "recipes.css",
+      reason: "R7, the type and spacing scale moves only through tokens: .ui-edge { padding: 4px }",
+    });
+    const accepted = await validateThemePack(doodlePack(), CONTRACT);
+    expect(seen.map(({ file, layer }) => [file, layer])).toEqual([
+      ["tokens.css", "ui-theme"],
+      ["recipes.css", "ui-theme"],
+      ["sections/empty.css", "ui-theme"],
+      ["accents.css", "ui-accent"],
+    ]);
+    for (const { file, css } of seen) expect(css, file).toBe(decode(accepted.files.get(file)));
   });
 
   it("refuses stylesheets adding up past 512 KiB as too large", async () => {

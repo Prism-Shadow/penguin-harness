@@ -19,7 +19,8 @@
  * The built-in packs are the build's: their sources travel inside the Web App's files (the UI
  * package's Vite plugin writes `themes/<id>/` and each pack's `fonts.json`), so a built-in exports
  * from the very build this server serves, offline, and the base pack among them says which theme
- * API and which token names an import is checked against.
+ * API and which token names an import is checked against. The clean baseline's rules (R1, R2,
+ * R5–R11) come from the UI package's own table, and an import may hit none of them.
  */
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -44,6 +45,9 @@ import {
   type ThemeContract,
   type ThemePackManifest,
 } from "@prismshadow/penguin-theme-pack";
+// The clean baseline's rule table, the one the UI package's de-slop suite runs over the built-in
+// packs: an import is held to it with no hit allowed. Inlined by the build (tsup.config.ts).
+import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
 import type { ThemePackDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { WebFiles } from "../workbenches/ui-runtime.js";
@@ -204,7 +208,10 @@ export class ThemeStore {
         "This server's Web App build carries no theme pack sources, so a pack cannot be checked against it.",
       );
     }
-    return contractOfBase(manifest, new TextDecoder().decode(tokens));
+    return {
+      ...contractOfBase(manifest, new TextDecoder().decode(tokens)),
+      cleanliness: { hits: packRuleHits, says: PACK_RULES },
+    };
   }
 
   /** Ids no import may take: the reserved names, the served build's packs, the archive folder. */

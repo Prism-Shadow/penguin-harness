@@ -122,11 +122,15 @@ export function builtinExportFiles(id: string, folder: ReadonlyMap<string, Uint8
 }
 
 /**
- * The theme contract a build implements, read from its base pack: the API its manifest targets
- * (the UI package's suite holds every built-in to the build's own number) and the `--ui-*` names
- * its tokens declare (the base declares every contract name: it is the fallback for all of them).
+ * What a build's base pack says of its theme contract: the API its manifest targets (the UI
+ * package's suite holds every built-in to the build's own number) and the `--ui-*` names its
+ * tokens declare (the base declares every contract name: it is the fallback for all of them).
+ * The clean-baseline rules are code, not data, and the caller adds them.
  */
-export function contractOfBase(manifest: Uint8Array, tokensCss: string): ThemeContract {
+export function contractOfBase(
+  manifest: Uint8Array,
+  tokensCss: string,
+): Pick<ThemeContract, "api" | "tokens"> {
   const { api } = parseManifest(manifest);
   const tokens = new Set<string>();
   const visit = (node: CssNode) => {

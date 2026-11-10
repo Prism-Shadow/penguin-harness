@@ -19,6 +19,8 @@ export const CONTRACT: ThemeContract = {
     "--ui-font-sans",
     "--ui-shadow-md",
   ]),
+  // The clean baseline's rules are the UI package's; the server's suite runs them on imports.
+  cleanliness: null,
 };
 
 const text = (value: string) => new TextEncoder().encode(value);

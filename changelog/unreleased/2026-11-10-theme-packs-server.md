@@ -24,6 +24,7 @@ An admin can import a theme pack as a zip, and every account on that server can 
   - `:lang()` with language tags;
   - `^=` on `role` alone;
   - `@keyframes` named `ui-…` beside `<id>-…`.
+- An import is also held to the clean baseline's static rules (R1, R2, R5–R11) with no hit allowed, and a hit refuses it with the rule and what it found. The rules come from the UI package's own table, the one its de-slop suite runs over the built-in packs, so the two cannot drift. The server takes it through a new subpath, `@prismshadow/penguin-ui/pack-rules`. The one regex it read from the de-slop module moved to a module of its own, so the table carries no other code.
 - Fonts are WOFF2 only, with the header and table directory read. Drawings take a plugin icon's check.
 - Caps: 200 files, a 16 MiB zip, 24 MiB unpacked, 512 KiB of stylesheets, 12 MiB of fonts, 2 s of parsing.
 

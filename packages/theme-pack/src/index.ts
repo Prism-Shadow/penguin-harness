@@ -29,6 +29,9 @@ export {
   INDEX_FILE,
   servedPath,
   validateThemePack,
+  type CleanlinessHit,
+  type CleanlinessRules,
+  type CleanlinessSource,
   type ThemeContract,
   type ValidatedThemePack,
 } from "./pack.js";

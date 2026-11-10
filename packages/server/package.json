@@ -124,6 +124,7 @@
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-theme-pack": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",

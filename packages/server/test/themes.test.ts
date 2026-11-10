@@ -15,6 +15,12 @@
  *   column and reason, and nothing is stored.
  * - Given a pack for a newer theme API, `422`; an upload past 16 MiB, `413`; a build carrying no
  *   pack sources to check against, `503`.
+ * - Given a pack breaking the clean baseline — one scenario per rule family the UI package's table
+ *   checks: decoration off its homes, texture behind text, a painting pseudo-element off its home,
+ *   a state rule setting more than colour, fill, weight or opacity, a per-element font size, a
+ *   shadow on a boxed host, a chart filter, a dark-only recipe, an animation off the live homes —
+ *   the import is `400 theme_invalid` naming the rule, and nothing is stored; a pack decorating,
+ *   edging and moving only in the allowed homes imports.
  * - Given a path the pack's installed.json does not list — its manifest, its readme, its record,
  *   or a way out of its folder — the files route answers `404`.
  * - Given an installed pack exported and imported again, the stored files are identical, and so
@@ -93,7 +99,8 @@ function packFiles(
       fonts: { ...BASE_MANIFEST.fonts },
     }),
     "tokens.css": `:root[data-theme="${id}"] { --ui-canvas: #f6f1e7; }\n:root[data-theme="${id}"].dark { --ui-canvas: #1c1a17; }\n`,
-    "recipes.css": `:root[data-theme="${id}"] .ui-empty [data-slot="art"] { background-image: url("art/mark.svg"); }\n`,
+    // A drawing in a decoration home: the frosted layer.
+    "recipes.css": `:root[data-theme="${id}"] .ui-glass[role="menu"] { background-image: url("art/mark.svg"); }\n`,
     "art/mark.svg": MARK_SVG,
     "README.md": "# Paper\n",
     ...overrides,
@@ -290,6 +297,76 @@ describe("theme packs", () => {
     } finally {
       await fsp.rename(`${sources}.off`, sources);
     }
+  });
+
+  /** `rules` with each `:root` scoped to the pack `id`. */
+  const scoped = (id: string, rules: string) =>
+    rules.replace(/:root(?=[ .])/g, `:root[data-theme="${id}"]`);
+  it.each([
+    [
+      "decoration outside its homes",
+      "R1",
+      ":root .ui-card { background-image: linear-gradient(#fff, #eee); }",
+    ],
+    [
+      "texture behind text",
+      "R1",
+      ':root .ui-message [data-slot="body"] { background-image: url("art/mark.svg"); }',
+    ],
+    [
+      "a painting pseudo-element outside its hook's home",
+      "R5",
+      ':root .ui-row::before { content: "•"; color: #888; }',
+    ],
+    [
+      "a state rule setting more than colour, fill, weight or opacity",
+      "R6",
+      ':root .ui-row[data-state="done"] { text-decoration: underline; }',
+    ],
+    ["a per-element font size", "R7", ":root .ui-row { font-size: 15px; }"],
+    ["a shadow on a boxed host", "R8", ":root .ui-frame { box-shadow: 0 1px 2px #0003; }"],
+    ["a filter on a chart mark", "R9", ":root .ui-chart path { filter: blur(1px); }"],
+    ["a dark-only recipe", "R10", ":root.dark .ui-row { color: #eee; }"],
+    [
+      "an animation outside the live homes",
+      "R11",
+      ":root .ui-row { animation: rule-wobble 1s infinite; }",
+    ],
+  ])(
+    "refuses a pack breaking the clean baseline with %s (%s), naming the rule",
+    async (_name, rule, css) => {
+      const id = `clean-${rule.toLowerCase()}-${css.length}`;
+      const res = await admin.upload(
+        "/api/themes",
+        zipOf(packFiles(id, { "recipes.css": scoped(id, css) })),
+      );
+      expect(res.status).toBe(400);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: Record<string, string> };
+      };
+      expect(error.code).toBe("theme_invalid");
+      expect(error.details).toMatchObject({ file: "recipes.css" });
+      expect(error.details.reason?.startsWith(`${rule}, `)).toBe(true);
+      expect(fs.existsSync(path.join(themesDir(), id))).toBe(false);
+    },
+  );
+
+  it("accepts a pack that decorates, edges and moves only in the homes the baseline allows", async () => {
+    const id = "clean-homes";
+    const recipes = scoped(
+      id,
+      [
+        ':root .ui-glass[role="menu"] { background-image: url("art/mark.svg"); }',
+        ":root .ui-row:focus-visible { outline: 2px solid var(--ui-canvas); }",
+        ":root .ui-live { animation: clean-homes-pulse 1s infinite; }",
+        ':root .ui-row[data-state="done"] { color: #2b2521; font-weight: 600; }',
+        ":root .ui-row { border-radius: 6px; }",
+        ":root.dark .ui-row { border-radius: 4px; }",
+        "@keyframes clean-homes-pulse { to { opacity: 0.6; } }",
+      ].join("\n"),
+    );
+    const { theme } = await imported(id, packFiles(id, { "recipes.css": recipes }));
+    expect(theme.id).toBe(id);
   });
 
   it.each([

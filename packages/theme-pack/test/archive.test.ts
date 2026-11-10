@@ -189,7 +189,9 @@ describe("the built-in packs' export form", () => {
       decode(baseFolder().get("tokens.css")),
     );
     expect(contract.api).toBe(1);
-    await expect(validateThemePack(files, contract)).resolves.toMatchObject({
+    await expect(
+      validateThemePack(files, { ...contract, cleanliness: null }),
+    ).resolves.toMatchObject({
       manifest: { id: "modern" },
     });
   });
