@@ -7,12 +7,11 @@
  * between them, which reads as content the model withdrew. The rendered message then says the
  * opposite of what was written.
  *
- * remark-gfm has no switch for strikethrough alone (`singleTilde: false` keeps `~~`), and the
- * rest of GFM — tables, task lists, autolinks, footnotes — stays wanted. So this pass runs on the
- * tree remark-gfm produced and turns every `delete` node back into its own text: the opening
- * tildes, the children as they were parsed (so a `**bold**` inside stays bold), the closing
- * tildes. The markers are read from the source at the node's offset, so `~` stays one tilde and
- * `~~` two.
+ * The chat dialect (packages/chat-markdown) still parses GFM's strikethrough, and
+ * this pass runs on the tree it produced and turns every `delete` node back into its own text:
+ * the opening tildes, the children as they were parsed (so a `**bold**` inside stays bold), the
+ * closing tildes. The markers are read from the source at the node's offset, so `~` stays one
+ * tilde and `~~` two.
  *
  * The server's messaging parse does the same for the chat channels
  * (packages/server/src/runtime/messaging/markdown.ts), so a reply reads alike everywhere.
@@ -54,7 +53,7 @@ export function literalStrikethrough(node: Node, source: string): void {
   node.children = out;
 }
 
-/** The remark plugin: runs after remark-gfm, against the file's own text. */
+/** The remark plugin: runs after the chat dialect's parse, against the file's own text. */
 export function remarkLiteralTildes() {
   return (tree: Node, file: { value?: unknown }): void => {
     literalStrikethrough(

@@ -19,8 +19,8 @@
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/amsp
-#   -> @prismshadow/a2ui -> @prismshadow/penguin-core -> @prismshadow/penguin-server ->
-#   @prismshadow/penguin-cli) to npm at the tag version.
+#   -> @prismshadow/a2ui -> @prismshadow/chat-markdown -> @prismshadow/penguin-core ->
+#   @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
 #   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
@@ -684,6 +684,7 @@ jobs:
           V="${TAG#v}"
           cp LICENSE packages/amsp/LICENSE
           cp LICENSE packages/a2ui/LICENSE
+          cp LICENSE packages/chat-markdown/LICENSE
           cp LICENSE packages/core/LICENSE
           cp LICENSE packages/ui/LICENSE
           cp LICENSE packages/server/LICENSE
@@ -713,12 +714,13 @@ jobs:
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
-          # Full names, in dependency order: @prismshadow/amsp and @prismshadow/a2ui are not
-          # penguin-* names, and the server and the CLI depend on them, so they go first.
-          # penguin-ui depends on none of them at run time (it bundles the A2UI grammar); it goes
-          # before the server, which carries its Workbench runtime inside web-dist/. Only pnpm
-          # applies its publishConfig, which points its exports at dist/ instead of src/.
-          for name in @prismshadow/amsp @prismshadow/a2ui @prismshadow/penguin-core @prismshadow/penguin-ui @prismshadow/penguin-server @prismshadow/penguin-cli; do
+          # Full names, in dependency order: @prismshadow/amsp, @prismshadow/a2ui and
+          # @prismshadow/chat-markdown are not penguin-* names, and the server and the CLI depend on
+          # them, so they go first. penguin-ui depends on none of them at run time (it bundles the
+          # A2UI grammar and the chat dialect); it goes before the server, which carries its
+          # Workbench runtime inside web-dist/. Only pnpm applies its publishConfig, which points
+          # its exports at dist/ instead of src/.
+          for name in @prismshadow/amsp @prismshadow/a2ui @prismshadow/chat-markdown @prismshadow/penguin-core @prismshadow/penguin-ui @prismshadow/penguin-server @prismshadow/penguin-cli; do
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue

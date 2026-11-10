@@ -1,7 +1,7 @@
 /**
  * Md (the shared UI package's Markdown) as the app wires it, via react-dom/server static markup
  * (node env, no DOM):
- * - outside a conversation every link — explicit [text](url), bare autolinked URL (remark-gfm),
+ * - outside a conversation every link — explicit [text](url), bare autolinked URL (chat dialect),
  *   relative or #anchor — opens in a new tab: target="_blank" + rel="noreferrer";
  * - inside one (WorkspaceLinksProvider, features/workspace/workspace-links.tsx, as MessageStream
  *   renders it) only an external link does:
