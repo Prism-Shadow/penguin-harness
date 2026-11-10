@@ -1,7 +1,7 @@
 /**
  * Theme packs over HTTP (`/api/themes`, PRFC-0026): an admin imports per server, every account
- * lists, loads and exports. The server's Web App build is a fixture folder carrying one built-in
- * pack's sources (Frost, the base), as the UI package's Vite plugin writes them.
+ * lists, loads and exports. The server's Web App build is a folder carrying the UI package's own
+ * Frost (the base), as the UI package's Vite plugin writes it.
  *
  * - Given a member, they list the packs, load a pack's files and export it, and every write they
  *   try is refused `403 admin_required` without touching the store.
@@ -25,8 +25,9 @@
  *   or a way out of its folder — the files route answers `404`.
  * - Given an installed pack exported and imported again, the stored files are identical, and so
  *   are they when the kept upload is gone and the export zips what is stored.
- * - Given a built-in pack exported, it is in the shape an import takes; imported as it is, it is
- *   refused as reserved, and renamed, it imports.
+ * - Given Frost exported, its recipes stay with the base and its README says so; imported as it
+ *   is, it is refused as reserved, and with nothing changed but its id — in pack.json and in the
+ *   selectors — it imports, clean baseline and all.
  * - Given the desktop app, the person at it is the admin and may import.
  */
 import fs from "node:fs";
@@ -51,8 +52,8 @@ import {
 const text = (value: string) => new TextEncoder().encode(value);
 const decode = (bytes: Uint8Array | undefined) => new TextDecoder().decode(bytes);
 
-/** The served build's sources of Frost, the base: what the contract is read from. */
-const BASE_MANIFEST = {
+/** A small pack's manifest, the template the scenarios' packs are made from. */
+const PACK_MANIFEST = {
   api: 1,
   id: "modern",
   names: { zh: "白领", en: "Frost" },
@@ -72,16 +73,20 @@ const BASE_MANIFEST = {
     display: "MiSans",
   },
 };
-const BASE_FILES: Record<string, string> = {
-  "pack.json": JSON.stringify(BASE_MANIFEST, null, 2),
-  "index.css": '@import "./tokens.css" layer(ui-base);\n@import "./recipes.css" layer(ui-base);\n',
-  "tokens.css":
-    "/* Frost on the bare root. */\n:root {\n  --ui-canvas: #fafafa;\n  --ui-fg: #232527;\n}\n:root.dark {\n  --ui-canvas: #1b1c1e;\n}\n",
-  "recipes.css":
-    ':root[data-theme-base="modern"] .ui-glass {\n  background: var(--ui-canvas);\n}\n',
-  "fonts.css": '@import "../../fonts/misans/misans.css";\n',
-  "fonts.json": "{}\n",
-};
+/** The UI package's Frost: the base pack every served build carries. */
+const FROST_DIR = path.resolve(import.meta.dirname, "../../ui/src/themes/modern");
+
+/**
+ * A served build's files carrying Frost's sources, as the UI package's Vite plugin writes them
+ * (Frost has no fonts of its own, so its fonts.json maps none): the contract an import is checked
+ * against, and the Frost an export hands out.
+ */
+async function servedBuild(): Promise<string> {
+  const dir = await makeTempRoot();
+  await fsp.cp(FROST_DIR, path.join(dir, "themes", "modern"), { recursive: true });
+  await fsp.writeFile(path.join(dir, "themes", "modern", "fonts.json"), "{}\n");
+  return dir;
+}
 
 const MARK_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 4h8" stroke="currentColor"/></svg>';
@@ -93,10 +98,10 @@ function packFiles(
 ): Record<string, string> {
   const files: Record<string, string | null> = {
     "pack.json": JSON.stringify({
-      ...BASE_MANIFEST,
+      ...PACK_MANIFEST,
       id,
       names: { zh: "纸页", en: "Paper" },
-      fonts: { ...BASE_MANIFEST.fonts },
+      fonts: { ...PACK_MANIFEST.fonts },
     }),
     "tokens.css": `:root[data-theme="${id}"] { --ui-canvas: #f6f1e7; }\n:root[data-theme="${id}"].dark { --ui-canvas: #1c1a17; }\n`,
     // A drawing in a decoration home: the frosted layer.
@@ -150,12 +155,7 @@ describe("theme packs", () => {
   }
 
   beforeAll(async () => {
-    webDist = await makeTempRoot();
-    for (const [rel, body] of Object.entries(BASE_FILES)) {
-      const abs = path.join(webDist, "themes", "modern", rel);
-      await fsp.mkdir(path.dirname(abs), { recursive: true });
-      await fsp.writeFile(abs, body);
-    }
+    webDist = await servedBuild();
     t = await createTestApp({ config: { webDist } });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const signedIn = await provisionUser(t.app, "reader");
@@ -279,7 +279,7 @@ describe("theme packs", () => {
 
   it("answers 422 for a newer theme API, 413 past 16 MiB, and 503 when the build carries no pack sources", async () => {
     const newer = packFiles("paper-new", {
-      "pack.json": JSON.stringify({ ...BASE_MANIFEST, id: "paper-new", api: 2 }),
+      "pack.json": JSON.stringify({ ...PACK_MANIFEST, id: "paper-new", api: 2 }),
     });
     expect((await admin.upload("/api/themes", zipOf(newer))).status).toBe(422);
     const big = new Uint8Array(16 * 1024 * 1024 + 1);
@@ -402,41 +402,34 @@ describe("theme packs", () => {
     expect(await stored("paper-trip")).toEqual(original);
   });
 
-  it("exports a built-in pack in import shape, refused as it is and imported once renamed", async () => {
+  it("exports Frost refused as it is, and imports it once its id alone is renamed", async () => {
     const res = await member.get("/api/themes/modern/export");
     expect(res.headers.get("content-disposition")).toBe('attachment; filename="modern-1.0.0.zip"');
     const zip = new Uint8Array(await res.arrayBuffer());
     const files = readPackArchive(zip);
-    expect([...files.keys()].sort()).toEqual(["pack.json", "recipes.css", "tokens.css"]);
-    expect(decode(files.get("tokens.css"))).toContain("/* Frost on the bare root. */");
-    expect(decode(files.get("recipes.css"))).toContain(':root[data-theme="modern"] .ui-glass');
+    // The recipes stay with the base, and the README says so.
+    expect(files.has("recipes.css")).toBe(false);
+    expect(decode(files.get("README.md"))).toContain('"base": "modern"');
+    expect(decode(files.get("tokens.css"))).toContain(':root[data-theme="modern"]');
     expect((await admin.upload("/api/themes", zip)).status).toBe(400);
 
-    // The rename the RFC describes: the id in pack.json, and the id in the selectors.
+    // What the person does, and nothing more: the id in pack.json, and the same id in the
+    // selectors.
     const renamed: Record<string, string> = {};
     for (const [rel, bytes] of files) {
       renamed[rel] = decode(bytes).replaceAll('[data-theme="modern"]', '[data-theme="mine"]');
     }
-    const manifest = JSON.parse(renamed["pack.json"]!) as Record<string, unknown>;
-    renamed["pack.json"] = JSON.stringify({
-      ...manifest,
-      id: "mine",
-      names: { zh: "我的", en: "Mine" },
-    });
-    const { theme } = await imported("mine", renamed);
-    expect(theme.id).toBe("mine");
+    renamed["pack.json"] = renamed["pack.json"]!.replace('"id": "modern"', '"id": "mine"');
+    const upload = await admin.upload("/api/themes", zipOf(renamed, "mine/"));
+    expect(upload.status, await upload.clone().text()).toBe(201);
+    const { theme } = (await upload.json()) as ThemePackImportResponse;
+    expect(theme).toMatchObject({ id: "mine", base: "modern", names: { en: "Frost" } });
   });
 });
 
 describe("theme packs on the desktop app", () => {
   it("lets the person at the app import, as its admin", async () => {
-    const webDist = await makeTempRoot();
-    for (const [rel, body] of Object.entries(BASE_FILES)) {
-      const abs = path.join(webDist, "themes", "modern", rel);
-      await fsp.mkdir(path.dirname(abs), { recursive: true });
-      await fsp.writeFile(abs, body);
-    }
-    const desktop = await createDesktopApp({ config: { webDist } });
+    const desktop = await createDesktopApp({ config: { webDist: await servedBuild() } });
     try {
       const client = apiClient(desktop.app, await desktopLoginCookie(desktop.app));
       expect((await client.upload("/api/themes", zipOf(packFiles("desk-paper")))).status).toBe(201);

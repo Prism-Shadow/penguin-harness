@@ -40,7 +40,7 @@
 - `v` 是主题包内容的摘要，因此导出后再导入，存下的文件逐字节相同。
 - `GET /api/themes`、`GET /api/themes/:id/files/<path>`、`POST /api/themes[?replace=1]`（管理员，zip 原文）、`DELETE /api/themes/:id`（管理员）与 `GET /api/themes/:id/export` 的说明见服务端 API 文档。
 - 每次写操作都向每个登录用户的事件流发送 `themes_changed`。
-- 共享 UI 包的 Vite 插件把每个内置包的源文件写进构建产物的 `themes/<id>/`，另有 `fonts.json`，把包自带的字体映射到产物里已带的哈希字体。服务器据此从它所提供的构建导出内置包，离线可用。导出时白领的规则限定到它自己的 id，字体全是应用共用字体的包导出时不带 `fonts.css`。
+- 共享 UI 包的 Vite 插件把每个内置包的源文件写进构建产物的 `themes/<id>/`，另有 `fonts.json`，把包自带的字体映射到产物里已带的哈希字体。服务器据此从它所提供的构建导出内置包，离线可用。导出时白领的规则限定到它自己的 id，字体全是应用共用字体的包导出时不带 `fonts.css`。白领导出时不带 `recipes.css`，附带的 README 写明 `base: "modern"` 的包从基准沿用这些配方，因此导出的白领只改 id 即可导入。
 
 ## Web App 契约
 

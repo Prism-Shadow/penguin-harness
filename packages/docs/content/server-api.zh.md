@@ -680,7 +680,7 @@ interface AgentApiKeyInfo {
   - `403` `admin_required`：成员的写操作。
 - 文件响应带它的类型，以及 `X-Content-Type-Options: nosniff`、`Cache-Control: private, max-age=31536000, immutable`、`Content-Security-Policy: sandbox; default-src 'none'` 与 `Cross-Origin-Resource-Policy: same-origin`。只提供该主题包 `installed.json` 所列的文件。
 - 删除内置包返回 `400` `theme_builtin`。未导入的 id 返回 `404` `theme_not_found`，导出未知 id 亦然。
-- 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。要做自己的主题包，就导出一个，把 `pack.json` 与选择器里的 id 改成自己的，再导入。
+- 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。白领导出时不带 `recipes.css`，因为 `"base": "modern"` 的包从基准沿用白领的配方，导出的 `README.md` 写明了这一点。要做自己的主题包，就导出白领，把 `pack.json` 与选择器里的 id 改成自己的，再导入。极客会带着配方导出，配方里的干净底线命中要先清掉才能导入。
 - 主题包存在数据根的 `themes/<id>/`，每次上传的原 zip 留在 `themes/archives/`。主题包不同步到机器。
 - 每次导入、覆盖与删除，都向每个登录用户的事件流发送 `themes_changed`。
 

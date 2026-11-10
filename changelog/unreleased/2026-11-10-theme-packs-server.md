@@ -40,7 +40,7 @@ An admin can import a theme pack as a zip, and every account on that server can 
 - `v` is a digest of the pack's content, so an export imported again lands byte for byte.
 - `GET /api/themes`, `GET /api/themes/:id/files/<path>`, `POST /api/themes[?replace=1]` (admin, the raw zip), `DELETE /api/themes/:id` (admin) and `GET /api/themes/:id/export` are documented on the server API page.
 - Every write sends `themes_changed` to every signed-in user's event stream.
-- The UI package's Vite plugin writes each built-in pack's sources into the build at `themes/<id>/`, with a `fonts.json` mapping the pack's own fonts to the hashed assets the bundle already carries. A server exports a built-in from the very build it serves, offline. Frost's rules are scoped to its id on export, and a pack whose faces are the app's shared ones exports without `fonts.css`.
+- The UI package's Vite plugin writes each built-in pack's sources into the build at `themes/<id>/`, with a `fonts.json` mapping the pack's own fonts to the hashed assets the bundle already carries. A server exports a built-in from the very build it serves, offline. Frost's rules are scoped to its id on export, and a pack whose faces are the app's shared ones exports without `fonts.css`. Frost exports without its `recipes.css`, with a README saying a `base: "modern"` pack takes them from the base, so an exported Frost imports once its id alone is renamed.
 
 ## The Web App contract
 
