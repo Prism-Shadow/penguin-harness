@@ -20,7 +20,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../server/tsconfig.json --out src/ifaces.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../server/tsconfig.json --out src/ifaces.json --components-out src/cli-commands.gen.ts",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "build": "pnpm gen:ifaces && tsup",

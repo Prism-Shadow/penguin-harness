@@ -63,7 +63,11 @@ import {
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export function registerRunCommand(run: Command, t: Messages): void {
   run
     .requiredOption("-m, --message <message>", t.run.message)
@@ -324,5 +328,31 @@ export function registerRunCommand(run: Command, t: Messages): void {
 class NullSink {
   write(_chunk: string): boolean {
     return true;
+  }
+}
+
+/** `penguin run`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.run",
+        key: "run",
+        summary: {
+          en: "Run a single Task",
+          zh: "单次运行一个 Task",
+        },
+      },
+    ],
+  },
+})
+export class RunCommand {
+  @Bind("cli.run") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerRunCommand(node(command), ctx.messages);
+      },
+    };
   }
 }

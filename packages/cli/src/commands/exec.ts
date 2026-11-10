@@ -24,6 +24,8 @@ import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
 import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 import { renderTable } from "@prismshadow/penguin-server/cli";
 import { serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /**
  * The language the server-side surfaces come in: a command summary is `{ en, zh }` and the
@@ -160,4 +162,33 @@ export function registerExecCommand(exec: Command, t: Messages): void {
         ),
       );
     });
+}
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
+/** `penguin exec`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.exec",
+        key: "exec",
+        summary: {
+          en: "Run a plugin command on the server by its dotted id (`penguin exec ls` lists what the plugins contribute)",
+          zh: "按点分 id 在服务端执行插件命令（`penguin exec ls` 列出各插件贡献的命令）",
+        },
+      },
+    ],
+  },
+})
+export class ExecCommand {
+  @Bind("cli.exec") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerExecCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }
