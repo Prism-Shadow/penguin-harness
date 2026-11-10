@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1525](https://github.com/Prism-Shadow/penguin-harness/pull/1525)
 
 [中文版](2026-11-10-workbench-import-dialog.zh.md)
 
