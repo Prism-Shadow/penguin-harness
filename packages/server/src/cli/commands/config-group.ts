@@ -7,14 +7,16 @@
 import {
   type ProjectConfig,
   type ProviderConnectionPatch,
-  fixedClientType,
-  fixedClientTypeRefuses,
   groupKeyReaches,
   loadProjectConfig,
   providerConnectionShape,
-  providerInfo,
   setProviderConnection,
 } from "@prismshadow/penguin-core";
+import {
+  fixedClientType,
+  fixedClientTypeRefuses,
+  providerInfo,
+} from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
 import { resolveRootOption } from "../root-option.js";
 
