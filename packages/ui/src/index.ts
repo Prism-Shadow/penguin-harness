@@ -307,6 +307,7 @@ export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
+export * from "./components/shell/window-band/window-band";
 export * from "./components/shell/sidebar-frame/sidebar-frame";
 export * from "./components/shell/session-row/session-row";
 

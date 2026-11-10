@@ -114,15 +114,13 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
-| **Skills** | Installed Skills and the Skills prompt |
-| **Hooks** | Installed hook packages and the switch for running them |
-| **Workbenches** | The agent's workbenches: their versions, zip import and export, and removal |
+| **Plugins** | The agent's plugins and the Skills, hook packages, MCP servers and workbenches each one brought; your own Skills, hook packages and workbenches; the switches for Skills, hooks and workbenches |
 | **Memory** | The agent's memories and the memory prompts |
 | **Vault** | Environment variables for the agent's commands |
 | **Schedules** | Scheduled tasks |
 | **API** | Whether programs may call the agent over the Agent API, the approval mode of their conversations, and the keys |
 
-Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `workbenches`, `memory`, `vault`, `schedules` or `api`.
+Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `plugins`, `memory`, `vault`, `schedules` or `api`. The older addresses with `skills`, `hooks` or `workbenches` open **Plugins**.
 
 ### Save changes
 
@@ -139,7 +137,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 Any Project member can change most settings. These actions are for the Project owner only:
 
 - deleting the agent, and overwriting or replacing it from a file;
-- turning **Enable hooks** on or off;
+- the switches on the **Plugins** tab (**Enable skills**, **Enable hooks**, **Enable workbenches** and each workbench's own), the **Skills prompt**, and uninstalling a plugin;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
 - importing memories;
@@ -290,25 +288,35 @@ A row may also show an icon for a server that cannot connect yet. A conversation
 
 PenguinHarness connects to each server in turn and discovers its tools. Nothing is saved. Each row shows the number of tools and the time taken, or **Connection failed** with the reason. References to the vault are filled in first; a server whose keys the vault lacks fails with their names, without a connection attempt.
 
-## Skills tab
+## Plugins tab
 
-The **Skills** tab lists the Skills installed on the agent. You can export or uninstall a Skill, import one with **Import skill**, turn the Skills section of the system prompt on or off with **Enable skills**, and edit the **Skills prompt**. See [Manage an agent's Skills](/skills#manage-an-agents-skills).
+The **Plugins** tab shows what is installed on the agent, grouped by the plugin it came from. From top to bottom:
 
-## Hooks tab
+- **Import** adds a Skill or a hook package, from a zip or by asking the agent in a chat, or a workbench from a zip. **Browse plugin library** opens the **Plugins** page, where plugins are installed.
+- **Enable skills** decides whether the system prompt lists the installed Skills, using the **Skills prompt** below it. **Enable hooks** decides whether new conversations run hook packages. **Enable workbenches** turns all of the agent's workbenches off or back on at once.
+- **Installed plugins** has one row per plugin, with what it brought (for example "3 skills, hooks, 1 workbench") and its status: **Installed**, **Update available**, **Incomplete** when a part is missing, or **Not in library** when an admin removed the plugin from the library. **Update** installs the library's copy again, which also brings back a missing part. **Uninstall** removes all of the plugin's parts at once, after a confirmation that lists them. Select a row to see its parts.
+- **Not from a plugin** lists the Skills, hook packages and workbenches you made or imported yourself.
 
-The **Hooks** tab lists the hook packages installed on the agent. You can export and uninstall hook packages, import one with **Import hook**, and turn hooks on or off for the agent with **Enable hooks**. Installing from the library happens on the **Plugins** page. See [Hook packages](/skills#hook-packages).
+A Skill belongs to a plugin when its name matches a Skill the plugin ships, so a Skill you wrote under such a name is listed under that plugin and goes with it when you uninstall it. A plugin's MCP servers are listed by name with what they still need, such as vault keys; edit them on the **Tools** tab.
 
-## Workbenches tab
+If some part cannot be removed, the message names it and the rest are removed anyway. An agent on a machine that runs an older version cannot uninstall a whole plugin; update the machine on the **Machines** page first.
 
-The **Workbenches** tab lists the agent's workbenches, including those that failed to load, each led by its App Center icon when it has one. **Open** opens a workbench beside a new chat. Its **More** menu (⋯) can **Reload** it, list its **Version history** to **Restore** an earlier version, **Export** its source as a zip, or **Remove** it.
+### Skills and hook packages
 
+A Skill's row shows its name, short description and version, with **Export** and **Uninstall**. A hook package's row also shows the hook points it runs at. See [Manage an agent's Skills](/skills#manage-an-agents-skills) and [Hook packages](/skills#hook-packages).
+
+### Workbenches
+
+A workbench's row, including one that failed to load, is led by its App Center icon when it has one. **Open** opens it beside a new chat, and its **More** menu (⋯) can **Reload** it, list its **Version history** to **Restore** an earlier version, **Export** its source as a zip, or **Remove** it. Its two switches say what they are: **Enable** and **App Center**; selecting the word beside a switch flips it too.
+
+- The **Enable** switch turns a workbench off without deleting anything. It leaves the chat page and the App Center, its pages stop opening, and its data and versions stay. **Version history**, **Restore**, **Export** and **Remove** still work. While **Enable workbenches** is off, every workbench is off and its own switch is greyed at the value it returns to. An agent on a machine that runs an older version shows no switches.
 - **Version history** lists up to 50 versions, newest first. **Restore** makes the workbench's source exactly that version and reloads it at once; its data (`state.json`) stays.
-- **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id.
-- The **App Center** switch puts a shortcut to the workbench in the Project's [App Center](/web-app#the-app-center), or takes it off; selecting the words beside it flips it too. The switch takes effect at once: it sets `penguin.appCenter.show` in the workbench's own `package.json`, leaving the rest of the file as it was, and the reload that follows is recorded as a version. Agents on connected machines have no switch, since the App Center lists this server's agents only.
+- **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id. Uninstalling the plugin a workbench came from deletes it the same way; to keep its data, turn it off instead.
+- The **App Center** switch puts a shortcut to the workbench in the Project's [App Center](/web-app#the-app-center), or takes it off. It takes effect at once: it sets `penguin.appCenter.show` in the workbench's own `package.json`, leaving the rest of the file as it was, and the reload that follows is recorded as a version (a workbench that is off is not loaded). Agents on connected machines have no App Center switch, since the App Center lists this server's agents only.
 - **Export** downloads the source as a zip with one top-level folder named after the workbench id. It never carries `state.json`, hidden files or `node_modules`, and imports back unchanged.
-- **Import zip** adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
+- **Import** › **Workbench** adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
 
-Any Project member can use the tab. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
+The switches, the **Skills prompt** and uninstalling a plugin are for the Project owner; members see the switches' state. Any member can import, update, export and remove parts. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
 
 ## Memory tab
 

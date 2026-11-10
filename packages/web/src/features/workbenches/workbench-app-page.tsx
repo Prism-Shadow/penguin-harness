@@ -36,7 +36,7 @@ export function WorkbenchAppPage() {
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const toAppCenter = isAppCenterPath(returnTo);
-  const { tab, failure } = useAppPageTab({
+  const { tab, off, failure } = useAppPageTab({
     projectId,
     agentId,
     workbenchId,
@@ -100,12 +100,12 @@ export function WorkbenchAppPage() {
     // A window of its own (`isolate`): its layers order only among themselves, under the
     // palette and every other overlay in the portal root. The theme's canvas shows through a
     // page that paints no background of its own.
-    <div className="relative isolate h-full w-full bg-canvas pt-[env(titlebar-area-height,0px)]">
+    <div className="relative isolate h-full w-full bg-canvas pt-[var(--window-band-height,0px)]">
       {/* A list request that fails after the page is up says so over it, rather than leaving
           a frame that quietly stopped following the workbench. */}
       {tab && failure !== null && (
         <div
-          className="absolute inset-x-0 top-[env(titlebar-area-height,0px)] z-window-overlay bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          className="absolute inset-x-0 top-[var(--window-band-height,0px)] z-window-overlay bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
           role="status"
         >
           {failure}
@@ -125,7 +125,7 @@ export function WorkbenchAppPage() {
           <span>
             {tab === undefined && failure === null
               ? S.workbenches.loadingPage
-              : (failure ?? S.workbenches.noSuchPage)}
+              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
           </span>
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>

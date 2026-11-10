@@ -1,0 +1,59 @@
+/* The desktop window's title band: the strip across the top of the window where the system's
+   title bar would be, which the desktop shell leaves to the page.
+
+   Its height is one variable, read by everything that has to keep out of the band (the app
+   window, the sign-in page, the full-page Workbench, every overlay pinned to the window's top). By
+   default it is the Window Controls Overlay's band — the macOS window's, and any window an older
+   desktop shell opens — and zero in a browser, which has no overlay. The Web App sets it on <html>
+   once the desktop shell's bridge names a height of its own (Windows and Linux have no overlay).
+   A use site still writes `var(--window-band-height,0px)`, so a page without this sheet reserves
+   nothing. */
+:root {
+  --window-band-height: env(titlebar-area-height, 0px);
+}
+
+/* What drags the window: a strip marked `data-window-drag`, minus the buttons on it. A drag region
+   swallows the pointer, so a control left draggable could never be clicked; one marked no-drag
+   wins over every drag region under it, whatever their order. */
+[data-window-drag] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-window-drag] button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* The app window with a band (`AppShell`'s `band`): the band and every gap around the main column
+   take the navigation column's colour, and the main column is a card inset from the band and the
+   window's right and bottom edges. The colour is laid over the theme's own field rather than in
+   place of it, so a translucent column colour (Frost's milky glass) comes out exactly as it does
+   on the column; the column itself then paints nothing, and draws no edge, since the card's own
+   edge separates the two. With a custom background the image shows through instead, as it does
+   behind the column's glass. Unlayered, like wallpaper.css, so it wins over a theme's recipe for
+   the same columns. */
+.ui-shell[data-window-band]:not([data-wallpaper]) {
+  box-shadow: inset 0 0 0 100vmax var(--ui-shell-nav-bg);
+}
+.ui-shell[data-window-band] > [data-slot="nav"] {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+.ui-shell[data-window-band] > [data-slot="main"] {
+  margin-block: calc(var(--ui-space-unit) * 1.5);
+  margin-inline: calc(var(--ui-space-unit) * 1.5);
+  border: 1px solid var(--ui-shell-line);
+  border-radius: var(--ui-radius-lg);
+  overflow: clip;
+}
+.ui-shell[data-window-band]:not([data-wallpaper]) > [data-slot="main"] {
+  background-color: var(--ui-shell-main-bg);
+}
+/* Beside the navigation column the card starts at the column's edge, which is already a gap of
+   the column's colour; below `md` the column is hidden, and the card keeps its gap on that side too. */
+@media (min-width: 48rem) {
+  .ui-shell[data-window-band] > [data-slot="nav"] + [data-slot="main"] {
+    margin-inline-start: 0;
+  }
+}

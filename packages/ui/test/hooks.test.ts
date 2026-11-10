@@ -32,7 +32,7 @@
  *   the renderer being a host loosens nothing;
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
  *   sits on an h1, a `.ui-glass` that names its anatomy names `tile` or `navigation`, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
- *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
+ *   `nav`, `main`, `dock` or `band` (the desktop window's title band), `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
@@ -198,7 +198,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
 const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded"]);
 
 const FRAME_SLOTS = new Set(["head", "body", "foot", "pane"]);
-const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
+const SHELL_SLOTS = new Set(["nav", "main", "dock", "band"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
@@ -380,7 +380,7 @@ describe("style hooks", () => {
         if (names.has("ui-shell")) {
           for (const { slot } of childSlots(element)) {
             if (!SHELL_SLOTS.has(slot)) {
-              problems.push(`${at} .ui-shell slot "${slot}" is not nav, main or dock`);
+              problems.push(`${at} .ui-shell slot "${slot}" is not nav, main, dock or band`);
             }
           }
         }

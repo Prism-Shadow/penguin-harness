@@ -1,7 +1,9 @@
 /**
  * The one workbench page a whole-page view shows — the full-page route and the App Center's
  * window both render it: the tab `tabKey` names, else the workbench's first; `null` when there is
- * no such page, `undefined` until the first answer. The list is read from the page's Agent, and
+ * no such page, `undefined` until the first answer; `off` when the workbench is listed but does
+ * not run (its own switch or the Agent-wide one is off), so it serves no page and the view says
+ * why. The list is read from the page's Agent, and
  * read again whenever the server says a workbench of that Agent changed or went away. A read
  * that fails keeps the page already shown and reports why.
  *
@@ -14,6 +16,7 @@ import * as api from "../../api/endpoints";
 import { openUserEvents } from "../../api/sse";
 import {
   appPageTab,
+  runningWorkbenches,
   WORKBENCH_UPDATED_EVENT,
   workbenchTabsOf,
   type WorkbenchTab,
@@ -40,8 +43,13 @@ export function useAppPageTab({
   machineId,
   ownEvents,
   enabled = true,
-}: AppPageTabQuery): { tab: WorkbenchTab | null | undefined; failure: string | null } {
+}: AppPageTabQuery): {
+  tab: WorkbenchTab | null | undefined;
+  off: boolean;
+  failure: string | null;
+} {
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
+  const [off, setOff] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +62,12 @@ export function useAppPageTab({
       try {
         const res = await api.getWorkbenches(projectId, agentId, machineId);
         if (!alive) return;
-        setTab(appPageTab(workbenchTabsOf(res.workbenches, machineId), workbenchId, tabKey));
+        const running = runningWorkbenches(res);
+        setOff(
+          res.workbenches.some((w) => w.id === workbenchId) &&
+            !running.some((w) => w.id === workbenchId),
+        );
+        setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
         setFailure(null);
       } catch (err) {
         if (alive) setFailure(err instanceof Error ? err.message : String(err));
@@ -82,5 +95,5 @@ export function useAppPageTab({
     };
   }, [enabled, ownEvents, projectId, agentId, workbenchId, tabKey, machineId]);
 
-  return { tab, failure };
+  return { tab, off, failure };
 }

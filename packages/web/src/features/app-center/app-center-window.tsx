@@ -31,7 +31,7 @@ export function AppCenterWindow({
   onClose: () => void;
   onFullScreen: () => void;
 }) {
-  const { tab, failure } = useAppPageTab({
+  const { tab, off, failure } = useAppPageTab({
     projectId,
     agentId: shortcut.agentId,
     workbenchId: shortcut.workbenchId,
@@ -73,7 +73,7 @@ export function AppCenterWindow({
           >
             {tab === undefined && failure === null
               ? S.workbenches.loadingPage
-              : (failure ?? S.workbenches.noSuchPage)}
+              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
           </p>
         )}
       </div>

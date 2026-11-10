@@ -4,7 +4,7 @@
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
  *   served by the icon route. A click opens it windowed over the grid, and the window's close
  *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The Show in the App Center switch on the workbench's row
+ *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins tab)
  *   takes the tile off (the empty page offers Create with AI) and puts it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
@@ -19,7 +19,13 @@ import { setAccountPrefs } from "./account-prefs.mjs";
 import { zip } from "./workbench-zip.mjs";
 
 const BASE = process.env.BASE_URL;
-const SUPPORT = "/agents/penguin_support?tab=workbenches";
+const SUPPORT = "/agents/penguin_support?tab=plugins";
+
+/** The Plugins tab of Support's Agent, with the plugin group that holds the workbench unfolded. */
+async function openSupportRow(page) {
+  await page.goto(`${BASE}${SUPPORT}`);
+  await page.locator('button[aria-expanded="false"]').filter({ hasText: /1 workbench/ }).click();
+}
 
 test("the App Center opens Support windowed and full screen, and its switch takes the tile off and back", async ({
   page,
@@ -50,7 +56,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await page.getByRole("button", { name: "Exit full screen" }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
 
-  await page.goto(`${BASE}${SUPPORT}`);
+  await openSupportRow(page);
   const toggle = page.getByRole("switch", { name: "Show in the App Center Support" });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await toggle.click();
@@ -62,7 +68,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page.getByText("The App Center is empty")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
-  await page.goto(`${BASE}${SUPPORT}`);
+  await openSupportRow(page);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
   await expect(toggle).toBeEnabled({ timeout: 30_000 });

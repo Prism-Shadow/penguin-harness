@@ -7,13 +7,20 @@
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. Its workbenches are the ones a suite gives it: they reload, restore, export
- * as a zip download and are removed, a zip upload installs the one the suite names, and the App
- * Center switch sets their `appCenter.show`. The Project's App Center lists the ones shown, the
- * way the server derives a shortcut (titles from the declaration, else the first tab, else the
- * name; broken when the files do not load); a suite can add or replace one mid-test
- * ({@link AgentServer.putWorkbench}). A test
- * can refuse the next write with {@link AgentServer.refuseNext}, or read back what was written
- * with {@link AgentServer.writes}.
+ * as a zip download, switch on and off (each, and all at once) and are removed, a zip upload
+ * installs the one the suite names, and the App Center switch sets their `appCenter.show`. The
+ * Project's App Center lists the ones shown, the way the server derives a shortcut (titles from
+ * the declaration, else the first tab, else the name; broken when the files do not load); a suite
+ * can add or replace one mid-test ({@link AgentServer.putWorkbench}). A test can refuse the next
+ * write with
+ * {@link AgentServer.refuseNext}, or read back what was written with {@link AgentServer.writes}.
+ *
+ * What the Agent carries besides is the suite's too (`parts`): Skills, hook packages, MCP server
+ * entries and the install receipts naming each workbench's plugin. Uninstalling a plugin takes
+ * away what the server would — the Skills its library entry contributes, the hook package of its
+ * name, the MCP entries and workbenches recording it — and reports any part the suite names in
+ * `uninstallFailures` as not removed. A server `older` than the workbench switches lists no
+ * `enabled` and has neither those routes nor the plugin uninstall.
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
@@ -63,10 +70,15 @@ import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  AgentMcpServerItem,
   AgentSummary,
   AppCenterLayout,
   AppCenterResponse,
   AppCenterShortcut,
+  HookItem,
+  PluginUninstallResponse,
+  PluginUpdateRef,
+  SkillMetadataItem,
   Employment,
   OrgHireRequest,
   OrganizationCreateRequest,
@@ -305,6 +317,20 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** What the Agent carries beyond its library installs (by default nothing). */
+    parts?: {
+      skills?: SkillMetadataItem[];
+      hooks?: HookItem[];
+      mcpServers?: AgentMcpServerItem[];
+      /** Each workbench's install receipt: the plugin that installed it. */
+      receipts?: Array<{ name: string; plugin: string; version: string }>;
+    };
+    /** Parts a plugin uninstall leaves in place and reports as failed. */
+    uninstallFailures?: NonNullable<PluginUninstallResponse["failed"]>;
+    /** The library plugins the Agent's list says it is behind on. */
+    pluginUpdates?: PluginUpdateRef[];
+    /** A server from before the workbench switches and the plugin uninstall. */
+    older?: boolean;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
     /** The Skills this server's Agent already has installed (by default none). */
@@ -335,6 +361,17 @@ export function agentServer(
   let workbenches = [...(options.workbenches ?? [])];
   const building = new Set<string>();
   let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
+  let partSkills = [...(options.parts?.skills ?? [])];
+  let partHooks = [...(options.parts?.hooks ?? [])];
+  let partMcp = [...(options.parts?.mcpServers ?? [])];
+  let receipts = [...(options.parts?.receipts ?? [])];
+  let pluginUpdates = [...(options.pluginUpdates ?? [])];
+  /** The workbenches switched off, and the Agent-wide switch. */
+  const switchedOff = new Set<string>();
+  let allOn = true;
+  /** A workbench as the list describes it: with its switch, unless the server predates them. */
+  const listed = (w: WorkbenchInfo): WorkbenchInfo =>
+    options.older ? w : { ...w, enabled: !switchedOff.has(w.id) };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -423,7 +460,7 @@ export function agentServer(
     workbenchCount: workbenches.length,
     memoryCount: 0,
     apiEnabled: false,
-    pluginUpdates: [],
+    pluginUpdates: agentId === AGENT_ID ? pluginUpdates : [],
   });
 
   /** The machines list as this server reports it: itself first, then each machine. */
@@ -551,20 +588,23 @@ export function agentServer(
           .filter((p) => names.includes(p.name))
           .flatMap((p) => p.skills.map((skill) => skill.name));
         installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
+        pluginUpdates = pluginUpdates.filter((u) => !names.includes(u.name));
       }
       const version = (name: string) =>
         libraryOf(request.machine)
           .flatMap((p) => p.skills)
           .find((skill) => skill.name === name)?.version ?? "";
+      const installed = (installs.get(key) ?? []).filter(
+        (name) => !partSkills.some((skill) => skill.name === name),
+      );
       return json({
-        skills: (installs.get(key) ?? []).map((name) => ({
-          name,
-          description: "",
-          version: version(name),
-        })),
-        hooks: [],
-        mcpServers: [],
-        workbenches: [],
+        skills: [
+          ...partSkills,
+          ...installed.map((name) => ({ name, description: "", version: version(name) })),
+        ],
+        hooks: partHooks,
+        mcpServers: partMcp,
+        workbenches: receipts,
       });
     }
     if (path === "/api/projects") {
@@ -780,10 +820,10 @@ export function agentServer(
         headers: { "content-disposition": `attachment; filename*=UTF-8''${AGENT_ID}-20261109.zip` },
       });
     }
-    if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
     if (path === `/api/projects/${PROJECT_ID}/app-center` && method === "GET") {
       const shortcuts: AppCenterShortcut[] = workbenches
-        .filter((w) => w.appCenter?.show === true)
+        // A workbench switched off, or every one while the Agent-wide switch is off, has no tile.
+        .filter((w) => w.appCenter?.show === true && allOn && !switchedOff.has(w.id))
         .map((w) => {
           const first = w.tabs[0];
           const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
@@ -807,6 +847,49 @@ export function agentServer(
     if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
       appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;
       return json({ layout: appCenterLayout });
+    }
+    const pluginPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins\/([^/]+)$/.exec(path);
+    if (pluginPath !== null && method === "DELETE" && !options.older) {
+      const key = installKey(request.machine, decodeURIComponent(pluginPath[1]!));
+      const name = decodeURIComponent(pluginPath[2]!);
+      const failures = (options.uninstallFailures ?? []).filter((f) =>
+        [...partSkills.map((s) => s.name), ...partHooks.map((h) => h.name)].includes(f.name),
+      );
+      const kept = (n: string) => failures.some((f) => f.name === n);
+      const own = new Set(
+        libraryOf(request.machine)
+          .find((p) => p.name === name)
+          ?.skills.map((skill) => skill.name) ?? [],
+      );
+      const removed: PluginUninstallResponse["removed"] = {
+        workbenches: receipts.filter((r) => r.plugin === name).map((r) => r.name),
+        mcpServers: partMcp.filter((m) => m.plugin === name).map((m) => m.name),
+        hooks: partHooks.filter((h) => h.name === name && !kept(h.name)).map((h) => h.name),
+        skills: [
+          ...new Set([...partSkills.map((s) => s.name), ...(installs.get(key) ?? [])]),
+        ].filter((n) => own.has(n) && !kept(n)),
+      };
+      const count = Object.values(removed).reduce((n, list) => n + list.length, 0);
+      if (count + failures.length === 0) return apiError(404, "plugin_not_installed");
+      workbenches = workbenches.filter((w) => !removed.workbenches.includes(w.id));
+      receipts = receipts.filter((r) => r.plugin !== name);
+      partMcp = partMcp.filter((m) => m.plugin !== name);
+      partHooks = partHooks.filter((h) => !removed.hooks.includes(h.name));
+      partSkills = partSkills.filter((s) => !removed.skills.includes(s.name));
+      installs.set(
+        key,
+        (installs.get(key) ?? []).filter((n) => !removed.skills.includes(n)),
+      );
+      return json({ removed, ...(failures.length > 0 ? { failed: failures } : {}) });
+    }
+    if (path === `${AGENT_PATH}/workbenches/enabled` && method === "PUT" && !options.older) {
+      allOn = (request.body as { enabled: boolean }).enabled;
+      return json({ workbenches: workbenches.map(listed), enabled: allOn });
+    }
+    if (path === `${AGENT_PATH}/workbenches`) {
+      return json(
+        options.older ? { workbenches } : { workbenches: workbenches.map(listed), enabled: allOn },
+      );
     }
     if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
       const incoming = options.importedWorkbench;
@@ -833,6 +916,7 @@ export function agentServer(
       if (!workbench) return apiError(404, "workbench_not_found");
       if (method === "DELETE") {
         workbenches = workbenches.filter((item) => item.id !== id);
+        receipts = receipts.filter((r) => r.name !== id);
         return new Response(null, { status: 204 });
       }
       if (action === "archive") {
@@ -851,11 +935,16 @@ export function agentServer(
         const index = workbenches.indexOf(workbench);
         const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
         workbenches = workbenches.map((item, i) => (i === index ? next : item));
-        return json({ workbench: next });
+        return json({ workbench: listed(next) });
+      }
+      if (action === "enabled" && method === "PUT" && !options.older) {
+        if ((request.body as { enabled: boolean }).enabled) switchedOff.delete(workbench.id);
+        else switchedOff.add(workbench.id);
+        return json({ workbench: listed(workbench) });
       }
       if (action === "rollback")
         workbench.revision = (request.body as { revision: string }).revision;
-      return json({ workbench });
+      return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
       const body = request.body as { agentId: string; name?: string };
@@ -919,8 +1008,8 @@ export function agentServer(
       );
       return new Response(null, { status: 204 });
     }
-    if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
-    if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
+    if (path === `${AGENT_PATH}/skills`) return json({ skills: partSkills });
+    if (path === `${AGENT_PATH}/hooks`) return json({ hooks: partHooks });
     if (path === `${AGENT_PATH}/memory`) {
       return json({
         enabled: stored.config.memory.enabled,

@@ -251,6 +251,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
+    kind: "family",
+    key: "penguin.sidebarModeNavPinned.",
+    scope: "browser",
+    why: "Which of a sidebar mode's nav entries (company mode's) stay out of the fold, one key per mode; names nothing on the server.",
+  },
+  {
     kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
