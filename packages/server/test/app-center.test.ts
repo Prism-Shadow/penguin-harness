@@ -660,14 +660,19 @@ describe("the App Center", { timeout: 30_000 }, () => {
       t.root,
       ICON_ROW,
       "badge",
-      packageJson({ tabs: [tab("main", "Badge")], appCenter: { show: false, icon: "ui/icon.svg" } }),
+      packageJson({
+        tabs: [tab("main", "Badge")],
+        appCenter: { show: false, icon: "ui/icon.svg" },
+      }),
       { "index.ts": HANDLER, "ui/icon.svg": ICON },
     );
     const base = `/api/projects/${PROJECT}/agents/${ICON_ROW}/workbenches`;
     const listed = (await (await owner.get(base)).json()) as { workbenches: WorkbenchInfo[] };
     const icon = listed.workbenches.find((w) => w.id === "badge")?.icon;
     expect(icon).toEqual({
-      url: expect.stringMatching(new RegExp(`^${iconRoute(ICON_ROW, "badge")}\\?rev=[0-9a-f]{12}$`)),
+      url: expect.stringMatching(
+        new RegExp(`^${iconRoute(ICON_ROW, "badge")}\\?rev=[0-9a-f]{12}$`),
+      ),
       tint: false,
     });
     const served = await owner.get(icon!.url);
@@ -675,7 +680,9 @@ describe("the App Center", { timeout: 30_000 }, () => {
     expect(await served.text()).toBe(ICON);
 
     const res = await owner.patch(`${base}/badge/app-center`, { show: true });
-    expect((await res.json()) as { workbench: WorkbenchInfo }).toMatchObject({ workbench: { icon } });
+    expect((await res.json()) as { workbench: WorkbenchInfo }).toMatchObject({
+      workbench: { icon },
+    });
     expect((await shortcutOf(ICON_ROW, "badge"))?.icon).toEqual(icon);
   });
 

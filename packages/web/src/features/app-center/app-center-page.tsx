@@ -369,9 +369,7 @@ export function AppCenterPage() {
           grid={grid}
           titleOf={titleOf}
           onClose={() => setNewFolderPicked(null)}
-          onCreate={(name, apps) =>
-            commit(groupApps(grid, apps, { id: newFolderId(grid), name }))
-          }
+          onCreate={(name, apps) => commit(groupApps(grid, apps, { id: newFolderId(grid), name }))}
         />
       )}
       <BuildErrorDialog

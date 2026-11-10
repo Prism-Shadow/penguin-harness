@@ -83,8 +83,7 @@ function NewFolderForm({
   /** The starting name is selected once, when the field first takes focus. */
   const unselected = useRef(true);
   const name = form.draft.name.trim();
-  const valid =
-    name !== "" && [...name].length <= FOLDER_NAME_MAX && form.draft.apps.length > 0;
+  const valid = name !== "" && [...name].length <= FOLDER_NAME_MAX && form.draft.apps.length > 0;
   /** Every app in the grid's order, with the folder it sits in. */
   const rows = grid.flatMap<{ app: GridApp; folder: GridFolder | null }>((item) =>
     item.type === "app"
@@ -156,7 +155,9 @@ function NewFolderForm({
                         <span className="truncate">{title}</span>
                       </span>
                     }
-                    {...(folder !== null ? { hint: S.appCenter.newFolderInFolder(folder.name) } : {})}
+                    {...(folder !== null
+                      ? { hint: S.appCenter.newFolderInFolder(folder.name) }
+                      : {})}
                   />
                 </li>
               );

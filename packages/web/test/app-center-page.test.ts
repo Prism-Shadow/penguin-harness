@@ -182,8 +182,8 @@ async function drag(from: Element, to: HTMLElement, x: number): Promise<void> {
 
 /** The new-folder dialog's checkbox for the app titled `title`. */
 const appBox = (title: string) =>
-  [...topDialog().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
-    (box) => spoken(box.closest("label")!).startsWith(title),
+  [...topDialog().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((box) =>
+    spoken(box.closest("label")!).startsWith(title),
   )!;
 /** The titles of the apps checked in the new-folder dialog, in its order. */
 const checkedApps = () =>

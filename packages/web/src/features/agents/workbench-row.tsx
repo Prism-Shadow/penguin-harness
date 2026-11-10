@@ -26,7 +26,7 @@ import {
   Switch,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 
 /** Edge of the row's mark, in px: the tile every settings row leads with. */
 const MARK_PX = 36;
@@ -138,7 +138,12 @@ export function WorkbenchRowMenu({
           onSelect={pick(onExport)}
         />
         <MenuSeparator />
-        <MenuItem glyph={ICONS.trash} label={S.workbenches.remove} danger onSelect={pick(onRemove)} />
+        <MenuItem
+          glyph={ICONS.trash}
+          label={S.workbenches.remove}
+          danger
+          onSelect={pick(onRemove)}
+        />
       </Menu>
     </Dropdown>
   );
