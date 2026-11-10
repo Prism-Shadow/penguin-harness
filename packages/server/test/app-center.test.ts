@@ -55,6 +55,8 @@
  *   declaration read back, records a version, and the shortcut appears.
  * - Given a body without a boolean `show`, an unknown workbench, or a package.json that is not a
  *   JSON object, nothing is written and the answer says which.
+ * - Given a workbench switched off, by its own switch or the Agent's, it has no tile; its row
+ *   still names its declaration and icon, and the App Center switch writes it without loading it.
  *
  * Only the switch, the held load, the bad icons' hints and the icon row load workbenches, each on
  * an Agent of its own, so listing the others never compiles them.
@@ -684,6 +686,32 @@ describe("the App Center", { timeout: 30_000 }, () => {
       workbench: { icon },
     });
     expect((await shortcutOf(ICON_ROW, "badge"))?.icon).toEqual(icon);
+  });
+
+  it("gives a switched-off workbench no tile, keeps its declaration on its row, and lets the App Center switch write it", async () => {
+    const base = `/api/projects/${PROJECT}/agents/${ICON_ROW}/workbenches`;
+    const off = await owner.put(`${base}/badge/enabled`, { enabled: false });
+    expect(off.status, await off.clone().text()).toBe(200);
+    expect(await ids()).not.toContain(`${ICON_ROW}/badge`);
+    const listed = (await (await owner.get(base)).json()) as { workbenches: WorkbenchInfo[] };
+    expect(listed.workbenches.find((w) => w.id === "badge")).toMatchObject({
+      enabled: false,
+      appCenter: { show: true, icon: "ui/icon.svg" },
+      icon: { url: expect.stringContaining(iconRoute(ICON_ROW, "badge")), tint: false },
+    });
+    const hidden = await owner.patch(`${base}/badge/app-center`, { show: false });
+    expect(hidden.status, await hidden.clone().text()).toBe(200);
+    expect(((await hidden.json()) as { workbench: WorkbenchInfo }).workbench).toMatchObject({
+      enabled: false,
+      appCenter: { show: false },
+    });
+
+    expect((await owner.put(`${base}/badge/enabled`, { enabled: true })).status).toBe(200);
+    expect((await owner.patch(`${base}/badge/app-center`, { show: true })).status).toBe(200);
+    expect(await ids()).toContain(`${ICON_ROW}/badge`);
+    // The Agent-wide switch takes every tile of the Agent off.
+    expect((await owner.put(`${base}/enabled`, { enabled: false })).status).toBe(200);
+    expect(await ids()).not.toContain(`${ICON_ROW}/badge`);
   });
 
   it("finds no icon for a workbench without one or an unknown workbench, and refuses a user outside the Project", async () => {

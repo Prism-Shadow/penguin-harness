@@ -11,6 +11,7 @@
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
+ *   DELETE /api/projects/:p/agents/:a/plugins/:name       # uninstall all of one plugin (owner only)
  *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
  *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
@@ -19,9 +20,10 @@
  * with library content (i.e. an update). A server name the Agent already has from someone else
  * refuses the whole request before anything is written (409 `mcp_server_name_taken`).
  * Installed skills and hook packages keep their own routes (skills.ts, hooks.ts); MCP servers
- * are listed and removed here, one by one — a plugin's uninstall from the Plugins page removes
- * its servers like its skills, and anyone who can edit the Agent's config could already rewrite
- * the whole list.
+ * are listed and removed here, one by one — anyone who can edit the Agent's config could
+ * already rewrite the whole list. Uninstalling a whole plugin is one request that removes
+ * every part on the server (services/plugin-uninstall.ts), so a failure half-way is reported
+ * rather than leaving a page to guess which of its own requests landed.
  *
  * Library and registry are two views of one kind of thing — a package of skills and/or
  * hooks. The library is what this build carries; the registry is what the deployment can
@@ -55,6 +57,7 @@ import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
 import type {
   AgentMcpServersResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   PluginFilesResponse,
   PluginIndexEntry,
   PluginIndexResponse,
@@ -66,6 +69,7 @@ import type { ServerConfig } from "../../config.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
@@ -96,6 +100,7 @@ import {
 } from "../../services/plugin-archive.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import type { PluginLibrary } from "../../plugin/library-module.js";
+import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -104,6 +109,8 @@ export interface PluginsRouteDeps {
   agentConfigService: AgentConfig;
   manager: ManagerIface;
   library: PluginLibrary;
+  /** An uninstall removes the plugin's workbenches the way a single removal does. */
+  workbenches: Pick<Workbenches, "remove">;
 }
 import { errorBody, HttpError } from "../errors.js";
 import { iconRef, iconResponse } from "../icon-response.js";
@@ -264,6 +271,36 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     );
   });
 
+  // Owner only, unlike an install: it takes the plugin's workbenches with their data and
+  // history, which is the owner's call like deleting the Agent.
+  app.delete("/:name", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const root = deps.config.root;
+    // Workbenches in the layout before Agent State are found where they move to.
+    await migrateWorkbenches(agentDir(root, projectId, agentId));
+    const result = await uninstallAgentPlugin(
+      { root, library: deps.library, workbenches: deps.workbenches },
+      projectId,
+      agentId,
+      name,
+    );
+    if (result === null) {
+      throw new HttpError(
+        404,
+        "plugin_not_installed",
+        `The agent has no part of plugin ${name} to uninstall.`,
+      );
+    }
+    // Once, for every part: a conversation that is running is rebuilt on its next idle access
+    // without the plugin's hooks, servers and Skills.
+    deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    return c.json(result satisfies PluginUninstallResponse);
+  });
+
   return app;
 }
 
@@ -329,6 +366,7 @@ export class PluginRoutes {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly library!: PluginLibrary;
+  @Use() private readonly workbenches!: Workbenches;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -340,6 +378,7 @@ export class PluginRoutes {
       agentConfigService: this.agentConfig,
       manager: this.manager,
       library: this.library,
+      workbenches: this.workbenches,
     };
     this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);

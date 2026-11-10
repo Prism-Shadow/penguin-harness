@@ -21,6 +21,7 @@
 - 每个图块、分组与网格空白处都有右键菜单：打开、全屏打开、移动到…、向前 / 向后移动、移出分组、查看错误、在 Agent 设置中查看、从应用中心移除；分组另有重命名与解散分组；空白处有**新建分组…**与**恢复默认排列**，后者先确认。键盘与触屏经这些菜单整理网格。
 - `PATCH /api/projects/:projectId/agents/:agentId/workbenches/:id/app-center` `{ show }` 只改写工作台 `package.json` 中的 `penguin.appCenter.show`（2 空格缩进，其余键不变），随后重新加载并记为一个版本。`package.json` 不是 JSON 对象时应答 409 `workbench_manifest_invalid`。Agent 设置的工作台标签页中，本服务端 Agent 的每一行新增应用中心开关（即拨即存），旁有文字**应用中心**（点击文字同样拨动，较长的说明作为悬停提示）。
 - 工作台标签页的行写明各控件的作用：**打开**是文字按钮；重新加载、**历史版本**、打包导出与移除（仍先确认）从裸图标按钮收进**更多**（⋯）菜单。行首在工作台声明了应用中心图标时显示该图标，否则为铁砧图块；`WorkbenchInfo.icon` 以与快捷入口相同的 `IconRef` 给出它，机器上的 Agent 则改指向该机器。机器上 Agent 的行只有**打开**与**更多**，没有开关。
+- 被自身或 Agent 级启停开关（[#1496](https://github.com/Prism-Shadow/penguin-harness/pull/1496)）关闭的工作台不出现在应用中心；它的行照常给出应用中心声明与图标，应用中心开关只改写清单、不加载它。
 - 从应用中心打开的工作台整页，退出时回到应用中心；从窗口进入的回到该窗口。
 - `packages/ui` 新增 `ContextMenu`：单个目标的菜单，右键在指针处打开，Shift+F10 或 ContextMenu 键在聚焦的目标处打开，触屏长按打开；Esc 关闭并交还焦点；嵌套的目标由最内层承接手势，其余位置保留浏览器自带菜单。`isContextMenuKey` 同时识别 ContextMenu 键，各行菜单一并受益。`InstallRing` 是构建中的圆环。组件画廊的选择器页演示右键菜单，新增的应用中心页面展示各图块状态与一个分组。
 - 没有快捷入口时，页面说明工作台是什么，并提供**用 AI 创建**：以 `web-design` 与 `penguin-plugin` 两个 Skill 打开新对话，请 Agent 做一个出现在应用中心的工作台。

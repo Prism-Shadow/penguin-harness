@@ -27,7 +27,7 @@ import type { IconRef } from "../api/types.js";
 import { iconRev } from "../http/icon-response.js";
 import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
 import { readLoadStatus } from "./compile.js";
-import { isSafeRelPath, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
+import { isSafeRelPath, isSwitchedOff, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
 
 const TITLE_MAX = 60;
 const TABS_KEY = "WebModule.sessionTabs";
@@ -258,7 +258,8 @@ function shortcutOf(
 
 /**
  * One Agent's shortcuts, by title: every folder under `base` with a package.json whose
- * declaration holds up and says `show: true`. `building` says whether a load of a folder is under
+ * declaration holds up and says `show: true`, and whose own switch is on (one turned off serves
+ * nothing, so it has no tile; the caller leaves out an Agent whose Agent-wide switch is off). `building` says whether a load of a folder is under
  * way or queued in this process; the caller keeps that, this module keeps no state.
  */
 export async function agentShortcuts(
@@ -273,7 +274,7 @@ export async function agentShortcuts(
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (manifest.appCenter?.show !== true) continue;
+    if (manifest.appCenter?.show !== true || (await isSwitchedOff(dir))) continue;
     const shown = { ...manifest, appCenter: manifest.appCenter };
     const build = await buildOf(dir, building(entry.name));
     out.push(shortcutOf(projectId, agent, entry.name, shown, build));

@@ -104,7 +104,7 @@ HTTP 前缀为 `/api/projects/:projectId/agents/:agentId/workbenches`，按已�
 | `icon` | 可选，`ui/` 下的相对路径（不得含 `..`，不超过 256 KB），格式为 SVG、PNG、JPEG、WebP、GIF 或 AVIF，按文件头识别且须与扩展名相符（`.jpg` / `.jpeg` 皆为 JPEG）；经 `GET /:id/app-center/icon` 提供；缺省为按 id 着色的首字母块 |
 | `tab` | 可选，打开时选中的标签页 `key`；缺省首个标签页 |
 
-对象不合规（类型不对、`icon` 越界、超限或文件头与扩展名不符、`tab` 不是已有标签页）记为加载提示（`hints`）而非错误：应用照常加载，只是不出现在应用中心。解析结果为 `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`，未声明时缺省；声明的图标检查通过时，`WorkbenchInfo.icon?: IconRef` 以与快捷入口相同的方式给出它（见下文），无论是否显示，设置页的行首即显示该图标。
+对象不合规（类型不对、`icon` 越界、超限或文件头与扩展名不符、`tab` 不是已有标签页）记为加载提示（`hints`）而非错误：应用照常加载，只是不出现在应用中心。解析结果为 `WorkbenchInfo.appCenter?: WorkbenchAppCenter { show, title?, titleZh?, icon?, tab? }`，未声明时缺省；声明的图标检查通过时，`WorkbenchInfo.icon?: IconRef` 以与快捷入口相同的方式给出它（见下文），无论是否显示，设置页的行首即显示该图标；被启停开关关闭的应用（PRFC-0025）同样从清单读出这两项，它没有快捷入口，开关改写清单后不加载。
 
 Agent 编写应用时写入该键（`penguin-plugin` Skill 的目录约定，以及 `web-design` Skill 问过「Workbench 还是独立应用」之后）。用户在设置页工作台行的开关经 `PATCH /:id/app-center { show }` 改写它：服务端只改 `penguin.appCenter.show`（没有该对象时新建 `{ show }`），以 2 空格缩进加末尾换行重写 `package.json`，其余键原样保留；监视器随之重载，加载照常提交一个版本，应答 `{ workbench }`；权限同重载与删除。`package.json` 不是 JSON 对象时应答 409 `workbench_manifest_invalid`，文件不动。开关与 Agent 同时改写这份文件时后写者胜，监视器加载落盘的那份。插件更新替换源码时连同该键一并覆盖。
 
@@ -211,3 +211,4 @@ PR [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595) 的设计不
 
 - 改动：排列中的分组空了才去掉，只有一个应用的分组保留。
 - 新增：`WorkbenchInfo.icon`（以 `IconRef` 给出声明的图标，无论是否显示），以及「新建分组」对话框所建分组的位置。
+- 改动：被自身或 Agent 级启停开关（PRFC-0025）关闭的应用没有快捷入口，应用中心开关改写其清单后不加载。

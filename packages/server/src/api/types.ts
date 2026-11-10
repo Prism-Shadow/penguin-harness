@@ -3911,7 +3911,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  /**
+   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
+   * version was restored — or switched on or off, by its own switch or the Agent's.
+   */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
   /** A load of a workbench's files has started (the watcher saw an edit, or a list or reload asked for it). */
   | { type: "workbench_building"; projectId: string; agentId: string; workbenchId: string }
@@ -5227,6 +5230,28 @@ export interface AgentPluginsInstallResponse {
 }
 
 /**
+ * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
+ * the server, in one request (owner only). Removed in order: the Workbenches whose install
+ * receipt names the plugin, its `tools.mcpServers` entries (`plugin` field), its hook package
+ * (`agent_state/hooks/<name>/`), and every Skill whose name the library plugin contributes (none
+ * when the plugin has left the library). A part that fails is reported in `failed` and the rest
+ * are still removed; nothing is rolled back. Nothing to remove is 404 `plugin_not_installed`.
+ */
+export interface PluginUninstallResponse {
+  removed: {
+    skills: string[];
+    hooks: string[];
+    mcpServers: string[];
+    workbenches: string[];
+  };
+  failed?: Array<{
+    kind: "skill" | "hook" | "mcpServer" | "workbench";
+    name: string;
+    error: string;
+  }>;
+}
+
+/**
  * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
  * identity, target and what keeps it from connecting — never a header, env or oauth value.
  */
@@ -5356,6 +5381,30 @@ export interface AppCenterLayoutRequest {
 }
 export interface AppCenterLayoutResponse {
   layout: AppCenterLayout | null;
+}
+
+/**
+ * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
+ * included (each says so in `enabled`).
+ */
+export interface WorkbenchesResponse {
+  workbenches: WorkbenchInfo[];
+  /**
+   * The Agent-wide switch: false while `agent_state/workbenches/.disabled` exists, and then no
+   * workbench of the Agent runs, whatever its own switch says. Absent from a server that
+   * predates the switches.
+   */
+  enabled?: boolean;
+}
+
+/**
+ * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
+ * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
+ * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
+ * once; turning it on loads it.
+ */
+export interface WorkbenchEnabledRequest {
+  enabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
