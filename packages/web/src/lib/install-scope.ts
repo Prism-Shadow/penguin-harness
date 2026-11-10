@@ -251,6 +251,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
+    kind: "family",
+    key: "penguin.sidebarModeNavPinned.",
+    scope: "browser",
+    why: "Which of a sidebar mode's nav entries (company mode's) stay out of the fold, one key per mode; names nothing on the server.",
+  },
+  {
     kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
@@ -279,6 +285,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.pluginsGroupsFolded",
     scope: "browser",
     why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupBy",
+    scope: "browser",
+    why: "How the Agents page groups its list (by author or not at all) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Agents page's author sections are folded, by author value (user, agent, company); those values ship with the build and name nothing on the server.",
   },
   {
     kind: "exact",

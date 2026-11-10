@@ -171,7 +171,11 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  installed: Record<string, { skills: SkillMetadataItem[]; hooks: HookItem[] }>;
+  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  installed: Record<
+    string,
+    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+  >;
   installedPlugins: InstalledPluginsResponse;
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;
@@ -251,6 +255,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "回答关于 Claude Code 文档的问题，每条结论都引用语料库里的真实文件。",
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
+      author: "user",
       createdAt: iso(ago(90)),
       // The self-evolution round's accepted candidate: its version, written when the round edited it.
       updatedAt: iso(rsi.evaluatedAt),
@@ -277,6 +282,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "从变更日志起草发布说明，中英各一份。",
         "Drafts release notes from the changelog, in both languages.",
       ),
+      // Made by the general agent through "Create with AI", so the list shows a second group.
+      author: "agent",
       createdAt: iso(ago(40)),
       updatedAt: iso(ago(6)),
       activeSessionCount: 0,
@@ -337,6 +344,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     config: {
       name: agent.name,
       description: agent.description,
+      author: agent.author ?? "user",
       version: agent.version,
       kernelVersion: agent.kernelOutdated ? "2026-08-20" : "2026-09-11",
       kernelLatest: "2026-09-11",

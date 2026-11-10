@@ -1,9 +1,10 @@
 /**
- * The import dialog of the Agent settings Skills, Hooks and Workbenches tabs: the recommended
- * chat import on top, the zip upload below, in two ruled sections. A tab hands in what differs by
- * kind — the title and the words, the prompt builder, the upload call with the code of the 409
- * that asks before overwriting, and the file type the picker accepts — and the rest is the same
- * for every kind.
+ * The import dialog behind the Agent settings Plugins tab's Import menu, one for each kind —
+ * Skill, hook package, workbench: the recommended chat import on top, the zip upload below, in
+ * two ruled sections. Each kind's dialog (agent-skills.tsx, agent-hooks.tsx,
+ * agent-workbenches.tsx) hands in what differs by kind — the title and the words, the prompt
+ * builder, the upload call with the code of the 409 that asks before overwriting, and the file
+ * type the picker accepts — and the rest is the same for every kind.
  *
  * The chat import takes a source (a web page, a repository, a local path, an install command, a
  * description …) and builds a review-then-import prompt from it, which can be copied or prefilled
@@ -44,8 +45,8 @@ import { useAiBridge } from "../ai-create";
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 /**
- * The dialog's words, under the names each kind's dictionary section gives them, so a tab passes
- * its section (`S.skills`, `S.hooks`, `S.workbenches`) as it is. Read at render time.
+ * The dialog's words, under the names each kind's dictionary section gives them, so a caller
+ * passes its section (`S.skills`, `S.hooks`, `S.workbenches`) as it is. Read at render time.
  */
 export interface ChatOrZipImportStrings {
   importChatTitle: string;
@@ -85,7 +86,7 @@ function nameAtMessageEnd(error: ApiError): string | undefined {
 }
 
 export interface ChatOrZipImportDialogProps<T> {
-  /** The dialog's title, the same words as the button that opens it. */
+  /** The dialog's title ("Import skill" …). */
   title: string;
   strings: ChatOrZipImportStrings;
   /** The source field takes several lines (a pasted config block) instead of one. */
@@ -103,7 +104,7 @@ export interface ChatOrZipImportDialogProps<T> {
   /** The name such a 409 names; by default the tail of its message. */
   conflictName?: (error: ApiError) => string | undefined;
   onClose: () => void;
-  /** A zip landed: the tab closes the dialog and reads its list again. */
+  /** A zip landed: the tab closes the dialog and reads its lists again. */
   onImported: (result: T) => void;
 }
 

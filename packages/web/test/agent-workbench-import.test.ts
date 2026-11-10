@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 /**
- * The Workbenches tab's chat import (features/agents/workbenches-tab.tsx, through the shared
- * chat-or-zip-import-dialog.tsx and workbench-import.ts). The zip path is
- * agent-workbench-archive.test.ts's, and closing with a source typed is import-dialogs-guard's.
+ * The workbench chat import on the Agent settings Plugins tab (Import → Workbench, the dialog in
+ * features/agents/agent-workbenches.tsx, through the shared chat-or-zip-import-dialog.tsx and
+ * workbench-import.ts). The zip path is agent-workbench-archive.test.ts's, and closing with a
+ * source typed is import-dialogs-guard's.
  *
- * - "Import workbench" opens the dialog of that name; Copy prompt and Open a new chat wait for a
- *   source.
+ * - Import → Workbench opens the Import workbench dialog; Copy prompt and Open a new chat wait
+ *   for a source.
  * - With a source typed, Copy prompt copies the prompt the preview shows, and Open a new chat
  *   opens a conversation with this Agent holding that same prompt, which names the source, the
  *   Project and the Agent.
@@ -30,7 +31,16 @@ import {
   whereIs,
 } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
-import { button, click, dialogs, hasButton, type, unmountAll, waitFor } from "./helpers/dom";
+import {
+  button,
+  click,
+  dialogs,
+  hasButton,
+  menuItem,
+  type,
+  unmountAll,
+  waitFor,
+} from "./helpers/dom";
 
 const GPU: FakeMachine = { machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] };
 const SOURCE = "https://github.com/acme/workbenches/tree/main/kanban";
@@ -38,17 +48,18 @@ const SOURCE = "https://github.com/acme/workbenches/tree/main/kanban";
 /** The clipboard the copy button writes to. */
 const clipboard = vi.fn<(text: string) => Promise<boolean>>();
 
-/** The Workbenches tab of this Agent, on `machine` when one is named, with its import dialog open. */
+/** The Plugins tab of this Agent, on `machine` when one is named, with Import → Workbench open. */
 async function openImport(machine?: FakeMachine) {
   agentServer(undefined, machine !== undefined ? { machines: [machine] } : {});
   const query = machine !== undefined ? `&machine=${machine.machineId}` : "";
   const router = await mountAgentApp(
     h(ClipboardWriterProvider, { write: clipboard }, h(AgentSettingsPage)),
-    { at: `/agents/${AGENT_ID}?tab=workbenches${query}` },
+    { at: `/agents/${AGENT_ID}?tab=plugins${query}` },
   );
-  const action = en.workbenches.importAction;
+  const action = en.agentPlugins.importAction;
   await waitFor(() => hasButton(action) && !button(action).disabled);
   await click(button(action));
+  await click(menuItem(en.agentPlugins.importWorkbench));
   await waitFor(() => dialogs().length === 1);
   return router;
 }
@@ -57,7 +68,7 @@ const sourceField = () => fieldIn(topDialog(), en.workbenches.importSourceLabel)
 const preview = () => fieldIn(topDialog(), en.workbenches.importPromptLabel).value;
 const draft = () => loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID));
 
-describe("the Workbenches tab's chat import", () => {
+describe("the workbench chat import on the Plugins tab", () => {
   beforeEach(() => {
     setActiveStrings(en);
     localStorage.clear();
@@ -69,10 +80,10 @@ describe("the Workbenches tab's chat import", () => {
     setActiveStrings(zh);
   });
 
-  it("opens Import workbench, whose copy and chat wait for a source", async () => {
+  it("opens Import workbench from the Import menu, whose copy and chat wait for a source", async () => {
     await openImport();
     const titleId = topDialog().getAttribute("aria-labelledby")!;
-    expect(document.getElementById(titleId)?.textContent).toBe(en.workbenches.importAction);
+    expect(document.getElementById(titleId)?.textContent).toBe(en.workbenches.importTitle);
     expect(buttonIn(topDialog(), en.workbenches.importCopyPrompt).disabled).toBe(true);
     expect(buttonIn(topDialog(), en.workbenches.importOpenChat).disabled).toBe(true);
 

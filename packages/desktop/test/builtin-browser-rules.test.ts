@@ -2,6 +2,21 @@
  * Guests attach only to browser storage with hardened preferences. Project partitions keep
  * their own profile even when an element supplies a conflicting webpreferences partition;
  * cookie import and clear preserve the selected profile and refuse arbitrary app partitions.
+ *
+ * Google sign-in sees Electron's own user agent, every other page Chrome's:
+ * - Given a tab whose main frame goes to accounts.google.com or accounts.youtube.com, then it
+ *   presents Electron's own user agent, unmodified.
+ * - Given any other page (Google's own services, look-alike hosts, a sign-in address in a
+ *   query), then it presents Chrome's: Electron's never leaks there.
+ * - Given a tab on the sign-in, when its main frame leaves for another site, then it presents
+ *   Chrome's again.
+ * - Given a main-frame request that still names the user agent its tab just left, then it goes
+ *   out with the tab's, and its client hints and every other header go unchanged.
+ * - Given a request that already names its tab's user agent, or names neither of the guest's
+ *   (a DevTools override), then nothing changes.
+ * - Given a main-frame redirect across the sign-in boundary, either way, then the navigation
+ *   starts over at the target; a redirect that keeps the user agent, one in a frame, one to a
+ *   non-web address, or one past the restart limit is followed as it comes.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -9,19 +24,24 @@ import {
   MAX_FAVICON_URL_CHARS,
   clearDataPlan,
   focusGuestScript,
+  MAX_SIGN_IN_RESTARTS,
   guestContextMenu,
+  guestUserAgents,
   hardenGuestPreferences,
   isGrantedPermission,
   isOpenableUrl,
   mayAttachGuest,
   mayNavigate,
+  navigationRequestHeaders,
   parseBrowserCommand,
   pickFavicon,
   plainChromeUserAgent,
   privateMemoryKB,
   procStatusPrivateKB,
+  restartsAtRedirect,
   tabLoads,
   typesIntoGuest,
+  userAgentForPage,
 } from "../src/builtin-browser-rules.js";
 import type { GuestMenuInput } from "../src/builtin-browser-rules.js";
 
@@ -161,6 +181,127 @@ describe("plainChromeUserAgent", () => {
     const chrome =
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
     expect(plainChromeUserAgent(chrome)).toBe(chrome);
+  });
+});
+
+describe("Google sign-in's user agent", () => {
+  const electron =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) PenguinHarness/0.2.18 Chrome/150.0.7712.40 Electron/43.7.6 Safari/537.36";
+  const chrome =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7712.40 Safari/537.36";
+  const agents = guestUserAgents(electron);
+  /** A main-frame request's headers as Chromium wrote them, client hints included. */
+  const sent = (userAgent: string) => ({
+    "User-Agent": userAgent,
+    "sec-ch-ua": '"Chromium";v="150", "Not?A_Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "Accept-Language": "en-US",
+  });
+
+  it("shows Electron's own user agent, unmodified, on Google's sign-in pages", () => {
+    for (const url of [
+      "https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fmail.google.com",
+      "https://ACCOUNTS.GOOGLE.COM/ServiceLogin",
+      "http://accounts.google.com/",
+      "https://accounts.youtube.com/accounts/SetSID?ssdc=1",
+    ]) {
+      expect(userAgentForPage(url, agents)).toBe(electron);
+    }
+  });
+
+  it("shows Chrome's everywhere else, Google's own services included", () => {
+    for (const url of [
+      "https://mail.google.com/mail/u/0/",
+      "https://myaccount.google.com/",
+      "https://www.google.com/search?q=accounts.google.com",
+      "https://www.youtube.com/",
+      "https://accounts.google.com.example.test/",
+      "https://example.test/?next=https://accounts.google.com/",
+      "https://web.whatsapp.com/",
+      "about:blank",
+      "not a url",
+    ]) {
+      expect(userAgentForPage(url, agents)).toBe(chrome);
+    }
+  });
+
+  it("gives a tab Chrome's back once its main frame leaves the sign-in", () => {
+    const walk = [
+      "https://example.test/",
+      "https://accounts.google.com/v3/signin/identifier",
+      "https://accounts.youtube.com/accounts/SetSID",
+      "https://accounts.google.com/CheckCookie",
+      "https://mail.google.com/mail/u/0/",
+    ];
+    expect(walk.map((url) => userAgentForPage(url, agents))).toEqual([
+      chrome,
+      electron,
+      electron,
+      electron,
+      chrome,
+    ]);
+  });
+
+  it("sends a navigation with the user agent its tab switched to, leaving the client hints alone", () => {
+    // Into the sign-in: written while the tab was still Chrome.
+    expect(navigationRequestHeaders(sent(chrome), electron, agents)).toEqual({
+      ...sent(chrome),
+      "User-Agent": electron,
+    });
+    // Out of it: written while the tab was still Electron.
+    expect(navigationRequestHeaders(sent(electron), chrome, agents)).toEqual({
+      ...sent(electron),
+      "User-Agent": chrome,
+    });
+    // Whatever the header's spelling.
+    expect(navigationRequestHeaders({ "user-agent": chrome }, electron, agents)).toEqual({
+      "user-agent": electron,
+    });
+  });
+
+  it("leaves a request alone when it already names its tab's user agent, or neither of the guest's", () => {
+    expect(navigationRequestHeaders(sent(chrome), chrome, agents)).toBeNull();
+    expect(navigationRequestHeaders(sent(electron), electron, agents)).toBeNull();
+    const emulated = sent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148");
+    expect(navigationRequestHeaders(emulated, electron, agents)).toBeNull();
+    expect(navigationRequestHeaders({ Accept: "text/html" }, electron, agents)).toBeNull();
+  });
+
+  it("starts a main-frame navigation over when a redirect crosses into or out of the sign-in", () => {
+    const redirect = (url: string, tabUserAgent: string) =>
+      restartsAtRedirect({ url, isMainFrame: true, tabUserAgent, restarts: 0 }, agents);
+    // A site's "Sign in with Google" redirecting to Google, and Google's redirect back after it.
+    expect(redirect("https://accounts.google.com/o/oauth2/v2/auth?client_id=x", chrome)).toBe(true);
+    expect(redirect("https://app.example.test/callback?code=x", electron)).toBe(true);
+    // Hops that keep the user agent go on as they are.
+    expect(redirect("https://accounts.youtube.com/accounts/SetSID", electron)).toBe(false);
+    expect(redirect("https://mail.google.com/mail/u/0/", chrome)).toBe(false);
+  });
+
+  it("follows a redirect in a frame, to a non-web address, or past the restart limit", () => {
+    const into = { url: "https://accounts.google.com/ServiceLogin", tabUserAgent: chrome };
+    expect(restartsAtRedirect({ ...into, isMainFrame: false, restarts: 0 }, agents)).toBe(false);
+    expect(
+      restartsAtRedirect(
+        {
+          url: "com.example.app:/oauth2redirect?code=x",
+          isMainFrame: true,
+          tabUserAgent: electron,
+          restarts: 0,
+        },
+        agents,
+      ),
+    ).toBe(false);
+    expect(
+      restartsAtRedirect(
+        { ...into, isMainFrame: true, restarts: MAX_SIGN_IN_RESTARTS - 1 },
+        agents,
+      ),
+    ).toBe(true);
+    expect(
+      restartsAtRedirect({ ...into, isMainFrame: true, restarts: MAX_SIGN_IN_RESTARTS }, agents),
+    ).toBe(false);
   });
 });
 
