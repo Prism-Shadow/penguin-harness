@@ -96,6 +96,8 @@ penguin chat [options]
 
 使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们；要换模型，在恢复后的对话里使用 `/switch-model`。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
 
+对话会显示其 Session 的每一次运行，不论由谁发起。恢复的 Session 可能仍在运行，例如启动其 Task 的终端已经关闭：对话先显示历史，再显示这次运行已有的内容，并跟随到运行结束，然后才给出提示符。对话停在提示符时，别处（Web App 或另一个终端）发起的运行也照此显示，连同它的输入。显示运行期间，输入即插话，Ctrl-C 中断，运行等待的审批在对话里询问，`/exit` 离开对话而运行继续。Session 压缩期间发出的消息排在压缩之后运行。接续正在进行的运行需要同一版本的服务端；服务端较旧时，对话以暗色一行提示，此后只显示历史和此后的实时输出。
+
 在终端里，REPL 会用 OSC 133 语义提示符序列标记它的提示符，也就是 shell 为终端集成输出的那组序列：`> ` 提示符前后分别是 `A` 和 `B`，提交的 Prompt 开始一轮时是 `C`，该轮结束时是 `D;0`（出错结束时是 `D;1`）。支持这些序列的终端可以在提示符之间跳转、选中某一轮的输出；在自己的终端里运行对话的程序也能据此判断对话已回到提示符。其他终端会忽略它们；只有 stdin 与 stdout 都是终端且 `TERM` 不是 `dumb` 时才会输出。这些标记仅供参考：模型输出未经过滤就写到终端，同样可能含有这些序列。
 
 ### REPL 内命令
@@ -246,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 发布准备" --json
 
 ## penguin agent
 
-`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。`agent export` 与 `agent import` 以 Agent 目录的 zip 搬运 Agent，见 [penguin agent export 与 import](#penguin-agent-export-与-import)。`agent api` 管理 Agent 的 API，见 [penguin agent api](#penguin-agent-api)。
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -265,6 +267,23 @@ penguin agent create --agent-id <id> [options]
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export 与 import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` 把 Agent 保存为 `<agent-id>-<yyyymmdd>.zip`（或 `--out` 指定的文件），缺省与 Web App 的导出弹窗相同：除定时任务外的全部部件，不含 Trace。`--traces last:<N>` 取最近活跃的 N 个 Session（1~500），各自连同它启动的 Subagent 会话；`--traces 2026-10-01..2026-10-31` 取这些日期目录中的 Session。密钥保险柜从不进包。见[导出和导入 Agent](/agents#导出和导入-agent)。
+
+`import` 原样上传 zip，或在 1.0 之前也接受 `.tar.gz` 快照包。目录即 Agent 目录，含 `agent_state/` 以及（如有）`traces/`，以目录名为顶层打成 zip，不含 `node_modules` 与 `.git`。id 取 `--agent-id`，没有则取 zip 的顶层目录名或目录名。id 已被占用时拒绝并提示如何覆盖：`--overwrite` 先写一份备份快照，再替换该 Agent 的 State，仅 Project owner 可用。命令打印新建还是覆盖、版本，以及因本服务器已有而跳过的 Session。
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api

@@ -1,4 +1,15 @@
 import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
+
+/**
+ * The selectable thinking tiers as each language lists them, built from the list the flag and
+ * /thinking validate against, so the printed ladder is always the accepted one (#322).
+ */
+const listLevels = (separator: string, last: string): string =>
+  `${DEFAULT_CHAT_THINKING_LEVELS.slice(0, -1).join(separator)}${last}${DEFAULT_CHAT_THINKING_LEVELS.at(-1)}`;
+const EN_LEVELS = listLevels(", ", ", or ");
+const ZH_LEVELS = listLevels("、", " 或 ");
+const LEVEL_CHOICES = DEFAULT_CHAT_THINKING_LEVELS.join("|");
 
 /**
  * CLI text internationalization (i18n).
@@ -249,6 +260,33 @@ export interface Messages {
     apiSignInRequired(): string;
     /** On stderr after `--open` switched keyless access on. */
     apiOpenWarning(): string;
+    /** `penguin agent export|import`: an Agent as a zip of its directory. */
+    exportDesc: string;
+    exportOut: string;
+    exportNoSkills: string;
+    exportNoHooks: string;
+    exportNoMemory: string;
+    exportNoWorkbenches: string;
+    exportNoWorkbenchData: string;
+    exportSchedules: string;
+    exportTraces: string;
+    exported(agentId: string, file: string): string;
+    importDesc: string;
+    importAgentId: string;
+    importOverwrite: string;
+    imported(
+      mode: "created" | "overwritten",
+      agentId: string,
+      projectId: string,
+      version: number,
+      sessions: number,
+    ): string;
+    importBackup(file: string): string;
+    importSkipped(sessionIds: readonly string[]): string;
+    /** After a 409 `agent_exists`. */
+    importOverwriteHint(): string;
+    importUnreadable(file: string): string;
+    importTooLarge(dir: string): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1105,6 +1143,14 @@ export interface Messages {
   resumeNoSession(): string;
   /** One-line prompt shown after a successful resume, before rendering history. */
   resumedBanner(sessionId: string, messageCount: number): string;
+  /** Dim line after a resumed Session's history when it is still running: the chat follows the run before its first prompt, and says what typing, Ctrl-C and /exit do meanwhile. */
+  chatFollowingResumed(): string;
+  /** Dim line where a run joined under way had more records than the server still holds: how many are not shown. */
+  chatRunOmitted(count: number): string;
+  /** Dim line when the server cannot hand over a run under way (an older server or machine): upgrade it. */
+  chatServerTooOld(): string;
+  /** Acknowledgment when a message sent while the Session compacts is queued to start after it (echoes the text). */
+  messageQueued(text: string): string;
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
   langInvalid(value: string): string;
@@ -1217,8 +1263,7 @@ const en: Messages = {
     workspace: "Workspace directory; must already exist (defaults to the current directory)",
     approve:
       "Approval mode: allow-all (auto-approve, default), deny-all (auto-reject), read-only (auto-approve read-only tools, prompt for the rest), always-ask (prompt per tool)",
-    thinking:
-      "Thinking level for this session: low, medium, high, xhigh, or max (defaults to the Agent's configured level)",
+    thinking: `Thinking level for this session: ${EN_LEVELS} (defaults to the Agent's configured level)`,
     json: "Print raw JSON instead of the rendered output",
     server:
       "Server URL to connect to (defaults to PENGUIN_API_URL, then the local running server, then auto-start)",
@@ -1415,6 +1460,31 @@ const en: Messages = {
       "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
     apiOpenWarning: () =>
       "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
+    exportDesc: "Export an agent as a zip of its directory (the vault never travels)",
+    exportOut: "File to write (defaults to the server's name for it, <agent-id>-<yyyymmdd>.zip)",
+    exportNoSkills: "Leave out the skills",
+    exportNoHooks: "Leave out the hook packages",
+    exportNoMemory: "Leave out the memory",
+    exportNoWorkbenches: "Leave out the workbenches",
+    exportNoWorkbenchData: "Take each workbench's source without its data (state.json)",
+    exportSchedules: "Take the scheduled tasks (once imported, they run on their schedule)",
+    exportTraces:
+      "Sessions to take: none, last:<N> (1-500 by last activity, subagents with their parent) or <yyyy-mm-dd>..<yyyy-mm-dd>",
+    exported: (agentId, file) => `Exported agent ${agentId} to ${file}.`,
+    importDesc: "Import an agent from a zip, a tar.gz snapshot package or an agent directory",
+    importAgentId: "Agent id (defaults to the zip's top-level folder or the directory's name)",
+    importOverwrite:
+      "Replace the State of the agent with that id (project owners only), after a backup snapshot",
+    imported: (mode, agentId, projectId, version, sessions) =>
+      `${mode === "created" ? "Created" : "Overwrote"} agent ${agentId} in project ${projectId} (version ${version}); ${sessions} ${sessions === 1 ? "Session" : "Sessions"} imported.`,
+    importBackup: (file) => `The replaced State is backed up as snapshots/${file}.`,
+    importSkipped: (ids) =>
+      `Skipped ${ids.length === 1 ? "a Session" : `${ids.length} Sessions`} this install already has: ${ids.join(", ")}`,
+    importOverwriteHint: () =>
+      "Pass --agent-id <id> to import under another id, or --overwrite to replace this agent (project owners only).",
+    importUnreadable: (file) => `Cannot read ${file}.`,
+    importTooLarge: (dir) =>
+      `${dir} is past what an import takes (20,000 files, 512MB, 64MB zipped); nothing was sent.`,
   },
   project: {
     desc: "Manage projects",
@@ -2225,13 +2295,12 @@ const en: Messages = {
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
   goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
   thinkingCurrent: (level) =>
-    `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
+    `[thinking] level: ${level} (this Session's) — change with /thinking <${LEVEL_CHOICES}>`,
   thinkingSet: (level) =>
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingHeld: (level) =>
     `[thinking] the new conversation will be pinned to ${level} (the Agent config is unchanged)`,
-  thinkingInvalid: (value) =>
-    `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
+  thinkingInvalid: (value) => `Invalid thinking level "${value}". Use ${EN_LEVELS}.`,
   switchModelCurrent: (model) =>
     `[model switch] current model: ${model} — switch with /switch-model <provider> <model_id> (the context is compacted on the current model first)`,
   switchModelUsage: () =>
@@ -2266,6 +2335,13 @@ const en: Messages = {
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
+  chatFollowingResumed: () =>
+    "[running] This Session is still running; following it here. Type to steer it, press Ctrl-C to stop it, or /exit to leave it running.",
+  chatRunOmitted: (count) =>
+    `… ${count} earlier record${count === 1 ? "" : "s"} of this run not shown (penguin session log shows them all)`,
+  chatServerTooOld: () =>
+    "This server cannot hand over a run under way; upgrade it. Until then the chat shows the history and what streams from here on.",
+  messageQueued: (text) => `» queued (sent when the current run ends): ${text}`,
   resumeHint: (command) => `To continue this conversation: ${command}`,
   langInvalid: (value) => `Invalid language "${value}". Use en or zh.`,
   langWindowsUnsupported: (lang) =>
@@ -2370,7 +2446,7 @@ const zh: Messages = {
     workspace: "Workspace 目录，须为已存在目录（默认当前目录）",
     approve:
       "审批模式：allow-all（全部放行，缺省）、deny-all（全部拒绝）、read-only（自动放行只读工具，其余仍逐个询问）、always-ask（逐个询问）",
-    thinking: "本会话的思考等级：low、medium、high、xhigh 或 max（缺省用 Agent 配置的等级）",
+    thinking: `本会话的思考等级：${ZH_LEVELS}（缺省用 Agent 配置的等级）`,
     json: "输出原始 JSON，不做渲染",
     server: "要连接的服务器地址（缺省依次取 PENGUIN_API_URL、本机运行中的服务器、自动拉起）",
     timeout:
@@ -2553,6 +2629,29 @@ const zh: Messages = {
       "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
     apiOpenWarning: () =>
       "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
+    exportDesc: "将 Agent 导出为其目录的 zip（vault 从不进包）",
+    exportOut: "写入的文件（缺省为服务端给出的名称 <agent-id>-<yyyymmdd>.zip）",
+    exportNoSkills: "不带技能",
+    exportNoHooks: "不带钩子包",
+    exportNoMemory: "不带记忆",
+    exportNoWorkbenches: "不带 Workbench",
+    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json）",
+    exportSchedules: "带上定时任务（导入后会按计划运行）",
+    exportTraces:
+      "带哪些 Session：none、last:<N>（1~500，按最近活跃，Subagent 会话随其父）或 <yyyy-mm-dd>..<yyyy-mm-dd>",
+    exported: (agentId, file) => `已将 Agent ${agentId} 导出到 ${file}。`,
+    importDesc: "从 zip、tar.gz 快照包或 Agent 目录导入 Agent",
+    importAgentId: "Agent id（缺省取 zip 的顶层目录名或目录名）",
+    importOverwrite: "替换该 id 已有 Agent 的 State（仅 Project owner），先写一份备份快照",
+    imported: (mode, agentId, projectId, version, sessions) =>
+      `已在 Project ${projectId} ${mode === "created" ? "新建" : "覆盖"} Agent ${agentId}（版本 ${version}），导入 ${sessions} 个 Session。`,
+    importBackup: (file) => `被替换的 State 已备份为 snapshots/${file}。`,
+    importSkipped: (ids) => `跳过本安装已有的 ${ids.length} 个 Session：${ids.join("、")}`,
+    importOverwriteHint: () =>
+      "用 --agent-id <id> 改用其他 id 导入，或用 --overwrite 覆盖该 Agent（仅 Project owner）。",
+    importUnreadable: (file) => `无法读取 ${file}。`,
+    importTooLarge: (dir) =>
+      `${dir} 超出导入上限（20 000 个文件、512MB、压缩后 64MB），未发送任何内容。`,
   },
   project: {
     desc: "管理 Project",
@@ -3308,11 +3407,11 @@ const zh: Messages = {
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
   goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
   thinkingCurrent: (level) =>
-    `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
+    `[思考] 当前等级：${level}（本 Session）——用 /thinking <${LEVEL_CHOICES}> 修改`,
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingHeld: (level) => `[思考] 新对话的等级将钉为 ${level}（不改动 Agent 配置）`,
-  thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
+  thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 ${ZH_LEVELS}。`,
   switchModelCurrent: (model) =>
     `[切换模型] 当前模型：${model}——用 /switch-model <provider> <model_id> 切换（会先用当前模型压缩上下文）`,
   switchModelUsage: () =>
@@ -3341,6 +3440,13 @@ const zh: Messages = {
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
+  chatFollowingResumed: () =>
+    "[运行中] 该 Session 仍在运行，已在此接上：输入即插话，Ctrl-C 中断，/exit 离开（Task 继续运行）。",
+  chatRunOmitted: (count) =>
+    `… 此次运行更早的 ${count} 条记录未显示（penguin session log 可查看全部）`,
+  chatServerTooOld: () =>
+    "该服务端不支持接续正在进行的运行，请升级服务端；在此之前只显示历史与此后的实时输出。",
+  messageQueued: (text) => `» 已排队（当前运行结束后发出）：${text}`,
   resumeHint: (command) => `继续本次对话：${command}`,
   langInvalid: (value) => `无效的语言 "${value}"。请使用 en 或 zh。`,
   langWindowsUnsupported: (lang) =>

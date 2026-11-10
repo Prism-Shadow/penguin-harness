@@ -36,7 +36,7 @@ export function Drawer({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-modal">
       <div
         // ui-scrim: the dimmed layer behind the drawer; a theme may blur the page through it.
         className="ui-scrim anim-fade absolute inset-0 bg-[var(--ui-overlay-backdrop)]"

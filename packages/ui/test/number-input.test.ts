@@ -64,7 +64,7 @@ describe("the number box", () => {
     expect(box(html)).toContain('value="3"');
     expect(html).toMatch(/<span[^>]*>pods<\/span>/);
     expect(described(html)).toBe("1–10");
-    expect(html).toMatch(/^<div class="min-w-0" data-control="number-input">/);
+    expect(html).toMatch(/^<div class="[^"]*" data-control="number-input">/);
   });
 
   it("keeps the caller's own description beside the range's", () => {

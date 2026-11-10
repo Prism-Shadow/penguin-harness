@@ -9,8 +9,8 @@
 
 New chat and the favorite page entries moved into one fixed block under the Project or
 organization switcher, and they no longer scroll away with the conversation list. The collapsible
-entries and their fold bar still scroll with the list. Company mode's six entries can be favorited
-the same way.
+entries and their fold bar still scroll with the list. Company mode's entries, including the
+company-mode pages plugins add, can be favorited the same way.
 
 ## Details
 
@@ -24,9 +24,9 @@ the same way.
 - In company mode the star, dragging between the areas, keyboard focus following a moved entry
   and the fold work as they do in development mode. No entry is a favorite by default, so the
   sidebar looks as before until one is starred.
-- Company mode's choices are saved per browser in `penguin.sidebarCompanyNavPinned`, apart from
-  development mode's `penguin.sidebarNavPinned`, so a star in one mode never moves an entry in the
-  other.
+- Company mode's choices are saved per browser in `penguin.sidebarModeNavPinned.company`, apart
+  from development mode's `penguin.sidebarNavPinned`, so a star in one mode never moves an entry in
+  the other.
 - Before there is an organization, the six company entries stay disabled and show no star; each
   sits in the area its saved choice puts it in.
 - The collapsed rail did not change.

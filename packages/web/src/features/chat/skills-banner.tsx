@@ -6,7 +6,7 @@
  */
 import { TranscriptNote } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { BOOK_ICON } from "./skill-use";
+import { BOOK_ICON } from "../../lib/skill-use";
 
 export function SkillsBanner({ names }: { names: string[] }) {
   return (

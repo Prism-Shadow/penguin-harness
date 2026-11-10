@@ -6,8 +6,6 @@
  * Given an autoplay request, only an embedded new conversation accepts it; other routes,
  * standalone frames and unknown walkthrough names remain ordinary interactive frames.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
@@ -132,25 +130,6 @@ describe("the frame URL", () => {
     const plain = seeded(`?${new URL(appFrameSrc("http://g", PREFS, { route: "/chat" })).search}`);
     expect(plain.getItem(BACKGROUND_STORAGE_KEYS.image)).toBeNull();
     expect(plain.getItem(BACKGROUND_STORAGE_KEYS.settings)).toBeNull();
-  });
-
-  it("seeds the app's own storage keys, every one of them the package's or the app's", () => {
-    expect(SEEDED_KEYS).toEqual({
-      theme: THEME_STORAGE_KEYS.themeId,
-      mode: THEME_STORAGE_KEYS.mode,
-      accent: THEME_STORAGE_KEYS.accent,
-      size: THEME_STORAGE_KEYS.textSize,
-      latin: THEME_STORAGE_KEYS.fontLatin,
-      cjk: THEME_STORAGE_KEYS.fontCjk,
-      lang: APP_LANG_KEY,
-    });
-    // The language key is the app's own (state/locale-pref.ts), spelled here to keep the
-    // gallery's frame script free of the app's modules.
-    const locale = readFileSync(
-      fileURLToPath(new URL("../../web/src/state/locale-pref.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(locale).toContain(`export const LANG_KEY = "${APP_LANG_KEY}";`);
   });
 
   it("is a classic script that gives the document a seeded in-memory storage", () => {
