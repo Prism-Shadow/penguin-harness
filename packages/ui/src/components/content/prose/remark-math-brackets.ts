@@ -46,7 +46,7 @@
 /**
  * The micromark and mdast-util shapes this touches, declared structurally rather than adding
  * `micromark-util-types` and `mdast-util-from-markdown` as dependencies for a handful of
- * interfaces — the same trade `remark-autolink-boundary.ts` makes for its mdast nodes.
+ * interfaces — the same trade `remark-literal-tildes.ts` makes for its mdast nodes.
  */
 type Code = number | null;
 interface Token {
@@ -81,8 +81,13 @@ interface CompileContext {
   exit(token: Token): void;
   sliceSerialize(token: Token): string;
 }
-/** The `this.data()` bag unified plugins share to register parser extensions. */
+/**
+ * The `this.data()` bag unified plugins share to register parser extensions. `settings` is
+ * unified's own field: naming it lets unified's `Data` match this shape in a program that does
+ * not load remark-parse's types, which is where the two lists are declared.
+ */
 interface ProcessorData {
+  settings?: unknown;
   micromarkExtensions?: unknown[];
   fromMarkdownExtensions?: unknown[];
 }

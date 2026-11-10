@@ -14,6 +14,7 @@
  */
 import { Badge, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
+import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { toneInk, type Tone } from "../../lib/tone";
 import { localizedText } from "../../lib/skill-use";
@@ -115,8 +116,8 @@ export function PluginTag({
   );
 }
 
-/** The raw icon.svg a row is drawn with, when it has one: the library plugin's, else the index entry's. */
-export function rowIcon(row: PluginRow): string | undefined {
+/** The icon a row is drawn with, when it has one: the library plugin's, else the index entry's. */
+export function rowIcon(row: PluginRow): IconRef | undefined {
   return row.library?.icon ?? row.module?.entry?.icon;
 }
 

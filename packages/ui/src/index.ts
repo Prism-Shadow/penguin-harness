@@ -18,6 +18,7 @@ export * from "./layers";
 // spinner, logos and avatars.
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
+export * from "./components/icons/image-icon/image-icon";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
@@ -131,6 +132,7 @@ export * from "./components/overlays/progress-toasts/progress-toasts";
 // `./highlighter` subpath, so no static import of this barrel reaches it.
 export * from "./components/content/prose/prose";
 export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";
 export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
@@ -304,6 +306,7 @@ export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
+export * from "./components/shell/window-band/window-band";
 export * from "./components/shell/sidebar-frame/sidebar-frame";
 export * from "./components/shell/session-row/session-row";
 

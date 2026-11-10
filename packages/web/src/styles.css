@@ -54,14 +54,14 @@
   #root {
     height: 100%;
   }
-  /* The desktop window's drag handle (index.html): a transparent strip over the title-bar band,
-     zero tall in a browser. Every page keeps its own controls out of the band, so the strip has
-     nothing to give way to; it is first in the document and first in paint order all the same,
-     so a control laid over it later could still opt out with `no-drag`. */
+  /* The desktop window's drag handle (index.html): a transparent strip over the title band,
+     zero tall in a browser, on every page — the sign-in page and a full-page Workbench draw no
+     band of their own. Anything clickable over it opts out with no-drag: the band's controls and
+     the window buttons do (`data-window-drag` in the UI package's window-band.css). */
   .window-drag-strip {
     position: fixed;
     inset: 0 0 auto;
-    height: env(titlebar-area-height, 0px);
+    height: var(--window-band-height, 0px);
     z-index: var(--layer-behind);
     -webkit-app-region: drag;
     app-region: drag;

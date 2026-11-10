@@ -3905,7 +3905,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  /**
+   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
+   * version was restored — or switched on or off, by its own switch or the Agent's.
+   */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
@@ -5053,6 +5056,19 @@ export interface BenchmarkArchiveImportResponse {
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
 
+/**
+ * An icon, as a listing sends one: where this server serves the image, and how to draw it. An
+ * icon never travels as markup. `url` is a path on this server that carries the image's content
+ * revision (`?rev=`), so it is cached for good; it serves SVG, PNG, JPEG, WebP, GIF or AVIF under
+ * the type its bytes say, sandboxed (`Content-Security-Policy: …; sandbox`, `nosniff`). Draw it
+ * with `<img>`, or — when `tint` is set — as a CSS mask filled with the text colour.
+ */
+export interface IconRef {
+  url: string;
+  /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
+  tint: boolean;
+}
+
 export interface SkillMetadataItem {
   /** Skill directory name (the identity key for install / uninstall / Prompt addressing). */
   name: string;
@@ -5061,12 +5077,13 @@ export interface SkillMetadataItem {
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * Raw icon.svg text from the installed skill directory: the plugin's icon for a library
-   * install (written beside SKILL.md at install time), a custom one for a user-authored skill.
-   * Only installed lists carry it — the library listing's skills share their plugin's icon,
-   * which the plugin item carries once. Absent, the frontend draws the book glyph.
+   * The `icon.<ext>` in the skill's directory: the plugin's icon for a library install (written
+   * beside SKILL.md at install time), a custom one for a user-authored skill. Served at
+   * `GET …/agents/:a/skills/:name/icon` (a directory Skill's at `GET …/dir-skills/icon`). Only
+   * installed and directory lists carry it — the library listing's skills share their plugin's
+   * icon, which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
-  icon?: string;
+  icon?: IconRef;
   /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
@@ -5081,8 +5098,8 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
-  /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
-  icon?: string;
+  /** The plugin's icon, written beside the manifest at install time and served at `GET …/agents/:a/hooks/:name/icon`; absent when there is none (the frontend draws the hook glyph). */
+  icon?: IconRef;
 }
 
 /**
@@ -5119,8 +5136,8 @@ export interface PluginItem {
   hooks: string[];
   /** The hook package's own dated version (its hooks contribution's `version`, `YYYY.MM.DD.N`); absent without a hook package. */
   hookVersion?: string;
-  /** The plugin's raw icon SVG (`icon.svg` at the package root, or the card's `icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
-  icon?: string;
+  /** The plugin's icon (`icon.<ext>` at the package root, or the card's `icon` — every built-in plugin ships one; one that will not do is never sent), served at `GET /api/plugins/:plugin/icon`, the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
@@ -5205,6 +5222,28 @@ export interface AgentPluginsInstallResponse {
 }
 
 /**
+ * DELETE /api/projects/:p/agents/:a/plugins/:name: uninstall a whole plugin from the Agent, on
+ * the server, in one request (owner only). Removed in order: the Workbenches whose install
+ * receipt names the plugin, its `tools.mcpServers` entries (`plugin` field), its hook package
+ * (`agent_state/hooks/<name>/`), and every Skill whose name the library plugin contributes (none
+ * when the plugin has left the library). A part that fails is reported in `failed` and the rest
+ * are still removed; nothing is rolled back. Nothing to remove is 404 `plugin_not_installed`.
+ */
+export interface PluginUninstallResponse {
+  removed: {
+    skills: string[];
+    hooks: string[];
+    mcpServers: string[];
+    workbenches: string[];
+  };
+  failed?: Array<{
+    kind: "skill" | "hook" | "mcpServer" | "workbench";
+    name: string;
+    error: string;
+  }>;
+}
+
+/**
  * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
  * identity, target and what keeps it from connecting — never a header, env or oauth value.
  */
@@ -5284,6 +5323,30 @@ export interface WorkbenchArchiveInstallResponse {
   workbench: WorkbenchInfo;
 }
 
+/**
+ * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
+ * included (each says so in `enabled`).
+ */
+export interface WorkbenchesResponse {
+  workbenches: WorkbenchInfo[];
+  /**
+   * The Agent-wide switch: false while `agent_state/workbenches/.disabled` exists, and then no
+   * workbench of the Agent runs, whatever its own switch says. Absent from a server that
+   * predates the switches.
+   */
+  enabled?: boolean;
+}
+
+/**
+ * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
+ * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
+ * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
+ * once; turning it on loads it.
+ */
+export interface WorkbenchEnabledRequest {
+  enabled: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin registry index
 // ---------------------------------------------------------------------------
@@ -5310,11 +5373,13 @@ export interface PluginIndexEntry {
   shortDescription?: string;
   shortDescriptionZh?: string;
   /**
-   * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
-   * listing fills these display fields from the package's own card contribution (in its
-   * ifaces.json) and icon when the package is on this server, over whatever the index row says.
+   * The plugin's icon, served at `GET /api/plugins/registry/icon?name=…` (optional; the card
+   * draws the puzzle piece without it). The listing fills these display fields from the
+   * package's own card contribution (in its ifaces.json) and icon when the package is on this
+   * server, over whatever the index row says. An index document carries an icon as raw SVG text
+   * instead, and only the one embedded in this server is believed (plugin/registry.ts).
    */
-  icon?: string;
+  icon?: IconRef;
   authors: string[];
   /** SPDX license identifier. */
   license: string;

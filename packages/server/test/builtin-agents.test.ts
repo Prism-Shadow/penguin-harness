@@ -130,8 +130,8 @@ describe("built-in Agent provisioning", () => {
     );
     // A hook package carries its plugin's icon beside the manifest, the way an installed skill does.
     for (const plugin of hookPlugins.filter((p) => p.icon !== undefined)) {
-      expect(await fs.readFile(path.join(hooksDir, plugin.name, "icon.svg"), "utf8")).toBe(
-        plugin.icon,
+      expect(await fs.readFile(path.join(hooksDir, plugin.name, "icon.svg"))).toEqual(
+        Buffer.from(plugin.icon!.bytes),
       );
     }
 

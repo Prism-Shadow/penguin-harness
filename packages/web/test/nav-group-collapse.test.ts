@@ -19,21 +19,31 @@
  *   boolean values, and anything unparseable reads as none.
  * - A storage that throws (quota, private mode, a throwing getter) never escapes: storing is a
  *   no-op and reading yields the defaults.
+ * - A contributed mode (company mode): with nothing stored no row is a favourite, so all start
+ *   in the fold. Starring one moves it to the favourites in the mode's order and is kept under
+ *   that mode's own key; a remount reads it back, and unstarring removes the stored choice.
+ * - Starring in one mode never moves an entry in another: no mode's choices are written to, or
+ *   read from, another's key.
  */
 import { describe, expect, it } from "vitest";
 import {
+  MODE_NAV_PINNED_PREFIX,
   NAV_GROUP_COLLAPSED_KEY,
   NAV_PINNED_KEY,
+  initialModeNavPinOverrides,
   initialNavGroupCollapsed,
   initialNavPinOverrides,
   isNavPinnable,
   isNavPinned,
   navEntryKeysFor,
   navKeysFor,
+  splitModeNavItems,
   splitNavEntries,
   storeNavGroupCollapsed,
+  storeModeNavPinOverrides,
   storeNavPinOverrides,
   visibleNavKeys,
+  withModeNavPinned,
   withNavPinned,
   type NavCollapseStorage,
   type NavPage,
@@ -316,5 +326,65 @@ describe("persisted pin choices (one global localStorage key)", () => {
   it("storage whose GETTER throws degrades instead of escaping the useState initializer", () => {
     expect(() => initialNavPinOverrides(NAV, hostileStorage)).not.toThrow();
     expect(initialNavPinOverrides(NAV, hostileStorage)).toEqual({});
+  });
+});
+
+describe("a contributed mode's favourites (a localStorage key per mode)", () => {
+  /** Company mode's rows as its contribution lists them. */
+  const ORG = ["overview", "chart", "calendar", "tickets", "finance", "handbook"].map((key) => ({
+    key,
+  }));
+  const keysOf = (rows: readonly { key: string }[]) => rows.map((r) => r.key);
+
+  it("with nothing stored no row is a favourite: all start in the fold, and reading writes nothing", () => {
+    const s = memoryStorage();
+    const { pinned, collapsible } = splitModeNavItems(
+      ORG,
+      initialModeNavPinOverrides("company", s),
+    );
+    expect(pinned).toEqual([]);
+    expect(keysOf(collapsible)).toEqual(keysOf(ORG));
+    expect(s.map.size).toBe(0);
+  });
+
+  it("a star moves a row to the favourites in the mode's order, a remount reads it back, and unstarring forgets it", () => {
+    const s = memoryStorage();
+    const starred = withModeNavPinned(withModeNavPinned({}, "finance", true), "chart", true);
+    storeModeNavPinOverrides("company", starred, s);
+    const restored = initialModeNavPinOverrides("company", s);
+    const split = splitModeNavItems(ORG, restored);
+    expect(keysOf(split.pinned)).toEqual(["chart", "finance"]);
+    expect(keysOf(split.collapsible)).toEqual(["overview", "calendar", "tickets", "handbook"]);
+    const back = withModeNavPinned(restored, "chart", false);
+    expect(back).toEqual({ finance: true });
+    // A star that changes nothing returns the same record, so the sidebar skips the write.
+    expect(withModeNavPinned(back, "finance", true)).toBe(back);
+    expect(withModeNavPinned(back, "overview", false)).toBe(back);
+  });
+
+  it("a star in one mode never moves an entry in another", () => {
+    const s = memoryStorage();
+    storeNavPinOverrides(withNavPinned({}, "models", false), s);
+    const devBefore = s.map.get(NAV_PINNED_KEY);
+    storeModeNavPinOverrides("company", withModeNavPinned({}, "tickets", true), s);
+    // Company mode's star left development mode's record and its areas as they were …
+    expect(s.map.get(NAV_PINNED_KEY)).toBe(devBefore);
+    expect(
+      splitNavEntries(navEntryKeysFor(NAV, true), initialNavPinOverrides(NAV, s)).pinned,
+    ).toEqual(["newChat", "agents", "plugins"]);
+    // … development mode's star moved nothing in company mode, nor company's in another mode.
+    expect(keysOf(splitModeNavItems(ORG, initialModeNavPinOverrides("company", s)).pinned)).toEqual(
+      ["tickets"],
+    );
+    expect(initialModeNavPinOverrides("other", s)).toEqual({});
+    expect(s.map.has(`${MODE_NAV_PINNED_PREFIX}company`)).toBe(true);
+  });
+
+  it("storage that throws reads as no favourites and is never escaped", () => {
+    expect(() =>
+      storeModeNavPinOverrides("company", { overview: true }, blockedStorage()),
+    ).not.toThrow();
+    expect(initialModeNavPinOverrides("company", blockedStorage())).toEqual({});
+    expect(initialModeNavPinOverrides("company", hostileStorage)).toEqual({});
   });
 });

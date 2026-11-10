@@ -39,7 +39,8 @@
  *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
  *   that runs one, with its commands.
  * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
- *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
+ *   Set up, a member is told the owner sets them. Only the owner may uninstall: a member reads
+ *   "Installed" with no Uninstall behind it. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
  * - While the list holds only the incompatible plugins, the page says so and offers the whole
  *   list back, not Show again; otherwise it counts what this build cannot fully run and offers
@@ -663,7 +664,7 @@ describe("a plugin's MCP servers", () => {
     expect(inLocale(StdioDisclosure, { plugins: [LIBRARY] })).toBe("");
   });
 
-  it("names the values an Agent's copy waits for, and offers its owner Set up", () => {
+  it("names the values an Agent's copy waits for, and offers its owner Set up and Uninstall", () => {
     const row = (isOwner: boolean) =>
       inLocale(InstallRow, {
         agentId: "default_agent",
@@ -681,8 +682,14 @@ describe("a plugin's MCP servers", () => {
     expect(owner).toContain(
       `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpWhere}`,
     );
+    expect(buttonText(owner, `${en.skills.uninstall} default_agent`)).toContain(
+      en.skills.uninstall,
+    );
     const member = row(false);
     expect(buttonText(member, `${en.plugins.setUp} default_agent`)).toBeUndefined();
+    // Uninstalling is the owner's alone: a member reads that it is installed and nothing more.
+    expect(buttonText(member, `${en.skills.uninstall} default_agent`)).toBeUndefined();
+    expect(member).toContain(en.skills.installed);
     expect(member).toContain(
       `${en.plugins.mcpNeedsSetup(["MAIL_CLIENT_SECRET"])} · ${en.plugins.mcpSetUpByOwner}`,
     );
