@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** refactor
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1527](https://github.com/Prism-Shadow/penguin-harness/pull/1527)
 - **Breaking:** yes — `@prismshadow/penguin-ui`：白领的外观需要在 `data-theme` 旁写 `data-theme-base="modern"`，不带 `data-theme` 的根元素呈现白领而非朴素，`DEFAULT_THEME_ID` 移除
 
 [English](2026-11-10-theme-packs-base.md)

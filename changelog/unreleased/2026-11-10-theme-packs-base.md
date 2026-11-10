@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** refactor
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1527](https://github.com/Prism-Shadow/penguin-harness/pull/1527)
 - **Breaking:** yes — `@prismshadow/penguin-ui`: Frost's look needs `data-theme-base="modern"` beside `data-theme`, a root without `data-theme` paints Frost rather than Primer, and `DEFAULT_THEME_ID` is gone
 
 [中文版](2026-11-10-theme-packs-base.zh.md)
