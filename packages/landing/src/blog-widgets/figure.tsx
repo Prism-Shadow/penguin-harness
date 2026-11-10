@@ -7,6 +7,8 @@
  */
 import type { ComponentPropsWithoutRef } from "react";
 import type { ExtraProps } from "react-markdown";
+import { SuperAgentArchitectureWidget } from "./super-agent-architecture";
+import { AgentTakeoverEvolutionWidget } from "./agent-takeover-evolution";
 import { SkillAdamWidget } from "./gdpevo-skilladam";
 import { GdpevoOrchestrationWidget } from "./gdpevo-orchestration";
 
@@ -19,6 +21,8 @@ export function MdFigure({ node: _node, children, ...figureProps }: MdFigureProp
   const widget = figureProps["data-widget"];
   return (
     <figure {...figureProps}>
+      {widget === "super-agent-architecture" && <SuperAgentArchitectureWidget />}
+      {widget === "agent-takeover-evolution" && <AgentTakeoverEvolutionWidget />}
       {widget === "skilladam-loop" && <SkillAdamWidget />}
       {widget === "gdpevo-orchestration" && <GdpevoOrchestrationWidget />}
       {children}

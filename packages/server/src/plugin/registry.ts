@@ -12,8 +12,8 @@
  *     on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one — and less
- *     in one respect: its entries lose their `icon`, an SVG the Web App inlines into the
- *     page, which only what ships with this server may supply (the embedded index, and a
+ *     in one respect: its entries lose their `icon`, an SVG this server would serve as its own
+ *     image, which only what ships with this server may supply (the embedded index, and a
  *     package's own icon on this machine, see localPluginDisplay).
  *
  * A deployment's list is the builtin registry plus the published index (see
@@ -24,13 +24,22 @@ import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readPackageCard, userAgent } from "@prismshadow/penguin-core";
+import type { IconImage } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
+
+/**
+ * One row of an index document, as a registry hands it out: the listing's entry, except that its
+ * icon, when it has one, is raw SVG text. Only the index embedded in this server keeps one (see
+ * parsePluginIndex); the listing reads it the way it reads a package's icon file and names it by
+ * the URL it is served at (http/routes/plugins.ts).
+ */
+export type IndexDocumentEntry = Omit<PluginIndexEntry, "icon"> & { icon?: string };
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
   readonly source: string;
-  index(): Promise<PluginIndexEntry[]>;
+  index(): Promise<IndexDocumentEntry[]>;
   /**
    * Long-form documentation for one entry, or null when this source has none for it.
    *
@@ -43,7 +52,7 @@ export interface PluginRegistry {
    * failure it remembers; null while a read is still out (one is started if none is). Absent on a
    * source that never waits on the network — the builtin index — which is simply read.
    */
-  inHand?(): Promise<PluginIndexEntry[]> | null;
+  inHand?(): Promise<IndexDocumentEntry[]> | null;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -51,7 +60,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** Validates one raw entry; returns null instead of throwing so the caller can name the index position. */
-function asIndexEntry(value: unknown): PluginIndexEntry | null {
+function asIndexEntry(value: unknown): IndexDocumentEntry | null {
   if (typeof value !== "object" || value === null) return null;
   const e = value as Record<string, unknown>;
   if (
@@ -79,7 +88,7 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
-  return value as PluginIndexEntry;
+  return value as IndexDocumentEntry;
 }
 
 /**
@@ -88,15 +97,15 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
  * unlike a Project's plugin list, whose entries are independent choices skipped one
  * by one.
  *
- * `icons: "drop"` is for a document from the network: the Web App draws an entry's icon by
- * inlining its SVG, so a remote entry's is removed. Removed rather than refused — the rest of
- * the row still lists, under the puzzle piece.
+ * `icons: "drop"` is for a document from the network: this server would serve an entry's icon
+ * as an image of its own, so a remote entry's is removed. Removed rather than refused — the
+ * rest of the row still lists, under the puzzle piece.
  */
 export function parsePluginIndex(
   data: unknown,
   source: string,
   { icons = "keep" }: { icons?: "keep" | "drop" } = {},
-): PluginIndexEntry[] {
+): IndexDocumentEntry[] {
   if (!Array.isArray(data)) {
     throw new Error(`plugin index from ${source} is not an array`);
   }
@@ -110,7 +119,7 @@ export function parsePluginIndex(
 }
 
 /** An index entry with no `icon`: what a remote source's entry becomes (see parsePluginIndex). */
-export function withoutIcon(entry: PluginIndexEntry): PluginIndexEntry {
+export function withoutIcon(entry: IndexDocumentEntry): IndexDocumentEntry {
   if (!("icon" in entry)) return entry;
   const { icon: _dropped, ...rest } = entry;
   return rest;
@@ -145,19 +154,19 @@ export function builtinPluginRegistry(
   };
 }
 
-/** The display fields an index entry may carry, which a package can also carry itself. */
+/** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
->;
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh"
+> & { icon?: IconImage };
 
 /**
  * What a package on this machine says about itself for its card: the Chinese and short
  * descriptions of its card contribution (in its generated `ifaces.json`), and its icon — read by
- * core's reader, the same one the library reads a library plugin with, so an icon that is not a
- * plain SVG is never sent. Empty when the package is not here (an index row is then all there is)
+ * core's reader, the same one the library reads a library plugin with, so an icon that will not
+ * do is never served. Empty when the package is not here (an index row is then all there is)
  * or carries neither; a package without a table, or whose table will not read, still has its
- * root icon.svg. Nothing here fails the listing: the card falls back to what the index says.
+ * root `icon.<ext>`. Nothing here fails the listing: the card falls back to what the index says.
  */
 export async function localPluginDisplay(
   name: string,
@@ -304,7 +313,7 @@ export const INDEX_RETRY_MS = 60_000;
 export interface IndexSnapshot {
   /** When the document was fetched (ms since the epoch). */
   at: number;
-  entries: PluginIndexEntry[];
+  entries: IndexDocumentEntry[];
 }
 
 /** A cached registry also hands out its last good document, for a successor to start from. */
@@ -333,8 +342,8 @@ export function cachedRegistry(
 ): CachedRegistry {
   let good: IndexSnapshot | null = seed;
   let failed: { at: number; error: unknown } | null = null;
-  let inFlight: Promise<PluginIndexEntry[]> | null = null;
-  const refresh = (): Promise<PluginIndexEntry[]> =>
+  let inFlight: Promise<IndexDocumentEntry[]> | null = null;
+  const refresh = (): Promise<IndexDocumentEntry[]> =>
     (inFlight ??= inner
       .index()
       .then(
@@ -352,7 +361,7 @@ export function cachedRegistry(
         inFlight = null;
       }));
   /** The answer in hand — refreshing a stale document behind it — or null when a fetch is all there is. */
-  const inHand = (): Promise<PluginIndexEntry[]> | null => {
+  const inHand = (): Promise<IndexDocumentEntry[]> | null => {
     if (good !== null && now() - good.at < ttlMs) return Promise.resolve(good.entries);
     const resting = failed !== null && now() - failed.at < retryMs;
     if (good !== null) {
@@ -378,7 +387,7 @@ export function cachedRegistry(
 
 /** What merging the sources gave: their entries, and the sources that failed or are still being read. */
 export interface MergedIndex {
-  entries: PluginIndexEntry[];
+  entries: IndexDocumentEntry[];
   failures: { source: string; error: string }[];
   /** Sources still being read when the listing was made: their entries are missing from it. */
   pending: string[];
@@ -413,7 +422,7 @@ export async function mergeIndexes(
         return {
           source: r.source,
           answer: {
-            entries: [] as PluginIndexEntry[],
+            entries: [] as IndexDocumentEntry[],
             error: err instanceof Error ? err.message : String(err),
           },
         };
@@ -421,7 +430,7 @@ export async function mergeIndexes(
     }),
   );
   const seen = new Set<string>();
-  const entries: PluginIndexEntry[] = [];
+  const entries: IndexDocumentEntry[] = [];
   const failures: MergedIndex["failures"] = [];
   const pending: string[] = [];
   for (const { source, answer } of settled) {

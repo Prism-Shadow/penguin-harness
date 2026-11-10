@@ -1,9 +1,9 @@
 /**
  * Prose and Md: Markdown in its reading box, the three densities, the link default and the
  * resolver that overrides it, and fenced code routed into CodeBlock. How the pipeline typesets
- * math is prose-math.test.ts; where a bare URL ends is remark-autolink-boundary.test.ts; the
- * stylesheets the box reads are held with every component stylesheet by
- * component-stylesheets.test.ts.
+ * math is prose-math.test.ts; where a bare URL ends and when bold closes beside it is
+ * prose-bare-url.test.ts; the stylesheets the box reads are held with every component stylesheet
+ * by component-stylesheets.test.ts.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";

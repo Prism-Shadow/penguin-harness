@@ -260,6 +260,33 @@ export interface Messages {
     apiSignInRequired(): string;
     /** On stderr after `--open` switched keyless access on. */
     apiOpenWarning(): string;
+    /** `penguin agent export|import`: an Agent as a zip of its directory. */
+    exportDesc: string;
+    exportOut: string;
+    exportNoSkills: string;
+    exportNoHooks: string;
+    exportNoMemory: string;
+    exportNoWorkbenches: string;
+    exportNoWorkbenchData: string;
+    exportSchedules: string;
+    exportTraces: string;
+    exported(agentId: string, file: string): string;
+    importDesc: string;
+    importAgentId: string;
+    importOverwrite: string;
+    imported(
+      mode: "created" | "overwritten",
+      agentId: string,
+      projectId: string,
+      version: number,
+      sessions: number,
+    ): string;
+    importBackup(file: string): string;
+    importSkipped(sessionIds: readonly string[]): string;
+    /** After a 409 `agent_exists`. */
+    importOverwriteHint(): string;
+    importUnreadable(file: string): string;
+    importTooLarge(dir: string): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -1433,6 +1460,31 @@ const en: Messages = {
       "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
     apiOpenWarning: () =>
       "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
+    exportDesc: "Export an agent as a zip of its directory (the vault never travels)",
+    exportOut: "File to write (defaults to the server's name for it, <agent-id>-<yyyymmdd>.zip)",
+    exportNoSkills: "Leave out the skills",
+    exportNoHooks: "Leave out the hook packages",
+    exportNoMemory: "Leave out the memory",
+    exportNoWorkbenches: "Leave out the workbenches",
+    exportNoWorkbenchData: "Take each workbench's source without its data (state.json)",
+    exportSchedules: "Take the scheduled tasks (once imported, they run on their schedule)",
+    exportTraces:
+      "Sessions to take: none, last:<N> (1-500 by last activity, subagents with their parent) or <yyyy-mm-dd>..<yyyy-mm-dd>",
+    exported: (agentId, file) => `Exported agent ${agentId} to ${file}.`,
+    importDesc: "Import an agent from a zip, a tar.gz snapshot package or an agent directory",
+    importAgentId: "Agent id (defaults to the zip's top-level folder or the directory's name)",
+    importOverwrite:
+      "Replace the State of the agent with that id (project owners only), after a backup snapshot",
+    imported: (mode, agentId, projectId, version, sessions) =>
+      `${mode === "created" ? "Created" : "Overwrote"} agent ${agentId} in project ${projectId} (version ${version}); ${sessions} ${sessions === 1 ? "Session" : "Sessions"} imported.`,
+    importBackup: (file) => `The replaced State is backed up as snapshots/${file}.`,
+    importSkipped: (ids) =>
+      `Skipped ${ids.length === 1 ? "a Session" : `${ids.length} Sessions`} this install already has: ${ids.join(", ")}`,
+    importOverwriteHint: () =>
+      "Pass --agent-id <id> to import under another id, or --overwrite to replace this agent (project owners only).",
+    importUnreadable: (file) => `Cannot read ${file}.`,
+    importTooLarge: (dir) =>
+      `${dir} is past what an import takes (20,000 files, 512MB, 64MB zipped); nothing was sent.`,
   },
   project: {
     desc: "Manage projects",
@@ -2577,6 +2629,29 @@ const zh: Messages = {
       "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
     apiOpenWarning: () =>
       "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
+    exportDesc: "将 Agent 导出为其目录的 zip（vault 从不进包）",
+    exportOut: "写入的文件（缺省为服务端给出的名称 <agent-id>-<yyyymmdd>.zip）",
+    exportNoSkills: "不带技能",
+    exportNoHooks: "不带钩子包",
+    exportNoMemory: "不带记忆",
+    exportNoWorkbenches: "不带 Workbench",
+    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json）",
+    exportSchedules: "带上定时任务（导入后会按计划运行）",
+    exportTraces:
+      "带哪些 Session：none、last:<N>（1~500，按最近活跃，Subagent 会话随其父）或 <yyyy-mm-dd>..<yyyy-mm-dd>",
+    exported: (agentId, file) => `已将 Agent ${agentId} 导出到 ${file}。`,
+    importDesc: "从 zip、tar.gz 快照包或 Agent 目录导入 Agent",
+    importAgentId: "Agent id（缺省取 zip 的顶层目录名或目录名）",
+    importOverwrite: "替换该 id 已有 Agent 的 State（仅 Project owner），先写一份备份快照",
+    imported: (mode, agentId, projectId, version, sessions) =>
+      `已在 Project ${projectId} ${mode === "created" ? "新建" : "覆盖"} Agent ${agentId}（版本 ${version}），导入 ${sessions} 个 Session。`,
+    importBackup: (file) => `被替换的 State 已备份为 snapshots/${file}。`,
+    importSkipped: (ids) => `跳过本安装已有的 ${ids.length} 个 Session：${ids.join("、")}`,
+    importOverwriteHint: () =>
+      "用 --agent-id <id> 改用其他 id 导入，或用 --overwrite 覆盖该 Agent（仅 Project owner）。",
+    importUnreadable: (file) => `无法读取 ${file}。`,
+    importTooLarge: (dir) =>
+      `${dir} 超出导入上限（20 000 个文件、512MB、压缩后 64MB），未发送任何内容。`,
   },
   project: {
     desc: "管理 Project",

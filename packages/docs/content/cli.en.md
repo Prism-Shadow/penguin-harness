@@ -248,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 release prep" --json
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent export` and `agent import` move an agent as a zip of its directory; see [penguin agent export and import](#penguin-agent-export-and-import). `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -267,6 +267,23 @@ Options of `agent create`:
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export and import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` saves the agent as `<agent-id>-<yyyymmdd>.zip`, or as `--out` says, with the same defaults as the Web App's dialog: every part but the scheduled tasks, and no Traces. `--traces last:<N>` takes the N most recently active Sessions (1–500), each with the subagent Sessions it started; `--traces 2026-10-01..2026-10-31` takes the Sessions in those date folders. The vault never travels. See [Export and import an agent](/agents#export-and-import-an-agent).
+
+`import` uploads a zip, or a `.tar.gz` snapshot package until 1.0, as it is. A directory is an agent's directory, holding `agent_state/` and, if any, `traces/`; it is zipped under its own name, without `node_modules` or `.git`. The id is `--agent-id`, else the zip's top-level folder or the directory's name. A taken id is refused with the way to overwrite it: `--overwrite` replaces that agent's State after a backup snapshot, and only the Project owner may. The command prints whether the agent was created or overwritten, its version, and the Sessions skipped because this server already has them.
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api
