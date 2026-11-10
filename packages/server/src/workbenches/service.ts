@@ -405,7 +405,12 @@ export class WorkbenchService implements Workbenches {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (await this.runs(projectId, agentId, folder)) {
       try {
-        return this.info(projectId, agentId, workbenchId, await this.load(projectId, agentId, folder));
+        return this.info(
+          projectId,
+          agentId,
+          workbenchId,
+          await this.load(projectId, agentId, folder),
+        );
       } catch (err) {
         // Switched off while it loaded: answered as it stands, like any other that does not run.
         if (!(err instanceof WorkbenchDisabled)) throw err;
@@ -611,11 +616,8 @@ export class WorkbenchService implements Workbenches {
       if (await isSwitchedOff(base)) continue;
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
       out.push(
-        ...(await agentShortcuts(
-          projectId,
-          { agentId, agentName },
-          base,
-          (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
+        ...(await agentShortcuts(projectId, { agentId, agentName }, base, (workbenchId) =>
+          this.building(key(projectId, agentId, workbenchId)),
         )),
       );
     }
@@ -808,7 +810,9 @@ export class WorkbenchService implements Workbenches {
       hints: [],
       enabled,
       ...(appCenter !== undefined ? { appCenter } : {}),
-      ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, folder.id, icon) } : {}),
+      ...(icon !== undefined
+        ? { icon: appCenterIconRef(projectId, agentId, folder.id, icon) }
+        : {}),
     };
   }
 
@@ -855,11 +859,19 @@ export class WorkbenchService implements Workbenches {
     if (own && all) {
       const current = this.loaded.get(k);
       if (current && current.folder.revision === folder.revision) {
-        return { info: this.info(projectId, agentId, folder.id, current), loaded: false, unloaded: false };
+        return {
+          info: this.info(projectId, agentId, folder.id, current),
+          loaded: false,
+          unloaded: false,
+        };
       }
       try {
         const fresh = await this.load(projectId, agentId, folder);
-        return { info: this.info(projectId, agentId, folder.id, fresh), loaded: true, unloaded: false };
+        return {
+          info: this.info(projectId, agentId, folder.id, fresh),
+          loaded: true,
+          unloaded: false,
+        };
       } catch (err) {
         if (!(err instanceof WorkbenchDisabled)) throw err;
       }
