@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** feature
 - **Scope:** `server`, `theme-pack`, `ui`, `web`, `ui-gallery`
+- **PR:** [#1529](https://github.com/Prism-Shadow/penguin-harness/pull/1529)
 
 [English](2026-11-10-theme-packs-server.md)
 
