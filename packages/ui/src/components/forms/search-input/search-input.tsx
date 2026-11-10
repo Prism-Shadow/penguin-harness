@@ -166,7 +166,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         data-tooltip={title}
         className={
           `block w-full appearance-none [&::-webkit-search-cancel-button]:appearance-none ` +
-          `${LOOK[variant]} ${sizeTextClass[size]} ${icon ? geometry.padWithIcon : geometry.pad}`
+          `${LOOK[variant]} ${variant === "field" ? "ui-edge" : ""} ${sizeTextClass[size]} ${icon ? geometry.padWithIcon : geometry.pad}`
         }
         {...rest}
       />

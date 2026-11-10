@@ -1,0 +1,183 @@
+/*
+ * Doodle's hook recipes (hooks.ts), served in `ui-theme` over Frost's, which Doodle keeps for
+ * every hook it leaves alone: the frosted menus' row bands, the opaque edgeless dialog, the
+ * lineless activity cards, the label sweep on a running step, the banded settings rows, the tree
+ * guides, the notice card, the chart joins, the widget tiles.
+ *
+ * What Doodle adds is a pen line where a person puts their hand, and two small drawings in their
+ * homes. Nothing else is outlined: cards, tool cards, code blocks, tiles, notices, widgets and
+ * tables keep Frost's hairline or none.
+ *
+ * - The pen line (`ui-edge`): a button with a fill or a line, a text field, a select trigger, a
+ *   checkbox, a radio, a switch's track, the start page's pickers and the person's own bubble.
+ *   One outline per shape, traced by a pen from a fixed seed (`scripts/draw-doodle-edges.mjs`,
+ *   which writes the generated block below), is laid on the host's 1px border as a
+ *   `border-image` 9-slice, and where `clip-path: shape()` exists the host's own background is
+ *   clipped to the same outline, so the fill ends under the line at every size and a resize
+ *   stretches the clip as it stretches the line. The host keeps its own fill — hover, a tone, an
+ *   accent preset, the dark mode — so every colour still comes from CSS. One stroke, no shadow,
+ *   no second line. A field that failed is drawn in the danger ink.
+ * - What floats (`ui-glass`): a dialog, a menu, a popover, a tooltip, the composer and its slash
+ *   list, and a toast are slips of paper: one image holds the slip's fill, its line and a soft
+ *   shadow drawn under it in a 12px margin, so the slip needs no fill, shadow, backdrop or filter
+ *   of its own and the shadow follows the drawn shape. A slip that only labels (a tooltip, the
+ *   launcher's caption) takes the control's corners; the launcher's ball and its fan are drawn
+ *   round. A plugin tile, the navigation backdrop and a page's header bar are glass that does not
+ *   float and keep Frost's look.
+ * - Keyboard focus. A clip cuts whatever its box paints, the focus ring included, so a focused
+ *   button gives up the clip and its CSS corner returns under the line, with the ring outside it
+ *   as in every theme; a focused text field or the focused composer is redrawn in the ring's
+ *   ballpoint blue instead, the one line it has.
+ * - The two drawings: the spinner is the pencil scribble in place of the arc (both turn with
+ *   the svg, so the motion and its reduced-motion stop are the host's), and an empty state shows
+ *   its art slot with the doodle, a pencil squiggle looped once, in place of the line drawing.
+ *
+ * Browsers without `shape()` (Chrome and Edge before 135, Safari before 18.4, Firefox before 141)
+ * keep a padding-box fill under the line. In forced colours none of the pen applies (every pen
+ * rule sits in `forced-colors: none`): the host's own border, radius, fill and focus ring return
+ * in the system's colours.
+ *
+ * An image cannot read a custom property, so the generated block spells the line ink, the danger
+ * ink, the focus blue and the overlay; `scripts/draw-doodle-edges.mjs` names them beside
+ * tokens.css. The properties it declares start with `--_`: private to these recipes, not tokens.
+ */
+
+/* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
+/* draw-doodle-edges.mjs: end generated block */
+
+@media (forced-colors: none) {
+  /* The pen line: a solid 1px border for the stroke to paint on, the host's own or this one. A
+     box is the person's bubble's shape by default; what a person presses or types into takes the
+     control's; a capsule picker the pill; a host drawn round (a radio's disc, a switch's track) a
+     disc; a checkbox the box. */
+  :root[data-theme="doodle"] :where(.ui-edge) {
+    border-style: solid;
+    border-width: 1px;
+    background-clip: padding-box;
+    border-image: var(--_stroke-surface) 14 / 14px / 0 stretch;
+  }
+  :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
+  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
+    border-image: var(--_stroke-control) 9 / 9px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
+    border-image: var(--_stroke-pill) 9 / 9px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
+    border-image: var(--_stroke-pill) 9 / 50% / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
+    border-image: var(--_stroke-box) 6 / 6px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
+    border-image-source: var(--_stroke-control-danger);
+  }
+
+  /* What floats: a slip of paper, its glass image its fill, its line and its shadow. The shadow
+     sits in the image's 12px outset, transparent elsewhere, so it never covers a neighbour's text
+     and no filter runs. */
+  :root[data-theme="doodle"] .ui-glass:not([data-glass], header) {
+    border-style: solid;
+    border-width: 1px;
+    background-color: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+  }
+  :root[data-theme="doodle"] .ui-glass:not([data-glass]):where([role="tooltip"], [aria-hidden="true"]) {
+    border-image: var(--_glass-control) 21 fill / 21px / 12px stretch;
+  }
+  :root[data-theme="doodle"] .ui-glass:not([data-glass])[data-slot="composer"]:focus-within {
+    border-image-source: var(--_glass-surface-focus);
+  }
+  :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
+    background-color: var(--ui-overlay);
+    background-clip: padding-box;
+    border-image: var(--_stroke-ball) 24 / 50% / 0 stretch;
+  }
+  /* A toast floats too: the slip in place of Frost's card and its shadow, over no backing (the
+     stack's opaque backing would show past the drawn corners). Frost's tone dot stays. */
+  :root[data-theme="doodle"] section[aria-live] > :has(> .ui-notice) {
+    background-color: transparent;
+  }
+  :root[data-theme="doodle"] section[aria-live] .ui-notice {
+    border-color: transparent;
+    background-color: transparent;
+    box-shadow: none;
+    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+  }
+
+  /* The window's columns: the pad beside the paper with the one pencil rule between them, and no
+     lit edge beside the rule. */
+  :root[data-theme="doodle"] .ui-shell > [data-slot="nav"] {
+    box-shadow: none;
+  }
+
+  /* The fill follows the line: a pen-edged host gives up its CSS corner (the line draws its own)
+     and paints its fill to the border's edge, which the clip trims to just outside the pen. */
+  @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+    :root[data-theme="doodle"] :where(.ui-edge) {
+      border-radius: 0;
+      background-clip: border-box;
+      clip-path: var(--_clip-surface);
+    }
+    :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
+    :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
+      clip-path: var(--_clip-control);
+    }
+    :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
+      clip-path: var(--_clip-pill);
+    }
+    :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
+      clip-path: var(--_clip-disc);
+    }
+    :root[data-theme="doodle"] .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
+      clip-path: var(--_clip-box);
+    }
+    :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
+      background-clip: border-box;
+      clip-path: var(--_clip-ball);
+    }
+    /* A clip cuts whatever the box paints: a menu opened in place inside the box, and a focus
+       ring. So while a menu is open in it, and while something a person presses holds keyboard
+       focus, the box keeps its own corner and a padding-box fill under the line instead, and the
+       ring draws outside as in every theme. */
+    :root[data-theme="doodle"] .ui-edge:has(.ui-glass:not([data-glass])),
+    :root[data-theme="doodle"]
+      .ui-edge:focus-visible:not(:where(input:not([type="checkbox"], [type="radio"]), textarea, select)),
+    :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full):focus-visible {
+      border-radius: revert-layer;
+      background-clip: padding-box;
+      clip-path: none;
+    }
+  }
+
+  /* A text field shows focus the way it shows its edge: the pen line redrawn in the ring's blue,
+     its own ring (a shadow outside the line, which the clip would cut) left out. */
+  :root[data-theme="doodle"]
+    :where(input:not([type="checkbox"], [type="radio"]), textarea, select).ui-edge:focus,
+  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea):focus)) {
+    border-image-source: var(--_stroke-control-focus);
+    box-shadow: none;
+  }
+}
+
+/* The scribble in place of the spinner's arc. */
+:root[data-theme="doodle"] .ui-live[data-live="spinner"] > [data-set="arc"] {
+  display: none;
+}
+:root[data-theme="doodle"] .ui-live[data-live="spinner"] > [data-set="scribble"] {
+  display: inline;
+}
+
+/* An empty state's art: the doodle in place of the line drawing. */
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] {
+  display: flex;
+}
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] > [data-set="line"] {
+  display: none;
+}
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] > [data-set="doodle"] {
+  display: block;
+}

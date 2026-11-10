@@ -20,6 +20,7 @@
 @import "@prismshadow/penguin-ui/themes/modern/index.css";
 @import "@prismshadow/penguin-ui/themes/github/index.css";
 @import "@prismshadow/penguin-ui/themes/geek/index.css";
+@import "@prismshadow/penguin-ui/themes/doodle/index.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 
 /* Tailwind scans the Vite root only: the package's components carry class strings too. The test

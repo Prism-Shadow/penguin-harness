@@ -25,6 +25,17 @@ describe("EmptyState", () => {
     );
     expect(html).toContain('<button type="button">Create</button>');
   });
+
+  it("holds a page's art above its title, one hidden drawing per style, and none in a slot", () => {
+    const page = renderStatic(createElement(EmptyState, { title: "Empty" }));
+    // The art says nothing the words do not: hidden from assistive tech, and before the title.
+    expect(page).toMatch(
+      /<div data-slot="art" aria-hidden="true"[^>]*><span data-set="line"[^>]*>.*?<\/span><svg data-set="doodle"/,
+    );
+    expect(page.indexOf('data-slot="art"')).toBeLessThan(page.indexOf(">Empty</p>"));
+    const slot = renderStatic(createElement(EmptyState, { title: "Empty", dashed: true }));
+    expect(slot).not.toContain('data-slot="art"');
+  });
 });
 
 describe("SettingsEmpty", () => {

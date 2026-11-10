@@ -154,6 +154,8 @@ export const BUNDLED_FONT_FAMILIES = {
   MiSans: "MiSans",
   "Noto Sans SC": "Noto Sans SC Variable",
   "JetBrains Mono": "JetBrains Mono Variable",
+  "Shantell Sans": "Shantell Sans Variable",
+  "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
 } as const;
 export type BundledFontName = keyof typeof BUNDLED_FONT_FAMILIES;
 

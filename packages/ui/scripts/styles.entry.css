@@ -14,6 +14,7 @@
 @import "../src/themes/modern/index.css";
 @import "../src/themes/github/index.css";
 @import "../src/themes/geek/index.css";
+@import "../src/themes/doodle/index.css";
 
 /* A Workbench page compiled from TSX carries this sheet. In the app's frame (the root the app marks
    `data-workbench-frame`) the page is see-through like a plain one: its body paints nothing, so the

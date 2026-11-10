@@ -12,7 +12,8 @@
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
  * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
- * with, which icon set a `ui-glyph` shows until a theme says, (animations.css) the entrance
+ * with, which icon set a `ui-glyph` (and which drawing the spinner and an empty state) shows
+ * until a theme says, the chart marks' fill from their `--_paint`, (animations.css) the entrance
  * and exit classes the components name, and (window-band.css) the desktop window's title band
  * and the inset card it frames the main column as. Token VALUES live only in the theme packs
  * (`themes/<id>/`), and so do the user's accent presets: each pack lists its own, in
@@ -292,6 +293,23 @@
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* A filled chart mark (a bar, the fill under a line, a point) carries its paint as `--_paint`,
+     the colour the chart primitive resolved or `currentColor` for an ink, and takes its fill from
+     it here. It sits in the base layer, the step a presentation attribute had, so any theme recipe
+     or utility that fills a mark wins without `!important`, while the mark keeps its own colour
+     to outline it in. `--_paint` is private to the primitives and the recipes (not a token). */
+  :is(rect, path)[data-part="bar"],
+  path[data-part="area"],
+  rect[data-part="point"] {
+    fill: var(--_paint);
+  }
+  /* The HTML marks — a timeline bar, a legend's or a bubble's swatch — take their background from
+     their `--_paint` the same way; an ink's mark is painted by its own background class, which
+     sits above this layer. */
+  span:is([data-part="bar"], [data-part="swatch"]) {
+    background-color: var(--_paint);
   }
 
   /*
@@ -692,6 +710,18 @@
   }
   .ui-glyph [data-part="duo"] {
     opacity: var(--ui-icon-duo-opacity, 0);
+  }
+
+  /* The other drawings made in every style at once: every pack starts from the spinner's arc and
+     from no empty-state art at all, and a pack that draws its own shows it in its own recipes —
+     the scribble in place of the arc, or the art slot with its own drawing in place of the line
+     one. */
+  .ui-live[data-live="spinner"] > [data-set="scribble"] {
+    display: none;
+  }
+  .ui-empty [data-slot="art"],
+  .ui-empty [data-slot="art"] > [data-set="doodle"] {
+    display: none;
   }
 
   /* A stream host whose edge is live (the caret is its last child) says so as a number a theme's

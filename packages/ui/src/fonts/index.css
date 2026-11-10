@@ -20,16 +20,21 @@
  * | Primer `github` | system sans                        | = sans                 | JetBrains Mono Variable       | system CJK                   |
  * | Frost `modern`  | MiSans 400 / 500                   | = sans                 | JetBrains Mono Variable       | MiSans (the same family)     |
  * | Console `geek`  | IBM Plex Sans Variable             | = sans                 | JetBrains Mono Variable       | Noto Sans SC Variable        |
+ * | Doodle `doodle` | Shantell Sans Variable             | = sans                 | JetBrains Mono Variable       | LXGW WenKai GB Screen        |
  *
  * The display face is the chrome face in every theme (Console's h1 is the Plex Sans bold); IBM
  * Plex Sans Condensed stays declared in Console's `fonts.css` until its dependency is dropped.
  *
- * Every face but MiSans is SIL Open Font License 1.1 and arrives through a fontsource package,
- * whose licence text `scripts/sync-font-licenses.mjs` mirrors into `LICENSES/`. MiSans has no
- * official package: `scripts/build-misans.py` cuts its slices from Xiaomi's download into
- * `misans/`, and its licence is transcribed into `LICENSES/misans.txt` (`vendored-fonts.json`
- * lists it). The `penguinUi()` Vite plugin emits every text in `LICENSES/` beside the build as
- * `fonts-licenses/<name>.txt`. `README.md` has the families, licences, sources and bytes.
+ * Every face but MiSans is SIL Open Font License 1.1, and every one but MiSans and LXGW WenKai
+ * GB Screen arrives through a fontsource package, whose licence text
+ * `scripts/sync-font-licenses.mjs` mirrors into `LICENSES/`. MiSans has no official package:
+ * `scripts/build-misans.py` cuts its slices from Xiaomi's download into `misans/`, and its
+ * licence is transcribed into `LICENSES/misans.txt`; LXGW WenKai GB Screen's GB2312 slices are
+ * copied from its pinned web release into the Doodle pack's `fonts/` by
+ * `scripts/vendor-wenkai.mjs`, its licence transcribed into `LICENSES/lxgw-wenkai-gb-screen.txt`
+ * (`vendored-fonts.json` lists both). The `penguinUi()` Vite plugin emits every text in
+ * `LICENSES/` beside the build as `fonts-licenses/<name>.txt`. `README.md` has the families,
+ * licences, sources and bytes.
  *
  * The Latin faces are hand-declared (latin + latin-ext only, normal style, woff2) instead of
  * importing fontsource's stylesheets, which would also bundle the cyrillic, greek and vietnamese
@@ -42,4 +47,5 @@
 @import "../themes/github/fonts.css";
 @import "../themes/modern/fonts.css";
 @import "../themes/geek/fonts.css";
+@import "../themes/doodle/fonts.css";
 @import "./cjk.css";

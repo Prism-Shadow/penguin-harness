@@ -49,6 +49,13 @@ describe("SessionRow", () => {
     expect(classTokens(row())).not.toContain(NAV_FILL.selected);
   });
 
+  it("marks the open row's button as the current page, and no other row", () => {
+    expect(row({ active: true })).toContain(
+      'data-testid="session-row" data-session-id="s-1" aria-current="page"',
+    );
+    expect(row()).not.toContain("aria-current");
+  });
+
   it("names every standing mark in words, from the caller's labels", () => {
     const html = row({
       sourceGlyph: ICONS.terminalPrompt,

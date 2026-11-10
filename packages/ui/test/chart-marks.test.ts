@@ -163,7 +163,7 @@ describe("the chart primitives, in the default theme", () => {
       className: "cursor-pointer",
     });
     expect(html).toContain("left:10%");
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[0]}`);
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
   });
@@ -175,13 +175,57 @@ describe("the chart primitives, in the default theme", () => {
     expect(timelineRadius(3, "both")).toBe(0);
   });
 
-  it("paint a swatch the way its mark is painted", () => {
-    expect(render(ChartSwatch, { paint: { role: "cacheRead" } })).toContain(
-      `background-color:${DEFAULT_CHART_STYLE.cacheRead}`,
+  it("paint a swatch the way its mark is painted, as the series its mark belongs to", () => {
+    const role = render(ChartSwatch, { paint: { role: "cacheRead" } });
+    expect(role).toContain('data-part="swatch"');
+    expect(role).toContain('data-series="cache-read"');
+    expect(role).toContain(`--_paint:${DEFAULT_CHART_STYLE.cacheRead}`);
+    const ink = render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } });
+    expect(ink).toContain("bg-fg-subtle");
+    expect(ink).toContain("--_paint:currentColor");
+    expect(ink).not.toContain("data-series");
+  });
+
+  it("leave a swatch or a timeline bar unpainted when its ink has no background", () => {
+    expect(render(ChartSwatch, { paint: { ink: "text-fg-subtle" } })).toContain(
+      "--_paint:transparent",
     );
     expect(
-      render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } }),
-    ).toContain("bg-fg-subtle");
+      render(TimelineBar, { paint: { ink: "text-fg-subtle" }, place: { left: "0%" } }),
+    ).toContain("--_paint:transparent");
+  });
+
+  it("name a Token kind's mark by its kind, as a slot's mark by its number", () => {
+    const kinds = [
+      ["cacheRead", "cache-read"],
+      ["cacheWrite", "cache-write"],
+      ["output", "output"],
+      ["ref", "ref"],
+    ] as const;
+    for (const [role, series] of kinds) {
+      const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { role } });
+      expect(bar).toContain(`data-series="${series}"`);
+      const span = render(TimelineBar, { paint: { role }, place: { left: "0%" } });
+      expect(span).toContain(`data-series="${series}"`);
+    }
+  });
+
+  it("leave a filled mark's fill to its paint, which an ink's mark takes from its class", () => {
+    const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { series: 1 } });
+    expect(bar).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(bar).not.toContain("fill=");
+    const area = render(ChartArea, {
+      points: [
+        [0, 10],
+        [10, 20],
+      ],
+      baseY: 30,
+      paint: { role: "output" },
+    });
+    expect(area).toContain(`--_paint:${DEFAULT_CHART_STYLE.output}`);
+    const point = render(ChartPoint, { cx: 10, cy: 10, paint: { ink: "text-tone-danger-fg" } });
+    expect(point).toContain("--_paint:currentColor");
+    expect(point).toContain("text-tone-danger-fg");
   });
 
   it("draw the axis labels as axis parts", () => {

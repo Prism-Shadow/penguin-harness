@@ -63,8 +63,28 @@ import type { SourceFile, ThemeFileAnalysis } from "../src/testing";
 import { REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
 
 type ThemeState =
-  | { id: ThemeId; file: string; status: "filled"; analysis: ThemeFileAnalysis }
+  | {
+      id: ThemeId;
+      file: string;
+      status: "filled";
+      /** What the pack's own rules declare. */
+      analysis: ThemeFileAnalysis;
+      /** What the pack resolves to per mode: its own declarations over the base's. */
+      values: ThemeFileAnalysis;
+    }
   | { id: ThemeId; file: string; status: "pending"; reason: string };
+
+/**
+ * A pack's values as the cascade resolves them on its root: its own rules over the base's, the
+ * way `ui-theme` sits over `ui-base` — so a name the pack declares in its light rule wins in dark
+ * too, over the base's dark value. For the base and a complete pack, its own analysis.
+ */
+function resolved(analysis: ThemeFileAnalysis, base: ThemeFileAnalysis): ThemeFileAnalysis {
+  const light = new Map([...base.modes.light, ...analysis.modes.light]);
+  const dark = new Map([...base.modes.dark].filter(([name]) => !analysis.modes.light.has(name)));
+  for (const [name, value] of analysis.modes.dark) dark.set(name, value);
+  return { ...analysis, modes: { light, dark } };
+}
 
 function themeState(id: ThemeId): ThemeState {
   const file = `src/themes/${id}/`;
@@ -77,9 +97,12 @@ function themeState(id: ThemeId): ThemeState {
       reason: "still the skeleton's stub (no --ui-* declared)",
     };
   }
-  return { id, file, status: "filled", analysis };
+  const values = complete(id) ? analysis : resolved(analysis, analyzePack(INITIAL_THEME_ID));
+  return { id, file, status: "filled", analysis, values };
 }
 
+/** A pack the contract holds to every name: the base itself, or one on the foundation alone. */
+const complete = (id: ThemeId) => id === INITIAL_THEME_ID || builtinPack(id).base === "foundation";
 const THEMES = THEME_IDS.map(themeState);
 const read = (rel: string) => readFileSync(join(SRC_DIR, rel), "utf8");
 /** Every rule of a pack, across its stylesheets. */
@@ -91,9 +114,6 @@ const filled = (id: ThemeId) => {
   if (theme === undefined || theme.status !== "filled") throw new Error(`${id} is filled`);
   return theme.analysis;
 };
-/** A pack the contract holds to every name: the base itself, or one on the foundation alone. */
-const complete = (id: ThemeId) => id === INITIAL_THEME_ID || builtinPack(id).base === "foundation";
-
 describe("the pack folders", () => {
   it("are the registry's built-ins, one folder each, and each manifest names its folder", () => {
     // A folder the registry does not import is a theme the app never offers; a registered id
@@ -372,7 +392,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     expect(all.length).toBe(new Set(all).size);
     // Console's own accent went black and white (2026-09-30) and Frost's followed (2026-10-02);
     // the hue each had is now its first preset, so their lists are one longer.
-    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6 };
+    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6, doodle: 5 };
     for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length, id).toBe(listed[id]);
     expect(THEME_ACCENT_PRESETS.geek[0]).toBe("orange");
     expect(THEME_ACCENT_PRESETS.modern[0]).toBe("forest");
@@ -382,7 +402,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
-        expect(theme.analysis.modes[mode].get("--ui-accent"), `${theme.id} ${mode}`).toBe(
+        expect(theme.values.modes[mode].get("--ui-accent"), `${theme.id} ${mode}`).toBe(
           THEME_OWN_ACCENTS[theme.id][mode],
         );
       }
@@ -411,7 +431,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
         );
       }
       for (const mode of THEME_MODES) {
-        const values = theme.analysis.modes[mode];
+        const values = theme.values.modes[mode];
         for (const name of [
           "--ui-accent-hover",
           "--ui-accent-active",
@@ -592,7 +612,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     ]);
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
-      const light = theme.analysis.modes.light;
+      const light = theme.values.modes.light;
       // In light the emphasis ink is the body ink; the on-knob follows the accent's label.
       expect(light.get("--ui-fg-emphasis"), theme.id).toBe("var(--ui-fg)");
       expect(light.get("--ui-switch-knob-on"), theme.id).toBe("var(--ui-accent-fg)");
@@ -665,7 +685,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
-        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        const values = new Map([...theme.values.modes.light, ...theme.values.modes[mode]]);
         expect(values.get("--ui-font-sans"), `${theme.id} ${mode}`).toContain("var(--ui-font-cjk)");
         expect(values.get("--ui-font-ui"), `${theme.id} ${mode}`).toBe("var(--ui-font-sans)");
       }
@@ -717,7 +737,7 @@ describe("the update mark (W1, 2026-09-30)", () => {
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
-        const value = modeDeclarations(theme.analysis, mode).get("--ui-mark-new");
+        const value = modeDeclarations(theme.values, mode).get("--ui-mark-new");
         expect(value, `${theme.id} ${mode}`).toBeTruthy();
       }
     }
@@ -802,7 +822,7 @@ describe("the chart style tokens (round 7)", () => {
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
-        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        const values = new Map([...theme.values.modes.light, ...theme.values.modes[mode]]);
         const at = `${theme.id} ${mode}`;
         expect(values.get("--ui-chart-curve"), at).toMatch(/^(?:linear|smooth|step)$/);
         for (const name of [
@@ -830,10 +850,12 @@ describe("the chart style tokens (round 7)", () => {
     }
   });
 
-  it("differs between the themes in geometry, not only in colour", () => {
+  it("differs between the base and the packs on the foundation in geometry, not only in colour", () => {
+    // A pack built on Frost may keep Frost's way of drawing a chart (Doodle does); the ones that
+    // draw their own each draw it differently.
     const geometry = (id: ThemeId) => {
       const theme = THEMES.find((entry) => entry.id === id);
-      if (theme === undefined || theme.status !== "filled") return null;
+      if (theme === undefined || theme.status !== "filled" || !complete(id)) return null;
       const light = theme.analysis.modes.light;
       return ["bar-fill", "bar-radius", "line-width", "curve"]
         .map((part) => light.get(`--ui-chart-${part}`))
@@ -859,7 +881,7 @@ describe("the streaming tokens (2026-09-30)", () => {
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
-        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        const values = new Map([...theme.values.modes.light, ...theme.values.modes[mode]]);
         const at = `${theme.id} ${mode}`;
         const reveal = values.get("--ui-stream-reveal");
         const rate = values.get("--ui-stream-rate") ?? "";
@@ -880,10 +902,11 @@ describe("the streaming tokens (2026-09-30)", () => {
       github: "instant",
       modern: "fade",
       geek: "typewriter",
+      doodle: "fade",
     };
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
-      expect(theme.analysis.modes.light.get("--ui-stream-reveal"), theme.id).toBe(
+      expect(theme.values.modes.light.get("--ui-stream-reveal"), theme.id).toBe(
         expected[theme.id],
       );
     }
@@ -907,7 +930,7 @@ describe("the themes' own faces (round 6)", () => {
       if (theme.status !== "filled") continue;
       for (const [role, token] of Object.entries(STACKS)) {
         const name = THEME_FONTS[theme.id][role as keyof typeof STACKS];
-        const first = firstFamily(theme.analysis.modes.light.get(token));
+        const first = firstFamily(theme.values.modes.light.get(token));
         if (name === SYSTEM_FONT) {
           expect(bundled.has(first), `${theme.id} ${role}: ${first} is a bundled face`).toBe(false);
         } else {

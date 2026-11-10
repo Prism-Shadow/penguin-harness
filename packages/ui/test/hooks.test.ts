@@ -16,9 +16,13 @@
  * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
  * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
- * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
- * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
- * source to it:
+ * style, of which the theme's CSS shows its own), the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04), the eighteenth,
+ * `ui-edge` (the edge of what a person presses, types into or wrote, which Doodle draws with a
+ * pen; 2026-11-04), and the nineteenth to twenty-third, the section hooks `ui-start`,
+ * `ui-library`, `ui-ledger`, `ui-empty` and `ui-run` (a section a pack may dress as a whole: the
+ * start page, the model library, a ledger of figures, an empty state, the run indicator;
+ * 2026-11-05). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -39,11 +43,13 @@
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
- *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
- *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
- *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
- *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
- *   wherever a `data-fold` is written.
+ *   a chart's parts are the seven the recipes style and a legend's swatch, and a glyph's the one
+ *   (`duo`), wherever a `data-part` is written, and a drawing's sets are the ones a recipe shows
+ *   (a glyph's `line`, `octicons` and `pixel`, the spinner's `arc` and `scribble`, an empty
+ *   state's art's `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which
+ *   the foundation's layout motion turns into a track, is one of the three it knows (`open`,
+ *   `closing`, `settled`) wherever a `data-fold` is written; the run indicator's state is
+ *   `running` and an empty state's form `page` or `slot`.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -72,6 +78,12 @@ const APPENDIX_A = [
   "ui-stream",
   "ui-glyph",
   "ui-widget",
+  "ui-edge",
+  "ui-start",
+  "ui-library",
+  "ui-ledger",
+  "ui-empty",
+  "ui-run",
 ];
 
 /**
@@ -191,6 +203,35 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
   // blocks render on, and the chart and resources blocks (2026-10-19).
   "ui-widget": ["WidgetSurface"],
+  // The edge of what a person presses, types into or wrote (2026-11-04): a button with a fill or
+  // a line, the text fields and select triggers on the shared control look, a checkbox's box and
+  // a radio's disc, native and drawn, a switch's track, the start page's Agent and Workspace
+  // pickers, and the person's own message bubble.
+  "ui-edge": [
+    "Button",
+    "Input",
+    "Textarea",
+    "Select",
+    "OptionMenu",
+    "SearchInput",
+    "FormPickerTrigger",
+    "Checkbox",
+    "CheckboxBox",
+    "Radio",
+    "RadioDisc",
+    "Switch",
+    "MessageBubble",
+    "AgentSelect",
+    "WorkspaceSelect",
+  ],
+  // The section hooks (2026-11-05): the start page, the model library, a ledger of figures (the
+  // usage summary card, the company KPI tile, a Benchmark card's score), an empty state and the
+  // chat toolbar's run indicator.
+  "ui-start": ["StartDashboard"],
+  "ui-library": ["ModelsPage"],
+  "ui-ledger": ["SummaryCard", "StatTile", "BenchmarkCard"],
+  "ui-empty": ["EmptyState"],
+  "ui-run": ["RunStatus"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -210,13 +251,19 @@ const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
 const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart", "resources"]);
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
+const RUN_STATES = new Set(["running"]);
+const EMPTY_FORMS = new Set(["page", "slot"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
-const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
+const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label", "swatch"]);
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
-const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/**
+ * The sets a drawing made in every style at once is drawn in: a glyph's three, the spinner's
+ * arc and scribble, and an empty state's art in the line set and as a doodle.
+ */
+const DRAWING_SETS = new Set(["line", "octicons", "pixel", "arc", "scribble", "doodle"]);
 /** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
 const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
@@ -272,7 +319,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the seventeen of Appendix A, each with its hosts", () => {
+  it("are the twenty-three of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -453,12 +500,21 @@ describe("style hooks", () => {
         const part = element.attributes.get("data-part");
         if (typeof part === "string" && !CHART_PARTS.has(part) && !GLYPH_PARTS.has(part)) {
           problems.push(
-            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label or duo`,
+            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label|swatch or duo`,
           );
         }
         const set = element.attributes.get("data-set");
-        if (typeof set === "string" && !GLYPH_SETS.has(set)) {
-          problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
+        if (typeof set === "string" && !DRAWING_SETS.has(set)) {
+          problems.push(`${at} data-set="${set}" is not line|octicons|pixel|arc|scribble|doodle`);
+        }
+        // A section names its state or form as a literal the recipes select on, or an expression.
+        const runState = element.attributes.get("data-state");
+        if (names.has("ui-run") && typeof runState === "string" && !RUN_STATES.has(runState)) {
+          problems.push(`${at} .ui-run data-state="${runState}" is not running`);
+        }
+        const form = element.attributes.get("data-form");
+        if (names.has("ui-empty") && typeof form === "string" && !EMPTY_FORMS.has(form)) {
+          problems.push(`${at} .ui-empty data-form="${form}" is not page or slot`);
         }
         const fold = element.attributes.get("data-fold");
         if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {

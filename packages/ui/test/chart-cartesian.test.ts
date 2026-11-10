@@ -187,8 +187,8 @@ describe("the hover bubble", () => {
     );
     expect(count(html, "<p")).toBe(3);
     expect(html).toMatch(/>Tuesday<[\s\S]*>api<[\s\S]*>—<[\s\S]*>web<[\s\S]*>6 ms</);
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
   });
 
   it("leaves out a category with no name", () => {
@@ -215,7 +215,7 @@ describe("the hover bubble", () => {
       }),
     );
     expect(html).toMatch(/>eu-west<[\s\S]*>Write<[\s\S]*>120 GB</);
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
     expect(html).toContain('aria-hidden="true"');
   });
 });
@@ -332,7 +332,7 @@ describe("HBarChart", () => {
     );
     expect(html).toContain("left:0%;width:86%");
     expect(html).toContain("left:0%;width:100%");
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[0]}`);
   });
 
   it("stacks a row's series end to end from zero, each segment a target in its series' slot", () => {
@@ -380,7 +380,7 @@ describe("HBarChart", () => {
       }),
     );
     expect(html).toMatch(/data-series="2"[^>]*left:0%;width:12%/);
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
     expect(html).not.toContain("data-hit");
   });
 });

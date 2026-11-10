@@ -237,7 +237,10 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } satisfies Record<ThemeId, string>,
+    themeNames: { github: "朴素", modern: "白领", geek: "极客", doodle: "卡通" } satisfies Record<
+      ThemeId,
+      string
+    >,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
@@ -409,6 +412,13 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
+      "ui-edge":
+        "人按下、输入或写下的框的边：有底色或描边的按钮、输入框与选择框、复选框、单选框、开关、首页的选择器与本人的消息气泡",
+      "ui-start": "首页（新建对话）整体：品牌、三个计数、输入区与示例文件夹",
+      "ui-library": "模型库：按提供方分组的框与其中的模型卡片",
+      "ui-ledger": "单独列出的一组数字：用量汇总卡、公司指标块、Benchmark 卡片的分数",
+      "ui-empty": "空状态：插画、标题、说明与操作",
+      "ui-run": "对话工具栏里的运行指示：图标与「运行中」",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":

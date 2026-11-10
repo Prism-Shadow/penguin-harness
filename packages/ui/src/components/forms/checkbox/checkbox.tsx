@@ -13,6 +13,9 @@
  *
  * `CheckboxBox` is the same box as a drawing, for a pressable option that is not a native checkbox
  * but toggles like one (a chip of a multiple-choice group).
+ *
+ * Both forms of the box carry the `ui-edge` hook, so a theme that draws its boxes' edges by hand
+ * draws this one, native or drawn, the same way.
  */
 import { useCallback, useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
@@ -83,7 +86,7 @@ export function CheckboxBox({ on, className = "" }: { on: boolean; className?: s
   return (
     <span
       aria-hidden
-      className={`relative inline-block ${BOX_SHAPE} ${on ? BOX_ON : BOX_OFF} ${className}`}
+      className={`relative inline-block ${BOX_SHAPE} ${on ? BOX_ON : BOX_OFF} ui-edge ${className}`}
     >
       {on && <BoxMark mixed={false} />}
     </span>
@@ -128,7 +131,7 @@ export function Checkbox({
         disabled={disabled}
         aria-describedby={describedByIds}
         onChange={(event) => onChange(event.target.checked)}
-        className={`${BOX_SHAPE} ${NATIVE} ${on ? BOX_ON : `${BOX_OFF} hover:border-fg-subtle`}`}
+        className={`ui-edge ${BOX_SHAPE} ${NATIVE} ${on ? BOX_ON : `${BOX_OFF} hover:border-fg-subtle`}`}
         {...rest}
       />
       {on && <BoxMark mixed={indeterminate} />}

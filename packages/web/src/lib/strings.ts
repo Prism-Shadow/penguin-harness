@@ -1056,8 +1056,8 @@ export const zh = {
       storageError: "无法保存背景设置，请检查此浏览器的本地存储空间或权限。",
     },
     themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
-    /** Display names of the three themes; the ids stay github / modern / geek. */
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" },
+    /** Display names of the built-in themes, keyed by their ids. */
+    themeNames: { github: "朴素", modern: "白领", geek: "极客", doodle: "卡通" },
     colorMode: "明暗",
     colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
@@ -1134,6 +1134,11 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
+      marker: "马克笔橙",
+      ballpoint: "圆珠笔蓝",
+      grass: "草绿",
+      crayon: "蜡笔红",
+      grape: "葡萄紫",
     } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
