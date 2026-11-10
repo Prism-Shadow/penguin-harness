@@ -269,8 +269,9 @@ function CreateAgentForm({
     setBusy(true);
     setRefused(undefined);
     try {
-      // Name defaults to the id (leave blank to let the server fill it in from the id).
-      const body: AgentCreateRequest = { agentId: id };
+      // Name defaults to the id (leave blank to let the server fill it in from the id). A person
+      // fills this dialog, so the new Agent's author is `user`.
+      const body: AgentCreateRequest = { agentId: id, author: "user" };
       if (name.trim()) body.name = name.trim();
       if (description.trim()) body.description = description.trim();
       // Picked plugins are seeded server-side inside the same create call, so a failure leaves

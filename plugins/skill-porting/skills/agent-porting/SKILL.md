@@ -1,7 +1,7 @@
 ---
 name: agent-porting
 description: Migrate an agent from Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code, WorkBuddy or another coding agent into a new PenguinHarness Agent — read its instructions, Skills, commands, MCP servers, hooks and memory, write them in the Agent zip layout without copying a secret, import the folder with `penguin agent import`, and report what did not map.
-version: 2026.11.09.1
+version: 2026.11.10.1
 ---
 
 # Agent Porting
@@ -115,11 +115,12 @@ A PenguinHarness Agent zip (`<id>-<yyyymmdd>.zip`) or an older `.tar.gz` Agent S
 
 ### Configuration
 
-`agent_state/system_config.yaml` holds only the keys the port changes. Without a `system_prompt` key the import lays it over the PenguinHarness template: objects merge key by key, lists and scalars replace the template's. Always write `name` and `description`; write the rest only where the source has it.
+`agent_state/system_config.yaml` holds only the keys the port changes. Without a `system_prompt` key the import lays it over the PenguinHarness template: objects merge key by key, lists and scalars replace the template's. Always write `name`, `description` and `author: agent` (who created the Agent: you are, in this chat); write the rest only where the source has it.
 
 ```yaml
 name: Docs writer
 description: Writes and reviews the product documentation
+author: agent
 model:
   thinking_level: high
 tools:

@@ -28,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
+  AgentAuthor,
   AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -48,6 +49,7 @@ import {
   OptionMenu,
   PageFrame,
   PageHeader,
+  Select,
   Skeleton,
   Switch,
   Table,
@@ -90,6 +92,7 @@ import {
 import { PluginsTab } from "./plugins-tab";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
+import { AGENT_AUTHORS } from "./agent-groups";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
@@ -278,11 +281,12 @@ export function AgentSettingsPage() {
           Object.keys(changed).length === 1 &&
           changed.compaction !== undefined;
         toastSuccess(compactionOnly ? S.agent.savedTakesEffectNow : S.agent.savedTakesEffect);
-        // Name/description changes affect the breadcrumb and list display; a builtin-tools
-        // change moves the card's tool count.
+        // Name/description changes affect the breadcrumb and list display, an author change
+        // moves the card to another group, and a builtin-tools change moves its tool count.
         if (
           update.config?.name !== undefined ||
           update.config?.description !== undefined ||
+          update.config?.author !== undefined ||
           update.config?.toolsBuiltin !== undefined
         ) {
           void reloadAgents();
@@ -459,15 +463,19 @@ async function saveWith(
 interface OverviewDraft {
   name: string;
   description: string;
+  author: AgentAuthor;
 }
 
 const overviewDraftOf = (config: AgentConfigDto): OverviewDraft => ({
   name: config.name ?? "",
   description: config.description ?? "",
+  // An older server reports no author; its Agents read as made by a person.
+  author: config.author ?? "user",
 });
 
-/** What Save sends: both fields trimmed. */
+/** What Save sends: the two text fields trimmed. */
 const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
+  ...draft,
   name: draft.name.trim(),
   description: draft.description.trim(),
 });
@@ -539,6 +547,7 @@ function OverviewTab({
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
     if (draft.name !== stored.name) config.name = draft.name;
     if (draft.description !== stored.description) config.description = draft.description;
+    if (draft.author !== stored.author) config.author = draft.author;
     void saveWith(
       setSaving,
       () => onSave({ config }),
@@ -561,6 +570,20 @@ function OverviewTab({
         value={form.draft.description}
         onChange={(e) => form.patch({ description: e.target.value })}
       />
+      {/* A field of the overview form like the two above: Save writes it, Reset puts it back. */}
+      <Select
+        size="sm"
+        label={S.agent.authorLabel}
+        info={S.agent.authorInfo}
+        value={form.draft.author}
+        onChange={(e) => form.patch({ author: e.target.value as AgentAuthor })}
+      >
+        {AGENT_AUTHORS.map((author) => (
+          <option key={author} value={author}>
+            {S.agent.authors[author]}
+          </option>
+        ))}
+      </Select>
       <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
       {/* Agent State section (ruled, the skills import modal's section family — no card

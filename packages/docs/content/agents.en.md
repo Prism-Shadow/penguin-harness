@@ -15,6 +15,8 @@ An agent is a configured assistant in a Project. Each agent has its own instruct
 
 In the sidebar, select **Agents**. The page lists every agent in the current Project. Use the search box (**Search agents: id / name / description**) to filter the list.
 
+By default the list is grouped by who created each agent: **Created by users**, **Created by agents** and **Created in company mode**, in that order. A group with no agents is not shown, and selecting a group's header collapses or expands it. To see one list instead, choose **No grouping** in the select beside the search box. In that list the employees of the Project's organizations come last, in a **Company employees** section of their own. The browser remembers the grouping you choose and the groups you collapsed.
+
 Every Project starts with the built-in agent `default_agent`. While it is the only agent, a card below it offers to create your first one: "No agent of your own yet".
 
 Each agent card shows:
@@ -49,7 +51,7 @@ The dialog shows which agent does the work: "Done by *agent* in a new conversati
 The fixed instructions tell that agent to use the `agent-initialization` Skill and to:
 
 - use the agent id you gave, or pick a short id that describes the agent, and stop instead of overwriting when that agent already exists;
-- start from `default_agent`'s configuration, set the name and description, and write the agent's role and rules into its `AGENTS.md`;
+- start from `default_agent`'s configuration, set the name and description, record that an agent created it, and write the agent's role and rules into its `AGENTS.md`;
 - copy only the Skills the new agent needs from the plugin library, and leave every other agent untouched;
 - report the new agent's id, the Skills it installed, and how to start a conversation with it.
 
@@ -96,7 +98,7 @@ Any Project member can import a new agent. When the id is taken, the dialog says
 
 ## Delete an agent
 
-Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: the **Company employees** section lists those, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).
+Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: its card names the organization, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).
 
 1. On the agent's card, select the delete button (**Delete agent**).
 2. Confirm.
@@ -110,7 +112,7 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 
 | Tab | What you configure |
 | --- | --- |
-| **Overview** | Name and description, export and replace from a file, kernel updates, and restoring the default configuration |
+| **Overview** | Name, description and author, export and replace from a file, kernel updates, and restoring the default configuration |
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
@@ -145,9 +147,9 @@ Any Project member can change most settings. These actions are for the Project o
 
 ## Overview tab
 
-### Edit the name and description
+### Edit the name, description and author
 
-Change **Name** or **Description**, then select **Save**.
+Change **Name**, **Description** or **Author**, then select **Save**. **Author** says who created the agent: **User** (created by a person in the Web App), **Agent** (created by an agent, for example through **Create with AI**) or **Company mode**. It decides which group the agent is in on the **Agents** page and changes nothing else.
 
 ### Export and import an agent
 
@@ -174,7 +176,7 @@ An agent's kernel version records which generation of the built-in default setti
 1. In the **Kernel** section, select **Update kernel**.
 2. Confirm.
 
-Tabs you have not customized are updated to the current built-in defaults. A tab you have edited stays unchanged in full and is listed in the result. The name, description, Agent State version and MCP servers are not affected. For the details, see [Kernel updates](/configuration#kernel-updates).
+Tabs you have not customized are updated to the current built-in defaults. A tab you have edited stays unchanged in full and is listed in the result. The name, description, author, Agent State version and MCP servers are not affected. For the details, see [Kernel updates](/configuration#kernel-updates).
 
 > [!TIP]
 > To update several agents at once, select **Update now** in the notice at the top of the **Agents** page.
@@ -187,7 +189,7 @@ Tabs you have not customized are updated to the current built-in defaults. A tab
 > [!WARNING]
 > Restoring the default configuration cannot be undone.
 
-The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
+The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
 
 ## System Prompt tab
 

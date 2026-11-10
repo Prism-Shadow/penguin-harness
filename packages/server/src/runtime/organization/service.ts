@@ -2939,8 +2939,14 @@ export class OrganizationModule {
       agents: {
         exists: async (projectId, agentId) =>
           agentsRepo.exists(projectId, agentId) || agentConfig.exists(projectId, agentId),
+        // Every Agent company mode creates — an organization's CEO, a new hire — is its own.
         create: async (projectId, agentId, name, description, plugins) => {
-          await agentService.createAgent(projectId, agentId, name, description, plugins);
+          await agentService.createAgent(projectId, agentId, {
+            ...(name !== undefined ? { name } : {}),
+            ...(description !== undefined ? { description } : {}),
+            author: "company",
+            plugins,
+          });
         },
         displayName: async (projectId, agentId) =>
           (await agentConfig.readCardMeta(projectId, agentId)).name ?? agentId,
