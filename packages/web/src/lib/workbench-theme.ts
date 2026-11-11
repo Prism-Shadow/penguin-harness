@@ -6,7 +6,9 @@
  * Rather than recompute the theme (two copies of one fact), the app copies what it has already
  * resolved onto the frame's root: the light/dark class, the theme attributes, every token of
  * the UI package's contract (`TOKEN_NAMES`) and the root font size, and into its head the
- * `@font-face` rules of the faces the app bundles.
+ * `@font-face` rules of the faces the app bundles. An imported theme pack's stylesheet goes in
+ * too, as the app's head links it: the tokens arrive resolved, but its hook recipes and its own
+ * faces live only in that sheet.
  *
  * The frame is see-through: the root also gets `data-workbench-frame`, on which both stylesheets
  * a page can carry leave its body unpainted (a page's own background still wins), and the app's
@@ -30,13 +32,8 @@
  *
  * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
-import {
-  INITIAL_THEME_ID,
-  TOKEN_NAMES,
-  isThemeId,
-  resolveAccent,
-  type ThemeId,
-} from "@prismshadow/penguin-ui";
+import { INITIAL_THEME_ID, TOKEN_NAMES, isThemeId, resolveAccent } from "@prismshadow/penguin-ui";
+import { THEME_PACK_ATTR } from "./theme-pack-links";
 
 /**
  * What a framed page may do. Same-origin on purpose — it is what lets the theme and the key
@@ -112,6 +109,8 @@ export interface WorkbenchTheme {
   vars: Record<string, string>;
   /** The app's `@font-face` rules, with absolute `url()`s, so the copied font stacks load. */
   fontFaces: string;
+  /** The imported theme pack's stylesheet the app links; absent for a built-in pack. */
+  packHref?: string;
 }
 
 interface AppRoot {
@@ -120,29 +119,34 @@ interface AppRoot {
   getAttribute(name: string): string | null;
 }
 
-function themeIdOf(root: AppRoot): ThemeId {
-  const id = root.getAttribute("data-theme");
-  return isThemeId(id) ? id : INITIAL_THEME_ID;
-}
-
 /**
  * The appearance the app has applied to its own document — read, not recomputed, so a new
- * token, accent or face needs no second definition here.
+ * token, accent or face needs no second definition here. `packHref` is the stylesheet of the
+ * imported pack the root names, as the app's head links it; without one, a root naming no
+ * built-in pack reads as the theme a browser starts in.
  */
 export function readAppTheme(
   root: AppRoot,
   computed: (property: string) => string,
   fontFaces = "",
+  packHref: string | null = null,
 ): WorkbenchTheme {
   const vars: Record<string, string> = {};
   for (const name of WORKBENCH_THEME_VARS) {
     const value = computed(name).trim();
     if (value !== "") vars[name] = value;
   }
-  const themeId = themeIdOf(root);
-  const attrs: WorkbenchTheme["attrs"] = { "data-theme": themeId };
-  const accent = resolveAccent(themeId, root.getAttribute("data-accent"));
-  if (accent !== null) attrs["data-accent"] = accent;
+  const named = root.getAttribute("data-theme");
+  const builtin = isThemeId(named) ? named : null;
+  // An imported pack the app's head links; any other id reads as the theme a browser starts in.
+  const pack = builtin === null && named !== null && packHref !== null ? named : null;
+  const attrs: WorkbenchTheme["attrs"] = { "data-theme": builtin ?? pack ?? INITIAL_THEME_ID };
+  // A built-in pack's presets are known here, so only one it paints is named. An imported pack's
+  // are in its stylesheet, which goes into the frame beside the attribute, so the attribute goes
+  // as the app's root carries it: the sheet paints only a preset it lists, as in the app.
+  const chosen = root.getAttribute("data-accent");
+  const accent = pack !== null ? chosen : resolveAccent(builtin ?? INITIAL_THEME_ID, chosen);
+  if (accent !== null && accent !== "") attrs["data-accent"] = accent;
   for (const name of ["data-theme-base", "data-font-latin", "data-font-cjk"] as const) {
     const value = root.getAttribute(name);
     if (value !== null && value !== "") attrs[name] = value;
@@ -153,7 +157,18 @@ export function readAppTheme(
     attrs,
     vars,
     fontFaces,
+    ...(pack !== null && packHref !== null ? { packHref } : {}),
   };
+}
+
+/** The stylesheet the app's head links for the imported pack its root names, or null. */
+function packHrefOf(doc: Document): string | null {
+  const id = doc.documentElement.getAttribute("data-theme");
+  if (id === null || isThemeId(id)) return null;
+  for (const link of Array.from(doc.head?.querySelectorAll(`link[${THEME_PACK_ATTR}]`) ?? [])) {
+    if (link.getAttribute(THEME_PACK_ATTR) === id) return link.getAttribute("href");
+  }
+  return null;
 }
 
 /**
@@ -259,7 +274,9 @@ const themeByDocument = new WeakMap<Document, { key: string; theme: WorkbenchThe
  */
 export function readDocumentTheme(doc: Document): WorkbenchTheme {
   const root = doc.documentElement;
-  const key = appearanceKey(root);
+  const packHref = packHrefOf(doc);
+  // A replaced pack keeps its id and changes its address: its tokens may have changed too.
+  const key = `${appearanceKey(root)}|${packHref ?? ""}`;
   const cached = themeByDocument.get(doc);
   if (cached?.key === key) return cached.theme;
   const style = doc.defaultView?.getComputedStyle(root);
@@ -267,6 +284,7 @@ export function readDocumentTheme(doc: Document): WorkbenchTheme {
     root,
     (property) => style?.getPropertyValue(property) ?? "",
     documentFontFaces(doc),
+    packHref,
   );
   // A read before the theme's stylesheet applies resolves nothing; it is not worth keeping.
   if (Object.keys(theme.vars).length > 0) themeByDocument.set(doc, { key, theme });
@@ -325,6 +343,22 @@ export function applyWorkbenchTheme(doc: Document, theme: WorkbenchTheme): void 
     link.rel = "stylesheet";
     link.href = WORKBENCH_THEME_HREF;
     head.prepend(link);
+  }
+  // The imported pack's sheet, last: after the components' stylesheet, whose layer order its
+  // layered rules must not open first. Unlayered, a page's own rules still win over it.
+  const packLink = head.querySelector(`link[${THEME_PACK_ATTR}]`);
+  const packId = theme.attrs["data-theme"] ?? "";
+  if (theme.packHref === undefined) {
+    packLink?.remove();
+  } else if (packLink === null) {
+    const link = doc.createElement("link");
+    link.rel = "stylesheet";
+    link.setAttribute(THEME_PACK_ATTR, packId);
+    link.setAttribute("href", theme.packHref);
+    head.append(link);
+  } else if (packLink.getAttribute("href") !== theme.packHref) {
+    packLink.setAttribute(THEME_PACK_ATTR, packId);
+    packLink.setAttribute("href", theme.packHref);
   }
   stampedByDocument.set(doc, theme);
 }
