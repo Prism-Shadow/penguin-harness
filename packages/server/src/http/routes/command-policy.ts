@@ -10,11 +10,11 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
+import { commandPolicyPatternError } from "@prismshadow/penguin-core";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
-import { patternSyntaxError } from "./command-policy-pattern.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface CommandPolicyRouteDeps {
@@ -74,7 +74,7 @@ function validateRules(value: unknown): RuleInput[] {
         `Each rule needs a non-empty pattern of at most ${MAX_RULE_PATTERN_LEN} characters.`,
       );
     }
-    const reason = patternSyntaxError(pattern);
+    const reason = commandPolicyPatternError(pattern);
     if (reason !== null) {
       throw new HttpError(
         400,

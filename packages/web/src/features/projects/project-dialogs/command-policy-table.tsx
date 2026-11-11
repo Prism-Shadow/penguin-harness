@@ -6,6 +6,10 @@
  * phone width a row becomes a two-line card (the name and its controls, then the pattern) and
  * the header steps aside, so nothing scrolls sideways.
  *
+ * A rule whose pattern the server cannot compile carries an amber sign after its name and a
+ * line under the row giving the engine's reason: a stored one the server's read reports (the
+ * matcher skips it, so it guards nothing), or a draft one the last save was refused over.
+ *
  * What is shown is a slice of the draft the section holds: turning a page changes what is on
  * screen and nothing else, so an unsaved edit on one page is still there after visiting
  * another. Every column is a fixed width or a share of the row, never sized by its content, so a
@@ -102,6 +106,15 @@ export function RuleTable({
         {shown.map((r, k) => {
           const i = start + k;
           if (editing === i) return <div key={`edit-${i}`}>{editor(i)}</div>;
+          // What is wrong with the row's pattern, if anything: the reason the last save was
+          // refused over this draft rule, or the server's own read of a stored one it cannot
+          // compile (which matching skips). Either way the row says so in a line of its own.
+          const problem =
+            rejected?.rule === r
+              ? S.project.commandPolicyPatternRejectedHint(rejected.reason)
+              : r.patternError !== undefined
+                ? S.project.commandPolicyRuleSkipped(r.patternError)
+                : null;
           return (
             <div
               key={`${r.name}-${i}`}
@@ -117,12 +130,11 @@ export function RuleTable({
                 >
                   {r.name}
                 </span>
-                {rejected?.rule === r && (
+                {problem !== null && (
                   <span
                     role="img"
                     className={`shrink-0 ${toneInk.attention}`}
-                    aria-label={S.project.commandPolicyPatternRejectedHint(rejected.reason)}
-                    data-tooltip={S.project.commandPolicyPatternRejectedHint(rejected.reason)}
+                    aria-label={S.project.commandPolicyPatternMark}
                   >
                     <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                   </span>
@@ -189,6 +201,13 @@ export function RuleTable({
                   </span>
                 )}
               </div>
+              {problem !== null && (
+                <p
+                  className={`col-span-2 row-start-3 text-xs ${toneInk.attention} sm:col-span-full sm:row-start-2`}
+                >
+                  {problem}
+                </p>
+              )}
             </div>
           );
         })}

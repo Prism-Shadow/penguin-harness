@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -270,14 +270,31 @@ describe("command policy config semantics", () => {
     expect(hit("mkfs /dev/sdb1", policy)).toBe("mkfs");
   });
 
-  it("skips an uncompilable rule instead of failing the whole policy", () => {
-    const policy: CommandPolicyConfig = {
-      rules: [
-        { name: "broken", pattern: "(" },
-        { name: "no-curl", pattern: "\\bcurl\\b" },
-      ],
-    };
-    expect(hit("curl http://x", policy)).toBe("no-curl");
+  it("skips a rule this engine cannot compile, and says so once per rule and pattern", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const policy: CommandPolicyConfig = {
+        rules: [
+          { name: "skipped-broken", pattern: "(" },
+          { name: "no-curl", pattern: "\\bcurl\\b" },
+        ],
+      };
+      // The rest of the policy still decides, and a broken deny rule does not refuse
+      // everything: it is skipped, not counted as a hit.
+      expect(hit("curl http://x", policy)).toBe("no-curl");
+      expect(hit("ls -la", policy)).toBeNull();
+      expect(hit("echo (", policy)).toBeNull();
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("skipped-broken"));
+      expect(said()).toHaveLength(1);
+
+      // A different broken pattern under the same name is news, and is said once too.
+      const changed: CommandPolicyConfig = { rules: [{ name: "skipped-broken", pattern: "[" }] };
+      expect(hit("ls", changed)).toBeNull();
+      expect(hit("ls", changed)).toBeNull();
+      expect(said()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("a hit reports the matched rule's name", () => {

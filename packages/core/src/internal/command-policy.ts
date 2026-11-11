@@ -68,6 +68,7 @@ import type {
   CommandPolicyRule,
 } from "../interfaces/index.js";
 import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js";
+import { commandPolicyPatternError } from "./command-policy-pattern.js";
 import {
   EXEC_COMMAND_NAME,
   EXEC_COMMAND_TEXT_ARGUMENTS,
@@ -102,20 +103,33 @@ function commandVariants(cmd: string): string[] {
   return unquoted === literal ? [literal] : [literal, unquoted];
 }
 
+/** The rules already reported as skipped, by name and pattern: each is said once per process. */
+const reportedSkips = new Set<string>();
+
 /**
- * Compiles a rule's pattern, returning null for an invalid regex instead of throwing: a
- * broken rule must not take the whole policy (or the Session) down with it. Write paths
- * validate patterns up front (the server rejects an uncompilable rule), so this fires for
- * hand-placed data, and for a pattern saved where the engine accepted it and read where it
- * does not (a file written under Node 24 and read by a CLI on Node 22, say). Such a rule is
- * skipped: it guards nothing on that engine.
+ * Compiles a rule's pattern, returning null for one this engine cannot compile instead of
+ * throwing: a broken rule must not take the whole policy (or the Session) down with it. Write
+ * paths validate patterns up front (the server refuses an uncompilable rule), so this fires
+ * for hand-placed data, and for a pattern saved where one engine accepted it and read where
+ * another does not.
+ *
+ * Such a rule is skipped, not counted as a hit: the policy is an accident guardrail, and a
+ * broken `deny` rule that matched everything would refuse every shell command until someone
+ * found it. Skipping is not silent, though — the process logs it once per rule and pattern
+ * (the server's log, inside the server), naming the runtime, and the settings page marks the
+ * rule from the server's own read of it.
  */
 function compileRule(rule: CommandPolicyRule): RegExp | null {
-  try {
-    return new RegExp(rule.pattern);
-  } catch {
-    return null;
+  const reason = commandPolicyPatternError(rule.pattern);
+  if (reason === null) return new RegExp(rule.pattern);
+  const key = `${rule.name}\u0000${rule.pattern}`;
+  if (!reportedSkips.has(key)) {
+    reportedSkips.add(key);
+    console.warn(
+      `[command-policy] Rule "${rule.name}" is skipped: its pattern does not compile on Node ${process.version} (${reason}).`,
+    );
   }
+  return null;
 }
 
 /**

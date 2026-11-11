@@ -12,6 +12,8 @@
  *   without one.
  * - An uncompilable pattern is refused by its rule's name, its index and the engine's reason,
  *   never by the pattern's own text; malformed bodies are refused.
+ * - A stored rule this engine cannot compile (matching skips it) is served with the engine's
+ *   reason, so the settings page can mark it; the other rules carry none.
  * - The write is read-modify-write: the models table survives.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -179,6 +181,27 @@ describe("project command policy", () => {
     // Nothing was stored: the list is still the seeded one.
     const stored = (await (await owner.get(url)).json()) as CommandPolicyDto;
     expect(stored.rules.map((r) => r.name)).toContain("rm-recursive-force");
+  });
+
+  it("serves a stored rule this engine cannot compile with the engine's reason, and only that rule", async () => {
+    // A file written where the engine accepted the pattern, read where it does not: placed by
+    // hand here, since this server refuses to store it.
+    const placed = await owner.put(url, {
+      rules: [
+        { name: "fine", pattern: "\\bcurl\\b" },
+        { name: "stored-broken", pattern: "PLACEHOLDER" },
+      ],
+    });
+    expect(placed.status).toBe(200);
+    const file = path.join(t.root, projectId, ".project_config.toml");
+    const toml = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, toml.replace('"PLACEHOLDER"', '"(?<broken"'), "utf8");
+
+    const dto = (await (await member.get(url)).json()) as CommandPolicyDto;
+    const byName = new Map(dto.rules.map((r) => [r.name, r]));
+    expect(byName.get("stored-broken")?.patternError).toEqual(expect.any(String));
+    expect(byName.get("fine")?.patternError).toBeUndefined();
+    expect(dto.defaultRules.every((r) => r.patternError === undefined)).toBe(true);
   });
 
   it("rejects malformed bodies (missing rules, bad entries, wrong types)", async () => {

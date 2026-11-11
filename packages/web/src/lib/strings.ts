@@ -1749,6 +1749,11 @@ export const zh = {
       `规则「${name}」的正则表达式在服务器上无法编译（${reason}），已转到它所在的页。`,
     commandPolicyPatternRejectedHint: (reason: string) =>
       `服务器无法编译这条规则的正则表达式：${reason}。编辑或删除它后再保存。`,
+    /** A stored rule the server cannot compile: matching skips it. `reason` is the engine's own words. */
+    commandPolicyRuleSkipped: (reason: string) =>
+      `这台服务器编译不了这条规则的正则表达式（${reason}），匹配命令时会跳过它，它不拦截任何命令。请编辑或删除它。`,
+    /** The row mark beside such a rule's name, as read aloud. */
+    commandPolicyPatternMark: "正则表达式无法编译",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",

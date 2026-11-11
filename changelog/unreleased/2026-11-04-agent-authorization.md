@@ -37,7 +37,7 @@ A Project that already stores its rule list keeps it as it is. It adopts the fiv
 
 The rule editor gains a Deny / Ask choice, and an `ask` rule's row carries an "Asks first" pill. `.project_config.toml` stores `action = "ask"` on such a rule.
 
-Every factory pattern now compiles on Node 22 and older engines too: case-insensitive words are spelled as letter classes instead of the ES2025 inline modifier `(?i:…)`, which made saving the list fail there. The rule list becomes a paged table with aligned columns (ten rules a page, the pager and Save held under it), and a save the server refuses over one pattern turns to that rule's page and marks its row.
+Every factory pattern now compiles on Node 22 and older engines too: case-insensitive words are spelled as letter classes instead of the ES2025 inline modifier `(?i:…)`. A stored rule whose pattern the server's runtime cannot compile is skipped when commands are matched, logged once per rule and pattern, and marked on the security page with its reason; stored rules are left as they are. The server and the CLI stop at start on a Node older than 24 and name the version they found. The rule list becomes a paged table with aligned columns (ten rules a page, the pager and Save held under it), and a save the server refuses over one pattern turns to that rule's page and marks its row.
 
 ## SDK
 

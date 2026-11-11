@@ -16,8 +16,8 @@
  * Every pattern sticks to syntax that every runtime the server ships on, and every browser
  * the settings page checks a pattern in, compiles: no inline modifier groups (`(?i:…)`, ES2025),
  * no lookbehind, no named groups, no `v`-flag classes. Node 22 and older reject `(?i:…)`, and
- * a factory rule one runtime cannot compile is one that guards nothing there and makes every
- * save of the list fail. Case-insensitive words are spelled with {@link ci} instead.
+ * a factory rule one runtime cannot compile is skipped there (it guards nothing) and makes
+ * every save of the list fail. Case-insensitive words are spelled with {@link ci} instead.
  * Descriptions are stored data (project-editable after seeding), so they are plain
  * English like the rest of the config file.
  */

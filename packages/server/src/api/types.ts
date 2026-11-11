@@ -1325,6 +1325,12 @@ export interface CommandPolicyRuleDto {
   enabled: boolean;
   /** What a hit does; absent = `deny` (served only for an `ask` rule, as it is stored). */
   action?: CommandPolicyActionDto;
+  /**
+   * Read-only, served only for a stored rule whose pattern this server's engine cannot
+   * compile: the engine's reason. Such a rule is skipped when commands are matched, so the
+   * settings page marks it; a PUT ignores the field (and refuses the pattern).
+   */
+  patternError?: string;
 }
 
 /**
