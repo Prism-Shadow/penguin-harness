@@ -8,6 +8,9 @@
  *   text size is kept and anything unknown reads as the default.
  * - The theme and font faces are validated against the package's lists; another theme's accent
  *   is kept as stored while the theme's own accent is the one in effect.
+ * - A stored imported pack reads as itself while this browser's copy of the server's list holds it
+ *   for this build's theme API, and as the initial theme otherwise, without a write; its accent
+ *   presets are kept only while it is the stored theme.
  * - A chosen face is named on <html>, the theme's own face leaves no attribute, every theme is
  *   named (the one an empty store starts in like a chosen one), a pack built on Frost carries
  *   the base attribute and one on the foundation alone none, and the text size sets the root
@@ -24,6 +27,7 @@ import {
   THEME_STORAGE_KEYS,
   applyThemeAttributes,
 } from "@prismshadow/penguin-ui/boot";
+import { shownTheme } from "../src/state/theme-entries";
 import { effectiveAccent, readThemePrefs } from "../src/state/theme-prefs";
 import { fontChoices } from "../src/features/settings/appearance-section";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -138,9 +142,44 @@ describe("reading the stored appearance", () => {
   it("keeps another theme's accent as stored, and marks the theme's own in effect", () => {
     const prefs = readThemePrefs(memoryStorage({ [THEME_STORAGE_KEYS.accent]: "ocean" }));
     expect(prefs.accent).toBe("ocean");
-    expect(effectiveAccent("modern", prefs.accent)).toBe("ocean");
-    expect(effectiveAccent("github", prefs.accent)).toBe("neutral");
-    expect(effectiveAccent("github", "blue")).toBe("blue");
+    expect(effectiveAccent(shownTheme("modern", []), prefs.accent)).toBe("ocean");
+    expect(effectiveAccent(shownTheme("github", []), prefs.accent)).toBe("neutral");
+    expect(effectiveAccent(shownTheme("github", []), "blue")).toBe("blue");
+  });
+
+  it("reads a stored imported pack as itself while the browser has it cached, and its presets beside it", () => {
+    const entry = (api: number) => ({
+      id: "paper",
+      api,
+      v: "5e1f0c2a",
+      base: "modern",
+      accent: { presets: [{ id: "ink-blue", swatch: "#2c4f9e" }] },
+    });
+    const stored = (packs: unknown[] | null, accent = "ink-blue") =>
+      memoryStorage({
+        [THEME_STORAGE_KEYS.themeId]: "paper",
+        [THEME_STORAGE_KEYS.accent]: accent,
+        ...(packs === null ? {} : { [THEME_STORAGE_KEYS.themePacks]: JSON.stringify(packs) }),
+      });
+
+    expect(readThemePrefs(stored([entry(1)]))).toMatchObject({
+      themeId: "paper",
+      accent: "ink-blue",
+    });
+    // Never seen listed, or written for a newer build: the initial theme, and the stored values stay.
+    for (const storage of [stored(null), stored([entry(2)])]) {
+      expect(readThemePrefs(storage)).toMatchObject({
+        themeId: INITIAL_THEME_ID,
+        accent: "neutral",
+      });
+      expect(storage.map.get(THEME_STORAGE_KEYS.themeId)).toBe("paper");
+      expect(storage.map.get(THEME_STORAGE_KEYS.accent)).toBe("ink-blue");
+    }
+    // A preset no theme lists is not kept, the pack's own neither when another theme is stored.
+    expect(readThemePrefs(stored([entry(1)], "glitter")).accent).toBe("neutral");
+    const elsewhere = stored([entry(1)]);
+    elsewhere.setItem(THEME_STORAGE_KEYS.themeId, "geek");
+    expect(readThemePrefs(elsewhere).accent).toBe("neutral");
   });
 });
 

@@ -924,6 +924,44 @@ export const en: Strings = {
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
     themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themePackFailed: (name: string, shown: string) =>
+      `${name}'s stylesheet did not load; showing ${shown}.`,
+    themePacks: {
+      title: "Theme packs",
+      versionLabel: (version: string) => `v${version}`,
+      idHint: (id: string) => `id: ${id}`,
+      base: { root: "Base", modern: "On Frost", foundation: "Standalone" },
+      baseHint: {
+        root: "Every other pack builds on Frost: a token or recipe a pack leaves out shows Frost's.",
+        modern: "Takes Frost's values and hook recipes, and changes only what it declares.",
+        foundation: "Falls back to Frost's values, without Frost's hook recipes.",
+      },
+      newerApi: "Needs a newer version",
+      newerApiHint:
+        "This pack was written for a newer version of the app; update the app to pick it.",
+      export: "Export",
+      exportLabel: (name: string) => `Export the theme pack ${name}`,
+      remove: "Remove",
+      removeLabel: (name: string) => `Remove the theme pack ${name}`,
+      importTitle: "Import a theme pack",
+      importHint: "A .zip file, up to 16 MB.",
+      importPick: "Choose file…",
+      importing: "Importing…",
+      adminOnly: "Only an admin can import or remove theme packs.",
+      tooLarge: "A theme pack can be at most 16 MB.",
+      invalid: (where: string, reason: string) =>
+        `The theme pack did not pass the checks: ${where}: ${reason}`,
+      imported: (name: string) => `Imported ${name}. Pick it under Theme.`,
+      replaced: (name: string) => `Replaced ${name}.`,
+      replaceTitle: (name: string) => `Replace the installed ${name}?`,
+      replaceBody: (name: string) =>
+        `Replace the installed ${name}? This server already has a pack with this id; every account that picked it gets the version you are importing.`,
+      replace: "Replace",
+      removeTitle: (name: string) => `Remove the theme pack ${name}?`,
+      removeBody: (name: string) =>
+        `Remove the theme pack ${name}? Accounts that picked it switch to Frost, and switch back when a pack with the same id is imported again.`,
+      removed: (name: string) => `Removed ${name}.`,
+    },
     colorMode: "Mode",
     colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
@@ -6577,6 +6615,16 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      theme_invalid: "The theme pack did not pass the checks.",
+      theme_id_reserved:
+        "That id belongs to a built-in theme. Give the pack another id in pack.json, then import it.",
+      theme_exists: "This server already has a theme pack with that id.",
+      theme_too_large: "The theme pack is over the import limits.",
+      theme_api_unsupported: "This theme pack was written for a newer version of the app.",
+      theme_builtin: "A built-in theme pack cannot be removed.",
+      theme_not_found: "That theme pack no longer exists.",
+      themes_unavailable:
+        "This server's build carries no built-in theme pack sources, so theme packs cannot be imported or exported for now.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
