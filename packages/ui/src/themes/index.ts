@@ -14,6 +14,7 @@
  * derived from CSS at run time. The contract test holds every manifest to its folder's CSS.
  */
 import type { AccentPresetSpec, ThemeModeName } from "../tokens";
+import doodle from "./doodle/pack.json" with { type: "json" };
 import geek from "./geek/pack.json" with { type: "json" };
 import github from "./github/pack.json" with { type: "json" };
 import modern from "./modern/pack.json" with { type: "json" };
@@ -75,7 +76,7 @@ export interface ThemePackManifest {
 
 /*
  * The built-in packs, keyed by id in the picker's order — Frost, Console, Primer (user decision,
- * 2026-10-02). The keys are what `ThemeId` is; each folder's manifest names the same id, which the
+ * 2026-10-02), then Doodle. The keys are what `ThemeId` is; each folder's manifest names the same id, which the
  * contract test holds. The JSON is typed by the contract, not by inference: TypeScript widens a
  * JSON module's strings, and the test validates every field the type promises.
  */
@@ -83,6 +84,7 @@ const PACKS = {
   modern: modern as unknown as ThemePackManifest,
   geek: geek as unknown as ThemePackManifest,
   github: github as unknown as ThemePackManifest,
+  doodle: doodle as unknown as ThemePackManifest,
 };
 
 /** A built-in pack's id: the theme ids the build ships. Display names are UI copy, not ids. */

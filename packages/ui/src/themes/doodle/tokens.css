@@ -1,0 +1,402 @@
+/**
+ * Doodle (`doodle`, 卡通) — Frost, hand-written. The page is Frost's (`base: "modern"`): its
+ * layout, its spacing, its lineless activity cards, its soft-filled groups, its sweep on a running
+ * label, its motion. What Doodle changes is the paper, the hand and the pen: a warm paper palette
+ * under a near-black ink, a handwriting face for chrome and reading, small corners, and a pen line
+ * drawn only where a person puts their hand (`recipes.css`). The idea is looseleaf's ("shadcn/ui,
+ * drawn by hand"); nothing of its code, components or font files is used.
+ *
+ * This file declares the groups Doodle changes and nothing else; every name it leaves out —
+ * density, motion, the streaming pace, structure, the chart geometry, the badges, the switch, the
+ * icon geometry, the focus ring's offset — resolves to Frost's, and Frost's dark value where dark
+ * changes it.
+ *
+ * - Surfaces: paper `#f6f1e7`, the slip laid on it `#fcf9f2`, the pad a step darker `#f3ede3`;
+ *   dark `#1c1a17` / `#23201d` / `#292622`. The gray bridge is a warm ramp through the same paper
+ *   and ink, so the app's palette classes (the terminal's chrome among them) land on paper too.
+ * - Text: ink `#2b2521` (11.6:1 on the paper surfaces), muted 5.6:1, subtle 3.9:1; dark body
+ *   chalk 12.4:1 (11.1:1 on its own accent's tint), the near-white for headings, muted 7.2:1,
+ *   subtle 5.2:1.
+ * - One ink. The theme's own accent is the ink under a paper label in light and the chalk under
+ *   the ink in dark, as every theme's own accent is black and white (user decision, 2026-10-02);
+ *   the family derives from `--ui-accent`, so a preset — five pens, `accents.css` — sets one
+ *   value per mode. The ballpoint blue is where Frost has a hue of its own and nowhere else: the
+ *   links, the focus ring and the selection.
+ * - Tones: a pen ink each, its tint a wash of it on paper, its line a lighter stroke of it; every
+ *   tone reads 4.5:1 on its tint and 3:1 as a mark on the page.
+ * - Charts: the roles in pen colours, each a 3:1 mark on the paper surfaces; how a chart is drawn
+ *   (fill, radius, widths, curve, no outline on a bar) is Frost's.
+ * - Type: Shantell Sans for chrome and reading, LXGW WenKai GB Screen for Han, JetBrains Mono for
+ *   code (`fonts.css`); a 14px body and 13px small at the 16px root, which the hand needs, titles
+ *   in the bold cut, no negative tracking.
+ * - Shape and depth: small corners (the pen draws its own on what it edges); no shadow on a card,
+ *   a soft warm paper shadow under what floats.
+ *
+ * The light rule carries every name it declares in tokens.ts's group order, after the gray bridge;
+ * the dark rule only what dark changes. index.css serves this file in `ui-theme`, over Frost's
+ * `ui-base`, so a value here beats Frost's in both modes.
+ */
+:root[data-theme="doodle"] {
+  /* ---- Gray bridge: a warm ramp from paper to ink. white = the slip. ---- */
+  --color-white: var(--ui-surface);
+  --color-gray-50: #faf6ee;
+  --color-gray-100: #f4efe5;
+  --color-gray-200: #e5ddcd;
+  --color-gray-300: #d3c8b5;
+  --color-gray-400: #a69a87;
+  --color-gray-500: #776d60;
+  --color-gray-600: #5e554b;
+  --color-gray-700: #4a423b;
+  --color-gray-800: #352e29;
+  --color-gray-900: #2b2521;
+  --color-gray-950: #1c1815;
+
+  /* ---- Colour — surfaces: the paper, the slip laid on it, the pad a step darker ---- */
+  --ui-canvas: #f6f1e7;
+  --ui-surface: #fcf9f2;
+  --ui-surface-muted: #f3ede3;
+  --ui-fill-neutral: #e9e1d1;
+  --ui-inset: #f3eee3;
+  --ui-overlay: #fdfbf6;
+  --ui-overlay-backdrop: rgb(43 37 33 / 0.38);
+
+  /* ---- Colour — text ---- */
+  --ui-fg: #2b2521;
+  --ui-fg-emphasis: var(--ui-fg);
+  --ui-fg-muted: #5e554b;
+  --ui-fg-subtle: #776d60;
+  --ui-fg-link: #2c4f9e;
+  --ui-fg-link-hover: #1f3b7a;
+  --ui-link-decoration: none;
+
+  /* ---- Colour — lines: pencil on paper ---- */
+  --ui-line: #d6ccba;
+  --ui-line-muted: #e5ddcd;
+  --ui-line-emphasis: #a69a87;
+  --ui-divider: #ddd4c3;
+
+  /* ---- Colour — accent: the ink under a paper label; the family derives from it ---- */
+  --ui-accent: #2b2521;
+  --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
+  --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
+  --ui-accent-fg: #fcf9f2;
+  --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 8%, transparent);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-canvas));
+  --ui-accent-line: color-mix(in srgb, var(--ui-accent) 40%, transparent);
+
+  /* ---- Colour — semantic tones: a pen ink each, its tint a wash of it, its line a lighter
+     stroke. Ink on tint ≥ 4.9:1, ink on the page ≥ 4.5:1, a solid fill's label ≥ 6:1. ---- */
+  --ui-tone-success-fg: #2f6b45;
+  --ui-tone-success-bg: #e2eddb;
+  --ui-tone-success-line: #8fb79a;
+  --ui-tone-success-emphasis: #2f6b45;
+  --ui-tone-success-emphasis-fg: #fcf9f2;
+  --ui-tone-attention-fg: #8a5a00;
+  --ui-tone-attention-bg: #f6eac6;
+  --ui-tone-attention-line: #d9b45a;
+  --ui-tone-attention-emphasis: #d99a22;
+  --ui-tone-attention-emphasis-fg: #2b2521;
+  --ui-tone-danger-fg: #b3261e;
+  --ui-tone-danger-bg: #f7e1db;
+  --ui-tone-danger-line: #e09a8c;
+  --ui-tone-danger-emphasis: #b3261e;
+  --ui-tone-danger-emphasis-fg: #fcf9f2;
+  --ui-tone-done-fg: #6a46b8;
+  --ui-tone-done-bg: #ece5f6;
+  --ui-tone-done-line: #b9a3e0;
+  --ui-tone-done-emphasis: #6a46b8;
+  --ui-tone-done-emphasis-fg: #fcf9f2;
+  --ui-tone-neutral-fg: #5e554b;
+  --ui-tone-neutral-bg: #ebe4d6;
+  --ui-tone-neutral-line: #d6ccba;
+  --ui-tone-neutral-emphasis: #5e554b;
+  --ui-tone-neutral-emphasis-fg: #fcf9f2;
+  --ui-tone-info-fg: #2c5d9e;
+  --ui-tone-info-bg: #e0eaf4;
+  --ui-tone-info-line: #9fbbe0;
+  --ui-tone-info-emphasis: #2c5d9e;
+  --ui-tone-info-emphasis-fg: #fcf9f2;
+
+  /* ---- Colour — marks: the marker's orange, one value in both modes ---- */
+  --ui-mark-new: #e0603a;
+
+  /* ---- Charts: the roles in pen colours, each a 3:1 mark on the paper surfaces ---- */
+  --ui-chart-1: #7a5bc4;
+  --ui-chart-2: #b0730c;
+  --ui-chart-3: #2f7bbd;
+  --ui-chart-4: #c94664;
+  --ui-chart-5: #2f8550;
+  --ui-chart-6: #a8429a;
+  --ui-chart-7: #1d8478;
+  --ui-chart-8: #c95a28;
+  --ui-chart-ref: var(--ui-fg-muted);
+  --ui-chart-cache-read: #8fbbe4;
+  --ui-chart-cache-write: #3f8ad0;
+  --ui-chart-output: #22558f;
+  --ui-chart-grid: #e7dfcf;
+  --ui-chart-axis: #776d60;
+
+  /* ---- Colour — code: a pad of its own, pen-wash diffs ---- */
+  --ui-code-bg: #f1ebdf;
+  --ui-code-line: #ddd4c3;
+  --ui-code-gutter: #8f8576;
+  --ui-code-selection: rgb(44 79 158 / 0.16);
+  --ui-diff-add-bg: #e2eddb;
+  --ui-diff-add-word: #c3dcb5;
+  --ui-diff-del-bg: #f7e1db;
+  --ui-diff-del-word: #eec0b4;
+  --ui-diff-hunk-bg: #e0eaf4;
+
+  /* ---- Shape: small corners; the pen draws its own on what it edges ---- */
+  --ui-radius-xs: 0.125rem;
+  --ui-radius-sm: 0.25rem;
+  --ui-radius-md: 0.375rem;
+  --ui-radius-lg: 0.5rem;
+  --ui-radius-xl: 0.625rem;
+  --ui-radius-pill: 9999px;
+  --ui-radius-control: 0.375rem;
+  --ui-border-w: 1px;
+  --ui-border-w-thick: 2px;
+
+  /* ---- Elevation: no shadow on a card; a soft, warm paper shadow under what floats (a slip
+     draws its own into its image, recipes.css); glass is opaque paper ---- */
+  --ui-shadow-flat: 0 0 #0000;
+  --ui-shadow-raised: 0 1px 1.5px rgb(58 44 30 / 0.16);
+  --ui-shadow-overlay: 0 1px 1.5px rgb(58 44 30 / 0.18), 0 8px 16px -6px rgb(58 44 30 / 0.24);
+  --ui-shadow-modal: 0 2px 3px rgb(58 44 30 / 0.18), 0 18px 32px -12px rgb(58 44 30 / 0.36);
+  --ui-shadow-drawer: 0 2px 3px rgb(58 44 30 / 0.18), 0 22px 40px -14px rgb(58 44 30 / 0.4);
+  --ui-glass-bg: var(--ui-overlay);
+  --ui-glass-blur: 0px;
+  --ui-glass-saturate: 100%;
+  --ui-glass-line: var(--ui-line);
+
+  /* ---- Shell: the pad beside the paper, one pencil rule between them ---- */
+  --ui-shell-field: var(--ui-canvas);
+  --ui-shell-nav-bg: var(--ui-surface-muted);
+  --ui-shell-main-bg: var(--ui-canvas);
+  --ui-shell-line: var(--ui-line);
+
+  /* ---- Typography — families: Shantell Sans for chrome and reading, LXGW WenKai GB Screen
+     for Han (its slices cover GB2312; a rarer ideograph falls back to Noto Sans SC, then the
+     platform), JetBrains Mono for code ---- */
+  --ui-font-cjk: "LXGW WenKai GB Screen", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
+  --ui-font-sans:
+    "Shantell Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  --ui-font-ui: var(--ui-font-sans);
+  --ui-font-mono:
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    var(--ui-font-cjk), monospace;
+  --ui-font-display: var(--ui-font-sans);
+
+  /* ---- Typography — scale and roles: a 14px body and 13px small at the 16px root (the hand
+     reads larger than its size), titles in the bold cut with no tracking, a sentence-case
+     eyebrow. Line-heights are ratios, so a child that sets only its size keeps them. ---- */
+  --ui-text-body-size: 0.875rem;
+  --ui-text-body-lh: 1.5;
+  --ui-text-small-size: 0.8125rem;
+  --ui-text-small-lh: 1.45;
+  --ui-text-caption-size: 0.8125rem;
+  --ui-text-caption-lh: 1.4;
+  --ui-text-code-size: 0.8125rem;
+  --ui-text-code-lh: 1.55;
+  --ui-text-prose-size: 0.9375rem;
+  --ui-text-prose-lh: 1.65;
+  --ui-h1-size: 1.75rem;
+  --ui-h1-lh: 1.2;
+  --ui-h1-weight: 700;
+  --ui-h1-tracking: normal;
+  --ui-h1-transform: none;
+  --ui-h1-font: var(--ui-font-display);
+  --ui-h2-size: 1.375rem;
+  --ui-h2-lh: 1.3;
+  --ui-h2-weight: 700;
+  --ui-h2-tracking: normal;
+  --ui-h2-transform: none;
+  --ui-h2-font: var(--ui-font-display);
+  --ui-h3-size: 1.1875rem;
+  --ui-h3-lh: 1.35;
+  --ui-h3-weight: 700;
+  --ui-h3-tracking: normal;
+  --ui-h3-transform: none;
+  --ui-h3-font: var(--ui-font-sans);
+  --ui-h4-size: 1rem;
+  --ui-h4-lh: 1.45;
+  --ui-h4-weight: 600;
+  --ui-h4-tracking: normal;
+  --ui-h4-transform: none;
+  --ui-h4-font: var(--ui-font-sans);
+  --ui-h5-size: 0.875rem;
+  --ui-h5-lh: 1.5;
+  --ui-h5-weight: 600;
+  --ui-h5-tracking: normal;
+  --ui-h5-transform: none;
+  --ui-h5-font: var(--ui-font-sans);
+  --ui-h6-size: 0.8125rem;
+  --ui-h6-lh: 1.45;
+  --ui-h6-weight: 600;
+  --ui-h6-tracking: normal;
+  --ui-h6-transform: none;
+  --ui-h6-font: var(--ui-font-sans);
+  --ui-md-h1-size: 1.375rem;
+  --ui-md-h2-size: 1.1875rem;
+  --ui-md-h3-size: 1.0625rem;
+  --ui-weight-body: 400;
+  --ui-weight-medium: 500;
+  --ui-weight-strong: 600;
+  --ui-tracking-body: normal;
+  --ui-tracking-mono: normal;
+  --ui-tracking-label: normal;
+
+  /* ---- Icons: Frost's line set and duotone bodies; the hues a decorative icon wears are pen
+     colours, each a 3:1 mark on the paper and the pad ---- */
+  --ui-icon-tint-blue: #2f6bbd;
+  --ui-icon-tint-violet: #7353c2;
+  --ui-icon-tint-pink: #bf3f7c;
+  --ui-icon-tint-red: #c2412d;
+  --ui-icon-tint-orange: #bd571d;
+  --ui-icon-tint-amber: #9a6600;
+  --ui-icon-tint-green: #2f7a45;
+  --ui-icon-tint-teal: #1e7f75;
+  --ui-icon-tint-slate: #5f6b78;
+
+  /* ---- Focus, selection and scrollbar: the ballpoint blue for the ring and a wash of it for
+     the selection, a pencil thumb ---- */
+  --ui-focus-ring: 2px solid #2c4f9e;
+  --ui-focus-ring-input: 0 0 0 2px rgb(44 79 158 / 0.35);
+  --ui-selection-bg: rgb(44 79 158 / 0.2);
+  --ui-scrollbar-thumb: rgb(43 37 33 / 0.28);
+  --ui-scrollbar-thumb-hover: rgb(43 37 33 / 0.45);
+}
+
+/* Dark: chalk on dark paper. Only what the mode changes. */
+:root[data-theme="doodle"].dark {
+  /* ---- Gray bridge: the same warm ramp turned over — 950 the paper, 100 the body chalk, 50 the
+     near-white kept for headings. `white` stays literal (see Primer's note). ---- */
+  --color-white: #ffffff;
+  --color-gray-50: #f4efe4;
+  --color-gray-100: #efe8dc;
+  --color-gray-200: #d8d0c1;
+  --color-gray-300: #cbc2b2;
+  --color-gray-400: #bcb2a2;
+  --color-gray-500: #a09686;
+  --color-gray-600: #625a50;
+  --color-gray-700: #3c3731;
+  --color-gray-800: #34302b;
+  --color-gray-900: #23201d;
+  --color-gray-950: #1c1a17;
+
+  /* ---- Colour — surfaces ---- */
+  --ui-canvas: #1c1a17;
+  --ui-surface: #23201d;
+  --ui-surface-muted: #292622;
+  --ui-fill-neutral: #34302b;
+  --ui-inset: #181614;
+  --ui-overlay: #25221f;
+  --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
+
+  /* ---- Colour — text: body 12.4:1, headings the near-white, muted 7.2:1, subtle 5.2:1 ---- */
+  --ui-fg: #efe8dc;
+  --ui-fg-emphasis: #f4efe4;
+  --ui-fg-muted: #bcb2a2;
+  --ui-fg-subtle: #a09686;
+  --ui-fg-link: #93b6ee;
+  --ui-fg-link-hover: #b3cbf3;
+
+  /* ---- Colour — lines: chalk dust ---- */
+  --ui-line: #48423a;
+  --ui-line-muted: #38332e;
+  --ui-line-emphasis: #6a6257;
+  --ui-divider: #3f3a34;
+
+  /* ---- Colour — accent: the chalk under the ink; hover lifts toward white ---- */
+  --ui-accent: #ece5d6;
+  --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
+  --ui-accent-active: color-mix(in srgb, var(--ui-accent) 88%, #000000);
+  --ui-accent-fg: #1c1a17;
+  --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+  --ui-accent-tint: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-canvas));
+  --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
+
+  /* ---- Colour — semantic tones: chalk colours on washes of themselves, dark labels on the
+     solid fills ---- */
+  --ui-tone-success-fg: #86c79a;
+  --ui-tone-success-bg: #26332a;
+  --ui-tone-success-line: #4e7d5c;
+  --ui-tone-success-emphasis: #86c79a;
+  --ui-tone-success-emphasis-fg: #1c1a17;
+  --ui-tone-attention-fg: #e8b65c;
+  --ui-tone-attention-bg: #3a3020;
+  --ui-tone-attention-line: #8a6a2c;
+  --ui-tone-attention-emphasis: #e8b65c;
+  --ui-tone-attention-emphasis-fg: #1c1a17;
+  --ui-tone-danger-fg: #ff8f7f;
+  --ui-tone-danger-bg: #3d2623;
+  --ui-tone-danger-line: #9a4a40;
+  --ui-tone-danger-emphasis: #ff8f7f;
+  --ui-tone-danger-emphasis-fg: #1c1a17;
+  --ui-tone-done-fg: #bba4ee;
+  --ui-tone-done-bg: #2f2a3b;
+  --ui-tone-done-line: #6b5a96;
+  --ui-tone-done-emphasis: #bba4ee;
+  --ui-tone-done-emphasis-fg: #1c1a17;
+  --ui-tone-neutral-fg: #bcb2a2;
+  --ui-tone-neutral-bg: #34302b;
+  --ui-tone-neutral-line: #5a534a;
+  --ui-tone-neutral-emphasis: #bcb2a2;
+  --ui-tone-neutral-emphasis-fg: #1c1a17;
+  --ui-tone-info-fg: #91b9ea;
+  --ui-tone-info-bg: #232e3b;
+  --ui-tone-info-line: #4a6a92;
+  --ui-tone-info-emphasis: #91b9ea;
+  --ui-tone-info-emphasis-fg: #1c1a17;
+
+  /* ---- Charts: the roles in chalk colours ---- */
+  --ui-chart-1: #b19af0;
+  --ui-chart-2: #e3ad4f;
+  --ui-chart-3: #7fb6ea;
+  --ui-chart-4: #f08aa0;
+  --ui-chart-5: #7fc193;
+  --ui-chart-6: #e08ad2;
+  --ui-chart-7: #6cc5b8;
+  --ui-chart-8: #ef9a6a;
+  --ui-chart-cache-read: #a9cdf0;
+  --ui-chart-cache-write: #6aa8e3;
+  --ui-chart-output: #3d7cc0;
+  --ui-chart-grid: #34302b;
+  --ui-chart-axis: #a09686;
+
+  /* ---- Colour — code ---- */
+  --ui-code-bg: #201d1a;
+  --ui-code-line: #3f3a34;
+  --ui-code-gutter: #7c7366;
+  --ui-code-selection: rgb(147 182 238 / 0.22);
+  --ui-diff-add-bg: rgb(127 193 147 / 0.14);
+  --ui-diff-add-word: rgb(127 193 147 / 0.32);
+  --ui-diff-del-bg: rgb(255 143 127 / 0.14);
+  --ui-diff-del-word: rgb(255 143 127 / 0.32);
+  --ui-diff-hunk-bg: rgb(145 185 234 / 0.14);
+
+  /* ---- Elevation: dark paper lifts on a black shadow ---- */
+  --ui-shadow-raised: 0 1px 1.5px rgb(0 0 0 / 0.4);
+  --ui-shadow-overlay: 0 1px 1.5px rgb(0 0 0 / 0.45), 0 8px 18px -6px rgb(0 0 0 / 0.55);
+  --ui-shadow-modal: 0 2px 3px rgb(0 0 0 / 0.45), 0 18px 36px -12px rgb(0 0 0 / 0.65);
+  --ui-shadow-drawer: 0 2px 3px rgb(0 0 0 / 0.45), 0 22px 44px -14px rgb(0 0 0 / 0.7);
+
+  /* ---- Icons: the hues lifted for dark paper ---- */
+  --ui-icon-tint-blue: #8fb0ec;
+  --ui-icon-tint-violet: #b49ae9;
+  --ui-icon-tint-pink: #ee8fbc;
+  --ui-icon-tint-red: #ff8a7a;
+  --ui-icon-tint-orange: #ef9a6a;
+  --ui-icon-tint-amber: #e3ad4f;
+  --ui-icon-tint-green: #7fc193;
+  --ui-icon-tint-teal: #6cc5b8;
+  --ui-icon-tint-slate: #a7b2bf;
+
+  /* ---- Focus, selection and scrollbar ---- */
+  --ui-focus-ring: 2px solid #93b6ee;
+  --ui-focus-ring-input: 0 0 0 2px rgb(147 182 238 / 0.4);
+  --ui-selection-bg: rgb(147 182 238 / 0.28);
+  --ui-scrollbar-thumb: rgb(230 223 209 / 0.22);
+  --ui-scrollbar-thumb-hover: rgb(230 223 209 / 0.38);
+}

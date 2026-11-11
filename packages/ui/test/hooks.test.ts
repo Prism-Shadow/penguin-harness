@@ -24,6 +24,8 @@
  * start page, the model library, a ledger of figures, an empty state, the run indicator;
  * 2026-11-05), and the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
  * every theme's style; 2026-11-04). This suite holds the source to it:
+ * pen; 2026-11-04), and the nineteenth to twenty-third, the section hooks `ui-start`,
+ * 2026-11-05). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;

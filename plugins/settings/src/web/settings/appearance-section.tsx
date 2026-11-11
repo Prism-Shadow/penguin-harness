@@ -78,7 +78,8 @@ function ThemePicker({
   value: string;
   onChange: (next: string) => void;
 }) {
-  if (segments) return <Segmented options={options} value={value} onChange={onChange} />;
+  // One column per built-in theme, on one line.
+  if (segments) return <Segmented options={options} value={value} onChange={onChange} cols={4} />;
   return (
     <span className="w-40 min-w-0">
       <Select

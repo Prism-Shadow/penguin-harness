@@ -931,6 +931,9 @@ importers:
       '@fontsource-variable/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource-variable/shantell-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/ibm-plex-sans-condensed':
         specifier: ^5.3.0
         version: 5.3.0
@@ -2051,6 +2054,9 @@ packages:
 
   '@fontsource-variable/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-lNar1dF7Ik/lHNPo/7JWG0TolXY29LtsqYgMvEysooZ5bsO9uH4shJmRrwyJ3PjyTPljhpMJEK0jDuLSU4vJ1w==}
+
+  '@fontsource-variable/shantell-sans@5.3.0':
+    resolution: {integrity: sha512-FPdHvSi6cngE/DMVCm7Xlls70U0b4/NMJLlcAPvVoq6eot1X8tNOZMRc22Rh9KoAfmmBz7yjsSXvpsYmkhXXVQ==}
 
   '@fontsource/ibm-plex-sans-condensed@5.3.0':
     resolution: {integrity: sha512-fQyBpwbkguP4azjq7Cw8h/J3C/d8MFAzXOiSoFxyKCUK4x0XKrWEh3tGdTxhDM0HctVRQilQo1zGoyxDHLm5jQ==}
@@ -6802,6 +6808,8 @@ snapshots:
   '@fontsource-variable/mona-sans@5.3.0': {}
 
   '@fontsource-variable/noto-sans-sc@5.3.0': {}
+
+  '@fontsource-variable/shantell-sans@5.3.0': {}
 
   '@fontsource/ibm-plex-sans-condensed@5.3.0': {}
 

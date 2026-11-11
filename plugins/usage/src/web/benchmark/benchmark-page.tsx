@@ -276,31 +276,39 @@ export function BenchmarkCard({
       )}
       {/* At least a score's width, and as wide as its label beyond that: the label is a phrase
           ("first evaluation", "Not evaluated yet") that runs longer than a score in English,
-          and cut short or broken over lines it stops reading as one. */}
-      <div className="min-w-16 shrink-0 text-right">
-        {latest ? (
-          <>
+          and cut short or broken over lines it stops reading as one. The figures are the card's
+          ledger (`ui-ledger`): one tile, the Score over the line saying how it moved. */}
+      <div className="ui-ledger min-w-16 shrink-0 text-right">
+        <div data-slot="tile">
+          {latest ? (
+            <>
+              <span
+                data-slot="figure"
+                className="block font-mono text-sm font-semibold tabular-nums"
+                data-tooltip={S.benchmark.latestScoreLabel}
+              >
+                {formatScore(latest.score)}
+              </span>
+              <span
+                data-slot="label"
+                className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
+              >
+                {latest.delta === null
+                  ? S.benchmark.firstEvaluation
+                  : latest.delta === 0
+                    ? "0"
+                    : signedDelta(formatScore(latest.delta))}
+              </span>
+            </>
+          ) : (
             <span
-              className="block font-mono text-sm font-semibold tabular-nums"
-              data-tooltip={S.benchmark.latestScoreLabel}
+              data-slot="label"
+              className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500"
             >
-              {formatScore(latest.score)}
+              {S.benchmark.notEvaluated}
             </span>
-            <span
-              className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
-            >
-              {latest.delta === null
-                ? S.benchmark.firstEvaluation
-                : latest.delta === 0
-                  ? "0"
-                  : signedDelta(formatScore(latest.delta))}
-            </span>
-          </>
-        ) : (
-          <span className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
-            {S.benchmark.notEvaluated}
-          </span>
-        )}
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a

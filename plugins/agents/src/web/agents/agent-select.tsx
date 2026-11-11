@@ -33,7 +33,7 @@ export function AgentSelect({
         aria-label={S.chat.chooseAgent}
         data-tooltip={S.chat.chooseAgent}
         aria-haspopup="dialog"
-        className={pillClass}
+        className={`ui-edge ${pillClass}`}
         onClick={() => {
           setQuery("");
           setOpen(true);

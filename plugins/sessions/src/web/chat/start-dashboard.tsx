@@ -29,6 +29,12 @@
  * Colours, lines, radii and type come from the tokens and the package's components, so the three
  * themes restyle the page through them: the counts' `Card` is squared and unfilled in Console and
  * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
+ *
+ * The page carries the `ui-start` hook, so a theme may also dress it as a whole: the brand block
+ * (`brand`: the logo, the `title`, `tagline` and `version`, and beside them the `counts` panel
+ * with each `count`), the `composer` (the composer card's own slot), and the `examples` block
+ * with its `folders` grid, each `folder` row (example-folder-row.tsx), the open folder's `rows`
+ * and each `row`. The wrapper is a plain block, so the page lays out exactly as its parts did.
  */
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
@@ -93,15 +99,16 @@ export function StartDashboard({
   const benchmarks = useProjectBenchmarks(projectId);
 
   return (
-    <>
+    <div className="ui-start">
       {/* The logo spans the name, slogan and version line. The version starts at the name's
           left edge and reaches under the counts at `@2xl`; below that, the counts take their
           own third row. */}
-      <div className="@container mb-10">
+      <div data-slot="brand" className="@container mb-10">
         <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
           <StartBrand />
           <VersionLine />
           <Card
+            data-slot="counts"
             padding="none"
             className="col-span-2 row-start-3 mt-4 justify-self-start overflow-hidden @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
           >
@@ -132,10 +139,10 @@ export function StartDashboard({
         </div>
       </div>
       {composer}
-      <div className="@container mt-10">
+      <div data-slot="examples" className="@container mt-10">
         <ExamplesSection ready={skillsLoaded} fill={fill} readComposerText={readComposerText} />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -162,10 +169,12 @@ function StartBrand() {
         />
       </div>
       <div className="col-start-2 row-start-1 min-w-0">
-        <Heading level={1} display>
+        <Heading level={1} display data-slot="title">
           <AppName />
         </Heading>
-        <Text className="mt-1 text-balance text-fg-muted">{S.chat.draftSubtitle}</Text>
+        <Text data-slot="tagline" className="mt-1 text-balance text-fg-muted">
+          {S.chat.draftSubtitle}
+        </Text>
       </div>
     </>
   );
@@ -208,7 +217,10 @@ function VersionLine() {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
   return (
-    <p className="col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4">
+    <p
+      data-slot="version"
+      className="col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4"
+    >
       {version === null ? (
         "\u00a0"
       ) : (
@@ -282,7 +294,7 @@ function StatCount({
   value: number | null;
 }) {
   return (
-    <li className="min-w-0">
+    <li data-slot="count" className="min-w-0">
       <Link
         to={to}
         className="flex min-w-0 flex-col px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
@@ -293,7 +305,7 @@ function StatCount({
           <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
           {label}
         </span>
-        <span className="text-xl font-semibold leading-7 tabular-nums text-fg">
+        <span data-slot="figure" className="text-xl font-semibold leading-7 tabular-nums text-fg">
           {value === null ? "—" : value}
         </span>
       </Link>
@@ -366,7 +378,7 @@ function ExamplesSection({
   );
   return (
     <RuledSection title={S.chat.start.examplesTitle} info={S.chat.exampleFillHint}>
-      <div className={exampleGridClass}>
+      <div data-slot="folders" className={exampleGridClass}>
         {EXAMPLE_FOLDERS.map((folder) => {
           const open = folder.id === openFolder;
           return (
@@ -379,13 +391,14 @@ function ExamplesSection({
                 onOpen={() => setOpenFolder(folder.id)}
               />
               {open && (
-                <ul className={`space-y-1.5 ${examplePanelClass}`}>
+                <ul data-slot="rows" className={`space-y-1.5 ${examplePanelClass}`}>
                   {folder.tasks.map((task) => {
                     const copy = S.chat.exampleTasks[task.id];
                     return (
                       <li key={task.id}>
                         <button
                           type="button"
+                          data-slot="row"
                           data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
                           data-tooltip-extra
                           disabled={!ready}

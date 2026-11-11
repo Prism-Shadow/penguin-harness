@@ -9,6 +9,8 @@
 import { ACCENT_PRESETS, INITIAL_THEME_ID, TONES } from "@prismshadow/penguin-ui";
 import type { ThemeId, ThemeModeName, ToneName } from "@prismshadow/penguin-ui";
 import type { CSSProperties } from "react";
+import doodleAccents from "../../../ui/src/themes/doodle/accents.css?raw";
+import doodleTokens from "../../../ui/src/themes/doodle/tokens.css?raw";
 import geekAccents from "../../../ui/src/themes/geek/accents.css?raw";
 import geekTokens from "../../../ui/src/themes/geek/tokens.css?raw";
 import githubAccents from "../../../ui/src/themes/github/accents.css?raw";
@@ -30,6 +32,7 @@ const THEME_CSS: Readonly<Record<ThemeId, { tokens: string; accents: string }>> 
   github: { tokens: githubTokens, accents: githubAccents },
   modern: { tokens: modernTokens, accents: modernAccents },
   geek: { tokens: geekTokens, accents: geekAccents },
+  doodle: { tokens: doodleTokens, accents: doodleAccents },
 };
 
 /** A pack's root selector: the base's is the bare root, every other pack's names its id. */

@@ -10,9 +10,10 @@
  * it found. The built-in packs predate the rules; the suite holds each to the count of hits it has
  * today, which only shrinks, and a new pack to none.
  *
- * The homes each rule names are the hooks that exist (hooks.ts); a hook a later pack round adds
- * (the control edge, the start page's brand slot, an empty state's art slot) joins its rule's homes
- * with that hook.
+ * The homes each rule names are the hooks that exist (hooks.ts). A recipe that lays its image or
+ * its shape through a private custom property (`border-image: var(--_stroke) …`) is read through
+ * it: the value a check judges is the declaration's with every `var(--_…)` the pack declares put
+ * in, so an indirection never hides a decoration from R1.
  */
 import { parseCssRules, selectorList } from "./css";
 import type { CssDeclaration, CssStyleRule } from "./css";
@@ -68,8 +69,19 @@ const DECORATION =
   /^(?:background|background-image|-webkit-mask|-webkit-mask-image|mask|mask-image|border-image|border-image-source|list-style-image)$/;
 const IMAGE_VALUE = /\burl\(|image-set\(|gradient\(/;
 const SHAPE_VALUE = /\b(?:shape|path|polygon)\(/;
-/** R1's homes: the frosted layer, and the gradients that carry a state or the data's shape. */
-const DECORATION_HOMES = [/\.ui-glass\b/, GRADIENT_RECIPES];
+/**
+ * R1's homes: what floats (the frosted layer, and a toast — a notice in the toast stack's live
+ * region), the edge of what a person presses or wrote (the control edge), the start page's brand
+ * block, an empty state's art slot, and the gradients that carry a state or the data's shape.
+ */
+const DECORATION_HOMES = [
+  /\.ui-glass\b/,
+  /\[aria-live\][^,]*\s\.ui-notice\b/,
+  /\.ui-edge\b/,
+  /\.ui-start\b.*\[data-slot="brand"\]/,
+  /\.ui-empty\b.*\[data-slot="art"\]/,
+  GRADIENT_RECIPES,
+];
 
 /** R5's homes: the hooks whose own anatomy is drawn with a pseudo-element. */
 const PSEUDO_HOMES = [
@@ -89,8 +101,8 @@ const STATE_PROPERTIES = new Set(["color", "background-color", "font-weight", "o
 const SCALE =
   /^(?:font-size|line-height|letter-spacing|padding(?:-[a-z-]+)?|margin(?:-[a-z-]+)?|gap|row-gap|column-gap)$/;
 
-/** R8: the boxed hosts, which never take a shadow. */
-const BOXED_HOSTS = /\.ui-(?:frame|notice|widget)\b/;
+/** R8: the boxed and edged hosts, which never take a shadow. */
+const BOXED_HOSTS = /\.ui-(?:frame|notice|widget|edge)\b/;
 const OUTLINE = /^outline(?:-(?:style|width|color))?$/;
 
 /** R9: what a chart mark may set. */
@@ -105,15 +117,42 @@ const custom = (d: CssDeclaration) => d.name.startsWith("--");
 const inHome = (selectors: readonly string[], homes: readonly RegExp[]) =>
   selectors.every((selector) => homes.some((home) => home.test(selector)));
 
+const PRIVATE_VAR = /var\(\s*(--_[\w-]+)\s*(?:,[^)]*)?\)/g;
+
+/**
+ * A value with every private custom property the pack declares put in (each of its values, where
+ * a mode or a rule declares it more than once), to a few levels deep; a name the pack does not
+ * declare stays as written.
+ */
+function resolvePrivate(value: string, privates: ReadonlyMap<string, readonly string[]>): string {
+  let out = value;
+  for (let depth = 0; depth < 4 && out.includes("var(--_"); depth++) {
+    out = out.replace(PRIVATE_VAR, (whole, name: string) => {
+      const values = privates.get(name);
+      return values === undefined ? whole : values.join(" ");
+    });
+  }
+  return out;
+}
+
 /** Every hit of the rules in one pack's stylesheets, in file and line order. */
 export function packRuleHits(sources: readonly ThemeSource[]): PackRuleHit[] {
   const hits: PackRuleHit[] = [];
-  const parsed = sources.flatMap((source) =>
+  const rules = sources.flatMap((source) =>
     parseCssRules(source.css)
       .filter((rule) => !rule.atRules.some((at) => at.startsWith("@keyframes")))
-      .filter((rule) => !rule.declarations.every(custom))
-      .map((rule) => ({ file: source.file, rule, selectors: selectorsOf(rule) })),
+      .map((rule) => ({ file: source.file, rule })),
   );
+  const privates = new Map<string, string[]>();
+  for (const { rule } of rules) {
+    for (const d of rule.declarations) {
+      if (d.name.startsWith("--_"))
+        privates.set(d.name, [...(privates.get(d.name) ?? []), d.value]);
+    }
+  }
+  const parsed = rules
+    .filter(({ rule }) => !rule.declarations.every(custom))
+    .map(({ file, rule }) => ({ file, rule, selectors: selectorsOf(rule) }));
   const everySelector = new Set(parsed.flatMap(({ selectors }) => selectors));
 
   for (const { file, rule, selectors } of parsed) {
@@ -130,9 +169,10 @@ export function packRuleHits(sources: readonly ThemeSource[]): PackRuleHit[] {
 
     for (const d of declared) {
       const found = `${d.name}: ${d.value}`;
+      const value = resolvePrivate(d.value, privates);
       const decoration =
-        (DECORATION.test(d.name) && IMAGE_VALUE.test(d.value)) ||
-        (d.name === "clip-path" && SHAPE_VALUE.test(d.value));
+        (DECORATION.test(d.name) && IMAGE_VALUE.test(value)) ||
+        (d.name === "clip-path" && SHAPE_VALUE.test(value));
       if (decoration && !inHome(selectors, DECORATION_HOMES)) hit("R1", d.line, found);
       if (stated && !STATE_PROPERTIES.has(d.name)) hit("R6", d.line, found);
       if (SCALE.test(d.name)) hit("R7", d.line, found);
