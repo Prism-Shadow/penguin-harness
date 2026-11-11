@@ -19,7 +19,7 @@ Settings → Appearance offers a fourth theme, Doodle (卡通, `doodle`), after 
 
 ## The pack
 
-- `packages/ui/src/themes/doodle/`: `pack.json` (`base: "modern"`), `tokens.css` with the groups Doodle changes (palette, type, shape, elevation, the shell's colours, the icon hues, the focus ring), `recipes.css`, `accents.css`, `fonts.css` and `index.css`. The registry, the three entry sheets, `fonts/index.css` and the Web App's and gallery's dictionaries list it.
+- `packages/ui/src/themes/doodle/`: `pack.json` (`base: "modern"`), `tokens.css` with the groups Doodle changes (palette, type, shape, elevation, the shell's colours, the icon hues, the focus ring), `recipes.css`, `accents.css`, `fonts.css` and `index.css`. The registry, the three entry sheets, `fonts/index.css` and the Web App's dictionaries list it; the gallery's pack switcher and its Foundations pack table read its manifest.
 - `scripts/draw-doodle-edges.mjs` draws the pen line from fixed seeds — the control, the bubble, the pill, the box and the ball, as `border-image` strokes and matching `clip-path: shape()` clips, and the slips' glass images — into the generated block of `recipes.css` (`--check` reports a stale block). `scripts/raster-strokes.mjs` renders the shapes a page shows by the dozen as small PNGs.
 
 ## Hooks

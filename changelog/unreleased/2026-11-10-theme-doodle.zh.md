@@ -19,7 +19,7 @@
 
 ## 主题包
 
-- `packages/ui/src/themes/doodle/`：`pack.json`（`base: "modern"`）、只声明卡通所改分组的 `tokens.css`（配色、字体、形状、层次、窗口栏的颜色、图标色相、焦点环）、`recipes.css`、`accents.css`、`fonts.css` 与 `index.css`。注册表、三份入口样式表、`fonts/index.css`，以及 Web App 与画廊的词典都已列入。
+- `packages/ui/src/themes/doodle/`：`pack.json`（`base: "modern"`）、只声明卡通所改分组的 `tokens.css`（配色、字体、形状、层次、窗口栏的颜色、图标色相、焦点环）、`recipes.css`、`accents.css`、`fonts.css` 与 `index.css`。注册表、三份入口样式表、`fonts/index.css` 与 Web App 的词典都已列入；画廊的主题包切换与 Foundations 的主题包表读它的清单。
 - `scripts/draw-doodle-edges.mjs` 以固定种子画出笔线——控件、气泡、胶囊、方框与圆球五种形状的 `border-image` 笔画与对应的 `clip-path: shape()` 裁切，以及纸条的玻璃图——写入 `recipes.css` 的生成区块（`--check` 报告过期的区块）。`scripts/raster-strokes.mjs` 把页面上成批出现的形状渲染成小 PNG。
 
 ## 钩子
