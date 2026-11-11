@@ -74,7 +74,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../chat/thinking-level";
+} from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
@@ -155,7 +155,7 @@ function HireForm({
   onHired,
   library,
 }: Omit<HireDialogProps, "open"> & { library: HirePluginItem[] | null }) {
-  const { agents } = useProject();
+  const { agents, reloadAgents } = useProject();
   const { currency } = useTheme();
   const company = useCompany();
 
@@ -263,6 +263,9 @@ function HireForm({
       // the sidebar's 工位 row carries its real id straight away, rather than a row that
       // cannot be opened or bound until some later event happens to refresh the cache.
       void company.reloadOrgSessions();
+      // The Agent is an employee now (and may be a new one): the Agent list carries every
+      // employment mark the shell shows — the Agents page's delete button among them.
+      void reloadAgents().catch(() => undefined);
       toastSuccess(S.company.chart.hired(hireName));
       setStdioConfirmOpen(false);
       onHired();

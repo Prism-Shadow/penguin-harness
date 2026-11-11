@@ -27,8 +27,11 @@
  */
 import ts from "typescript";
 import { parseCssRules, stripCssComments } from "./css";
+import { GRADIENT_RECIPES } from "./gradient-recipes";
 import type { CssStyleRule } from "./css";
 import type { SourceFile } from "./source-roots";
+
+export { GRADIENT_RECIPES };
 
 // ---------------------------------------------------------------------------
 // Rules and policy
@@ -1322,10 +1325,9 @@ const cssHookMonoCheck: Check = (analysis) =>
  * `.ui-shell` is not among them: the app window's field is one flat colour, so a wash on it is the
  * tell, as is a gradient on any other hook, as a background or as a mask. A gradient in app CSS
  * that is not a hook is review: the context bar's hatch, which carries meaning, and the sweep
- * across the TokenDance banner's brand name, the banner's one deliberate emphasis.
+ * across the TokenDance banner's brand name, the banner's one deliberate emphasis. The three are
+ * GRADIENT_RECIPES (gradient-recipes.ts).
  */
-const GRADIENT_RECIPES =
-  /\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-(?:state="streaming"|settling)\]/;
 
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {

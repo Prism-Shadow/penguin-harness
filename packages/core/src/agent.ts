@@ -98,7 +98,6 @@ import type {
   AmspRecord,
   SessionMetaPayload,
   SessionSource,
-  ToolCallPayload,
 } from "@prismshadow/amsp/records";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
@@ -1296,9 +1295,13 @@ export class Agent {
           // Pass through the parent's approval callback: the child Session inherits
           // the parent Agent's approval mode (with no callback, the child engine
           // defaults to deny). The tool_call received for approval also carries the
-          // origin, so the approval UI can identify which tool a subagent is calling.
-          const childApprove = approve
-            ? (tc: AmspRecord<ToolCallPayload>) => approve(withOrigin(tc, hop))
+          // origin, so the approval UI can identify which tool a subagent is calling, and
+          // the child's policy reason rides along untouched.
+          const childApprove: ApproveFn | undefined = approve
+            ? (tc, context) =>
+                context === undefined
+                  ? approve(withOrigin(tc, hop))
+                  : approve(withOrigin(tc, hop), context)
             : undefined;
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —

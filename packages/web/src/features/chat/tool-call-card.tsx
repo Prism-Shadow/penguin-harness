@@ -448,6 +448,16 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
           ? {
               preview: previewArguments(item.name, approvalArguments),
               payload: pendingFilePayload(item.name, approvalArguments),
+              // A command-policy rule asked, not the approval mode: the block says which one,
+              // or a person who allowed everything would not know why this call stopped.
+              ...(pending.reason?.kind === "policy"
+                ? {
+                    reason: {
+                      text: S.chat.approvalPolicyReason(pending.reason.rule),
+                      hint: S.chat.approvalPolicyReasonHint,
+                    },
+                  }
+                : {}),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }

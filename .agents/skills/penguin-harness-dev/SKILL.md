@@ -110,7 +110,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | --- | --- |
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
-| `plugins/**` (repo root) | that plugin's `build` (a change to `src/index.ts` reaches the library only through the `ifaces.json` it writes) and its own `test` where it has one, the server's `plugin-library.test.ts` (every shipped package reads clean, the README tables), core's `goal-hooks.test.ts` / `continual-learning-hook.test.ts` / `plugin-porting.test.ts` when those scripts changed, `docs`'s `skills-sync.test.ts`, and `node scripts/check-plugin-versions.mjs origin/main` |
+| `plugins/**` (repo root) | that plugin's `build` (a change to `src/index.ts` reaches the library only through the `ifaces.json` it writes) and its own `test` where it has one, the server's `plugin-library.test.ts` (every shipped package reads clean), core's `goal-hooks.test.ts` / `continual-learning-hook.test.ts` / `plugin-porting.test.ts` when those scripts changed, and `node scripts/check-plugin-versions.mjs origin/main` |
 | The model catalog | server `model-catalog.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
 | The credential rule or a row's effective connection | core `model-connection.test.ts`, server `models.test.ts` and `models-balance.test.ts` |
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |

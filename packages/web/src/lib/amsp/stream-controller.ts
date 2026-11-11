@@ -48,6 +48,7 @@ import {
 } from "@prismshadow/amsp";
 
 import type {
+  ApprovalReason,
   GoalServerEvent,
   HistoryProgress,
   MessagesLiveTail,
@@ -88,6 +89,8 @@ import { seedPriorStats } from "./task-stats";
 export interface PendingApproval {
   toolCall: AmspRecord<ToolCallPayload>;
   origin?: string[];
+  /** Why it asks when the approval mode did not send it (a command-policy `ask` rule). */
+  reason?: ApprovalReason;
 }
 
 /** Buffered stream event; `id` is the SSE event id (`<epoch>-<seq>`, null when unknown); `seeded` marks a live-tail fragment injected at replay time (never carried over into a later round's buffer — the new round refetches fresh fragments). */
@@ -628,6 +631,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         const toolCallId = ev.toolCall.payload.tool_call_id;
         const entry: PendingApproval = { toolCall: ev.toolCall };
         if (ev.origin) entry.origin = ev.origin;
+        if (ev.reason) entry.reason = ev.reason;
         pending.set(approvalKey(ev.origin, toolCallId), entry);
         adoptEarlierChild(ev.origin);
         const card = findToolCard(model, ev.origin, toolCallId);

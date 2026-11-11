@@ -16,7 +16,7 @@
  *   old to be recorded: the whole tab is conservatively kept (`kept`), edits, additions and
  *   deliberate deletions alike. Restore-default-config remains the full-refresh recourse.
  *
- * Never touched: `name`, `description`, `version` (the optimization counter) and
+ * Never touched: `name`, `description`, `author`, `version` (the optimization counter) and
  * `tools.mcpServers` — identity and user-owned data, none of them owned by a kernel tab. The
  * file is edited via yaml `parseDocument`, so comments and untouched content survive (same
  * mechanism as the config PUT); finally the config is stamped `kernel_version: KERNEL_VERSION`.

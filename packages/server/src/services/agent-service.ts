@@ -9,8 +9,8 @@
  * Delete: the folder is renamed into `agents/.deleting/` (one rename, so it leaves every list
  * and route at once) and its contents are removed in the background, the removal reporting how
  * far it got; a server that stops mid-removal resumes it at its next start.
- * Create: generate agent-<8hex>, initialize Agent State via core's `createAgent`,
- * then write name/description into system_config.yaml (parseDocument preserves the
+ * Create: initialize Agent State via core's `createAgent` under the creator's id, then
+ * write name/description/author into system_config.yaml (parseDocument preserves the
  * template's comments).
  */
 import fs from "node:fs/promises";
@@ -45,14 +45,14 @@ import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
+import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
 import type { AgentIndex } from "../mechanisms/projects.js";
 
 /**
@@ -126,6 +126,8 @@ export interface AgentListItem {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent (system_config.yaml `author`; missing or unknown = `user`). */
+  author: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the later of system_config.yaml / AGENTS.md mtime. */
   updatedAt?: string;
@@ -151,6 +153,21 @@ export interface AgentListItem {
   memoryCount: number;
   /** The content revision of the Agent's own picture (agent-avatar.ts); absent when it has none. */
   avatarRev?: string;
+}
+
+/** What a new Agent starts with, besides its id. Every field is optional. */
+export interface AgentCreation {
+  /** Display name; the id when omitted (an imported package keeps its own instead). */
+  name?: string;
+  description?: string;
+  /** Who is creating it; `user` when omitted. An imported package keeps its own. */
+  author?: AgentAuthor;
+  /** Library plugin names to install into it. */
+  plugins?: readonly string[];
+  /** Skills to import from a directory the creator picked. */
+  directory?: { path: string; names: readonly string[] };
+  /** An Agent package (the import route's) to start from instead of the default template. */
+  archive?: AgentPackage;
 }
 
 @Component()
@@ -681,33 +698,27 @@ export class AgentService implements AgentLifecycle {
    * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all.
    *
-   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
-   * it instead of the default template (explicit name/description override the package's
-   * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
-   * package carries its own skills and hooks. An invalid package fails the whole creation
-   * inside the same cleanup window, leaving no empty Agent behind.
+   * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
+   * description and version instead of the template's, and its Traces land once the State is
+   * in. An invalid package fails the whole creation inside the same cleanup window, leaving no
+   * empty Agent behind.
+   *
+   * `author` says how this Agent came to be, `user` when the creator names none, and is written
+   * into a template-made Agent. An imported Agent keeps the package's own `author` (none reads
+   * as `user`): an import moves an existing Agent, it does not make a new one.
    */
   async createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    pluginNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: Buffer,
+    creation: AgentCreation = {},
   ): Promise<AgentListItem> {
+    const { name, description, plugins: pluginNames, directory, archive } = creation;
+    const author = creation.author ?? "user";
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
-      );
-    }
-    if (archive !== undefined && (pluginNames?.length || directory)) {
-      throw new HttpError(
-        400,
-        "snapshot_with_plugins",
-        "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
       );
     }
     const taken =
@@ -732,26 +743,15 @@ export class AgentService implements AgentLifecycle {
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       if (archive !== undefined) {
-        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
-        // version confirmation: both guards protect existing State, and this Agent has
-        // none yet — its template state is not worth preserving.
-        await this.snapshots.importArchive(projectId, agentId, archive, {
-          confirm: true,
-          preSnapshot: false,
-        });
-        // Explicit name/description override the package's values; absent ones keep them.
-        // No id fallback here: the package is the identity being copied in.
-        if (name !== undefined || description !== undefined) {
-          await this.agentConfig.updateConfig(projectId, agentId, {
-            config: {
-              ...(name !== undefined ? { name } : {}),
-              ...(description !== undefined ? { description } : {}),
-            },
-          });
-        }
+        // No pre-import snapshot: it protects existing State, and this Agent has none yet.
+        await this.snapshots.importArchive(projectId, agentId, archive, { preSnapshot: false });
       } else {
         await this.agentConfig.updateConfig(projectId, agentId, {
-          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+          config: {
+            name: displayName,
+            ...(description !== undefined ? { description } : {}),
+            author,
+          },
         });
       }
       for (const plugin of librarySeed) {
@@ -787,6 +787,7 @@ export class AgentService implements AgentLifecycle {
       agentId,
       name: cardName,
       ...(cardDescription !== undefined ? { description: cardDescription } : {}),
+      author: meta.author,
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,

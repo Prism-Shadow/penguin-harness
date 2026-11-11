@@ -1,12 +1,12 @@
 /**
  * An Agent's avatar: its own picture when it has one (`src`), else its default avatar — the
- * Agent mascot, a small standing penguin in the Agent's ink on a pale tile of its hue
- * (agent-avatar-variants.tsx, agent-palette.ts). The default is what an Agent is drawn as wherever
- * it has no picture of its own, and wherever its picture fails to load.
+ * Agent mascot, the ball penguin, painted in the Agent's colours and wearing its expression
+ * (agent-avatar-variants.tsx, agent-palette.ts, agent-expression.ts). The default is what an Agent
+ * is drawn as wherever it has no picture of its own, and wherever its picture fails to load.
  *
  * The default is drawn in every theme's style at once and carries the `ui-avatar` hook: each
  * drawing is a direct child `<g data-variant="…">`, the foundation shows the `flat` one, and a
- * theme with a drawing of its own swaps it in from its theme file — so the avatar follows a theme
+ * pack with a drawing of its own swaps it in from its recipes — so the avatar follows a theme
  * switch the moment the root's attribute changes, and a theme without a drawing shows Primer's.
  * The component never asks which theme is active. `variant` pins one drawing whatever the theme
  * (a theme preview, the gallery's board), and then the hook is left off.
@@ -15,14 +15,16 @@
  * alike. It keeps the Agent's tile — the flat drawing's rounded square, at the rendered size —
  * rather than an account's circle, so an Agent and a person stay told apart at a glance.
  *
- * The colour hashes the Agent's id — never its display name — so it survives renames, and every
- * drawing paints the same colours, so it survives theme switches too. No initial is drawn: every
- * place an avatar sits shows the Agent's name beside it or on hover, and at the 14–18 px most
- * avatars are drawn at, a letter and a penguin do not both fit.
+ * The colour and the expression both hash the Agent's id — never its display name — so they
+ * survive renames, and every drawing paints the same colours and wears the same face, so they
+ * survive theme switches too; the svg names its face in `data-expression`. No initial is drawn:
+ * every place an avatar sits shows the Agent's name beside it or on hover, and at the 14–18 px
+ * most avatars are drawn at, a letter and a penguin do not both fit.
  */
 import { useState } from "react";
 import { AGENT_AVATAR_VARIANTS, AGENT_AVATAR_VARIANT_NAMES } from "./agent-avatar-variants";
 import type { AgentAvatarVariant } from "./agent-avatar-variants";
+import { agentExpression } from "./agent-expression";
 import { agentColors } from "./agent-palette";
 
 /** The Agent tile's corner at `size` px: the flat drawing's `rx="5"` on its 24-unit box. */
@@ -62,6 +64,7 @@ export function AgentAvatar({
     );
   }
   const colors = agentColors(id);
+  const expression = agentExpression(id);
   const drawn = variant === undefined ? AGENT_AVATAR_VARIANT_NAMES : [variant];
   return (
     <svg
@@ -69,6 +72,7 @@ export function AgentAvatar({
       height={size}
       viewBox="0 0 24 24"
       className={`${hook} ${className ?? ""}`}
+      data-expression={expression}
       aria-hidden
       role="img"
     >
@@ -76,7 +80,7 @@ export function AgentAvatar({
         const Drawing = AGENT_AVATAR_VARIANTS[name];
         return (
           <g key={name} data-variant={name}>
-            <Drawing colors={colors} size={size} />
+            <Drawing colors={colors} expression={expression} size={size} />
           </g>
         );
       })}

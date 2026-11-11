@@ -23,6 +23,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -62,6 +63,7 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { originRule } from "./http/public-origin.js";
+import { WEB_APP_CSP } from "./http/page-csp.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -159,7 +161,6 @@ import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import { agentHooksRoutes } from "./http/routes/hooks.js";
 import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
-import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
 import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
@@ -503,7 +504,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
+    // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+    const size = isAgentImport(c.req.method, c.req.path)
+      ? MAX_PACKAGE_BYTES
+      : bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -710,6 +714,11 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
+  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
+  // revalidation updates the stored response's headers, so a shell cached before the policy
+  // existed picks it up without a re-download.
+  if (ext === ".html") headers["Content-Security-Policy"] = WEB_APP_CSP;
   // Announced whenever the answer COULD have varied — on the 304 too, and even when this
   // particular client took no encoding: a shared cache keys on what the header says, so
   // leaving it off is how one client's gzip reaches another that cannot read it.

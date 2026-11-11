@@ -27,7 +27,7 @@ import type { Components, Options } from "react-markdown";
 import { nodeText, parseTabLabels, readFencedCode, slugifyHeading } from "./markdown-text";
 import type { HastElement } from "./markdown-text";
 import type { CodeHighlighter } from "../content/code-block/highlight-options";
-import { SITE_REHYPE_PLUGINS, SITE_REMARK_PLUGINS } from "../content/prose/markdown-plugins";
+import { SITE_REHYPE_PLUGINS, SITE_REMARK_PLUGINS } from "../content/prose/site-markdown-plugins";
 import { rehypeMarkdownTables } from "../content/prose/markdown-table";
 import { rehypeCitations } from "./rehype-citations";
 import { remarkCallout } from "./remark-callout";

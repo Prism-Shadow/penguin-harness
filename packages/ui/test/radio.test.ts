@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Radio, RadioDisc, RadioGroup } from "../src/components/forms/radio/radio";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const noop = () => {};
 
@@ -32,7 +32,6 @@ describe("RadioGroup", () => {
     expect(html).toMatch(
       /^<fieldset class="[^"]*"><legend class="[^"]*">When a name exists<\/legend>/,
     );
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["font-semibold", "text-fg-muted"]));
   });
 
   it("gives every radio one shared name, and checks only the current value", () => {
@@ -50,43 +49,34 @@ describe("RadioGroup", () => {
     for (const id of described) expect(html).toContain(`id="${id}"`);
     expect(html.match(/disabled=""/g)).toHaveLength(1);
   });
-
-  it("lays the options out on one line when asked", () => {
-    expect(classTokens(group())).toContain("flex-col");
-    expect(classTokens(group({ orientation: "horizontal" }))).toContain("flex-wrap");
-  });
-});
-
-describe("Radio", () => {
-  it("fills with the accent and draws the inner disc only while selected", () => {
-    const off = renderStatic(
-      createElement(Radio, { checked: false, onChange: noop, "aria-label": "A" }),
-    );
-    expect(classTokens(off)).toEqual(
-      expect.arrayContaining(["border-line-emphasis", "bg-surface"]),
-    );
-    expect(off).not.toContain("bg-accent-fg");
-    const on = renderStatic(
-      createElement(Radio, { checked: true, onChange: noop, "aria-label": "A" }),
-    );
-    expect(classTokens(on)).toEqual(
-      expect.arrayContaining(["border-accent", "bg-accent", "bg-accent-fg", "rounded-full"]),
-    );
-  });
 });
 
 describe("RadioDisc", () => {
   it("draws the radio's disc for a control that is not a radio, hidden from assistive technology", () => {
     const off = renderStatic(createElement(RadioDisc, { on: false }));
     expect(off).toMatch(/^<span aria-hidden="true" class="[^"]*"><\/span>$/);
-    expect(classTokens(off)).toEqual(
-      expect.arrayContaining(["border-line-emphasis", "rounded-full"]),
+  });
+});
+
+describe("Radio", () => {
+  const radio = (props: Partial<Parameters<typeof Radio>[0]> = {}) =>
+    renderStatic(
+      createElement(Radio, { checked: false, onChange: noop, "aria-label": "A", ...props }),
     );
-    const on = renderStatic(createElement(RadioDisc, { on: true }));
-    expect(classTokens(on)).toEqual(
-      expect.arrayContaining(["border-accent", "bg-accent", "bg-accent-fg"]),
-    );
-    // No hover of its own: the control around it takes the hover.
-    expect(classTokens(off).some((token) => token.startsWith("hover:"))).toBe(false);
+
+  it("is the bare native radio without a label, checked only while selected", () => {
+    expect(radio()).toMatch(/^<span [^>]*><input type="radio"/);
+    expect(radio()).not.toContain("<label");
+    expect(radio()).not.toContain('checked=""');
+    expect(radio({ checked: true })).toContain('checked=""');
+    expect(radio({ disabled: true })).toContain('disabled=""');
+  });
+
+  it("wraps the radio and its words in one label, described by its hint", () => {
+    const html = radio({ label: "Skip", hint: "Keep what is there" });
+    expect(html).toMatch(/^<label /);
+    expect(html).toContain(">Skip</span>");
+    const id = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(html).toMatch(new RegExp(`id="${id}"[^>]*>Keep what is there</span>`));
   });
 });

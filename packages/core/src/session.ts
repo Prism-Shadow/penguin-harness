@@ -619,11 +619,13 @@ export class Session {
     opts?: SessionRunOptions,
   ): AsyncGenerator<AmspRecord, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
-    // injected callback is wrapped so a vetoed command is refused before the host is ever
-    // asked, which is what makes the policy outrank every approval mode — no host, and no
-    // approval mode, gets a say. Wrapped once for every Task of this call; a child Session
-    // wraps its own forwarded callback again, harmlessly. With no callback at all the
-    // engine denies everything anyway, so there is nothing to guard.
+    // injected callback is wrapped so a `deny` hit is refused before the host is ever asked
+    // and an `ask` hit reaches the host with a policy reason, which the host puts to a person
+    // whatever its approval mode — which is what makes the policy outrank every approval
+    // mode. Wrapped once for every Task of this call. A child Session wraps its own forwarded
+    // callback again: that callback is this wrapper, so the child's `ask` hit arrives here
+    // with its reason and is matched once more (see internal/command-policy.ts). With no
+    // callback at all the engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
@@ -631,8 +633,9 @@ export class Session {
     // engine records their events in stream order and applies the first decision before
     // the approval callback. One rule is enforced here, where the command policy lives:
     // a hook `allow` never overrides the policy — hook packages sit in agent-writable
-    // state, the policy is Project-owned security config — so a policy-vetoed allow is
-    // downgraded to no decision and the approval chain (policy outermost) answers.
+    // state, the policy is Project-owned security config — so an allow on a call either kind
+    // of rule matches (`deny` or `ask`) is downgraded to no decision and the approval chain
+    // (policy outermost) answers: refused, or put to a person.
     // The hooks are read at each consult rather than captured here: a compaction inside
     // this call opens a context with hooks of its own, and the calls after it are theirs.
     {
@@ -1332,9 +1335,15 @@ export class Session {
     return this.environment.setBackgroundSubagentThinkingLevel?.(childSessionId, level) ?? false;
   }
 
-  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  /**
+   * Attaches the host's session-lifetime fallback approval sink for child sessions (see
+   * EnvironmentInterface.setSubagentApprovalFallback), wrapped with this Session's command
+   * policy as `run` wraps its callback: a child's call can reach this sink with no parent run
+   * whose wrapper would match it, and the host's callback alone would let allow-all wave an
+   * `ask` hit through: wrapped, that hit reaches the host's callback with its policy reason.
+   */
   setSubagentApprovalFallback(approve: ApproveFn): void {
-    this.environment.setSubagentApprovalFallback?.(approve);
+    this.environment.setSubagentApprovalFallback?.(withCommandPolicy(approve, this.commandPolicy));
   }
 
   /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */

@@ -1,0 +1,426 @@
+/*
+ * Doodle's hook recipes (hooks.ts), served in `ui-theme` over Frost's, which Doodle keeps for
+ * every hook it leaves alone: the frosted menus' row bands, the opaque edgeless dialog, the
+ * lineless activity cards, the label sweep on a running step, the banded settings rows, the tree
+ * guides, the notice card, the chart joins, the widget tiles.
+ *
+ * What Doodle adds is a pen line where a person puts their hand, and two small drawings in their
+ * homes. Nothing else is outlined: cards, tool cards, code blocks, tiles, notices, widgets and
+ * tables keep Frost's hairline or none.
+ *
+ * - The pen line (`ui-edge`): a button with a fill or a line, a text field, a select trigger, a
+ *   checkbox, a radio, a switch's track, the start page's pickers and the person's own bubble.
+ *   One outline per shape, traced by a pen from a fixed seed (`scripts/draw-doodle-edges.mjs`,
+ *   which writes the generated block below), is laid on the host's 1px border as a
+ *   `border-image` 9-slice, and where `clip-path: shape()` exists the host's own background is
+ *   clipped to the same outline, so the fill ends under the line at every size and a resize
+ *   stretches the clip as it stretches the line. The host keeps its own fill — hover, a tone, an
+ *   accent preset, the dark mode — so every colour still comes from CSS. One stroke, no shadow,
+ *   no second line. A field that failed is drawn in the danger ink.
+ * - What floats (`ui-glass`): a dialog, a menu, a popover, a tooltip, the composer and its slash
+ *   list, and a toast are slips of paper: one image holds the slip's fill, its line and a soft
+ *   shadow drawn under it in a 12px margin, so the slip needs no fill, shadow, backdrop or filter
+ *   of its own and the shadow follows the drawn shape. A slip that only labels (a tooltip, the
+ *   launcher's caption) takes the control's corners; the launcher's ball and its fan are drawn
+ *   round. A plugin tile, the navigation backdrop and the public site's header bar
+ *   (`.site-ui-header`) are glass that does not float and keep Frost's look.
+ * - Keyboard focus. A clip cuts whatever its box paints, the focus ring included, so a focused
+ *   button gives up the clip and its CSS corner returns under the line, with the ring outside it
+ *   as in every theme; a focused text field or the focused composer is redrawn in the ring's
+ *   ballpoint blue instead, the one line it has.
+ * - The two drawings: the spinner is the pencil scribble in place of the arc (both turn with
+ *   the svg, so the motion and its reduced-motion stop are the host's), and an empty state shows
+ *   its art slot with the doodle, a pencil squiggle looped once, in place of the line drawing.
+ *
+ * Browsers without `shape()` (Chrome and Edge before 135, Safari before 18.4, Firefox before 141)
+ * keep a padding-box fill under the line. In forced colours none of the pen applies (every pen
+ * rule sits in `forced-colors: none`): the host's own border, radius, fill and focus ring return
+ * in the system's colours.
+ *
+ * An image cannot read a custom property, so the generated block spells the line ink, the danger
+ * ink, the focus blue and the overlay; `scripts/draw-doodle-edges.mjs` names them beside
+ * tokens.css. The properties it declares start with `--_`: private to these recipes, not tokens.
+ */
+
+/* draw-doodle-edges.mjs: begin generated block, do not edit by hand */
+:root[data-theme="doodle"] {
+  --_stroke-control: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-control-danger: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWzJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh6zJh5kTHtcAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-control-focus: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEUsT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT54sT57g6ZSYAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-surface: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACfUlEQVR42s3Yz2vTYBgH8KdL5yo6KAw82kH/gDlrDx5chOF5g/0SPKQeBG89Cd4mg0ntJeDJ2wQ9zKp0Jw+D0aPH7qzrsn9Aorbp0pD0K8nSH8pY369Q8aHQJLyfvO+b5H15n1fkLEzE8e3d85V0eCWXy2+UKg07vu7dkEFk119gZPjL/fJTvWuNRuMC0d3qAT06/xQ1ZCL/uHLc8/u726s340IPANyNj+thhQ+Hmqjlcmn5M27baJ0dpQB8npWRca1XhY7KlqjEAtrRv+WLWmg2ClGLmopAFqJeZPBMFUxYHREpdkU5jCB8qK46yGBWNPxUB9MoyGXsqYMUXst1LKuDJE7EIPosCThiegSQmiumywDzL0B1vKDqSrXNAocE1vhBiwJtsZoUcAT/H7A5cMp2euwvznSlxoEO+bWaHjuAWGB45JgOQYcCATkv/QPgk6DokcCkgUuCKg3a5JuuOySwWGA3SYAm+XnjOwc0HhzKDlsD1elECDzyKXHAaskmt3RwwnmAm70NnxwP0TJOOTY9Ehi+6BRYCkRnVmSiI/wRkWEBXYMekGCJBeFj5YBHApMGHRLsuCSo0sAhgeVIEeSYBgXsJgc0/JA6M4BS2BMDaXVwFQWZVk8UReaQlimcEJOGL5KwiSVZ/TT8PPqZ+8i4FGWVc2ipj+gwq0zaqrliwgrSw5n7yLgSr9M1Gy+V0m8zyvBF5A7w5pwC2bXFwclk+QDw+m0D3kp2vfzRRqNSerIyf2ujfBBtyhztbi9GWyHF8Oywzy3AumhfJoj2dL4ONj8ma+eVOhq+ibf6215Jsobul1eP5mfy98sfjhHsl9bClszce/o+Vr2NgF8v9hp+aHdg+gAAAABJRU5ErkJggg==")
+      2x
+  );
+  --_stroke-pill: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAMFBMVEU1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lik1Lim+jEvZAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABWUlEQVR42mWSv0/CUBDHDwqEKAqLi4nKYqJbE+MqOLmY4ODkgoM7xvgHdGdAV2NkNA4GBmd1ciWOmpiSOJtGBSzU9quvjwe915sun3fvfnzviEJL728kN7eJ2ZoDYa+nhSlbhDL/XLG0A+/i4ePmVlAV28TIDJ2FuoNHyXL4NdWnFDzpNGBN01fQlo/9SB8ZGbqEs2h3NTyL3z5rOQX3P0unxwepekQJdDnMByK8zeEcipTFMYczKFMOJodZHNJKwBllYFF1pME02tQcaNDAgFpam5SAS40fDQpSHcZgn0pBQYOtHs1Dh/YX5f1YoS6VPA0KMWKFsrCohjKHyzAph3etIyGyHRRZHacXX1wmFN3AJ9d4L5zAjcLxMCWWtCL7ng3XP7Z1SNUMZ3J/dAB8S28LeLsWt526grpKMsIjfjmqAxhO8u/a6ryfojomd+4BeCf6FlYv75T7BwJGqkBGrRARAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M3.8 0.9L6.1 1L8.2 1.3L9.8 1.2L11.7 1.4L14 1.3L15.5 1.4L16.2 2.7L17.3 4L16.8 3.8L16.8 6.1L16.8 7.6L16.9 10L17.3 12.4L17.2 14L16.5 15.5L15.6 16.8L14 16.8L13.6 16.8L12.3 17.1L10 16.8L7.7 17.3L5.8 16.6L4 17.1L2.3 17L1.8 15.3L1 14L1 14.1L1.4 11.7L0.8 10L0.7 8.1L1.1 6.4L1.4 4L1.5 2.5L2.6 1.6L4 1.4Z' fill='none' stroke='%23352e29' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_stroke-ball: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M24 1.3L29.8 2.2L35.3 4.5L40.5 7.5L43.5 12.7L46.5 18L47.2 24L45.8 29.8L43.7 35.4L40.2 40.2L35.7 44.2L30.1 46.7L24 47.4L18.1 46.1L12.7 43.6L7.4 40.6L4.1 35.5L1.5 30L0.9 24L2.1 18.1L3.7 12.3L7.4 7.4L12.7 4.4L18.1 1.8Z' fill='none' stroke='%23352e29' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_glass-control: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='26' height='26' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='3'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='8'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M5.8 1.2L9 1.3L12.6 0.9L15.6 0.7L18.4 1.3L22 1.4L24.3 2L26.3 3.5L27.1 6L26.7 6.3L27 9.1L27.3 12L27.4 15.5L27.2 18.9L27.1 22L26.3 24.5L24.7 26.7L22 26.9L22 26.7L18.6 27.3L15.3 26.9L12.8 26.8L9.6 26.8L6 27L3.6 26.2L1.3 24.7L1 22L0.9 22.1L0.6 18.5L0.6 15.3L1.3 12.2L0.6 9.2L1.3 6L1.8 3.6L3.7 2.1L6 0.8Z' fill='%23fdfbf6' stroke='%23352e29' stroke-width='1.45' stroke-linejoin='round'/%3E%3Cpath d='M2.8 3L8.3 1.1' fill='none' stroke='%23352e29' stroke-width='1.45' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-surface: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%23fdfbf6' stroke='%23352e29' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%23352e29' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-surface-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%233a2c1e'%3E%3Cg stroke-opacity='0.2'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.032'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%23fdfbf6' stroke='%232c4f9e' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%232c4f9e' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_clip-control: shape(
+    from 5.76px 0.23px,
+    line to 8.97px 0.34px,
+    line to calc(35.95% + 2.53px) -0.1px,
+    line to calc(65.99% - 2.88px) -0.23px,
+    line to calc(93.96% - 7.91px) 0.36px,
+    line to calc(100% - 6px) 0.46px,
+    line to calc(100% - 3.18px) 1.12px,
+    line to calc(100% - 0.83px) 3.01px,
+    line to calc(100% + 0.12px) 6px,
+    line to calc(100% - 0.34px) 6.31px,
+    line to calc(100% - 0.05px) calc(0.99% + 8.82px),
+    line to calc(100% + 0.31px) calc(30.21% + 3.56px),
+    line to calc(100% + 0.41px) calc(64.7% - 2.65px),
+    line to calc(100% + 0.2px) calc(98.95% - 8.81px),
+    line to calc(100% + 0.07px) calc(100% - 6px),
+    line to calc(100% - 0.85px) calc(100% - 3.03px),
+    line to calc(100% - 2.77px) calc(100% - 0.41px),
+    line to calc(100% - 6px) calc(100% - 0.08px),
+    line to calc(100% - 6px) calc(100% - 0.28px),
+    line to calc(96.03% - 8.29px) calc(100% + 0.24px),
+    line to calc(63.19% - 2.37px) calc(100% - 0.11px),
+    line to calc(38.3% + 2.11px) calc(100% - 0.26px),
+    line to calc(5.53% + 8px) calc(100% - 0.22px),
+    line to 6px calc(100% - 0.06px),
+    line to 3.11px calc(100% - 1px),
+    line to 0.49px calc(100% - 2.82px),
+    line to -0.01px calc(100% - 6px),
+    line to -0.07px calc(100% - 5.91px),
+    line to -0.33px calc(94.94% - 8.09px),
+    line to -0.35px calc(62.78% - 2.3px),
+    line to 0.28px calc(32.09% + 3.22px),
+    line to -0.34px calc(1.63% + 8.71px),
+    line to 0.37px 6px,
+    line to 0.95px 3.08px,
+    line to 3.26px 1.26px,
+    line to 6px -0.15px,
+    close
+  );
+  --_clip-surface: shape(
+    from 7.77px -0.23px,
+    line to calc(1.33% + 13.63px) -0.41px,
+    line to calc(34.97% + 4.21px) 0.29px,
+    line to calc(64.13% - 3.96px) 0.17px,
+    line to calc(96.22% - 12.94px) -0.28px,
+    line to calc(100% - 8px) -0.31px,
+    line to calc(100% - 4.1px) 1.25px,
+    line to calc(100% - 1.17px) 4.06px,
+    line to calc(100% - 0.12px) 8px,
+    line to calc(100% + 0.04px) 8.13px,
+    line to calc(100% - 0.07px) calc(1.9% + 13.47px),
+    line to calc(100% + 0.18px) calc(33.55% + 4.61px),
+    line to calc(100% - 0.31px) calc(67.05% - 4.77px),
+    line to calc(100% + 0.27px) calc(95.91% - 12.86px),
+    line to calc(100% - 0.17px) calc(100% - 8px),
+    line to calc(100% - 1.37px) calc(100% - 4.17px),
+    line to calc(100% - 3.95px) calc(100% - 0.98px),
+    line to calc(100% - 8px) calc(100% - 0.42px),
+    line to calc(100% - 8.12px) calc(100% + 0.41px),
+    line to calc(99.38% - 13.83px) calc(100% + 0.23px),
+    line to calc(68.1% - 5.07px) calc(100% - 0.38px),
+    line to calc(33.38% + 4.65px) calc(100% + 0.27px),
+    line to 13.98px calc(100% - 0.23px),
+    line to 8px calc(100% + 0.38px),
+    line to 4.15px calc(100% - 1.33px),
+    line to 1.24px calc(100% - 4.1px),
+    line to -0.4px calc(100% - 8px),
+    line to 0.2px calc(100% - 7.61px),
+    line to 0.18px calc(96.45% - 13px),
+    line to -0.06px calc(66.42% - 4.6px),
+    line to 0.04px calc(33.61% + 4.59px),
+    line to -0.25px calc(2.53% + 13.29px),
+    line to 0.02px 8px,
+    line to 1.44px 4.21px,
+    line to 3.86px 0.83px,
+    line to 8px 0.34px,
+    close
+  );
+  --_clip-pill: shape(
+    from 8.77px 0.31px,
+    line to calc(100% - 9px) 0.07px,
+    line to calc(100% - 6.73px) 0.53px,
+    line to calc(100% - 4.41px) 1.04px,
+    line to calc(100% - 2.77px) 2.77px,
+    line to calc(100% - 1.08px) 4.43px,
+    line to calc(100% - 0.61px) 6.75px,
+    line to calc(100% - 0.37px) 9px,
+    line to calc(100% + 0.03px) calc(0.45% + 8.92px),
+    line to calc(100% - 0.15px) calc(100% - 9px),
+    line to calc(100% - 0.6px) calc(100% - 6.75px),
+    line to calc(100% - 1.6px) calc(100% - 4.73px),
+    line to calc(100% - 2.38px) calc(100% - 2.38px),
+    line to calc(100% - 4.54px) calc(100% - 1.28px),
+    line to calc(100% - 6.73px) calc(100% - 0.51px),
+    line to calc(100% - 9px) calc(100% + 0.05px),
+    line to calc(98.2% - 8.68px) calc(100% + 0.17px),
+    line to 9px calc(100% - 0.25px),
+    line to 6.78px calc(100% - 0.71px),
+    line to 4.37px calc(100% - 0.97px),
+    line to 2.68px calc(100% - 2.68px),
+    line to 1.65px calc(100% - 4.76px),
+    line to 0.06px calc(100% - 6.61px),
+    line to 0.35px calc(100% - 9px),
+    line to 0.16px calc(87.43% - 6.74px),
+    line to -0.1px calc(0% + 9px),
+    line to 0.49px 6.72px,
+    line to 1.09px 4.43px,
+    line to 2.48px 2.48px,
+    line to 4.42px 1.07px,
+    line to 6.61px 0.09px,
+    line to 9px 0.21px,
+    close
+  );
+  --_clip-box: shape(
+    from 3.77px -0.1px,
+    line to calc(1.02% + 5.88px) 0.04px,
+    line to calc(36.53% + 1.62px) 0.31px,
+    line to calc(63.03% - 1.56px) 0.22px,
+    line to calc(95.62% - 5.47px) 0.39px,
+    line to calc(100% - 4px) 0.29px,
+    line to calc(100% - 2.02px) 0.57px,
+    line to calc(100% - 0.92px) 2.22px,
+    line to calc(100% + 0.25px) 4px,
+    line to calc(100% - 0.24px) 3.76px,
+    line to calc(100% - 0.27px) calc(2.42% + 5.71px),
+    line to calc(100% - 0.25px) calc(26.44% + 2.83px),
+    line to calc(100% - 0.1px) calc(66.47% - 1.98px),
+    line to calc(100% + 0.26px) calc(100% - 5.64px),
+    line to calc(100% + 0.19px) calc(100% - 4px),
+    line to calc(100% - 0.62px) calc(100% - 2.05px),
+    line to calc(100% - 1.88px) calc(100% - 0.33px),
+    line to calc(100% - 4px) calc(100% - 0.27px),
+    line to calc(100% - 4.38px) calc(100% - 0.18px),
+    line to calc(100% - 5.68px) calc(100% + 0.06px),
+    line to calc(67.07% - 2.05px) calc(100% - 0.18px),
+    line to calc(27.8% + 2.66px) calc(100% + 0.29px),
+    line to 5.83px calc(100% - 0.4px),
+    line to 4px calc(100% + 0.12px),
+    line to 1.8px calc(100% - 0.18px),
+    line to 0.93px calc(100% - 2.23px),
+    line to -0.02px calc(100% - 4px),
+    line to -0.01px calc(100% - 3.89px),
+    line to 0.45px calc(94.66% - 5.36px),
+    line to -0.22px calc(66.62% - 1.99px),
+    line to -0.29px calc(35.76% + 1.71px),
+    line to 0.08px calc(6.53% + 5.22px),
+    line to 0.46px 4px,
+    line to 0.62px 2.05px,
+    line to 2.13px 0.76px,
+    line to 4px 0.45px,
+    close
+  );
+  --_clip-disc: shape(
+    from 48.71% 1.74%,
+    line to 50% 0.36%,
+    line to 62.61% 2.93%,
+    line to 75.53% 5.79%,
+    line to 84.6% 15.4%,
+    line to 94.01% 24.59%,
+    line to 96.63% 37.51%,
+    line to 97.95% 50%,
+    line to 100.15% 50%,
+    line to 99.19% 50%,
+    line to 96.66% 62.5%,
+    line to 91.09% 73.73%,
+    line to 86.78% 86.78%,
+    line to 74.76% 92.88%,
+    line to 62.63% 97.15%,
+    line to 50% 100.25%,
+    line to 50% 100.96%,
+    line to 50% 98.6%,
+    line to 37.66% 96.07%,
+    line to 24.25% 94.6%,
+    line to 14.88% 85.12%,
+    line to 9.19% 73.56%,
+    line to 0.36% 63.3%,
+    line to 1.96% 50%,
+    line to 0.9% 50%,
+    line to -0.57% 50%,
+    line to 2.74% 37.34%,
+    line to 6.05% 24.63%,
+    line to 13.77% 13.77%,
+    line to 24.55% 5.93%,
+    line to 36.74% 0.51%,
+    line to 50% 1.18%,
+    close
+  );
+}
+:root[data-theme="doodle"].dark {
+  --_stroke-control: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-control-danger: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEX/j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3//j3+e/5WQAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-control-focus: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4BAMAAABaqCYtAAAAMFBMVEWTtu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6Ttu6MVT1EAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABsElEQVR42q3UO0sjURgG4DfxtkRNAlbauMX2CSaVsEQrKyEQAmKTytpFthGLXRAFGyP4A6KdDEq2XIQQOyEgESwWFmaTX+B4izpJzrxy4g3NfKeQfZlqHs5lvvnOAXQmdxFHcs46sc9/T+NtRknPq/EptmVZ36PPNuCwK2r70Xoex6jKeiaBwMzBE//sYI5ke+l1kZFEMrvisKlnDpH88/ndLhAs8gxAkWoV3emnFwWc+zj88pVpBHnka+jjDvq45Y8B1vGJ3/wR5QZCnBKw6CLMqIB0EVOQ8BI5V8LaBQq3Elav9SNt6BqsS1hogKcS5u/gXEiYc1EW10w1kRd3G1OG74wQsbaEw9QuZIhIiSNDxOK9AQsNA1avDCjXVuMvE+78fxw04fCHMUxI5wiIeIYeiihDhSLK0GAphdqliC1Dx6eaKN4YsHAn4Q/X0JrVG72sf4KsY1w62f3cQphxqe5pDFHozbwH9DqdG7ArPdQ9O0YeR/1m7fzLWbK1Ye3btv3PPtxbmMCX5dLfUk11RgQ26Zfnss77XPLey5XYm80k9GUdTGQ3DpzKWjIzoV8/AHTOGFVg1wKkAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-surface: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgBAMAAAAQtmoLAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAACfUlEQVR42s3Yz2vTYBgH8KdL5yo6KAw82kH/gDlrDx5chOF5g/0SPKQeBG89Cd4mg0ntJeDJ2wQ9zKp0Jw+D0aPH7qzrsn9Aorbp0pD0K8nSH8pY369Q8aHQJLyfvO+b5H15n1fkLEzE8e3d85V0eCWXy2+UKg07vu7dkEFk119gZPjL/fJTvWuNRuMC0d3qAT06/xQ1ZCL/uHLc8/u726s340IPANyNj+thhQ+Hmqjlcmn5M27baJ0dpQB8npWRca1XhY7KlqjEAtrRv+WLWmg2ClGLmopAFqJeZPBMFUxYHREpdkU5jCB8qK46yGBWNPxUB9MoyGXsqYMUXst1LKuDJE7EIPosCThiegSQmiumywDzL0B1vKDqSrXNAocE1vhBiwJtsZoUcAT/H7A5cMp2euwvznSlxoEO+bWaHjuAWGB45JgOQYcCATkv/QPgk6DokcCkgUuCKg3a5JuuOySwWGA3SYAm+XnjOwc0HhzKDlsD1elECDzyKXHAaskmt3RwwnmAm70NnxwP0TJOOTY9Ehi+6BRYCkRnVmSiI/wRkWEBXYMekGCJBeFj5YBHApMGHRLsuCSo0sAhgeVIEeSYBgXsJgc0/JA6M4BS2BMDaXVwFQWZVk8UReaQlimcEJOGL5KwiSVZ/TT8PPqZ+8i4FGWVc2ipj+gwq0zaqrliwgrSw5n7yLgSr9M1Gy+V0m8zyvBF5A7w5pwC2bXFwclk+QDw+m0D3kp2vfzRRqNSerIyf2ujfBBtyhztbi9GWyHF8Oywzy3AumhfJoj2dL4ONj8ma+eVOhq+ibf6215Jsobul1eP5mfy98sfjhHsl9bClszce/o+Vr2NgF8v9hp+aHdg+gAAAABJRU5ErkJggg==")
+      2x
+  );
+  --_stroke-pill: image-set(
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAMFBMVEXZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cHZ0cFTAZBvAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAABWUlEQVR42mWSv0/CUBDHDwqEKAqLi4nKYqJbE+MqOLmY4ODkgoM7xvgHdGdAV2NkNA4GBmd1ciWOmpiSOJtGBSzU9quvjwe915sun3fvfnzviEJL728kN7eJ2ZoDYa+nhSlbhDL/XLG0A+/i4ePmVlAV28TIDJ2FuoNHyXL4NdWnFDzpNGBN01fQlo/9SB8ZGbqEs2h3NTyL3z5rOQX3P0unxwepekQJdDnMByK8zeEcipTFMYczKFMOJodZHNJKwBllYFF1pME02tQcaNDAgFpam5SAS40fDQpSHcZgn0pBQYOtHs1Dh/YX5f1YoS6VPA0KMWKFsrCohjKHyzAph3etIyGyHRRZHacXX1wmFN3AJ9d4L5zAjcLxMCWWtCL7ng3XP7Z1SNUMZ3J/dAB8S28LeLsWt526grpKMsIjfjmqAxhO8u/a6ryfojomd+4BeCf6FlYv75T7BwJGqkBGrRARAAAAAElFTkSuQmCC")
+      2x
+  );
+  --_stroke-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M3.8 0.9L6.1 1L8.2 1.3L9.8 1.2L11.7 1.4L14 1.3L15.5 1.4L16.2 2.7L17.3 4L16.8 3.8L16.8 6.1L16.8 7.6L16.9 10L17.3 12.4L17.2 14L16.5 15.5L15.6 16.8L14 16.8L13.6 16.8L12.3 17.1L10 16.8L7.7 17.3L5.8 16.6L4 17.1L2.3 17L1.8 15.3L1 14L1 14.1L1.4 11.7L0.8 10L0.7 8.1L1.1 6.4L1.4 4L1.5 2.5L2.6 1.6L4 1.4Z' fill='none' stroke='%23d9d1c1' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_stroke-ball: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M24 1.3L29.8 2.2L35.3 4.5L40.5 7.5L43.5 12.7L46.5 18L47.2 24L45.8 29.8L43.7 35.4L40.2 40.2L35.7 44.2L30.1 46.7L24 47.4L18.1 46.1L12.7 43.6L7.4 40.6L4.1 35.5L1.5 30L0.9 24L2.1 18.1L3.7 12.3L7.4 7.4L12.7 4.4L18.1 1.8Z' fill='none' stroke='%23d9d1c1' stroke-width='1.55' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --_glass-control: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='26' height='26' rx='5' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='3'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='8'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='26' height='26' rx='5' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M5.8 1.2L9 1.3L12.6 0.9L15.6 0.7L18.4 1.3L22 1.4L24.3 2L26.3 3.5L27.1 6L26.7 6.3L27 9.1L27.3 12L27.4 15.5L27.2 18.9L27.1 22L26.3 24.5L24.7 26.7L22 26.9L22 26.7L18.6 27.3L15.3 26.9L12.8 26.8L9.6 26.8L6 27L3.6 26.2L1.3 24.7L1 22L0.9 22.1L0.6 18.5L0.6 15.3L1.3 12.2L0.6 9.2L1.3 6L1.8 3.6L3.7 2.1L6 0.8Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='1.45' stroke-linejoin='round'/%3E%3Cpath d='M2.8 3L8.3 1.1' fill='none' stroke='%23d9d1c1' stroke-width='1.45' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-surface: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%2325221f' stroke='%23d9d1c1' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%23d9d1c1' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+  --_glass-surface-focus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cg transform='translate(12 12)'%3E%3Cg fill='none' stroke='%23000000'%3E%3Cg stroke-opacity='0.5'%3E%3Crect x='1' y='2' width='46' height='46' rx='7' stroke-width='1.5'/%3E%3C/g%3E%3Cg stroke-opacity='0.07'%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='3'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='5.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='8'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='10.5'/%3E%3Crect x='1' y='5' width='46' height='46' rx='7' stroke-width='13'/%3E%3C/g%3E%3C/g%3E%3Cpath d='M7.8 0.8L14.3 0.6L21 1.3L26.8 1.2L33.2 0.7L40 0.7L43.4 2.1L45.9 4.6L46.9 8L47 8.1L46.9 14.4L47.2 20.7L46.7 27.4L47.2 33.2L46.8 40L45.7 43.3L43.5 46.1L40 46.6L39.9 47.4L33.9 47.2L27.6 46.6L20.7 47.2L14 46.7L8 47.4L4.7 45.8L2.1 43.4L0.6 40L1.2 40.4L1.2 33.3L1 27.3L1.1 20.7L0.8 14.5L1 8L2.3 4.7L4.4 1.7L8 1.4Z' fill='%2325221f' stroke='%2393b6ee' stroke-width='1.55' stroke-linejoin='round'/%3E%3Cpath d='M4.8 2.6L10.3 0.7' fill='none' stroke='%2393b6ee' stroke-width='1.55' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E");
+}
+/* draw-doodle-edges.mjs: end generated block */
+
+@media (forced-colors: none) {
+  /* The pen line: a solid 1px border for the stroke to paint on, the host's own or this one. A
+     box is the person's bubble's shape by default; what a person presses or types into takes the
+     control's; a capsule picker the pill; a host drawn round (a radio's disc, a switch's track) a
+     disc; a checkbox the box. */
+  :root[data-theme="doodle"] :where(.ui-edge) {
+    border-style: solid;
+    border-width: 1px;
+    background-clip: padding-box;
+    border-image: var(--_stroke-surface) 14 / 14px / 0 stretch;
+  }
+  :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
+  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
+    border-image: var(--_stroke-control) 9 / 9px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
+    border-image: var(--_stroke-pill) 9 / 9px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
+    border-image: var(--_stroke-pill) 9 / 50% / 0 stretch;
+  }
+  :root[data-theme="doodle"]
+    .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
+    border-image: var(--_stroke-box) 6 / 6px / 0 stretch;
+  }
+  :root[data-theme="doodle"] .ui-edge:where([aria-invalid="true"], :has(> [aria-invalid="true"])) {
+    border-image-source: var(--_stroke-control-danger);
+  }
+
+  /* What floats: a slip of paper, its glass image its fill, its line and its shadow. The shadow
+     sits in the image's 12px outset, transparent elsewhere, so it never covers a neighbour's text
+     and no filter runs. */
+  :root[data-theme="doodle"] .ui-glass:not([data-glass], .site-ui-header) {
+    border-style: solid;
+    border-width: 1px;
+    background-color: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+  }
+  :root[data-theme="doodle"]
+    .ui-glass:not([data-glass]):where([role="tooltip"], [aria-hidden="true"]) {
+    border-image: var(--_glass-control) 21 fill / 21px / 12px stretch;
+  }
+  :root[data-theme="doodle"] .ui-glass:not([data-glass])[data-slot="composer"]:focus-within {
+    border-image-source: var(--_glass-surface-focus);
+  }
+  /* A round slip (the launcher's ball and its fan) keeps its round fill under the drawn circle,
+     unclipped: the ball holds its caption, which sits outside it. */
+  :root[data-theme="doodle"] .ui-glass:not([data-glass]):where(.rounded-full) {
+    background-color: var(--ui-overlay);
+    background-clip: padding-box;
+    border-image: var(--_stroke-ball) 24 / 50% / 0 stretch;
+  }
+  /* A toast floats too: the slip in place of Frost's card and its shadow, over no backing (the
+     stack's opaque backing would show past the drawn corners). Frost's tone dot stays. */
+  :root[data-theme="doodle"] [aria-live] > :has(> .ui-notice) {
+    background-color: transparent;
+  }
+  :root[data-theme="doodle"] [aria-live] .ui-notice {
+    border-color: transparent;
+    background-color: transparent;
+    box-shadow: none;
+    border-image: var(--_glass-surface) 26 fill / 26px / 12px stretch;
+  }
+
+  /* The window's columns: the pad beside the paper with the one pencil rule between them, and no
+     lit edge beside the rule. */
+  :root[data-theme="doodle"] .ui-shell > [data-slot="nav"] {
+    box-shadow: none;
+  }
+
+  /* The fill follows the line: a pen-edged host gives up its CSS corner (the line draws its own)
+     and paints its fill to the border's edge, which the clip trims to just outside the pen. */
+  @supports (clip-path: shape(from 0px 0px, line to 1px 1px, close)) {
+    :root[data-theme="doodle"] :where(.ui-edge) {
+      border-radius: 0;
+      background-clip: border-box;
+      clip-path: var(--_clip-surface);
+    }
+    :root[data-theme="doodle"] :where(button, input, textarea, select, [role="combobox"]).ui-edge,
+    :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea))) {
+      clip-path: var(--_clip-control);
+    }
+    :root[data-theme="doodle"] .ui-edge:where(.rounded-\[var\(--ui-radius-pill\)\]) {
+      clip-path: var(--_clip-pill);
+    }
+    :root[data-theme="doodle"] .ui-edge:where(.rounded-full) {
+      clip-path: var(--_clip-disc);
+    }
+    :root[data-theme="doodle"]
+      .ui-edge:where(input[type="checkbox"], span[aria-hidden="true"]:not(.rounded-full)) {
+      clip-path: var(--_clip-box);
+    }
+    /* A clip cuts whatever the box paints: a menu opened in place inside the box, and a focus
+       ring. So while a menu is open in it, and while something a person presses holds keyboard
+       focus, the box keeps its own corner and a padding-box fill under the line instead, and the
+       ring draws outside as in every theme. */
+    :root[data-theme="doodle"] .ui-edge:has(.ui-glass:not([data-glass])),
+    :root[data-theme="doodle"]
+      .ui-edge:focus-visible:not(
+        :where(input:not([type="checkbox"], [type="radio"]), textarea, select)
+      ) {
+      border-radius: revert-layer;
+      background-clip: padding-box;
+      clip-path: none;
+    }
+  }
+
+  /* A text field shows focus the way it shows its edge: the pen line redrawn in the ring's blue,
+     its own ring (a shadow outside the line, which the clip would cut) left out. */
+  :root[data-theme="doodle"]
+    :where(input:not([type="checkbox"], [type="radio"]), textarea, select).ui-edge:focus,
+  :root[data-theme="doodle"] .ui-edge:where(:has(> :is(input, textarea):focus)) {
+    border-image-source: var(--_stroke-control-focus);
+    box-shadow: none;
+  }
+}
+
+/* The scribble in place of the spinner's arc. */
+:root[data-theme="doodle"] .ui-live[data-live="spinner"] > [data-set="arc"] {
+  display: none;
+}
+:root[data-theme="doodle"] .ui-live[data-live="spinner"] > [data-set="scribble"] {
+  display: inline;
+}
+
+/* An empty state's art: the doodle in place of the line drawing. */
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] {
+  display: flex;
+}
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] > [data-set="line"] {
+  display: none;
+}
+:root[data-theme="doodle"] .ui-empty [data-slot="art"] > [data-set="doodle"] {
+  display: block;
+}

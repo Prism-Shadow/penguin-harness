@@ -54,8 +54,16 @@ export default defineConfig({
   clean: jsOnly ? ["!**/*.d.ts"] : true,
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
-  // inlined here so this package's published dist stays self-contained.
-  noExternal: ["@prismshadow/penguin-hmr"],
+  // inlined here so this package's published dist stays self-contained. So is the theme-pack
+  // validator, a private source package; its own dependencies (css-tree, fflate) stay imports and
+  // are this package's dependencies. And so is the UI package's clean-baseline rule table, the
+  // one subpath of it the server imports (`@prismshadow/penguin-ui/pack-rules`, which reaches
+  // nothing but two small modules): the published UI package does not export it.
+  noExternal: [
+    "@prismshadow/penguin-hmr",
+    "@prismshadow/penguin-theme-pack",
+    "@prismshadow/penguin-ui",
+  ],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
   // does; everything after is a `penguin` subcommand the machine already has). Each is

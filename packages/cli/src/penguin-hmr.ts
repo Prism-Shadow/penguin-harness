@@ -9,6 +9,7 @@ import "dotenv/config";
 import { pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { readPushedCli } from "@prismshadow/penguin-server/hmr/manifest";
+import { exitBelowNodeFloor } from "./node-floor-check.js";
 
 export async function loadPushedCli(root: string): Promise<(argv: string[]) => Promise<number>> {
   const pushed = await readPushedCli(root);
@@ -28,6 +29,7 @@ export async function loadPushedCli(root: string): Promise<(argv: string[]) => P
 
 /** Only when run as the entry point, so tests can import loadPushedCli. */
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitBelowNodeFloor();
   loadPushedCli(resolveRoot())
     .then((cli) => cli(process.argv.slice(2)))
     .then((code) => {

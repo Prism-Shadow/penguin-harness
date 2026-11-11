@@ -43,26 +43,27 @@ export interface SessionRowState {
 }
 
 /**
- * The hover affordance's direct actions: archive alone. Everything else — delete
- * included — lives in the context menu, whose discoverable pointer entry is the
- * ellipsis button the row renders after these (see the module header).
- */
-export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
-
-/**
  * The context menu's actions. The order runs from the actions that change the Session to the
  * one that ends it: pin, rename and the messaging binding first, then archive, then copying
  * the id — the one row that changes nothing, kept between archive and delete — and delete
  * last.
  */
-export const CONTEXT_MENU_ACTIONS: readonly SessionRowAction[] = [
+export const CONTEXT_MENU_ACTIONS = [
   "pin",
   "rename",
   "messaging",
   "archive",
   "copy",
   "delete",
-];
+] as const satisfies readonly SessionRowAction[];
+
+/**
+ * The hover affordance's direct actions: archive alone. Everything else — delete
+ * included — lives in the context menu, whose discoverable pointer entry is the
+ * ellipsis button the row renders after these (see the module header). Typed as menu
+ * actions, so an action reachable by hover alone does not compile.
+ */
+export const HOVER_ROW_ACTIONS: readonly (typeof CONTEXT_MENU_ACTIONS)[number][] = ["archive"];
 
 /**
  * A company desk row's menu (features/company/org-session-groups.tsx). A desk's title and its

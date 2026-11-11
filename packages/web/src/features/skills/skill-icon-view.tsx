@@ -1,21 +1,22 @@
 /**
  * Skill, hook package and plugin icons. An icon belongs to a plugin: the library card and the
- * detail Modal show the plugin's own `icon.svg`, and an installed skill or hook package shows
- * the icon of the plugin it came from (written into its directory at install time). Where a
- * subject has no icon — a user-authored or zip-imported skill, an install older than the icon
- * copy, a custom plugin without an icon.svg — the mark falls back to one uniform glyph for its
- * kind: the book for a skill, the hook for a hook package, the puzzle piece for a plugin. The
- * caller names the kind through `fallback`; never a letter or a per-name mark.
+ * detail Modal show the plugin's own icon, and an installed skill or hook package shows the icon
+ * of the plugin it came from (written into its directory at install time). Where a subject has
+ * no icon — a user-authored or zip-imported skill without one, an install older than the icon
+ * copy, a custom plugin without an icon file — or its image does not load, the mark falls back
+ * to one uniform glyph for its kind: the book for a skill, the hook for a hook package, the
+ * puzzle piece for a plugin. The caller names the kind through `fallback`; never a letter or a
+ * per-name mark.
  *
  * `SkillIcon` is the bare mark (inline beside a name: the composer's chips and pick list);
- * `SkillTile` is the tinted square the rows and cards lead with. A DTO icon (raw icon.svg) is
- * rendered inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text
- * color).
+ * `SkillTile` is the tinted square the rows and cards lead with. A DTO icon is an image the
+ * server serves by URL, drawn by the UI package's `ImageIcon`: a monochrome SVG as a mask in the
+ * text colour (so line icons follow the ink, as they always have), anything else as itself.
+ * Nothing of the icon ever enters the page as markup.
  */
-import { useMemo } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ImageIcon } from "@prismshadow/penguin-ui";
+import type { IconRef } from "@prismshadow/penguin-server/api";
 import { BOOK_ICON } from "../../lib/skill-use";
-import { sanitizeSkillIcon } from "./skill-icon";
 
 /**
  * Per-name tile colors (soft tinted tile + colored line-art stroke, light/dark pairs).
@@ -52,38 +53,32 @@ export function skillTileColor(name: string): string {
   return SKILL_TILE_COLORS[h % SKILL_TILE_COLORS.length]!;
 }
 
-/** The bare mark, inline: the sanitized svg at `size`, else the kind's glyph (`fallback`; the book unless the subject is not a skill). */
+/** The bare mark, inline: the icon's image at `size`, else the kind's glyph (`fallback`; the book unless the subject is not a skill). */
 export function SkillIcon({
   icon,
   fallback = BOOK_ICON,
   size = 20,
   className = "",
 }: {
-  icon?: string;
-  /** 24×24 line path drawn when there is no usable `icon`: the uniform mark of the subject's kind. */
+  icon?: IconRef;
+  /** 24×24 line path drawn when there is no icon, or its image does not load: the uniform mark of the subject's kind. */
   fallback?: string;
   size?: number;
   className?: string;
 }) {
-  const safe = sanitizeSkillIcon(icon);
-  // Held stable across renders: React compares this prop by object identity and re-sets
-  // `innerHTML` whenever it differs, so a literal in the JSX rebuilds the markup on every render
-  // (see test/inner-html-stability.test.ts).
-  const markup = useMemo(() => (safe ? { __html: safe } : undefined), [safe]);
-  if (markup === undefined) return <GlyphIcon d={fallback} size={size} className={className} />;
   return (
-    <span
-      aria-hidden
-      style={{ width: size, height: size }}
-      className={`block shrink-0 [&>svg]:block [&>svg]:h-full [&>svg]:w-full ${className}`}
-      dangerouslySetInnerHTML={markup}
+    <ImageIcon
+      icon={icon}
+      size={size}
+      className={className}
+      fallback={<GlyphIcon d={fallback} size={size} className={className} />}
     />
   );
 }
 
 /**
  * The tinted square a row or card leads with: the icon at `glyph` px inside a `size` px box in
- * the name's palette color, or the kind's glyph (`fallback`) when there is no usable icon.
+ * the name's palette color, or the kind's glyph (`fallback`) when there is none or it does not load.
  * Decorative — the name beside it is the carrier.
  */
 export function SkillTile({
@@ -93,7 +88,7 @@ export function SkillTile({
   size = 36,
   glyph = 20,
 }: {
-  icon?: string;
+  icon?: IconRef;
   /** Names the tile's color. */
   name: string;
   /** 24×24 line path drawn without an icon: the book for a skill, the hook for a hook package, the puzzle piece for a plugin. */

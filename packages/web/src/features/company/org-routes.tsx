@@ -8,13 +8,13 @@
  *
  * After the organization's own pages come the company-mode pages a plugin contributes
  * (`nav: "org"`, use-org-pages.ts): their paths are relative to the organization, and the nav
- * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). A builtin one is drawn
- * with the component this file names for it.
+ * row beside them is the sidebar's (company-nav.ts ORG_PAGE_RENDERERS). The page table has
+ * already resolved what each one draws — a builtin renderer into the component the module
+ * registered (`WebAppModule.pageRenderers`), an iframe into the shell's FramePage — so a
+ * route mounts the page's component as it is.
  */
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
-import { ContributedPage } from "../../lib/local-contributed-page";
-import { orgPagesOf } from "../../lib/local-page-table";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
 import { OrgChartPage } from "./org-chart-page";
@@ -26,11 +26,8 @@ import { HandbookPage } from "./handbook-page";
 import { useOrgPages } from "./use-org-pages";
 import { useCompany } from "./company-state";
 
-/** The component of each builtin renderer a contributed company-mode page may name. */
-const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {};
-
 export function OrgRoutes() {
-  const contributed = orgPagesOf(useOrgPages());
+  const contributed = useOrgPages().filter((page) => page.released);
   const { homePath } = useCompany();
   return (
     <Routes>
@@ -45,11 +42,7 @@ export function OrgRoutes() {
         <Route path="handbook" element={<HandbookPage />} />
         <Route path="channels/:channelId" element={<ChannelView />} />
         {contributed.map((page) => (
-          <Route
-            key={page.id}
-            path={page.path}
-            element={<ContributedPage page={page} builtins={ORG_PAGE_COMPONENTS} />}
-          />
+          <Route key={page.id} path={page.path} element={<page.Component />} />
         ))}
         <Route path="*" element={<Navigate to="overview" replace />} />
       </Route>

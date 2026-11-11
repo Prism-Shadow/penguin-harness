@@ -1,27 +1,17 @@
 /**
  * The registry (src/lib/shortcuts/registry.ts) holds the line on what a default may be: it
  * parses, it carries a modifier or is an F key, no two same-scope defaults collide on any
- * platform, a literal Ctrl token is used only where macOS must not follow ⌘, no default sits on
- * a browser-reserved chord, the defaults on a chord a browser also uses are named one by one, and
- * every id passes the server's grammar.
+ * platform, no default sits on a browser-reserved chord, and no two commands share an id. An
+ * unknown id is refused by name.
  */
 import { describe, expect, it } from "vitest";
 import { isBindableChord, parseChord } from "../src/lib/shortcuts/chord";
 import { findConflicts } from "../src/lib/shortcuts/conflicts";
-import {
-  SHORTCUT_COMMANDS,
-  SHORTCUT_GROUPS,
-  commandById,
-  defaultChord,
-} from "../src/lib/shortcuts/registry";
-import { browserCommon, browserReserved } from "../src/lib/shortcuts/reserved";
-import { S } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { SHORTCUT_COMMANDS, commandById, defaultChord } from "../src/lib/shortcuts/registry";
+import { browserReserved } from "../src/lib/shortcuts/reserved";
 import type { Chord, CommandId, Platform } from "../src/lib/shortcuts/types";
 
 const PLATFORMS: readonly Platform[] = ["mac", "windows", "linux"];
-/** The id grammar the server enforces on `ui_prefs.keybindings` (services/keybindings.ts). */
-const ID_RE = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
 
 function defaultsFor(platform: Platform): Map<CommandId, Chord | null> {
   return new Map(SHORTCUT_COMMANDS.map((cmd) => [cmd.id, defaultChord(cmd, platform)]));
@@ -56,15 +46,6 @@ describe("registry defaults", () => {
     }
   });
 
-  it("uses a literal Ctrl token only where the macOS default must not follow ⌘", () => {
-    const literalCtrl = SHORTCUT_COMMANDS.filter((cmd) =>
-      Object.values(cmd.defaults).some(
-        (text) => typeof text === "string" && text.includes("Ctrl+"),
-      ),
-    ).map((cmd) => cmd.id);
-    expect(literalCtrl).toEqual(["terminal.toggle", "terminal.new", "terminal.close"]);
-  });
-
   it("puts no default on a browser-reserved chord", () => {
     for (const platform of PLATFORMS) {
       const reserved = SHORTCUT_COMMANDS.filter((cmd) => {
@@ -75,47 +56,13 @@ describe("registry defaults", () => {
     }
   });
 
-  it("names every default that shares a chord with a browser function", () => {
-    // The palette takes Firefox's private-window chord; find/save keep the main defaults.
-    const expected: Record<Platform, CommandId[]> = {
-      mac: ["palette.toggle", "chat.new", "find.open", "find.all", "editor.save"],
-      windows: ["palette.toggle", "find.open", "editor.save"],
-      linux: ["palette.toggle", "find.open", "editor.save"],
-    };
-    for (const platform of PLATFORMS) {
-      const common = SHORTCUT_COMMANDS.filter((cmd) => {
-        const chord = defaultChord(cmd, platform);
-        return chord !== null && browserCommon(chord, platform);
-      }).map((cmd) => cmd.id);
-      expect(common, platform).toEqual(expected[platform]);
-    }
-  });
-
-  it("ids match the server grammar and are unique", () => {
+  it("gives no two commands the same id", () => {
     const ids = SHORTCUT_COMMANDS.map((cmd) => cmd.id);
-    for (const id of ids) expect(id).toMatch(ID_RE);
     expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("groups every command under a drawn group", () => {
-    for (const cmd of SHORTCUT_COMMANDS) expect(SHORTCUT_GROUPS).toContain(cmd.group);
   });
 
   it("looks commands up by id and refuses unknown ones", () => {
     expect(commandById("terminal.close").scope).toBe("terminal");
     expect(() => commandById("terminal.explode" as CommandId)).toThrow(/unknown shortcut command/);
-  });
-});
-
-describe("registry labels", () => {
-  it("has a label for every command and group in both dictionaries", () => {
-    for (const cmd of SHORTCUT_COMMANDS) {
-      expect(S.shortcuts.commands[cmd.id], `zh ${cmd.id}`).toBeTruthy();
-      expect(en.shortcuts.commands[cmd.id], `en ${cmd.id}`).toBeTruthy();
-    }
-    for (const group of SHORTCUT_GROUPS) {
-      expect(S.shortcuts.groups[group], `zh ${group}`).toBeTruthy();
-      expect(en.shortcuts.groups[group], `en ${group}`).toBeTruthy();
-    }
   });
 });

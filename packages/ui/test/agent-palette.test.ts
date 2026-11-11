@@ -1,34 +1,38 @@
 /**
- * The Agent mascot's colours (src/components/icons/avatars/agent-palette.ts).
+ * The Agent mascot's colours and faces (src/components/icons/avatars/agent-palette.ts,
+ * agent-expression.ts).
  *
- * - Given an Agent's id, its palette slot is the same on every call, and realistic ids spread
- *   over all twelve slots.
+ * - Given an Agent's id, its palette slot and its expression are the same on every call, and
+ *   realistic ids spread over all twelve slots and every expression.
+ * - Given two Agents that share a colour, they can still wear different faces.
  * - Given an Agent whose letter tile had hue h, its mascot's slot is the one whose hue anchor lies
  *   within 15° of h: it keeps the colour family it had.
- * - Given any slot, in either mode, the penguin reads on its tile: the ink keeps ≥ 4.5:1 (AA).
- * - Given any slot, in every theme and mode, the penguin stands off the page — its ink keeps
- *   ≥ 3:1 against the canvas, a card and the muted surface, wherever the pale tile does not.
- * - Given any two slots, in either mode, their inks are not near-duplicates: two Agents side by
+ * - Given any slot, in either mode, the penguin reads on its tile: its coat keeps ≥ 3:1 on the
+ *   tile (a graphic, WCAG non-text contrast), and the eyes, beak and smile keep ≥ 4.5:1 on the face.
+ * - Given any slot, in every theme and mode, the penguin stands off the page — its coat keeps
+ *   ≥ 3:1 against the canvas, a card and the muted surface, wherever the tile does not.
+ * - Given any two slots, in either mode, their coats are not near-duplicates: two Agents side by
  *   side can be told apart.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { avatarHue } from "../src/components/icons/avatars/avatar";
+import {
+  AGENT_EXPRESSIONS,
+  agentExpression,
+} from "../src/components/icons/avatars/agent-expression";
 import { AGENT_PALETTE, agentSlot } from "../src/components/icons/avatars/agent-palette";
-import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
+import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import {
   BLACK,
   WHITE,
-  analyzeThemeFile,
+  analyzePack,
   composite,
   contrastRatio,
   parseColor,
   resolveThemeValue,
 } from "../src/testing";
 import type { Rgba, ThemeFileAnalysis } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
 
 const color = (value: string): Rgba => {
   const parsed = parseColor(value);
@@ -47,13 +51,32 @@ const IDS = [
   ...Array.from({ length: 300 }, (_, n) => `agent-${n}`),
 ];
 
-describe("agentSlot", () => {
-  it("gives an id the same slot every time, and realistic ids reach every slot", () => {
-    for (const id of IDS) expect(agentSlot(id)).toBe(agentSlot(id));
+describe("an Agent's colour and face", () => {
+  it("are the same for an id every time", () => {
+    for (const id of IDS) {
+      expect(agentSlot(id)).toBe(agentSlot(id));
+      expect(agentExpression(id)).toBe(agentExpression(id));
+    }
+  });
+
+  it("spread realistic ids over every slot and every expression", () => {
     expect(new Set(IDS.map(agentSlot)).size).toBe(AGENT_PALETTE.length);
     for (const id of IDS) {
       expect(agentSlot(id)).toBeGreaterThanOrEqual(0);
       expect(agentSlot(id)).toBeLessThan(AGENT_PALETTE.length);
+    }
+    expect(new Set(IDS.map(agentExpression))).toEqual(new Set(AGENT_EXPRESSIONS));
+  });
+
+  it("let two Agents of one colour wear different faces", () => {
+    const facesBySlot = new Map<number, Set<string>>();
+    for (const id of IDS) {
+      const faces = facesBySlot.get(agentSlot(id)) ?? new Set<string>();
+      faces.add(agentExpression(id));
+      facesBySlot.set(agentSlot(id), faces);
+    }
+    for (const [slot, faces] of facesBySlot) {
+      expect(faces.size, `slot ${slot} wears one face only`).toBeGreaterThan(1);
     }
   });
 
@@ -67,15 +90,15 @@ describe("agentSlot", () => {
   });
 });
 
-describe("the penguin reads on its tile (WCAG AA)", () => {
+describe("the penguin reads on its tile", () => {
   for (const mode of THEME_MODES) {
-    it(`${mode}: every slot's ink keeps ≥ 4.5:1 on its tile`, () => {
+    it(`${mode}: every slot's coat keeps ≥ 3:1 on its tile, and its marks ≥ 4.5:1 on its face`, () => {
       const failures: string[] = [];
-      AGENT_PALETTE.forEach(({ tile, ink }, slot) => {
-        const ratio = contrastRatio(color(ink[mode]), color(tile[mode]));
-        if (ratio < 4.5) {
-          failures.push(`slot ${slot} ${ink[mode]} on ${tile[mode]}: ${ratio.toFixed(2)}:1`);
-        }
+      AGENT_PALETTE.forEach(({ tile, coat, face, mark }, slot) => {
+        const body = contrastRatio(color(coat[mode]), color(tile[mode]));
+        if (body < 3) failures.push(`slot ${slot} coat on tile: ${body.toFixed(2)}:1`);
+        const marks = contrastRatio(color(mark[mode]), color(face[mode]));
+        if (marks < 4.5) failures.push(`slot ${slot} marks on face: ${marks.toFixed(2)}:1`);
       });
       expect(failures, `\n${failures.join("\n")}\n`).toEqual([]);
     });
@@ -86,31 +109,29 @@ describe("the penguin reads on its tile (WCAG AA)", () => {
 const SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
 
 function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
-  const path = join(SRC_DIR, "themes", `${id}.css`);
-  if (!existsSync(path)) return null;
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzePack(id);
   return analysis.isStub ? null : analysis;
 }
 
 describe("the penguin stands off the page (WCAG non-text 3:1)", () => {
-  const defaultTheme = themeAnalysis(DEFAULT_THEME_ID);
+  const baseTheme = themeAnalysis(INITIAL_THEME_ID);
 
-  it("reads the default theme", () => {
-    expect(defaultTheme).not.toBeNull();
+  it("reads the base theme", () => {
+    expect(baseTheme).not.toBeNull();
   });
 
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
-    if (theme === null || defaultTheme === null) {
-      it.skip(`${id} — PENDING: themes/${id}.css declares no tokens yet`, () => {});
+    if (theme === null || baseTheme === null) {
+      it.skip(`${id} — PENDING: themes/${id}/ declares no tokens yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {
-      it(`${id} ${mode}: every slot against the page surfaces`, () => {
+      it(`${id} ${mode}: every slot's coat against the page surfaces`, () => {
         const failures: string[] = [];
         const ground = mode === "light" ? WHITE : BLACK;
         const surfaces = SURFACES.flatMap((name) => {
-          const value = resolveThemeValue(name, mode, theme, defaultTheme);
+          const value = resolveThemeValue(name, mode, theme, baseTheme);
           const parsed = value === null ? null : parseColor(value);
           if (parsed === null) {
             failures.push(`${name} does not resolve to a colour (${String(value)})`);
@@ -118,8 +139,8 @@ describe("the penguin stands off the page (WCAG non-text 3:1)", () => {
           }
           return [{ name, color: composite(parsed, ground) }];
         });
-        AGENT_PALETTE.forEach(({ ink }, slot) => {
-          const penguin = color(ink[mode]);
+        AGENT_PALETTE.forEach(({ coat }, slot) => {
+          const penguin = color(coat[mode]);
           for (const surface of surfaces) {
             const page = contrastRatio(penguin, surface.color);
             if (page < 3) failures.push(`slot ${slot} on ${surface.name}: ${page.toFixed(2)}:1`);
@@ -150,16 +171,16 @@ function oklab({ r, g, b }: Rgba): [number, number, number] {
 
 describe("the palette's slots", () => {
   for (const mode of THEME_MODES) {
-    it(`${mode}: are never inked near-duplicates of one another`, () => {
+    it(`${mode}: are never coated in near-duplicates of one another`, () => {
       const close: string[] = [];
-      const labs = AGENT_PALETTE.map(({ ink }) => oklab(color(ink[mode])));
+      const labs = AGENT_PALETTE.map(({ coat }) => oklab(color(coat[mode])));
       for (let i = 0; i < labs.length; i++) {
         for (let j = i + 1; j < labs.length; j++) {
           const [a, b] = [labs[i]!, labs[j]!];
           const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-          // A pastel ink in dark mode holds less chroma than a dark one in light; 0.075 is still
-          // several steps of visible difference (a just-noticeable one is about 0.02).
-          if (distance < 0.075) close.push(`slots ${i} and ${j}: ${distance.toFixed(3)}`);
+          // A mid-tone coat in dark mode holds less chroma than a dark one in light; 0.06 is still
+          // a few steps of visible difference (a just-noticeable one is about 0.02).
+          if (distance < 0.06) close.push(`slots ${i} and ${j}: ${distance.toFixed(3)}`);
         }
       }
       expect(close, `\n${close.join("\n")}\n`).toEqual([]);

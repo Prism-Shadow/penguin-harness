@@ -7,7 +7,8 @@
  * - A picture that is not one of the three formats, whose bytes are not the format it claims, or
  *   that is over the cap is refused, and nothing is written.
  * - The file is the Agent's like any other in its State: one the Agent writes itself is listed,
- *   it survives a snapshot restore, and an exported package carries it into a new Agent.
+ *   the Agent's zip carries it, back over the Agent when the owner imports it there, and into the
+ *   new Agent a zip is imported as.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -15,7 +16,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { agentStateDir } from "@prismshadow/penguin-core";
 import type {
   AgentAvatarResponse,
-  AgentCreateResponse,
   AgentsResponse,
   ProjectCreateResponse,
 } from "../src/api/types.js";
@@ -152,36 +152,35 @@ describe("an Agent's own avatar", () => {
     expect((await member.get(`${base}/avatar`)).status).toBe(404);
   });
 
-  it("comes back with a snapshot restore", async () => {
+  it("comes back when the owner imports the Agent's zip over it", async () => {
     const { avatarRev } = (await (
       await put(dataUrl("image/png", PNG))
     ).json()) as AgentAvatarResponse;
-    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    const zip = new Uint8Array(await (await owner.get(`${base}/archive`)).arrayBuffer());
 
     await put(dataUrl("image/jpeg", JPEG));
     expect(await listedRev()).not.toBe(avatarRev);
 
-    const restored = await owner.post(`${base}/import`, {
-      dataBase64: archive.toString("base64"),
-      confirm: true,
-    });
-    expect(restored.status).toBe(200);
+    const restored = await owner.upload(
+      `/api/projects/${projectId}/agents/import?agentId=default_agent&overwrite=1`,
+      zip,
+    );
+    expect(restored.status).toBe(201);
     expect(await listedRev()).toBe(avatarRev);
     expect((await fs.readdir(state)).filter((f) => f.startsWith("avatar"))).toEqual(["avatar.png"]);
   });
 
-  it("travels in an exported package into the Agent created from it", async () => {
+  it("travels in the Agent's zip into the Agent it is imported as", async () => {
     const { avatarRev } = (await (
       await put(dataUrl("image/png", PNG))
     ).json()) as AgentAvatarResponse;
-    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    const zip = new Uint8Array(await (await owner.get(`${base}/archive`)).arrayBuffer());
 
-    const created = await member.post(`/api/projects/${projectId}/agents`, {
-      agentId: "avatar_copy",
-      dataBase64: archive.toString("base64"),
-    });
+    const created = await member.upload(
+      `/api/projects/${projectId}/agents/import?agentId=avatar_copy`,
+      zip,
+    );
     expect(created.status).toBe(201);
-    expect(((await created.json()) as AgentCreateResponse).agent.avatarRev).toBe(avatarRev);
     expect(await listedRev("avatar_copy")).toBe(avatarRev);
     const served = await member.get(`/api/projects/${projectId}/agents/avatar_copy/avatar`);
     expect(Buffer.from(await served.arrayBuffer()).equals(PNG)).toBe(true);

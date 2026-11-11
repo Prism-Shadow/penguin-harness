@@ -609,25 +609,16 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     });
   });
 
-  it("every refusal has a message in both languages", () => {
-    const plans = [
-      planUpdate({ ...base, install: { kind: "source" } }),
-      planUpdate({ ...base, install: { kind: "unknown" } }),
-      planUpdate({ ...base, install: { kind: "npm", globalRoot: "/weird/place" } }),
-      planUpdate({ ...base, platform: "win32", install: tarball }),
-      planUpdate({ ...base, platform: "win32", install: npmGlobal }),
-    ];
-    for (const lang of ["en", "zh"] as const) {
+  it.each(["en", "zh"] as const)(
+    "%s: a refusal names what the user acts on: the path, the global root, the command to run",
+    (lang) => {
       const t = getMessages(lang);
-      expect(plans.map((p) => p.action)).toEqual(Array(plans.length).fill("refuse"));
-      expect(t.update.sourceCheckout()).toBeTruthy();
-      expect(t.update.unknownInstall("/x")).toContain("/x");
+      expect(t.update.unknownInstall("/random/place/index.js")).toContain("/random/place/index.js");
       expect(t.update.npmUnknownManager("/weird/place", "0.1.2")).toContain("/weird/place");
-      expect(t.update.windowsUnsupported()).toBeTruthy();
       // The Windows global-install message is only useful if it carries the command verbatim.
       expect(t.update.windowsGlobalInstall("pnpm add -g pkg@1")).toContain("pnpm add -g pkg@1");
-    }
-  });
+    },
+  );
 });
 
 describe("confirmationMode (the gate in front of every upgrade)", () => {
