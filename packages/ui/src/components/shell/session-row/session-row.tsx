@@ -153,8 +153,11 @@ export interface SessionRowProps {
   active?: boolean;
   /** Archived: the title recedes to the subtle ink. */
   archived?: boolean;
-  /** The conversation's agent, as a small avatar before the title (where its group is not the agent). */
-  agent?: { id: string; name: string };
+  /**
+   * The conversation's agent, as a small avatar before the title (where its group is not the
+   * agent); `avatarSrc` is its own picture, when it has one.
+   */
+  agent?: { id: string; name: string; avatarSrc?: string | undefined };
   /**
    * The program that opened it (an API caller, a scheduled task, a parent agent, a CLI run): the
    * caller's glyph from the icon registry, named by `sourceLabel`. Drawn only when both are given.
@@ -304,7 +307,12 @@ export function SessionRow({
         >
           {agent !== undefined && (
             <span data-tooltip={agent.name} className="flex shrink-0 items-center">
-              <AgentAvatar id={agent.id} size={ICON_SIZE.rowLead} className="rounded-sm" />
+              <AgentAvatar
+                id={agent.id}
+                size={ICON_SIZE.rowLead}
+                className="rounded-sm"
+                src={agent.avatarSrc}
+              />
               {/* The avatar is hidden from assistive technology and the hint serves pointers only:
                   the agent's name reaches everyone else as hidden text inside the row's button. */}
               <span className="sr-only">{agent.name}</span>

@@ -4,6 +4,10 @@ import { hasPendingWithinOrigin, type StreamModel } from "@prismshadow/penguin-w
 
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { machineForSession } from "../../lib/session-machines";
+import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -23,6 +27,7 @@ export function SessionSubagentChip({
 }) {
   const { agents } = useProject();
   const { sessions } = useSessions();
+  const avatarSrc = useAgentAvatarSrc();
   const resolvedAgentId = model.meta?.agentId ?? agentId;
   const label =
     resolveAgentLabel({ sessionId, agentId: resolvedAgentId }, agents, sessions) ?? S.chat.subagent;
@@ -33,6 +38,11 @@ export function SessionSubagentChip({
       label={label}
       name={`${S.chat.subagent} ${label}${pending ? ` · ${S.chat.approvalWaiting}` : ""}`}
       avatarId={resolvedAgentId ?? sessionId}
+      avatarSrc={
+        resolvedAgentId === null
+          ? undefined
+          : avatarSrc(resolvedAgentId, machineForSession(sessionId))
+      }
       {...(sessionId ? { tag: shortSessionId(sessionId) } : {})}
       running={running}
       pending={pending}

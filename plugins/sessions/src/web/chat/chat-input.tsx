@@ -134,6 +134,13 @@ import { fitTextarea } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
+import { S } from "../../lib/strings";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { formatBytes, humanizeTokens } from "../../lib/format";
+import { fitTextarea } from "../../lib/textarea-fit";
+import { useLocale } from "../../state/locale";
+import { useAuth } from "../../state/auth";
+import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { SkillIcon, SkillPickList, toggleSkillName } from "@prismshadow/penguin-web/internal";
@@ -191,8 +198,11 @@ function AgentMenuList({
   agents,
   currentAgentId,
   onPick,
+  avatarSrc,
 }: {
   agents: AgentSummary[];
+  /** Each Agent's own picture (lib/agent-avatar.ts), on the machine the list lives on. */
+  avatarSrc: (agentId: string) => string | undefined;
   /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
   currentAgentId?: string;
   onPick: (agent: AgentSummary) => void;
@@ -212,7 +222,12 @@ function AgentMenuList({
       onPick={onPick}
       renderRow={(a) => (
         <>
-          <AgentAvatar id={a.agentId} size={16} className="shrink-0 rounded" />
+          <AgentAvatar
+            id={a.agentId}
+            size={16}
+            className="shrink-0 rounded"
+            src={avatarSrc(a.agentId)}
+          />
           <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
           {a.name && a.name !== a.agentId && (
             <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
@@ -587,6 +602,7 @@ export function ChatInput({
   modeSaving,
   autoFocus,
   agents,
+  agentsMachineId = null,
   currentAgentId,
   skills,
   initialSkills,
@@ -772,6 +788,8 @@ export function ChatInput({
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
+  /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
+  agentsMachineId?: string | null;
   /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
   currentAgentId?: string;
   /**
@@ -842,6 +860,7 @@ export function ChatInput({
   controlRef?: RefObject<ComposerControl | null>;
 }) {
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
   const { uploadLimits } = useAuth();
@@ -1972,7 +1991,14 @@ export function ChatInput({
             key: "target",
             label: target.agentId,
             mono: true,
-            glyph: <AgentAvatar id={target.agentId} size={13} className="shrink-0 rounded-sm" />,
+            glyph: (
+              <AgentAvatar
+                id={target.agentId}
+                size={13}
+                className="shrink-0 rounded-sm"
+                src={avatarSrc(target.agentId, agentsMachineId)}
+              />
+            ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
             tooltipExtra: true,
             removeLabel: S.chat.handoffRemove,
@@ -2146,6 +2172,7 @@ export function ChatInput({
             agents={agents}
             {...(currentAgentId !== undefined ? { currentAgentId } : {})}
             onPick={pickHandoffTarget}
+            avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
           />
         </SlashPicker>
       )}

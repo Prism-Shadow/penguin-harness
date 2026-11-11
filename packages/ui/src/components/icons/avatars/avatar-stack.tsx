@@ -7,7 +7,7 @@
  * the avatar's own outline (a disc for an account, the tile's fixed corner for an agent), which
  * is geometry of the tile rather than a theme radius.
  */
-import { AgentAvatar } from "./agent-avatar";
+import { AgentAvatar, agentTileRadius } from "./agent-avatar";
 import { UserAvatar } from "./user-avatar";
 
 export interface AvatarStackItem {
@@ -17,12 +17,9 @@ export interface AvatarStackItem {
   name: string;
   /** Whose avatar: an agent's mascot (the default) or an account's disc. */
   kind?: "agent" | "user";
-  /** An account's stored image; an agent has none. */
+  /** The stored image: an account's, or an agent's own picture; absent, the default is drawn. */
   src?: string;
 }
-
-/** An agent tile's corner: `rx="5"` on its 24-unit box, at the rendered size. */
-const tileRadius = (size: number) => (size * 5) / 24;
 
 export function AvatarStack({
   items,
@@ -46,12 +43,12 @@ export function AvatarStack({
           <span
             key={`${item.kind ?? "agent"}:${item.id}`}
             className="flex shrink-0 ring-2 ring-canvas"
-            style={{ borderRadius: item.kind === "user" ? "50%" : tileRadius(size) }}
+            style={{ borderRadius: item.kind === "user" ? "50%" : agentTileRadius(size) }}
           >
             {item.kind === "user" ? (
               <UserAvatar userId={item.id} displayName={item.name} avatar={item.src} size={size} />
             ) : (
-              <AgentAvatar id={item.id} size={size} />
+              <AgentAvatar id={item.id} size={size} src={item.src} />
             )}
           </span>
         ))}

@@ -123,6 +123,10 @@ import type { LoadedOrg } from "./model.js";
 import { parseAvatarDataUrl, readAvatar, writeAvatar } from "../organization/avatars.js";
 import { employeeNameProblem, findMentions } from "../organization/names.js";
 import type { MentionHandle } from "../organization/names.js";
+import { readAvatar, readAvatarRev, writeAvatar } from "../../organization/avatars.js";
+import { parseAvatarDataUrl } from "../../services/avatar-file.js";
+import { employeeNameProblem, findMentions } from "../../organization/names.js";
+import type { MentionHandle } from "../../organization/names.js";
 import {
   channelArchiveChanged,
   channelCreated,
@@ -815,7 +819,7 @@ export class OrganizationService {
         ledgerDesk !== undefined && this.deps.sessions.findById(ledgerDesk.sessionId) !== null
           ? ledgerDesk
           : undefined;
-      const avatarRev = (await readAvatar(org.dir, e.agentId))?.rev;
+      const avatarRev = await readAvatarRev(org.dir, e.agentId);
       out.push({
         agentId: e.agentId,
         name: names.get(e.agentId) ?? e.agentId,

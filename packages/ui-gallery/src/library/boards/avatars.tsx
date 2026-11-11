@@ -1,7 +1,8 @@
 /**
  * 头像: the user avatar at its two rungs, with and without a nickname; the agent avatar — the
  * active theme's drawing for twelve Agents, one in each palette colour, then every theme's drawing
- * pinned side by side, at 16, 24, 48 and 96 px; and the avatar stack — agents and an account
+ * pinned side by side, at 16, 24, 48 and 96 px; an agent's own picture at those sizes, beside one
+ * whose picture fails to load and draws the default; and the avatar stack — agents and an account
  * overlapping, then the count of the rest. The page's mode switch shows the other mode.
  */
 import {
@@ -21,6 +22,17 @@ import { useText } from "../../text";
 
 /** The sizes the board draws: the sidebar's row, a list's, a dialog's face, and the largest. */
 const SIZES = [16, 24, 48, 96] as const;
+
+/** An agent's own picture, as an upload would make it: a square scene, as an SVG data URL. */
+const PICTURE = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">' +
+    '<rect width="128" height="128" fill="hsl(200 70% 72%)"/>' +
+    '<circle cx="92" cy="38" r="16" fill="hsl(45 95% 62%)"/>' +
+    '<path d="M0 128V86q32-30 64-8t64-10v60Z" fill="hsl(140 40% 42%)"/></svg>',
+)}`;
+
+/** A picture URL that never loads: the avatar falls back to the default drawing. */
+const BROKEN_PICTURE = "/no-such-picture.png";
 
 /** The built-in themes whose packs show each drawing, for its label. */
 const DRAWN_BY: Readonly<Record<AgentAvatarVariant, readonly ThemeId[]>> = {
@@ -72,7 +84,12 @@ export function AvatarsBoard() {
   const [userId, displayName] = t.userNames;
   const stack = [
     { id: userId ?? "admin", name: displayName ?? userId ?? "admin", kind: "user" as const },
-    ...t.agents.map((agent) => ({ id: agent.id, name: agent.name })),
+    ...t.agents.map((agent, i) => ({
+      id: agent.id,
+      name: agent.name,
+      // The first agent has a picture of its own, among the drawn ones.
+      ...(i === 0 ? { src: PICTURE } : {}),
+    })),
   ];
   return (
     <div className="gf-board">
@@ -115,6 +132,20 @@ export function AvatarsBoard() {
               ))}
             </section>
           ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.picture} aside={t.pictureAside}>
+        <div className="lib-row">
+          {SIZES.map((size) => (
+            <span key={size} className="lib-cell" data-avatar-board="picture">
+              <AgentAvatar id="docs-expert" size={size} src={PICTURE} />
+              <span className="lib-caption">{t.sizeCaption(size)}</span>
+            </span>
+          ))}
+          <span className="lib-cell" data-avatar-board="broken">
+            <AgentAvatar id="docs-expert" size={SIZES[2]} src={BROKEN_PICTURE} />
+            <span className="lib-caption">{t.pictureBroken}</span>
+          </span>
         </div>
       </BoardGroup>
       <BoardGroup title={t.stack}>

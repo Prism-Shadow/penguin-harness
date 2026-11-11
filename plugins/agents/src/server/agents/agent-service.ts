@@ -67,6 +67,7 @@ import type { AgentIndex } from "@prismshadow/penguin-server/internal";
 
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
+import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
@@ -175,6 +176,8 @@ export interface AgentListItem {
   pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
+  /** The content revision of the Agent's own picture (agent-avatar.ts); absent when it has none. */
+  avatarRev?: string;
 }
 
 /** What a new Agent starts with, besides its id. Every field is optional. */
@@ -270,7 +273,7 @@ export class AgentService implements AgentLifecycle {
         // A migration that fails (an unreadable folder) is reported where the Agent's
         // workbenches are opened; one Agent's must not fail the list of all of them.
         await this.migrateWorkbenches(projectId, row.agentId).catch(() => undefined);
-        const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount, avatarRev] =
           await Promise.all([
             this.agentConfig.readCardMeta(projectId, row.agentId),
             this.configUpdatedAt(projectId, row.agentId),
@@ -278,6 +281,7 @@ export class AgentService implements AgentLifecycle {
             this.scheduleCount(projectId, row.agentId),
             this.installedPlugins(projectId, row.agentId, library),
             this.memoryCount(projectId, row.agentId),
+            agentAvatarRev(this.root, projectId, row.agentId).catch(() => undefined),
           ]);
         return {
           agentId: row.agentId,
@@ -291,6 +295,7 @@ export class AgentService implements AgentLifecycle {
           hookCount: installed.hookCount,
           pluginUpdates: installed.updates,
           memoryCount,
+          ...(avatarRev !== undefined ? { avatarRev } : {}),
         };
       }),
     );
@@ -802,6 +807,7 @@ export class AgentService implements AgentLifecycle {
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
     const installed = await this.installedPlugins(projectId, agentId, this.library.list());
+    const avatarRev = await agentAvatarRev(this.root, projectId, agentId).catch(() => undefined);
     return {
       agentId,
       name: cardName,
@@ -821,6 +827,8 @@ export class AgentService implements AgentLifecycle {
       hookCount: installed.hookCount,
       pluginUpdates: installed.updates,
       memoryCount: await this.memoryCount(projectId, agentId),
+      // A package may carry the Agent's picture, like any other file of its State.
+      ...(avatarRev !== undefined ? { avatarRev } : {}),
     };
   }
 }

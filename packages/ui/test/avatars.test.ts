@@ -11,6 +11,8 @@
  * - Given a small avatar, the face drops the cheeks it cannot resolve; from 20 px up they show.
  * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
  *   scales to the box, antialiased.
+ * - Given a picture of the Agent's own, it is drawn instead of the mascot, in the Agent's
+ *   rounded tile rather than a circle, under the same hook; a stack draws an Agent's picture too.
  * - An account's disc is drawn in tokens, and a stack shows a few avatars then a count, with the
  *   avatars themselves hidden from assistive technology.
  */
@@ -88,6 +90,21 @@ describe("AgentAvatar", () => {
     }
   });
 
+  it("draws the Agent's own picture in its rounded tile, under the hook, instead of the mascot", () => {
+    const html = renderStatic(
+      createElement(AgentAvatar, { id: "qa", size: 48, src: "/pictures/qa.png" }),
+    );
+    expect(html).toMatch(/^<img /);
+    expect(html).toContain('src="/pictures/qa.png"');
+    expect(html).toContain('alt=""');
+    expect(classTokens(html)).toContain("ui-avatar");
+    // A rounded tile, not an account's circle: its corner is above zero and short of half its side.
+    const radius = Number(/border-radius:([\d.]+)px/.exec(html)![1]);
+    expect(radius).toBeGreaterThan(0);
+    expect(radius).toBeLessThan(24);
+    expect(drawings(html).size).toBe(0);
+  });
+
   /** The pixel drawing's placement at `size` px: its transform, and whether its edges are crisp. */
   const pixelAt = (size: number) => {
     const markup = drawings(avatar({ id: "qa", size, variant: "pixel" })).get("pixel")!;
@@ -151,6 +168,17 @@ describe("AvatarStack", () => {
     const html = renderStatic(createElement(AvatarStack, { items, size: 18 }));
     expect(html.match(/<svg/g)).toHaveLength(3);
     expect(html).toContain(">+2</span>");
+  });
+
+  it("draws an Agent's own picture among the tiles", () => {
+    const html = renderStatic(
+      createElement(AvatarStack, {
+        items: [{ id: "qa", name: "QA", src: "/pictures/qa.png" }, ...items.slice(0, 2)],
+        size: 24,
+      }),
+    );
+    expect(html).toContain('src="/pictures/qa.png"');
+    expect(html.match(/<svg/g)).toHaveLength(2);
   });
 
   it("draws no count when everything fits", () => {

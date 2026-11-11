@@ -1174,6 +1174,10 @@ export const en: GalleryStrings = {
       variantsAside:
         "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
       sizeCaption: (px) => `${px}px`,
+      picture: "An agent's own picture",
+      pictureAside:
+        "An uploaded picture keeps the agent's rounded tile; one that fails to load draws the default",
+      pictureBroken: "Fails to load",
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],

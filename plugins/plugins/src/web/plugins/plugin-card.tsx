@@ -57,6 +57,14 @@ import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "@prismshadow/penguin-web/internal";
+import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { S } from "../../lib/strings";
+import { cardBodyClick } from "../../lib/card-open";
+import { downloadArchive } from "../agents/archive-download";
+import { useLocale } from "../../state/locale";
+import { agentDisplayName } from "../../state/project";
+import { SkillTile } from "../skills";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
@@ -151,6 +159,7 @@ export interface PluginCardProps {
 export function PluginCard(props: PluginCardProps) {
   const { row, status, usage, categoryTitle, agents, installed } = props;
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   const sharedId = useId();
   const plugin = row.library;
   const [detailOpen, setDetailOpen] = useState(false);
@@ -490,6 +499,15 @@ export function PluginCard(props: PluginCardProps) {
                 installed={usage?.usedBy.includes(a.agentId) ?? false}
                 outdated={behind.includes(a.agentId)}
                 mcp={pluginMcpState(plugin, installed.get(a.agentId))}
+                key={t.key}
+                agentId={t.agent.agentId}
+                name={agentDisplayName(t.agent)}
+                avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
+                machine={t.machine?.label ?? null}
+                installed={usage?.usedBy.includes(t.key) ?? false}
+                outdated={behind.includes(t.key)}
+                mcp={pluginMcpState(plugin, installed.get(t.key))}
+                held={heldRow(t, props.unknown, props.failed)}
                 isOwner={props.isOwner}
                 onToggle={(on) => {
                   // Install runs directly, unless it brings a stdio server: that runs a command on
@@ -660,6 +678,8 @@ export function PluginCard(props: PluginCardProps) {
 export function InstallRow({
   agentId,
   name,
+  avatarSrc,
+  machine = null,
   installed,
   outdated,
   mcp,
@@ -670,6 +690,10 @@ export function InstallRow({
 }: {
   agentId: string;
   name: string;
+  /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc?: string | undefined;
+  /** The ssh alias of the machine the Agent lives on; null for this server. */
+  machine?: string | null;
   installed: boolean;
   outdated: boolean;
   /** What the plugin's MCP servers on this Agent wait for; null when it carries none. */
@@ -691,6 +715,8 @@ export function InstallRow({
         {name}
       className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
       <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" />
+    >
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span
           className="min-w-0 truncate text-sm"

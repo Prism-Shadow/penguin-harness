@@ -6,7 +6,7 @@ import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 /**
  * Agent settings page: nine tabs —
- * Overview (name/description form + two ruled sections in the skills import modal's
+ * Overview (avatar field, name/description form + two ruled sections in the skills import modal's
  * family: Agent State — State version, export / replace from file and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
@@ -27,6 +27,10 @@ import { useProject } from "@prismshadow/penguin-web/internal";
  * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
  * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
+ *
+ * The header leads with the Agent's avatar — its own picture, or the default — and only shows it:
+ * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
+ * a crop is confirmed rather than with the tab's Save.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
@@ -46,6 +50,7 @@ import {
   type RuntimeDraft,
   type RuntimeNumberField,
 } from "./runtime-form";
+  AgentAvatar,
   Button,
   Card,
   ConfirmModal,
@@ -78,6 +83,30 @@ import {
 
 
 import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
+import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
+import { useProject } from "../../state/project";
+import { useMachines } from "../../state/machines";
+import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
+import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
+import { publishMachineAgentsChanged, readMachineAgents } from "../../lib/machine-agent-lists";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
+import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
+import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
+  hasDescriptionProperty,
+  normalizeTools,
+  toolsDraftOf,
+  toolsErrors,
+  toolsUpdateOf,
+  withCallDescription,
+  type ToolNumberField,
+  type ToolRowDraft,
+} from "./tools-form";
 
 import { PluginsTab } from "./plugins-tab";
 import { MemoryTab } from "./memory-tab";
@@ -184,6 +213,25 @@ export function AgentSettingsPage() {
     () => (machineId === null ? reloadHere() : Promise.resolve()),
     [machineId, reloadHere],
   );
+  const avatarSrc = useAgentAvatarSrc();
+  /** The Agent's own picture, from the list that names it; undefined draws the default. */
+  const picture = avatarSrc(agentId, machineId);
+  // A machine's list is what the header's picture is looked up in: read it as the page opens,
+  // once the machine can be asked (it is answered from the store when it answered moments ago).
+  useEffect(() => {
+    if (projectId === null || machineId === null || !reachable) return;
+    readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reachable]);
+  /** After the picture changed: the list it is looked up in is read again, here or on the machine. */
+  const avatarChanged = useCallback(async () => {
+    if (projectId === null) return;
+    if (machineId === null) {
+      await reloadHere();
+      return;
+    }
+    publishMachineAgentsChanged(machineId);
+    await readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reloadHere]);
   /** Writes the tab into `?tab=` (replacing the history entry, keeping the other params). */
   const switchTab = useCallback(
     (next: TabKey) => {
@@ -331,6 +379,7 @@ export function AgentSettingsPage() {
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
         title={data.config.name ?? agentId}
+        media={<AgentAvatar id={agentId} size={AGENT_AVATAR_PREVIEW_PX} src={picture} />}
         back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
         // 16px rather than the description line's body height. A machine's Agent names the
@@ -361,6 +410,8 @@ export function AgentSettingsPage() {
             <OverviewTab
               data={data}
               agentId={agentId}
+              picture={picture}
+              onAvatarChanged={avatarChanged}
               onSave={save}
               onImported={onImported}
               onConfigReset={onConfigReset}
@@ -473,6 +524,8 @@ const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
 function OverviewTab({
   data,
   agentId,
+  picture,
+  onAvatarChanged,
   onSave,
   onImported,
   onConfigReset,
@@ -480,6 +533,10 @@ function OverviewTab({
 }: {
   data: AgentConfigResponse;
   agentId: string;
+  /** The Agent's own picture; undefined draws the default. */
+  picture: string | undefined;
+  /** The picture was written: the list it is looked up in is read again. */
+  onAvatarChanged: () => Promise<void>;
   onSave: SaveFn;
   onImported: () => void;
   onConfigReset: () => void;
@@ -547,6 +604,17 @@ function OverviewTab({
 
   return (
     <div className="space-y-4">
+      {/* The avatar is outside the draft below: it saves on crop confirm, and the Save row
+          answers only for the name and the description. */}
+      {projectId && (
+        <AgentAvatarField
+          projectId={projectId}
+          agentId={agentId}
+          machineId={machineId}
+          picture={picture}
+          onChanged={onAvatarChanged}
+        />
+      )}
       <Input
         size="sm"
         label={S.common.name}

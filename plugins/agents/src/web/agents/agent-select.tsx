@@ -5,6 +5,11 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { pillClass } from "@prismshadow/penguin-web/internal";
 import { employeesLast, isEmployee } from "./agent-employment";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { S } from "../../lib/strings";
+import { agentDisplayName } from "../../state/project";
+import { pillClass } from "../workspace";
+import { employeesLast, isEmployee } from "../../lib/agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({
@@ -12,12 +17,16 @@ export function AgentSelect({
   selected,
   onSelect,
   empty,
+  machineId = null,
 }: {
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
   empty: string;
+  /** The machine `agents` lives on, for their pictures; null for this server. */
+  machineId?: string | null;
 }) {
+  const avatarSrc = useAgentAvatarSrc();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLocaleLowerCase();
@@ -39,7 +48,14 @@ export function AgentSelect({
           setOpen(true);
         }}
       >
-        {selected && <AgentAvatar id={selected.agentId} size={16} className="shrink-0 rounded" />}
+        {selected && (
+          <AgentAvatar
+            id={selected.agentId}
+            size={16}
+            className="shrink-0 rounded"
+            src={avatarSrc(selected.agentId, machineId)}
+          />
+        )}
         <span className="min-w-0 truncate">
           {selected ? agentDisplayName(selected) : S.common.loading}
         </span>
@@ -62,7 +78,12 @@ export function AgentSelect({
         }}
         renderRow={(agent) => (
           <>
-            <AgentAvatar id={agent.agentId} size={20} className="shrink-0 rounded" />
+            <AgentAvatar
+              id={agent.agentId}
+              size={20}
+              className="shrink-0 rounded"
+              src={avatarSrc(agent.agentId, machineId)}
+            />
             <span
               className="min-w-0 flex-1 truncate"
               data-tooltip={[

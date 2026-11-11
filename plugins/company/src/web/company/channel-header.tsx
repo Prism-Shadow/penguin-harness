@@ -44,6 +44,11 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { Truncated } from "@prismshadow/penguin-web/internal";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { useProject } from "../../state/project";
+import { Truncated } from "../../components/ui/truncated";
+import { EmployeeAvatar, FACE_PX, useEmployeeAvatarSrc } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
@@ -93,6 +98,7 @@ function MemberPopover({
   openingDesk: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const pictureOf = useEmployeeAvatarSrc();
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: () => setOpen(false),
@@ -114,7 +120,11 @@ function MemberPopover({
       >
         {/* The first few only: the count beside the stack already says how many there are. */}
         <AvatarStack
-          items={members.slice(0, AVATAR_STACK).map(memberAvatarItem)}
+          items={members.slice(0, AVATAR_STACK).map((member) => {
+            const item = memberAvatarItem(member);
+            const src = item.kind === "user" ? undefined : pictureOf(item.id);
+            return src === undefined ? item : { ...item, src };
+          })}
           size={ICON_SIZE.groupHeaderAvatar}
         />
         <span className="tabular-nums">{S.company.channels.memberCount(members.length)}</span>
