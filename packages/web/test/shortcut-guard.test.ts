@@ -24,9 +24,9 @@ const ALLOWED_DIR = "lib/shortcuts";
  * would rebind. A new entry here needs a reason of the same kind.
  */
 const EXCUSED_FILES = new Set([
-  "features/chat/workspace-finder-model.ts",
-  "features/chat/model-picker-logic.ts",
-  "features/chat/model-picker-modal.tsx",
+  "features/workspace/workspace-finder-model.ts",
+  "features/model-picker/model-picker-logic.ts",
+  "features/model-picker/model-picker-modal.tsx",
   "lib/workbench-theme.ts",
 ]);
 

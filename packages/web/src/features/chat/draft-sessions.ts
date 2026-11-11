@@ -20,6 +20,7 @@
  * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
  * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
  */
+import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { randomHex } from "../../lib/random-id";
@@ -45,6 +46,18 @@ export interface DraftSessionEntry {
 /** Storage key for one user × Project's parked drafts (a JSON array of entries). */
 export const draftSessionsKey = (userId: string, projectId: string): string =>
   `penguin.chatDrafts.${userId}.${projectId}`;
+
+/**
+ * Route id for a draft chat (`/chat/new`), declared in the server's API contract so the desktop
+ * tray opens the same route: the Session is only created once **the first message is sent**
+ * (once created, the model is locked into its meta). Parked draft conversations' route ids start
+ * with `draft-`.
+ */
+export { DRAFT_SESSION_ID };
+
+/** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
+export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
+  routeSessionId !== null && routeSessionId.startsWith("draft-") ? routeSessionId : null;
 
 /** Newest-first cap: localStorage is shared budget, and fifty abandoned drafts is already hoarding. */
 const MAX_DRAFTS = 50;

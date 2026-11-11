@@ -1,12 +1,27 @@
 /**
  * Command policy — the project-level sandbox guardrail for shell commands.
  *
- * A deny-rule list the Session applies to the **injected approval callback**: `Session.run`
- * wraps `RunOptions.approve` with `withCommandPolicy`, so a matching command answers "deny"
- * without the human being consulted, and the policy therefore outranks every approval mode,
- * allow-all included. Nothing about it reaches `context_engine`, which keeps doing what it
- * always did — ask the approval boundary, record the decision, feed a denied call its
- * terminal output.
+ * A rule list the Session applies to the **injected approval callback**: `Session.run` wraps
+ * `RunOptions.approve` with `withCommandPolicy`, and each rule says what a hit does. A `deny`
+ * hit answers "forbidden" without the human being consulted; an `ask` hit is handed to
+ * `approve` with a policy reason (`{ reason: { kind: "policy", rule } }`), which the host
+ * answers by putting the call to a person whatever its approval mode. Either way the policy
+ * outranks every approval mode, allow-all included. Nothing about it reaches
+ * `context_engine`, which keeps doing what it always did — ask the approval boundary with the
+ * call alone, record the decision, feed a denied call its terminal output — and never reads
+ * the policy or the reason.
+ *
+ * A `deny` hit outranks an `ask` hit wherever the two sit in the list: the settings page puts a
+ * new rule at the head of the list and offers no reordering, so letting list order decide
+ * between the two would let an added `ask` rule turn a factory refusal into a question.
+ * Within one action the first match in list order is the rule a decision names.
+ *
+ * A child Session wraps the callback it was forwarded the same way, and that callback is the
+ * parent's own wrapper: the child's `ask` hit travels with its reason through the child's
+ * approval queue to the parent's wrapper, which matches it again (or, matching nothing, passes
+ * the reason on untouched) and hands it to the host's callback. The host's session-lifetime
+ * fallback sink for child approvals is wrapped too (Session.setSubagentApprovalFallback), so a
+ * call routed there cannot walk past an `ask` rule either.
  *
  * Both tools that reach a shell are checked: `exec_command`'s `cmd` (the launch, read through
  * the tool's own argument list so its `command` alias is screened the same) and
@@ -23,7 +38,7 @@
  * The getter is still consulted per decision, which is what hands the tool calls after a
  * mid-run rotation the new context's policy without any reload machinery.
  *
- * The rules are **data, not code**: every rule (name / pattern / description / enabled) is
+ * The rules are **data, not code**: every rule (name / pattern / description / enabled / action) is
  * project-editable, and the factory set (state/command-policy-defaults.ts) is *seeded* into
  * new projects' config the same way model presets are — copied in at creation, never
  * rewritten afterward. A config without a `rules` list behaves as the factory set
@@ -46,8 +61,14 @@
  * it and no substitute.
  * Docs: /docs/configuration § "Command policy".
  */
-import type { ApproveFn, CommandPolicyConfig, CommandPolicyRule } from "../interfaces/index.js";
+import type {
+  ApproveFn,
+  CommandPolicyAction,
+  CommandPolicyConfig,
+  CommandPolicyRule,
+} from "../interfaces/index.js";
 import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js";
+import { commandPolicyPatternError } from "./command-policy-pattern.js";
 import {
   EXEC_COMMAND_NAME,
   EXEC_COMMAND_TEXT_ARGUMENTS,
@@ -55,9 +76,10 @@ import {
 import { INPUT_COMMAND_NAME, INTERRUPT } from "../environment/tools/input-command.js";
 import { stringArgument } from "../environment/tools/tool-arguments.js";
 
-/** A command-policy hit: the matched rule's name. */
+/** A command-policy hit: the matched rule's name, and what the hit does. */
 export interface CommandPolicyVeto {
   rule: string;
+  action: CommandPolicyAction;
 }
 
 /** Collapses whitespace runs to single spaces (the only normalization rule patterns may assume). */
@@ -81,25 +103,41 @@ function commandVariants(cmd: string): string[] {
   return unquoted === literal ? [literal] : [literal, unquoted];
 }
 
+/** The rules already reported as skipped, by name and pattern: each is said once per process. */
+const reportedSkips = new Set<string>();
+
 /**
- * Compiles a rule's pattern, returning null for an invalid regex instead of throwing: a
- * broken rule must not take the whole policy (or the Session) down with it. Write paths
- * validate patterns up front (the server rejects an uncompilable rule), so this only fires
- * for hand-placed data.
+ * Compiles a rule's pattern, returning null for one this engine cannot compile instead of
+ * throwing: a broken rule must not take the whole policy (or the Session) down with it. Write
+ * paths validate patterns up front (the server refuses an uncompilable rule), so this fires
+ * for hand-placed data, and for a pattern saved where one engine accepted it and read where
+ * another does not.
+ *
+ * Such a rule is skipped, not counted as a hit: the policy is an accident guardrail, and a
+ * broken `deny` rule that matched everything would refuse every shell command until someone
+ * found it. Skipping is not silent, though — the process logs it once per rule and pattern
+ * (the server's log, inside the server), naming the runtime, and the settings page marks the
+ * rule from the server's own read of it.
  */
 function compileRule(rule: CommandPolicyRule): RegExp | null {
-  try {
-    return new RegExp(rule.pattern);
-  } catch {
-    return null;
+  const reason = commandPolicyPatternError(rule.pattern);
+  if (reason === null) return new RegExp(rule.pattern);
+  const key = `${rule.name}\u0000${rule.pattern}`;
+  if (!reportedSkips.has(key)) {
+    reportedSkips.add(key);
+    console.warn(
+      `[command-policy] Rule "${rule.name}" is skipped: its pattern does not compile on Node ${process.version} (${reason}).`,
+    );
   }
+  return null;
 }
 
 /**
- * Evaluates one command against the policy: the first matching enabled rule wins, in list
- * order. Returns null when the policy is disabled or nothing matches. An absent config or
- * an absent `rules` list means the factory set (a project from before the block was
- * seeded, or an SDK embedder passing no policy).
+ * Evaluates one command against the policy: an enabled `deny` rule that matches wins over any
+ * `ask` rule that matches, wherever the two sit in the list (see the header); within one
+ * action the first match in list order is the one reported. Returns null when the policy is
+ * disabled or nothing matches. An absent config or an absent `rules` list means the factory
+ * set (a project from before the block was seeded, or an SDK embedder passing no policy).
  */
 export function evaluateCommandPolicy(
   cmd: string,
@@ -108,14 +146,19 @@ export function evaluateCommandPolicy(
   if (policy?.enabled === false) return null;
   const variants = commandVariants(cmd);
   if (variants[0] === "") return null;
+  let ask: CommandPolicyVeto | null = null;
   for (const rule of effectiveCommandPolicyRules(policy)) {
     if (rule.enabled === false) continue;
+    const action = rule.action ?? "deny";
+    // An ask hit is already in hand: only a deny rule can still change the answer.
+    if (ask !== null && action === "ask") continue;
     const re = compileRule(rule);
     if (re && variants.some((v) => re.test(v))) {
-      return { rule: rule.name };
+      if (action === "deny") return { rule: rule.name, action };
+      ask = { rule: rule.name, action };
     }
   }
-  return null;
+  return ask;
 }
 
 /**
@@ -161,17 +204,22 @@ export function vetoForToolCall(
 export type CommandPolicySource = () => CommandPolicyConfig | undefined;
 
 /**
- * Wraps an approval callback with the policy: a vetoed call answers `"forbidden"` here and
- * `approve` is never reached, so no approval mode — and no Human implementation — can let
- * it through. `"forbidden"` is the decision's own third value: the engine renders it as
- * the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
- * user."), and the `approval_decision` event carries it — the model's text and the Trace
- * both name the decider. The `source` getter is consulted at every decision (no source, or
- * a source yielding nothing, applies the factory rule set); a source that cannot be read
- * fails toward the factory rules rather than waving the call through.
+ * Wraps an approval callback with the policy. A call a `deny` rule matches answers
+ * `"forbidden"` here and `approve` is never reached, so no approval mode — and no Human
+ * implementation — can let it through. `"forbidden"` is the decision's own third value: the
+ * engine renders it as the fixed aborted line "Tool call denied by policy." (a person's denial
+ * reads "by user."), and the `approval_decision` event carries it — the model's text and the
+ * Trace both name the decider. A call an `ask` rule matches goes to `approve` with
+ * `{ reason: { kind: "policy", rule } }`, which tells the host the mode alone may not answer
+ * it (allow-all would wave it through); a host callback that reads no second argument decides
+ * it as for any call. Any other call goes to `approve` with the context it came with, so a
+ * reason a child's wrapper attached survives the parent's. The `source` getter is consulted
+ * at every decision (no source, or a source yielding nothing, applies the factory rule set); a
+ * source that cannot be read fails toward the factory rules rather than waving the call
+ * through.
  */
 export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySource): ApproveFn {
-  return async (toolCall) => {
+  return async (toolCall, context) => {
     let policy: CommandPolicyConfig | undefined;
     try {
       policy = source?.();
@@ -179,7 +227,11 @@ export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySour
       policy = undefined;
     }
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
-    if (veto) return "forbidden";
-    return approve(toolCall);
+    if (veto?.action === "deny") return "forbidden";
+    if (veto?.action === "ask") {
+      return approve(toolCall, { reason: { kind: "policy", rule: veto.rule } });
+    }
+    // Forwarded as it came: an ordinary call still reaches `approve` with the call alone.
+    return context === undefined ? approve(toolCall) : approve(toolCall, context);
   };
 }

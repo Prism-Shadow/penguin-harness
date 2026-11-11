@@ -5,7 +5,11 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State).
  */
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
+import { EVOLUTION_DEMO } from "./evolution-demo";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -27,6 +31,8 @@ export const en: Strings = {
     userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    back: "Back",
+    forward: "Forward",
     collapseGroup: "Collapse",
     expandGroup: "Expand",
     pinGroup: "Pin group",
@@ -43,6 +49,13 @@ export const en: Strings = {
       finance: "Finance",
       handbook: "Handbook",
     },
+  },
+
+  window: {
+    minimize: "Minimize",
+    maximize: "Maximize",
+    restore: "Restore",
+    close: "Close",
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
@@ -910,7 +923,45 @@ export const en: Strings = {
     },
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console", doodle: "Doodle" },
+    themePackFailed: (name: string, shown: string) =>
+      `${name}'s stylesheet did not load; showing ${shown}.`,
+    themePacks: {
+      title: "Theme packs",
+      versionLabel: (version: string) => `v${version}`,
+      idHint: (id: string) => `id: ${id}`,
+      base: { root: "Base", modern: "On Frost", foundation: "Standalone" },
+      baseHint: {
+        root: "Every other pack builds on Frost: a token or recipe a pack leaves out shows Frost's.",
+        modern: "Takes Frost's values and hook recipes, and changes only what it declares.",
+        foundation: "Falls back to Frost's values, without Frost's hook recipes.",
+      },
+      newerApi: "Needs a newer version",
+      newerApiHint:
+        "This pack was written for a newer version of the app; update the app to pick it.",
+      export: "Export",
+      exportLabel: (name: string) => `Export the theme pack ${name}`,
+      remove: "Remove",
+      removeLabel: (name: string) => `Remove the theme pack ${name}`,
+      importTitle: "Import a theme pack",
+      importHint: "A .zip file, up to 16 MB.",
+      importPick: "Choose file…",
+      importing: "Importing…",
+      adminOnly: "Only an admin can import or remove theme packs.",
+      tooLarge: "A theme pack can be at most 16 MB.",
+      invalid: (where: string, reason: string) =>
+        `The theme pack did not pass the checks: ${where}: ${reason}`,
+      imported: (name: string) => `Imported ${name}. Pick it under Theme.`,
+      replaced: (name: string) => `Replaced ${name}.`,
+      replaceTitle: (name: string) => `Replace the installed ${name}?`,
+      replaceBody: (name: string) =>
+        `Replace the installed ${name}? This server already has a pack with this id; every account that picked it gets the version you are importing.`,
+      replace: "Replace",
+      removeTitle: (name: string) => `Remove the theme pack ${name}?`,
+      removeBody: (name: string) =>
+        `Remove the theme pack ${name}? Accounts that picked it switch to Frost, and switch back when a pack with the same id is imported again.`,
+      removed: (name: string) => `Removed ${name}.`,
+    },
     colorMode: "Mode",
     colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
@@ -987,7 +1038,12 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
-    } as Record<string, string>,
+      marker: "Marker",
+      ballpoint: "Ballpoint",
+      grass: "Grass",
+      crayon: "Crayon",
+      grape: "Grape",
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -1030,10 +1086,20 @@ export const en: Strings = {
   workbenches: {
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
-    empty: "This Agent has no workbenches yet.",
-    agentTabDesc:
-      "Manage this Agent’s workbenches: open an app, reload it, review its versions or remove it.",
     open: "Open workbench",
+    /** The Agent-wide switch on the Plugins tab, and what it does. */
+    enableAll: "Enable workbenches",
+    enableAllHint:
+      "With it off, none of this agent's workbenches run: they leave the chat page and the App Center, and their pages stop opening. Each workbench keeps its own switch, its data and its versions, and turning this back on restores them as they were.",
+    /** One workbench's own switch (its accessible name). */
+    enableOne: (name: string) => `Enable ${name}`,
+    /** The word beside a workbench's own switch, which flips it too. */
+    enableLabel: "Enable",
+    /** Why a workbench's switch is greyed: the Agent-wide one is off. */
+    offByAll: "Enable workbenches is off. Turn it on first.",
+    /** The full-page route of a switched-off workbench. */
+    offPage:
+      "This workbench is turned off. You can turn it on under Plugins in the agent's settings.",
     noMatches: "No matching agents.",
     searchAgents: "Search agents",
 
@@ -1074,8 +1140,39 @@ export const en: Strings = {
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    importAction: "Import zip",
     importTitle: "Import workbench",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews its pages and server code, then installs the workbench on this agent and reloads it — more reliable than a bare upload.",
+    importSourceLabel: "Workbench source",
+    importSourceHint:
+      "A web page / GitHub repo or directory / local path / an install command from another ecosystem / a description",
+    importSourcePlaceholder: "https://…, a git repo, /path/to/workbench, or a description",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string =>
+        `Please read this page and import the workbench it describes: ${s}.`,
+      repoUrl: (s: string): string =>
+        `Please fetch this repository or directory (git clone or fetch it directly), locate the workbench directory holding its package.json, and import it: ${s}.`,
+      localPath: (s: string): string =>
+        `Please read the workbench files under this local path directly and import them: ${s}.`,
+      command: (s: string): string =>
+        `This is an install command from another ecosystem — do not run it blindly: work out what it would install, fetch the same content from its repository or registry, then import it as a workbench: ${s}.`,
+      reference: (s: string): string =>
+        `Please resolve this reference or description to its source (repository, marketplace, or docs page) and import it as a workbench: ${s}.`,
+    },
+    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read every file of the source in full before installing anything. A workbench's pages run inside the app and its server handlers run on this server, so review it for anything that sends data out, runs commands it does not need, or reaches outside its own directory; if anything looks wrong, stop and tell me instead of installing it.",
+        `Once it is safe, lay it out the way the penguin-plugin skill describes (package.json with penguin.modules, index.ts and ui/), put it in agent_state/workbenches/<id>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the workbench id), reload it and check that it loads, then tell me what it does and which pages it adds.`,
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a workbench zip",
     importUploadDesc:
       "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
     importUploadAction: "Choose zip file",
@@ -1088,8 +1185,118 @@ export const en: Strings = {
     importLoadFailedToast: (error: string): string =>
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "Show in the App Center",
+    showInAppCenterHint:
+      "Show a shortcut to this workbench in the App Center. This rewrites its package.json and is recorded as a version.",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "App Center",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "Open",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "More",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "Version history",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "Exit full page (back to the App Center)",
+  },
+  appCenter: {
+    title: "App Center",
+    loading: "Loading…",
+    emptyTitle: "The App Center is empty",
+    empty:
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “App Center” switch on, it appears here.",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "Failed to load",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "Building",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Building; it opens once the build is done`,
+    failedTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
+    folderName: (name: string, count: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
+    newFolder: "New folder",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "New folder",
+    menu: {
+      open: "Open",
+      openFullScreen: "Open full screen",
+      moveTo: "Move to…",
+      moveForward: "Move forward",
+      moveBackward: "Move backward",
+      removeFromFolder: "Remove from folder",
+      removeFromAppCenter: "Remove from the App Center",
+      viewInSettings: "View in agent settings",
+      showError: "Show error",
+      rename: "Rename",
+      dissolve: "Ungroup",
+      restoreDefault: "Restore default order",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "New folder…",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "Back",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "Into a folder",
+      newFolderWith: "Into a new folder with",
+    },
+    restoreTitle: "Restore default order",
+    restoreBody:
+      "The App Center goes back to its default order: your order and folders are cleared. The apps themselves are not changed.",
+    restoreConfirm: "Restore default",
+    renameTitle: "Rename folder",
+    folderNameLabel: "Folder name",
+    folderNameHint: "Up to 40 characters",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "New folder",
+    newFolderApps: "Apps to put in it",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `In “${name}”; picking it moves it to the new folder`,
+    newFolderCreate: "Create",
+    errorTitle: (title: string) => `${title} failed to load`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "No error message was recorded. Open the app to see how it loads.",
+    /** The windowed app's title bar. */
+    windowClose: "Close, back to the App Center",
+    windowFullScreen: "Open full screen",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote:
+      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    aiCreateTitle: "Create an app with AI",
+    aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
+    aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "Build it as a workbench of your own, not as a separate project: settle the interface with the web-design Skill, then write it and check that it loads with the penguin-plugin Skill. In its package.json, set penguin.appCenter.show to true so it appears in the App Center. Tell me its name when you are done.",
+    aiCreateExamples: {
+      board: {
+        label: "Daily to-do board",
+        description: "Cards in columns by status, to add, drag and delete",
+        prompt:
+          "Make a daily to-do board: cards in three columns, To do, Doing and Done, which I can add, drag and delete, with the data kept in the workbench.",
+      },
+      digest: {
+        label: "Page digest",
+        description: "Paste a link and the agent reads it for you",
+        prompt:
+          "Make a page digest tool: I paste a link, the agent reads the page and gives a three-line summary and the key points, and past digests are listed newest first.",
+      },
+      expenses: {
+        label: "Expense log",
+        description: "A form, monthly totals and an export",
+        prompt:
+          "Make an expense log: enter the date, amount, category and a note, see totals by month, and export them as CSV.",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness history",
@@ -1568,7 +1775,7 @@ export const en: Strings = {
     deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression; a hit is refused outright whatever the approval mode allows. It is an accident guardrail: a command assembled at run time is not covered.",
+      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression. A hit on a Deny rule is refused outright and a hit on an Ask rule waits for a person's go-ahead, whatever the approval mode allows; a Deny hit wins over an Ask hit. It is an accident guardrail: a command assembled at run time is not covered.",
     commandPolicyEnable: "Enable policy",
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",
@@ -1585,7 +1792,29 @@ export const en: Strings = {
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
     commandPolicyRuleDesc: "Description",
+    commandPolicyRuleAction: "On a match",
+    commandPolicyActionDeny: "Deny",
+    commandPolicyActionAsk: "Ask",
+    commandPolicyAskPill: "Asks first",
+    commandPolicyAskPillHint:
+      "A matching command runs only after a person allows it, whatever the approval mode.",
     commandPolicyInvalidPattern: "Invalid regular expression",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "Pattern",
+    commandPolicyColEnabled: "Enabled",
+    commandPolicyRuleSwitch: (name: string) => `Enable rule ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `Edit rule ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `Delete rule ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `Rule ${name}'s regular expression does not compile on the server (${reason}); its page is shown.`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `The server cannot compile this rule's regular expression: ${reason}. Edit or delete it, then save.`,
+    /** A stored rule the server cannot compile: matching skips it. `reason` is the engine's own words. */
+    commandPolicyRuleSkipped: (reason: string) =>
+      `This server cannot compile this rule's regular expression (${reason}), so matching skips it and it blocks nothing. Edit or delete it.`,
+    /** The row mark beside such a rule's name, as read aloud. */
+    commandPolicyPatternMark: "Pattern does not compile",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -1626,6 +1855,18 @@ export const en: Strings = {
     listTitle: "Agents",
     searchPlaceholder: "Search agents: id / name / description",
     searchEmpty: "No agent matches that.",
+    groupByLabel: "Group agents by",
+    groupBy: { author: "Group by author", none: "No grouping" },
+    authorGroups: {
+      user: "Created by users",
+      agent: "Created by agents",
+      company: "Created in company mode",
+    },
+    agentCount: (n: number): string => (n === 1 ? "1 agent" : `${n} agents`),
+    authorLabel: "Author",
+    authors: { user: "User", agent: "Agent", company: "Company mode" },
+    authorInfo:
+      "How this agent came to be: created by a user, created by an agent in a conversation, or created in company mode. The Agents list can be grouped by it.",
     create: "Create agent",
     createTitle: "Create agent",
     id: "Agent id",
@@ -1657,13 +1898,7 @@ export const en: Strings = {
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
     createDirSkillsClear: "Don't import from a directory",
-    createSnapshot: "Initialize from a snapshot",
-    createSnapshotPick: "Choose a snapshot package",
-    createSnapshotHint:
-      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
-    createSnapshotSkillsOff:
-      "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
-    createSnapshotClear: "Remove the selected package",
+    createFromFileHint: "Creating an agent from an exported file?",
     aiCreateTitle: "Create an agent with AI",
     aiCreateIntro:
       "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
@@ -1708,7 +1943,7 @@ export const en: Strings = {
     aiCreateTail: [
       "Use the agent-initialization skill to create a new agent in the current Project from the description above:",
       "- Use the agent id given above if there is one; otherwise pick a short semantic id (starting with a lowercase letter; letters, digits, underscores or hyphens). If the target directory already exists, stop and tell me instead of overwriting it.",
-      "- Start from default_agent's system_config.yaml, set its name, description and version, and write the role and rules into its agent_state/AGENTS.md.",
+      "- Start from default_agent's system_config.yaml, set its name, description and version, set author to agent (an agent created it), and write the role and rules into its agent_state/AGENTS.md.",
       "- Copy only the skills it really needs from the plugin library (the skill directories default_agent carries); do not over-equip it.",
       "- Do not touch any other agent; run the skill's validation when done.",
       "Finish by telling me the new agent's id, the skills you installed, and how to start a conversation with it (the New chat button on its card on the Agents page).",
@@ -1729,9 +1964,7 @@ export const en: Strings = {
     tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
-    tabSkills: "Skills",
-    tabWorkbenches: "Workbenches",
-    tabHooks: "Hooks",
+    tabPlugins: "Plugins",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     tabApi: "API",
@@ -1925,21 +2158,67 @@ export const en: Strings = {
     stateTitle: "Agent State",
     stateVersion: "Agent State version",
     transferDesc:
-      "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
-    exportSnapshot: "Export snapshot",
-    importSnapshot: "Import snapshot",
+      "Export… packs the agent into a zip. Replace from file… replaces its Agent State from an exported file; its conversations, vault and API keys stay, and a backup snapshot is written first.",
+    exportOpen: "Export…",
+    replaceOpen: "Replace from file…",
+    exportAgent: "Export agent",
+    importAgent: "Import agent",
+    exportTitle: (name: string): string => `Export agent: ${name}`,
+    exportInclude: "Include",
+    exportSkills: "Skills",
+    exportHooks: "Hooks",
+    exportWorkbenches: "Workbenches",
+    exportWorkbenchData: "With their data",
+    exportSchedulesHint: "They run on their schedule once imported",
+    exportTraces: "Conversations",
+    exportTracesNone: "None",
+    exportTracesLast: "Latest N",
+    exportTracesRange: "Date range",
+    exportTracesCount: "Number of conversations",
+    exportTracesFrom: "From",
+    exportTracesTo: "To",
+    exportVaultNote:
+      "The vault never goes into the zip; a value written into the config itself travels as it is.",
+    exportAction: "Export",
+    exporting: "Exporting…",
+    replaceTitle: (name: string): string => `Replace from file: ${name}`,
+    migrateTitle: "Migrate from another framework",
+    migrateInfo:
+      "The Project's default agent reads the source in a new conversation with the agent-porting skill, creates the new agent, and says what it could not move. The prompt only lands in the message box; sending it is up to you.",
+    migrateFramework: "Source framework",
+    migrateOther: "Other",
+    migratePath: "Path",
+    migratePathOther: "Path or description",
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `Migrate this source into a new PenguinHarness agent: ${source}`
+          : `Migrate the ${framework} setup into a new PenguinHarness agent. Source: ${source}`,
+        "Use the agent-porting skill:",
+        "- Read the source in full: instruction files, skills, commands, MCP servers, hooks, subagents and memory. Read only; change nothing in the source.",
+        "- Never copy the value of a key, token or password; note only the names that need filling in.",
+        "- Write the new agent in a scratch folder, in the agent zip layout the skill describes.",
+        `- Import it with \`penguin agent import <that folder> --project-id ${projectId}\`; if the id is taken, pick another with --agent-id.`,
+        "- Finally tell me the new agent's id, what was mapped, what was not and why, and the vault keys to fill in.",
+      ].join("\n"),
+    importFileTitle: "Import a file",
+    importFileHint: ".zip, or an older .tar.gz package until 1.0",
+    importPick: "Choose a file",
+    importAction: "Import",
     importing: "Importing…",
-    importDone: (v: number): string => `Import finished, Agent State version v${v}`,
-    importConflictTitle: "Version conflict",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `Replace the whole Agent State with ${file}? Everything in it is replaced by the snapshot (the Vault is kept); the current version is snapshotted first.`,
-    importConflictBody:
-      "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
+    importExists: (id: string): string => `The id ${id} is taken`,
+    importRename: "Use another id",
+    importOverwrite: "Overwrite the existing agent",
+    replaceAction: "Replace",
+    overwriteTitle: "Replace the Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `Replace the Agent State of ${agentId} from ${file}? Parts the file does not carry, its conversations, vault and API keys stay. A backup snapshot is written first.`,
+    importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
+      `${overwritten ? "Overwrote" : "Imported"} the agent ${name}; conversations: ${imported} imported, ${skipped} already here and skipped`,
     resetConfigTitle: "Restore default configuration",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
-      "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
+      "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name, description and author. Like a skill update this cannot be undone. Continue?",
     resetConfigDone: "Configuration restored to the current defaults",
     kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
@@ -1951,7 +2230,7 @@ export const en: Strings = {
     kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
-      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, author, the State version and MCP servers are unaffected. Continue?",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
         ? `Kernel updated to ${version}; ${advanced} tab(s) now follow the new defaults`
@@ -2190,7 +2469,7 @@ export const en: Strings = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
     protocolUnset: "Select protocol",
@@ -2329,6 +2608,16 @@ export const en: Strings = {
     disconnectConfirm: (label: string): string =>
       `Disconnect ${label}? This deletes the group key; models that use it stop working, models with their own key are unaffected.`,
     disconnected: (label: string): string => `Disconnected ${label}`,
+    connectDefaultSwitchTitle: "Switch default model",
+    connectDefaultOffer: (group: string, current: string, model: string): string =>
+      `${group} is connected. The current default model, ${current}, is not in this group. Switch to ${model}? New Sessions will use it by default.`,
+    connectDefaultOfferUnset: (group: string, model: string): string =>
+      `${group} is connected. Make ${model} the default model? New Sessions will use it by default.`,
+    connectDefaultSwitch: "Switch",
+    connectDefaultKeep: "Keep current",
+    connectDefaultSet: "Set as default",
+    connectDefaultNotNow: "Not now",
+    modelInGroup: (name: string, group: string): string => `${name} (${group})`,
     /**
      * A group's account balance in its header (and pinned beside the user name): the sentence
      * spoken behind the amount names the group, the vendor's own figures and the time of the
@@ -3066,13 +3355,69 @@ export const en: Strings = {
       "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the agent's plugins and the parts each brought, the agent's own parts last. */
+  agentPlugins: {
+    tabDesc:
+      "The plugins installed on this agent, and the skills, hooks, MCP servers and workbenches each one brought. Uninstalling a plugin removes all of its parts at once. Parts you made or imported yourself are listed last.",
+    /** Appended to the description for a member. */
+    readOnlyHint:
+      "Only the Project owner can use the switches, edit the skills prompt or uninstall a plugin.",
+    importAction: "Import",
+    importMenu: "What to import",
+    importSkill: "Skill",
+    importHook: "Hook package",
+    importWorkbench: "Workbench",
+    importChatOrZip: "Upload a zip, or have the agent import it in a chat",
+    browseLibrary: "Browse plugin library",
+    installedTitle: "Installed plugins",
+    empty: "No plugins on this agent yet. Select Browse plugin library to add one.",
+    ownTitle: "Not from a plugin",
+    /** What a plugin brought to this agent, beside its name: "3 skills, hooks, 1 workbench". */
+    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
+      [
+        skills === 0 ? "" : skills === 1 ? "1 skill" : `${skills} skills`,
+        hooks ? "hooks" : "",
+        mcp === 0 ? "" : mcp === 1 ? "1 MCP server" : `${mcp} MCP servers`,
+        workbenches === 0 ? "" : workbenches === 1 ? "1 workbench" : `${workbenches} workbenches`,
+      ]
+        .filter((part) => part !== "")
+        .join(", "),
+    /** A plugin's status on this agent, and what it means on hover. */
+    status: {
+      installed: "Installed",
+      update: "Update available",
+      incomplete: "Incomplete",
+      "not-in-library": "Not in library",
+    },
+    statusHint: {
+      installed: "Every part of this plugin is here.",
+      update: "The plugin library has a newer version. Select Update to get it.",
+      incomplete: "Some parts of this plugin are missing. Select Update to put them back.",
+      "not-in-library":
+        "An admin removed this plugin from the plugin library, so it cannot be updated.",
+    },
+    /** The parts the uninstall confirmation lists, one per line. */
+    partSkill: (name: string) => `Skill: ${name}`,
+    partHook: (name: string) => `Hook package: ${name}`,
+    partMcp: (name: string) => `MCP server: ${name}`,
+    partWorkbench: (name: string) => `Workbench: ${name}`,
+    uninstallBody: (plugin: string, agent: string) =>
+      `These parts of ${plugin} will be deleted from ${agent}, local edits included:`,
+    uninstallWorkbenchData:
+      "A workbench's data and versions are deleted with it. To stop using one for now, turn its switch off instead.",
+    /** A part the server could not remove, and why; the rest were removed. */
+    failedPart: (name: string, error: string) => `${name} (${error})`,
+    uninstallPartly: (plugin: string, failed: string) =>
+      `Uninstalled ${plugin}, but these parts could not be deleted: ${failed}`,
+    updatedToast: (plugin: string, agent: string) => `Updated ${plugin} on ${agent}`,
+    /** An MCP server row: what keeps it from connecting, and where it is edited. */
+    mcpNeedsSetup: "Needs setup",
+    mcpNeedsSignIn: "Needs sign-in",
+    mcpEdit: "Edit in Tools",
+  },
+
+  /** An agent's hook packages on its Plugins tab (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
-    agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
-    agentTabEmpty: "No hook packages installed yet",
-    /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
     exportHook: "Export",
@@ -3154,17 +3499,14 @@ export const en: Strings = {
     skillCount: (n: number): string => (n === 1 ? "1 skill" : `${n} skills`),
     /** The plugin library's per-agent update button, and the confirm buttons of every update dialog. */
     updateAction: "Update",
-    /** Settings Skills tab: toast after uninstalling one skill. */
+    /** Toast after uninstalling one skill from an agent. */
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
-    /** Agent settings "Skills" tab (installed list + import modal). */
-    agentTabDesc:
-      "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
-    agentTabEmpty: "No skills installed yet",
+    /** An agent's Skills on its Plugins tab (rows + import modal). */
     exportSkill: "Export",
     importSkill: "Import skill",
     importChatTitle: "Recommended: install by chatting with the agent",
@@ -3228,6 +3570,9 @@ export const en: Strings = {
   },
 
   chat: {
+    workspacePanel: "Files",
+    memoryViewTitle: "Memory",
+    openAgents: "Agents panel",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
@@ -3240,7 +3585,7 @@ export const en: Strings = {
       high: "high",
       xhigh: "xhigh",
       max: "max",
-    },
+    } satisfies Record<ThinkingLevelName, string>,
     /** English has no trigger/menu split to make: the name above already IS the wire value, so a menu row annotating it would only repeat itself. Taking just the name (the second parameter is dropped) is how this locale says "same text on every surface". */
     thinkingLevelMenuName: (name: string): string => name,
     thinkingSwitchTitle: "Switch thinking level",
@@ -3555,12 +3900,12 @@ When done, open index.html in a browser and self-test once.`,
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
-- id: \`finite_choice_agent\`
+- id: \`${EVOLUTION_DEMO.agentId}\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
 - installed_skills: \`[]\`
 
 Benchmark:
-- id: \`contextual-choice-adaptation\`
+- id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
@@ -3575,8 +3920,8 @@ Scenarios:
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
-- test_agent_id: \`finite_choice_agent\`
-- benchmark_id: \`contextual-choice-adaptation\`
+- test_agent_id: \`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id: \`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
 - runs: \`3\`
 - desired_score: \`>=95\`
@@ -3792,6 +4137,9 @@ Scenarios:
     compact: "Compact context",
     approve: "Allow",
     deny: "Deny",
+    approvalPolicyReason: (rule: string) => `Confirmation required by command-policy rule ${rule}`,
+    approvalPolicyReasonHint:
+      "This rule of the Project's command policy asks a person every time, whatever the approval mode. Change it on the security page of the Project settings.",
     decisionAllow: "Approved",
     decisionDeny: "Denied",
     decisionManual: "manual",
@@ -4035,9 +4383,6 @@ Scenarios:
     },
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openAgents: "Agents panel",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -4047,7 +4392,6 @@ Scenarios:
     memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
     memoryOpWrite: "Wrote",
     memoryOpEdit: "Edited",
-    memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
     memoryRowOpen: "View content",
@@ -4801,6 +5145,13 @@ Scenarios:
 
   files: {
     title: "Files",
+    audioPlay: (name: string) => `Play ${name}`,
+    audioPause: (name: string) => `Pause ${name}`,
+    audioSeek: (name: string) => `Position in ${name}`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed} of ${total}`,
+    audioLoading: (name: string) => `Loading ${name}`,
+    audioUnavailable: (name: string) =>
+      `Cannot play ${name}: the file is missing or its format is not supported.`,
     upload: "Upload",
     download: "Download",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
@@ -5138,8 +5489,7 @@ Scenarios:
     askEvaluationTitle: "Ask AI about this evaluation",
     askEvaluationDescription:
       "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
-    askEvaluationDefault: "Explain this evaluation's result.",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "Explain this evaluation's result",
@@ -5200,8 +5550,7 @@ Scenarios:
     askCaseTitle: "Ask AI about this case",
     askCaseDescription:
       "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
-    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "Explain what this case tests and what a strong answer looks like",
@@ -5641,13 +5990,41 @@ Scenarios:
     resume: "Resume organization",
     deleteOrg: "Delete organization",
     deleteOrgDesc:
-      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+      "Moves the organization to the Project's trash and, by default, permanently deletes the agents only it employs. Built-in agents and agents another organization also employs are kept.",
     deleteOrgConfirm:
-      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. An agent deleted with it is gone for good, with all of its conversations. An agent that is kept stays in the Project with its desk and ticket conversations, but with the organization gone no page lists them any more; while the old CEO's agent exists, the id cannot be used for a new organization. To stop an organization without losing anything, pause it instead.",
+    /** The confirmation's checkbox; the count is null until the organization's Agents are read. */
+    deleteOrgAgents: (count: number | null) =>
+      count === null
+        ? "Also delete this company's agents"
+        : `Also delete this company's agents (${count})`,
+    deleteOrgWillDelete: (names: string) => `Will be deleted permanently: ${names}`,
+    deleteOrgWillKeep: (names: string) => `Will be kept: ${names}`,
+    deleteOrgKeptBuiltin: (name: string) => `${name} (built-in)`,
+    deleteOrgKeptElsewhere: (name: string, orgNames: string) =>
+      `${name} (also employed by ${orgNames})`,
+    deleteOrgKeptUnknown: (name: string) => `${name} (employment unknown)`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `The chart of ${orgNames} cannot be read, so nobody is known to work only here; no agent is deleted until it is fixed.`,
+    deleteOrgAgentsLoadFailed:
+      "The organization's agents could not be read. Retry, or delete the organization alone and keep all of its agents.",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) =>
+      `; kept ${names}, as they changed after the confirmation was shown`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `; kept ${names} because another organization's chart could not be read: ${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) =>
+      `Organization ${orgId} deleted, though its answer did not arrive; the lists were read again`,
     deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
     deleted: (orgId: string) => `Organization ${orgId} deleted`,
+    deletedWithAgents: (orgId: string, count: number) =>
+      `Organization ${orgId} deleted, with ${count === 1 ? "1 agent" : `${count} agents`}`,
+    deleteOrgAgentsFailed: (orgId: string, names: string) =>
+      `Organization ${orgId} deleted, but these agents could not be deleted: ${names}`,
     pauseInfo:
-      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
+      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. Pausing deletes nothing: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {
@@ -6296,6 +6673,16 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      theme_invalid: "The theme pack did not pass the checks.",
+      theme_id_reserved:
+        "That id belongs to a built-in theme. Give the pack another id in pack.json, then import it.",
+      theme_exists: "This server already has a theme pack with that id.",
+      theme_too_large: "The theme pack is over the import limits.",
+      theme_api_unsupported: "This theme pack was written for a newer version of the app.",
+      theme_builtin: "A built-in theme pack cannot be removed.",
+      theme_not_found: "That theme pack no longer exists.",
+      themes_unavailable:
+        "This server's build carries no built-in theme pack sources, so theme packs cannot be imported or exported for now.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       trace_body_not_found: "This part is no longer in the conversation's Trace.",
@@ -6303,6 +6690,9 @@ Scenarios:
       machine_no_answer: "The machine didn't answer.",
       machine_not_found: "This machine is not on the Project's machine list.",
       machine_outdated: "The machine runs an older version; update it on the Machines page.",
+      plugin_not_installed: "Nothing of this plugin is left on this agent.",
+      workbench_disabled:
+        "This workbench is turned off. You can turn it on under Plugins in the agent's settings.",
       machine_answered: "The machine's answer could not be used; try again.",
       trace_changed: "The conversation's Trace kept changing while it was read; try again.",
       internal: "The server hit an internal error. Please try again shortly.",

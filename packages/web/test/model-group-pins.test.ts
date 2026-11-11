@@ -2,9 +2,8 @@
  * Which model groups stay in view on the models page (model-group-pins.ts), as the sidebar nav's
  * pinned and collapsible entries do.
  *
- * - Given a first visit, TokenDance, Penguin Go, DeepSeek, OpenRouter, Google, OpenAI and
- *   Anthropic show, in the page's order, and every other group — a user-defined one included —
- *   sits folded under one bar that counts them.
+ * - Given a first visit, the default groups show, in the page's order, and every other group —
+ *   a user-defined one included — sits folded under one bar that counts them.
  * - Given the user pins or unpins a group, the choice is stored as a difference from the default
  *   set only, survives a reload, and a choice back to the default leaves nothing stored.
  * - Given stored choices that are malformed, or storage that throws, the defaults apply.
@@ -18,6 +17,7 @@
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-server/model-catalog";
 import {
+  DEFAULT_PINNED_MODEL_GROUPS,
   initialModelGroupPins,
   initialModelGroupsFolded,
   modelGroupLayout,
@@ -45,22 +45,16 @@ const visible = (l: ReturnType<typeof layout>) =>
   l.fold !== null && !l.fold.folded ? [...l.shown, ...l.fold.groups] : l.shown;
 
 describe("a first visit", () => {
-  it("shows the seven default groups in the page's order and folds the rest under the bar", () => {
+  it("shows the default groups in the page's order and folds the rest under the bar", () => {
     const first = layout(initialModelGroupPins(memoryStorage()), {
       folded: initialModelGroupsFolded(memoryStorage()),
     });
-    expect(first.shown).toEqual([
-      "tokendance",
-      "penguin-go",
-      "deepseek",
-      "openrouter",
-      "google",
-      "openai",
-      "anthropic",
-    ]);
+    const pinned = GROUPS.filter((g) => DEFAULT_PINNED_MODEL_GROUPS.has(g));
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(first.shown).toEqual(pinned);
     expect(first.fold?.folded).toBe(true);
     // The bar counts what it holds: every other group, the user-defined one included.
-    expect(first.fold?.groups).toHaveLength(GROUPS.length - 7);
+    expect(first.fold?.groups).toHaveLength(GROUPS.length - pinned.length);
     expect(first.fold?.groups).toContain("my-ollama");
     expect(first.fold?.groups).toContain("custom");
     expect(visible(first)).toEqual(first.shown);

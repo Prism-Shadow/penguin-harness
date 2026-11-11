@@ -1,9 +1,12 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { SidebarDropTarget } from "@prismshadow/penguin-ui";
 import {
+  isModeNavPinned,
   isNavPinned,
+  storeModeNavPinOverrides,
   storeNavGroupCollapsed,
   storeNavPinOverrides,
+  withModeNavPinned,
   withNavPinned,
   type NavEntryKey,
 } from "../../lib/sidebar-nav-state";
@@ -23,6 +26,10 @@ export function useMainSidebarSetGroupMode(scope: ReturnType<typeof useMainSideb
     setNavCollapsed,
     navPins,
     setNavPins,
+    inCompany,
+    modeKey,
+    modeNavPins,
+    setModeNavPinsByMode,
     navDrag,
     setNavDrag,
     navDropArea,
@@ -61,16 +68,27 @@ export function useMainSidebarSetGroupMode(scope: ReturnType<typeof useMainSideb
    * with no reveal on the moved row (a de-blur there read as the row flickering).
    */
   const setNavPinned = (key: NavEntryKey, pinned: boolean) => {
+    if (inCompany) {
+      const next = withModeNavPinned(modeNavPins, key, pinned);
+      if (next === modeNavPins) return;
+      storeModeNavPinOverrides(modeKey, next);
+      setModeNavPinsByMode((prev) => ({ ...prev, [modeKey]: next }));
+      return;
+    }
     const next = withNavPinned(navPins, key, pinned);
     if (next === navPins) return;
     storeNavPinOverrides(next);
     setNavPins(next);
   };
 
+  /** Whether an entry is a favourite, by the current mode's own choices. */
+  const isNavEntryPinned = (key: NavEntryKey): boolean =>
+    inCompany ? isModeNavPinned(key, modeNavPins) : isNavPinned(key, navPins);
+
   /**
-   * Drag wiring of one development-mode nav entry: the row is its own handle. Offered only
-   * where a pointer that can drag exists (HTML5 drag-and-drop never fires from touch); the
-   * pin button is the way everywhere, and the only one there.
+   * Drag wiring of one nav entry, in either mode: the row is its own handle. Offered only where
+   * a pointer that can drag exists (HTML5 drag-and-drop never fires from touch); the pin button
+   * is the way everywhere, and the only one there.
    */
   const navEntryDragProps = (key: NavEntryKey) =>
     canDrag
@@ -97,7 +115,7 @@ export function useMainSidebarSetGroupMode(scope: ReturnType<typeof useMainSideb
     over: navDropArea === area,
     onDragOver: (e) => {
       if (navDrag === null || !isNavDrag(e)) return;
-      if (isNavPinned(navDrag, navPins) === (area === "pinned")) return;
+      if (isNavEntryPinned(navDrag) === (area === "pinned")) return;
       e.preventDefault();
       // The effect must be one effectAllowed permits, or the drop never fires (groupDragProps).
       e.dataTransfer.dropEffect = "move";
@@ -117,5 +135,13 @@ export function useMainSidebarSetGroupMode(scope: ReturnType<typeof useMainSideb
       setNavDropArea(null);
     },
   });
-  return { ...scope, setGroupMode, toggleNavGroup, setNavPinned, navEntryDragProps, navAreaDrop };
+  return {
+    ...scope,
+    setGroupMode,
+    toggleNavGroup,
+    setNavPinned,
+    isNavEntryPinned,
+    navEntryDragProps,
+    navAreaDrop,
+  };
 }

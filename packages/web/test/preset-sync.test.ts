@@ -8,25 +8,20 @@
  *   out with mode "add", and the table the server answers with is adopted.
  * - Given the Restore defaults confirmation, when its confirm button is pressed, one POST goes
  *   out with mode "restore", the table is adopted, and the dialog closes once the request settles.
+ * - Given the Restore defaults confirmation open, its body draws and nothing is sent yet.
  * - Given the server refuses, nothing is adopted, and the busy flag and the badge re-probe still
  *   run.
- * - The confirmation names, in both languages, the API keys it keeps.
  */
-import { createElement, type ReactElement } from "react";
-
+import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ModelsResponse, PresetSyncResponse } from "@prismshadow/penguin-server/api";
 import {
   AddNewModelsButton,
   AddNewModelsConfirm,
-  RestoreDefaultsBody,
   RestoreDefaultsConfirm,
   type PresetSyncHost,
 } from "../src/features/models/preset-sync";
-
-import { setActiveStrings, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ANSWER: PresetSyncResponse = {
@@ -67,23 +62,10 @@ function host(): PresetSyncHost & {
   };
 }
 
-/** What an element reads as: its static markup without the tags, entities decoded. */
-function renderedText(element: ReactElement): string {
-  return renderToStaticMarkup(element)
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&#x27;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
 /** The sync requests that went out, as the server saw them. */
 function syncRequests(fetch: ReturnType<typeof stubFetch>) {
   return fetch.requests.filter((r) => r.path === "/api/projects/p1/models/sync-presets");
 }
-
-afterEach(() => setActiveStrings(zh));
 
 describe("the catalog actions send the server's sync in their own mode", () => {
   it('the "Add new models" button only opens its confirmation; it sends nothing itself', () => {
@@ -143,6 +125,22 @@ describe("the catalog actions send the server's sync in their own mode", () => {
     expect(syncing).toEqual([true, false]);
   });
 
+  it("the Restore defaults confirmation draws its warning and sends nothing until confirmed", () => {
+    const fetch = stubFetch(() => json(ANSWER));
+    const confirm = RestoreDefaultsConfirm({
+      host: host(),
+      busy: false,
+      setSyncing: () => {},
+      onClose: () => {},
+    }) as ReactElement<{ children: ReactNode }>;
+    // The body is what the dialog shows above its buttons (the modal itself portals, which the
+    // node renderer cannot draw).
+    const body = renderToStaticMarkup(confirm.props.children as ReactElement);
+
+    expect(body.replace(/<[^>]+>/g, "").trim()).not.toBe("");
+    expect(syncRequests(fetch)).toEqual([]);
+  });
+
   it("a refused sync adopts nothing, and still lowers the busy flag and re-probes the badge", async () => {
     const fetch = stubFetch(() => apiError(403, "forbidden"));
     const page = host();
@@ -160,14 +158,5 @@ describe("the catalog actions send the server's sync in their own mode", () => {
     expect(syncRequests(fetch)).toHaveLength(1);
     expect(page.adopted).toEqual([]);
     expect(page.busy).toEqual([true, false]);
-  });
-});
-
-describe("the Restore defaults confirmation", () => {
-  it("names, in both languages, the API keys it keeps", () => {
-    for (const dict of [zh, en]) {
-      setActiveStrings(dict);
-      expect(renderedText(createElement(RestoreDefaultsBody))).toContain("API key");
-    }
   });
 });

@@ -11,24 +11,22 @@
  * - Given any two slots, in either mode, their inks are not near-duplicates: two Agents side by
  *   side can be told apart.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 import { avatarHue } from "../src/components/icons/avatars/avatar";
 import { AGENT_PALETTE, agentSlot } from "../src/components/icons/avatars/agent-palette";
-import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
+import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import {
   BLACK,
   WHITE,
-  analyzeThemeFile,
+  analyzePack,
   composite,
   contrastRatio,
   parseColor,
   resolveThemeValue,
 } from "../src/testing";
 import type { Rgba, ThemeFileAnalysis } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
 
 const color = (value: string): Rgba => {
   const parsed = parseColor(value);
@@ -86,14 +84,12 @@ describe("the penguin reads on its tile (WCAG AA)", () => {
 const SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
 
 function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
-  const path = join(SRC_DIR, "themes", `${id}.css`);
-  if (!existsSync(path)) return null;
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzePack(id);
   return analysis.isStub ? null : analysis;
 }
 
 describe("the penguin stands off the page (WCAG non-text 3:1)", () => {
-  const defaultTheme = themeAnalysis(DEFAULT_THEME_ID);
+  const defaultTheme = themeAnalysis(INITIAL_THEME_ID);
 
   it("reads the default theme", () => {
     expect(defaultTheme).not.toBeNull();
@@ -102,7 +98,7 @@ describe("the penguin stands off the page (WCAG non-text 3:1)", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null || defaultTheme === null) {
-      it.skip(`${id} — PENDING: themes/${id}.css declares no tokens yet`, () => {});
+      it.skip(`${id} — PENDING: themes/${id}/ declares no tokens yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {

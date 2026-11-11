@@ -30,6 +30,11 @@ export type * from "./version-info.js";
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
 export { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "./internal/ports.js";
 export { SERVER_RESTART_EXIT_CODE } from "./internal/server-lifecycle.js";
+// Whether a command-policy pattern compiles here: the server's save check and its read of the
+// policy ask the same question the matcher does.
+export { commandPolicyPatternError } from "./internal/command-policy-pattern.js";
+// The oldest Node the server and the CLI start on, checked at each entry.
+export { NODE_FLOOR, meetsNodeFloor, nodeFloorRefusal } from "./node-floor.js";
 
 // Submodules
 export * from "./state/index.js";
@@ -70,7 +75,18 @@ export type {
 } from "./plugin/contributions.js";
 export { hasLibraryContributions, isLibraryPackage, libraryParts } from "./plugin/kinds.js";
 export type { LibraryParts } from "./plugin/kinds.js";
-export { MAX_PLUGIN_ICON_BYTES, isSafeIconSvg, readPluginIcon } from "./plugin/icon.js";
+export { iconImage, readInstalledIcon, readPluginIcon } from "./plugin/icon.js";
+export type { IconImage } from "./plugin/icon.js";
+export {
+  ICON_CONTENT_TYPES,
+  ICON_FILE_NAMES,
+  MAX_ICON_BYTES,
+  iconFileName,
+  isIconFileName,
+  sniffIconFormat,
+} from "./plugin/icon-format.js";
+export type { IconFormat } from "./plugin/icon-format.js";
+export { isSafeIconSvg, isTintableSvg } from "./plugin/icon-svg.js";
 export {
   USER_PROMPT_EVERY_PROMPT_SINCE,
   comparePluginVersions,

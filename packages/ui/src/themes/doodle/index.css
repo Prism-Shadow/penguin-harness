@@ -1,0 +1,12 @@
+/**
+ * Doodle (`doodle`, 卡通) as a built-in pack (`pack.json`). Its manifest says `base: "modern"`,
+ * so the root carries `data-theme-base="modern"` and the page is Frost's — its values for every
+ * name this pack leaves out, and its hook recipes — with Doodle's own tokens and recipes served
+ * in `ui-theme`, over Frost's `ui-base`, and the accent presets in `ui-accent`.
+ *
+ * A pack's files carry no `@layer` of their own; this file serves each in its layer. `fonts.css`
+ * is imported by `fonts/index.css`, not here, so the faces stay out of the published `styles.css`.
+ */
+@import "./tokens.css" layer(ui-theme);
+@import "./recipes.css" layer(ui-theme);
+@import "./accents.css" layer(ui-accent);

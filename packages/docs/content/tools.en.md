@@ -345,16 +345,22 @@ Every complete `tool_call` gets exactly one approval decision:
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+// `context.reason` is set when a command-policy `ask` rule matched: the call needs a person.
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: { reason?: { kind: "policy"; rule: string } },
+) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
 | --- | --- |
-| SDK | Pass `approve` to each `session.run`. With none injected, the engine denies everything by default, so nothing is approved unattended |
+| SDK | Pass `approve` to each `session.run`. With none injected, the engine denies everything by default, so nothing is approved unattended. A call that arrives with `context.reason` is one an `ask` rule matched: put it to a person rather than answering by mode. A callback that ignores the second argument decides it like any other call |
 | CLI | `--approve` takes four modes: `allow-all` (default), `deny-all`, `read-only`, `always-ask`. `read-only` auto-approves `permission: "r"` tools and leaves the rest to a person. The flag sets the approval mode of the server Session the CLI drives; without it, a CLI running inside an agent's command inherits the calling Session's mode |
 | Web / Server | The same four modes, set per Session. The mode is re-read from the database on every decision, so a change applies at once. A tool's `r` / `rw` comes from the running context's toolset, so a permission change applies at the next rotation (compaction). Manual decisions arrive through the API |
 
-Installed pre-tool-use hooks are consulted before the approval callback. A hook's `deny` refuses the call without asking, and its `allow` approves without asking, except that the [command policy](/configuration#command-policy) still vetoes an allowed call it matches. See [Pre-tool-use hooks](/agent-loop#pre-tool-use-hooks).
+The [command policy](/configuration#command-policy) sits above the mode. A rule with `action: deny` refuses a matching call as `forbidden` without asking anyone. A rule with `action: ask` hands a matching call to the approval callback with a policy reason, and the server puts it to a person under every mode but `deny-all`, which still denies it, so a `gh pr merge` stops for a click even under `allow-all`. The server pushes the call as an ordinary `approval_request` carrying `reason: { kind: "policy", rule }`, and the Web App's approval card shows a muted line naming the rule. An unattended Session (an organization's desks and tickets) has nobody to ask and denies such a call at once.
+
+Installed pre-tool-use hooks are consulted before the approval callback. A hook's `deny` refuses the call without asking, and its `allow` approves without asking, except that the command policy still answers for a call it matches: a `deny` rule's call stays forbidden and an `ask` rule's call still goes to a person. See [Pre-tool-use hooks](/agent-loop#pre-tool-use-hooks).
 
 A refused call gets a synthetic `aborted` `tool_call_output` for the model to react to. The wording names the decider:
 
@@ -366,7 +372,7 @@ A refused call gets a synthetic `aborted` `tool_call_output` for the model to re
 
 A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [agent loop](/agent-loop).
 
-**Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active.
+**Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active. The Session wraps the fallback sink with its command policy, so a child's `ask` hit that lands there reaches the host's callback with its reason and still goes to a person.
 
 ## Customizing the toolset
 

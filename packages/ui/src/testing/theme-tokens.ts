@@ -1,26 +1,31 @@
 /**
- * Reading a theme file (`src/themes/<id>.css`) the way the token contract describes it, for the
+ * Reading a theme pack (`src/themes/<id>/`) the way the token contract describes it, for the
  * contract and contrast tests — and for anyone filling a theme who wants the list of what is
  * still missing without running the suite.
  *
- * A theme file is one `@layer ui-theme` block with a base rule and a dark rule on fixed
- * selectors (tokens.ts, `themes/github.css`):
+ * A pack is a folder: its manifest (`pack.json`), and an `index.css` that imports the pack's
+ * stylesheets by relative path, each in its cascade layer — `@import "./tokens.css"
+ * layer(ui-theme);`. The stylesheets carry no `@layer` of their own; {@link readPackSources}
+ * follows the imports in cascade order and records the layer each file is served in, and the
+ * analysis reads a rule as sitting in that layer.
  *
- *   default theme   base `:root, :root[data-theme="github"]`   dark `:root.dark, :root[data-theme="github"].dark`
- *   any other       base `:root[data-theme="<id>"]`             dark `:root[data-theme="<id>"].dark`
+ * The token rules sit on fixed selectors, in a fixed layer:
  *
- * The base rule declares every contract name with its light value, plus the gray bridge that
+ *   the base (Frost)   base `:root`                     dark `:root.dark`                  ui-base
+ *   any other pack     base `:root[data-theme="<id>"]`  dark `:root[data-theme="<id>"].dark`  ui-theme
+ *
+ * The base rule declares contract names with their light values, plus the gray bridge that
  * re-points Tailwind's own palette variables. The dark rule matches the same root and declares
  * only what dark changes, so a mode is the base rule overlaid with that mode's own rule (light has
- * none of its own). Nothing else is a token.
+ * none of its own). Nothing else is a token. The base pack and every pack on the foundation alone
+ * (`base: "foundation"`) declare every name in both modes; a pack built on Frost may declare only
+ * what it changes, and the rest resolves to Frost's ({@link resolveThemeValue}).
  *
- * After the theme block, one `@layer ui-accent` block holds the theme's own accent presets
- * (tokens.ts, `ACCENT_PRESETS`), each on the theme's root with `[data-accent="<id>"]` — the
- * default theme's on a bare root as well, spelled `:root:not([data-theme])` so it never matches
- * another theme's root — and optionally a `.dark` rule that lifts the preset for dark mode:
+ * The accent presets (the manifest's `accent.presets`) sit in `ui-accent`, each on the pack's
+ * root with `[data-accent="<id>"]` — the base's too, so a pack built on Frost never shows Frost's
+ * presets — and optionally a `.dark` rule that lifts the preset for dark mode:
  *
- *   default theme   light `:root:not([data-theme])[data-accent="x"], :root[data-theme="github"][data-accent="x"]`
- *   any other       light `:root[data-theme="<id>"][data-accent="x"]`   dark `…[data-accent="x"].dark`
+ *   light `:root[data-theme="<id>"][data-accent="x"]`   dark `…[data-accent="x"].dark`
  *
  * A preset's light rule sets `--ui-accent` and nothing outside the accent group; its dark rule
  * declares only what dark changes. In a mode a preset overlays the theme's values for that mode.
@@ -29,17 +34,30 @@
  * theme's own ink for the mode, whose pairing with every preset the contrast suite measures.
  * Primer's presets set all six literally (the app's pixels are pinned), which satisfies this
  * trivially.
+ *
+ * A custom property whose name starts with `--_` is private to the recipes (theme.css's own
+ * convention: a tone's resolved ink, a tree row's depth) and is not a token: the analysis skips it
+ * wherever it is declared.
  */
-import { DEFAULT_THEME_ID, THEME_MODES, TOKEN_GROUPS, TOKEN_NAMES } from "../tokens";
-import type { ThemeId, ThemeModeName } from "../tokens";
-import { parseCssRules, selectorList } from "./css";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { INITIAL_THEME_ID, THEME_MODES, TOKEN_GROUPS, TOKEN_NAMES } from "../tokens";
+import type { ThemeModeName } from "../tokens";
+import { parseCssRules, selectorList, stripCssComments } from "./css";
 import type { CssDeclaration } from "./css";
 
-/** The layer every theme block lives in, so a user accent preset (`@layer ui-accent`) beats it. */
+/** The layer the base pack's rules live in, under every other pack's. */
+export const BASE_LAYER = "@layer ui-base";
+
+/** The layer every other pack's rules live in, so a user accent preset (`@layer ui-accent`) beats it. */
 export const THEME_LAYER = "@layer ui-theme";
 
 /** The layer a theme's accent presets live in: after `ui-theme`, so a preset beats the dark rule. */
 export const ACCENT_LAYER = "@layer ui-accent";
+
+/** The four layers theme.css opens, in cascade order. */
+export const UI_LAYERS = ["ui-base", "ui-theme", "ui-accent", "ui-font"] as const;
 
 /** The names a preset may set: the contract's accent group, and nothing outside it. */
 export const ACCENT_TOKEN_NAMES: readonly string[] =
@@ -48,29 +66,81 @@ export const ACCENT_TOKEN_NAMES: readonly string[] =
 /** Tailwind palette variables a theme may re-point: the gray bridge, plus white and black. */
 export const BRIDGE_VARIABLE = /^--color-(?:white|black|gray-(?:50|[1-9]00|950))$/;
 
-/** The eleven gray steps. A non-default theme re-points all of them, in its base rule (see below). */
+/** The eleven gray steps. A complete pack re-points all of them, and white (see below). */
 export const GRAY_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
 /** Marker a stub theme file carries in its header comment until its tokens are written. */
 export const STUB_MARKER = "Stub:";
 
+/** The built-in packs' folder, `packages/ui/src/themes/`. */
+export const THEMES_DIR = fileURLToPath(new URL("../themes/", import.meta.url));
+
 const CONTRACT = new Set<string>(TOKEN_NAMES);
 
+/** A recipe's private custom property, which is not a token. */
+const PRIVATE_PROPERTY = /^--_/;
+
+/** One stylesheet of a pack: where it lives (for the messages), its text, and its layer. */
+export interface ThemeSource {
+  /** The path relative to the pack's folder, `/`-separated. */
+  readonly file: string;
+  readonly css: string;
+  /** The layer the file is served in (`ui-theme`), or null for a file imported without one. */
+  readonly layer: string | null;
+}
+
+/** A relative `@import`, with the layer it serves the file in: `@import "./a.css" layer(ui-base);`. */
+const PACK_IMPORT = /@import\s+["'](\.{1,2}\/[^"']+)["'](?:\s+layer\(\s*([\w-]+)\s*\))?\s*;/g;
+
+/**
+ * The stylesheets of one pack in the order the cascade reads them: each file `index.css` imports
+ * by relative path — its own imports first, a file imported without a layer taking its importer's
+ * — and then `index.css` itself. Package imports (`@prismshadow/…`) are not the pack's.
+ */
+export function readPackSources(packDir: string): ThemeSource[] {
+  const sources: ThemeSource[] = [];
+  const visit = (path: string, layer: string | null) => {
+    const css = readFileSync(path, "utf8");
+    for (const match of stripCssComments(css).matchAll(PACK_IMPORT)) {
+      visit(join(dirname(path), match[1]!), match[2] ?? layer);
+    }
+    sources.push({ file: relative(packDir, path).split("\\").join("/"), css, layer });
+  };
+  visit(join(packDir, "index.css"), null);
+  return sources;
+}
+
+/** The ids of the pack folders under `themesDir`: every folder holding a `pack.json`, sorted. */
+export function packFolders(themesDir: string = THEMES_DIR): string[] {
+  return readdirSync(themesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(themesDir, entry.name, "pack.json")))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** Reads and analyzes the pack in `themesDir/<id>/`. */
+export function analyzePack(id: string, themesDir: string = THEMES_DIR): ThemeFileAnalysis {
+  return analyzeThemeFile(readPackSources(join(themesDir, id)), id);
+}
+
+/** Whether `themeId` is the base pack, whose rules sit on the bare root in `ui-base`. */
+const isBase = (themeId: string) => themeId === INITIAL_THEME_ID;
+
 /** The canonical selector list of a theme's rule for one mode. */
-export function themeSelectors(themeId: ThemeId, mode: ThemeModeName): string[] {
-  const attr = `:root[data-theme="${themeId}"]`;
+export function themeSelectors(themeId: string, mode: ThemeModeName): string[] {
   const suffix = mode === "dark" ? ".dark" : "";
-  return themeId === DEFAULT_THEME_ID
-    ? [`:root${suffix}`, `${attr}${suffix}`]
-    : [`${attr}${suffix}`];
+  return isBase(themeId) ? [`:root${suffix}`] : [`:root[data-theme="${themeId}"]${suffix}`];
+}
+
+/** The layer a theme's token rules and recipes sit in. */
+export function themeLayer(themeId: string): string {
+  return isBase(themeId) ? BASE_LAYER : THEME_LAYER;
 }
 
 /** The canonical selector list of one accent preset's rule for one mode. */
-export function accentSelectors(themeId: ThemeId, presetId: string, mode: ThemeModeName): string[] {
-  const attr = `[data-accent="${presetId}"]`;
+export function accentSelectors(themeId: string, presetId: string, mode: ThemeModeName): string[] {
   const suffix = mode === "dark" ? ".dark" : "";
-  const own = `:root[data-theme="${themeId}"]${attr}${suffix}`;
-  return themeId === DEFAULT_THEME_ID ? [`:root:not([data-theme])${attr}${suffix}`, own] : [own];
+  return [`:root[data-theme="${themeId}"][data-accent="${presetId}"]${suffix}`];
 }
 
 /** One preset's rules: the light rule (it applies in both modes) and the dark rule alone. */
@@ -80,18 +150,18 @@ export interface AccentPresetRules {
 }
 
 export interface ThemeFileAnalysis {
-  readonly themeId: ThemeId;
+  readonly themeId: string;
   /**
    * Custom properties each canonical rule declares itself, name → value: `light` is the base rule
    * (it applies in both modes), `dark` the dark rule alone. {@link modeDeclarations} gives what a
    * mode resolves to.
    */
   readonly modes: Readonly<Record<ThemeModeName, ReadonlyMap<string, string>>>;
-  /** The theme's accent presets, id → rules, in the order the file declares them. */
+  /** The theme's accent presets, id → rules, in the order the files declare them. */
   readonly accents: ReadonlyMap<string, AccentPresetRules>;
-  /** True once any rule in the file declares a `--ui-*` property. */
+  /** True once any rule in the pack declares a `--ui-*` property. */
   readonly declaresTokens: boolean;
-  /** True while the header still carries {@link STUB_MARKER} and nothing is declared. */
+  /** True while a header still carries {@link STUB_MARKER} and nothing is declared. */
   readonly isStub: boolean;
   /** Shape problems: token declarations outside the canonical rules or layer, duplicates. */
   readonly structure: readonly string[];
@@ -109,16 +179,36 @@ function presetOf(selectors: readonly string[]): string | null {
   return id !== undefined && id !== "" && rest.length === 0 ? id : null;
 }
 
-export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalysis {
-  const rules = parseCssRules(css);
+/**
+ * Reads a theme: one stylesheet's text (its rules' layers as written), or a pack's sources
+ * ({@link readPackSources}), whose rules sit in the layer each file is served in and whose
+ * problems name the file they are in.
+ */
+export function analyzeThemeFile(
+  input: string | readonly ThemeSource[],
+  themeId: string,
+): ThemeFileAnalysis {
+  const sources: readonly ThemeSource[] =
+    typeof input === "string" ? [{ file: "", css: input, layer: null }] : input;
+  const rules = sources.flatMap((source) =>
+    parseCssRules(source.css).map((rule) => ({
+      rule,
+      file: source.file,
+      atRules: source.layer === null ? rule.atRules : [`@layer ${source.layer}`, ...rule.atRules],
+    })),
+  );
   const modes = { light: new Map<string, string>(), dark: new Map<string, string>() };
-  const firstLine = { light: new Map<string, number>(), dark: new Map<string, number>() };
+  const firstLine = { light: new Map<string, string>(), dark: new Map<string, string>() };
   const accents = new Map<string, { light: Map<string, string>; dark: Map<string, string> }>();
   const structure: string[] = [];
+  const layer = themeLayer(themeId);
   let declaresTokens = false;
 
-  for (const rule of rules) {
-    const custom = rule.declarations.filter((d: CssDeclaration) => d.name.startsWith("--"));
+  for (const { rule, file, atRules } of rules) {
+    const at = (line: number) => (file === "" ? `line ${line}` : `${file} line ${line}`);
+    const custom = rule.declarations.filter(
+      (d: CssDeclaration) => d.name.startsWith("--") && !PRIVATE_PROPERTY.test(d.name),
+    );
     if (rule.declarations.some((d) => d.name.startsWith("--ui-"))) declaresTokens = true;
     if (custom.length === 0) continue;
     const selectors = selectorList(rule.selector);
@@ -128,17 +218,17 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       const mode = THEME_MODES.find((m) => sameSet(selectors, accentSelectors(themeId, preset, m)));
       if (mode === undefined) {
         structure.push(
-          `line ${rule.line}: \`${rule.selector}\` declares ${custom[0]!.name} — a preset's rules are ` +
+          `${at(rule.line)}: \`${rule.selector}\` declares ${custom[0]!.name} — a preset's rules are ` +
             `${THEME_MODES.map((m) => `\`${accentSelectors(themeId, preset, m).join(", ")}\``).join(" / ")}`,
         );
         continue;
       }
       const layered =
-        rule.parents.length === 0 && rule.atRules.length === 1 && rule.atRules[0] === ACCENT_LAYER;
+        rule.parents.length === 0 && atRules.length === 1 && atRules[0] === ACCENT_LAYER;
       if (!layered) {
-        const where = [...rule.atRules, ...rule.parents].join(" › ") || "top level";
+        const where = [...atRules, ...rule.parents].join(" › ") || "top level";
         structure.push(
-          `line ${rule.line}: the ${preset} preset's ${mode} rule sits in ${where}; it must sit ` +
+          `${at(rule.line)}: the ${preset} preset's ${mode} rule sits in ${where}; it must sit ` +
             `directly in \`${ACCENT_LAYER}\` so it overrides the theme's dark rule by layer order`,
         );
       }
@@ -146,7 +236,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
       for (const declaration of custom) {
         if (entry[mode].has(declaration.name)) {
           structure.push(
-            `line ${declaration.line}: ${declaration.name} is declared again for the ${preset} preset (${mode}); the later one silently wins`,
+            `${at(declaration.line)}: ${declaration.name} is declared again for the ${preset} preset (${mode}); the later one silently wins`,
           );
         }
         entry[mode].set(declaration.name, declaration.value);
@@ -158,25 +248,25 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
     const mode = THEME_MODES.find((m) => sameSet(selectors, themeSelectors(themeId, m)));
     if (mode === undefined) {
       structure.push(
-        `line ${rule.line}: \`${rule.selector}\` declares ${custom[0]!.name} — tokens belong in the ` +
+        `${at(rule.line)}: \`${rule.selector}\` declares ${custom[0]!.name} — tokens belong in the ` +
           `canonical rules (${THEME_MODES.map((m) => `\`${themeSelectors(themeId, m).join(", ")}\``).join(" / ")})`,
       );
       continue;
     }
-    if (rule.parents.length > 0 || rule.atRules.length !== 1 || rule.atRules[0] !== THEME_LAYER) {
-      const where = [...rule.atRules, ...rule.parents].join(" › ") || "top level";
+    if (rule.parents.length > 0 || atRules.length !== 1 || atRules[0] !== layer) {
+      const where = [...atRules, ...rule.parents].join(" › ") || "top level";
       structure.push(
-        `line ${rule.line}: the ${mode} rule sits in ${where}; it must sit directly in \`${THEME_LAYER}\` ` +
-          `so the user's accent presets (\`@layer ui-accent\`) override it`,
+        `${at(rule.line)}: the ${mode} rule sits in ${where}; it must sit directly in \`${layer}\` ` +
+          `so the cascade puts it ${layer === BASE_LAYER ? "under every pack" : "over the base"} and the user's accent presets (\`@layer ui-accent\`) override it`,
       );
     }
     for (const declaration of custom) {
       const seen = firstLine[mode].get(declaration.name);
       if (seen !== undefined) {
         structure.push(
-          `line ${declaration.line}: ${declaration.name} is declared again for ${mode} (first at line ${seen}); the later one silently wins`,
+          `${at(declaration.line)}: ${declaration.name} is declared again for ${mode} (first at ${seen}); the later one silently wins`,
         );
-      } else firstLine[mode].set(declaration.name, declaration.line);
+      } else firstLine[mode].set(declaration.name, at(declaration.line));
       modes[mode].set(declaration.name, declaration.value);
     }
   }
@@ -186,7 +276,7 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
     modes,
     accents,
     declaresTokens,
-    isStub: !declaresTokens && css.includes(STUB_MARKER),
+    isStub: !declaresTokens && sources.some((source) => source.css.includes(STUB_MARKER)),
     structure,
   };
 }
@@ -195,23 +285,25 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
 const DERIVED_FROM_ACCENT = /var\(\s*--ui-accent\s*[,)]/;
 
 /**
- * Problems with a theme's accent presets against the list tokens.ts declares for it: the ids
- * and their order, a light rule that sets `--ui-accent` and only accent names, a dark rule that
- * sets only accent names and only what dark changes, values that resolve, every accent token a
- * preset leaves alone derived from `--ui-accent` by the theme (the label ink excepted — the
- * contrast suite measures it against every preset), and the swatch tokens.ts carries for each
- * preset equal to the `--ui-accent` its light rule sets.
+ * Problems with a theme's accent presets against the list its manifest declares: the ids and
+ * their order, a light rule that sets `--ui-accent` and only accent names, a dark rule that sets
+ * only accent names and only what dark changes, values that resolve, every accent token a preset
+ * leaves alone derived from `--ui-accent` by the theme (the label ink excepted — the contrast
+ * suite measures it against every preset), and the swatch the manifest carries for each preset
+ * equal to the `--ui-accent` its light rule sets. `base` is the base pack's analysis, which a
+ * pack built on Frost takes the derivations it leaves out from.
  */
 export function accentProblems(
   analysis: ThemeFileAnalysis,
   expected: readonly { readonly id: string; readonly swatch: string }[],
+  base: ThemeFileAnalysis | null = null,
 ): string[] {
   const problems: string[] = [];
   const declared = [...analysis.accents.keys()];
   const expectedIds = expected.map((preset) => preset.id);
   if (declared.join(",") !== expectedIds.join(",")) {
     problems.push(
-      `the presets are [${declared.join(", ")}]; tokens.ts lists [${expectedIds.join(", ")}] in that order`,
+      `the presets are [${declared.join(", ")}]; the manifest lists [${expectedIds.join(", ")}] in that order`,
     );
   }
   for (const { id, swatch } of expected) {
@@ -224,7 +316,10 @@ export function accentProblems(
       // A token the preset does not set in this mode takes the theme's value for the mode, which
       // must be a derivation of `--ui-accent` — otherwise the theme's own hover, wash or line
       // would show under the preset's accent.
-      const themeValues = modeDeclarations(analysis, mode);
+      const themeValues = new Map([
+        ...(base === null || base === analysis ? [] : modeDeclarations(base, mode)),
+        ...modeDeclarations(analysis, mode),
+      ]);
       for (const name of ACCENT_TOKEN_NAMES) {
         if (name === "--ui-accent" || name === "--ui-accent-fg") continue;
         if (rules.light.has(name) || (mode === "dark" && rules.dark.has(name))) continue;
@@ -260,7 +355,7 @@ export function accentProblems(
     const accent = rules.light.get("--ui-accent");
     if (accent !== undefined && accent !== swatch) {
       problems.push(
-        `${id}: tokens.ts carries the swatch ${swatch}, the light rule sets --ui-accent: ${accent}`,
+        `${id}: the manifest carries the swatch ${swatch}, the light rule sets --ui-accent: ${accent}`,
       );
     }
   }
@@ -268,7 +363,7 @@ export function accentProblems(
 }
 
 /**
- * What one mode of a theme defines within its own file: the base rule, overlaid in dark with the
+ * What one mode of a theme defines within its own pack: the base rule, overlaid in dark with the
  * dark rule. `:root.dark` also matches the base rule, so a name the dark rule leaves out keeps its
  * base value.
  */
@@ -281,14 +376,27 @@ export function modeDeclarations(
     : new Map([...analysis.modes.light, ...analysis.modes.dark]);
 }
 
+/** How much of the contract a pack must declare. */
+export interface ContractOptions {
+  /**
+   * True (the default) for the base and for a pack on the foundation alone: every name, and the
+   * whole gray bridge. False for a pack built on Frost, which may leave names to Frost.
+   */
+  readonly complete?: boolean;
+}
+
 /**
- * Contract problems for one mode — the base rule plus that mode's own: missing names, names
- * outside the contract, bad values.
+ * Contract problems for one mode — the base rule plus that mode's own: missing names (for a
+ * complete pack), names outside the contract, bad values.
  */
-export function contractProblems(analysis: ThemeFileAnalysis, mode: ThemeModeName): string[] {
+export function contractProblems(
+  analysis: ThemeFileAnalysis,
+  mode: ThemeModeName,
+  { complete = true }: ContractOptions = {},
+): string[] {
   const declared = modeDeclarations(analysis, mode);
   const problems: string[] = [];
-  const missing = TOKEN_NAMES.filter((name) => !declared.has(name));
+  const missing = complete ? TOKEN_NAMES.filter((name) => !declared.has(name)) : [];
   if (missing.length > 0) {
     problems.push(`missing ${missing.length} of ${TOKEN_NAMES.length}: ${missing.join(", ")}`);
   }
@@ -308,15 +416,14 @@ export function contractProblems(analysis: ThemeFileAnalysis, mode: ThemeModeNam
       }
     }
   }
-  if (analysis.themeId !== DEFAULT_THEME_ID) {
-    // The default theme's rules match every <html> (`:root`, `:root.dark`), so a gray step this
-    // theme leaves alone renders in the default theme's value — the palette classes the app
-    // still spells would mix two themes on one screen.
-    const grays = GRAY_STEPS.filter((step) => !declared.has(`--color-gray-${step}`));
-    if (grays.length > 0) {
-      problems.push(
-        `the gray bridge is incomplete — re-point ${grays.map((s) => `--color-gray-${s}`).join(", ")}`,
-      );
+  if (complete) {
+    // The base's rules match every <html> (`:root`, `:root.dark`), so a bridge step a complete
+    // pack leaves alone renders in the base's value — the palette classes the app still spells
+    // would mix two themes on one screen.
+    const bridge = ["--color-white", ...GRAY_STEPS.map((step) => `--color-gray-${step}`)];
+    const holes = bridge.filter((name) => !declared.has(name));
+    if (holes.length > 0) {
+      problems.push(`the gray bridge is incomplete — re-point ${holes.join(", ")}`);
     }
   }
   return problems;
@@ -335,18 +442,17 @@ export function darkRepeats(analysis: ThemeFileAnalysis): string[] {
 
 /**
  * The value a custom property resolves to for `mode` of a theme, following the cascade the
- * selectors produce: an applied accent preset's rules first (its dark rule, then its light one —
+ * layers produce: an applied accent preset's rules first (its dark rule, then its light one —
  * they sit in `ui-accent`, after every theme rule), then the mode's own rule, then (dark only)
- * the same theme's base rule, which the dark `<html>` also matches, then the default theme's
- * rules, which match every `<html>`. (Against the default theme's dark rule, another theme's base
- * rule ties on specificity and wins because the theme files are imported after `github.css`.)
+ * the same theme's base rule, which the dark `<html>` also matches and which sits in a layer
+ * above the base pack's, then the base pack's rules (`ui-base`), which match every `<html>`.
  * `var()` references are substituted recursively, fallbacks honoured. `null` when unresolvable.
  */
 export function resolveThemeValue(
   name: string,
   mode: ThemeModeName,
   theme: ThemeFileAnalysis,
-  defaultTheme: ThemeFileAnalysis,
+  base: ThemeFileAnalysis,
   preset: AccentPresetRules | null = null,
 ): string | null {
   const scopes: ReadonlyMap<string, string>[] = [];
@@ -359,7 +465,7 @@ export function resolveThemeValue(
     scopes.push(preset.light);
   }
   push(theme);
-  if (defaultTheme !== theme) push(defaultTheme);
+  if (base !== theme) push(base);
 
   const lookup = (key: string) => {
     for (const scope of scopes) {

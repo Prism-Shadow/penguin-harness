@@ -1,0 +1,24 @@
+/**
+ * Primer (`github`, 朴素) as a built-in pack (`pack.json`). Its manifest says `base:
+ * "foundation"`, so the root carries no `data-theme-base` and none of Frost's recipes apply: the
+ * tokens (complete in both modes) are served in `ui-theme`, over Frost's values in `ui-base`, and
+ * the accent presets in `ui-accent`.
+ *
+ * Primer has no recipes file: every style hook (hooks.ts) is a no-op here. The app's look is what
+ * the components' own classes render — an opaque overlay, a semibold h1, a linear pulse, a
+ * bordered card with a muted head, the accent bar under a tab, the sidebar's muted fill beside
+ * the canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
+ * above its control and a settings row's label beside it, a plain row for a step of the agent's
+ * work, a plain dim behind a dialog, a streaming reply under the host's own pulsing caret glyph,
+ * a reply's widget in its host's card — and none may be written until a Primer polish wave
+ * changes that look on purpose (the 2026-09-30 lift of the light chart steps and the knob's
+ * hairline were such changes, made in tokens, not recipes). The rules every theme shares (the
+ * eyebrow on the h6 rung, the display title in the emphasis ink, the line drawings for icons, the
+ * flat drawing of an Agent's avatar) live in theme.css and are what the app's group labels, page
+ * titles, glyphs and avatars already draw.
+ *
+ * A pack's files carry no `@layer` of their own; this file serves each in its layer. `fonts.css`
+ * is imported by `fonts/index.css`, not here, so the faces stay out of the published `styles.css`.
+ */
+@import "./tokens.css" layer(ui-theme);
+@import "./accents.css" layer(ui-accent);

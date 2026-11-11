@@ -17,6 +17,7 @@ import {
 import type { AgentAvatarVariant, ThemeId } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+import { useText } from "../../text";
 
 /** The sizes the board draws: the sidebar's row, a list's, and a dialog's face. */
 const SIZES = [16, 24, 48] as const;
@@ -61,6 +62,7 @@ function PaletteRow({ size, variant }: { size: number; variant?: AgentAvatarVari
 export function AvatarsBoard() {
   const { S } = useGallery();
   const t = S.library.avatars;
+  const text = useText();
   const [userId, displayName] = t.userNames;
   const stack = [
     { id: userId ?? "admin", name: displayName ?? userId ?? "admin", kind: "user" as const },
@@ -100,7 +102,7 @@ export function AvatarsBoard() {
           {AGENT_AVATAR_VARIANT_NAMES.map((variant) => (
             <section key={variant} className="lib-part" data-avatar-board={variant}>
               <div className="lib-part-head">
-                <h2>{S.rail.themeNames[DRAWN_BY[variant]]}</h2>
+                <h2>{text.theme(DRAWN_BY[variant])}</h2>
               </div>
               {SIZES.map((size) => (
                 <PaletteRow key={size} size={size} variant={variant} />

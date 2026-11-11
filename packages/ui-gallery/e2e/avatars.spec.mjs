@@ -5,15 +5,16 @@
  * active theme's drawing. Each avatar carries every theme's drawing; the theme's CSS shows one.
  *
  * - Given each theme, every live avatar shows that theme's drawing and nothing else: Primer the
- *   flat one, Frost the soft one, Console the pixel one.
+ *   flat one, Frost and Doodle (built on Frost) the soft one, Console the pixel one.
  * - Given the theme changes while the page is open, the same avatars show the new theme's drawing
  *   at once, with no reload.
- * - Given a theme id no stylesheet draws an avatar for, the avatars show Primer's flat drawing.
+ * - Given a pack on the foundation alone that draws no avatar of its own, the avatars show Primer's
+ *   flat drawing.
  * - Given the same Agent, its tile is painted the same colour in every theme.
  */
 import { test, expect } from "@playwright/test";
 
-const DRAWN = { github: "flat", modern: "soft", geek: "pixel" };
+const DRAWN = { github: "flat", modern: "soft", geek: "pixel", doodle: "soft" };
 
 /** The drawings each live avatar on the board shows, in board order. */
 const shown = (page) =>
@@ -57,17 +58,27 @@ test("a theme switch redraws the open avatars, and an unknown theme falls back t
 }) => {
   await open(page, "github");
   const tile = (await fills(page))[0];
-  const setTheme = (id) =>
-    page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), id);
+  // The root as the app writes it: the pack's id, and `data-theme-base="modern"` beside a pack
+  // built on Frost (none beside one on the foundation alone).
+  const setTheme = (id, onFrost) =>
+    page.evaluate(
+      ([value, base]) => {
+        const root = document.documentElement;
+        root.setAttribute("data-theme", value);
+        if (base) root.setAttribute("data-theme-base", "modern");
+        else root.removeAttribute("data-theme-base");
+      },
+      [id, onFrost],
+    );
 
-  await setTheme("geek");
+  await setTheme("geek", false);
   expect(new Set(await shown(page))).toEqual(new Set(["pixel"]));
   expect(await fills(page)).toContain(tile);
 
-  await setTheme("modern");
+  await setTheme("modern", true);
   expect(new Set(await shown(page))).toEqual(new Set(["soft"]));
   expect(await fills(page)).toContain(tile);
 
-  await setTheme("no-such-theme");
+  await setTheme("no-such-theme", false);
   expect(new Set(await shown(page))).toEqual(new Set(["flat"]));
 });

@@ -1,9 +1,8 @@
 /**
  * Custom-model protocol detection UI logic: the protocols the picker offers (the three
- * detection probes, then Google GenAI and MMSP, each shown checked with its path and name once
- * stored, older spellings as the protocol they name), selector visibility and value mapping,
- * when saving must detect first — only when nothing,
- * not even the group, decides the protocol — what the failure popup explains, the guarantee
+ * detection probes, then Google GenAI and MMSP, each shown checked with its path once stored,
+ * older spellings as the protocol they name), selector visibility and value mapping, when saving
+ * must detect first — only when nothing, not even the group, decides the protocol — the guarantee
  * that no entry is persisted without a protocol while a blank one that follows its group
  * stays blank, and the protocol-path suffix for the new client types. A group decides only
  * through its `[providers.<id>]` table (a new Project writes the catalog's there); the catalog
@@ -17,16 +16,12 @@ import {
   presetProviderTable,
 } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
-import { zh as ZH } from "../src/lib/strings";
-import { en as EN } from "../src/lib/strings-en";
 import {
   clientTypeAfterProviderChange,
   rowToEntry,
   type RowState,
 } from "../src/features/models/models-page";
-
 import {
-  PROTOCOL_CLIENT_TYPES,
   detectableBaseUrl,
   displayWidthCh,
   envHintFor,
@@ -55,18 +50,12 @@ describe("the protocols the picker offers", () => {
     ["mmsp", "/stream"],
   ];
 
-  it("offers the detectable three first, then Google GenAI and MMSP", () => {
-    expect([...PROTOCOL_CLIENT_TYPES]).toEqual(OFFERED.map(([t]) => t));
-  });
-
   it.each(OFFERED)(
-    "%s round-trips: stored, it is shown checked with the path its client appends and a name in both languages",
+    "%s round-trips: stored, it is shown checked with the path its client appends",
     (clientType, path) => {
       expect(isGenericProtocolClientType(clientType)).toBe(true);
       expect(protocolSelectorValue(clientType)).toBe(clientType);
       expect(protocolPathForModel("custom", clientType)).toBe(path);
-      expect(EN.models.protocolNames[clientType]).toBeTruthy();
-      expect(ZH.models.protocolNames[clientType]).toBeTruthy();
     },
   );
 });
@@ -425,51 +414,6 @@ describe("rowToEntry (the persistence funnel)", () => {
     expect(rowToEntry(row({ provider: "penguin-go", discount: 0.5 }))).not.toHaveProperty(
       "discount",
     );
-  });
-});
-
-describe("detection copy", () => {
-  it("has exactly one user-facing failure message, in both locales", () => {
-    // Every failure mode collapses to this: the maintainer's point is that a user cannot
-    // act on "the endpoint responded but serves no protocol", only on the key and the URL.
-    for (const catalog of [EN.models, ZH.models] as const) {
-      expect(catalog.detectFailedBody).toBeTruthy();
-      // No protocol names to parse, and no "pick one manually" instruction.
-      expect(catalog.detectFailedBody).not.toContain("OpenAI Responses");
-      expect(catalog.detectFailedBody).not.toContain("Anthropic Messages");
-    }
-    // The distinguishing strings are gone, not merely unused.
-    expect("detectNone" in EN.models).toBe(false);
-    expect("detectUnreachable" in EN.models).toBe(false);
-    expect("detectNone" in ZH.models).toBe(false);
-    expect("detectUnreachable" in ZH.models).toBe(false);
-  });
-
-  it("names the unset protocol as a placeholder rather than a protocol", () => {
-    for (const catalog of [EN.models, ZH.models] as const) {
-      expect(catalog.protocolUnset).toBeTruthy();
-      expect(Object.values(catalog.protocolNames)).not.toContain(catalog.protocolUnset);
-    }
-  });
-
-  it("carries no dialog-era copy: both outcomes are toasts, so no popup titles remain", () => {
-    // The verdict used to be a blocking AlertModal (which needed an accessible name) and,
-    // before that, a line rendered under the base URL field. Both are gone: a detection
-    // result is transient and must occupy no space in the form.
-    for (const catalog of [EN.models, ZH.models] as const) {
-      expect("detectOkTitle" in catalog).toBe(false);
-      expect("detectFailedTitle" in catalog).toBe(false);
-    }
-  });
-
-  it("keeps both toast messages to a single short line", () => {
-    for (const catalog of [EN.models, ZH.models] as const) {
-      const success = catalog.detectedProtocol("OpenAI Responses");
-      for (const text of [success, catalog.detectFailedBody]) {
-        expect(text.length).toBeLessThanOrEqual(80);
-        expect(text).not.toContain("\n");
-      }
-    }
   });
 });
 

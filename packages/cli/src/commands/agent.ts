@@ -2,8 +2,9 @@
  * `penguin agent` — list and create agents through the server, and manage an agent's public API.
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
- *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
+ *   penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--author <a>]
  *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *   penguin agent export <agent-id> … / penguin agent import <source> …   (./agent-archive.ts)
  *   penguin agent api status  --agent-id <id> [--project-id <id>] [--json] [--server <url>]
  *   penguin agent api enable  --agent-id <id> [--open | --no-open] [--approve <mode>] …
  *   penguin agent api disable --agent-id <id> …
@@ -15,7 +16,9 @@
  *
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
  * and library plugins to seed (comma-separated names; unknown names are rejected by the
- * server before anything is created).
+ * server before anything is created). It also says who is creating the agent: `--author`
+ * when given, else `agent` inside a Session (PENGUIN_SESSION_ID set, so the command is an
+ * agent's), else nothing, which the server records as `user`.
  *
  * `api` is the Agent page's API tab over /api/projects/:p/agents/:a/api: whether external
  * programs may talk to the agent, keyless access, the approval mode API conversations are
@@ -37,6 +40,7 @@
 import type { Command } from "commander";
 import type {
   AgentApiKeyCreateResponse,
+  AgentAuthor,
   AgentApiResponse,
   AgentApiSettings,
   AgentApiUpdateRequest,
@@ -47,10 +51,26 @@ import type {
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
+import { registerAgentArchiveCommands } from "./agent-archive.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
 const enc = encodeURIComponent;
+
+/** The values `--author` takes: the server's AgentAuthor. */
+const AUTHORS: readonly AgentAuthor[] = ["user", "agent", "company"];
+
+/**
+ * Who a `create` records as the author: the flag, else `agent` inside a Session, else none
+ * (the server's default, `user`). Null for a flag that names no author.
+ */
+function createAuthor(flag: unknown): AgentAuthor | undefined | null {
+  if (flag !== undefined) {
+    const value = String(flag).trim().toLowerCase();
+    return AUTHORS.find((author) => author === value) ?? null;
+  }
+  return process.env.PENGUIN_SESSION_ID?.trim() ? "agent" : undefined;
+}
 
 interface ApiOpts {
   agentId: string;
@@ -334,11 +354,19 @@ export function registerAgentCommand(program: Command, t: Messages): void {
     .requiredOption("--agent-id <id>", t.agent.createId)
     .option("--name <name>", t.agent.createName)
     .option("--description <text>", t.agent.createDescription)
+    .option("--author <author>", t.agent.createAuthor)
     .option("--plugins <names>", t.agent.createPlugins)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (opts) => {
+      // Checked before anything is resolved or sent: a bad flag creates nothing.
+      const author = createAuthor(opts.author);
+      if (author === null) {
+        process.stderr.write(`${t.error(t.agent.createAuthorInvalid(String(opts.author)))}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const plugins =
@@ -355,6 +383,7 @@ export function registerAgentCommand(program: Command, t: Messages): void {
           agentId: String(opts.agentId),
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
           ...(opts.description !== undefined ? { description: String(opts.description) } : {}),
+          ...(author !== undefined ? { author } : {}),
           ...(plugins !== undefined && plugins.length > 0 ? { plugins } : {}),
         },
       );
@@ -365,5 +394,6 @@ export function registerAgentCommand(program: Command, t: Messages): void {
       process.stdout.write(`${t.agent.created(res.agent.agentId, projectId)}\n`);
     });
 
+  registerAgentArchiveCommands(agent, t);
   registerApiCommands(agent, t);
 }

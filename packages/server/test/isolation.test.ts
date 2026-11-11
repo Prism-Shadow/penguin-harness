@@ -12,8 +12,10 @@ import { describe, expect, it } from "vitest";
 const testDir = import.meta.dirname;
 
 describe("suite-wide isolation preconditions", () => {
-  it("no test file registers a module mock", async () => {
-    const files = (await fs.readdir(testDir)).filter((name) => name.endsWith(".test.ts"));
+  it("no test file registers a module mock, in test/ or any directory under it", async () => {
+    const files = (await fs.readdir(testDir, { recursive: true })).filter((name) =>
+      name.endsWith(".test.ts"),
+    );
     // A sanity floor: an empty listing would make this test pass without checking anything.
     expect(files.length).toBeGreaterThan(50);
 

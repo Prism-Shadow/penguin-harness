@@ -8,6 +8,8 @@
  *   wallpaper.css, checked in a browser).
  * - Pressing Allow or Deny hands that decision to the caller once, and both buttons hold still
  *   until the caller has settled it.
+ * - A call a command-policy rule sent to a person says so, with its explanation on hover; a call
+ *   the approval mode sent says nothing extra.
  *
  * vitest runs node-only here (no DOM), so nothing mounts the buttons: their one piece of state is
  * kept by a minimal stand-in for React's useState (slots in call order, the cursor rewound on
@@ -84,6 +86,27 @@ describe("ApprovalBlock", () => {
     const root = /^<[^>]*>/.exec(html)?.[0] ?? "";
     expect(root).toContain('data-wallpaper-surface="tone"');
     expect(root).toContain('data-tone="warning"');
+  });
+
+  it("says why a call waits when a command-policy rule, not the approval mode, sent it", () => {
+    const block = (reason?: { text: string; hint: string }) =>
+      renderStatic(
+        createElement(ApprovalBlock, {
+          name: "Run command",
+          preview: "$ gh pr merge 7",
+          onDecide: async () => {},
+          labels,
+          ...(reason ? { reason } : {}),
+        }),
+      );
+    const asked = block({
+      text: "Confirmation required by command-policy rule gh-pr-merge-close",
+      hint: "This rule asks a person every time.",
+    });
+    expect(asked).toContain("Confirmation required by command-policy rule gh-pr-merge-close");
+    expect(asked).toContain('data-tooltip="This rule asks a person every time."');
+    // Without a reason no line (and so no hover explanation) is drawn.
+    expect(block()).not.toContain("data-tooltip");
   });
 
   it.each(["allow", "deny"] as const)(

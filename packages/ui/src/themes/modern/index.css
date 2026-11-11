@@ -1,0 +1,15 @@
+/**
+ * Frost (`modern`, 白领) as a built-in pack, and the base every pack builds on (`pack.json`). Its
+ * token values sit on the bare root (`tokens.css`) and its hook recipes key on
+ * `data-theme-base="modern"` (`recipes.css`), both served in `ui-base`, under every other pack's
+ * `ui-theme`: a pack's own declaration wins by layer whatever its specificity, and whatever a pack
+ * leaves out shows Frost's. The accent presets match Frost's own id and sit in `ui-accent`.
+ *
+ * A pack's files carry no `@layer` of their own; this file serves each in its layer. A consumer
+ * imports this pack first and then every other built-in pack's index.css, after theme.css, which
+ * opens the four layers in order. `fonts.css` is imported by `fonts/index.css`, not here, so the
+ * faces stay out of the published `styles.css`.
+ */
+@import "./tokens.css" layer(ui-base);
+@import "./recipes.css" layer(ui-base);
+@import "./accents.css" layer(ui-accent);

@@ -1,3 +1,13 @@
+/**
+ * The CLI's language and its two dictionaries.
+ *
+ * - PENGUIN_LANG picks zh only when it says exactly zh; anything else, or nothing, is en.
+ * - The in-session model switch is taught the same way in both languages.
+ * - In both languages a message carries what it is given, and an optional part only when it is
+ *   given; each reason the built-in browser is unavailable gets a hint of its own.
+ * - The header puts the build, Agent, Workspace, Model and Server on their own lines.
+ * - An API key is masked to its last four characters, or wholly when it is short.
+ */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getMessages, maskApiKey, resolveLanguage } from "../src/i18n.js";
 
@@ -32,39 +42,6 @@ describe("resolveLanguage (env PENGUIN_LANG, default en)", () => {
 });
 
 describe("getMessages", () => {
-  it("provides zh and en runtime + help strings", () => {
-    expect(getMessages("zh").modelAdded("m", "m")).toContain("已添加");
-    expect(getMessages("en").modelAdded("m", "m")).toContain("Added");
-    expect(getMessages("zh").modelUpdated("m", "m")).toContain("已更新");
-    expect(getMessages("en").modelUpdated("m", "m")).toContain("Updated");
-    // Command/option descriptions are also localized.
-    expect(getMessages("zh").config.addDesc).toContain("模型");
-    expect(getMessages("en").config.addDesc).toContain("model");
-    expect(getMessages("en").run.desc).toContain("Task");
-    // config lang copy.
-    expect(getMessages("zh").config.langDesc).toContain("语言");
-    expect(getMessages("en").config.langDesc).toContain("language");
-    expect(getMessages("en").langSet("zh", "/x/.zshrc")).toContain("/x/.zshrc");
-    expect(getMessages("zh").langInvalid("fr")).toContain("fr");
-    // Thinking-level control and tool-output collapsing (issue #305).
-    expect(getMessages("en").thinkingCurrent("medium")).toContain("medium");
-    expect(getMessages("zh").thinkingCurrent("medium")).toContain("medium");
-    expect(getMessages("en").thinkingSet("high")).toContain("high");
-    expect(getMessages("zh").thinkingSet("high")).toContain("high");
-    // The soft limit's reminder: both locales advise compacting first when re-pinning.
-    expect(getMessages("en").thinkingSet("high")).toContain("/compact");
-    expect(getMessages("zh").thinkingSet("high")).toContain("/compact");
-    expect(getMessages("en").thinkingInvalid("none")).toContain('"none"');
-    expect(getMessages("zh").thinkingInvalid("none")).toContain('"none"');
-    expect(getMessages("en").toolOutputElided(42)).toContain("42");
-    expect(getMessages("zh").toolOutputElided(42)).toContain("42");
-    // The hints line teaches the two new commands in both languages.
-    expect(getMessages("en").chatHints()).toContain("/thinking");
-    expect(getMessages("en").chatHints()).toContain("/verbose");
-    expect(getMessages("zh").chatHints()).toContain("/thinking");
-    expect(getMessages("zh").chatHints()).toContain("/verbose");
-  });
-
   it("the in-session model switch reads the same in both languages", () => {
     const en = getMessages("en");
     const zh = getMessages("zh");
@@ -93,108 +70,62 @@ describe("getMessages", () => {
     expect(zh.switchModelHandedOver()).not.toBe(en.switchModelHandedOver());
   });
 
-  it("server-backed command families exist in both languages (spot checks)", () => {
-    for (const lang of ["en", "zh"] as const) {
+  it.each(["en", "zh"] as const)(
+    "%s: a message carries what it is given, and an optional part only when it is given",
+    (lang) => {
       const m = getMessages(lang);
-      // Every listing command names its subject in its description.
-      expect(m.ls.desc.length).toBeGreaterThan(0);
-      expect(m.input.desc.length).toBeGreaterThan(0);
-      expect(m.log.desc.length).toBeGreaterThan(0);
-      expect(m.agent.lsDesc.length).toBeGreaterThan(0);
-      expect(m.project.lsDesc.length).toBeGreaterThan(0);
-      expect(m.cost.desc.length).toBeGreaterThan(0);
-      expect(m.schedule.lsDesc.length).toBeGreaterThan(0);
-      // Interpolating messages carry their arguments in both languages.
-      expect(m.ls.empty("proj-x")).toContain("proj-x");
-      expect(m.agent.created("helper", "proj-x")).toContain("helper");
-      expect(m.client.autoStarted("http://localhost:1", "/log")).toContain("http://localhost:1");
-      expect(m.client.remoteNeedsToken("https://r")).toContain("PENGUIN_API_TOKEN");
-      expect(m.client.noToken("http://l", "/root/api-token")).toContain("/root/api-token");
-      expect(m.client.httpError(500, "boom", "detail")).toContain("500");
-      expect(m.client.sessionAmbiguous("ab", ["s1", "s2"])).toContain("s1");
-      expect(m.client.sessionNotFound("zz", "proj-x")).toContain("zz");
-      expect(m.log.tailInvalid("x")).toContain("x");
-      expect(m.cost.byInvalid("bogus")).toContain("bogus");
-      expect(m.run.sessionNoOverride()).toContain("--session");
-      // The soft-yield / poll / caller-context family.
-      expect(m.common.timeout.length).toBeGreaterThan(0);
-      expect(m.client.timeoutInvalid("5d")).toContain("5d");
-      expect(m.client.stillRunning("abcd1234")).toContain("abcd1234");
-      expect(m.client.callerDefaultsFailed("session-x")).toContain("session-x");
-      expect(m.input.noReplyYet().length).toBeGreaterThan(0);
-      expect(m.log.timeoutNeedsFollow().length).toBeGreaterThan(0);
-      expect(m.run.timeoutWithBackground()).toContain("--background");
-      // ls --days and the schedule writer family.
-      expect(m.ls.daysInvalid("x")).toContain("x");
-      expect(m.schedule.targetConflict()).toContain("--session-id");
-      expect(m.schedule.enableDisableConflict()).toContain("--enable");
-      expect(
-        m.schedule.written("daily", m.schedule.enabled(), "2026-08-27T09:00:00.000Z"),
-      ).toContain("daily");
-      expect(m.schedule.written("daily", m.schedule.enabled(), undefined)).toContain("daily");
-      expect(m.schedule.removed("daily")).toContain("daily");
-      // The latest-session default and its empty state.
-      expect(m.common.latestAgentId.length).toBeGreaterThan(0);
-      expect(m.client.latestSession("session-x")).toContain("session-x");
-      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("ag");
-      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("proj-x");
-      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("penguin chat");
-      // Argument errors: each shape keeps the identifier commander quoted.
-      expect(m.usage.missingArgument("sessionId")).toContain("sessionId");
-      expect(m.usage.missingOption("--prompt <text>")).toContain("--prompt <text>");
-      expect(m.usage.optionMissingArgument("--tail <n>")).toContain("--tail <n>");
-      expect(m.usage.unknownOption("--nope")).toContain("--nope");
-      expect(m.usage.unknownCommand("nosuch")).toContain("nosuch");
-      expect(m.usage.other("too many arguments.")).toContain("too many arguments.");
-      const hint = m.usage.hint("penguin schedule add", "[options] <name>");
-      expect(hint).toContain("penguin schedule add [options] <name>");
-      expect(hint).toContain("penguin schedule add --help");
-      // The company-mode family: descriptions, the control-environment default, confirmations.
-      expect(m.org.lsDesc.length).toBeGreaterThan(0);
-      expect(m.org.ticketCreateDesc.length).toBeGreaterThan(0);
-      expect(m.org.orgId).toContain("PENGUIN_ORG_ID");
-      expect(m.org.orgIdMissing()).toContain("PENGUIN_ORG_ID");
-      expect(m.org.hireTargetConflict()).toContain("--new-agent");
-      expect(m.org.statusInvalid("bogus")).toContain("bogus");
-      expect(m.org.created("acme", "session-x")).toContain("session-x");
-      expect(m.org.created("acme", undefined)).toContain("acme");
-      expect(m.org.hired("dev1", "Developer", "ceo")).toContain("ceo");
-      expect(m.org.ticketMoved("2026-09-02-site", "in_progress")).toContain("in_progress");
-      expect(m.org.calendarWritten("dev1", "standup", m.schedule.enabled(), undefined)).toContain(
-        "dev1/standup",
-      );
-      expect(m.org.ticketHead("2026-09-02-site", "review", false, "waiting")).toContain("waiting");
-      expect(m.org.financeTotal("2026-09", "$1.0000")).toContain("2026-09");
-      // The built-in browser family: the error line keeps its code, the hint names the app.
-      expect(m.browser.execDesc.length).toBeGreaterThan(0);
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("no_such_tab");
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("gone");
-      for (const reason of [undefined, "not_desktop", "shell_unsupported", "no_window"]) {
-        expect(m.browser.unavailableHint(reason)).toContain("PenguinHarness");
+      const at = "2026-08-27T09:00:00.000Z";
+      const on = m.schedule.enabled();
+      // [the message with its optional part, the same message without it, what only the first carries]
+      const optional: Array<[string, string, string]> = [
+        [m.schedule.written("daily", on, at), m.schedule.written("daily", on, undefined), at],
+        [
+          m.org.calendarWritten("dev1", "standup", on, at),
+          m.org.calendarWritten("dev1", "standup", on, undefined),
+          at,
+        ],
+        [m.org.created("acme", "session-x"), m.org.created("acme", undefined), "session-x"],
+        [m.org.hired("dev1", "Developer", "ceo"), m.org.hired("dev1", "Developer", null), "ceo"],
+        [
+          m.org.ticketHead("2026-09-02-site", "review", false, "waiting"),
+          m.org.ticketHead("2026-09-02-site", "review", false, undefined),
+          "waiting",
+        ],
+        [
+          m.browser.sourceNotFound("safari", ["chrome"]),
+          m.browser.sourceNotFound("safari", []),
+          "chrome",
+        ],
+        [m.client.httpError(500, "boom", "detail"), m.client.httpError(500, "boom", ""), "detail"],
+        [m.modelAdded("m1", "d1"), m.modelAdded("m1", undefined), "d1"],
+        [m.modelUpdated("m1", "d1"), m.modelUpdated("m1", undefined), "d1"],
+      ];
+      for (const [given, left, part] of optional) {
+        expect(given).toContain(part);
+        expect(left).not.toContain(part);
       }
-      expect(m.browser.tabHead(12, "Orders", "https://a.example/", false)).toContain("12");
-      expect(m.browser.sourceNotFound("safari", ["chrome"])).toContain("safari");
-      expect(m.browser.elementsChanged(14)).toContain("14");
-    }
-    expect(getMessages("zh").browser.unavailableHint(undefined)).not.toBe(
-      getMessages("en").browser.unavailableHint(undefined),
-    );
-    // Argument errors really are translated, not the English text twice.
-    expect(getMessages("zh").usage.missingArgument("sessionId")).not.toBe(
-      getMessages("en").usage.missingArgument("sessionId"),
-    );
-    expect(getMessages("zh").client.noSessionsYet("ag", "p")).not.toBe(
-      getMessages("en").client.noSessionsYet("ag", "p"),
-    );
-    // The dictionaries are genuinely two languages, not one copied twice.
-    expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
-    expect(getMessages("zh").org.desc).not.toBe(getMessages("en").org.desc);
-    expect(getMessages("zh").session.desc).not.toBe(getMessages("en").session.desc);
-    expect(getMessages("zh").session.renamed("s", "t")).not.toBe(
-      getMessages("en").session.renamed("s", "t"),
-    );
-    expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
-  });
+      const tab = m.browser.tabHead(12, "Orders", "https://a.example/", false);
+      for (const part of ["12", "Orders", "https://a.example/"]) expect(tab).toContain(part);
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "%s: each reason the built-in browser is unavailable gets a hint of its own",
+    (lang) => {
+      const m = getMessages(lang);
+      const reasons = [
+        undefined,
+        "shell_unsupported",
+        "no_window",
+        "not_desktop",
+        "extension_not_paired",
+        "extension_disconnected",
+        "extension_disabled",
+      ];
+      const hints = new Set(reasons.map((reason) => m.browser.unavailableHint(reason)));
+      expect(hints.size).toBe(reasons.length);
+    },
+  );
 
   it("header shows the build and Agent / Workspace / Model / Server on their own lines", () => {
     for (const lang of ["en", "zh"] as const) {

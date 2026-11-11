@@ -19,11 +19,13 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import {
   forwardFrameKeys,
+  PAGE_FRAME_SANDBOX,
   readDocumentTheme,
   themeWorkbenchFrame,
 } from "../../lib/workbench-theme";
 import {
   FILL_APP_MESSAGE,
+  runningWorkbenches,
   settleActiveTab,
   WORKBENCH_UPDATED_EVENT,
   workbenchAppPath,
@@ -37,7 +39,7 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
-import { localizedText } from "../../lib/skill-use";
+import { localizedText } from "../chat";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -77,10 +79,12 @@ export function useWorkbenchTabs(
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
       if (asked.current !== mine || isSafeMode()) return;
+      // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
+      const running = runningWorkbenches(res);
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(res.workbenches, machineId),
-        notices: workbenchNoticesOf(res.workbenches),
+        tabs: workbenchTabsOf(running, machineId),
+        notices: workbenchNoticesOf(running),
       });
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
@@ -219,7 +223,7 @@ export function WorkbenchFrame({
   /** The workbench and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -287,7 +291,7 @@ export function WorkbenchFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
+  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
@@ -357,7 +361,9 @@ export function WorkbenchFrame({
 
   const historyId = `workbench-history-${tab.workbenchId}`;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+    // No fill of its own: the bar and the page sit on the surface the window shows through (the
+    // chat column's canvas, a wallpaper), as the chat does.
+    <div className="flex h-full min-h-0 flex-col">
       <div
         hidden={bare}
         className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400"
@@ -488,7 +494,7 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+        sandbox={PAGE_FRAME_SANDBOX}
       />
       <ConfirmModal
         open={restoring !== null}

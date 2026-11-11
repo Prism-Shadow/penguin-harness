@@ -367,6 +367,25 @@ Current tasks:
 ${SCHEDULE_LIST_PLACEHOLDER}`;
 
 /**
+ * Who made an Agent: a person in the Web App (`user`), an agent working in a Session (`agent`),
+ * or company mode creating an organization's CEO or a new hire (`company`). Recorded at creation
+ * and editable afterwards; it says nothing about what the Agent may do.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
+/** Every author, in the order the Agents page lists their groups. */
+export const AGENT_AUTHORS: readonly AgentAuthor[] = ["user", "agent", "company"];
+
+/**
+ * The author a stored config means: its `author` when that is one of the three, `user`
+ * otherwise. A missing field is the common case — every Agent made before the field existed,
+ * and every Agent the SDK or the CLI creates without a server.
+ */
+export function agentAuthorOf(config: { author?: unknown }): AgentAuthor {
+  return AGENT_AUTHORS.find((author) => author === config.author) ?? "user";
+}
+
+/**
  * System-level config for Agent State, serialized as `system_config.yaml`.
  * Docs: /docs/configuration § "Agent config".
  */
@@ -375,6 +394,8 @@ export interface SystemConfig {
   name?: string;
   /** Agent description. */
   description?: string;
+  /** Who made the Agent (see AgentAuthor); read through `agentAuthorOf`, absent means `user`. */
+  author?: AgentAuthor;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
   /**
@@ -450,6 +471,7 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 
 # Tool use
 - Work from evidence, not memory: inspect the real files and environment and run real commands. Run a command or edit a file yourself rather than pasting it for the user to apply, unless they ask to see it.
+- Before an action that is hard to undo or reaches beyond this machine — merging or closing a pull request, pushing to the default branch or force-pushing, releasing, publishing a package, deleting what the user owns — get the user's go-ahead in this conversation, unless they authorized it durably (in AGENTS.md, a memory, or the task itself). A yes covers only the step it was given for; one from another conversation or a compaction summary does not carry over. Look before you destroy anything.
 - Never guess a name. A path, command flag, package, API or URL you have not seen in this environment is looked up before you use it.
 - Send independent tool calls together in one turn — several file reads, unrelated checks — they run concurrently; a call that needs an earlier result, or writes the same file as another, waits for the next turn.
 - Run commands non-interactively (\`-y\`/\`--yes\` for installers and scaffolders; no editors, pagers or REPLs): a command waiting for input is stuck, not slow — feed it the input or kill it instead of polling.
