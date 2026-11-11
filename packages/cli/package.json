@@ -41,6 +41,7 @@
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
