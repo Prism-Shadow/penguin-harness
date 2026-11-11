@@ -2,7 +2,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readHarnessMeta } from "./harness-meta.js";
-import { layCarriedStore, readCarriedStore } from "./carried-store.js";
+import {
+  carriedStoreComplete,
+  carriedStorePointers,
+  layCarriedStore,
+  readCarriedStore,
+} from "./carried-store.js";
 import type { CarriedSource } from "./carried-store.js";
 export { carriedStore as carriedBody } from "./machines/install-server.js";
 
@@ -13,7 +18,8 @@ export type SyncOutcome =
   | { kind: "absent"; reason: "no-body" }
   | { kind: "failed"; detail: string };
 
-/** No record: copy. Same image: current. Older image: upgrade. Push or peer: defer. */
+/** No record: copy. Same image: current — unless the store is broken, then repair. Older
+ * image: upgrade. Push or peer: defer. */
 export async function syncCarriedImage(root: string, dir: string | null): Promise<SyncOutcome> {
   if (dir === null || !fs.existsSync(dir)) return { kind: "absent", reason: "no-body" };
   let source: CarriedSource;
@@ -27,7 +33,16 @@ export async function syncCarriedImage(root: string, dir: string | null): Promis
   if (meta.kind === "meta") {
     const marked = meta.manifest.source as Partial<CarriedSource> | undefined;
     if (marked?.channel !== "shipped-image") return { kind: "kept", reason: "pushed" };
-    if (marked.image === source.image) return { kind: "current" };
+    if (marked.image === source.image) {
+      // Same image as the record: usually current. But a record naming a store that lost
+      // a file (a partial copy, a pruned artifact) is not usable — laying the carried
+      // body again is what repairs it, and the immutable namespace makes that safe.
+      const complete = await carriedStoreComplete(
+        path.join(root, "hmr", "store", "carried", source.image),
+        carriedStorePointers(meta.manifest).map((value) => value.slice("store/".length)),
+      );
+      if (complete.ok) return { kind: "current" };
+    }
   }
   try {
     await layCarriedStore(dir, path.join(root, "hmr"));

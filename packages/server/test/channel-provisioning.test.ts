@@ -121,7 +121,9 @@ async function expectRecordAndAnswer(root: string): Promise<void> {
   const answer = await resolveCli({ callerEntry: "/install/dist/penguin.js", root });
   expect(answer).toEqual({
     kind: "entry",
-    entry: "/install/dist/penguin.js",
+    // The resolver resolves the caller's entry, so the expectation is the same resolution
+    // — a literal POSIX string would not hold on Windows (drive letter, path separators).
+    entry: path.resolve("/install/dist/penguin.js"),
     reason: "own-entry",
     bundle: bundlePath,
   });
