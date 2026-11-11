@@ -15,7 +15,7 @@ import {
 import { useTheme } from "../state/theme";
 
 export function FramePage({ src, title }: { src: string; title: string }) {
-  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const applyTheme = useCallback(() => {
     themeWorkbenchFrame(frameRef.current, readDocumentTheme(document));
@@ -25,7 +25,7 @@ export function FramePage({ src, title }: { src: string; title: string }) {
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk]);
+  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk]);
   const detachKeys = useRef<() => void>(() => undefined);
   useEffect(() => () => detachKeys.current(), []);
   const onLoad = useCallback(() => {
