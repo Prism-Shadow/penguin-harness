@@ -222,6 +222,14 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
   });
 });
 
+describe("compactionReserve on the smallest usable windows", () => {
+  it("keeps compaction on: the reserve takes at most half the window", () => {
+    expect(effectiveMaxContextLength(256000, 4096)).toBe(2048);
+    expect(effectiveMaxContextLength(256000, 8192)).toBe(4096);
+    expect(effectiveMaxContextLength(256000, 16384)).toBe(8192);
+  });
+});
+
 describe("compactionRoundLimit (the context size past which a compaction offers no tool round)", () => {
   it("keeps room for the summary under the window", () => {
     expect(compactionRoundLimit(128000)).toBe(115712);

@@ -109,7 +109,13 @@ export const COMPACTION_RESERVE_MAX = 32768;
  * such a window, so without this cap the window's hard limit would always be hit first.
  */
 export function compactionReserve(window: number): number {
-  return Math.min(COMPACTION_RESERVE_MAX, Math.max(COMPACTION_RESERVE_MIN, Math.floor(window / 8)));
+  const reserve = Math.min(
+    COMPACTION_RESERVE_MAX,
+    Math.max(COMPACTION_RESERVE_MIN, Math.floor(window / 8)),
+  );
+  // Never more than half the window: the smallest usable windows (4096–16384) keep a positive
+  // threshold instead of falling into the `<= 0` range that means compaction is off.
+  return Math.min(reserve, Math.floor(window / 2));
 }
 
 /** Room a tool round needs to leave for the summary that follows it. */
