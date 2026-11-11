@@ -465,7 +465,7 @@
   shape-rendering: crispEdges;
 }
 
-/* An Agent's avatar is the pixel drawing, like the icons: the penguin on whole pixels from
+/* An Agent's avatar is the pixel drawing, like the icons: the ball penguin on whole pixels from
    16 px up, on a square tile. */
 :root[data-theme="geek"] .ui-avatar > [data-variant="flat"] {
   display: none;

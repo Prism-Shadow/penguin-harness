@@ -437,7 +437,7 @@ export const zh = {
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
-        "按主题换画法的智能体缺省头像：同一只企鹅以墨色画在淡色底上，朴素为圆角方块，白领为圆形，极客为像素画",
+        "按主题换画法的智能体缺省头像：同一只圆球企鹅，表情由 id 决定，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
     } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -1138,9 +1138,11 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
-      agentAside: "当前主题的画法，十二种颜色各一",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一，表情不一",
+      faces: "表情",
+      facesAside: "每个智能体一种友善的表情，与颜色一样由 id 决定",
       variants: "各主题的画法",
-      variantsAside: "同一只企鹅，每套主题一种画法；颜色只随智能体",
+      variantsAside: "同一只圆球企鹅，每套主题一种画法；颜色与表情只随智能体",
       sizeCaption: (px: number) => `${px}px`,
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,

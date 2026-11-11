@@ -27,6 +27,7 @@ export * from "./components/icons/logos/penguin-logo";
 export * from "./components/icons/avatars/avatar";
 export * from "./components/icons/avatars/agent-avatar";
 export * from "./components/icons/avatars/agent-palette";
+export * from "./components/icons/avatars/agent-expression";
 export { AGENT_AVATAR_VARIANT_NAMES } from "./components/icons/avatars/agent-avatar-variants";
 export type { AgentAvatarVariant } from "./components/icons/avatars/agent-avatar-variants";
 export * from "./components/icons/avatars/user-avatar";

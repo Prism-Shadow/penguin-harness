@@ -413,7 +413,7 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one penguin inked on a pale tile, a rounded square (Primer), a circle (Frost) or pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one ball penguin wearing the face its id gives it, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -1169,9 +1169,12 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
-      agentAside: "The active theme's drawing, once in each of the twelve colours",
+      agentAside: "The active theme's drawing for twelve agents: every colour, a mix of faces",
+      faces: "Faces",
+      facesAside: "Each agent wears one friendly face, chosen by its id like its colour",
       variants: "Every theme's drawing",
-      variantsAside: "One penguin, drawn once per theme; the colour follows the agent alone",
+      variantsAside:
+        "One ball penguin, drawn once per theme; the colour and the face follow the agent alone",
       sizeCaption: (px) => `${px}px`,
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,

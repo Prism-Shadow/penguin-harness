@@ -565,7 +565,7 @@
   font-synthesis-weight: none;
 }
 
-/* An Agent's avatar is the soft drawing: a rounder penguin on a round tile. Every pack built on the
+/* An Agent's avatar is the soft drawing: the ball penguin on a round tile. Every pack built on the
    base shows it, Doodle included, until it draws its own. */
 :root[data-theme-base="modern"] .ui-avatar > [data-variant="flat"] {
   display: none;
