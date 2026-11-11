@@ -30,6 +30,11 @@ export type * from "./version-info.js";
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
 export { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "./internal/ports.js";
 export { SERVER_RESTART_EXIT_CODE } from "./internal/server-lifecycle.js";
+// Whether a command-policy pattern compiles here: the server's save check and its read of the
+// policy ask the same question the matcher does.
+export { commandPolicyPatternError } from "./internal/command-policy-pattern.js";
+// The oldest Node the server and the CLI start on, checked at each entry.
+export { NODE_FLOOR, meetsNodeFloor, nodeFloorRefusal } from "./node-floor.js";
 
 // Submodules
 export * from "./state/index.js";
@@ -37,7 +42,86 @@ export * from "./llm/index.js";
 export * from "./environment/index.js";
 export * from "./trace/index.js";
 export * from "./hooks/index.js";
-export * from "./plugins/index.js";
+
+// The plugin library: Node-only readers over a package's npm fields and generated table. The
+// vocabulary a plugin compiles against is the `./plugin` subpath's (types only).
+export type {
+  HookCommand,
+  HookPackageContribution,
+  McpServerContribution,
+  PluginCard,
+  PluginSetupKey,
+  QuickStart,
+  SkillContribution,
+  UserPromptTrigger,
+  WorkbenchContribution,
+} from "./plugin/library.js";
+export {
+  PLUGIN_NAME_PATTERN,
+  PLUGIN_VERSION_PATTERN,
+  PluginManifestError,
+  parsePackageJson,
+  readPackageJson,
+  unscopedPackageName,
+} from "./plugin/package-json.js";
+export type { NpmPackage } from "./plugin/package-json.js";
+export { IFACES_FILE, packageEntry, readPluginTable } from "./plugin/table.js";
+export type { PluginDeclaration, PluginTable } from "./plugin/table.js";
+export { LIBRARY_SLOTS, libraryContributions } from "./plugin/contributions.js";
+export type {
+  LibraryContributions,
+  LibraryHooksContribution,
+  PluginMcpServer,
+} from "./plugin/contributions.js";
+export { hasLibraryContributions, isLibraryPackage, libraryParts } from "./plugin/kinds.js";
+export type { LibraryParts } from "./plugin/kinds.js";
+export { iconImage, readInstalledIcon, readPluginIcon } from "./plugin/icon.js";
+export type { IconImage } from "./plugin/icon.js";
+export {
+  ICON_CONTENT_TYPES,
+  ICON_FILE_NAMES,
+  MAX_ICON_BYTES,
+  iconFileName,
+  isIconFileName,
+  sniffIconFormat,
+} from "./plugin/icon-format.js";
+export type { IconFormat } from "./plugin/icon-format.js";
+export { isSafeIconSvg, isTintableSvg } from "./plugin/icon-svg.js";
+export {
+  USER_PROMPT_EVERY_PROMPT_SINCE,
+  comparePluginVersions,
+  parsePluginVersion,
+  pluginContentVersion,
+  predatesEveryPromptHooks,
+  userPromptTrigger,
+} from "./plugin/versions.js";
+export { parseSkillFrontmatter } from "./plugin/skill-frontmatter.js";
+export type { SkillMetadata } from "./plugin/skill-frontmatter.js";
+export {
+  useInstalledPluginPrefix,
+  useLibraryHost,
+  usePushedPluginLibrary,
+  workspacePluginRoot,
+} from "./plugin/library-host.js";
+export {
+  libraryPlugin,
+  libraryPluginPackage,
+  libraryPluginReadme,
+  librarySkill,
+  loadLibraryPlugins,
+  loadPreinstalledPlugins,
+  readLibraryPackage,
+  readPackageCard,
+} from "./plugin/library-reader.js";
+export type {
+  HookManifest,
+  LibraryHooks,
+  LibraryPlugin,
+  LibrarySkill,
+  LibraryWorkbench,
+} from "./plugin/library-reader.js";
+export { PLUGIN_CATEGORIES, groupPlugins, loadPluginGroups } from "./plugin/categories.js";
+export type { PluginCategory, ResolvedPluginGroup } from "./plugin/categories.js";
 
 // Runtime entry points
 export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";

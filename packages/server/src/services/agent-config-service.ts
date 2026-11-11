@@ -8,8 +8,11 @@
  * plaintext values only ever hit disk, and are always masked in responses.
  */
 import fs from "node:fs/promises";
-import { parseDocument, parse as parseYaml } from "yaml";
+import { isMap, isScalar, parseDocument, parse as parseYaml } from "yaml";
+import type { Document } from "yaml";
 import {
+  AGENT_AUTHORS,
+  agentAuthorOf,
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
   DEFAULT_SCHEDULES_PROMPT,
@@ -40,6 +43,7 @@ import {
   THINKING_LEVEL_NAMES,
 } from "@prismshadow/penguin-core";
 import type {
+  AgentAuthor,
   MCPServerConfig,
   ThinkingLevelName,
   ToolDefinitionConfig,
@@ -87,6 +91,25 @@ export interface AgentConfigView {
   stateDir: string;
 }
 
+/**
+ * Sets the top-level `author` in place. A key the file already has keeps its position; a new
+ * one goes right after `description` (else `name`), where a reader looks for who the Agent is,
+ * or last when the file has neither.
+ */
+function setAuthor(doc: Document, author: AgentAuthor): void {
+  const map = doc.contents;
+  if (!isMap(map) || map.has("author")) {
+    doc.setIn(["author"], author);
+    return;
+  }
+  const keyIndex = (key: string) =>
+    map.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === key);
+  const anchor = Math.max(keyIndex("description"), keyIndex("name"));
+  const pair = doc.createPair("author", author);
+  if (anchor < 0) map.items.push(pair);
+  else map.items.splice(anchor + 1, 0, pair);
+}
+
 @Component()
 export class AgentConfigService implements AgentConfig {
   @Use() private readonly paths!: Paths;
@@ -121,6 +144,7 @@ export class AgentConfigService implements AgentConfig {
   ): Promise<{
     name?: string;
     description?: string;
+    author: AgentAuthor;
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
@@ -133,6 +157,7 @@ export class AgentConfigService implements AgentConfig {
       return {
         ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
         ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
+        author: agentAuthorOf(parsed),
         toolCount: countOf(tools.builtin) + countOf(tools.mcpServers),
         version: agentStateVersion({ version: parsed.version as number | undefined }),
         kernelOutdated: isKernelOutdated(
@@ -141,7 +166,7 @@ export class AgentConfigService implements AgentConfig {
       };
     } catch {
       // A corrupt config carries no readable stamp either: reported outdated, like a pre-stamp one.
-      return { toolCount: 0, version: 1, kernelOutdated: true };
+      return { author: "user", toolCount: 0, version: 1, kernelOutdated: true };
     }
   }
 
@@ -231,6 +256,7 @@ export class AgentConfigService implements AgentConfig {
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
+      author: agentAuthorOf(parsed),
       version: agentStateVersion({ version: parsed.version as number | undefined }),
       kernelVersion,
       kernelLatest: KERNEL_VERSION,
@@ -279,9 +305,35 @@ export class AgentConfigService implements AgentConfig {
   }
 
   /**
+   * Writes `author` into the Agent's config only when the file has none, in place like a PUT
+   * (comments and formatting kept). Answers whether it wrote: false when the file already
+   * names an author, whatever its value, and when there is no config to write into — the file
+   * is never created, nor rewritten when it does not parse.
+   */
+  async stampMissingAuthor(
+    projectId: string,
+    agentId: string,
+    author: AgentAuthor,
+  ): Promise<boolean> {
+    const yamlPath = systemConfigPath(this.root, projectId, agentId);
+    let raw: string;
+    try {
+      raw = await fs.readFile(yamlPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
+    }
+    const doc = parseDocument(raw);
+    if (doc.errors.length > 0 || !isMap(doc.contents) || doc.contents.has("author")) return false;
+    setAuthor(doc, author);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+    return true;
+  }
+
+  /**
    * Overwrites system_config.yaml with the current code defaults (core's
    * resetSystemConfigToDefaults) — same semantics as updating an installed skill:
-   * only the identity fields (name / description / version) survive; the system
+   * only the identity fields (name / description / author / version) survive; the system
    * prompt, max_turns, model/compaction settings and the tool list (incl. MCP
    * servers) become the current defaults. AGENTS.md, skills and the vault are
    * untouched.
@@ -308,10 +360,18 @@ export class AgentConfigService implements AgentConfig {
     agentId: string,
     config: NonNullable<AgentConfigUpdateRequest["config"]>,
   ): Promise<void> {
-    const cfg = config as unknown as Record<string, unknown>;
     const yamlPath = systemConfigPath(this.root, projectId, agentId);
     const doc = parseDocument(await fs.readFile(yamlPath, "utf8"));
+    AgentConfigService.applyConfigFields(doc, config);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+  }
 
+  /** A config write's checks and edits on `doc`: each provided key is checked (400) and set. */
+  static applyConfigFields(
+    doc: Document,
+    config: NonNullable<AgentConfigUpdateRequest["config"]>,
+  ): void {
+    const cfg = config as unknown as Record<string, unknown>;
     const setIfProvided = (path: string[], value: unknown): void => {
       if (value !== undefined) doc.setIn(path, value);
     };
@@ -321,6 +381,8 @@ export class AgentConfigService implements AgentConfig {
       ["description"],
       optionalString(cfg, "description", { maxLen: 2000, label: "description" }),
     );
+    const author = optionalEnum(cfg, "author", AGENT_AUTHORS);
+    if (author !== undefined) setAuthor(doc, author);
     setIfProvided(
       ["system_prompt"],
       optionalString(cfg, "systemPrompt", { label: "systemPrompt" }),
@@ -395,8 +457,6 @@ export class AgentConfigService implements AgentConfig {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
-
-    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
   }
 
   /**

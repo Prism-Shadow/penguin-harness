@@ -6,11 +6,11 @@
  * - A workbench source change fails until its package.json penguin.version changes.
  * - A skill whose files changed without a new version fails, naming the skill; raising its
  *   version passes.
- * - A changed hook script, or a changed hook command in package.json's `penguin.hooks`, fails
- *   until `penguin.hooks.version` is raised.
- * - The rest of package.json, README.md and icon.svg reach no installed copy and need nothing.
- * - Hook commands moved unchanged from a base's plugin.json into package.json need no bump; moved
- *   and changed at once, they need one, measured against the version the base's plugin.json had.
+ * - A changed hook script, or a changed command in the hooks contribution the plugin declares in
+ *   src/index.ts, fails until that contribution's version is raised.
+ * - The rest of src/index.ts (the card, the commands' key order), package.json, README.md and
+ *   icon.svg reach no installed copy and need nothing.
+ * - A hooks contribution that is not a literal fails, naming the file.
  * - Only plugin directories count: the library's own README is no plugin, and a plugin new since
  *   the base reads as new, with nothing printed but the summary.
  */
@@ -27,19 +27,45 @@ const skillMd = (version: string | null, body = "Do the thing.") =>
 
 const HOOKS = { version: "2026.10.04.1", stop: [{ command: "stop.mjs", timeout: 60 }] };
 
-/** The demo plugin's package.json, its `penguin` block carrying `hooks`. */
-const packageJson = (hooks: unknown = HOOKS, extra: Record<string, unknown> = {}) =>
+/** `value` as a TypeScript object literal: keys unquoted, as the plugin sources write them. */
+const literal = (value: unknown) => JSON.stringify(value).replace(/"([A-Za-z_]\w*)":/g, "$1:");
+
+/**
+ * The demo plugin's src/index.ts, written as the shipped ones are: a card and a hook package
+ * declared in the decorator literal, with comments and brackets inside strings along the way.
+ */
+const moduleSource = (hooks: unknown = HOOKS, shortDescription = "Demo [beta].") =>
+  [
+    'import { Component } from "@prismshadow/penguin-core/plugin";',
+    "",
+    "@Component({",
+    "  contributes: {",
+    `    "PluginLibraryModule.cards": [${literal({ id: "demo.card", shortDescription })}],`,
+    '    "PluginLibraryModule.hooks": [',
+    "      // The loop's turn ends here: [stop]",
+    `      /* ] */ ${typeof hooks === "string" ? hooks : literal({ id: "demo.hooks", path: "hooks", ...(hooks as object) })},`,
+    "    ],",
+    "  },",
+    "})",
+    "export class DemoPlugin {}",
+    "",
+    "export default { modules: [DemoPlugin] };",
+    "",
+  ].join("\n");
+
+/** The demo plugin's package.json: npm's fields. */
+const packageJson = (extra: Record<string, unknown> = {}) =>
   JSON.stringify({
     name: "@penguinharness/demo",
     version: "0.2.13",
     description: "Demo.",
     ...extra,
-    penguin: { short_description: "Demo.", hooks },
   });
 
 /** The repo's layout: dated versions on the skill and on the hook package. */
 const PER_PART: Record<string, string> = {
   "plugins/demo/package.json": packageJson(),
+  "plugins/demo/src/index.ts": moduleSource(),
   "plugins/demo/README.md": "# Demo\n",
   "plugins/demo/icon.svg": "<svg/>\n",
   "plugins/demo/skills/one/SKILL.md": skillMd("2026.10.04.1"),
@@ -116,57 +142,51 @@ describe("the plugin version guard", () => {
     expect(raised.ok).toBe(true);
   });
 
-  it("fails a changed hook script or hook command until penguin.hooks.version is raised", async () => {
+  it("fails a changed hook script or hook command until the hooks contribution's version is raised", async () => {
     const base = await checkout(PER_PART);
     expect((await guard(base, { "plugins/demo/hooks/stop.mjs": "export const x = 1;\n" })).ok).toBe(
       false,
     );
     await guard(base, { "plugins/demo/hooks/stop.mjs": PER_PART["plugins/demo/hooks/stop.mjs"]! });
     const longer = { ...HOOKS, stop: [{ command: "stop.mjs", timeout: 90 }] };
-    const command = await guard(base, { "plugins/demo/package.json": packageJson(longer) });
+    const command = await guard(base, { "plugins/demo/src/index.ts": moduleSource(longer) });
     expect(command.ok).toBe(false);
-    expect(command.out).toContain("plugins/demo/hooks changed but penguin.hooks.version is still");
+    expect(command.out).toContain(
+      "plugins/demo: the hook package changed but its version is still 2026.10.04.1",
+    );
 
     const raised = await guard(base, {
-      "plugins/demo/package.json": packageJson({ ...longer, version: "2026.10.09.2" }),
+      "plugins/demo/src/index.ts": moduleSource({ ...longer, version: "2026.10.09.2" }),
     });
     expect(raised.ok).toBe(true);
   });
 
-  it("asks nothing of the rest of package.json, of README.md or of icon.svg", async () => {
+  it("asks nothing of the card, of the commands' key order, of package.json, README.md or icon.svg", async () => {
     const base = await checkout(PER_PART);
     const run = await guard(base, {
-      "plugins/demo/package.json": packageJson(
+      "plugins/demo/src/index.ts": moduleSource(
         { stop: [{ timeout: 60, command: "stop.mjs" }], version: "2026.10.04.1" },
-        { version: "0.2.14", description: "Demo, described better." },
+        "Demo, described better.",
       ),
+      "plugins/demo/package.json": packageJson({
+        version: "0.2.14",
+        description: "Demo, described better.",
+      }),
       "plugins/demo/README.md": "# Demo, described better\n",
       "plugins/demo/icon.svg": "<svg viewBox='0 0 24 24'/>\n",
     });
     expect(run).toMatchObject({ ok: true });
   });
 
-  it("lets hook commands moved unchanged from the base's plugin.json through, and holds a moved command that changed", async () => {
-    // The base before the move: the hook declaration in plugin.json, no penguin block.
-    const base = await checkout({
-      ...PER_PART,
-      "plugins/demo/package.json": JSON.stringify({
-        name: "@penguinharness/demo",
-        version: "0.2.13",
-      }),
-      "plugins/demo/plugin.json": JSON.stringify({ description: "Demo.", hooks: HOOKS }),
+  it("fails a hooks contribution that is not a literal, naming the file", async () => {
+    const base = await checkout(PER_PART);
+    const run = await guard(base, {
+      "plugins/demo/src/index.ts": moduleSource("{ ...SHARED_HOOKS }"),
     });
-    const moved = await guard(base, {
-      "plugins/demo/plugin.json": null,
-      "plugins/demo/package.json": packageJson(),
-    });
-    expect(moved.ok).toBe(true);
-
-    const changed = await guard(base, {
-      "plugins/demo/package.json": packageJson({ ...HOOKS, stop: [{ command: "stop.mjs" }] }),
-    });
-    expect(changed.ok).toBe(false);
-    expect(changed.out).toContain("penguin.hooks.version is still 2026.10.04.1");
+    expect(run.ok).toBe(false);
+    expect(run.out).toContain(
+      "plugins/demo/src/index.ts: its PluginLibraryModule.hooks entry does not read as a literal",
+    );
   });
 
   it("counts plugin directories only, and reads a plugin new since the base without noise", async () => {
@@ -176,7 +196,6 @@ describe("the plugin version guard", () => {
       "plugins/fresh/package.json": JSON.stringify({
         name: "@penguinharness/fresh",
         version: "0.2.13",
-        penguin: { category: "office-productivity" },
       }),
       "plugins/fresh/skills/one/SKILL.md": skillMd("2026.10.09.1"),
     });

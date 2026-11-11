@@ -10,8 +10,8 @@
  * widget's own is the row of drawings, placed with the chart's columns so each sits under its
  * hour.
  */
-import { formatTemp } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiLang, A2uiWeatherHour } from "@prismshadow/penguin-core/a2ui";
+import { formatTemp } from "@prismshadow/a2ui";
+import type { A2uiLang, A2uiWeatherHour } from "@prismshadow/a2ui";
 import { LineChart } from "../../charts/cartesian/line-chart";
 import { bareColumns } from "../../charts/cartesian/plot-layout";
 import { useChartWidth } from "../../charts/chart-frame/chart-frame";

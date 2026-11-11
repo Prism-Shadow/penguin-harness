@@ -12,14 +12,14 @@
  * plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
- *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
- *   behind (`AgentSummary.pluginUpdates` — the page never compares versions itself), and the
- *   notice under the title updates every outdated plugin at once. Installed means the whole
- *   plugin: every one of its skills in the Agent's installed skills, its hook package (when it
- *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
- *   servers as an entry it installed — which is why the page reads the three lists per Agent
- *   (agent-installs.ts). Uninstall takes it apart the same way: one DELETE per skill, one for the
- *   hook package and one per MCP server. The dialog lists this server's Agents and each machine's
+ *   installs" dialog, and uninstalled there by the Project owner; the update nudge appears when
+ *   the server lists some Agent's copy as behind (`AgentSummary.pluginUpdates` — the page never
+ *   compares versions itself), and the notice under the title updates every outdated plugin at
+ *   once. Installed means the whole plugin: every one of its skills in the Agent's installed
+ *   skills, its hook package (when it ships one) in the Agent's installed hooks, and each of its
+ *   MCP servers among the Agent's servers as an entry it installed — which is why the page reads
+ *   the three lists per Agent (agent-installs.ts). Uninstall is one request, which the server
+ *   carries out part by part. The dialog lists this server's Agents and each machine's
  *   own in one list, in the Agents page's order (lib/machine-agent-lists.ts `mixAgents`): a
  *   machine's Agent is installed on, read back from and updated on that machine, from that
  *   machine's library, and counts towards the card's "used by" and status — with what the
@@ -61,9 +61,14 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import {
+  useUpdateBadges,
+  dismissTodo,
+  bulkOutcome,
+  failedList,
+  firstFailure,
+  noticeCounts,
+} from "../todos";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -72,14 +77,12 @@ import { useSessions } from "../../state/sessions";
 import { agentKey } from "../../lib/agent-location";
 import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { readKey, useRead } from "../../lib/read-store";
-import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { localizedText } from "../chat/skill-use";
+import { MachinePicker, type MachineChoice } from "../machines";
+import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
+import { localizedText } from "../../lib/skill-use";
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
-import { SettingsDialog } from "../settings/settings-dialog";
+import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
@@ -102,7 +105,10 @@ import {
 } from "./agent-installs";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
-import { usePluginsIncompatibleOnly, writePluginsIncompatibleOnly } from "./incompatible-only";
+import {
+  usePluginsIncompatibleOnly,
+  writePluginsIncompatibleOnly,
+} from "../../lib/plugins-incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
   foldKey,
@@ -549,13 +555,12 @@ export function PluginsPage() {
   };
 
   /**
-   * Install / uninstall on one Agent (any member can do this): optimistic update, a
+   * Install (any member) / uninstall (the Project owner) on one Agent: optimistic update, a
    * confirmation toast on success, rollback plus a toast on failure — a server name the Agent
-   * already has from someone else is the server's refusal, named in the toast. Install is one
-   * request for the whole plugin; uninstall takes it apart — one DELETE per skill, one for the
-   * hook package and one per MCP server the plugin installed — since the server offers no
-   * plugin-level delete, and a plugin's parts are what an Agent actually holds. The Agent list is re-read afterwards either way: the card's counts
-   * and its `pluginUpdates` moved, and both are read off that list.
+   * already has from someone else is the server's refusal, named in the toast. Each is one
+   * request for the whole plugin; an uninstall that could not remove some part still removed the
+   * rest, and names what it left with why. The Agent list is re-read afterwards either way: the
+   * card's counts and its `pluginUpdates` moved, and both are read off that list.
    */
   const toggleInstall = async (key: string, plugin: PluginItem, on: boolean) => {
     if (!projectId) return false;
@@ -591,42 +596,37 @@ export function PluginsPage() {
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
         );
       } else {
-        // A 404 on a part means "was already not installed": the target state is already
-        // reached for that part, so it does not fail the uninstall (otherwise the row would be
-        // stuck at "Installed" whenever this page's snapshot is stale).
-        const gone = (e: unknown) => {
-          if (e instanceof ApiError && e.status === 404) return;
-          throw e;
-        };
-        await Promise.all([
-          ...(plugin.workbenches ?? [])
-            .filter((w) => prev.workbenches?.get(w.name)?.plugin === plugin.name)
-            .map((w) => api.removeWorkbench(projectId, agentId, w.name, machineId).catch(gone)),
-          ...plugin.skills.map((skill) =>
-            api.removeAgentSkill(projectId, agentId, skill.name, machineId).catch(gone),
-          ),
-          ...(plugin.hooks.length > 0
-            ? [api.uninstallAgentHook(projectId, agentId, plugin.name, machineId).catch(gone)]
-            : []),
-          // Only the entries the plugin installed: a server the user added under one of its
-          // names is the user's.
-          ...plugin.mcpServers
-            .filter((server) => prev.mcp.get(server.name)?.plugin === plugin.name)
-            .map((server) =>
-              api.uninstallAgentMcpServer(projectId, agentId, server.name, machineId).catch(gone),
-            ),
-        ]);
-        // What the DELETEs left is known; the Agent is read again to confirm it.
+        // One request: the server takes every part apart. "Nothing of it is here" is the state
+        // asked for (this page's snapshot was behind), so it does not fail the uninstall —
+        // otherwise the row would be stuck at "Installed".
+        const res = await api
+          .uninstallAgentPlugin(projectId, agentId, plugin.name, machineId)
+          .catch((e: unknown) => {
+            if (e instanceof ApiError && e.status === 404 && e.code === "plugin_not_installed") {
+              return null;
+            }
+            throw e;
+          });
+        // What it removed is known; the Agent is read again to confirm it.
         const before = agentInstalls.get(storeKey).value;
         if (before !== null) agentInstalls.accept(storeKey, withoutPlugin(before, plugin));
         rereadInstalls(projectId, machineId, agentId);
-        toastSuccess(
-          `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
-        );
+        const failed = res?.failed ?? [];
+        if (failed.length > 0) {
+          const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
+          toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
+        } else {
+          toastSuccess(
+            `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+          );
+        }
       }
     } catch (e) {
       written();
-      toastApiError(e);
+      // A 404 of any other kind is a server without the request: a machine older than this page.
+      if (e instanceof ApiError && e.status === 404 && machineId !== null) {
+        toastError(S.errors.byCode.machine_outdated);
+      } else toastApiError(e);
       return false;
     }
     written();

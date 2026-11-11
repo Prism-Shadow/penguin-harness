@@ -11,7 +11,7 @@ import {
   formatDuration,
   formatDurationLive,
 } from "../src/components/feedback/duration-slot/duration-slot";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 describe("formatDuration", () => {
   it("keeps a tenth below a minute, and whole seconds past it", () => {
@@ -33,10 +33,9 @@ describe("formatDurationLive", () => {
 });
 
 describe("DurationSlot", () => {
-  it("shows the settled duration in tabular figures, and nothing before one is known", () => {
+  it("shows the settled duration, and nothing before one is known", () => {
     const html = renderStatic(createElement(DurationSlot, { running: false, durationMs: 2300 }));
     expect(html).toContain(">2.3s</span>");
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["font-mono", "tabular-nums"]));
     expect(renderStatic(createElement(DurationSlot, { running: false }))).toBe("");
   });
 

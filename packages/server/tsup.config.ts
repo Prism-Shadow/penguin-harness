@@ -12,7 +12,9 @@ export default defineConfig({
   // reset-admin-password are side-effect-free for CLI pre-checks and the offline
   // admin-password rescue); "./secret-file" is the shared symlink-safe writer;
   // "./hmr/manifest" is the host-less harness.json reader the CLI's thin loader
-  // resolves the current cli bundle through, and "./version-report" is the shared
+  // resolves the current cli bundle through, "./cli-shim" is the shim module that also
+  // answers "which entry runs this command" — the answer that loader and shim both act
+  // on — and "./version-report" is the shared
   // assembler `penguin version` and GET /api/version both render (core plus that
   // same reader — no server). There is deliberately no
   // "./platform" subpath: src/hmr/entry.ts (this package's platform artifact
@@ -37,6 +39,9 @@ export default defineConfig({
     "auth-token": "src/auth-token.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    "pushed-build": "src/hmr/pushed-build.ts",
+    "harness-meta": "src/harness-meta.ts",
+    "cli-shim": "src/services/cli-shim.ts",
     "version-report": "src/version-report.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,
@@ -54,8 +59,16 @@ export default defineConfig({
   clean: jsOnly ? ["!**/*.d.ts"] : true,
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
-  // inlined here so this package's published dist stays self-contained.
-  noExternal: ["@prismshadow/penguin-hmr"],
+  // inlined here so this package's published dist stays self-contained. So is the theme-pack
+  // validator, a private source package; its own dependencies (css-tree, fflate) stay imports and
+  // are this package's dependencies. And so is the UI package's clean-baseline rule table, the
+  // one subpath of it the server imports (`@prismshadow/penguin-ui/pack-rules`, which reaches
+  // nothing but two small modules): the published UI package does not export it.
+  noExternal: [
+    "@prismshadow/penguin-hmr",
+    "@prismshadow/penguin-theme-pack",
+    "@prismshadow/penguin-ui",
+  ],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
   // does; everything after is a `penguin` subcommand the machine already has). Each is

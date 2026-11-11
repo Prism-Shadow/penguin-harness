@@ -13,6 +13,9 @@
     "penguin": "./dist/penguin.js",
     "penguin-hmr": "./dist/penguin-hmr.js"
   },
+  "penguin": {
+    "cliLoader": "./dist/penguin-hmr.js"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -49,6 +52,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
+    "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",

@@ -96,6 +96,8 @@ A new chat creates its Session when you send the first message, not when it star
 
 With `--resume`, the original Session fixes the Workspace and model, so `--workspace`, `--model-id` and `--provider` cannot override them; to change the model, use `/switch-model` inside the resumed chat. `--thinking` is still accepted: it re-pins the existing Session from its next LLM request. Changing the level mid-context costs the provider's cached context, so compact first. On exit, if the Session has any history, the REPL prints a copy-pastable `penguin chat --resume <sessionId>` command.
 
+The chat shows every run of its Session, whoever started it. A Session can still be running when you resume it, for example when the terminal that started its Task was closed. The chat then shows the history, then the run so far, and follows the run until it ends before it gives you the prompt. A run started elsewhere while the chat waits at its prompt, in the Web App or another terminal, is shown the same way, its input included. While a run is shown, typing steers it, Ctrl-C stops it, an approval it is waiting on is asked in the chat, and `/exit` leaves the chat while the run goes on. A message sent while the Session compacts waits for the compaction and then runs. Following a run under way needs a server of the same version: with an older one the chat says so in a dim line and shows only the history and what streams from then on.
+
 On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences, the ones shells emit for shell integration: `A` and `B` around the `> ` prompt, `C` when a submitted prompt's turn starts, and `D;0` when it ends (`D;1` after an error). A terminal that supports them can jump between prompts and select one turn's output, and a program that runs the chat in a terminal of its own can tell when it is back at its prompt. Other terminals ignore them, and none are written unless both stdin and stdout are a terminal and `TERM` is not `dumb`. The marks are advisory: model output reaches the terminal unfiltered and can contain the same sequences.
 
 ### In-REPL commands
@@ -246,7 +248,7 @@ penguin session rename 402a2e24 -t "Q3 release prep" --json
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent export` and `agent import` move an agent as a zip of its directory; see [penguin agent export and import](#penguin-agent-export-and-import). `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -259,12 +261,30 @@ Options of `agent create`:
 | --- | --- | --- |
 | `--agent-id <id>` | The agent id, which is also its directory name. Required. | — |
 | `--name <name>` / `--description <text>` | Display name and description. | — |
+| `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent export and import
+
+```bash
+penguin agent export <agent-id> [--out <file>] [--no-skills] [--no-hooks] [--no-memory] [--no-workbenches] [--no-workbench-data] [--schedules] [--traces none|last:<N>|<from>..<to>] [--project-id <id>] [--json] [--server <url>]
+penguin agent import <file.zip|file.tar.gz|directory> [--agent-id <id>] [--overwrite] [--project-id <id>] [--json] [--server <url>]
+```
+
+`export` saves the agent as `<agent-id>-<yyyymmdd>.zip`, or as `--out` says, with the same defaults as the Web App's dialog: every part but the scheduled tasks, and no Traces. `--traces last:<N>` takes the N most recently active Sessions (1–500), each with the subagent Sessions it started; `--traces 2026-10-01..2026-10-31` takes the Sessions in those date folders. The vault never travels. See [Export and import an agent](/agents#export-and-import-an-agent).
+
+`import` uploads a zip, or a `.tar.gz` snapshot package until 1.0, as it is. A directory is an agent's directory, holding `agent_state/` and, if any, `traces/`; it is zipped under its own name, without `node_modules` or `.git`. The id is `--agent-id`, else the zip's top-level folder or the directory's name. A taken id is refused with the way to overwrite it: `--overwrite` replaces that agent's State after a backup snapshot, and only the Project owner may. The command prints whether the agent was created or overwritten, its version, and the Sessions skipped because this server already has them.
+
+```bash
+penguin agent export helper --traces last:20
+penguin agent import helper-20261109.zip --agent-id helper_copy
+penguin agent import ./ported/my_agent
 ```
 
 ### penguin agent api
@@ -325,7 +345,7 @@ penguin project ls
 Installs and removes the plugins on the server, which is an admin's to do: the CLI calls with the server's local API token, which is the admin's, so an agent can install a plugin it has reviewed in a conversation. Each command takes `--project-id` (defaulting to `PENGUIN_PROJECT_ID`, then `default_project`), `--json` and `--server`.
 
 - `penguin plugin install <specifier>` installs a plugin on the server: an npm package name, optionally with a version, range or tag (`@scope/name`, `name@1.2.0`), or an https link to a git repository or a tarball (`https://github.com/o/r`, `github:o/r#v1`). The server refuses anything else, such as a path that is not a package directory, an `http:` link or a link to a folder inside a repository. A plugin of Skills, hooks or MCP servers joins the plugin library, and you install it on an agent from the **Plugins** page. A plugin of server modules is also listed for the Project and loaded at once, which stops the agent runs in progress on the server.
-- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The CLI first reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared in `penguin.mcp_servers`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
+- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The package must be built: its `ifaces.json` is what the server reads, so run the package's build first (`npm install`, then `npm run build`, which runs `penguin-gen-ifaces`); a directory without one is refused before anything is sent. The CLI then reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared as `mcpServers` contributions in its `src/index.ts`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
 - `penguin plugin remove <name>` removes the plugin from the Project, and from the server once no other Project lists it.
 - `penguin plugin list` (or `ls`) lists the server modules the Project lists, with their state on this server, and the plugins of Skills, hooks or MCP servers installed on the server.
 

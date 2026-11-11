@@ -13,14 +13,14 @@
  *
  * Read-only, the fields show with every control disabled and no fill button. Once the reply has
  * been answered they show the answers read back out of the message that answered it
- * (`answeredWith`, core's `parseFormFill`), so a reload brings back what the reader sent, not the
+ * (`answeredWith`, A2UI's `parseFormFill`), so a reload brings back what the reader sent, not the
  * model's defaults; a field the message has no acceptable line for shows unanswered
  * (form-answers.ts). A message that is not the form's answer leaves the form as it was.
  */
 import { useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
-import { fieldProblem, formFillText, parseFormFill } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiForm } from "@prismshadow/penguin-core/a2ui";
+import { fieldProblem, formFillText, parseFormFill } from "@prismshadow/a2ui";
+import type { A2uiForm } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
 import { useA2uiActions } from "./actions";

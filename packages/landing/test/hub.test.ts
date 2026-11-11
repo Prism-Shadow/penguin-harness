@@ -2,9 +2,16 @@
  * The hub's build-time readers (scripts/hub/) and the list pages' filtering (src/lib/hub/filter.ts).
  *
  * Scenarios:
- * - Given a plugin package with skills, hooks and an icon but no penguin.title or
- *   penguin.description, when the hub is read, then it is shown by its id, described by its npm
- *   description, and lists what it ships.
+ * - Given a plugin package whose built table carries a card with no title, when the hub is read,
+ *   then it is shown by its id and described by its npm description; given one whose table
+ *   declares Skills, a hook package and an icon, then it lists exactly what it declares — not a
+ *   Skill folder no entry names, nor what a module its default export leaves out contributes.
+ * - Given a plugin package whose icon is a line drawing in currentColor, and one whose icon is a
+ *   PNG at its root, when the hub is read, then the first is carried to be drawn in the tile's
+ *   ink and the second as itself; given an icon whose bytes are not the format its name says,
+ *   then the build fails naming the file.
+ * - Given a plugin package that was never built (no ifaces.json), when the hub is read, then the
+ *   build fails naming that file.
  * - Given a benchmark whose id differs from its folder, when the hub is read, then the build fails
  *   naming that file (nothing is silently dropped).
  * - Given a draft benchmark and a draft leaderboard, when the hub is read, then both are left
@@ -39,7 +46,7 @@ afterEach(() => {
 });
 
 /** A temp tree from `{ "relative/path": contents }`. */
-function tree(files: Record<string, string>): string {
+function tree(files: Record<string, string | Uint8Array>): string {
   const root = mkdtempSync(join(tmpdir(), "hub-"));
   roots.push(root);
   for (const [path, text] of Object.entries(files)) {
@@ -49,15 +56,31 @@ function tree(files: Record<string, string>): string {
   return root;
 }
 
-const plugin = (name: string, penguin: object = {}, extra: object = {}) =>
+/** A plugin's package.json: npm's fields only. */
+const plugin = (name: string) =>
   JSON.stringify({
     name: `@penguinharness/${name}`,
     version: "1.0.0",
     description: `${name} does things.`,
     license: "Apache-2.0",
     author: { name: "Prism-Shadow", url: "https://github.com/Prism-Shadow" },
-    penguin: { category: "rsi", ...penguin },
-    ...extra,
+  });
+
+/**
+ * A plugin's built table as `gen-ifaces` writes it: the modules with what each contributes, and
+ * the ones the default export names (`listed`).
+ */
+const table = (modules: Record<string, Record<string, object[]>>, listed = ["Plugin"]) =>
+  JSON.stringify({
+    ifaces: {},
+    types: {},
+    modules: Object.fromEntries(
+      Object.entries(modules).map(([name, contributes]) => [
+        name,
+        { name, kind: "component", requires: {}, provides: {}, contributes, children: [] },
+      ]),
+    ),
+    plugin: { modules: listed, replaces: [] },
   });
 
 const benchmark = (id: string, status = "published") =>
@@ -162,24 +185,54 @@ function repo(extra: Record<string, string> = {}) {
   });
 }
 
-function plugins() {
+function plugins(extra: Record<string, string | Uint8Array> = {}) {
   return tree({
-    "toolkit/package.json": plugin("toolkit", {
-      title: "Toolkit",
-      hooks: { version: "1", stop: [{ command: "stop.mjs" }] },
-      icon: "icon.svg",
+    "toolkit/package.json": plugin("toolkit"),
+    "toolkit/ifaces.json": table({
+      Plugin: {
+        "PluginLibraryModule.cards": [
+          { id: "toolkit.card", title: "Toolkit", category: "rsi", icon: "icon.svg" },
+        ],
+        "PluginLibraryModule.skills": [
+          { id: "toolkit.skill.learn", name: "learn", path: "skills/learn" },
+        ],
+        "PluginLibraryModule.hooks": [
+          { id: "toolkit.hooks", version: "1", path: "hooks", stop: [{ command: "stop.mjs" }] },
+        ],
+      },
+      // A module the default export does not name: what it contributes is not the plugin's.
+      Spare: {
+        "PluginLibraryModule.skills": [
+          { id: "toolkit.skill.spare", name: "spare", path: "skills/spare" },
+        ],
+      },
     }),
-    "toolkit/icon.svg": '<svg viewBox="0 0 24 24"><path d="M1 1h2"/></svg>',
+    "toolkit/icon.svg":
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 1h2"/></svg>',
     "toolkit/skills/learn/SKILL.md":
       "---\nname: learn\ndescription: Learn from scores.\n---\n# Learn",
+    "toolkit/skills/spare/SKILL.md": "---\nname: spare\ndescription: Spare.\n---\n# Spare",
+    "toolkit/skills/draft/SKILL.md": "---\nname: draft\ndescription: Undeclared.\n---\n# Draft",
     "plain/package.json": plugin("plain"),
+    "plain/ifaces.json": table({
+      Plugin: { "PluginLibraryModule.cards": [{ id: "plain.card", category: "rsi" }] },
+    }),
+    "photo/package.json": plugin("photo"),
+    "photo/ifaces.json": table({
+      Plugin: { "PluginLibraryModule.cards": [{ id: "photo.card", category: "rsi" }] },
+    }),
+    "photo/icon.png": PNG,
+    ...extra,
   });
 }
+
+/** The first bytes of a PNG: as much of one as its format is told by. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 
 const mean2 = `  - op: mean\n    args:\n${leaf("exp-1")}${leaf("exp-2")}`;
 
 describe("the hub readers", () => {
-  it("shows a plugin by its id and npm description when it names neither, with what it ships", () => {
+  it("shows a plugin by its id and npm description when its card names neither, and lists exactly what it declares", () => {
     const hub = loadHub({ repo: repo(), pluginsDir: plugins() });
     const plain = hub.details.plugin["plain"]!;
     expect(plain.title).toBe("plain");
@@ -191,11 +244,34 @@ describe("the hub readers", () => {
     const toolkit = hub.details.plugin["toolkit"]!;
     expect(toolkit.skills).toEqual([{ name: "learn", description: "Learn from scores." }]);
     expect(toolkit.hooks).toEqual(["stop"]);
-    expect(toolkit.icon).toMatch(/^data:image\/svg\+xml,/);
+    expect(plain.icon).toBeUndefined();
     expect(hub.index.plugins.find((p) => p.id === "toolkit")).toMatchObject({
       skillCount: 1,
       hookCount: 1,
     });
+  });
+
+  it("carries a line icon to take the tile's ink and a PNG icon as itself, and fails on a mislabelled one", () => {
+    const hub = loadHub({ repo: repo(), pluginsDir: plugins() });
+    expect(hub.details.plugin["toolkit"]!.icon).toEqual({
+      url: expect.stringMatching(/^data:image\/svg\+xml,/),
+      tint: true,
+    });
+    expect(hub.details.plugin["photo"]!.icon).toEqual({
+      url: `data:image/png;base64,${Buffer.from(PNG).toString("base64")}`,
+      tint: false,
+    });
+    const mislabelled = plugins({ "photo/icon.png": "<svg></svg>" });
+    expect(() => loadHub({ repo: repo(), pluginsDir: mislabelled })).toThrow(
+      /photo[/\\]icon\.png: its bytes are not the image format its name says/,
+    );
+  });
+
+  it("fails the build on a plugin package that was never built", () => {
+    const unbuilt = tree({ "fresh/package.json": plugin("fresh") });
+    expect(() => loadHub({ repo: repo(), pluginsDir: unbuilt })).toThrow(
+      /fresh[/\\]ifaces\.json: missing; build the plugins first/,
+    );
   });
 
   it("fails the build on a benchmark whose id differs from its folder", () => {

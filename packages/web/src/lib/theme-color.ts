@@ -2,10 +2,9 @@
  * The page's theme colour: the canvas the current theme and mode actually paint, written into
  * every `<meta name="theme-color">`.
  *
- * A host draws its own chrome in this colour — a phone browser's toolbar, and the desktop shell's
- * window controls, which sit over the page's top band and pick light or dark symbols from it. The
- * static tags in index.html can only follow the system's light/dark preference, and the app's own
- * mode setting may differ from it.
+ * A host draws its own chrome in this colour — a phone browser's toolbar. The static tags in
+ * index.html can only follow the system's light/dark preference, and the app's own mode setting
+ * may differ from it.
  */
 export function syncThemeColor(doc: Document): void {
   const canvas = doc.defaultView?.getComputedStyle(doc.body).backgroundColor ?? "";

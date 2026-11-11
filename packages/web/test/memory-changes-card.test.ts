@@ -7,12 +7,18 @@
  *   no glyph), and the brain mark stays the only one.
  * - With nothing to open, there is no action and still one mark.
  * - The action's words follow the UI language.
+ *
+ * Its rows, against the loaded memory listing:
+ * - A file the conversation wrote into a memory's folder stays on the card (it is listed under
+ *   that memory, not deleted) and reads right under the memory's own row; a changed file deleted
+ *   since leaves the card.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ICONS } from "@prismshadow/penguin-ui";
 import { MemoryChangesCard } from "../src/features/chat/memory-changes-card";
+import { deletedChangeKeys, type ScopeFiles } from "../src/features/chat/memory-nav";
 import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -70,5 +76,46 @@ describe("MemoryChangesCard header", () => {
     const html = render(() => {});
     expect(html).toContain(en.chat.memoryOpenList);
     expect(html).not.toContain(zh.chat.memoryOpenList);
+  });
+});
+
+describe("MemoryChangesCard rows", () => {
+  const at = "2026-08-20T00:00:00.000Z";
+  const listing: ScopeFiles[] = [
+    {
+      info: { scopeKey: "user", kind: "user", fileCount: 2, hasIndex: true },
+      files: [
+        {
+          name: "csv-tools.md",
+          title: "csv-tools",
+          description: "",
+          size: 1,
+          modifiedAt: at,
+          files: [{ path: "csv-tools/dedupe.py", size: 1, modifiedAt: at }],
+        },
+        { name: "prefs.md", title: "prefs", description: "", size: 1, modifiedAt: at, files: [] },
+      ],
+      orphanFiles: [],
+    },
+  ];
+
+  it("keeps a file written into a memory's folder, under that memory, and drops one deleted since", () => {
+    const rows: MemoryChangeRow[] = [
+      { scope: "user", file: "csv-tools/dedupe.py", op: "write" },
+      { scope: "user", file: "prefs.md", op: "edit" },
+      { scope: "user", file: "csv-tools.md", op: "write" },
+      { scope: "user", file: "csv-tools/gone.py", op: "write" },
+    ];
+    const deletedKeys = deletedChangeKeys(listing, rows) ?? undefined;
+    const html = renderToStaticMarkup(
+      createElement(MemoryChangesCard, { rows, deletedKeys, onLocateChange: () => {} }),
+    );
+    // A row that opens carries its full path as its tooltip.
+    const order = ["csv-tools.md", "csv-tools/dedupe.py", "prefs.md"].map((p) =>
+      html.indexOf(`data-tooltip="${p}"`),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(html).not.toContain("gone.py");
   });
 });

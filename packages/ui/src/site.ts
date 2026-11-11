@@ -23,5 +23,7 @@ export * from "./components/site/site-markdown";
 export * from "./components/site/markdown-text";
 export * from "./components/site/remark-tabs";
 export * from "./components/site/remark-callout";
-export { SITE_REMARK_PLUGINS } from "./components/content/prose/markdown-plugins";
+export { SITE_REMARK_PLUGINS } from "./components/content/prose/site-markdown-plugins";
 export { Fold } from "./components/layout/fold/fold";
+export { ImageIcon } from "./components/icons/image-icon/image-icon";
+export type { ImageIconSource } from "./components/icons/image-icon/image-icon";

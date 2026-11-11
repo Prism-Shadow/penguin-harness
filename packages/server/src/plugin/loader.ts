@@ -25,11 +25,15 @@ import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import {
   effectivePluginTable,
+  IFACES_FILE,
+  packageEntry,
   parsePluginTables,
   projectConfigPath,
+  readPluginTable,
 } from "@prismshadow/penguin-core";
+import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -39,7 +43,7 @@ import type {
   ModuleDef,
   Resources,
 } from "@prismshadow/penguin-core/kernel";
-import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
+import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { readManifest } from "../hmr/manifest.js";
@@ -241,40 +245,6 @@ export function resolvePluginPackage(
   return null;
 }
 
-/**
- * The file an `import "<name>"` of the package would load: `exports["."]` — a string, or its
- * `import` / `node` / `default` condition — else `main` (with `.js` supplied when it is
- * written without one), else `index.js`. The packages are ESM and name one entry, which is
- * all this reads; anything richer is the package's own business once Node imports it.
- */
-function packageEntry(dir: string, manifest: string): string | null {
-  let pkg: { exports?: unknown; main?: unknown };
-  try {
-    pkg = JSON.parse(readFileSync(manifest, "utf8")) as typeof pkg;
-  } catch {
-    return null;
-  }
-  const condition = (value: unknown): string | null => {
-    if (typeof value === "string") return value;
-    if (value === null || typeof value !== "object") return null;
-    const v = value as Record<string, unknown>;
-    return condition(v.import) ?? condition(v.node) ?? condition(v.default) ?? null;
-  };
-  let rel: string | null = null;
-  const exp = pkg.exports;
-  if (typeof exp === "string") rel = exp;
-  else if (exp !== null && typeof exp === "object") {
-    const table = exp as Record<string, unknown>;
-    rel = condition("." in table ? table["."] : table);
-  }
-  rel ??= typeof pkg.main === "string" ? pkg.main : "./index.js";
-  const file = path.resolve(dir, rel);
-  if (!existsSync(file) && path.extname(file) === "" && existsSync(`${file}.js`)) {
-    return `${file}.js`;
-  }
-  return file;
-}
-
 /** Where a specifier resolves from — the entry file and the base that found it — or null. */
 function resolvePlugin(
   specifier: string,
@@ -292,7 +262,8 @@ function resolvePlugin(
   if (!PACKAGE_NAME.test(specifier)) return null;
   const found = resolvePluginPackage(specifier, bases);
   if (found === null) return null;
-  const file = packageEntry(found.dir, found.manifest);
+  // core's rule: `exports["."]`, else `main`, else `index.js` (a package of content alone has none).
+  const file = packageEntry(found.dir);
   return file === null ? null : { file, base: found.base };
 }
 
@@ -356,16 +327,10 @@ async function importPlugin(
   return { module: await import(specifier), file: null, stamp: null };
 }
 
-/** The generated table a plugin package ships beside its package.json. */
-export const IFACES_FILE = "ifaces.json";
+/** The generated table a plugin package ships beside its package.json (core plugin/table.ts reads it). */
+export { IFACES_FILE };
+export type { PluginDeclaration };
 
-/** The `plugin` entry of a package's table: the names its default export lists, read statically by the generator. */
-export interface PluginDeclaration {
-  modules: readonly string[];
-  replaces: readonly string[];
-}
-
-/**
 /**
  * What a listed specifier DECLARES, read from its generated table alone — the package is never
  * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
@@ -402,10 +367,10 @@ export async function readPluginDeclaration(
 
 /**
  * The package's generated table (`ifaces.json` beside its `package.json`, the nearest one
- * above the resolved entry file): the manifest of every decorated class, the signature of
- * every interface they name. A package is a plugin by being listed; the table is its
- * MODULE payload, and a package without one ships no modules (`manifests` empty). Null
- * only when no `package.json` is above the file at all.
+ * above the resolved entry file), read by core's reader (plugin/table.ts): the manifest of every
+ * decorated class, the signature of every interface they name. A package is a plugin by being
+ * listed; the table is its MODULE payload, and a package without one ships no modules
+ * (`manifests` empty). Null only when no `package.json` is above the file at all.
  */
 async function readPackageTable(file: string | null): Promise<{
   where: string;
@@ -415,56 +380,18 @@ async function readPackageTable(file: string | null): Promise<{
   plugin: PluginDeclaration;
 } | null> {
   if (file === null) return null;
-  let dir = path.dirname(file);
-  for (;;) {
+  for (let dir = path.dirname(file); ;) {
     const where = path.join(dir, "package.json");
-    try {
-      await fs.access(where);
-      const tableFile = path.join(dir, IFACES_FILE);
-      let text: string;
-      try {
-        text = await fs.readFile(tableFile, "utf8");
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        return {
-          where,
-          ifaces: { ifaces: {}, types: {} },
-          manifests: {},
-          plugin: { modules: [], replaces: [] },
-        };
-      }
-      const table = JSON.parse(text) as {
-        ifaces?: unknown;
-        types?: unknown;
-        modules?: unknown;
-        plugin?: unknown;
-      };
-      const isRecord = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
-      if (!isRecord(table.ifaces) || !isRecord(table.types) || !isRecord(table.modules)) {
-        throw new Error(`${tableFile}: expected { ifaces, types, modules } (gen-ifaces output)`);
-      }
-      const names = (v: unknown) => Array.isArray(v) && v.every((n) => typeof n === "string");
-      const plugin = (table.plugin ?? {}) as { modules?: unknown; replaces?: unknown };
-      if (!isRecord(plugin) || !names(plugin.modules ?? []) || !names(plugin.replaces ?? [])) {
-        throw new Error(
-          `${tableFile}#plugin: expected { modules: [<name>, …], replaces: [<name>, …] }`,
-        );
-      }
-      const manifests: Record<string, ModuleDef["manifest"]> = {};
-      for (const [name, doc] of Object.entries(table.modules as Record<string, unknown>)) {
-        manifests[name] = parseManifest(doc, `${tableFile}#modules.${name}`);
-      }
-      return {
-        where,
-        ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
-        manifests,
-        plugin: {
-          modules: (plugin.modules ?? []) as string[],
-          replaces: (plugin.replaces ?? []) as string[],
-        },
-      };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    if (existsSync(where)) {
+      const table = readPluginTable(dir);
+      return table === null
+        ? {
+            where,
+            ifaces: { ifaces: {}, types: {} },
+            manifests: {},
+            plugin: { modules: [], replaces: [] },
+          }
+        : { where, ifaces: table.ifaces, manifests: table.manifests, plugin: table.plugin };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;

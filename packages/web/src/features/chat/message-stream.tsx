@@ -7,8 +7,16 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
 import {
   A2uiActionsProvider,
   EmptyState,
@@ -30,7 +38,7 @@ import type { RequestFailure } from "./request-failure-report";
 import { parseUserMessageBody } from "./user-message-body";
 import { interactiveReplyIndex } from "./a2ui-reply";
 import { readOnlyActions } from "./a2ui-answered";
-import { WorkspaceLinksProvider } from "./workspace-links";
+import { WorkspaceLinksProvider } from "../workspace";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { ElidedBodiesContext } from "./elided-body";
 import { HistoryTransferLine } from "./history-loading";
@@ -730,7 +738,7 @@ export function MessageStream({
           aria-label={S.chat.jumpToLatest}
           data-tooltip={S.chat.jumpToLatest}
           onClick={jumpToLatest}
-          className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          className="anim-pop absolute bottom-3 left-1/2 z-raised -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
           <GlyphIcon d={ICONS.arrowDown} size={16} />
         </button>

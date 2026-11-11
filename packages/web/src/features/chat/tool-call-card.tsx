@@ -19,15 +19,20 @@
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
-import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
+import {
+  ToolCallCard,
+  useElapsedPast,
+  type RunState,
+  type ToolCallDuration,
+} from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
 import { routedUrl } from "../../lib/session-machines";
-import { approvalKey } from "../../lib/amsp/stream-model";
-import type { ToolCallItem } from "../../lib/amsp/stream-model";
+import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
+
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { ElidedBodyNote, hasElidedNote } from "./elided-body";
@@ -443,6 +448,16 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
           ? {
               preview: previewArguments(item.name, approvalArguments),
               payload: pendingFilePayload(item.name, approvalArguments),
+              // A command-policy rule asked, not the approval mode: the block says which one,
+              // or a person who allowed everything would not know why this call stopped.
+              ...(pending.reason?.kind === "policy"
+                ? {
+                    reason: {
+                      text: S.chat.approvalPolicyReason(pending.reason.rule),
+                      hint: S.chat.approvalPolicyReasonHint,
+                    },
+                  }
+                : {}),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }

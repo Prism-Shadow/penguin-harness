@@ -31,7 +31,7 @@ import { AuthProvider } from "../src/state/auth";
 import { ProjectProvider } from "../src/state/project";
 import { MachinesProvider } from "../src/state/machines";
 import { SessionsProvider } from "../src/state/sessions";
-import { WorkspaceFinder } from "../src/features/chat/workspace-finder";
+import { WorkspaceFinder } from "../src/features/workspace/workspace-finder";
 import { S } from "../src/lib/strings";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import {

@@ -11,6 +11,7 @@ fetched from a CDN, so the desktop build renders offline.
 | Primer `github` | system sans | = sans | JetBrains Mono Variable | system CJK |
 | Frost `modern` | **MiSans** 400 / 500 | = sans | JetBrains Mono Variable | MiSans (the same family) |
 | Console `geek` | IBM Plex Sans Variable | = sans | JetBrains Mono Variable | Noto Sans SC Variable |
+| Doodle `doodle` | Shantell Sans Variable | = sans | JetBrains Mono Variable | LXGW WenKai GB Screen |
 
 Two faces per theme since the theme identities (2026-09-19): `--ui-font-ui` is the chrome's face
 (`body` sets it; navigation, controls, labels, headings, badges, tables) and `--ui-font-sans` the
@@ -18,25 +19,36 @@ reading face (message text, prose, the composer's input opt in with `font-sans`)
 both at one family; Console set its chrome in a mono face until 2026-09-30, and now keeps mono for
 code and a few technical marks (the status-line tags, a step's label and block bar, chart axis
 labels). The display face is the chrome face everywhere: Console's h1 is the Plex Sans bold, and IBM
-Plex Sans Condensed 600 (the old uppercase h1) stays declared in `geek.css` but unnamed until its
+Plex Sans Condensed 600 (the old uppercase h1) stays declared in `themes/geek/fonts.css` but unnamed until its
 dependency is dropped.
 
 | family | files | source | licence |
 | --- | --- | --- | --- |
-| Mona Sans Variable | `github.css`: latin + latin-ext — a pairing option; no theme names it since 2026-10-02 | `@fontsource-variable/mona-sans` | OFL-1.1 |
-| JetBrains Mono Variable | `github.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
-| MiSans | `modern.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
-| IBM Plex Sans Variable | `geek.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
-| IBM Plex Sans Condensed | `geek.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
+| Mona Sans Variable | `themes/github/fonts.css`: latin + latin-ext — a pairing option; no theme names it since 2026-10-02 | `@fontsource-variable/mona-sans` | OFL-1.1 |
+| JetBrains Mono Variable | `themes/github/fonts.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
+| MiSans | `themes/modern/fonts.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
+| IBM Plex Sans Variable | `themes/geek/fonts.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
+| IBM Plex Sans Condensed | `themes/geek/fonts.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
 | Noto Sans SC Variable | `cjk.css`: fontsource's own sheet, 101 `unicode-range` slices | `@fontsource-variable/noto-sans-sc` | OFL-1.1 |
+| Shantell Sans Variable | `shantell-sans.css`: latin + latin-ext | `@fontsource-variable/shantell-sans` | OFL-1.1 |
+| LXGW WenKai GB Screen | `themes/doodle/fonts.css`: 400, the 48 `unicode-range` slices in `themes/doodle/fonts/` that hold any character of the GB2312 grid | vendored: `scripts/vendor-wenkai.mjs` copies them from the pinned `lxgw-wenkai-screen-web` 1.530.0 tarball | OFL-1.1, with the author's permission for web-delivery subsets to keep the font's name |
 
 Why these faces: Mona Sans was Primer's face from W1a (2026-09-30) until 2026-10-02 and stays as a
 pairing option; Primer reads in the platform's own faces. MiSans gives Frost one family for Latin and
 Chinese, so a zh line sits in the same face as the English around it; no other face on the shortlist
 has Chinese. IBM Plex Sans is Console's main face, chrome and reading text alike, and JetBrains
-Mono, the code face the three themes share, sets its code and its technical marks.
+Mono, the code face every theme shares, sets its code and its technical marks.
 
-Frost ships two MiSans weights and no more, so `themes/modern.css` turns off weight synthesis: a 600
+Doodle (2026-11-04) reads in two hand-drawn faces chosen by specimen at the 13–16px rungs, light
+and dark, DPR 1 and 2: Shantell Sans held its letters apart where Patrick Hand and Kalam crowded
+and Kevin Sans and Short Stack ran wide; LXGW WenKai GB Screen read a touch crisper at 13px than
+Xiaolai, and its licence lets web-delivery subsets keep the font's name, which Xiaolai's reserved
+names do not. WenKai's web release is sliced by character frequency, so the 48 slices that hold
+the GB2312 grid are 2.8 MB of its 13.7 MB; the rare ideographs, Hangul and symbols in the other
+211 fall back to Noto Sans SC and then the platform. WenKai ships one weight, and Frost's recipes
+turn weight synthesis off, so Han in a bold title stays in it.
+
+Frost ships two MiSans weights and no more, so `themes/modern/recipes.css` turns off weight synthesis: a 600
 or 700 request renders in Medium instead of a synthesized bold, which smears Han strokes. Frost's
 own tokens stop at 500.
 
@@ -45,7 +57,7 @@ own tokens stop at 500.
 Font files and font declarations cost differently:
 
 - **Files.** A browser fetches a font file only when an element's `font-family` names its family
-  and its text falls inside the face's `unicode-range`. Each theme file names only its own
+  and its text falls inside the face's `unicode-range`. Each theme pack names only its own
   families, so a session downloads its theme's faces and nothing else, and only the slices its text
   touches. The consumers' Vite configs never inline a font (`build.assetsInlineLimit`), so every
   slice stays a file of its own.
@@ -78,7 +90,9 @@ gallery), because the offline desktop app needs them all:
 | JetBrains Mono Variable | 2 | 55,600 |
 | IBM Plex Sans Variable | 2 | 76,676 |
 | IBM Plex Sans Condensed 600 | 2 | 35,860 |
-| **total** | **307** | **8,996,252** |
+| Shantell Sans Variable | 2 | 116,484 |
+| LXGW WenKai GB Screen (GB2312 slices) | 48 | 2,755,632 |
+| **total** | **357** | **11,868,368** |
 
 MiSans covers the characters of Noto's slice partition plus its own other non-ideograph characters.
 The roughly 15,500 rare ideographs outside that partition are not shipped (they would add 2.46 MB per
@@ -92,6 +106,14 @@ The `penguinUi()` Vite plugin emits every text in `LICENSES/` beside the build a
 **OFL-1.1 faces.** `scripts/sync-font-licenses.mjs` mirrors each fontsource package's `LICENSE` into
 `LICENSES/<package>.txt` (`pnpm --filter @prismshadow/penguin-ui sync:font-licenses`, `--check` to
 verify without writing).
+
+**LXGW WenKai GB Screen.** SIL OFL 1.1 with the author's additional permission: the reserved
+names may stay on versions subsetted or converted solely for web font delivery that are not made
+available as installable desktop fonts — which the slices are, and nothing offers them for
+download on their own. `LICENSES/lxgw-wenkai-gb-screen.txt` is the release repository's `OFL.txt`
+(https://github.com/lxgw/LxgwWenKai-Screen, sha256 `ba38832f…62fd8b6` as `vendored-fonts.json`
+pins it in full), whitespace-normalized; its copyright lines are the ones the font's name table
+carries.
 
 **MiSans.** Xiaomi Inc. publishes MiSans under the MiSans Font Intellectual Property License
 Agreement: https://hyperos.mi.com/font-download/MiSans%E5%AD%97%E4%BD%93%E7%9F%A5%E8%AF%86%E4%BA%A7%E6%9D%83%E8%AE%B8%E5%8F%AF%E5%8D%8F%E8%AE%AE.pdf
@@ -115,6 +137,10 @@ What the licence asks, and where the app does it:
 
 - **A fontsource face:** change the dependency, run `pnpm install`, then `sync:font-licenses`, and
   check the paths in the theme's font sheet against the package's `files/`.
+- **LXGW WenKai GB Screen:** point `vendored-fonts.json`'s `wenkai` entry at the new
+  `lxgw-wenkai-screen-web` tarball (its URL, `packageIntegrity` and `version`), then run
+  `node packages/ui/scripts/vendor-wenkai.mjs` (`--check` compares without writing); re-read the
+  release's `OFL.txt` against `LICENSES/lxgw-wenkai-gb-screen.txt`.
 - **MiSans:** download the official package from https://hyperos.mi.com/font/ (the site asks you to
   accept the licence first), then from the repository root run
   `uv run packages/ui/scripts/build-misans.py <MiSans.zip>` (or `pnpm --filter

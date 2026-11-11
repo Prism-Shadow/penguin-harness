@@ -149,7 +149,7 @@ export interface SessionRowProps {
   sessionId: string;
   /** Draws the title line with the classes the row hands over (its ink and weight). */
   renderTitle: (className: string) => ReactNode;
-  /** The open conversation: the selected wash and the title's medium weight. */
+  /** The open conversation: the selected wash, the title's medium weight and `aria-current="page"`. */
   active?: boolean;
   /** Archived: the title recedes to the subtle ink. */
   archived?: boolean;
@@ -272,7 +272,7 @@ export function SessionRow({
       {dropEdge !== null && (
         <div
           aria-hidden
-          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-accent ${
+          className={`pointer-events-none absolute inset-x-1 z-raised h-0.5 rounded-full bg-accent ${
             dropEdge === "above" ? "-top-px" : "-bottom-px"
           }`}
         />
@@ -292,6 +292,8 @@ export function SessionRow({
           type="button"
           data-testid="session-row"
           data-session-id={sessionId}
+          // The open conversation is where the reader is: the window's selected nav row.
+          aria-current={active ? "page" : undefined}
           // A press-and-hold that opened the menu must not also open the conversation: touch
           // screens replay the held press as a click once the finger lifts.
           onClick={() => {

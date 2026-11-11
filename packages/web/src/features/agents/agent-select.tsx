@@ -3,8 +3,8 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { pillClass } from "../chat/workspace-select";
-import { employeesLast, isEmployee } from "./agent-employment";
+import { pillClass } from "../workspace";
+import { employeesLast, isEmployee } from "../../lib/agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({
@@ -33,7 +33,7 @@ export function AgentSelect({
         aria-label={S.chat.chooseAgent}
         data-tooltip={S.chat.chooseAgent}
         aria-haspopup="dialog"
-        className={pillClass}
+        className={`ui-edge ${pillClass}`}
         onClick={() => {
           setQuery("");
           setOpen(true);

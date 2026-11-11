@@ -1,5 +1,5 @@
 /**
- * The shell's organization status marks (features/company/shell-org-status.ts).
+ * WebApp's organization status marks (features/company/shell-org-status.ts).
  *
  * - An organization headlines invalid configuration above paused, and paused above active.
  * - A session-list group shows its skeleton only until a fetch completes, then the error line

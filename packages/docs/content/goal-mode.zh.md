@@ -16,7 +16,7 @@ description: 给 Agent 一个目标，让它持续工作，直到目标完成、
 **开始之前**
 
 - Agent 已安装 `goal` 插件。`default_agent` 预装了它，其他 Agent 可以从插件库安装。
-- Agent 的钩子已开启，也就是 Agent **钩子**标签页上的**启用钩子**。除非 Project owner 把它关掉，钩子默认开启。
+- Agent 的钩子已开启，也就是 Agent **插件**标签页上的**启用钩子**。除非 Project owner 把它关掉，钩子默认开启。
 
 没装插件或关了钩子，Agent 就无法启动目标。Web App 和 API 会直接返回 `409 goal_plugin_not_installed`，而不是运行一个到头就结束的普通 Task。
 

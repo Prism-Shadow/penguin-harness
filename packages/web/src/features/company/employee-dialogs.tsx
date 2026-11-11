@@ -19,8 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -56,19 +56,24 @@ import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
+  type AvatarCrop,
 } from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import {
+  SkillPickList,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+  type PickableItem,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -78,7 +83,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   effectiveThinkingLevel,
   thinkingLevelLabel,
-} from "../chat/thinking-level";
+} from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
@@ -159,7 +164,7 @@ function HireForm({
   onHired,
   library,
 }: Omit<HireDialogProps, "open"> & { library: HirePluginItem[] | null }) {
-  const { agents } = useProject();
+  const { agents, reloadAgents } = useProject();
   const { currency } = useTheme();
   const company = useCompany();
 
@@ -267,6 +272,9 @@ function HireForm({
       // the sidebar's 工位 row carries its real id straight away, rather than a row that
       // cannot be opened or bound until some later event happens to refresh the cache.
       void company.reloadOrgSessions();
+      // The Agent is an employee now (and may be a new one): the Agent list carries every
+      // employment mark the shell shows — the Agents page's delete button among them.
+      void reloadAgents().catch(() => undefined);
       toastSuccess(S.company.chart.hired(hireName));
       setStdioConfirmOpen(false);
       onHired();

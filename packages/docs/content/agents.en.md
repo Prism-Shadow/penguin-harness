@@ -6,7 +6,7 @@ description: Create agents, and configure their prompts, tools, Skills, hooks, m
 An agent is a configured assistant in a Project. Each agent has its own instructions, runtime settings, tools, Skills, hook packages, memory, vault variables and scheduled tasks, stored together as its Agent State. You create agents and change their settings on the **Agents** page.
 
 - To see the agents in a Project, see [The Agents page](#the-agents-page).
-- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai) or [Create an agent manually](#create-an-agent-manually).
+- To add an agent, see [Create an agent with AI](#create-an-agent-with-ai), [Create an agent manually](#create-an-agent-manually) or [Import an agent](#import-an-agent).
 - To change an agent, see [Agent settings](#agent-settings) and the section for each tab.
 - To back up, move or reset an agent, see [Overview tab](#overview-tab).
 - To delete an agent, see [Delete an agent](#delete-an-agent).
@@ -15,6 +15,8 @@ An agent is a configured assistant in a Project. Each agent has its own instruct
 
 In the sidebar, select **Agents**. The page lists every agent in the current Project. Use the search box (**Search agents: id / name / description**) to filter the list.
 
+By default the list is grouped by who created each agent: **Created by users**, **Created by agents** and **Created in company mode**, in that order. A group with no agents is not shown, and selecting a group's header collapses or expands it. To see one list instead, choose **No grouping** in the select beside the search box. In that list the employees of the Project's organizations come last, in a **Company employees** section of their own. The browser remembers the grouping you choose and the groups you collapsed.
+
 Every Project starts with the built-in agent `default_agent`. While it is the only agent, a card below it offers to create your first one: "No agent of your own yet".
 
 Each agent card shows:
@@ -22,7 +24,7 @@ Each agent card shows:
 - the agent's name, its id, its Agent State version (for example `v3`) and its description; an agent whose API is on carries an API icon after its name (**API access on**);
 - a row of counts: Sessions, tools, Skills, hook packages, memories, vault variables and scheduled tasks, plus when the agent was last modified. Select a count to open the matching settings tab;
 - the agent's Session activity over the last 30 days;
-- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; and a delete button.
+- **New chat**, which starts a conversation with the agent; **Settings**, which opens its settings; an icon that opens its costs in **Cost Center**; **Export agent**, which opens the export dialog (see [Export and import an agent](#export-and-import-an-agent)); and a delete button.
 
 When a newer kernel is available for some agents, their cards show **Kernel update needed**, and a notice at the top of the page offers **Update now** and **Dismiss**. See [Update the kernel](#update-the-kernel).
 
@@ -49,7 +51,7 @@ The dialog shows which agent does the work: "Done by *agent* in a new conversati
 The fixed instructions tell that agent to use the `agent-initialization` Skill and to:
 
 - use the agent id you gave, or pick a short id that describes the agent, and stop instead of overwriting when that agent already exists;
-- start from `default_agent`'s configuration, set the name and description, and write the agent's role and rules into its `AGENTS.md`;
+- start from `default_agent`'s configuration, set the name and description, record that an agent created it, and write the agent's role and rules into its `AGENTS.md`;
 - copy only the Skills the new agent needs from the plugin library, and leave every other agent untouched;
 - report the new agent's id, the Skills it installed, and how to start a conversation with it.
 
@@ -68,24 +70,35 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 
 Any Project member can create an agent.
 
-### Start from a snapshot
+To create an agent from an exported file instead, select **Import agent** in the dialog's footer.
 
-A snapshot package is an exported Agent State. You can create an agent from one, for example to copy an agent to another Project or another machine.
+## Import an agent
 
-**Before you begin**
+**Import agent**, beside the create buttons on the Agents page, opens a dialog with two ways in.
 
-- A snapshot package (`.tar.gz`) of the agent you want to copy. A package can be up to 14 MB. To create one, see [Export and import a snapshot](#export-and-import-a-snapshot).
+### Migrate from another framework
 
-1. In the **Create agent** dialog, under **Initialize from a snapshot**, select **Choose a snapshot package** and pick the package. If **Agent id** is empty, it is filled in from the file name.
-2. Leave **Name** and **Description** empty to keep the values in the package, or fill them in to replace them.
-3. Select **Create**.
+Move an agent set up in Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code or WorkBuddy into a new agent in this Project.
 
-> [!NOTE]
-> A snapshot package carries its own Skills and hooks. While a package is selected, **Plugins** and **Import Skills from a project directory** are hidden.
+1. In **Source framework**, select the tool, or **Other** for any other tool.
+2. Optional: in **Path**, enter where its files are. Empty reads the tool's user directory shown in the box: `~/.claude`, `~/.codex`, `~/.dsh`, `~/.qoder`, `~/.qwen` or `~/.workbuddy-ai`. For **Other**, the field is **Path or description** and is required.
+3. Optional: expand **Full prompt** to read the prompt, or copy it.
+4. Select **Open a new chat**. A conversation with the Project's `default_agent`, or the first agent when there is none, opens with the prompt filled in. Nothing is sent yet.
+5. Review the prompt and send it.
+
+The agent follows the `agent-porting` Skill of the `skill-porting` plugin. It reads the source without changing it and never copies a secret's value. It writes the new agent in the layout of an exported zip, imports it with `penguin agent import`, and reports the new agent's id, what it brought over, what it could not and why, and the vault keys to fill in. When that agent does not have the Skill yet, **Open a new chat** installs the plugin on it first.
+
+### Import a file
+
+1. Under **Import a file**, select **Choose a file** and pick a `.zip` exported from an agent. Until 1.0, an older `.tar.gz` snapshot package works too.
+2. Check **Agent id**. It is filled in from the file name without its `-<yyyymmdd>` or `-v<n>` ending.
+3. Select **Import**. A message says whether the agent was created or overwritten, and how many conversations were imported and skipped. The new agent appears in the list.
+
+Any Project member can import a new agent. When the id is taken, the dialog says so. Select **Use another id** to change it, or, as the Project owner, **Overwrite the existing agent** and confirm. Overwriting replaces the parts of that agent's Agent State the file carries; its conversations, vault and API keys stay, and a backup snapshot is written first.
 
 ## Delete an agent
 
-Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: the **Company employees** section lists those, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).
+Only the Project owner can delete an agent. The built-in `default_agent` cannot be deleted, and neither can an employee of an organization: its card names the organization, and an employee can be deleted once it leaves its organization in company mode (see [Employees are agents](/company-mode#employees-are-agents)).
 
 1. On the agent's card, select the delete button (**Delete agent**).
 2. Confirm.
@@ -99,19 +112,17 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 
 | Tab | What you configure |
 | --- | --- |
-| **Overview** | Name and description, Agent State snapshots, kernel updates, and restoring the default configuration |
+| **Overview** | Name, description and author, export and replace from a file, kernel updates, and restoring the default configuration |
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
-| **Skills** | Installed Skills and the Skills prompt |
-| **Hooks** | Installed hook packages and the switch for running them |
-| **Workbenches** | The agent's workbenches: their versions, zip import and export, and removal |
+| **Plugins** | The agent's plugins and the Skills, hook packages, MCP servers and workbenches each one brought; your own Skills, hook packages and workbenches; the switches for Skills, hooks and workbenches |
 | **Memory** | The agent's memories and the memory prompts |
 | **Vault** | Environment variables for the agent's commands |
 | **Schedules** | Scheduled tasks |
 | **API** | Whether programs may call the agent over the Agent API, the approval mode of their conversations, and the keys |
 
-Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `workbenches`, `memory`, `vault`, `schedules` or `api`.
+Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `plugins`, `memory`, `vault`, `schedules` or `api`. The older addresses with `skills`, `hooks` or `workbenches` open **Plugins**.
 
 ### Save changes
 
@@ -127,8 +138,8 @@ For the file format behind these settings, see [Agent config](/configuration#age
 
 Any Project member can change most settings. These actions are for the Project owner only:
 
-- deleting the agent and importing a snapshot;
-- turning **Enable hooks** on or off;
+- deleting the agent, and overwriting or replacing it from a file;
+- the switches on the **Plugins** tab (**Enable skills**, **Enable hooks**, **Enable workbenches** and each workbench's own), the **Skills prompt**, and uninstalling a plugin;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
 - importing memories;
@@ -136,16 +147,25 @@ Any Project member can change most settings. These actions are for the Project o
 
 ## Overview tab
 
-### Edit the name and description
+### Edit the name, description and author
 
-Change **Name** or **Description**, then select **Save**.
+Change **Name**, **Description** or **Author**, then select **Save**. **Author** says who created the agent: **User** (created by a person in the Web App), **Agent** (created by an agent, for example through **Create with AI**) or **Company mode**. It decides which group the agent is in on the **Agents** page and changes nothing else.
 
-### Export and import a snapshot
+### Export and import an agent
 
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
-- **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+- **Export…** opens the export dialog, which **Export agent** on the agent's card opens too. Choose what goes in beside the configuration: **Skills**, **Hooks**, **Memory**, **Workbenches**, with **With their data** for each workbench's state, and **Schedules**, off by default. Under **Conversations**, choose **None**, **Latest N** (20 by default, up to 500) or a **Date range**. Select **Export** to save `<agentId>-<yyyymmdd>.zip`.
+- **Replace from file…** (Project owner only) opens the [import dialog](#import-an-agent) with only its file section. Pick an exported file, select **Replace** and confirm.
+
+An agent travels as a zip of its directory: `<agentId>/agent_state/…` and, for the Sessions you choose, `<agentId>/traces/…`. There is no manifest; the name, description and version are in `system_config.yaml`. The configuration always travels. Skills, hooks, memory and workbenches, with or without their data, travel unless you leave them out; scheduled tasks only when you take them, since an imported task runs on its schedule. The vault never travels, and a vault value found in a Trace is replaced by `[vault:<KEY>]`. A value written literally into the configuration travels as it is, so reference credentials as `${KEY}`.
+
+- Importing under an id no agent has creates the agent from the package, with its State, name, description and version. Any member can.
+- Overwriting an agent is for the Project owner. The current Agent State is first packed into a backup of its own, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`, then replaced by what the package carries: a part the package leaves out (an export without memory, say) keeps the agent's own, and so does a workbench's data the package left out. The agent's conversations, vault, API keys and employments stay. The workbench version history sits beside the Agent State, so an import leaves it as it is.
+- Sessions the package carries land as conversations of the agent, titled from their first message. A Session this server already has, as when you import an export from the same server, is skipped and reported.
+- A package whose `system_config.yaml` has no `system_prompt` is laid over the default configuration, and the files it leaves out come from the defaults, so a hand-written package needs only the keys it changes.
+
+A `.tar.gz` snapshot package exported before this format imports the same way until 1.0. For the routes, see [Agent routes](/server-api#agent-routes).
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 
@@ -156,7 +176,7 @@ An agent's kernel version records which generation of the built-in default setti
 1. In the **Kernel** section, select **Update kernel**.
 2. Confirm.
 
-Tabs you have not customized are updated to the current built-in defaults. A tab you have edited stays unchanged in full and is listed in the result. The name, description, Agent State version and MCP servers are not affected. For the details, see [Kernel updates](/configuration#kernel-updates).
+Tabs you have not customized are updated to the current built-in defaults. A tab you have edited stays unchanged in full and is listed in the result. The name, description, author, Agent State version and MCP servers are not affected. For the details, see [Kernel updates](/configuration#kernel-updates).
 
 > [!TIP]
 > To update several agents at once, select **Update now** in the notice at the top of the **Agents** page.
@@ -169,7 +189,7 @@ Tabs you have not customized are updated to the current built-in defaults. A tab
 > [!WARNING]
 > Restoring the default configuration cannot be undone.
 
-The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
+The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
 
 ## System Prompt tab
 
@@ -270,24 +290,35 @@ A row may also show an icon for a server that cannot connect yet. A conversation
 
 PenguinHarness connects to each server in turn and discovers its tools. Nothing is saved. Each row shows the number of tools and the time taken, or **Connection failed** with the reason. References to the vault are filled in first; a server whose keys the vault lacks fails with their names, without a connection attempt.
 
-## Skills tab
+## Plugins tab
 
-The **Skills** tab lists the Skills installed on the agent. You can export or uninstall a Skill, import one with **Import skill**, turn the Skills section of the system prompt on or off with **Enable skills**, and edit the **Skills prompt**. See [Manage an agent's Skills](/skills#manage-an-agents-skills).
+The **Plugins** tab shows what is installed on the agent, grouped by the plugin it came from. From top to bottom:
 
-## Hooks tab
+- **Import** adds a Skill, a hook package or a workbench, from a zip or by asking the agent in a chat. **Browse plugin library** opens the **Plugins** page, where plugins are installed.
+- **Enable skills** decides whether the system prompt lists the installed Skills, using the **Skills prompt** below it. **Enable hooks** decides whether new conversations run hook packages. **Enable workbenches** turns all of the agent's workbenches off or back on at once.
+- **Installed plugins** has one row per plugin, with what it brought (for example "3 skills, hooks, 1 workbench") and its status: **Installed**, **Update available**, **Incomplete** when a part is missing, or **Not in library** when an admin removed the plugin from the library. **Update** installs the library's copy again, which also brings back a missing part. **Uninstall** removes all of the plugin's parts at once, after a confirmation that lists them. Select a row to see its parts.
+- **Not from a plugin** lists the Skills, hook packages and workbenches you made or imported yourself.
 
-The **Hooks** tab lists the hook packages installed on the agent. You can export and uninstall hook packages, import one with **Import hook**, and turn hooks on or off for the agent with **Enable hooks**. Installing from the library happens on the **Plugins** page. See [Hook packages](/skills#hook-packages).
+A Skill belongs to a plugin when its name matches a Skill the plugin ships, so a Skill you wrote under such a name is listed under that plugin and goes with it when you uninstall it. A plugin's MCP servers are listed by name with what they still need, such as vault keys; edit them on the **Tools** tab.
 
-## Workbenches tab
+If some part cannot be removed, the message names it and the rest are removed anyway. An agent on a machine that runs an older version cannot uninstall a whole plugin; update the machine on the **Machines** page first.
 
-The **Workbenches** tab lists the agent's workbenches, including those that failed to load. For each one you can open it, **Reload** it, **Restore** an earlier version from its **History**, **Export** its source as a zip, or **Remove** it.
+### Skills and hook packages
 
-- **History** lists up to 50 versions, newest first. **Restore** makes the workbench's source exactly that version and reloads it at once; its data (`state.json`) stays.
-- **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id.
+A Skill's row shows its name, short description and version, with **Export** and **Uninstall**. A hook package's row also shows the hook points it runs at. See [Manage an agent's Skills](/skills#manage-an-agents-skills) and [Hook packages](/skills#hook-packages).
+
+### Workbenches
+
+A workbench's row, including one that failed to load, is led by its App Center icon when it has one. **Open** opens it beside a new chat, and its **More** menu (⋯) can **Reload** it, list its **Version history** to **Restore** an earlier version, **Export** its source as a zip, or **Remove** it. Its two switches say what they are: **Enable** and **App Center**; selecting the word beside a switch flips it too.
+
+- The **Enable** switch turns a workbench off without deleting anything. It leaves the chat page and the App Center, its pages stop opening, and its data and versions stay. **Version history**, **Restore**, **Export** and **Remove** still work. While **Enable workbenches** is off, every workbench is off and its own switch is greyed at the value it returns to. An agent on a machine that runs an older version shows no switches.
+- **Version history** lists up to 50 versions, newest first. **Restore** makes the workbench's source exactly that version and reloads it at once; its data (`state.json`) stays.
+- **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id. Uninstalling the plugin a workbench came from deletes it the same way; to keep its data, turn it off instead.
+- The **App Center** switch puts a shortcut to the workbench in the Project's [App Center](/web-app#the-app-center), or takes it off. It takes effect at once: it sets `penguin.appCenter.show` in the workbench's own `package.json`, leaving the rest of the file as it was, and the reload that follows is recorded as a version (a workbench that is off is not loaded). Agents on connected machines have no App Center switch, since the App Center lists this server's agents only.
 - **Export** downloads the source as a zip with one top-level folder named after the workbench id. It never carries `state.json`, hidden files or `node_modules`, and imports back unchanged.
-- **Import zip** adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
+- **Import** › **Workbench** offers two ways. The recommended one: enter a web page, a GitHub repository or directory, a local path, an install command or a description in **Workbench source**, then select **Open a new chat**, or **Copy prompt** to use the prompt elsewhere. The agent reads every file, stops and tells you if anything looks unsafe, then installs the workbench on this agent and reloads it. The other way, under **Upload a workbench zip**, adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
 
-Any Project member can use the tab. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
+The switches, the **Skills prompt** and uninstalling a plugin are for the Project owner; members see the switches' state. Any member can import, update, export and remove parts. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
 
 ## Memory tab
 
@@ -308,6 +339,17 @@ Each memory row has three buttons:
 
 Memory content is changed through the agent in a chat, not edited in place.
 
+### Scripts a memory keeps
+
+A memory can keep scripts in a folder of its name. Its row then shows a paperclip with the number of files, and **View** shows them under **Files**, below the memory's content, each with its path, size and date. A file row has two buttons:
+
+- **View** shows the file's folder path and its code, with line numbers, in the same side panel. **Back to** returns to the memory. A file over 512 KB, or one that is not text, is listed but not shown.
+- **Delete** deletes the file after you confirm. What the memory's text says about it stays until the agent updates it.
+
+Deleting a memory deletes its folder too; the confirmation says how many files go with it. Files have no **Edit**: ask the agent in a chat to change one. Every later Session of the agent may run its scripts, so look at one before you rely on it. See [Scripts](/configuration#scripts).
+
+A folder with no memory of its name beside it, usually left behind when its memory was deleted, belongs to no memory. Its files are listed at the bottom of the group under **Files without a memory**, with the same two buttons.
+
 ### Add a memory
 
 1. On a group's header, select **Add**. The **Add memory** dialog opens.
@@ -316,18 +358,22 @@ Memory content is changed through the agent in a chat, not edited in place.
 
 ### Export and import memories
 
-- **Export** on a group's header downloads every memory in the group, with the group's `MEMORY.md`, as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other.
-- **Import** on a group's header reads such a file back into the group. Only the Project owner can import.
+- **Export** on a group's header downloads the group's folder as a zip: `MEMORY.md`, every memory and the files each keeps, as the files they are on disk. The file name includes the export date and time, so repeated exports do not overwrite each other.
+- **Import** on a group's header reads such a zip back into the group. A JSON file exported by an earlier version still imports. Only the Project owner can import.
 
 When you import, choose what happens when the group already has a memory with the same name:
 
 | Option | Result |
 | --- | --- |
 | **Keep the one that is here** (default) | Adds only what the group does not have. Nothing is lost |
-| **Take the file's version** | Replaces same-named memories. Memories the file does not carry are left alone |
-| **Replace the whole group** | Deletes every memory the file does not carry |
+| **Take the file's version** | Replaces same-named memories, their files included. Memories the file does not carry are left alone |
+| **Replace the whole group** | Deletes every memory the file does not carry, with its files, and every folder that belongs to no memory |
 
 If the import would overwrite or delete memories, or replace the group's `MEMORY.md`, a **Confirm the import** dialog lists what changes first.
+
+A memory moves with its files: the folder of a memory taken from the file holds exactly the file's files afterwards. A folder that belongs to no memory counts as its memory being in the group already.
+
+A zip exported now cannot be imported into a server from before: that server takes only the JSON file and refuses it.
 
 ### Memory prompts
 

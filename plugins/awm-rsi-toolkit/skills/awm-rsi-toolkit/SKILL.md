@@ -1,7 +1,7 @@
 ---
 name: awm-rsi-toolkit
 description: Run AWM (Agent Workflow Memory, Wang et al. 2024) on an agent - induce reusable workflows from its successful trajectories, online over a training stream or offline from supplied experiences, then freeze the workflow memory and measure it on a published Benchmark.
-version: 2026.10.12.1
+version: 2026.11.05.1
 ---
 
 # AWM
@@ -15,7 +15,7 @@ This Skill needs `run_subagent`, so it runs in a top-level Session. If the messa
 - `test_agent_id` — the Target (the Evaluation Center's Test Agent): an existing agent of this Project, or `create: <id>` when the user wants a fresh one, created with no plugins by `penguin agent create --agent-id <id> --project-id "$PROJECT_ID" --json` (an id matches `^[a-z][a-z0-9_-]{1,63}$`). If that id exists already, stop and ask; never reinitialize an agent. The Target is never the agent you run as: training rewrites its State while you work.
 - `benchmark_id` — a Benchmark of this Project whose `benchmark_config.toml` status is published (not a literal `draft` or `failed`). Its cases (every directory of it holding a `statement/README.md`) are the training stream of `online_train` and the measured case set. Without one, list the published Benchmarks and ask; this Skill never builds one.
 - `test_benchmark_id` (optional) — a second published Benchmark held out from training: H1 (the initialized State) and the final memory are measured on it too, and nothing of it reaches the Judge or the Inducer.
-- `runs` — runs per case in every measurement; default 1.
+- `runs` — runs per case in every measurement; default 1. A request's `test_repetitions` (the Evaluation Center sends one) gives this count: R runs per case are R complete passes over the Benchmark.
 - The runtime — the `provider` / `model_id` pair the user names, else your Environment's, fixed for the whole experiment (`references/evaluation.md`, controller step 2). The Judge and the Inducer run on your own model; record it.
 - `mode`, fixed before any task evidence is read:
   - `online_train` (default) — the paper's online loop (run, judge, induce, integrate) over the Benchmark's cases as a training stream; the memory is then frozen and measured.
