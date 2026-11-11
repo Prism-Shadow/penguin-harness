@@ -120,6 +120,11 @@ export interface CompactionSettings {
    * request, as before the rounds existed).
    */
   maxRounds?: number;
+  /**
+   * No tool round is open once the context reaches this many tokens (the window minus the
+   * room the summary still needs); resolved by the composition layer. Absent: no limit.
+   */
+  roundLimit?: number;
 }
 
 /**
@@ -146,6 +151,11 @@ export interface OpenedContext {
   maxTurns?: number;
   /** Compaction settings of this context (thresholds, mode, Prompt). */
   compaction?: CompactionSettings;
+  /**
+   * Set when the opener could not assemble the Agent State and reopened the configuration in
+   * force instead; the text is told to the model in the context's opening summary.
+   */
+  notice?: string;
 }
 
 /** What {@link ContextEngineDeps.openNextContext} is called with. */
@@ -296,6 +306,12 @@ export interface ContextEngineDeps {
    * before the rounds existed.
    */
   compactionToolGate?: CompactionToolGate;
+  /**
+   * Builds the hand-off note a compaction opens the next context with when no summary could be
+   * had: a user text record the composition layer derives from the Trace file being closed.
+   * Absent or throwing, the engine writes a bare note of its own.
+   */
+  buildHandoff?: () => AmspRecord | Promise<AmspRecord>;
   /**
    * The shell the Session's commands run in (the system prompt's `Shell:` value), used only to
    * word the Trace-query hint in the `[context_summary]` trailer for that shell. Absent: the
@@ -1193,6 +1209,8 @@ export class ContextEngine {
     mode?: CompactionMode;
     /** Approves the calls of the compaction's tool rounds, as `RunOptions.approve` does a turn's; absent denies them all. */
     approve?: ApproveFn | undefined;
+    /** The note used at the hand-off rung instead of the in-place one (a model switch passes its own). */
+    handoff?: AmspRecord | undefined;
   }): AsyncGenerator<AmspRecord, StopReason | undefined> {
     // The manual entry into a compaction, and the second place the live settings decide
     // something: the `mode` below, and the prompt summarizeContext reads from them.
