@@ -490,7 +490,7 @@ export function PluginsTab({
                   "workbench",
                   ICONS.anvil,
                   S.agentPlugins.importWorkbench,
-                  S.agentPlugins.importZip,
+                  S.agentPlugins.importChatOrZip,
                 ],
               ] as const
             ).map(([kind, glyph, label, description]) => (
