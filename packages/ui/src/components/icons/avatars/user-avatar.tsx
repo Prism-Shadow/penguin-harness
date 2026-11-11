@@ -4,7 +4,7 @@
  *
  * Two states, one component. With an avatar stored it is that image, cropped to the circle;
  * without one it is a letter disc — the foreground colour with the initial in the canvas colour,
- * which is deliberately NOT the tinted hashed tile `AgentAvatar` uses: an account is the one
+ * which is deliberately NOT the hashed colour `AgentAvatar` draws its mascot in: an account is the one
  * identity the viewer already knows, so it does not need a colour to be told apart from its
  * neighbours, and there is only ever one of it on screen. The initial follows the nickname once
  * there is one, falling back to the id, so the disc changes with the name rather than

@@ -74,6 +74,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
@@ -230,6 +231,7 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
   /** The header's grouping select and the folded author sections, both remembered per browser. */
@@ -520,9 +522,9 @@ export function AgentsPage() {
           <div className="flex items-center gap-2">
             <AgentAvatar
               id={a.agentId}
-              name={agentDisplayName(a)}
               size={18}
               className="shrink-0 rounded"
+              src={avatarSrc(a.agentId, machineId)}
             />
             <AgentNameLink
               agentId={a.agentId}

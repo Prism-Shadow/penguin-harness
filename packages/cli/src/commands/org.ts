@@ -118,7 +118,7 @@ interface OrgScope {
   base: string;
 }
 
-/** The server's cap on an avatar, measured on the data URL (organization/avatars.ts). */
+/** The server's cap on an avatar, measured on the data URL (services/avatar-file.ts). */
 const AVATAR_MAX_CHARS = 131072;
 
 /** The image type an avatar file holds, read from its first bytes; null for anything else. */

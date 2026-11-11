@@ -13,8 +13,9 @@
  * a reply's widget in its host's card — and none may be written until a Primer polish wave
  * changes that look on purpose (the 2026-09-30 lift of the light chart steps and the knob's
  * hairline were such changes, made in tokens, not recipes). The rules every theme shares (the
- * eyebrow on the h6 rung, the display title in the emphasis ink, the line drawings for icons)
- * live in theme.css and are what the app's group labels, page titles and glyphs already draw.
+ * eyebrow on the h6 rung, the display title in the emphasis ink, the line drawings for icons, the
+ * flat drawing of an Agent's avatar) live in theme.css and are what the app's group labels, page
+ * titles, glyphs and avatars already draw.
  *
  * A pack's files carry no `@layer` of their own; this file serves each in its layer. `fonts.css`
  * is imported by `fonts/index.css`, not here, so the faces stay out of the published `styles.css`.

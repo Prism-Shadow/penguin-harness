@@ -7,6 +7,8 @@ import type {
   AgentApiKeyCreateResponse,
   AgentApiResponse,
   AgentApiUpdateRequest,
+  AgentAvatarRequest,
+  AgentAvatarResponse,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -2217,6 +2219,36 @@ export const benchmarkCaseFileUrl = (
     (options.preview && !options.download ? "&preview=1" : "")
   );
 };
+
+// An Agent's own avatar (agent_state/avatar.<ext>) ---------------------------------------------
+
+const agentAvatarPath = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/avatar`;
+
+/**
+ * Where an Agent's own picture is served from — through its machine for a machine's Agent. `rev`
+ * (the list's `avatarRev`) makes the URL the image's own, so it is cached for good.
+ */
+export const agentAvatarUrl = (
+  projectId: string,
+  agentId: string,
+  rev: string,
+  machineId: string | null,
+): string =>
+  `${apiUrl(agentAvatarPath(projectId, agentId), machineId)}?rev=${encodeURIComponent(rev)}`;
+
+/** Sets the Agent's own picture from a data URL (png, jpeg or webp); `null` removes it. */
+export const putAgentAvatar = (
+  projectId: string,
+  agentId: string,
+  avatar: string | null,
+  machineId: string | null,
+) =>
+  apiFetch<AgentAvatarResponse>(agentAvatarPath(projectId, agentId), {
+    method: "PUT",
+    body: { avatar } satisfies AgentAvatarRequest,
+    server: machineId,
+  });
 
 // Agent zip export / import ----------------------------------------------------------------
 

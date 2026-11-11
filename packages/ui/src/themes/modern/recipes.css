@@ -9,11 +9,11 @@
  * id: every pack whose manifest says `base: "modern"` draws them too, and a pack's own recipe in
  * `ui-theme` replaces one by layer. Primer and Console say `base: "foundation"` and draw none.
  *
- * Frost gives fifteen of the seventeen a recipe: glass, eyebrow (its ink; the rung is
- * theme.css's), display, live, frame, underline-nav, shell, icon-decor, tree, field, activity,
- * notice, chart, stream, widget. `.ui-scrim` is a documented no-op: the page behind a dialog is
- * the host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's
- * own, and their duotone bodies show through `--ui-icon-duo-opacity`.
+ * Frost gives sixteen of the hooks a recipe: glass, eyebrow (its ink; the rung is theme.css's),
+ * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart,
+ * stream, widget, avatar. `.ui-scrim` is a documented no-op: the page behind a dialog is the
+ * host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's own,
+ * and their duotone bodies show through `--ui-icon-duo-opacity`.
  */
 
 /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
@@ -563,4 +563,13 @@
    than as a synthesized bold, which smears Han strokes; Frost's own weights stop at 500. */
 :root[data-theme-base="modern"] {
   font-synthesis-weight: none;
+}
+
+/* An Agent's avatar is the soft drawing: the ball penguin on a round tile. Every pack built on the
+   base shows it, Doodle included, until it draws its own. */
+:root[data-theme-base="modern"] .ui-avatar > [data-variant="flat"] {
+  display: none;
+}
+:root[data-theme-base="modern"] .ui-avatar > [data-variant="soft"] {
+  display: inline;
 }

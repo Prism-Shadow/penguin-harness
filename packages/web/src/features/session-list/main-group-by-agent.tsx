@@ -18,6 +18,7 @@ import type { MainSidebarState } from "./main-sidebar-controller";
 export function renderMainGroupByAgent(scope: MainSidebarState) {
   const {
     agents,
+    avatarSrc,
     countsByAgent,
     loading,
     byAgent,
@@ -62,9 +63,9 @@ export function renderMainGroupByAgent(scope: MainSidebarState) {
               icon={
                 <AgentAvatar
                   id={agent.agentId}
-                  name={agentDisplayName(agent)}
                   size={18}
                   className="shrink-0 rounded"
+                  src={avatarSrc(agent.agentId)}
                 />
               }
               label={agentDisplayName(agent)}

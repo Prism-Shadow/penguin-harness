@@ -29,19 +29,16 @@
  * A write that fails therefore leaves the screen agreeing with the server and says so inline,
  * rather than showing a picture that silently disappears on the next load.
  */
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 
 import type { UpdateProfileRequest, UserInfo } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  ConfirmModal,
-  HiddenFileInput,
   Input,
   PrefRow,
   SettingsGroup,
   USER_AVATAR_SIZE,
   UserAvatar,
-  buttonClass,
   toastSuccess,
   useFormDraft,
   useSaving,
@@ -49,28 +46,11 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import {
-  avatarDataUrlFromImage,
-  loadAvatarImage,
-  releaseAvatarImage,
-  type AvatarCrop,
-} from "../../lib/avatar-image";
 
-import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
+import { AvatarPicker } from "../../components/ui/avatar-picker";
 import { profileControls } from "../../lib/profile-form";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
-
-/** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
-const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
-
-const CHANGE_AVATAR_CLASS = buttonClass("secondary", "sm");
-
-/**
- * A label has no disabled state: ignore pointer input while its write runs, including hover
- * styling. The input inside is disabled too, so Tab skips it.
- */
-const CHANGE_AVATAR_BUSY_CLASS = `${CHANGE_AVATAR_CLASS} pointer-events-none opacity-60`;
 
 /** Which row is mid-write. One at a time, so the busy mark always names the row being used. */
 type PendingWrite = "avatar" | "nickname";
@@ -87,7 +67,6 @@ export function ProfileSection() {
   // A nickname write (Save, or Restore default) holds the dialog's close until it answers; an
   // avatar write is direct manipulation with no draft to lose, so it holds nothing.
   useSaving(pending === "nickname", SETTINGS_SCOPE);
-  const [confirmAvatarReset, setConfirmAvatarReset] = useState(false);
 
   /**
    * One patch out, and the row that comes back becomes the auth state: the sidebar's user row,
@@ -121,49 +100,12 @@ export function ProfileSection() {
     }
   };
 
-  /** The picked image, decoded and waiting for its crop to be chosen. */
-  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
-  const endCrop = (): void => {
-    if (cropping !== null) releaseAvatarImage(cropping);
-    setCropping(null);
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    // Reset before reading so re-picking the same file fires change again.
-    e.target.value = "";
-    if (file === undefined) return;
-    setError(null);
-    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
-  };
-
-  const onCropped = (crop: AvatarCrop): void => {
-    const image = cropping;
-    if (image === null) return;
-    // The encode runs inside the busy window as well as the request: it redraws the image,
-    // which for a phone photograph is long enough to click twice through.
-    void run("avatar", async () => {
-      const dataUrl = avatarDataUrlFromImage(image, crop);
-      if (dataUrl === null) {
-        setError(S.profile.avatarTooLarge);
-        return;
-      }
-      await send({ avatar: dataUrl });
-    }).finally(endCrop);
-  };
-
   if (!user) return null;
   const controls = profileControls(user, nickname.draft);
   const busy = pending !== null;
 
   return (
     <section>
-      <AvatarCropDialog
-        image={cropping}
-        busy={pending !== null}
-        onCancel={endCrop}
-        onConfirm={onCropped}
-      />
       <SettingsGroup>
         {/* The avatar's controls wrap, right-aligned, where a phone-width column cannot hold
             them on one line: a button keeps its label whole and does not shrink. */}
@@ -175,23 +117,15 @@ export function ProfileSection() {
               {...(user.avatar !== undefined ? { avatar: user.avatar } : {})}
               size={USER_AVATAR_SIZE.preview}
             />
-            {/* A label rather than a Button: the hidden file input has to be labelled for a
-                click to open the native picker. Same two records Button reads, at the form rung
-                its neighbours sit on. */}
-            <label className={`shrink-0 ${busy ? CHANGE_AVATAR_BUSY_CLASS : CHANGE_AVATAR_CLASS}`}>
-              <HiddenFileInput accept={AVATAR_ACCEPT} disabled={busy} onChange={onPickFile} />
-              {S.profile.changeAvatar}
-            </label>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="shrink-0"
-              aria-label={S.profile.restoreDefaultOf(S.profile.avatar)}
-              disabled={busy || !controls.canRestoreAvatar}
-              onClick={() => setConfirmAvatarReset(true)}
-            >
-              {S.profile.restoreDefault}
-            </Button>
+            <AvatarPicker
+              hasPicture={controls.canRestoreAvatar}
+              busy={busy}
+              run={(work) => run("avatar", work)}
+              save={async (avatar) => {
+                await send({ avatar });
+              }}
+              onError={setError}
+            />
           </div>
         </PrefRow>
         <PrefRow label={S.profile.displayName} info={S.profile.displayNameInfo}>
@@ -248,19 +182,6 @@ export function ProfileSection() {
           left to the preview looking unchanged. */}
       {busy && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.common.saving}</p>}
       {error !== null && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-      <ConfirmModal
-        open={confirmAvatarReset}
-        title={S.profile.restoreDefaultOf(S.profile.avatar)}
-        onClose={() => setConfirmAvatarReset(false)}
-        onConfirm={() => {
-          setConfirmAvatarReset(false);
-          void run("avatar", () => send({ avatar: null }));
-        }}
-        confirmLabel={S.profile.restoreDefault}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.profile.avatarResetConfirm}</p>
-      </ConfirmModal>
     </section>
   );
 }
