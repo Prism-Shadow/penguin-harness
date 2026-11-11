@@ -1056,16 +1056,20 @@ export interface Messages {
   /** compaction start event: indicates compaction in progress (mode is summarize/discard, reason is context/turns/manual). */
   compactionStart(mode: string, reason: string): string;
   /**
-   * compaction stop event: the compaction result (status is completed/failed/aborted;
-   * completed varies its text by mode). tokens is Token usage (same convention as the stats
-   * line: total = Session cumulative, delta = consumed by this compaction, carrying its own
-   * sign); when present it is appended at the end of the line, e.g. ` · tokens 14k (+6k)`.
+   * compaction stop event: the compaction result (status is completed/aborted/fatal, or an old
+   * Trace's retryable/failed; completed varies its text by mode). tokens is Token usage (same
+   * convention as the stats line: total = Session cumulative, delta = consumed by this
+   * compaction, carrying its own sign); when present it is appended at the end of the line,
+   * e.g. ` · tokens 14k (+6k)`. `degraded` marks a completion without a full summary — the
+   * summary was cut off and kept (`salvaged`), or the next context opens with the Trace
+   * hand-off note (`handoff`, with errorMessage as its reason) — as a suffix to the line.
    */
   compactionStop(
     mode: string,
     status: string,
     tokens?: { total: string; delta: string },
     errorMessage?: string,
+    degraded?: "salvaged" | "handoff",
   ): string;
   /** mcp_connect_begin event: the configured MCP servers are being connected (the first run, or a new context after compaction). */
   mcpConnectStart(servers: string[]): string;
@@ -2261,22 +2265,25 @@ const en: Messages = {
       : failures.length === 0
         ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failures.map((f) => `${f.server} (${f.error})`).join(", ")}`,
-  compactionStop: (mode, status, tokens, errorMessage) =>
+  compactionStop: (mode, status, tokens, errorMessage, degraded) =>
     (status === "completed"
-      ? mode === "discard"
-        ? "[compaction] done; old context discarded"
-        : "[compaction] done; continuing with the summarized context"
+      ? (mode === "discard"
+          ? "[compaction] done; old context discarded"
+          : "[compaction] done; continuing with the summarized context") +
+        (degraded === "salvaged"
+          ? " (summary cut off)"
+          : degraded === "handoff"
+            ? ` (no summary: Trace hand-off${errorMessage !== undefined ? ` — ${errorMessage}` : ""})`
+            : "")
       : status === "aborted"
         ? "[compaction] aborted; keeping the current context"
-        : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context${
-            // retryable = abandoned this time, retried at the next trigger; fatal = a config
-            // or credential change has to come first. Legacy Traces spell both "failed".
-            status === "retryable"
-              ? "; retries at the next trigger"
-              : status === "fatal"
-                ? "; fix the model configuration to retry"
-                : ""
-          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+        : status === "fatal"
+          ? `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}; the next context could not be opened; keeping the current context`
+          : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context${
+              // An old Trace's abandoned compaction: retryable = given up this time, retried
+              // at the next trigger; legacy "failed" says no more.
+              status === "retryable" ? "; retries at the next trigger" : ""
+            }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   clearDone: () =>
     "[clear] your next message starts a fresh session (the previous one is kept and resumable)",
@@ -3377,22 +3384,25 @@ const zh: Messages = {
       : failures.length === 0
         ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failures.map((f) => `${f.server}（${f.error}）`).join("、")}`,
-  compactionStop: (mode, status, tokens, errorMessage) =>
+  compactionStop: (mode, status, tokens, errorMessage, degraded) =>
     (status === "completed"
-      ? mode === "discard"
-        ? "[压缩] 完成，旧上下文已丢弃"
-        : "[压缩] 完成，已切换到摘要后的新上下文"
+      ? (mode === "discard"
+          ? "[压缩] 完成，旧上下文已丢弃"
+          : "[压缩] 完成，已切换到摘要后的新上下文") +
+        (degraded === "salvaged"
+          ? "（摘要没有写完）"
+          : degraded === "handoff"
+            ? `（没有摘要，改用 Trace 交接说明${errorMessage !== undefined ? `：${errorMessage}` : ""}）`
+            : "")
       : status === "aborted"
         ? "[压缩] 已中断，保留当前上下文"
-        : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
-            // retryable = abandoned this time, retried at the next trigger; fatal = a config
-            // or credential change has to come first. Legacy Traces spell both "failed".
-            status === "retryable"
-              ? "，下次触发时重试"
-              : status === "fatal"
-                ? "，需修复模型配置后重试"
-                : ""
-          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+        : status === "fatal"
+          ? `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，未能开启新的上下文，保留当前上下文`
+          : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
+              // An old Trace's abandoned compaction: retryable = given up this time, retried
+              // at the next trigger; legacy "failed" says no more.
+              status === "retryable" ? "，下次触发时重试" : ""
+            }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   clearDone: () => "[清空] 下一条消息将开启全新 Session（原会话仍保留，可恢复）",
   chatNewConversation: () => "新对话：发出第一条消息时才会创建。",

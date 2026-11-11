@@ -38,8 +38,9 @@
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
  *     banner instead (issue #290), the summary draft starting over at each of the span's
- *     request_begin events (only the last request's text is the summary), and the tool
- *     rounds' calls become the banner's work cards (CompactionItem.work);
+ *     request_begin events (only the last request's text is the summary, unless the end says
+ *     the compaction completed without one — CompactionItem.outcome), and every tool call of
+ *     the span, run or refused, becomes a work card on the banner (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -69,6 +70,7 @@ import {
   parseBackgroundTaskDoneMessage,
   parseInPlaceModelSwitch,
   parseUserSteeringText,
+  salvageableSummary,
 } from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
@@ -385,33 +387,46 @@ export interface CompactionItem {
   /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
   durationMs?: number;
   /**
+   * How a completed summarize compaction opened the next context, read off its `compaction_end`
+   * and the span's drafts: `summary` — the end carries no error pair, and the span's latest
+   * request wrote the summary; `salvaged` — the end carries the error pair and some request left
+   * a summary cut off before its end (`salvageableSummary`), the longest of which is the result;
+   * `handoff` — the end carries the error pair and no request left such a summary, so the next
+   * context opens with the harness's Trace hand-off note and the row has no result. Absent while
+   * running, on an end that did not complete, and on a discard (which opens with nothing).
+   */
+  outcome?: "summary" | "salvaged" | "handoff";
+  /**
    * Raw text of the summary the compaction request is generating (issue #290): accumulated
    * live from the span's own partial_text fragments, and rebuilt identically on history
    * replay from the span's complete assistant text — the banner shows the summary being
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
-   * It is the text of the span's latest request alone: each request_begin starts it over,
-   * since a request that took a tool round, or was retried, wrote no summary.
+   * While the span runs it is the text of its latest request alone: each request_begin starts
+   * it over, since a request that took a tool round, or was retried, wrote no summary. A
+   * `salvaged` end puts the kept draft back (see `salvageDraft`); a `handoff` end drops it.
    */
   summaryText?: string;
   /**
-   * The tool rounds the compaction took before its summary (hand-off files read and written):
-   * one card per call, in call order, built like the transcript's tool cards — streamed
-   * arguments, the approval decision, the output — and registered in the model's `toolCards`,
-   * so an approval request finds its card here. Never transcript items and never counted in
-   * the Task's tool time (the server's window scanner skips the span too). Absent when the
-   * compaction took no round; dropped with the drafts when it did not complete.
+   * While the span runs: the longest draft an earlier request left that still holds a summary
+   * worth keeping (`salvageableSummary` non-empty; the latest wins a tie, as the engine picks),
+   * and its result section's start. Each request_begin starts `summaryText` over, so this is
+   * what remembers a cut-off summary for a degraded end; cleared at `compaction_end`.
+   */
+  salvageDraft?: string;
+  /** The kept draft's result-section start (see `salvageDraft`). */
+  salvageStartedAtMs?: number;
+  /**
+   * The tool calls the compaction made (hand-off files read and written, and the calls it
+   * refused once no round was left): one card per call, in call order, built like the
+   * transcript's tool cards — streamed arguments, the approval decision, the output — and
+   * registered in the model's `toolCards`, so an approval request finds its card here. A
+   * refused call is a failed card showing the refusal, live and from history alike, since the
+   * engine streams every call of the span. Never transcript items and never counted in the
+   * Task's tool time (the server's window scanner skips the span too). Absent when the
+   * compaction made no call; dropped with the drafts when it did not complete.
    */
   work?: ToolCallItem[];
-  /**
-   * How many work cards the span held when its latest request began. The engine streams a
-   * request's calls only when they are going to be a round; a response it rejects instead (tool
-   * calls once the rounds are spent) keeps its calls in the Trace, followed there by the
-   * corrective note it re-asks with. History rebuild reads those calls too, and drops them when
-   * that note — a user text in the span — arrives, so a reload shows the rounds the live viewer
-   * saw and no more.
-   */
-  requestWorkStart?: number;
   /**
    * Raw text of the thinking the compaction request produced ahead of its summary:
    * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
@@ -872,10 +887,10 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       // section's start (the ThinkingItem convention), this message's own time settles it.
       // Read before advanceLastTs below, exactly as the ordinary complete path reads it.
       const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
+      // A user text inside the span (the Prompt, a round's harness line, a corrective line)
+      // renders nothing: the calls it follows stay on the banner, refused ones as failed cards.
       if (p.type === "text" && p.role === "assistant" && p.text) {
         appendCompactionSummaryText(model, p.text, startMs);
-      } else if (p.type === "text" && p.role === "user") {
-        dropRejectedWork(model);
       } else if (p.type === "thinking" && p.thinking) {
         appendCompactionThinking(model, p.thinking, false, startMs, tsMs);
       }
@@ -1971,6 +1986,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     case "compaction_end": {
       // status decides whether context usage is cleared: when not completed, the original context is kept (see endCompaction).
       endCompaction(model.stats, p.status);
+      // A completed end carrying the error pair completed without a full summary: the next
+      // context opens with the summary a request was cut off in, or with the hand-off note.
+      const degraded = p.error_code !== undefined || p.error_message !== undefined;
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
@@ -1979,16 +1997,21 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
+        if (p.status === "completed" && p.mode !== "discard") {
+          settleCompactionOutcome(item, degraded);
+        }
+        delete item.salvageDraft;
+        delete item.salvageStartedAtMs;
         // The result section runs for as long as the row does, so its wall time ends here too.
         if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
           item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
         }
         // A compaction that did not complete produced no summary — only a half-written
-        // draft that was never adopted (a user quitting mid-compaction is the common case,
-        // closed as `failed` when the session next loads). Discard it, and the thinking that
-        // led to it, rather than leave a truncated summary on screen implying the context
+        // draft that was never adopted (a user stopping it is the common case; an old Trace's
+        // abandoned one reads `retryable`, `fatal` or `failed`). Discard it, and the thinking
+        // that led to it, rather than leave a truncated summary on screen implying the context
         // was replaced by it.
-        // A tool round's card that never got its output will not get one now.
+        // A call card that never got its output will not get one now.
         for (const card of item.work ?? []) if (!card.outputComplete) settleUnfinishedCard(card);
         if (p.status !== "completed") {
           delete item.work;
@@ -2006,7 +2029,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           settleCompactionThinking(item, tsMs);
         }
       } else {
-        // Mid-stream join (missed the begin): append a completed banner directly.
+        // Mid-stream join (missed the begin): append a completed banner directly. It saw no
+        // draft, so a degraded end reads as a hand-off by the same rule.
         const created: CompactionItem = {
           kind: "compaction",
           id: nextId(model),
@@ -2016,14 +2040,18 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           status: p.status,
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
         };
+        if (p.status === "completed" && p.mode !== "discard") {
+          settleCompactionOutcome(created, degraded);
+        }
         model.items.push(created);
       }
       return;
     }
     case "request_begin": {
       // A compaction's request (a tool round's next one, or a retried attempt): the summary
-      // draft starts over — only the last request's text is the summary — and nothing else
-      // here is about it (compaction requests aren't timed, and no reconnect hint is theirs).
+      // draft starts over — only the last request's text is the summary, a cut-off one kept
+      // aside for a degraded end — and nothing else here is about it (compaction requests
+      // aren't timed, and no reconnect hint is theirs).
       if (model.stats.compactionActive) {
         restartCompactionSummary(model);
         return;
@@ -2201,28 +2229,58 @@ function appendCompactionSummaryText(
   }
 }
 
-/** Starts the running compaction's summary draft over, for the request that begins now. */
+/**
+ * Starts the running compaction's summary draft over, for the request that begins now, after
+ * keeping the draft aside when it holds a cut-off summary (see CompactionItem.salvageDraft).
+ */
 function restartCompactionSummary(model: StreamModel): void {
   const item = findLastRunningCompaction(model);
   if (!item) return;
+  keepSalvageCandidate(item);
   delete item.summaryText;
   delete item.summaryStartedAtMs;
-  item.requestWorkStart = item.work?.length ?? 0;
 }
 
 /**
- * A user text inside the span is the compaction asking again (the corrective note after a
- * rejected response, then the Prompt): the calls of the request before it were rejected, never
- * a round — drop their cards (see CompactionItem.requestWorkStart).
+ * Keeps the current draft as the salvage candidate when it holds a summary worth keeping and
+ * is at least as long as the one already kept — the latest wins a tie, which is how the engine
+ * picks the summary it salvages, so the row shows the text the next context opened with.
  */
-function dropRejectedWork(model: StreamModel): void {
-  const item = findLastRunningCompaction(model);
-  if (!item?.work) return;
-  const rejected = item.work.splice(item.requestWorkStart ?? 0);
-  for (const card of rejected) {
-    if (model.toolCards.get(card.toolCallId) === card) model.toolCards.delete(card.toolCallId);
+function keepSalvageCandidate(item: CompactionItem): void {
+  const draft = item.summaryText;
+  if (draft === undefined) return;
+  const candidate = salvageableSummary(draft);
+  if (candidate === "") return;
+  const kept = item.salvageDraft === undefined ? "" : salvageableSummary(item.salvageDraft);
+  if (kept !== "" && candidate.length < kept.length) return;
+  item.salvageDraft = draft;
+  if (item.summaryStartedAtMs !== undefined) item.salvageStartedAtMs = item.summaryStartedAtMs;
+  else delete item.salvageStartedAtMs;
+}
+
+/**
+ * The outcome of a completed summarize compaction (see CompactionItem.outcome): without the
+ * error pair the latest draft is the summary; with it, the longest cut-off summary of the span
+ * (the final draft counted too) is the result, or — with none — the result is dropped, since
+ * the next context opens with the hand-off note.
+ */
+function settleCompactionOutcome(item: CompactionItem, degraded: boolean): void {
+  if (!degraded) {
+    item.outcome = "summary";
+    return;
   }
-  if (item.work.length === 0) delete item.work;
+  keepSalvageCandidate(item);
+  if (item.salvageDraft !== undefined) {
+    item.outcome = "salvaged";
+    item.summaryText = item.salvageDraft;
+    if (item.salvageStartedAtMs !== undefined) item.summaryStartedAtMs = item.salvageStartedAtMs;
+    else delete item.summaryStartedAtMs;
+    return;
+  }
+  item.outcome = "handoff";
+  delete item.summaryText;
+  delete item.summaryStartedAtMs;
+  delete item.summaryDurationMs;
 }
 
 /**

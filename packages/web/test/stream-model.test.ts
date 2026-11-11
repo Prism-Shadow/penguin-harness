@@ -11,11 +11,14 @@
  * - Approval decisions annotate their card (manual when registered here, even across a resync
  *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
  *   and aborts render their own items.
- * - A compaction renders one banner: its summary and thinking stream onto it, its tool rounds
- *   become work cards on it (an approval finds them; a rejected response's calls never do), the
- *   summary draft starts over at each of its requests, each body
+ * - A compaction renders one banner: its summary and thinking stream onto it, its tool calls
+ *   become work cards on it (an approval finds them; a call refused once no round is left is a
+ *   failed card), the summary draft starts over at each of its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
+ * - A completed end carrying the error pair keeps the longest cut-off summary of the span as
+ *   the result (salvaged) or drops the result (hand-off), live and rebuilt alike, and clears
+ *   the context figure as any completion does; a fatal end keeps the context.
  * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
  *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
@@ -809,8 +812,10 @@ describe("approvals and events", () => {
     );
     // The thinking start is recorded once and each later stop only extends it: the wall time
     // covers the span that produced the prose on screen, the failed attempt included. The
-    // result is the last request's text, timed from its first summary token.
+    // result is the last request's text, timed from its first summary token: an end without
+    // the error pair is a summary, whatever an earlier attempt left.
     expect(banner).toMatchObject({
+      outcome: "summary",
       thinkingText: "first pass second pass",
       thinkingStartedAtMs: Date.parse(t(2)),
       thinkingDurationMs: 7000,
@@ -921,32 +926,256 @@ describe("approvals and events", () => {
     expect(banner.work![0]!.outputComplete).toBe(false);
   });
 
-  it("a rejected response's calls are no work: history drops them when the corrective note follows, as live never showed them", () => {
-    const m = createStreamModel();
+  it("a call refused once no round is left is a failed work card, the same live and from history", () => {
+    const refusal = "[tool error] no tool round is left in this compaction; reply with the summary";
+    const live = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "r1" }),
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls"}',
+        toolCallId: "r1",
+      }),
+      partialToolCall({ eventType: "stop", name: "", toolCallId: "r1" }),
+      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "r1" }),
+      requestEnd("completed"),
+      toolCallOutput({ output: refusal, toolCallId: "r1", status: "fatal" }),
+      requestBegin(),
+      partialText("start"),
+      partialText("delta", "[summary]plain[/summary]"),
+      partialText("stop"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]) {
+      pushMessage(live, msg);
+    }
+    // The Trace also holds the Prompt and the corrective line the engine asked again with.
+    const rebuilt = createStreamModel();
     for (const msg of [
       compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
       userText("COMPACT NOW"),
       requestBegin(),
       toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "r1" }),
       requestEnd("completed"),
-      toolCallOutput({
-        output: "[tool error] the compaction request expects a summary, not tool calls",
-        toolCallId: "r1",
-        status: "fatal",
-      }),
-      userText("Your previous reply was not a usable summary."),
-      userText("COMPACT NOW"),
+      toolCallOutput({ output: refusal, toolCallId: "r1", status: "fatal" }),
+      userText("Those tool calls were refused: no tool round is left. Reply now with the summary."),
       requestBegin(),
       assistantText("[summary]plain[/summary]"),
       requestEnd("completed"),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
     ]) {
+      pushMessage(rebuilt, msg);
+    }
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual(["compaction"]);
+      const banner = items(m)[0] as CompactionItem;
+      expect(workOf(banner)).toEqual([
+        {
+          name: "exec_command",
+          argumentsText: '{"cmd":"ls"}',
+          output: refusal,
+          outputStatus: "fatal",
+          decision: undefined,
+          callComplete: true,
+          outputComplete: true,
+        },
+      ]);
+      expect(findToolCard(m, [], "r1")).toBe(banner.work![0]);
+      expect(banner).toMatchObject({ outcome: "summary", summaryText: "[summary]plain[/summary]" });
+    }
+  });
+
+  /** A summary cut off at the output limit: well past the salvage floor inside its open tag. */
+  const cutSummary = (lead: string, repeat: number) =>
+    `[summary]\n## Request\n${`${lead} Fix the three broken links in the release-notes draft. `.repeat(repeat)}`;
+  /** What the banner settles to, for comparing a live model with one rebuilt from history. */
+  const rowOf = (m: StreamModel) => {
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    return {
+      running: banner.running,
+      status: banner.status,
+      outcome: banner.outcome,
+      errorMessage: banner.errorMessage,
+      summaryText: banner.summaryText,
+      thinkingText: banner.thinkingText,
+      work: workOf(banner),
+    };
+  };
+  const degradedEnd = (
+    errorCode: "malformed" | "rejected",
+    errorMessage: string,
+    attempt: number,
+  ) =>
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      attempt,
+      errorCode,
+      errorMessage,
+    });
+
+  it("a completed end with the error pair after a cut summary and two empty retries keeps the cut text and is salvaged, live and from history alike", () => {
+    const cut = cutSummary("Cut.", 9);
+    const end = () => degradedEnd("malformed", "the response contained no usable summary", 3);
+    const live = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      partialThinking("start"),
+      partialThinking("delta", "what the next context needs"),
+      partialThinking("stop"),
+      partialText("start"),
+      partialText("delta", cut),
+      partialText("stop"),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      requestBegin(),
+      requestEnd("completed"),
+      requestBegin(),
+      requestEnd("completed"),
+      end(),
+    ]) {
+      pushMessage(live, msg);
+    }
+    const rebuilt = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      thinkingMessage("what the next context needs"),
+      assistantText(cut),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      userText("Your previous reply hit the output limit and was discarded."),
+      requestBegin(),
+      requestEnd("completed"),
+      userText("Your previous reply held no summary."),
+      requestBegin(),
+      requestEnd("completed"),
+      end(),
+    ]) {
+      pushMessage(rebuilt, msg);
+    }
+    expect(rowOf(live)).toEqual({
+      running: false,
+      status: "completed",
+      outcome: "salvaged",
+      errorMessage: "the response contained no usable summary",
+      summaryText: cut,
+      thinkingText: "what the next context needs",
+      work: [],
+    });
+    expect(rowOf(rebuilt)).toEqual(rowOf(live));
+  });
+
+  it("a degraded end keeps the longest cut-off summary of the span, not the last one", () => {
+    const longer = cutSummary("First.", 12);
+    const shorter = cutSummary("Second.", 9);
+    const m = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      assistantText(longer),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      requestBegin(),
+      assistantText(shorter),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 2 }),
+      requestBegin(),
+      assistantText("[summary]too short to keep"),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 3 }),
+      degradedEnd("malformed", "the response hit the output limit", 3),
+    ]) {
       pushMessage(m, msg);
     }
-    const banner = items(m)[0] as CompactionItem;
-    expect(banner.work).toBeUndefined();
-    expect(findToolCard(m, [], "r1")).toBeNull();
-    expect(banner.summaryText).toBe("[summary]plain[/summary]");
+    expect(rowOf(m)).toMatchObject({ outcome: "salvaged", summaryText: longer });
+  });
+
+  it("a completed end with the error pair and nothing to salvage has no result and is a hand-off, with the error kept for the tooltip", () => {
+    const message = "400 prompt is too long: 140000 tokens > 131072 maximum";
+    const end = () => degradedEnd("rejected", message, 2);
+    const live = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      partialThinking("start"),
+      partialThinking("delta", "start with the request"),
+      partialThinking("stop"),
+      partialText("start"),
+      partialText("delta", "[summary]\n## Request\nFix the li"),
+      partialText("stop"),
+      requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: message, attempt: 2 }),
+      end(),
+    ]) {
+      pushMessage(live, msg);
+    }
+    const rebuilt = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      thinkingMessage("start with the request"),
+      assistantText("[summary]\n## Request\nFix the li"),
+      requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: message, attempt: 2 }),
+      end(),
+    ]) {
+      pushMessage(rebuilt, msg);
+    }
+    // The thinking stays; the draft was never what the next context opened with.
+    expect(rowOf(live)).toEqual({
+      running: false,
+      status: "completed",
+      outcome: "handoff",
+      errorMessage: message,
+      summaryText: undefined,
+      thinkingText: "start with the request",
+      work: [],
+    });
+    expect(rowOf(rebuilt)).toEqual(rowOf(live));
+    const banner = items(live)[0] as CompactionItem;
+    expect(banner.summaryStartedAtMs).toBeUndefined();
+    expect(banner.summaryDurationMs).toBeUndefined();
+  });
+
+  it("a degraded end clears the context figure like any completion; a fatal end keeps the failed row and the context", () => {
+    const degraded = createStreamModel();
+    pushMessage(degraded, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      degraded,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(degraded, degradedEnd("rejected", "400 Bad Request", 1));
+    expect(degraded.stats.contextStale).toBe(true);
+
+    const fatal = createStreamModel();
+    pushMessage(fatal, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      fatal,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(fatal, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(
+      fatal,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no model client could be built",
+      }),
+    );
+    expect(fatal.stats.contextStale).toBe(false);
+    expect(rowOf(fatal)).toMatchObject({
+      status: "fatal",
+      outcome: undefined,
+      errorMessage: "no model client could be built",
+      summaryText: undefined,
+    });
   });
 
   it("a compaction that does not complete drops its work with its drafts, and a call it cut short settles", () => {

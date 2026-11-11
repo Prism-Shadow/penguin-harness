@@ -14,14 +14,21 @@
  * detail slot is left for the one thing a title cannot say — why a compaction failed, under
  * the bare mode word.
  *
+ * A compaction that completed without a full summary — the summary was cut off and what was
+ * written is kept, or none could be had and the next context opens with the harness's Trace
+ * hand-off note — is still a completion: its row reads exactly as a successful one, and only
+ * the head's status mark changes, to the attention ink, with the explanation as its tooltip and
+ * accessible name. A hand-off has no result section.
+ *
  * The body follows the work group: **stacked disclosure rows, each with its own status icon
  * exactly like a thinking block** — 「思考」/ "Thinking", what the compaction request thought
  * ahead of its summary (present only once any arrived; a model that does not think leaves no
- * empty row); 「工作」/ "Work", present when the compaction took tool rounds before its summary,
- * whose body lists each call as the transcript's tool row ("写入 plan.md") — its approval
- * buttons included, so under always-ask a hand-off file write is allowed or denied here, and the
- * section opens itself while one waits; and 「压缩结果」/ "Result", the summary itself (the last
- * request's text). Thinking and result carry the thinking block's own body (`md-body` through
+ * empty row); 「工作」/ "Work", present when the compaction made tool calls, whose body lists
+ * each call as the transcript's tool row ("写入 plan.md") — its approval buttons included, so
+ * under always-ask a hand-off file write is allowed or denied here, and the section opens itself
+ * while one waits; a call refused once no round was left is a failed row showing the refusal —
+ * and 「压缩结果」/ "Result", the summary itself (the last request's text, or the cut-off
+ * summary that was kept). Thinking and result carry the thinking block's own body (`md-body` through
  * the shared `StreamText`) and stream while the request writes them, revealed the way a reply is.
  *
  * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
@@ -52,6 +59,9 @@ import {
   ActivityGroup,
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   LiveDuration,
   StatusIcon,
   StreamText,
@@ -118,8 +128,8 @@ function CompactionSection({
 }
 
 /**
- * The tool rounds the compaction took: one section row over the calls, each the transcript's
- * tool row. Closed by default like its siblings, and open while a call waits for an approval —
+ * The tool calls the compaction made, run or refused: one section row over the calls, each the
+ * transcript's tool row. Closed by default like its siblings, and open while a call waits for an approval —
  * the buttons must be reachable (keyed on that state, so the reader's own choice is back once
  * nothing waits).
  */
@@ -241,6 +251,15 @@ export function CompactionBanner({
     );
   }
   const ok = item.status === "completed";
+  // A completion without a full summary is still a completion: the title, the wall time and
+  // the row stay as they are, and only the head's mark turns to the attention ink, its tooltip
+  // and accessible name saying what the next context opened with instead.
+  const degradedHint =
+    item.outcome === "salvaged"
+      ? S.chat.compactionSalvagedHint
+      : item.outcome === "handoff"
+        ? S.chat.compactionHandoffHint(item.errorMessage)
+        : undefined;
   return (
     <ActivityGroup
       kind="event"
@@ -250,6 +269,20 @@ export function CompactionBanner({
       // the part a title cannot carry.
       title={ok ? S.chat.compactionDone(item.mode) : S.chat.compactionTitle(item.mode)}
       detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
+      {...(degradedHint !== undefined
+        ? {
+            mark: (
+              <span
+                role="img"
+                aria-label={degradedHint}
+                data-tooltip={degradedHint}
+                className="flex shrink-0 text-tone-attention-fg"
+              >
+                <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.rowLead} />
+              </span>
+            ),
+          }
+        : {})}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
       {...(expandable ? { rows } : {})}
     />
