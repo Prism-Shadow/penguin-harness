@@ -22,7 +22,7 @@
 import { createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeResponse, ThemePackDto } from "@prismshadow/penguin-server/api";
-import { toastStore } from "@prismshadow/penguin-ui";
+import { BUILTIN_PACKS, builtinPack, toastStore, type ThemeId } from "@prismshadow/penguin-ui";
 import { THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import { AppearanceSection } from "../src/features/settings/appearance-section";
 import { ThemePacksSection } from "../src/features/settings/theme-packs-section";
@@ -49,6 +49,8 @@ import { apiError, json, stubFetch, type FetchRequest } from "./helpers/fetch";
 import { SignedIn } from "./helpers/signed-in";
 
 const T = en.settings.themePacks;
+/** The built-in packs' names as the screen shows them, in the order every theme list puts first. */
+const BUILTIN_NAMES = BUILTIN_PACKS.map((p) => en.settings.themeNames[p.id as ThemeId]);
 
 const pack = (id: string, names: { zh: string; en: string }, v: string): ThemePackDto => ({
   id,
@@ -208,14 +210,8 @@ describe("the theme-pack group on the Appearance page", () => {
     await waitFor(() => themeSelect() !== null);
     await click(themeSelect()!);
     const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
-    expect(options.map((o) => o.textContent)).toEqual([
-      "Frost",
-      "Console",
-      "Primer",
-      "Paper",
-      "Ink",
-    ]);
-    await click(options[3]!);
+    expect(options.map((o) => o.textContent)).toEqual([...BUILTIN_NAMES, "Paper", "Ink"]);
+    await click(options.find((o) => o.textContent === "Paper")!);
     expect(localStorage.getItem(THEME_STORAGE_KEYS.themeId)).toBe("paper");
     expect(document.head.querySelector('link[data-theme-pack="paper"]')?.getAttribute("href")).toBe(
       PAPER.href,
@@ -224,7 +220,7 @@ describe("the theme-pack group on the Appearance page", () => {
 
   it("shows a member every pack with Export, and no Remove and no import", async () => {
     await openPage(MEMBER);
-    expect(rowNames()).toEqual(["Frost", "Console", "Primer", "Paper"]);
+    expect(rowNames()).toEqual([...BUILTIN_NAMES, "Paper"]);
     for (const name of rowNames()) expect(hasButton(T.exportLabel(name!))).toBe(true);
     expect(rowNames().some((name) => hasButton(T.removeLabel(name!)))).toBe(false);
     expect(fileInput()).toBeNull();
@@ -249,7 +245,7 @@ describe("the theme-pack group on the Appearance page", () => {
     expect(s.requests.filter((r) => r.method === "DELETE").map((r) => r.path)).toEqual([
       "/api/themes/paper",
     ]);
-    expect(rowNames()).toEqual(["Frost", "Console", "Primer"]);
+    expect(rowNames()).toEqual(BUILTIN_NAMES);
     await waitFor(() => document.documentElement.dataset.theme === "modern");
   });
 
@@ -272,7 +268,7 @@ describe("the theme-pack group on the Appearance page", () => {
     await click(button(T.exportLabel("Frost")));
     await waitFor(() => saved.length === 1);
     expect(s.requests.at(-1)?.path).toBe("/api/themes/modern/export");
-    expect(saved).toEqual(["modern-1.0.0.zip"]);
+    expect(saved).toEqual([`modern-${builtinPack("modern").version}.zip`]);
   });
 
   it("imports a zip as it is, and replaces an installed id once the admin says so", async () => {
@@ -291,7 +287,7 @@ describe("the theme-pack group on the Appearance page", () => {
     await waitFor(() => document.body.textContent?.includes("v1.1.0") === true);
     const posts = s.requests.filter((r) => r.method === "POST");
     expect(posts.map((r) => r.query.get("replace"))).toEqual([null, null, "1"]);
-    expect(rowNames()).toEqual(["Frost", "Console", "Primer", "Paper", "Ink"]);
+    expect(rowNames()).toEqual([...BUILTIN_NAMES, "Paper", "Ink"]);
   });
 
   it("says where a refused import stopped and keeps the list, and sends nothing for a file over the cap", async () => {
@@ -306,7 +302,7 @@ describe("the theme-pack group on the Appearance page", () => {
     await pickFile(fileInput()!, zip());
     await waitFor(() => toasts().length === 1);
     expect(toasts()).toEqual([["error", T.invalid("recipes.css:12:4", "remote url()")]]);
-    expect(rowNames()).toEqual(["Frost", "Console", "Primer", "Paper"]);
+    expect(rowNames()).toEqual([...BUILTIN_NAMES, "Paper"]);
 
     const posts = s.requests.filter((r) => r.method === "POST").length;
     await pickFile(fileInput()!, zip(16 * 1024 * 1024 + 1));
