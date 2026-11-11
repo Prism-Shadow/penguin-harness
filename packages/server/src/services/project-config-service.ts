@@ -93,6 +93,7 @@ import type {
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
+  DefaultModelOffer,
   CommandPolicyRuleDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -111,11 +112,13 @@ import type {
   PresetSyncMode,
   PresetSyncResponse,
   ProviderConnectionDto,
+  ProviderConnectionResponse,
   ProviderConnectionUpdate,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import { connectDefaultOffer } from "./connect-default-offer.js";
 import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
@@ -136,6 +139,7 @@ import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
+  GroupKeyApplied,
   ModelPromotion,
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
@@ -412,6 +416,27 @@ function rowsFollowingGroupKey(raw: RawTable, provider: string): number {
       groupKeyReaches(optStr(m.base_url), groupBaseUrl) &&
       (optStr(m.api_key)?.trim() ?? "") === "",
   ).length;
+}
+
+/**
+ * The default a write that stores `provider`'s group key offers (connectDefaultOffer), from the
+ * table as it stood (`before`) and the one the write stores (`next`). The offer is only reported:
+ * the write keeps the Project's default as it is.
+ */
+function connectOfferOf(
+  before: RawTable,
+  next: RawTable,
+  provider: string,
+): DefaultModelOffer | undefined {
+  const current = optRef(before.default_model);
+  return connectDefaultOffer({
+    provider,
+    hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
+    hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
+    current:
+      current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
+    holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
+  });
 }
 
 /** A group's stored connection as the page reads it: the group's own values, the key masked. */
@@ -2030,22 +2055,26 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
    * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. A protocol
    * Penguin Go's fixed one does not allow is refused before anything is written
-   * (checkGroupProtocol). Returns the models view as it now stands.
+   * (checkGroupProtocol). Returns the models view as it now stands, with the default a group's
+   * first key offers (connectOfferOf); the default itself is left as it is.
    */
   async setProviderConnection(
     projectId: string,
     provider: string,
     patch: ProviderConnectionUpdate,
-  ): Promise<ModelsResponse> {
+  ): Promise<ProviderConnectionResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
       checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
-      await this.writeRaw(projectId, { ...raw, providers: table });
+      const next = { ...raw, providers: table };
+      const defaultOffer = connectOfferOf(raw, next, provider);
+      await this.writeRaw(projectId, next);
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
       }
-      return this.getModels(projectId);
+      const res = await this.getModels(projectId);
+      return defaultOffer === undefined ? res : { ...res, defaultOffer };
     });
   }
 
@@ -2056,15 +2085,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * and a caller that never saw the rest of the table cannot flatten it. A group with no rows
    * still takes the key.
    *
-   * Returns how many of the group's rows now use it — the ones without a key of their own.
+   * Returns how many of the group's rows now use it — the ones without a key of their own —
+   * and the default a group's first key offers (connectOfferOf), which is not written.
    */
-  async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+  async setGroupApiKey(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<GroupKeyApplied> {
     if (provider === MODELSCOPE_PROVIDER_ID) {
       return this.withProviderCredentialLock(projectId, provider, async () => {
-        const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+        const written = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
         // Written by hand: the authorization's refresh token belongs to the key it replaced.
         this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
-        return applied;
+        return written;
       });
     }
     return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
@@ -2088,7 +2122,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         const current = this.providerAuthTokens?.get(projectId, provider);
         if (current?.refreshToken !== options.expectedRefreshToken) return 0;
       }
-      const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+      const { applied } = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
       this.providerAuthTokens?.upsert(projectId, {
         provider,
         refreshToken: token.refreshToken,
@@ -2102,11 +2136,14 @@ export class ProjectConfigService implements ProjectConfigStore {
     projectId: string,
     provider: string,
     apiKey: string,
-  ): Promise<number> {
+  ): Promise<GroupKeyApplied> {
     const raw = await this.readRaw(projectId);
     const { table } = patchProviderTable(asTable(raw.providers), provider, { apiKey });
-    await this.writeRaw(projectId, { ...raw, providers: table });
-    return rowsFollowingGroupKey(raw, provider);
+    const next = { ...raw, providers: table };
+    const defaultOffer = connectOfferOf(raw, next, provider);
+    await this.writeRaw(projectId, next);
+    const applied = rowsFollowingGroupKey(raw, provider);
+    return defaultOffer === undefined ? { applied } : { applied, defaultOffer };
   }
 
   /** A group's key (`[providers.<id>].api_key`), never a row's own; never sent over HTTP. */
@@ -2166,7 +2203,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *
    * Returns how many rows were added, `updated` (price, promotion or route changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
-   * otherwise the rows added.
+   * otherwise the rows added. An authorization that writes the group's first key reports the
+   * default it offers as `defaultOffer` (connectOfferOf), without writing it.
    */
   async mergePlatformModels(
     projectId: string,
@@ -2252,15 +2290,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
+    let defaultOffer: DefaultModelOffer | undefined;
     if (added.length > 0 || routesUpdated > 0 || pricesChanged || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
-      await this.writeRaw(projectId, {
+      const next = {
         ...raw,
         ...(providers !== undefined ? { providers } : {}),
         models: nextModels,
-      });
+      };
+      defaultOffer = connectOfferOf(before, next, provider);
+      await this.writeRaw(projectId, next);
     }
     // After the file write, so each promotion applies to the list price that was persisted.
     // A missing promotion clears the advertised row's old one; unadvertised rows are kept.
@@ -2281,7 +2322,12 @@ export class ProjectConfigService implements ProjectConfigStore {
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
       : added.length;
-    return { added: added.length, updated: Math.max(routesUpdated, changedIds.size), applied };
+    return {
+      added: added.length,
+      updated: Math.max(routesUpdated, changedIds.size),
+      applied,
+      ...(defaultOffer !== undefined ? { defaultOffer } : {}),
+    };
   }
 
   /**
