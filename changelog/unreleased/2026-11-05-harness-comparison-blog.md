@@ -11,10 +11,10 @@ Added Chinese and English experiment blog posts comparing PenguinHarness, DSH, P
 
 ## Details
 
-- Added ten diagrams and four interface screenshots covering experiment design, reproduction, execution, statistics, scores, task stability and resource use.
+- Added bilingual practice posts covering all six sections of the manuscript, including two task-level case studies.
 - Added the article to the practice-post index with the byline Zhihao Liu (Prism Shadow AI).
-- Matched the Chinese article to the Feishu manuscript and translated its title, five sections, experiment prompt, captions and alt text into English.
-- Updated all ten diagrams to the manuscript's selected figures.
-- Described the three-step reproduction workflow, the subset comparison, Pass@3, and per-task changes behind equal overall scores.
-- Replaced the resource-use discussion with the DSH storage-engine example comparing conventional and randomized self-tests.
-- Updated the introduction to mention launching experiments from the web interface, and refreshed the execution, statistics and task-stability figures and captions.
+- Matched the Chinese article to the Feishu manuscript and translated its title, experiment prompt, tables, captions and alt text into English.
+- Referenced 13 language-specific figures per article through `/blog-assets/`, with image bytes stored in `penguin-harness-community`.
+- Registered the dimensions of all 26 assets and removed this post's image files from the main repository.
+- Described benchmark selection, the three-step reproduction workflow, pass frequencies, per-task stability and resource use.
+- Analyzed DSH's storage-engine self-tests and its repeated local tuning on a table-suppression task.
