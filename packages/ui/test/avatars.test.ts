@@ -19,6 +19,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { AgentAvatar } from "../src/components/icons/avatars/agent-avatar";
+import { AGENT_AVATAR_VARIANT_NAMES } from "../src/components/icons/avatars/agent-avatar-variants";
 import { agentColors, agentSlot } from "../src/components/icons/avatars/agent-palette";
 import { AvatarStack } from "../src/components/icons/avatars/avatar-stack";
 import { USER_AVATAR_SIZE, UserAvatar } from "../src/components/icons/avatars/user-avatar";
@@ -48,7 +49,7 @@ describe("AgentAvatar", () => {
     const { tile, coat, face, mark, blush } = agentColors("docs-expert");
     expect(classTokens(html)).toContain("ui-avatar");
     const drawn = drawings(html);
-    expect([...drawn.keys()]).toEqual(["flat", "soft", "pixel"]);
+    expect([...drawn.keys()]).toEqual(AGENT_AVATAR_VARIANT_NAMES);
     for (const [name, markup] of drawn) {
       expect(paintsOf(markup), `${name} paints the Agent's colours alone`).toEqual(
         new Set([tile, coat, face, mark, blush]),
@@ -81,7 +82,7 @@ describe("AgentAvatar", () => {
 
   it("leaves the cheeks off below 20px and draws them from 20px up", () => {
     const { blush } = agentColors("qa");
-    for (const variant of ["flat", "soft", "pixel"] as const) {
+    for (const variant of AGENT_AVATAR_VARIANT_NAMES) {
       const at = (size: number) =>
         paintsOf(drawings(avatar({ id: "qa", size, variant })).get(variant)!);
       expect(at(16), `${variant} at 16px`).not.toContain(blush);
@@ -102,17 +103,36 @@ describe("AgentAvatar", () => {
     expect(drawings(html).size).toBe(0);
   });
 
-  it("lays the pixel penguin on whole pixels from 16px up, and scales it into a smaller box", () => {
-    const pixel = (size: number) =>
-      drawings(avatar({ id: "qa", size, variant: "pixel" })).get("pixel")!;
-    // 18px: one pixel a cell, centred one pixel in — 24/18 user units to a pixel.
-    expect(pixel(18)).toContain('transform="translate(1.3333 1.3333) scale(1.3333)"');
-    expect(pixel(18)).toContain('shape-rendering="crispEdges"');
-    // 40px: two pixels a cell, the 32px drawing four pixels in.
-    expect(pixel(40)).toContain('transform="translate(2.4 2.4) scale(1.2)"');
-    // 14px: no whole-pixel layout fits sixteen cells; scaled and left antialiased.
-    expect(pixel(14)).toContain('transform="scale(1.5)"');
-    expect(pixel(14)).not.toContain("crispEdges");
+  /** The pixel drawing's placement at `size` px: its transform, and whether its edges are crisp. */
+  const pixelAt = (size: number) => {
+    const markup = drawings(avatar({ id: "qa", size, variant: "pixel" })).get("pixel")!;
+    const transform = /<g transform="([^"]+)"/.exec(markup)![1]!;
+    return { transform, crisp: markup.includes('shape-rendering="crispEdges"') };
+  };
+
+  it.each(Array.from({ length: 33 }, (_, n) => n + 16))(
+    "lays the pixel penguin's cells on whole CSS pixels at %ipx",
+    (size) => {
+      const { transform, crisp } = pixelAt(size);
+      const m = /^translate\(([\d.]+) ([\d.]+)\) scale\(([\d.]+)\)$/.exec(transform)!;
+      const [x, y, scale] = [Number(m[1]), Number(m[2]), Number(m[3])];
+      // A unit of the 24-unit box is size/24 CSS pixels: a cell and the offset are whole pixels, to
+      // the transform's rounding.
+      const cellPx = (scale * size) / 24;
+      expect(Math.round(cellPx)).toBeGreaterThanOrEqual(1);
+      expect(cellPx).toBeCloseTo(Math.round(cellPx), 2);
+      expect(x).toBe(y);
+      expect((x * size) / 24).toBeCloseTo(Math.round((x * size) / 24), 2);
+      expect(crisp).toBe(true);
+    },
+  );
+
+  it("scales the pixel penguin into a box too small for whole-pixel cells, antialiased", () => {
+    const { transform, crisp } = pixelAt(14);
+    const scale = Number(/^scale\(([\d.]+)\)$/.exec(transform)![1]);
+    // Sixteen cells fill the 24-unit box.
+    expect(16 * scale).toBe(24);
+    expect(crisp).toBe(false);
   });
 });
 

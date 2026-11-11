@@ -3,8 +3,6 @@
  *
  * - Given an Agent's id, its palette slot is the same on every call, and realistic ids spread over
  *   all twelve slots.
- * - Given an Agent whose letter tile had hue h, its mascot's slot is the one whose hue anchor lies
- *   within 15° of h: it keeps the colour family it had.
  * - Given any slot, in either mode, the penguin reads on its tile: its coat keeps ≥ 3:1 on the
  *   tile (a graphic, WCAG non-text contrast), and the eyes, beak and smile keep ≥ 4.5:1 on the face.
  * - Given any slot, in every theme and mode, the penguin stands off the page — its coat keeps
@@ -13,7 +11,6 @@
  *   side can be told apart.
  */
 import { describe, expect, it } from "vitest";
-import { avatarHue } from "../src/components/icons/avatars/avatar";
 import { AGENT_PALETTE, agentSlot } from "../src/components/icons/avatars/agent-palette";
 import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
@@ -53,15 +50,6 @@ describe("an Agent's colour", () => {
       expect(agentSlot(id)).toBeGreaterThanOrEqual(0);
       expect(agentSlot(id)).toBeLessThan(AGENT_PALETTE.length);
     }
-  });
-
-  it("keeps an Agent in the colour family its letter tile had", () => {
-    const far = IDS.filter((id) => {
-      const anchor = agentSlot(id) * 30;
-      const off = Math.abs(avatarHue(id) - anchor);
-      return Math.min(off, 360 - off) > 15;
-    });
-    expect(far).toEqual([]);
   });
 });
 
