@@ -21,7 +21,6 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IndexDocumentEntry } from "../src/plugin/registry.js";
 import {
   installPluginChannel,
   npmFailureKind,
@@ -30,6 +29,7 @@ import {
   verifyIntegrity,
 } from "../src/plugin/install.js";
 import { indexChannelLookup, indexChannelOf, type IndexChannel } from "../src/plugin/registry.js";
+import type { IndexDocumentEntry } from "../src/plugin/registry.js";
 import { installNamedOrChanneled } from "../src/http/routes/plugins-installed.js";
 
 const execFileAsync = promisify(execFile);
