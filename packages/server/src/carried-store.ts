@@ -78,4 +78,65 @@ export async function layCarriedStore(dir: string, target: string): Promise<Carr
   } finally {
     await fs.rm(staging, { recursive: true, force: true });
   }
+ * A namespace is only "in place" when every pointer the manifest names resolves to an
+ * existing file or directory beneath it — a directory that merely exists is not a store
+ * (a partial copy, a lost file, a pruned artifact), and committing a record over one
+ * would present a broken store as a usable version. `EEXIST` on the rename is therefore
+ * not success by itself: the namespace already there is verified, and rebuilt when it
+ * does not hold everything the record names.
+        !value.startsWith("store/") ||
+        value.split("/").some((part) => part === "..") ||
+        value.includes("\\")
+      ) {
+        // Backslashes are path separators on Windows: a pointer carrying one is not a
+        // store-relative name, whatever the local platform reads it as.
+    const pointers = [
+      ...(manifest.platform?.bundle ? [manifest.platform.bundle] : []),
+      ...(manifest.cli?.bundle ? [manifest.cli.bundle] : []),
+      ...(manifest.web?.manifest ? [manifest.web.manifest] : []),
+      ...(manifest.assets?.dir ? [manifest.assets.dir] : []),
+    ];
+    for (const value of pointers) {
+      // Every pointer must resolve to something the carried body actually holds — the
+      // staging copy is the source of truth, and a pointer to nothing is a broken body.
+      const from = path.join(staging, "store", ...value.slice("store/".length).split("/"));
+      await fs.access(from);
+      // EPERM is what Windows reports for a directory rename onto an existing one;
+      // EEXIST/ENOTEMPTY is the POSIX answer. Both mean "already there".
+      if (!["EEXIST", "ENOTEMPTY", "EPERM"].includes((err as NodeJS.ErrnoException).code ?? ""))
+        throw err;
+      // The namespace is already there — but only a complete one counts. Rebuild it when
+      // it does not hold everything the record names (a partial copy, a lost file).
+      const complete = await carriedStoreComplete(
+        destination,
+        pointers.map((value) => value.slice("store/".length)),
+      );
+      if (!complete.ok) {
+        await fs.rm(destination, { recursive: true, force: true });
+        await fs.rename(path.join(staging, "store"), destination);
+/**
+ * Whether a carried store holds everything its record names: every pointer resolves
+ * beneath the store, to an existing file or directory. `complete.ok` is the answer; when
+ * it is false, `reason` says which pointer failed — the caller repairs by laying the
+ * carried body again.
+export async function carriedStoreComplete(
+  storeDir: string,
+  pointers: string[],
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  for (const rel of pointers) {
+    if (rel.includes("\\") || rel.split("/").some((part) => part === "..")) {
+      return { ok: false, reason: `invalid carried store pointer: store/${rel}` };
+    const at = path.join(storeDir, ...rel.split("/"));
+      await fs.access(at);
+    } catch {
+      return { ok: false, reason: `the carried store lost ${rel}` };
+  return { ok: true };
+/** The pointers this manifest names, store-relative (the `store/` prefix kept). */
+export function carriedStorePointers(manifest: Manifest): string[] {
+  return [
+    ...(manifest.platform?.bundle ? [manifest.platform.bundle] : []),
+    ...(manifest.cli?.bundle ? [manifest.cli.bundle] : []),
+    ...(manifest.web?.manifest ? [manifest.web.manifest] : []),
+    ...(manifest.assets?.dir ? [manifest.assets.dir] : []),
+  ];
 }

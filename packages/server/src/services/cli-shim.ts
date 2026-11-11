@@ -509,5 +509,27 @@ export async function resolveCli(input: {
     entry: path.resolve(input.callerEntry),
     reason: "own-entry",
     bundle: path.resolve(path.join(path.resolve(input.root), "hmr"), bundle),
+ * parse, a CLI half that names no usable bundle, a pointer that would leave the store, a
+ * bundle the store no longer holds — with what went wrong as its detail. The pointer is
+ * trusted content written only by a push or an install, but a reader never lets a
+ * malformed or malicious value walk it out of the store (the same contract the HMR
+ * layer's own reader keeps, packages/hmr/src/manifest.ts's readPushedCli).
+  if (meta.kind !== "meta" || meta.manifest.cli === undefined) {
+    // No record, or a version that pushed no CLI: nothing rides with the caller.
+  const bundle: unknown = (meta.manifest.cli as { bundle?: unknown }).bundle;
+      kind: "fault",
+      fault: "record-unsupported",
+      detail: "harness.json has a `cli` entry with no bundle path",
+  const hmrDir = path.join(path.resolve(input.root), "hmr");
+  const resolved = path.resolve(hmrDir, bundle);
+  if (resolved !== hmrDir && !resolved.startsWith(hmrDir + path.sep)) {
+      kind: "fault",
+      fault: "record-unsupported",
+      detail: `harness.json points \`cli.bundle\` outside ${hmrDir}: ${bundle}`,
+  if (!fs.existsSync(resolved)) {
+      kind: "fault",
+      fault: "record-unsupported",
+      detail: `the committed CLI bundle is missing from the store: ${resolved}`,
+    bundle: resolved,
   };
 }

@@ -19,6 +19,7 @@ import { resolveRoot } from "@prismshadow/penguin-core";
 import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 import { readPushedCli } from "@prismshadow/penguin-server/hmr/manifest";
 import { exitBelowNodeFloor } from "./node-floor-check.js";
+import { resolveCli } from "@prismshadow/penguin-server/cli-shim";
 
 /** This file: the loader's own entry, which resolution answers with. */
 const SELF_ENTRY = fileURLToPath(import.meta.url);
@@ -61,7 +62,7 @@ export async function loadCli(
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   loadCli(resolveRoot())
   exitBelowNodeFloor();
-  loadPushedCli(resolveRoot())
+  loadCli(resolveRoot())
     .then((cli) => cli(process.argv.slice(2)))
     .then((code) => {
       process.exitCode = code;

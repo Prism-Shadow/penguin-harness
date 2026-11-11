@@ -61,6 +61,11 @@ async function main(): Promise<void> {
   await server.syncCarriedImage();
   await server.ensureSoleInstance();
   server.listen();
+  // Reconcile only after this process owns the root (the lock was acquired in listen):
+  // a start that lost the ownership race exits at ensureSoleInstance before touching the
+  // root, so a reconciling copy can never interleave with a live server's push — the
+  // record a push just committed is never overwritten by a losing start's store.
+  await server.syncCarriedImage();
   // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
   // generation a request goes to, how a push lands, what happens when one fails. The
   // product hands it the host, what to refresh once a generation is current, and its own
@@ -176,6 +181,10 @@ class PenguinServer {
    * it, the CLI shim names it). A start that cannot copy says so on the console and
    * continues: the root keeps whatever record it had, which is what the reconciliation
    * promises (a pushed record is never touched; an unreadable one is left to be reported).
+   *
+   * Called only after listen() has acquired this root's lock (see main): the process that
+   * reconciles is the one that owns the root, so the copy cannot interleave with a live
+   * server's push — the losing start never reaches this line.
    */
   async syncCarriedImage(): Promise<void> {
     const outcome = await syncCarriedImage(this.config.root, carriedBody());

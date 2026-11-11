@@ -60,6 +60,7 @@ import { ErrorsRepo, TraceIndexRepo, UsageRepo } from "@penguinharness/plugin-us
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { openDatabase } from "@penguinharness/plugin-db/server";
+import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "@penguinharness/plugin-db/server";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
