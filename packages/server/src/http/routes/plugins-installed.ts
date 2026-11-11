@@ -61,6 +61,7 @@ import type {
   UnsatisfiedPlugin,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { eventStream } from "../event-stream.js";
 import { readJson, requireString, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -83,17 +84,81 @@ import {
 import type { PluginPackages } from "../../mechanisms/plugins.js";
 import {
   installedPackageDir,
+  installPluginChannel,
   PluginInstallError,
   pluginsPrefix,
   readInstalledVersion,
   type InstalledPackage,
 } from "../../plugin/install.js";
+import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
 import { MachinesRepo } from "../../db/repos/machines.js";
+
+/** How a channel install reports its download phase as it runs: bytes received, the total when known. */
+export type InstallProgress = (received: number, total: number | null) => void;
+
+/**
+ * Installs by name or link, npm first. A name npm cannot serve — because it answered that
+ * the package, or the requested version of it, is not on the registry (reason
+ * "unavailable"); any other npm failure stays a failure, since a channel is not the answer
+ * to a registry that refused or a script that died — can still come from the published
+ * index: the entry whose version the request names may pin a github release channel, which
+ * npm installs from the channel's URL and the install then verifies against the sha512 the
+ * entry pins, through the integrity npm itself recorded in the prefix's lock
+ * (installPluginChannel). A channel listed without an integrity is a refusal with the
+ * reason, not an install of unverified bytes; an entry with no channel leaves npm's failure
+ * as the answer, naming that the index had nothing to fall through to either. Everything
+ * surfaces as a PluginInstallError, which the route renders as npm's failure.
+ */
+export async function installNamedOrChanneled(
+  root: string,
+  source: PluginSource,
+  io: {
+    install: (root: string, spec: string) => Promise<InstalledPackage>;
+    channelOf?: (
+      name: string,
+      version?: string,
+    ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
+    installChannel: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
+  },
+): Promise<InstalledPackage> {
+  try {
+    return await io.install(root, source.spec);
+  } catch (err) {
+    if (
+      !(err instanceof PluginInstallError) ||
+      source.kind !== "name" ||
+      err.reason !== "unavailable"
+    ) {
+      throw err;
+    }
+    const npmSaid = err.message;
+    const resolved = (await io.channelOf?.(source.name, source.version)) ?? {
+      channel: null,
+      fault: null,
+    };
+    if (resolved.fault !== null) {
+      throw new PluginInstallError(`${npmSaid}. ${resolved.fault}`);
+    }
+    if (resolved.channel === null) {
+      throw new PluginInstallError(
+        `${npmSaid}. The published plugin index lists no installable github channel for ${source.name} either.`,
+      );
+    }
+    try {
+      return await io.installChannel(root, resolved.channel);
+    } catch (channelErr) {
+      if (channelErr instanceof PluginInstallError) {
+        throw new PluginInstallError(`${npmSaid}. Its index channel: ${channelErr.message}`);
+      }
+      throw channelErr;
+    }
+  }
+}
 
 export interface InstalledPluginsDeps {
   root: string;
@@ -119,6 +184,22 @@ export interface InstalledPluginsDeps {
   apply: (change: ReassemblyChange) => Promise<boolean>;
   /** How packages reach and leave this server's prefix: npm, unless a test stands in. */
   packages: PluginPackages;
+  /**
+   * What the published index lists as a name's github release channel for a requested
+   * version, consulted only after npm has answered that the name (or its requested version)
+   * is not on the registry (indexChannelLookup); absent = no published index is configured,
+   * so npm's failure is the whole answer.
+   */
+  channelOf?: (
+    name: string,
+    version?: string,
+  ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
+  /**
+   * How a verified channel installs — npm carries the bytes from the channel's URL, and the
+   * install verifies what npm settled against the entry's pin; a test stands in
+   * (installPluginChannel).
+   */
+  installChannel?: (root: string, channel: IndexChannel) => Promise<InstalledPackage>;
   /**
    * Hands this Project's list to the machines it uses, strict parity. Not awaited: the
    * person editing is not the one who should wait for a set of ssh tunnels — the same rule
@@ -259,6 +340,34 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       }
       throw err;
     }
+  };
+
+  /**
+   * The route's install of a specifier: npm first, the published index's channel on its
+   * failure. `channeled` says which source carried the bytes — a channel install runs a real
+   * download, and that is the only install whose stream reports a download phase.
+   */
+  const installSpecifier = async (
+    source: PluginSource,
+    onProgress?: InstallProgress,
+  ): Promise<{ installed: InstalledPackage; channeled: boolean }> => {
+    let channeled = false;
+    const installed = await viaNpm(() =>
+      installNamedOrChanneled(deps.root, source, {
+        install: (root, spec) => deps.packages.install(root, spec),
+        channelOf: deps.channelOf,
+        installChannel: (root, channel) => {
+          channeled = true;
+          // npm carries the bytes, so nothing per-byte is ever reported: the one thing a
+          // stream can say while the channel's asset downloads is that it is under way
+          // (npm knows the total only once its own fetch has it, and the total is not
+          // this process's to show) — the page shows the download as a pulse.
+          onProgress?.(0, null);
+          return (deps.installChannel ?? installPluginChannel)(root, channel);
+        },
+      }),
+    );
+    return { installed, channeled };
   };
 
   /** What a package in this server's prefix is, by its table (core plugin/kinds.ts): a library plugin (Skills, hooks, MCP servers or workbenches), server modules, or both. */
@@ -405,12 +514,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       : {}),
   });
 
-  app.post("/", async (c) => {
-    requireAdmin(c);
-    const projectId = scope(c);
-    const body = await readJson(c);
-    const source = sourceOf(body.specifier);
-    const machineId = machineOf(body.machineId);
+  /**
+   * The install itself, answer and all — the verb both transports of POST run. Everything
+   * that can refuse (the session, the body, npm, the vetting) refuses here, so a stream
+   * answer carries exactly the errors the JSON one would have.
+   */
+  const performInstall = async (
+    projectId: string,
+    source: PluginSource,
+    machineId: string | null,
+    onProgress?: InstallProgress,
+  ): Promise<InstalledPluginsResponse> => {
     const runsHere = machineId === null || machineId === deps.machineId;
     if (source.kind === "link") {
       // A link names no package another machine could fetch by name: it installs here, and is
@@ -422,12 +536,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           "A link installs on this server only; install it on that machine from its own Plugins page.",
         );
       }
-      const installed = await viaNpm(() => deps.packages.install(deps.root, source.spec));
+      const { installed } = await installSpecifier(source);
       if ((await vetInstalled(installed)).modules) {
         await list(projectId, installed.name, {}, deps.machineId);
         deps.syncFleet(projectId);
       }
-      return c.json(await answer(projectId, installed));
+      return answer(projectId, installed);
     }
     // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
@@ -435,10 +549,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // and npm failing must leave the deployment unchanged. A plugin asked of another machine
     // only is downloaded THERE, by that machine, when the list reaches it.
     const shipped = await shippedNames();
-    const installed =
+    const { installed } =
       runsHere && !shipped.includes(source.name)
-        ? await viaNpm(() => deps.packages.install(deps.root, source.spec))
-        : null;
+        ? await installSpecifier(source, onProgress)
+        : { installed: null };
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
     // loads it.
     const kinds = installed !== null ? await vetInstalled(installed) : null;
@@ -453,7 +567,44 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed));
+    return answer(projectId, installed);
+  };
+
+  app.post("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const source = sourceOf(body.specifier);
+    const machineId = machineOf(body.machineId);
+    if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
+      return c.json(await performInstall(projectId, source, machineId));
+    }
+    // The same install, read as it arrives: a channel install's download opens the stream
+    // (`download`, the asset's size when it is known — nothing per-byte, npm carries the
+    // bytes), `npm` marks the hand-off to npm's install, the finished list comes as `result`.
+    // A plain npm install sends no download event at all — there was no download of ours to
+    // report — so the page shows "Installing" for it, not a progress bar. A failure that the
+    // JSON answer would have carried as a status rides as an `error` event with that status,
+    // so the page raises the same error either way.
+    return eventStream(c, async (sink) => {
+      try {
+        let downloadStarted = false;
+        const next = await performInstall(projectId, source, machineId, (received, total) => {
+          downloadStarted = true;
+          void sink.send("download", null, JSON.stringify({ received, total }));
+        });
+        if (downloadStarted) await sink.send("npm", null, "{}");
+        await sink.send("result", null, JSON.stringify(next));
+      } catch (err) {
+        const [status, code, message] =
+          err instanceof HttpError
+            ? [err.status, err.code, err.message]
+            : [500, "internal_error", err instanceof Error ? err.message : String(err)];
+        await sink
+          .send("error", null, JSON.stringify({ status, code, message }))
+          .catch(() => undefined);
+      }
+    });
   });
 
   app.post("/archive", async (c) => {
@@ -615,6 +766,9 @@ export class InstalledPluginRoutes {
       access: this.access,
       apply: (change) => this.reassembly.reassemble(change),
       packages: this.packages,
+      // The published index's github channels, for a name npm has no answer for; looked up
+      // only then, cached at the listing's cadence (indexChannelLookup).
+      channelOf: indexChannelLookup(this.config.pluginIndexUrl ?? null),
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
     });

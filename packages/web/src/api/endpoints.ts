@@ -1,3 +1,9 @@
+/**
+ * API endpoint wrappers: one function per API.
+ * DTO types come from @prismshadow/penguin-server/api (**type import only**, resolved via
+ * tsconfig paths to the server contract file types.ts; must not be a value import — server
+ * code must not enter the browser bundle).
+ */
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -7,8 +13,6 @@ import type {
   AgentApiKeyCreateResponse,
   AgentApiResponse,
   AgentApiUpdateRequest,
-  AgentAvatarRequest,
-  AgentAvatarResponse,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -17,7 +21,8 @@ import type {
   AgentDeletionResponse,
   AgentHooksResponse,
   AgentMcpServersResponse,
-  AgentArchiveImportResponse,
+  AgentImportRequest,
+  AgentImportResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -25,9 +30,6 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
-  AppCenterLayout,
-  AppCenterLayoutResponse,
-  AppCenterResponse,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
   BackgroundImageResponse,
@@ -76,6 +78,7 @@ import type {
   MemoryImportRequest,
   MemoryImportResponse,
   MemoryOverviewResponse,
+  MemoryScopeExport,
   MeResponse,
   MessagesResponse,
   MessagingAccountHoldersResponse,
@@ -100,14 +103,12 @@ import type {
   ModelsUpdateRequest,
   PresetSyncRequest,
   PresetSyncResponse,
-  ProviderConnectionResponse,
   ProviderConnectionUpdate,
   ModelTestRequest,
   ModelTestResponse,
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
   OrganizationCreateRequest,
-  OrganizationDeleteResponse,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -149,7 +150,6 @@ import type {
   PluginFilesResponse,
   PluginInstallRequest,
   PluginLibraryResponse,
-  PluginUninstallResponse,
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
@@ -213,10 +213,6 @@ import type {
   TelegramBindingResponse,
   TelegramTestRequest,
   TelegramTestResponse,
-  ThemeInvalidDetails,
-  ThemePackDto,
-  ThemePackImportResponse,
-  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -244,13 +240,9 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
-  WorkbenchAppCenterRequest,
-  WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallRequest,
   WorkbenchArchiveInstallResponse,
-  WorkbenchEnabledRequest,
   WorkbenchInfo,
-  WorkbenchesResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -274,15 +266,13 @@ import type {
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
   DesktopBrowserCommand,
-  HookItem,
-  SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, apiUpload } from "./client";
-import { iconsOn } from "./machine-icons";
+import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
-import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
+import { activityCursorParam } from "../lib/session-grouping";
+import type { ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -467,15 +457,14 @@ export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
 
 /**
  * One group's connection (`[providers.<id>]`, owner): only the fields the update names change;
- * the models that store none of their own follow it. Answers with the whole table, re-read, and
- * the default model the group's first key offers, if any.
+ * the models that store none of their own follow it. Answers with the whole table, re-read.
  */
 export const putProviderConnection = (
   projectId: string,
   provider: string,
   body: ProviderConnectionUpdate,
 ) =>
-  apiFetch<ProviderConnectionResponse>(
+  apiFetch<ModelsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/providers/${encodeURIComponent(provider)}`,
     { method: "PUT", body },
   );
@@ -671,7 +660,7 @@ export const insertSchedulesPlaceholder = (
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
 
-/** Base path of an Agent's Memory API; the scope key and a topic's file name are single path segments (never a path). */
+/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
 const memoryBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
 
@@ -703,35 +692,26 @@ export const getMemoryFiles = (
     server: machineId,
   });
 
-/**
- * One memory file's URL. `filePath` is its place in the scope: a topic's name (`MemoryFileInfo.name`)
- * or a kept file's path (`MemoryFolderFile.path`, `<folder>/<path>`), each segment encoded on its
- * own and the `/` between them kept.
- */
-const memoryFileUrl = (projectId: string, agentId: string, scopeKey: string, filePath: string) =>
-  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
-
-/** A topic with the files it keeps, or a kept file's text (up to 512 KB of UTF-8). */
 export const getMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  filePath: string,
+  name: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFileResponse>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
-    server: machineId,
-  });
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
+    { server: machineId },
+  );
 
-/** Deletes a topic with its folder (and its index lines), or one kept file. */
 export const deleteMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  filePath: string,
+  name: string,
   machineId: string | null,
 ) =>
-  apiFetch<void>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
+  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
     method: "DELETE",
     server: machineId,
   });
@@ -739,15 +719,23 @@ export const deleteMemoryFile = (
 const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}`;
 
-/** Zip download URL for one scope's folder (server sets Content-Disposition attachment); the export round-trips through importMemoryScope. */
-export const memoryScopeArchiveUrl = (
+/**
+ * One scope as a transfer document. Fetched as ordinary JSON rather than followed as a download
+ * link so a failure arrives as an ApiError and reaches the user as a toast — a bare `<a download>`
+ * would save the error body as a file (the skills tab hit the same wall). The server still sets
+ * Content-Disposition, for anyone opening the URL directly.
+ */
+export const exportMemoryScope = (
   projectId: string,
   agentId: string,
   scopeKey: string,
   machineId: string | null,
-): string => apiUrl(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, machineId);
+) =>
+  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, {
+    server: machineId,
+  });
 
-/** Writes a scope zip (or a version 1 JSON document) into one scope (owner only); `confirm` is required by the modes that would destroy something. */
+/** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
   projectId: string,
   agentId: string,
@@ -1003,7 +991,7 @@ export const listDirectorySkills = (projectId: string, path: string, machineId: 
   apiFetch<DirectorySkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
     { server: machineId },
-  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
+  );
 
 /**
  * Creates a Session on the machine that owns its workspace.
@@ -1898,16 +1886,7 @@ export const deleteSchedule = (
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
 export const getPluginLibrary = (machineId: string | null) =>
-  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId }).then((r) => ({
-    ...r,
-    groups: r.groups.map((g) => ({ ...g, plugins: iconsOn(g.plugins, machineId) })),
-  }));
-
-/** An Agent's installed lists from `machineId`, their icons re-rooted onto it (api/machine-icons.ts). */
-const installedOn = <T extends { skills: SkillMetadataItem[]; hooks: HookItem[] }>(
-  r: T,
-  machineId: string | null,
-): T => ({ ...r, skills: iconsOn(r.skills, machineId), hooks: iconsOn(r.hooks, machineId) });
+  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId });
 
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
@@ -1926,7 +1905,7 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
     { server: machineId },
-  ).then((r) => installedOn(r, machineId));
+  );
 
 /** With `machineId`, installs from THAT machine's library onto its Agent. */
 export const installAgentPlugins = (
@@ -1938,25 +1917,6 @@ export const installAgentPlugins = (
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
     { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
-  ).then((r) => installedOn(r, machineId));
-
-/**
- * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
- * workbenches, its MCP server entries, its hook package and its Skills. The answer lists what was
- * removed, and `failed` what could not be (the rest is removed regardless). 404
- * `plugin_not_installed` when the Agent carries nothing of it; any other 404 is a server older
- * than the route.
- */
-export const uninstallAgentPlugin = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  machineId: string | null,
-) =>
-  apiFetch<PluginUninstallResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/plugins/${encodeURIComponent(name)}`,
-    { method: "DELETE", server: machineId },
   );
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
@@ -1965,55 +1925,23 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
-// Theme packs (this server's; never a machine's) ---------------------------------------
-
-/**
- * The theme packs an admin imported on this server, in install order. The built-in packs are
- * not listed: the app ships them. Re-read on `themes_changed`.
- */
-export const listThemePacks = () => apiFetch<ThemePacksResponse>("/api/themes", { server: null });
-
-/**
- * Imports a pack's zip as it is (admins only). An id already installed is 409 `theme_exists`
- * (`details.themeId`) unless `replace`; a pack the validator refuses is 400 `theme_invalid`
- * with {@link ThemeInvalidDetails} in `details`.
- */
-export const importThemePack = (file: Blob, replace = false) =>
-  apiUpload<ThemePackImportResponse>(`/api/themes${replace ? "?replace=1" : ""}`, file, null);
-
-/** Removes an imported pack (admins only); a built-in pack is 400 `theme_builtin`. */
-export const deleteThemePack = (id: string) =>
-  apiFetch<void>(`/api/themes/${encodeURIComponent(id)}`, { method: "DELETE", server: null });
-
-/** Where any pack, built-in or imported, downloads as a zip: an attachment, for a plain link. */
-export const themePackExportUrl = (id: string): string =>
-  `/api/themes/${encodeURIComponent(id)}/export`;
-
-/**
- * One file an imported pack serves at version `v` (a {@link ThemePackDto}'s `v`): its
- * `index.css`, which the DTO's `href` already names, or a font or drawing that stylesheet uses.
- */
-export const themePackFileUrl = (id: string, file: string, v: string): string =>
-  `/api/themes/${encodeURIComponent(id)}/files/${file
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/")}?v=${encodeURIComponent(v)}`;
-
-/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
-export const getPluginReadme = (name: string) =>
-  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. `lang` picks the language when the package ships more than one (`zh` falls back to English). */
+export const getPluginReadme = (name: string, lang?: "en" | "zh") =>
+  apiFetch<PluginReadmeResponse>(
+    `/api/plugins/registry/readme?name=${encodeURIComponent(name)}${lang === "zh" ? "&lang=zh" : ""}`,
+  );
 
 export const getAgentSkills = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { server: machineId },
-  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
+  );
 
 export const getAgentHooks = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
     { server: machineId },
-  ).then((r) => ({ ...r, hooks: iconsOn(r.hooks, machineId) }));
+  );
 
 /** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
 export const getAgentMcpServers = (projectId: string, agentId: string, machineId: string | null) =>
@@ -2059,7 +1987,7 @@ export const installAgentHookArchive = (
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/archive`,
     { method: "POST", body, server: machineId },
-  ).then((r) => ({ ...r, hooks: iconsOn(r.hooks, machineId) }));
+  );
 
 /** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
 export const agentHookArchiveUrl = (
@@ -2085,7 +2013,7 @@ export const installAgentSkillArchive = (
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/archive`,
     { method: "POST", body, server: machineId },
-  ).then((r) => ({ ...r, skills: iconsOn(r.skills, machineId) }));
+  );
 
 /** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
 export const agentSkillArchiveUrl = (
@@ -2220,67 +2148,28 @@ export const benchmarkCaseFileUrl = (
   );
 };
 
-// An Agent's own avatar (agent_state/avatar.<ext>) ---------------------------------------------
+// Agent State snapshot export / import ------------------------------------------------------
 
-const agentAvatarPath = (projectId: string, agentId: string) =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/avatar`;
-
-/**
- * Where an Agent's own picture is served from — through its machine for a machine's Agent. `rev`
- * (the list's `avatarRev`) makes the URL the image's own, so it is cached for good.
- */
-export const agentAvatarUrl = (
+/** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
+export const agentExportUrl = (
   projectId: string,
   agentId: string,
-  rev: string,
-  machineId: string | null,
-): string =>
-  `${apiUrl(agentAvatarPath(projectId, agentId), machineId)}?rev=${encodeURIComponent(rev)}`;
-
-/** Sets the Agent's own picture from a data URL (png, jpeg or webp); `null` removes it. */
-export const putAgentAvatar = (
-  projectId: string,
-  agentId: string,
-  avatar: string | null,
-  machineId: string | null,
-) =>
-  apiFetch<AgentAvatarResponse>(agentAvatarPath(projectId, agentId), {
-    method: "PUT",
-    body: { avatar } satisfies AgentAvatarRequest,
-    server: machineId,
-  });
-
-// Agent zip export / import ----------------------------------------------------------------
-
-/** The zip export with its parts query; a browser-followed URL, so the proxy prefix is in it (downloadArchive fetches it). */
-export const agentArchiveUrl = (
-  projectId: string,
-  agentId: string,
-  parts: Record<string, string>,
   machineId: string | null,
 ): string =>
   apiUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/archive?${new URLSearchParams(parts).toString()}`,
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`,
     machineId,
   );
 
-/**
- * Uploads an Agent zip (or an older `.tar.gz`) as it is: a new Agent `agentId`, or with
- * `overwrite` (owners only) the State of the existing one. A taken id without it is 409
- * `agent_exists`, the id in `details.agentId`.
- */
-export const importAgentArchive = (
+export const importAgent = (
   projectId: string,
-  file: Blob,
-  target: { agentId: string; overwrite: boolean },
+  agentId: string,
+  body: AgentImportRequest,
   machineId: string | null,
 ) =>
-  apiUpload<AgentArchiveImportResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/import?agentId=` +
-      `${encodeURIComponent(target.agentId)}${target.overwrite ? "&overwrite=1" : ""}`,
-    file,
-    machineId,
+  apiFetch<AgentImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
+    { method: "POST", body, server: machineId },
   );
 
 // Machines (admin only) ----------------------------------------------------------------
@@ -2535,24 +2424,11 @@ export const patchOrganization = (
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
 /**
- * Owner only. The organization goes to the Project's trash, restorable by hand. With `agentIds`
- * — the employees' Agents the confirmation listed for deletion — those are deleted for good as
- * well, as far as they still qualify (not built in, employed nowhere else), and the answer
- * reports every employee; without it the Agents and their Sessions are left as they are.
+ * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
+ * employees' Agents and its desk and ticket Sessions are left as they are.
  */
-export const deleteOrganization = (
-  projectId: string,
-  orgId: string,
-  opts: { agentIds?: readonly string[] } = {},
-) =>
-  apiFetch<OrganizationDeleteResponse>(
-    `${orgBase(projectId, orgId)}${
-      opts.agentIds === undefined
-        ? ""
-        : `?${new URLSearchParams({ deleteAgents: "1", agentIds: opts.agentIds.join(",") })}`
-    }`,
-    { method: "DELETE" },
-  );
+export const deleteOrganization = (projectId: string, orgId: string) =>
+  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
 
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
@@ -2857,37 +2733,12 @@ const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
  * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
- * the workbenches of an Agent that only a machine has are asked of THAT machine's server, and the
- * list's icons are re-rooted onto it (api/machine-icons.ts).
+ * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
  */
 export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
-  apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
-    server: machineId,
-  }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
-/** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
-export const setWorkbenchesEnabled = (
-  projectId: string,
-  agentId: string,
-  enabled: boolean,
-  machineId: string | null,
-) =>
-  apiFetch<WorkbenchesResponse>(`${workbenchesBase(projectId, agentId)}/enabled`, {
-    method: "PUT",
-    body: { enabled } satisfies WorkbenchEnabledRequest,
+  apiFetch<{ workbenches: WorkbenchInfo[] }>(workbenchesBase(projectId, agentId), {
     server: machineId,
   });
-/** One workbench's own switch (Project owner): off, it is unloaded and serves nothing. */
-export const setWorkbenchEnabled = (
-  projectId: string,
-  agentId: string,
-  workbenchId: string,
-  enabled: boolean,
-  machineId: string | null,
-) =>
-  apiFetch<{ workbench: WorkbenchInfo }>(
-    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/enabled`,
-    { method: "PUT", body: { enabled } satisfies WorkbenchEnabledRequest, server: machineId },
-  );
 /** Re-import the folder now (the server also does this whenever a file changes). */
 export const reloadWorkbench = (
   projectId: string,
@@ -2955,30 +2806,6 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
-/** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
-export const setWorkbenchAppCenter = (
-  projectId: string,
-  agentId: string,
-  workbenchId: string,
-  show: boolean,
-  machineId: string | null,
-) =>
-  apiFetch<WorkbenchAppCenterResponse>(
-    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/app-center`,
-    { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
-  );
-/**
- * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
- * with its build state, and the viewer's own arrangement of them (null: the server's order).
- */
-export const getAppCenter = (projectId: string) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
-/** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
-export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
-  apiFetch<AppCenterLayoutResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/app-center/layout`,
-    { method: "PUT", body: { layout } },
-  );
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
@@ -3015,6 +2842,90 @@ export const installPlugin = (
     method: "POST",
     body: machineId === null ? { specifier } : { specifier, machineId },
   });
+
+/** How a channel install reports its download as it arrives: bytes so far, the total when known. */
+export type InstallProgressListener = (received: number, total: number | null) => void;
+
+/**
+ * The same install as {@link installPlugin}, read as it arrives: the server answers a
+ * `text/event-stream`. A `download` event names the channel's asset download — a real
+ * download, and the only one the page shows progress for; npm carries the bytes, so a plain
+ * npm install sends none and the page keeps its "Installing" state. `npm` marks the hand-off
+ * to npm's install and carries nothing to read, `result` carries the finished list, and an
+ * `error` event carries the status the JSON answer would have had and is raised as an
+ * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ */
+export const installPluginStream = async (
+  projectId: string,
+  specifier: string,
+  machineId: string | null,
+  onProgress: InstallProgressListener,
+): Promise<InstalledPluginsResponse> => {
+  const response = await apiFetchStream(pluginsPath(projectId), {
+    method: "POST",
+    body: machineId === null ? { specifier } : { specifier, machineId },
+    headers: { accept: "text/event-stream" },
+  });
+  for await (const { event, data } of sseEvents(response)) {
+    if (event === "result") return JSON.parse(data) as InstalledPluginsResponse;
+    if (event === "download") {
+      const progress = JSON.parse(data) as { received: number; total: number | null };
+      onProgress(progress.received, progress.total);
+    } else if (event === "error") {
+      const failure = JSON.parse(data) as { status: number; code: string; message: string };
+      throw new ApiError(failure.status, failure.code, failure.message);
+    }
+    // `npm` marks the hand-off and carries nothing to read; anything unknown is skipped so a
+    // newer server can add events this page has not heard of.
+  }
+  throw new ApiError(0, "network_error", "the stream ended with no result.");
+};
+
+/**
+ * Reads a `text/event-stream` answer one event at a time: a blank line ends an event, whose
+ * `event:` names it and whose `data:` lines join with newlines into its payload. Text decodes
+ * incrementally, so a chunk split inside a multi-byte character still lands whole.
+ */
+async function* sseEvents(response: Response): AsyncGenerator<{ event: string; data: string }> {
+  const body = response.body;
+  if (!body) throw new ApiError(0, "network_error", "the answer carried no stream.");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (buffer.trim() !== "")
+          throw new ApiError(0, "network_error", "the stream ended mid-event.");
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      // `cut` is recomputed on every iteration: an event with no name (a comment or a
+      // keep-alive) is consumed and the scan starts from what is left of the buffer, so a
+      // stream of unnamed events can never spin on a cut that no longer moves.
+      for (;;) {
+        const cut = buffer.indexOf("\n\n");
+        if (cut === -1) break;
+        const lines = buffer.slice(0, cut).split("\n");
+        buffer = buffer.slice(cut + 2);
+        const event = lines
+          .find((line) => line.startsWith("event:"))
+          ?.slice("event:".length)
+          .trim();
+        if (event === undefined) continue; // a comment or a keep-alive with no event name
+        const data = lines
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trim())
+          .join("\n");
+        yield { event, data };
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
  * machine's own table; the package leaves this server's disk once nothing asks it to run here.
@@ -3059,7 +2970,7 @@ export const registryPluginArchiveUrl = (name: string): string =>
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
-/** What the storage-clearing route takes (WebApp's own clear-data command). */
+/** What the storage-clearing route takes (the shell's own clear-data command). */
 export type BuiltinBrowserStorage = Extract<
   DesktopBrowserCommand,
   { op: "clear-data" }
@@ -3189,6 +3100,3 @@ export const clearBuiltinBrowserData = (
     body: { storages, ...scope },
     server: null,
   });
-
-/** The existing server contributions route, read by the single frame provider. */
-export const getContributions = () => apiFetch<ContributionsResponse>("/api/contributions");
