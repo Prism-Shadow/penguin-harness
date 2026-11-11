@@ -1140,8 +1140,39 @@ export const en: Strings = {
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    importAction: "Import zip",
     importTitle: "Import workbench",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews its pages and server code, then installs the workbench on this agent and reloads it — more reliable than a bare upload.",
+    importSourceLabel: "Workbench source",
+    importSourceHint:
+      "A web page / GitHub repo or directory / local path / an install command from another ecosystem / a description",
+    importSourcePlaceholder: "https://…, a git repo, /path/to/workbench, or a description",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string =>
+        `Please read this page and import the workbench it describes: ${s}.`,
+      repoUrl: (s: string): string =>
+        `Please fetch this repository or directory (git clone or fetch it directly), locate the workbench directory holding its package.json, and import it: ${s}.`,
+      localPath: (s: string): string =>
+        `Please read the workbench files under this local path directly and import them: ${s}.`,
+      command: (s: string): string =>
+        `This is an install command from another ecosystem — do not run it blindly: work out what it would install, fetch the same content from its repository or registry, then import it as a workbench: ${s}.`,
+      reference: (s: string): string =>
+        `Please resolve this reference or description to its source (repository, marketplace, or docs page) and import it as a workbench: ${s}.`,
+    },
+    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read every file of the source in full before installing anything. A workbench's pages run inside the app and its server handlers run on this server, so review it for anything that sends data out, runs commands it does not need, or reaches outside its own directory; if anything looks wrong, stop and tell me instead of installing it.",
+        `Once it is safe, lay it out the way the penguin-plugin skill describes (package.json with penguin.modules, index.ts and ui/), put it in agent_state/workbenches/<id>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the workbench id), reload it and check that it loads, then tell me what it does and which pages it adds.`,
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a workbench zip",
     importUploadDesc:
       "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
     importUploadAction: "Choose zip file",
@@ -3336,7 +3367,6 @@ export const en: Strings = {
     importHook: "Hook package",
     importWorkbench: "Workbench",
     importChatOrZip: "Upload a zip, or have the agent import it in a chat",
-    importZip: "Upload a zip",
     browseLibrary: "Browse plugin library",
     installedTitle: "Installed plugins",
     empty: "No plugins on this agent yet. Select Browse plugin library to add one.",

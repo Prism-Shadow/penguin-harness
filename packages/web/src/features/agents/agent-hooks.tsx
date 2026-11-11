@@ -11,57 +11,35 @@
  * the trailing slot: the version, export and uninstall. Export downloads the installed directory
  * as a zip; uninstall confirms first. Both are member-level, matching the hooks routes.
  *
- * The "Import hook" dialog offers the Skills import's two paths: the recommended chat import (a
- * source field taking a URL / repo / local path / description / another tool's hooks config,
- * whose generated review-then-install prompt — hook-import.ts — can be copied or prefilled into a
- * new chat with this Agent) and a zip upload that takes such a package back (409 hook_exists asks
- * before overwriting). It is mounted only while it is open, so every opening starts with nothing
- * typed. The source is its draft under the settings commit model: closing the dialog with one
- * typed (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in
- * flight. Opening the chat hands the source over, so the draft is forgotten before the page moves
- * to the conversation.
+ * The "Import hook" dialog is the Skills import's (chat-or-zip-import-dialog.tsx) with its two
+ * paths: the recommended chat import (a source field taking a URL / repo / local path /
+ * description / another tool's hooks config, whose generated review-then-install prompt —
+ * hook-import.ts — can be copied or prefilled into a new chat with this Agent) and a zip upload
+ * that takes such a package back (409 hook_exists asks before overwriting).
  */
 import { useState } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { HookItem } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
   ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
   DownloadIcon,
   GlyphIcon,
-  HiddenFileInput,
   ICONS,
-  Modal,
-  Textarea,
-  discardUnsaved,
   toastSuccess,
-  useCopied,
-  useFormDraft,
-  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
 import { SkillTile } from "../skills";
-import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
+import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildHookImportPrompt } from "./hook-import";
-import { UPLOAD_LABEL_CLASS } from "./agent-skills";
 import { toastApiError } from "../../lib/toast-api-error";
-
-/** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
-interface PendingOverwrite {
-  dataBase64: string;
-  name: string;
-}
 
 /**
  * The rows of an Agent's hook packages and the one uninstall confirmation they share. `agentName`
@@ -201,9 +179,10 @@ export function useHookRows({
 }
 
 /**
- * The "Import hook" dialog: the recommended chat import on top, the zip upload below (the Skills
- * tab's shape). The source is the dialog's draft (compared without the spaces around it): closing
- * with one typed asks first, and an upload in flight holds every way of closing until it answers.
+ * The "Import hook" dialog: the shared chat-or-zip import, with a multi-line source (a whole
+ * pasted hooks config block fits), a prompt in which a URL / repo / path source gets an import
+ * lead sentence and free text is the lead itself (see hook-import.ts), and the zip going to the
+ * hooks archive endpoint of the server the Agent lives on.
  */
 export function HookImportDialog({
   projectId,
@@ -217,179 +196,19 @@ export function HookImportDialog({
   /** A zip landed: the tab closes the dialog and reads the lists again. */
   onImported: () => void;
 }) {
-  const { openAiChat } = useAiBridge();
   const machineId = useAgentLocation();
-  const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
-  const source = form.draft;
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  // Non-null shows the overwrite confirm (the archive POST answered 409 hook_exists).
-  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
-  const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
-
-  /**
-   * POST the zip to the archive endpoint. A 409 hook_exists pops the overwrite confirm (the
-   * package name is read from the server's fixed message tail, pinned by the route tests;
-   * `fallbackName` — the picked file's stem — covers a parse miss). Success hands over to the
-   * tab, which closes the dialog and re-fetches the list.
-   */
-  const upload = async (dataBase64: string, fallbackName: string, overwrite: boolean) => {
-    setUploading(true);
-    setUploadError(null);
-    try {
-      await api.installAgentHookArchive(
-        projectId,
-        agentId,
-        { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
-        machineId,
-      );
-      setOverwriting(null);
-      onImported();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "hook_exists") {
-        const name = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? fallbackName;
-        setOverwriting({ dataBase64, name });
-      } else {
-        setOverwriting(null);
-        setUploadError(apiErrorText(e));
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploadError(null);
-    const fallbackName = file.name.replace(/\.zip$/i, "");
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      void upload(dataUrl.slice(dataUrl.indexOf(",") + 1), fallbackName, false); // strip the data:...;base64, prefix
-    };
-    reader.onerror = () => setUploadError(S.common.unknownError);
-    reader.readAsDataURL(file);
-  };
-
-  // A URL / repo / path source gets an import lead sentence, free text is the lead itself (see
-  // hook-import.ts); the preview substitutes a placeholder token until something is entered.
-  const trimmedSource = source.trim();
-  const chatPrompt = buildHookImportPrompt(
-    trimmedSource || S.hooks.importSourceToken,
-    projectId,
-    agentId,
-  );
-  // Copy feedback lives at the button (the shared copy convention): its glyph flips to the
-  // check while copied — no toast, and the button label never changes.
-  const promptCopy = useCopied();
-
-  /**
-   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
-   * import prompt (parking typed-but-unsent draft text first) and clears a stale handoff
-   * target and skill pre-selection along with it. The source goes with the chat, so nothing
-   * typed is left to lose: it is forgotten first, or the leave guard would hold the move to
-   * the conversation.
-   */
-  const openChat = () => {
-    if (trimmedSource === "") return;
-    discardUnsaved(form.scope);
-    openAiChat({
-      agentId,
-      text: buildHookImportPrompt(trimmedSource, projectId, agentId),
-      machineId,
-    });
-    onClose();
-  };
-
   return (
-    <>
-      <Modal open title={S.hooks.importHook} onClose={requestClose} widthClass="sm:max-w-lg">
-        <div className="space-y-4">
-          <section>
-            <p className="text-sm font-medium">{S.hooks.importChatTitle}</p>
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-              {S.hooks.importChatWhy}
-            </p>
-            <div className="mt-2.5 space-y-3">
-              {/* A source may be a whole pasted hooks config block, so the field is multi-line. */}
-              <Textarea
-                label={S.hooks.importSourceLabel}
-                hint={S.hooks.importSourceHint}
-                size="sm"
-                rows={3}
-                value={source}
-                onChange={(e) => form.setDraft(e.target.value)}
-                placeholder={S.hooks.importSourcePlaceholder}
-              />
-              <Textarea
-                label={S.hooks.importPromptLabel}
-                size="sm"
-                rows={5}
-                readOnly
-                value={chatPrompt}
-                className="text-gray-600 dark:text-gray-300"
-              />
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={trimmedSource === ""}
-                  onClick={() =>
-                    promptCopy.flash(buildHookImportPrompt(trimmedSource, projectId, agentId))
-                  }
-                >
-                  <CopyCheckGlyph copied={promptCopy.copied} size={12} />
-                  {S.hooks.importCopyPrompt}
-                </Button>
-                <CopiedStatus copied={promptCopy.copied} />
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={trimmedSource === ""}
-                  onClick={openChat}
-                >
-                  {S.hooks.importOpenChat}
-                </Button>
-              </div>
-            </div>
-          </section>
-
-          <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
-            <p className="text-sm font-medium">{S.hooks.importUploadTitle}</p>
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-              {S.hooks.importUploadDesc}
-            </p>
-            <label
-              className={`${UPLOAD_LABEL_CLASS} mt-2.5 ${uploading ? "pointer-events-none opacity-60" : ""}`}
-            >
-              <HiddenFileInput accept=".zip" disabled={uploading} onChange={onPickFile} />
-              {uploading ? S.hooks.importUploading : S.hooks.importUploadAction}
-            </label>
-            {uploadError && (
-              <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{uploadError}</p>
-            )}
-          </section>
-        </div>
-      </Modal>
-
-      {/* Overwrite confirmation: the import modal stays underneath, so cancel returns to it; confirm resends the same zip with overwrite: true. */}
-      <ConfirmModal
-        open={overwriting !== null}
-        title={S.hooks.importOverwriteTitle}
-        tone="primary"
-        confirmLabel={S.hooks.importOverwriteAction}
-        cancelLabel={S.common.cancel}
-        busy={uploading}
-        onClose={() => setOverwriting(null)}
-        onConfirm={() => {
-          if (overwriting !== null) void upload(overwriting.dataBase64, overwriting.name, true);
-        }}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {overwriting !== null ? S.hooks.importOverwriteBody(overwriting.name) : ""}
-        </p>
-      </ConfirmModal>
-    </>
+    <ChatOrZipImportDialog
+      title={S.hooks.importHook}
+      strings={S.hooks}
+      multilineSource
+      buildPrompt={(source) => buildHookImportPrompt(source, projectId, agentId)}
+      agentId={agentId}
+      accept=".zip"
+      upload={(body) => api.installAgentHookArchive(projectId, agentId, body, machineId)}
+      conflictCode="hook_exists"
+      onClose={onClose}
+      onImported={onImported}
+    />
   );
 }
