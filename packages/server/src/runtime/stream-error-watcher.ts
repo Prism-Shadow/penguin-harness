@@ -50,7 +50,11 @@
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_fatal:exec_command`) — so the stats dashboard's "most common error
- * code" and the error table can show at a glance which tool failed.
+ * code" and the error table can show at a glance which tool failed. Inside a compaction span
+ * a `fatal` output for a call that never reached an `approval_decision` is the harness
+ * refusing it (a tool the compaction may not use, or no tool round left), the compaction
+ * protocol rather than a tool failing, and is not recorded; a call that was approved and then
+ * failed still is.
  *
  * **Attribution (ctx) is recorded against the session that actually produced the error,
  * not always the parent Session**: a subagent's LLM failures and tool failures also flow
@@ -175,6 +179,12 @@ export class StreamErrorWatcher {
    * once (see observeCompactionEnd), never an LLM failure besides.
    */
   private readonly compacting = new Set<string>();
+  /**
+   * Calls made inside a compaction span that have not reached an approval decision
+   * (`origin \0 tool_call_id`): a `fatal` output for one is the harness's refusal, not a tool
+   * failure (see the file header). Dequeued at the decision or the output.
+   */
+  private readonly unapproved = new Set<string>();
 
   constructor(
     private readonly errors: ErrorSink,
@@ -201,6 +211,7 @@ export class StreamErrorWatcher {
     this.toolNames.clear();
     this.originCtx.clear();
     this.compacting.clear();
+    this.unapproved.clear();
   }
 
   // —— Attribution (see file header) ——
@@ -259,6 +270,11 @@ export class StreamErrorWatcher {
     if (p.type === "compaction_end") {
       this.compacting.delete(key);
       this.observeCompactionEnd(msg, key);
+      return;
+    }
+    if (p.type === "approval_decision") {
+      const id = (msg.payload as { tool_call_id?: unknown }).tool_call_id;
+      if (typeof id === "string") this.unapproved.delete(`${key}\0${id}`);
       return;
     }
     if ((p.type === "request_end" || p.type === "request_begin") && this.compacting.has(key)) {
@@ -437,13 +453,22 @@ export class StreamErrorWatcher {
         const oldest = this.toolNames.keys().next().value;
         if (oldest !== undefined) this.toolNames.delete(oldest);
       }
+      if (this.compacting.has(origin)) {
+        this.unapproved.add(key);
+        if (this.unapproved.size > TOOL_NAMES_MAX) {
+          const oldest = this.unapproved.values().next().value;
+          if (oldest !== undefined) this.unapproved.delete(oldest);
+        }
+      }
       return;
     }
     if (p.type !== "tool_call_output") return;
 
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
-    if (p.status !== "fatal") return; // completed / aborted (a denial, an interruption) are not errors
+    // A compaction call answered with no approval decision: the harness refused it.
+    const refused = this.unapproved.delete(key);
+    if (p.status !== "fatal" || refused) return; // completed / aborted (a denial, an interruption) are not errors
     const output = p.output ?? "";
     this.errors.record({
       source: "environment",

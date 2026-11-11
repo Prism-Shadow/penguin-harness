@@ -437,7 +437,8 @@ export interface TaskEndPayload {
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
  * mechanical criterion Trace replay (Session resumption) uses to determine whether a turn was
  * committed, and it also gives performance analysis a basis for Request latency and turn counts.
- * A compaction request produces this same event pair too (written to Trace only, not streamed).
+ * A compaction request produces this same event pair too, written to Trace and streamed between
+ * the paired compaction events (a frontend restarts the summary draft at each `request_begin`).
  */
 export interface RequestBeginPayload {
   type: "request_begin";
@@ -458,10 +459,12 @@ export interface RequestBeginPayload {
  * and additive: old Traces replay unchanged.
  */
 export interface RetryDetail extends ErrorInfo {
-  // error_code / error_message (ErrorInfo): present only on non-completed statuses — the
+  // error_code / error_message (ErrorInfo): present on non-completed statuses — the
   // classified cause and the real reason behind a retried/failed Request (e.g. `403 …
   // (insufficient_user_quota)`); the server's error records / Cost center read them here
-  // because a failed request never produces an abort event. Not plain `message`: in this
+  // because a failed request never produces an abort event. One exception: a `completed`
+  // compaction_end may carry the pair too, meaning the compaction completed without a full
+  // summary (see CompactionEndPayload). Not plain `message`: in this
   // protocol "message" means a record. (Traces written before the rename carry the
   // text as `message`; nothing reads that field semantically after the fact.)
   /**
@@ -498,15 +501,13 @@ export type CompactionMode = "summarize" | "discard";
 
 /**
  * Compaction boundary event, produced **in pairs** by `context_engine`. Between the pair
- * the stream carries only each attempt's `token_usage` and the summary being written as
- * ordinary `partial_text` fragments (or the complete text when nothing streamed) — the
- * compaction request's other raw messages stay Trace-only. Both `reason` and
- * `mode` are carried on both events, for stateless frontend rendering; `status` uses the
- * shared StopReason vocabulary: `retryable` means "abandoned this time on exhausted
- * retries — the standing trigger makes it up at the next opportunity", while `fatal`
- * means the compaction request died on a failure no retry can fix (credentials, a
- * provider rejection) and needs a config change first. Legacy Traces spell the abandoned
- * case `failed`.
+ * the stream carries each compaction request's `request_begin` / `request_end` and
+ * `token_usage`, its thinking and the summary being written (as `partial_*` fragments, or the
+ * complete records when nothing streamed), and every tool call of the span with its approval
+ * and output, whether it ran or was refused; the compaction Prompt and the harness's round and
+ * corrective lines stay Trace-only. Both `reason` and `mode` are carried on both events, for
+ * stateless frontend rendering; `status` on the end event uses the shared StopReason
+ * vocabulary (see CompactionEndPayload).
  */
 export interface CompactionBeginPayload {
   type: "compaction_begin";
@@ -520,16 +521,23 @@ export interface CompactionBeginPayload {
 
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
- * (failed attempts and retries included — stamped by summarize mode), `error_message` is
- * the last failure's detail (present on `retryable` / `fatal` ends), and `retry_in_ms` is
+ * (failed attempts and retries included — stamped by summarize mode), the error pair is the
+ * reason the compaction did not get a full summary or could not finish, and `retry_in_ms` is
  * never stamped here (compaction retries are announced on the compaction request's own
- * request_end, which is Trace-only).
+ * request_end).
  */
 export interface CompactionEndPayload extends RetryDetail {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
+  /**
+   * Compaction result. `completed`: the next context is open — with the error pair, it opened
+   * with a salvaged summary (one cut off before its end) or the harness's Trace hand-off note
+   * instead of a full summary. `aborted`: the user stopped it; `fatal`: the next context could
+   * not be opened; both keep the original context. `retryable` is written only by Session
+   * resume, closing a span the process died in. Older Traces' `retryable`, `fatal` and legacy
+   * `failed` all read "abandoned, original context kept".
+   */
   status: StopReason;
 }
 

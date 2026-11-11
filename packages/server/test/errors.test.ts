@@ -49,6 +49,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
+  approvalDecision,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -1068,6 +1069,44 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       }),
     ]);
     expect(got.map((r) => r.source)).toEqual(["compaction"]);
+  });
+
+  it("a compaction call the harness refused is no error; one it ran that failed is", () => {
+    const tc = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 2 }),
+      requestBegin(),
+      tc("exec_command", "c1"),
+      tc("write_file", "c2"),
+      requestEnd("completed"),
+      // Refused by the compaction's tool gate: never put to approval.
+      toolCallOutput({
+        output:
+          "[tool error] only read_file, and write_file/edit_file inside this Session's scratchpad, are available while compacting",
+        toolCallId: "c1",
+        status: "fatal",
+      }),
+      // Approved, run, and failed in the sandbox.
+      approvalDecision("allow", "c2"),
+      toolCallOutput({ output: "[tool error] EACCES", toolCallId: "c2", status: "fatal" }),
+      requestBegin(),
+      tc("write_file", "c3"),
+      requestEnd("completed"),
+      // No tool round is left: refused outright.
+      toolCallOutput({
+        output: "[tool error] no tool round is left in this compaction; reply with the summary",
+        toolCallId: "c3",
+        status: "fatal",
+      }),
+      requestBegin(),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempt: 2 }),
+      // Outside the span an unapproved fatal output is an ordinary tool failure again.
+      tc("read_file", "t1"),
+      toolCallOutput({ output: "[tool error] no such file", toolCallId: "t1", status: "fatal" }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:write_file", "tool_fatal:read_file"]);
+    expect(got[0]!.message).toContain("EACCES");
   });
 
   it("compaction completed / aborted are not errors; fatal and an old-core failed still record", () => {

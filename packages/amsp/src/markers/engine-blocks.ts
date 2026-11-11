@@ -113,7 +113,8 @@ const HANDOFF_LEAD_OPENING =
   "No summary of the earlier conversation could be written, so the harness wrote this note in its place. The conversation up to this point is no longer in your context; ";
 const HANDOFF_LEAD_TRANSCRIPT =
   "its transcript is the file named below, and what follows is copied from it, shortened where marked. Carry on with the task from where it stopped; when you need more than this note holds, query the transcript first.";
-const HANDOFF_LEAD_NO_TRANSCRIPT = "no transcript of it is recorded.";
+const HANDOFF_LEAD_NO_TRANSCRIPT =
+  "no transcript of it is recorded. Carry on with the task from where it stopped.";
 const HANDOFF_LEAD_CLOSING =
   " Consent does not carry over: anything that needed a go-ahead is asked again.";
 

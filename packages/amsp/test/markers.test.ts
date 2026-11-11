@@ -329,6 +329,7 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     const lines = note.split("\n");
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain("no transcript of it is recorded");
+    expect(lines[1]).toContain("Carry on with the task from where it stopped.");
     expect(lines[1]).not.toContain("file named below");
     expect(lines[1]).toContain("Consent does not carry over");
     expect(note).not.toContain("JSONL");
