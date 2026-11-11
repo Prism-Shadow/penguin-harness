@@ -132,6 +132,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.themePacks",
+    scope: "install",
+    why: "The server's imported theme packs as this browser last read them (the boot script links one); they live in the data root, so another root's list is stale.",
+  },
+  {
+    kind: "exact",
     key: "penguin.textSize",
     scope: "browser",
     why: "Root text size (five steps) — a readability preference of this display.",

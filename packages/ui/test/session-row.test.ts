@@ -12,6 +12,7 @@ import { NAV_FILL } from "../src/components/navigation/nav-list/nav-list";
 import { RowHoverActions, SessionRow } from "../src/components/shell/session-row/session-row";
 import type { SessionRowProps } from "../src/components/shell/session-row/session-row";
 import { classTokens, renderStatic, markupStructure } from "../src/testing";
+import { elementsOf, readMarkup } from "./helpers/markup";
 
 const action = (id: string, label: string, danger = false) => ({
   id,
@@ -47,6 +48,14 @@ describe("SessionRow", () => {
     expect(classTokens(row({ active: true }))).toContain(NAV_FILL.selected);
     expect(classTokens(row())).toContain(NAV_FILL.hover);
     expect(classTokens(row())).not.toContain(NAV_FILL.selected);
+  });
+
+  it("marks the open row's button as the current page, and no other row", () => {
+    const button = elementsOf(readMarkup(row({ active: true }))).find(
+      (e) => e.attrs["data-testid"] === "session-row",
+    );
+    expect(button?.attrs["aria-current"]).toBe("page");
+    expect(row()).not.toContain("aria-current");
   });
 
   it("names every standing mark in words, from the caller's labels", () => {

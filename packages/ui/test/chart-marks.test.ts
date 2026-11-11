@@ -22,6 +22,7 @@ import {
   ChartSwatch,
   barPath,
 } from "../src/components/charts/marks/marks";
+import type { ChartPaint } from "../src/components/charts/marks/marks";
 import { TimelineBar, timelineRadius } from "../src/components/charts/marks/timeline-bar";
 import { DEFAULT_CHART_STYLE } from "../src/components/charts/chart-style";
 import { renderStatic } from "../src/testing";
@@ -30,6 +31,7 @@ import { SRC_DIR } from "./helpers/paths";
 // Each primitive has its own props; the helper only renders one, so it takes any component.
 const render = (type: (props: any) => ReactElement | null, props: object) =>
   renderStatic(createElement(type, props));
+type ChartRole = Extract<ChartPaint, { role: unknown }>["role"];
 
 describe("the chart primitives, in the default theme", () => {
   it("draw a bar at the theme's share of its band, unoutlined, in its slot's colour", () => {
@@ -156,14 +158,14 @@ describe("the chart primitives, in the default theme", () => {
     expect(track).toContain('stroke-opacity="0.3"');
   });
 
-  it("place a timeline bar where the chart says, in its slot's colour", () => {
+  it("place a timeline bar where the chart says, as its slot's mark", () => {
     const html = render(TimelineBar, {
       paint: { series: 0 },
       place: { left: "10%", width: "5%" },
       className: "cursor-pointer",
     });
     expect(html).toContain("left:10%");
-    expect(html).toContain(`background-color:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain('data-series="1"');
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
   });
@@ -175,13 +177,60 @@ describe("the chart primitives, in the default theme", () => {
     expect(timelineRadius(3, "both")).toBe(0);
   });
 
-  it("paint a swatch the way its mark is painted", () => {
-    expect(render(ChartSwatch, { paint: { role: "cacheRead" } })).toContain(
-      `background-color:${DEFAULT_CHART_STYLE.cacheRead}`,
+  it("paint a swatch the way its mark is painted, as the series its mark belongs to", () => {
+    const role = render(ChartSwatch, { paint: { role: "cacheRead" } });
+    expect(role).toContain('data-part="swatch"');
+    expect(role).toContain('data-series="cache-read"');
+    expect(role).toContain(`--_paint:${DEFAULT_CHART_STYLE.cacheRead}`);
+    const ink = render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } });
+    expect(ink).toContain("bg-fg-subtle");
+    expect(ink).toContain("--_paint:currentColor");
+    expect(ink).not.toContain("data-series");
+  });
+
+  it("leave a swatch or a timeline bar unpainted when its ink has no background", () => {
+    expect(render(ChartSwatch, { paint: { ink: "text-fg-subtle" } })).toContain(
+      "--_paint:transparent",
     );
     expect(
-      render(ChartSwatch, { paint: { ink: "text-fg-subtle", swatch: "bg-fg-subtle" } }),
-    ).toContain("bg-fg-subtle");
+      render(TimelineBar, { paint: { ink: "text-fg-subtle" }, place: { left: "0%" } }),
+    ).toContain("--_paint:transparent");
+  });
+
+  it("give a named colour's bar and its timeline span the same series, one no other colour has", () => {
+    // The named colours are the roles the default style paints from a `--ui-chart-*` token of
+    // their own; a theme's recipe tells their marks apart by `data-series` alone.
+    const roles = Object.entries(DEFAULT_CHART_STYLE)
+      .filter(([, value]) => typeof value === "string" && value.startsWith("var(--ui-chart-"))
+      .map(([role]) => role as ChartRole);
+    expect(roles.length).toBeGreaterThan(1);
+    const seriesOf = (html: string) => /\bdata-series="([^"]+)"/.exec(html)?.[1];
+    const named = roles.map((role) => {
+      const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { role } });
+      const span = render(TimelineBar, { paint: { role }, place: { left: "0%" } });
+      expect(seriesOf(bar), role).toBeDefined();
+      expect(seriesOf(span), role).toBe(seriesOf(bar));
+      return seriesOf(bar);
+    });
+    expect(new Set(named).size).toBe(roles.length);
+  });
+
+  it("leave a filled mark's fill to its paint, which an ink's mark takes from its class", () => {
+    const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { series: 1 } });
+    expect(bar).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[1]}`);
+    expect(bar).not.toContain("fill=");
+    const area = render(ChartArea, {
+      points: [
+        [0, 10],
+        [10, 20],
+      ],
+      baseY: 30,
+      paint: { role: "output" },
+    });
+    expect(area).toContain(`--_paint:${DEFAULT_CHART_STYLE.output}`);
+    const point = render(ChartPoint, { cx: 10, cy: 10, paint: { ink: "text-tone-danger-fg" } });
+    expect(point).toContain("--_paint:currentColor");
+    expect(point).toContain("text-tone-danger-fg");
   });
 
   it("draw the axis labels as axis parts", () => {

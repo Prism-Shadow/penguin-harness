@@ -3,9 +3,10 @@
  * mode every entry — New chat, then the pages below — is either PINNED (a favourite), always
  * shown in the fixed block under the switcher, or COLLAPSIBLE, inside the area a nav-row-wide
  * chevron button under it folds away (arrow up = collapse; collapsed, the button stays — arrow
- * down — as the way back). New chat, Agents, Models and Plugins are pinned by default; the user
- * moves an entry across with the row's star or by dragging it into or out of the collapsible
- * area. Both areas keep page order, and with nothing collapsible there is no chevron. A
+ * down — as the way back). New chat, Agents, the App Center, Models and Plugins are pinned by
+ * default; the user moves an entry across with the row's star or by dragging it into or out of
+ * the collapsible area. Both areas keep page order, and with nothing collapsible there is no
+ * chevron. A
  * contributed mode's rows (company mode's pages) split the same way, with none pinned by
  * default and each mode's choices kept apart (see the section at the end).
  *
@@ -38,11 +39,35 @@ export interface NavPage {
   key: string;
   admin: boolean;
   released: boolean;
+  /** The page this one sits under (web-app/page-table.ts): it is not an entry of its own. */
+  parent?: string;
 }
 
-/** The nav as this user sees it: page keys, in table order. */
+const offered = (p: NavPage, isAdmin: boolean) => p.released && (isAdmin || !p.admin);
+
+/** The nav as this user sees it: the top-level page keys, in table order. */
 export function navKeysFor(pages: readonly NavPage[], isAdmin: boolean): readonly string[] {
-  return pages.filter((p) => p.released && (isAdmin || !p.admin)).map((p) => p.key);
+  return pages.filter((p) => p.parent === undefined && offered(p, isAdmin)).map((p) => p.key);
+}
+
+/**
+ * The pages each entry carries below it, by the entry's key, in table order and offered the
+ * way entries are. A child is not an entry: it has no pin choice and no drag, and it is drawn
+ * under its parent in whichever area the parent is, so folding or moving the parent moves it.
+ * The collapsed rail draws entries only, and lights the parent's while a child is open.
+ */
+export function navChildKeysFor(
+  pages: readonly NavPage[],
+  isAdmin: boolean,
+): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, string[]>();
+  for (const p of pages) {
+    if (p.parent === undefined || !offered(p, isAdmin)) continue;
+    const siblings = out.get(p.parent);
+    if (siblings === undefined) out.set(p.parent, [p.key]);
+    else siblings.push(p.key);
+  }
+  return out;
 }
 
 /**
@@ -63,10 +88,15 @@ export function navEntryKeysFor(
   return [NEW_CHAT_ENTRY, ...navKeysFor(pages, isAdmin)];
 }
 
-/** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
+/**
+ * Entries pinned until the user says otherwise; every other entry, a page added later included,
+ * starts collapsible. The App Center is the Project's home screen, and a home screen folded away
+ * is not one.
+ */
 export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
   NEW_CHAT_ENTRY,
   "agents",
+  "apps",
   "models",
   "plugins",
 ]);

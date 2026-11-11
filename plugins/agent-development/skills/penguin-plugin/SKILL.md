@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.11.04.1
+version: 2026.11.09.1
 ---
 
 # Agent Workbench with Penguin Plugins
@@ -125,7 +125,7 @@ Layout, under `<App Data Dir>/agents/<agent_id>/agent_state/workbenches/<workben
 ```
 package.json    "type": "module" and "penguin": { "modules": [ …manifests ] } — no dependency to install
 index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfies WorkbenchPackage — TypeScript only
-ui/             the workbench's pages and their assets, plain JS or TSX (see Pages in TSX); which of them are tabs is what the manifest contributes
+ui/             the workbench's pages and their assets, plain JS or TSX (see Pages in TSX); which of them are tabs is what the manifest contributes; ui/icon.svg is its App Center icon when the manifest names it
 state.json      the workbench's own document, kept by the server across reloads and rollbacks
 .harness/       the server's: the types this workbench was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it; ui/ holds the types TSX pages compile against
 .build/         the server's: emitted JavaScript per revision (<revision>/ui/ for TSX pages), and status.json — the result of the last load; read it, never edit it
@@ -358,3 +358,21 @@ Keep empty alerts hidden. A component rule such as `.notice { display: flex }` o
 ## Filling the app
 
 A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The floating *Exit full screen* button returns to the same Agent and workbench tab. The command palette also offers *Exit full page*. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must not intercept that chord.
+
+## The App Center
+
+The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of tiles, each a workbench's icon and name, that open the workbench in a window over the grid (or full screen from the tile's menu). The user arranges the tiles and folders themselves. A workbench is on it when its `package.json` says so, beside `penguin.version` and `penguin.modules`:
+
+```json
+"penguin": {
+  "appCenter": { "show": true, "title": "Tickets", "titleZh": "工单", "icon": "ui/icon.svg", "tab": "main" },
+  "modules": [ … ]
+}
+```
+
+- `show` is required when `appCenter` is there; `false`, or no `appCenter`, keeps the workbench off the App Center.
+- `title` and `titleZh` are optional, at most 60 characters each; without them the shortcut takes the first tab's titles, then the package name.
+- `icon` is optional: an SVG, PNG, JPEG, WebP, GIF or AVIF file under `ui/`, at most 256 KB, shown at 56 px as an image (never put into the page as markup). The server checks the file's bytes, so its extension must match what it is (`.jpg` or `.jpeg` for JPEG); an SVG must be plain (no script, animation, event handlers, links or external references). An SVG whose every paint is `currentColor` or `none` is drawn in the text colour; any other icon is drawn as itself, so a tile reads best as a filled rounded square with the glyph on it in its own colours. Without one the tile is a coloured letter.
+- `tab` is optional: the key of the tab the shortcut opens; the first tab without it.
+
+When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. While the server is loading your files the tile shows a building ring and does not open; a failed load leaves it marked, and its menu shows the error from `.build/status.json`. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.

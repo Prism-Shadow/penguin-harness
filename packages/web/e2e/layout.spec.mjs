@@ -495,13 +495,13 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // --- No sessions yet: the rail renders all 7 entries, "last conversation" disabled ---
+  // --- No sessions yet: the rail renders all 8 entries, "last conversation" disabled ---
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${BASE}/chat`);
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   const rail = page.locator("aside nav");
   const entries = rail.locator("a, button");
-  await expect(entries).toHaveCount(7);
+  await expect(entries).toHaveCount(8);
   await expect(rail.getByRole("button", { name: "Last conversation" })).toBeDisabled();
 
   // --- Order and tooltips (en): aria-label defines the order, and the styled tooltip shows the
@@ -511,6 +511,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
+    "App Center",
     "Models",
     "Plugins",
     "Cost Center",
@@ -586,8 +587,17 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   // --- zh: tooltips follow the product-specified wording ---
   await setAccountPrefs(page.request, { lang: "zh" });
   await page.reload();
-  await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
+  await expect(entries).toHaveCount(8);
+  const ZH = [
+    "最近一次对话",
+    "新建对话",
+    "智能体",
+    "应用中心",
+    "模型库",
+    "插件市场",
+    "成本中心",
+    "评估中心",
+  ];
   expect(await names(), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
   await rail.getByRole("link", { name: "模型库" }).hover();

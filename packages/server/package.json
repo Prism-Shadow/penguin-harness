@@ -106,6 +106,7 @@
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
+    "css-tree": "^3.2.1",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.11",
@@ -122,6 +123,8 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-theme-pack": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",

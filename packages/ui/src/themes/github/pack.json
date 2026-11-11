@@ -1,0 +1,29 @@
+{
+  "api": 1,
+  "id": "github",
+  "names": { "zh": "朴素", "en": "Primer" },
+  "version": "1.0.0",
+  "base": "foundation",
+  "modes": ["light", "dark"],
+  "swatches": {
+    "light": { "canvas": "#ffffff", "ink": "#101828", "accent": "#111827" },
+    "dark": { "canvas": "#121212", "ink": "#d6d6d6", "accent": "#f3f4f6" }
+  },
+  "accent": {
+    "own": { "light": "#111827", "dark": "#f3f4f6" },
+    "presets": [
+      { "id": "blue", "swatch": "#2563eb" },
+      { "id": "green", "swatch": "#15803d" },
+      { "id": "violet", "swatch": "#7c3aed" },
+      { "id": "rose", "swatch": "#be123c" },
+      { "id": "amber", "swatch": "#b45309" }
+    ]
+  },
+  "fonts": {
+    "sans": "ui-sans-serif",
+    "ui": "ui-sans-serif",
+    "mono": "JetBrains Mono Variable",
+    "cjk": "PingFang SC",
+    "display": "ui-sans-serif"
+  }
+}

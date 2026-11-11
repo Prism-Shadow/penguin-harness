@@ -1,0 +1,12 @@
+/**
+ * Console (`geek`, 极客) as a built-in pack (`pack.json`). Its manifest says `base:
+ * "foundation"`, so the root carries no `data-theme-base` and none of Frost's recipes apply: the
+ * tokens (complete in both modes) and the recipes are served in `ui-theme`, over Frost's values in
+ * `ui-base`, and the accent presets in `ui-accent`.
+ *
+ * A pack's files carry no `@layer` of their own; this file serves each in its layer. `fonts.css`
+ * is imported by `fonts/index.css`, not here, so the faces stay out of the published `styles.css`.
+ */
+@import "./tokens.css" layer(ui-theme);
+@import "./recipes.css" layer(ui-theme);
+@import "./accents.css" layer(ui-accent);

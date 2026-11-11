@@ -1,5 +1,5 @@
 /**
- * WCAG 2 contrast of the theme tokens, computed from the theme files.
+ * WCAG 2 contrast of the theme tokens, computed from the theme packs (src/themes/<id>/).
  *
  * The web app used to record its ratios in comments beside `tone.ts`, measured against the two
  * surfaces it had. Three themes × two modes each bring their own surfaces, and a comment cannot
@@ -41,11 +41,9 @@
  * A pair a theme cannot meet yet goes in EXCEPTIONS with the reason and the wave that fixes it; an
  * exception that has started passing fails the suite until it is removed.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_THEME_ID,
+  INITIAL_THEME_ID,
   THEME_ACCENT_PRESETS,
   THEME_IDS,
   THEME_MODES,
@@ -55,6 +53,7 @@ import type { ThemeId, ThemeModeName, TokenName } from "../src/tokens";
 import {
   BLACK,
   WHITE,
+  analyzePack,
   analyzeThemeFile,
   composite,
   contrastRatio,
@@ -64,7 +63,6 @@ import {
 } from "../src/testing";
 import type { AccentPresetRules, Rgba, ThemeFileAnalysis } from "../src/testing";
 import { ICON_TINT_NAMES } from "../src/components/icons/sets";
-import { SRC_DIR } from "./helpers/paths";
 
 interface Pair {
   readonly fg: TokenName;
@@ -296,14 +294,17 @@ function measure(
   return { ratio, detail: `${formatColor(composite(fg, bg))} on ${formatColor(bg)}` };
 }
 
+/** A built-in pack's analysis, or null while it is still a stub. */
 function themeAnalysis(id: ThemeId): ThemeFileAnalysis | null {
-  const path = join(SRC_DIR, "themes", `${id}.css`);
-  if (!existsSync(path)) return null;
-  const analysis = analyzeThemeFile(readFileSync(path, "utf8"), id);
+  const analysis = analyzePack(id);
   return analysis.isStub ? null : analysis;
 }
 
-const defaultTheme = themeAnalysis(DEFAULT_THEME_ID) ?? analyzeThemeFile("", DEFAULT_THEME_ID);
+/**
+ * The base pack, Frost, whose values every pack's root also matches (in `ui-base`): a pair a pack
+ * leaves to it is measured on Frost's value, composited the way the page composites it.
+ */
+const baseTheme = themeAnalysis(INITIAL_THEME_ID) ?? analyzeThemeFile("", INITIAL_THEME_ID);
 
 /** The series colours and the reference line: the marks a chart draws on the page. */
 const SERIES_TOKENS = [
@@ -333,7 +334,7 @@ function seriesReads(
   theme: ThemeFileAnalysis,
 ): { ok: boolean; detail: string } {
   const resolve: Resolve = (name) => {
-    const value = resolveThemeValue(name, mode, theme, defaultTheme);
+    const value = resolveThemeValue(name, mode, theme, baseTheme);
     if (value === null) return `${name} does not resolve to a value`;
     return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
   };
@@ -343,9 +344,9 @@ function seriesReads(
   if (typeof canvas === "string") return { ok: false, detail: canvas };
   const direct = contrastRatio(series, canvas);
   const strokeWidth = Number.parseFloat(
-    resolveThemeValue("--ui-chart-bar-stroke", mode, theme, defaultTheme) ?? "0",
+    resolveThemeValue("--ui-chart-bar-stroke", mode, theme, baseTheme) ?? "0",
   );
-  const strokeSpec = resolveThemeValue("--ui-chart-bar-stroke-color", mode, theme, defaultTheme);
+  const strokeSpec = resolveThemeValue("--ui-chart-bar-stroke-color", mode, theme, baseTheme);
   const outlineColor =
     strokeSpec === null || strokeSpec.trim() === "series" ? series : parseColor(strokeSpec);
   const outline =
@@ -362,12 +363,12 @@ describe("theme contrast", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null) {
-      it.skip(`src/themes/${id}.css — PENDING, contrast not checked: no tokens declared yet`, () => {});
+      it.skip(`src/themes/${id}/ — PENDING, contrast not checked: no tokens declared yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {
       const resolve: Resolve = (name) => {
-        const value = resolveThemeValue(name, mode, theme, defaultTheme);
+        const value = resolveThemeValue(name, mode, theme, baseTheme);
         if (value === null) return `${name} does not resolve to a value`;
         return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
       };
@@ -419,7 +420,7 @@ describe("theme contrast", () => {
  */
 function knobReads(mode: ThemeModeName, theme: ThemeFileAnalysis): { ok: boolean; detail: string } {
   const resolve: Resolve = (name) => {
-    const value = resolveThemeValue(name, mode, theme, defaultTheme);
+    const value = resolveThemeValue(name, mode, theme, baseTheme);
     if (value === null) return `${name} does not resolve to a value`;
     return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
   };
@@ -443,7 +444,7 @@ describe("the switch's knob on its off track", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null) {
-      it.skip(`src/themes/${id}.css — PENDING, switch not checked: no tokens declared yet`, () => {});
+      it.skip(`src/themes/${id}/ — PENDING, switch not checked: no tokens declared yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {
@@ -459,7 +460,7 @@ describe("chart series marks", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null) {
-      it.skip(`src/themes/${id}.css — PENDING, series not checked: no tokens declared yet`, () => {});
+      it.skip(`src/themes/${id}/ — PENDING, series not checked: no tokens declared yet`, () => {});
       continue;
     }
     for (const mode of THEME_MODES) {
@@ -484,7 +485,7 @@ describe("accent presets, per theme", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null) {
-      it.skip(`src/themes/${id}.css — PENDING, presets not checked: no tokens declared yet`, () => {});
+      it.skip(`src/themes/${id}/ — PENDING, presets not checked: no tokens declared yet`, () => {});
       continue;
     }
 
@@ -498,7 +499,7 @@ describe("accent presets, per theme", () => {
           const preset: AccentPresetRules | null = theme.accents.get(accent) ?? null;
           expect(preset, `${accent} has no rule`).not.toBeNull();
           const resolve: Resolve = (name) => {
-            const value = resolveThemeValue(name, mode, theme, defaultTheme, preset);
+            const value = resolveThemeValue(name, mode, theme, baseTheme, preset);
             if (value === null) return `${name} does not resolve to a value`;
             return (
               parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`
@@ -529,7 +530,7 @@ describe("the accent's tint under the person's own words", () => {
   for (const id of THEME_IDS) {
     const theme = themeAnalysis(id);
     if (theme === null) {
-      it.skip(`src/themes/${id}.css — PENDING, the tint not checked: no tokens declared yet`, () => {});
+      it.skip(`src/themes/${id}/ — PENDING, the tint not checked: no tokens declared yet`, () => {});
       continue;
     }
     const accents: readonly (string | null)[] = [null, ...THEME_ACCENT_PRESETS[id]];
@@ -538,7 +539,7 @@ describe("the accent's tint under the person's own words", () => {
       const resolverFor = (accent: string | null): Resolve => {
         const preset = accent === null ? null : (theme.accents.get(accent) ?? null);
         return (name) => {
-          const value = resolveThemeValue(name, mode, theme, defaultTheme, preset);
+          const value = resolveThemeValue(name, mode, theme, baseTheme, preset);
           if (value === null) return `${name} does not resolve to a value`;
           return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
         };
