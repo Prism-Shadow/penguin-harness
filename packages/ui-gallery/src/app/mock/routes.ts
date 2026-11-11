@@ -122,6 +122,8 @@ import type {
   SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
+  ThemePackDto,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportResponse,
@@ -142,6 +144,7 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
@@ -2350,6 +2353,76 @@ router
     if (installed.skills.length === before) notFound("Skill");
     agentOf(ctx).skillCount = installed.skills.length;
     return empty();
+  });
+
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The one pack an admin imported on the demo's server: warm paper over Frost, tokens and one
+ * accent preset, served as the stylesheet the server would assemble for it.
+ */
+const THEME_PACK: ThemePackDto = {
+  id: "paper",
+  names: { zh: "纸页", en: "Paper" },
+  version: "1.0.0",
+  api: 1,
+  base: "modern",
+  modes: ["light", "dark"],
+  swatches: {
+    light: { canvas: "#f6f1e7", ink: "#2b2521", accent: "#2b2521" },
+    dark: { canvas: "#1c1a17", ink: "#ece4d6", accent: "#ece4d6" },
+  },
+  accent: {
+    own: { light: "#2b2521", dark: "#ece4d6" },
+    presets: [{ id: "ink-blue", swatch: "#2c4f9e" }],
+  },
+  fonts: {
+    sans: "MiSans",
+    ui: "MiSans",
+    mono: "JetBrains Mono Variable",
+    cjk: "MiSans",
+    display: "MiSans",
+  },
+  href: "/api/themes/paper/files/index.css?v=5e1f0c2a",
+  v: "5e1f0c2a",
+};
+
+const THEME_PACK_CSS =
+  '@layer ui-theme{:root[data-theme="paper"]{--ui-canvas:#f6f1e7;--ui-fg:#2b2521;--ui-accent:#2b2521}' +
+  ':root[data-theme="paper"].dark{--ui-canvas:#1c1a17;--ui-fg:#ece4d6;--ui-accent:#ece4d6}}' +
+  '@layer ui-accent{:root[data-theme="paper"][data-accent="ink-blue"]{--ui-accent:#2c4f9e}}';
+
+/** The server's refusal of a write a member may not make. */
+function adminOnly(store: DemoStore): void {
+  if (!store.f.user.isAdmin) {
+    fail(403, "admin_required", "Only an admin can perform this operation.");
+  }
+}
+
+router
+  .get("/api/themes", (): ThemePacksResponse => ({ themes: [THEME_PACK] }))
+  .get("/api/themes/:id/files/*", ({ params }) => {
+    if (params.id !== THEME_PACK.id || params["*"] !== "index.css") notFound("Theme file");
+    return raw(THEME_PACK_CSS, { "content-type": "text/css; charset=utf-8" });
+  })
+  .post("/api/themes", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("import a theme pack");
+  })
+  .delete("/api/themes/:id", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("remove a theme pack");
+  })
+  // A built-in pack or the demo's own, as a zip: the demo's bytes stand in for the archive.
+  .get("/api/themes/:id/export", ({ params }) => {
+    const id = params.id!;
+    if (id !== THEME_PACK.id && !isThemeId(id)) notFound("Theme pack");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${id}-1.0.0.zip"`,
+    });
   });
 
 // ---------------------------------------------------------------------------------------------

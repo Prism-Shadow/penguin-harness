@@ -16,7 +16,7 @@
  */
 import { parseCssRules, selectorList } from "./css";
 import type { CssDeclaration, CssStyleRule } from "./css";
-import { GRADIENT_RECIPES } from "./deslop";
+import { GRADIENT_RECIPES } from "./gradient-recipes";
 import type { ThemeSource } from "./theme-tokens";
 
 export const PACK_RULES = {
