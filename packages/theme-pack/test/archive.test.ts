@@ -13,8 +13,9 @@
  * - Given the base pack's folder (Frost's bare root and base-keyed recipes, the build's
  *   index.css, a fonts.css over the app's shared faces), its export form scopes every rule to its
  *   id with the source's comments kept, leaves the build's files and its recipes behind with a
- *   README saying the recipes come from the base, and passes the validator under the contract the
- *   base declares; a pack with fonts of its own keeps them.
+ *   README beside them (what it says is held by the server's suite, over a real export), and
+ *   passes the validator under the contract the base declares; a pack with fonts of its own keeps
+ *   them.
  */
 import { describe, expect, it } from "vitest";
 import { zipSync } from "fflate";
@@ -183,7 +184,6 @@ describe("the built-in packs' export form", () => {
     expect(tokens).toContain("/* Frost's values, on the bare root. */");
     expect(tokens).toContain(':root[data-theme="modern"] {');
     expect(tokens).toContain(':root[data-theme="modern"].dark {');
-    expect(decode(files.get("README.md"))).toContain('`"base": "modern"` takes Frost\'s recipes');
     // A base-keyed recipe, wherever one sits, is scoped to the pack's id the same way.
     expect(rescopeBase(decode(baseFolder().get("recipes.css")), "modern")).toContain(
       ':root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream',
