@@ -55,6 +55,7 @@ import {
   HelpFold,
   HiddenFileInput,
   ICONS,
+  ICON_SIZE,
   IconButton,
   InfoPopover,
   ListRow,
@@ -281,7 +282,12 @@ export function MemoryTab({
         await Promise.all(
           overview.scopes.map(async (scope) => {
             try {
-              const listed = await api.getMemoryFiles(projectId, agentId, scope.scopeKey, machineId);
+              const listed = await api.getMemoryFiles(
+                projectId,
+                agentId,
+                scope.scopeKey,
+                machineId,
+              );
               return { scope, files: listed.files, orphanFiles: listed.orphanFiles };
             } catch {
               // One unreadable scope (bad hand-made directory name, raced delete) must not
@@ -650,8 +656,11 @@ export function MemoryTab({
       meta={
         <span className="flex items-center gap-2 tabular-nums">
           {file.files.length > 0 && (
-            <span data-tooltip={S.memory.fileCount(file.files.length)} className="flex items-center gap-0.5">
-              <GlyphIcon d={ICONS.paperclip} size={13} />
+            <span
+              data-tooltip={S.memory.fileCount(file.files.length)}
+              className="flex items-center gap-1"
+            >
+              <GlyphIcon d={ICONS.paperclip} size={ICON_SIZE.inlineGlyph} />
               <span aria-hidden="true">{file.files.length}</span>
               <span className="sr-only">{S.memory.fileCount(file.files.length)}</span>
             </span>
@@ -664,14 +673,19 @@ export function MemoryTab({
   );
 
   /** One kept file's row: its path, size and date, then View and Delete — no Edit, it is the Agent's code. */
-  const keptRow = (scope: MemoryScopeInfo, file: MemoryFolderFile, topic: MemoryFileInfo | null) => (
+  const keptRow = (
+    scope: MemoryScopeInfo,
+    file: MemoryFolderFile,
+    topic: MemoryFileInfo | null,
+  ) => (
     <ListRow
       key={file.path}
       as="li"
       title={<span className="font-mono text-[length:var(--ui-text-code-size)]">{file.path}</span>}
       meta={
-        <span className="tabular-nums">
-          {formatBytes(file.size)} · {formatRelativeDate(file.modifiedAt, locale)}
+        <span className="flex items-center gap-2 tabular-nums">
+          <span>{formatBytes(file.size)}</span>
+          <span>{formatRelativeDate(file.modifiedAt, locale)}</span>
         </span>
       }
       trailing={
@@ -735,16 +749,15 @@ export function MemoryTab({
                 {S.memory.fileCount(viewing.file.files.length)}
               </span>
             </h4>
-            <ul>
-              {viewing.file.files.map((file) => keptRow(viewing.scope, file, viewing.file))}
-            </ul>
+            <ul>{viewing.file.files.map((file) => keptRow(viewing.scope, file, viewing.file))}</ul>
           </section>
         )}
       </>
     ) : (
       <>
-        <span className="text-xs tabular-nums text-gray-400 dark:text-gray-500">
-          {formatBytes(viewing.file.size)} · {formatRelativeDate(viewing.file.modifiedAt, locale)}
+        <span className="flex gap-2 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+          <span>{formatBytes(viewing.file.size)}</span>
+          <span>{formatRelativeDate(viewing.file.modifiedAt, locale)}</span>
         </span>
         <p className="break-all font-mono text-xs text-gray-400 dark:text-gray-500">
           {memoryFilePath(viewing.scope, viewing.file.path)}
@@ -786,7 +799,8 @@ export function MemoryTab({
   );
 
   /** The view panel's title: a memory's frontmatter name, or a kept file's path. */
-  const viewTitle = viewing === null ? "" : viewing.kind === "topic" ? viewing.file.title : viewing.file.path;
+  const viewTitle =
+    viewing === null ? "" : viewing.kind === "topic" ? viewing.file.title : viewing.file.path;
 
   return (
     <div className="space-y-4">

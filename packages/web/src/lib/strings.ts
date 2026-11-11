@@ -3033,7 +3033,8 @@ export const zh = {
     importModeSkip: "保留现有的这条",
     importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
     importModeOverwrite: "改用文件里的版本",
-    importModeOverwriteHint: "采用文件版本的记忆，其附带的文件也换成文件里的；文件中没有的记忆保持不变。",
+    importModeOverwriteHint:
+      "采用文件版本的记忆，其附带的文件也换成文件里的；文件中没有的记忆保持不变。",
     importModeReplace: "整组替换",
     importModeReplaceHint:
       "文件中没有的记忆连同附带的文件将被删除，不属于任何记忆的文件夹也一并删除。",

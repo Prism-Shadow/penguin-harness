@@ -528,9 +528,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/vault/template-placeholder` | 在 Prompt 模板中插入 `{{VAULT}}` 占位符（仅所有者） |
 | GET | `/agents/:agentId/memory` | 记忆概览 |
 | POST | `/agents/:agentId/memory/template-placeholder` | 在 Prompt 模板中插入 `{{MEMORY}}` 占位符 |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件与脚本 |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/scripts/:name` | 读取 / 删除一个脚本 |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件、各自附带的文件，以及不属于任何主题的文件 |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取一个主题文件 / 连同其文件夹删除 |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:folder/:path` | 读取 / 删除一个附带的文件 |
 | GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
 | POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
 | GET | `/agents/:agentId/archive` | 把 Agent 导出为其目录的 zip；查询参数选择部件与 Trace |
@@ -570,11 +570,11 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 - `GET …/memory` 返回记忆开关、Prompt 模板是否带有 `{{MEMORY}}`，以及每个作用域的条目：用户作用域（`user`，`kind: "user"`）排在最前，随后是各个 Workspace。
 - 在这些作用域路由中，`:key` 是某个 Workspace 的 key 或 `user`。
-- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息，随后是其 `scripts/` 目录下的脚本。每一项都带 `kind`（`topic` 或 `script`）和 `path`，即它在作用域中的位置：主题文件是文件名，脚本是 `scripts/<name>`。
-- `DELETE …/scopes/:key/files/:name` 删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行；`DELETE …/files/scripts/:name` 对脚本做同样的事。
-- `GET …/files/scripts/:name` 返回一个脚本的文本。超过 512 KB 的脚本以 413 `memory_script_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_script_not_text` 拒绝。
-- `GET …/scopes/:key/export` 把作用域的全部主题文件、脚本连同 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。文档为 `version: 2`，每一项以 `path` 标明位置。超过 512 KB 或不是 UTF-8 文本的脚本不写入文档，而是列在 `omitted` 中，附 `size` 与 `reason`（`too_large` 或 `not_text`）。
-- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。`mode` 取 `skip`（默认值，只添加作用域缺少的路径）、`overwrite`（替换同一路径的文件）或 `replace`（还会删除文档中没有包含的文件，脚本也不例外）。凡会覆盖或删除文件的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。`version: 1` 的文档（各项以 `name` 指明主题文件）照常导入。一份文档至多携带 100 个脚本；文档带有脚本而作用域的 `scripts` 不是目录时，路由返回 409 `memory_scripts_not_a_directory`，什么也不写入。
+- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。每个主题带 `files`：其文件夹（主题文件名去掉 `.md`，如 `csv-tools.md` 的 `csv-tools/`）中任意层级的文件，各带在作用域中的 `path`（`csv-tools/lib/io.py`）、`size` 和 `modifiedAt`。`orphanFiles` 以同样形式列出旁边没有同名主题的文件夹中的文件。
+- `DELETE …/scopes/:key/files/:name` 连同文件夹删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行。
+- `GET …/files/:folder/:path` 返回一个附带文件的文本，路径的每一段对应 URL 的一段。超过 512 KB 的文件以 413 `memory_file_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_file_not_text` 拒绝。对同一路径 `DELETE` 删除该文件以及因此变空的文件夹。两者都不跟随符号链接。
+- `GET …/scopes/:key/export` 把作用域的全部主题文件（连同各自附带的文件）和 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。文档为 `version: 2`：主题条目带 `files`，每个文件以 `path` 标明它在主题文件夹中的位置。超过 512 KB 的文件、不是 UTF-8 文本的文件，以及不属于任何主题的文件夹中的文件不写入文档，而是列在 `omitted` 中，附 `path`、`size` 与 `reason`（`too_large`、`not_text` 或 `orphan`）。
+- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。主题连同文件夹一起迁移。`mode` 取 `skip`（默认值，只添加作用域缺少的主题）、`overwrite`（替换同名主题，其文件夹此后恰好是文档中的文件）或 `replace`（还会删除文档中没有的主题及其文件夹，以及不属于任何主题的文件夹；`removed` 把这种文件夹写作 `<folder>/`）。没有同名主题的文件夹视为该主题已存在。凡会覆盖或删除的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。`version: 1` 的文档（不带文件）照常导入。主题文件夹的位置或通往其某个文件的路径上有非目录时，路由返回 409 `memory_folder_not_a_directory`，什么也不写入。
 
 ### 插件与钩子
 

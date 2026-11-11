@@ -129,7 +129,12 @@ describe("buildMemoryList", () => {
         scope: "user",
         scopeKey: "user",
         rows: [
-          { target: { scope: "user", file: "a.md" }, kind: "topic", title: "a.md", changed: "write" },
+          {
+            target: { scope: "user", file: "a.md" },
+            kind: "topic",
+            title: "a.md",
+            changed: "write",
+          },
         ],
         orphanRows: [],
       },

@@ -225,8 +225,9 @@ export function ChatMemoryView({
                           <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300">
                             {file.path}
                           </span>
-                          <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-                            {formatBytes(file.size)} · {formatRelativeDate(file.modifiedAt, locale)}
+                          <span className="flex shrink-0 gap-2 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                            <span>{formatBytes(file.size)}</span>
+                            <span>{formatRelativeDate(file.modifiedAt, locale)}</span>
                           </span>
                         </button>
                       </li>
@@ -265,7 +266,7 @@ export function ChatMemoryView({
             {row.fileCount !== undefined && row.fileCount > 0 && (
               <span
                 data-tooltip={S.memory.fileCount(row.fileCount)}
-                className="flex shrink-0 items-center gap-0.5 font-sans text-xs font-normal tabular-nums text-gray-400 dark:text-gray-500"
+                className="flex shrink-0 items-center gap-1 font-sans text-xs font-normal tabular-nums text-gray-400 dark:text-gray-500"
               >
                 <GlyphIcon d={ICONS.paperclip} size={ICON_SIZE.inlineGlyph} />
                 <span aria-hidden="true">{row.fileCount}</span>

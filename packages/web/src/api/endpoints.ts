@@ -747,10 +747,9 @@ export const getMemoryFolderFile = (
   filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFolderFileResponse>(
-    memoryFolderFileUrl(projectId, agentId, scopeKey, filePath),
-    { server: machineId },
-  );
+  apiFetch<MemoryFolderFileResponse>(memoryFolderFileUrl(projectId, agentId, scopeKey, filePath), {
+    server: machineId,
+  });
 
 export const deleteMemoryFolderFile = (
   projectId: string,

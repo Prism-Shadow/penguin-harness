@@ -339,14 +339,16 @@ Each memory row has three buttons:
 
 Memory content is changed through the agent in a chat, not edited in place.
 
-### Scripts
+### Scripts a memory keeps
 
-When the agent keeps scripts in a group, the group lists them under **Scripts**, below its memories, with each script's size and date. A script row has two buttons:
+A memory can keep scripts in a folder of its name. Its row then shows a paperclip with the number of files, and **View** shows them under **Files**, below the memory's content, each with its path, size and date. A file row has two buttons:
 
-- **View** shows the script's folder path and its code, with line numbers, in the same side panel. A script over 512 KB, or one that is not text, is listed but not shown.
-- **Delete** deletes the script after you confirm, and removes its line from `MEMORY.md`.
+- **View** shows the file's folder path and its code, with line numbers, in the same side panel. **Back to** returns to the memory. A file over 512 KB, or one that is not text, is listed but not shown.
+- **Delete** deletes the file after you confirm. What the memory's text says about it stays until the agent updates it.
 
-Scripts have no **Edit**: ask the agent in a chat to change one. Every later Session of the agent may run its scripts, so look at one before you rely on it. See [Scripts](/configuration#scripts).
+Deleting a memory deletes its folder too; the confirmation says how many files go with it. Files have no **Edit**: ask the agent in a chat to change one. Every later Session of the agent may run its scripts, so look at one before you rely on it. See [Scripts](/configuration#scripts).
+
+A folder with no memory of its name beside it, usually left behind when its memory was deleted, belongs to no memory. Its files are listed at the bottom of the group under **Files without a memory**, with the same two buttons.
 
 ### Add a memory
 
@@ -356,7 +358,7 @@ Scripts have no **Edit**: ask the agent in a chat to change one. Every later Ses
 
 ### Export and import memories
 
-- **Export** on a group's header downloads every memory in the group, its scripts and the group's `MEMORY.md` as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other. A script over 512 KB, or one that is not text, is left out of the file, and a notice names it.
+- **Export** on a group's header downloads every memory in the group, with the files each keeps, and the group's `MEMORY.md` as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other. A file over 512 KB, one that is not text and one that belongs to no memory are left out of the file, and a notice names them.
 - **Import** on a group's header reads such a file back into the group. Only the Project owner can import.
 
 When you import, choose what happens when the group already has a memory with the same name:
@@ -364,12 +366,14 @@ When you import, choose what happens when the group already has a memory with th
 | Option | Result |
 | --- | --- |
 | **Keep the one that is here** (default) | Adds only what the group does not have. Nothing is lost |
-| **Take the file's version** | Replaces same-named memories. Memories the file does not carry are left alone |
-| **Replace the whole group** | Deletes every memory and script the file does not carry |
+| **Take the file's version** | Replaces same-named memories, their files included. Memories the file does not carry are left alone |
+| **Replace the whole group** | Deletes every memory the file does not carry, with its files, and every folder that belongs to no memory |
 
 If the import would overwrite or delete memories, or replace the group's `MEMORY.md`, a **Confirm the import** dialog lists what changes first.
 
-A file exported before scripts existed still imports. A file exported now cannot be imported into a server from before scripts: that server does not know the file's newer format version and refuses it.
+A memory moves with its files: the folder of a memory taken from the file holds exactly the file's files afterwards. A folder that belongs to no memory counts as its memory being in the group already.
+
+A file exported before memories kept scripts still imports. A file exported now cannot be imported into a server from before: that server does not know the file's newer format version and refuses it.
 
 ### Memory prompts
 

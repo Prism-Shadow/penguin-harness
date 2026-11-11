@@ -393,7 +393,9 @@ describe("memory api", () => {
     expect(read.content).toBe("def read(): pass\n");
     expect(read.file.path).toBe("csv-tools/lib/io.py");
     // Reading the topic brings its files along, for a detail view that shows both.
-    const topic = (await (await owner.get(`${filesPath()}/csv-tools.md`)).json()) as MemoryFileResponse;
+    const topic = (await (
+      await owner.get(`${filesPath()}/csv-tools.md`)
+    ).json()) as MemoryFileResponse;
     expect(topic.file.files).toHaveLength(3);
 
     const overview = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
@@ -574,7 +576,11 @@ describe("memory scope export/import", () => {
     omitted: [],
   });
 
-  const topic = (name: string, body: string, kept?: Record<string, string>): MemoryTransferFile => ({
+  const topic = (
+    name: string,
+    body: string,
+    kept?: Record<string, string>,
+  ): MemoryTransferFile => ({
     name,
     content: `---\nname: ${name}\n---\n${body}\n`,
     ...(kept !== undefined
@@ -1025,7 +1031,10 @@ describe("memory scope export/import", () => {
     await rejects({ ...document([]), version: 3 }, "future version");
     // A version 2 entry is named by its file name: a `path` alone does not name one.
     await rejects({ ...document([]), files: [{ path: "a.md", content: "x" }] }, "entry by path");
-    await rejects({ ...document([]), files: [{ ...topic("a.md", "x"), files: {} }] }, "files is not a list");
+    await rejects(
+      { ...document([]), files: [{ ...topic("a.md", "x"), files: {} }] },
+      "files is not a list",
+    );
     await rejects({ ...document([]), files: "not-an-array" }, "files is not an array");
     await rejects([topic("a.md", "1"), topic("a.md", "2")], "the same name twice");
     expect((await owner.post(importPath(), {})).status).toBe(400);
