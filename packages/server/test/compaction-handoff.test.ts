@@ -36,6 +36,7 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
   createAgent,
+  modelVisiblePath,
   parseTraceLines,
   saveProjectConfig,
   sessionScratchpadDir,
@@ -515,7 +516,9 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
   });
 
   it("a fork of a Session whose context opened with a hand-off note: the note names the fork's scratchpad and the fork's copy of the file it closed", async () => {
-    const plan = (scratchpad: string) => `${scratchpad}/handoff/plan.md`;
+    // The model writes the scratchpad as the compaction prompt spells it (forward slashes on
+    // Windows), and the note quotes what it wrote.
+    const plan = (scratchpad: string) => `${modelVisiblePath(scratchpad)}/handoff/plan.md`;
     script = (n) => {
       if (n === 2) {
         const scratchpad = scratchpadNamedIn(mock.requests[1]!);
@@ -559,7 +562,10 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     const forkNote = openingOf(fork[1]!.records)!;
     expect(forkNote).toBe(
       note
-        .replaceAll(scratchpadOf(sessionId), scratchpadOf(forkId))
+        .replaceAll(
+          modelVisiblePath(scratchpadOf(sessionId)),
+          modelVisiblePath(scratchpadOf(forkId)),
+        )
         .replaceAll(source[0]!.path, fork[0]!.path),
     );
     expect(forkNote).not.toContain(sessionId);
