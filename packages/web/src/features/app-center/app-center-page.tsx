@@ -253,7 +253,6 @@ export function AppCenterPage() {
           <div className="mx-auto flex min-h-full max-w-5xl flex-col">
             <PageHeader
               title={S.appCenter.title}
-              description={S.appCenter.description}
               {...(grid !== null && grid.length > 0 ? { actions: headerActions } : {})}
             />
             {error !== null && (
