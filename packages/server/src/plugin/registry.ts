@@ -394,7 +394,8 @@ export function httpPluginRegistry(
   // What the last 200 answered, so the next read can revalidate instead of re-downloading:
   // the etag goes back as If-None-Match, and the body's hash catches a CDN (GitHub Pages
   // among them) whose etag churns while the document does not.
-  let revalidate: { etag: string | null; hash: string; entries: PluginIndexEntry[] } | null = null;
+  let revalidate: { etag: string | null; hash: string; entries: IndexDocumentEntry[] } | null =
+    null;
   const request = async (): Promise<Response> => {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -425,7 +426,7 @@ export function httpPluginRegistry(
   // state, and whichever finished last would write its document over the other's — an older
   // completion could rewind the etag a newer read had just advanced, and the next read would
   // revalidate against a header the server had already retired.
-  const readOnce = async (): Promise<PluginIndexEntry[]> => {
+  const readOnce = async (): Promise<IndexDocumentEntry[]> => {
     const res = await request();
     // Unchanged since the last read: the document in hand stands, nothing re-parsed.
     if (res.status === 304 && revalidate !== null) {
