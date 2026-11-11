@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PluginIndexEntry } from "../src/api/types.js";
+import type { IndexDocumentEntry } from "../src/plugin/registry.js";
 import {
   installPluginChannel,
   npmFailureKind,
@@ -300,7 +300,7 @@ describe("installPluginChannel", () => {
 });
 
 describe("indexChannelOf", () => {
-  const entry = (over: Partial<PluginIndexEntry>): PluginIndexEntry => ({
+  const entry = (over: Partial<IndexDocumentEntry>): IndexDocumentEntry => ({
     name: "@penguinharness/language-typst",
     version: "0.0.2",
     description: "Typst highlighting.",
@@ -351,7 +351,7 @@ describe("indexChannelOf", () => {
 describe("indexChannelLookup", () => {
   const index = [entry()];
 
-  function entry(): PluginIndexEntry {
+  function entry(): IndexDocumentEntry {
     return {
       name: "@penguinharness/language-typst",
       version: "0.0.2",

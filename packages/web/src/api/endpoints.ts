@@ -267,9 +267,8 @@ import type {
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiUpload } from "./client";
 import { iconsOn } from "./machine-icons";
-import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
+import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";

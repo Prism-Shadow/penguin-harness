@@ -251,11 +251,11 @@ export function indexChannelOf(entry: IndexDocumentEntry): {
  * pin faults there, and that fault is the answer).
  */
 export function selectIndexChannel(
-  entries: readonly PluginIndexEntry[],
+  entries: readonly IndexDocumentEntry[],
   version: string | undefined,
 ): { channel: IndexChannel | null; fault: string | null } {
   if (entries.length === 0) return { channel: null, fault: null };
-  const newest = (pool: readonly PluginIndexEntry[]) =>
+  const newest = (pool: readonly IndexDocumentEntry[]) =>
     pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
   const tag =
     version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
@@ -309,7 +309,7 @@ export function indexChannelLookup(
   // Every version the index carries for a name, not one row per name: the request's version
   // is what picks among them (selectIndexChannel), and collapsing to one row per name would
   // make the index's last-listed version the only one a channel could serve.
-  let cache: { at: number; byName: Map<string, PluginIndexEntry[]> } | null = null;
+  let cache: { at: number; byName: Map<string, IndexDocumentEntry[]> } | null = null;
   return async (name, version) => {
     if (indexUrl === null) return { channel: null, fault: null };
     const at = now();
@@ -320,7 +320,7 @@ export function indexChannelLookup(
       } catch {
         return { channel: null, fault: null };
       }
-      const byName = new Map<string, PluginIndexEntry[]>();
+      const byName = new Map<string, IndexDocumentEntry[]>();
       for (const entry of entries) {
         const rows = byName.get(entry.name);
         if (rows === undefined) byName.set(entry.name, [entry]);
@@ -739,8 +739,8 @@ function outranks(a: string, b: string): boolean {
  * among themselves; rows of equal precedence (a build-metadata difference) keep the first. The
  * survivors come back in the document's own order.
  */
-export function newestPerName(entries: readonly PluginIndexEntry[]): PluginIndexEntry[] {
-  const newest = new Map<string, PluginIndexEntry>();
+export function newestPerName(entries: readonly IndexDocumentEntry[]): IndexDocumentEntry[] {
+  const newest = new Map<string, IndexDocumentEntry>();
   for (const entry of entries) {
     const held = newest.get(entry.name);
     if (held === undefined || outranks(entry.version, held.version)) newest.set(entry.name, entry);
