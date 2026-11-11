@@ -811,7 +811,7 @@ export class GenerativeModel implements LLMInterface {
    * validation with a non-retryable 400.
    *
    * Interplay with compaction: the engine's compaction threshold is derived at
-   * `context_window − COMPACTION_HEADROOM` (see effectiveMaxContextLength), so under normal
+   * `context_window − compactionReserve(window)` (see effectiveMaxContextLength), so under normal
    * operation the context is summarized before the remaining window ever nears the
    * MIN_OUTPUT_TOKENS floor; the floor only binds when compaction is disabled or the window
    * is misconfigured, where a deterministic small cap beats a provider rejection.

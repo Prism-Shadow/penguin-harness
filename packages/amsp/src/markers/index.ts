@@ -6,8 +6,9 @@
  * rather than something the user typed. They come in three families:
  *
  *   - **engine blocks** (`engine-blocks.ts`): `[turn_aborted]` / `[turn_retried]` transcripts,
- *     the `[context_summary]` injection and the `[summary]` the compaction prompt asks for —
- *     produced by the ReAct loop and Trace replay;
+ *     the `[context_summary]` injection (a summary, or the hand-off note written in place of
+ *     one) and the `[summary]` the compaction prompt asks for, read whole or salvaged from a
+ *     reply that did not finish — produced by the ReAct loop and Trace replay;
  *   - **origin blocks** (`origin-blocks.ts`): `[use_skills]`, `[handoff_from]`,
  *     `[scheduled_task]`, `[model_switch_from]` — prefixed to a user message by the hosts
  *     (Web composer, server scheduler) and collapsed into a banner when rendered;

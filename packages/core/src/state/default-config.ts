@@ -108,17 +108,17 @@ export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
  * Docs: /docs/configuration § "Agent config".
  */
 export interface CompactionConfig {
-  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. */
+  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. The value in force is the smaller of this and the model's `context_window` less the compaction reserve (see `effectiveMaxContextLength`). */
   max_context_length?: number;
   /** Session cumulative turn threshold (counted in LLM Requests, across Tasks); defaults to -1, <=0 means no limit. */
   max_session_turns?: number;
   /** Compaction mode; defaults to summarize. */
   mode?: CompactionMode;
   /**
-   * Tool rounds a summarize compaction may take before its summary, writing hand-off files to
-   * this Session's scratchpad (`read_file`, and `write_file` / `edit_file` inside the
-   * scratchpad); defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <= 0 restores the single
-   * text-only request.
+   * Tool rounds the harness allows a summarize compaction before its summary, writing hand-off
+   * files to this Session's scratchpad (`read_file`, and `write_file` / `edit_file` inside the
+   * scratchpad); the harness counts them and tells the model how many are left. Defaults to
+   * {@link DEFAULT_COMPACTION_MAX_ROUNDS}; <= 0: every tool call is refused.
    */
   max_rounds?: number;
   /**
@@ -635,22 +635,25 @@ export function insertSchedulesPlaceholder(template: string): string {
 
 /**
  * Built-in default compaction Prompt (summarize mode): tells the model the transcript will no
- * longer be visible in the next context, to write detail worth more than a paragraph to
- * hand-off files in this Session's scratchpad first (the only tools that work while compacting,
- * within `{{MAX_ROUNDS}}` tool rounds), and then to reply with a summary in fixed sections —
- * the hand-off files named by absolute path, and consent not carried across the boundary. The
- * format is shown as a concrete example rather than described in prose — some models treat the
- * tags as a "title" and write the body after the closing tag (issue #170); extraction salvages
- * that shape, but generating it right beats repairing it. `{{SCRATCHPAD_DIR}}` and
- * `{{MAX_ROUNDS}}` are substituted where the settings are read; the prompt is the appended user
- * turn of the compaction request, outside the cached prefix. Persisted per-agent in
- * system_config.yaml — existing agents keep their stored prompt until a kernel update.
+ * longer be visible in the next context and asks for the summary in fixed sections — when there
+ * is detail worth more than a paragraph, saved alongside it to hand-off files in this Session's
+ * scratchpad, in the same reply when it can (`read_file`, and `write_file` / `edit_file` inside
+ * the scratchpad, are the only tools that work while compacting). It says the harness counts
+ * the `{{MAX_ROUNDS}}` tool rounds and lists, under the summary, the calls it ran and how each
+ * ended — so the summary names hand-off files by absolute path rather than repeating them, and
+ * consent is not carried across the boundary. The format is shown as a concrete example rather
+ * than described in prose — some models treat the tags as a "title" and write the body after
+ * the closing tag (issue #170); extraction salvages that shape, but generating it right beats
+ * repairing it. `{{SCRATCHPAD_DIR}}` and `{{MAX_ROUNDS}}` are substituted where the settings are
+ * read; the prompt is the appended user turn of the compaction request, outside the cached
+ * prefix. Persisted per-agent in system_config.yaml — existing agents keep their stored prompt
+ * until a kernel update.
  */
 export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
 
-First, when there is detail worth more than a paragraph — a plan, findings, a decision log, data, drafts — write it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with the file tools (absolute paths; read a file before overwriting it). Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes. You have at most ${COMPACTION_MAX_ROUNDS_PLACEHOLDER} tool rounds; then reply.
+Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. A file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
 
-Then reply with text only, in exactly this format and nothing after it:
+The harness counts tool rounds for you: ${COMPACTION_MAX_ROUNDS_PLACEHOLDER} are allowed, each round's results say how many are left, and once none are left every tool call is refused. Under your summary the harness lists the tool calls it actually ran and how each ended, so name every hand-off file by its absolute path and do not repeat its content.
 
 [summary]
 ## Request
@@ -662,7 +665,7 @@ What is done and verified, with file paths; what is in progress and where it sta
 ## Errors and fixes
 Errors met, what fixed them, and what not to repeat.
 ## Files
-Workspace files that matter (read or changed), and every hand-off file you wrote, each with its absolute path and one line on what it holds.
+Workspace files that matter (read or changed), and every hand-off file, each with its absolute path and one line on what it holds.
 ## Next steps
 The remaining work in order, and the exact next action.
 [/summary]`;

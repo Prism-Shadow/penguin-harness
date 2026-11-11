@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-11-10";
+export const KERNEL_VERSION = "2026-11-11";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -235,23 +235,23 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   thinking stream upstream and send nothing until the answer starts, so the whole thinking
  *   phase lands in the wait for the first event again, and 300000 cut long ones short. The
  *   runtime tab moved.
- * - `2026-11-04` — compaction hands files to the next context: the new
- *   `compaction.max_rounds` (3) lets a summarize compaction take tool rounds before its
- *   summary, and the default compaction prompt asks for hand-off files under the Session's
- *   scratchpad (`{{SCRATCHPAD_DIR}}`, `{{MAX_ROUNDS}}`) and a summary in fixed sections. The
- *   runtime tab moved.
  * - `2026-11-09` — `# Tool use` gains the go-ahead rule: hard-to-undo and
  *   outward-facing actions need the user's go-ahead in this conversation unless authorized
  *   durably; a yes covers only its own step; look before destroying. The prompt tab moved.
- * - `2026-11-10` (current) — the memory prompt names the scripts a fact keeps and gained its
+ * - `2026-11-10` — the memory prompt names the scripts a fact keeps and gained its
  *   **Scripts:** paragraph: a program the model would otherwise rewrite sits in a folder named
  *   after the fact it serves, any number of files, listed with relative links in that fact's own
  *   body and never in `MEMORY.md`, run through its interpreter by absolute path, and read before
  *   running one this Session did not write. The memory tab moved.
+ * - `2026-11-11` (current) — compaction hands files to the next context: the new
+ *   `compaction.max_rounds` (3) is the number of tool rounds the harness allows a summarize
+ *   compaction, counted by the harness, and the default compaction prompt asks for a summary in
+ *   fixed sections, with hand-off files under the Session's scratchpad (`{{SCRATCHPAD_DIR}}`,
+ *   `{{MAX_ROUNDS}}`) written in the same reply when it can. The runtime tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "3ab519fe2fb0394ffe061eb239d70dfbd21fa27e413f25cebaf73e9b307d0077",
-  runtime: "ca4bf78d4016a50481db5e25dbe6f0e15835bb92ba7cbeb70666d7fe4f7272d4",
+  runtime: "370a7396061c1d9ef965d328a29ab691d7f6381d55371a1e9d7513a062286028",
   tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "a9614cd7bd07f576edbcfc311c32c2fa40a57807a26e069a90c3e526dac272b6",
@@ -285,7 +285,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
     "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20", // model.timeoutMs was 120000, before the rise to 300000
     "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346", // model.timeoutMs was 300000, before the rise to 600000
-    "83cffc520d74ff6b307a1371b8e770a1986436ef0632e9f5146fec1a3dc67134", // the compaction prompt before the hand-off format and `max_rounds`
+    "83cffc520d74ff6b307a1371b8e770a1986436ef0632e9f5146fec1a3dc67134", // the compaction prompt before hand-off files and harness-counted rounds, no `max_rounds`
   ],
   tools: [
     "238440586ad2e075bde04948cf8dc9876301da538aafeb8926cd9c6a5738081b", // before run_subagent's `thinking_level` (#306)

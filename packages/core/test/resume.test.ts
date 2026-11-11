@@ -472,6 +472,43 @@ describe("agent.resumeSession", () => {
     }
   });
 
+  it("a file closed by a compaction that completed without a summary stays closed: the restart has the hand-off note pending", async () => {
+    // The compaction's request was refused, so it completed with the error pair and the next
+    // context opens with the note built from this file, not with the closed context replayed.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      taskBegin(),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      taskEnd(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.compactability()).toBe("just_compacted");
+      expect(session.hasPendingInput()).toBe(true);
+      expect(session.resumedHistory).toEqual([]);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("compactability stays empty for a resumed session whose context has no completed turn", async () => {
     // The genuine `empty` case survives the fix: the only request in the trace was interrupted,
     // so no turn ever completed and there is truly nothing to fold.

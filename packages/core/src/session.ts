@@ -64,6 +64,8 @@ import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js
 import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
+import { readTraceTolerant } from "./trace/resume.js";
+import { buildCompactionHandoff } from "./engine/compaction-carry.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
@@ -491,6 +493,7 @@ export class Session {
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.compactionToolGate ? { compactionToolGate: config.compactionToolGate } : {}),
+      buildHandoff: () => this.compactionHandoff(),
       ...(config.shell !== undefined ? { shell: config.shell } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
@@ -1025,9 +1028,10 @@ export class Session {
    *
    * When the summary cannot be had — the model the Session is on can no longer be reached
    * (no longer configured, or its client cannot be built: it is then sent nothing), or the
-   * compaction ends other than `completed` or `aborted` — the switch hands the history over by
-   * Trace path instead: the next context opens on the target with the `/model` block naming
-   * this Session (see `switchHandoff`) where the summary would be. Only a stop keeps the model.
+   * compaction gets neither a summary nor a salvageable part of one — the switch hands the
+   * history over by Trace path instead: the next context opens on the target with the `/model`
+   * block naming this Session (see `switchHandoff`) where the summary would be. Only a stop, or
+   * a target whose context cannot be opened, keeps the model.
    *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
@@ -1039,7 +1043,8 @@ export class Session {
    *
    * Returns the terminal status: `completed` — the Session is on the target, and children
    * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
-   * the model it was on.
+   * the model it was on; `fatal` — the target's context could not be opened after the
+   * compaction (its `compaction_end` says why), and the Session stays on the model it was on.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
@@ -1078,7 +1083,7 @@ export class Session {
     if (!(yield* this.ensureEngine(opts.signal))) return "aborted";
     this.switchTarget = target;
     try {
-      // Summary first, handing over on any end but a stop; an unreachable model, at once.
+      // Summary first, the handoff as the compaction's last rung; an unreachable model, at once.
       const status = reachable
         ? yield* this.engine!.switchContext(
             opts.signal,
@@ -1118,6 +1123,24 @@ export class Session {
         },
         this.shell !== undefined ? { shell: this.shell } : {},
       ),
+    );
+  }
+
+  /**
+   * The hand-off note a compaction opens the next context with when no summary could be had,
+   * built from the Trace file being closed (the running file: the rotation comes after it). A
+   * file that cannot be read gives the note without its digest; a Session without a Trace sink
+   * has no file to name either.
+   */
+  private async compactionHandoff(): Promise<AmspRecord> {
+    const tracePath = this.trace?.currentPath?.();
+    const records =
+      tracePath !== undefined ? await readTraceTolerant(tracePath).catch(() => []) : [];
+    return userText(
+      buildCompactionHandoff(records, {
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        ...(this.shell !== undefined ? { shell: this.shell } : {}),
+      }),
     );
   }
 

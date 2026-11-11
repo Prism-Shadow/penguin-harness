@@ -56,6 +56,7 @@ import {
   DEFAULT_MAX_CONTEXT_LENGTH,
   GenerativeModel,
   ToolCallIdAllocator,
+  compactionRoundLimit,
   effectiveMaxContextLength,
 } from "./llm/index.js";
 import { unreachableModel } from "./llm/unreachable-model.js";
@@ -343,7 +344,9 @@ interface SessionRuntime {
    * Opens the context that follows a completed compaction (see ContextEngineDeps.openNextContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
-   * the context alongside its engine settings, with the hooks the context runs with.
+   * the context alongside its engine settings, with the hooks the context runs with. On a
+   * same-model rotation an Agent State that cannot be assembled reopens the configuration in
+   * force instead, and the result carries the `notice` the opening tells the model.
    */
   openNextContext: (opts: SessionOpenContextOptions) => Promise<SessionOpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
@@ -395,8 +398,9 @@ interface AssembledContext {
 
 /**
  * The Session's compaction settings as they follow from a `compaction` section: defaults
- * filled in, the threshold capped by what the model's window leaves room for, and an unknown
- * mode read as the default `summarize`.
+ * filled in, the threshold capped by what the model's window leaves room for, the context size
+ * past which no tool round opens (none for an unconfigured window), and an unknown mode read as
+ * the default `summarize`.
  *
  * Stated once because two callers need the same answer from the same input — the context
  * assembly below, and the live re-reader every checkpoint calls (see `compactionReader`). Two
@@ -414,6 +418,7 @@ function resolveCompaction(
   const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT)
     .replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, modelVisiblePath(scratchpadDir))
     .replaceAll(COMPACTION_MAX_ROUNDS_PLACEHOLDER, String(Math.max(0, maxRounds)));
+  const roundLimit = compactionRoundLimit(contextWindow);
   return {
     maxContextLength: effectiveMaxContextLength(
       config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
@@ -422,8 +427,19 @@ function resolveCompaction(
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
     maxRounds,
+    ...(roundLimit !== undefined ? { roundLimit } : {}),
     prompt,
   };
+}
+
+/**
+ * What the model is told in the opening of a context the opener reopened on the configuration
+ * in force, because the Agent State could not be assembled (see `openNextContext`): the error,
+ * and that an edit of its own may be what broke it — an Agent that rewrote its
+ * `system_config.yaml` badly can repair it from the next context.
+ */
+function configurationFallbackNotice(error: string): string {
+  return `this Agent's configuration could not be read when this context opened (${error}); the previous configuration is still in force. If you changed system_config.yaml, fix it.`;
 }
 
 /**
@@ -1568,16 +1584,34 @@ export class Agent {
     // (`modelRef`, resolved against the Project config on disk). The Environment is
     // re-equipped with the new toolset and vault, then the context is opened by the same
     // procedure as the first one — the engine yields the published records live and writes
-    // them at the head of the rotated Trace file. An Agent State that cannot be assembled (a
-    // config that no longer parses) throws: the run fails with that error and the engine
-    // keeps the old context. So does this layer when the open itself fails: `current` moves
-    // only once the context is open, and the Environment goes back to the running one.
+    // them at the head of the rotated Trace file.
+    //
+    // An Agent State that cannot be assembled (a config that no longer parses) does not end
+    // the run on a same-model rotation: the configuration in force is reopened on a fresh LLM
+    // object — the same prompt and toolset, nothing reconnected — the model is told so in the
+    // opening (`notice`), and the broken state is tried again at the next rotation. That is the
+    // rule the live compaction re-read already follows: keep the settings in force and warn. A
+    // model switch rethrows instead, so it keeps the model it was on. When the open itself
+    // fails, this layer throws as well: `current` moves only once the context is open, and the
+    // Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,
     }: SessionOpenContextOptions): Promise<SessionOpenedContext> => {
       const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
-      const next = await this.assembleContext(spec, entry);
+      let next: AssembledContext;
+      let notice: string | undefined;
+      try {
+        next = await this.assembleContext(spec, entry);
+      } catch (err) {
+        if (modelRef) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        next = current;
+        notice = configurationFallbackNotice(message);
+        process.stderr.write(
+          `[penguin] the next context could not be assembled from the Agent State: ${message}; reopening the configuration in force.\n`,
+        );
+      }
       equip(next);
       let llm: GenerativeModel;
       try {
@@ -1587,7 +1621,7 @@ export class Agent {
         throw err;
       }
       current = next;
-      return { llm, ...contextFacts(next) };
+      return { llm, ...contextFacts(next), ...(notice !== undefined ? { notice } : {}) };
     };
 
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle): the
