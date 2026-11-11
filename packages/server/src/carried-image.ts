@@ -47,15 +47,18 @@ export async function syncCarriedImage(root: string, dir: string | null): Promis
       // a file (a partial copy, a pruned artifact) is not usable — laying the carried
       // body again is what repairs it, and the immutable namespace makes that safe.
       // The record's pointers already carry the namespace (store/carried/<image>/…), so
-      // the strip here is that whole prefix, not just `store/`.
+      // the strip here is that whole prefix, not just `store/`. A pointer outside that
+      // namespace is a malformed record, not an empty relative path — it counts as
+      // incomplete, so laying the carried body repairs it rather than the check
+      // passing on the store directory itself.
       const prefix = `store/carried/${source.image}/`;
-      const pointers = carriedStorePointers(meta.manifest).map((value) =>
-        value.startsWith(prefix) ? value.slice(prefix.length) : "",
-      );
-      const complete = await carriedStoreComplete(
-        path.join(root, "hmr", "store", "carried", source.image),
-        pointers,
-      );
+      const pointers = carriedStorePointers(meta.manifest);
+      const complete =
+        pointers.every((value) => value.startsWith(prefix)) &&
+        (await carriedStoreComplete(
+          path.join(root, "hmr", "store", "carried", source.image),
+          pointers.map((value) => value.slice(prefix.length)),
+        ));
       if (complete.ok) return { kind: "current" };
     }
   }

@@ -11,6 +11,7 @@ import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import { ShippedImage } from "../src/machines/shipped-image.js";
 import { shippedImage } from "../src/machines/install-server.js";
 import { resolveCli } from "../src/services/cli-shim.js";
+import type { Manifest } from "@prismshadow/penguin-hmr/manifest";
 
 const made: string[] = [];
 
@@ -244,6 +245,26 @@ describe("the reconciliation is idempotent and defers to a push", () => {
       const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
       expect(bundle).toBe(CLI);
     }
+    await expectRecordAndAnswer(root);
+  });
+
+  // The same image id, but a record pointer outside that image's namespace: the check
+  // must treat this as incomplete. Mapping a prefix-mismatched pointer to an empty
+  // relative path would resolve to the store directory itself and let a start answer
+  // "current" while the CLI still resolves to a missing bundle.
+  it("a same-image record pointing outside its own namespace is repaired, not trusted", async () => {
+    const dist = await tmp("penguin-sync-namespace-dist-");
+    const body = await packImage(dist);
+    const root = await tmp("penguin-sync-namespace-root-");
+    await syncCarriedImage(root, body);
+
+    const record = path.join(root, "hmr", "harness.json");
+    const manifest = JSON.parse(await fs.readFile(record, "utf8")) as Manifest;
+    expect(manifest.source).toMatchObject({ image: expect.any(String) });
+    manifest.cli!.bundle = "store/carried/foreign-image/cli/0123456789abcdef.mjs";
+    await fs.writeFile(record, JSON.stringify(manifest));
+
+    await expect(syncCarriedImage(root, body)).resolves.toMatchObject({ kind: "copied" });
     await expectRecordAndAnswer(root);
   });
 
