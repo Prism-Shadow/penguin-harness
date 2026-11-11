@@ -1324,7 +1324,7 @@ const cssHookMonoCheck: Check = (analysis) =>
  * that is not a hook is review: the context bar's hatch, which carries meaning, and the sweep
  * across the TokenDance banner's brand name, the banner's one deliberate emphasis.
  */
-const GRADIENT_RECIPES =
+export const GRADIENT_RECIPES =
   /\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-(?:state="streaming"|settling)\]/;
 
 const cssDecorationCheck: Check = (analysis) =>

@@ -173,15 +173,6 @@
     backdrop-filter: none;
   }
 }
-/* A tone strip (a notice, or any strip that names its tone the same way) keeps its tone on the
-   image at half its tint; the ink is unchanged. It sits in the theme layer, below a theme's own
-   notice recipe (later in the layer and more specific): Frost lays its card on the panel fill,
-   Console paints nothing. A pressed notice is a toast, which floats and keeps its surface. */
-@layer ui-theme {
-  @media not (prefers-reduced-transparency: reduce) {
-    .ui-shell[data-wallpaper]
-      :where([data-wallpaper-surface="tone"]:not(button, [role="dialog"] *)) {
-      background-color: color-mix(in srgb, var(--_tone-bg) 50%, transparent);
-    }
-  }
-}
+/* A tone strip on the image keeps its tone at half its tint: that rule is a foundation default
+   under every theme's own notice recipe, so it lives in theme.css's `ui-base` block, beside the
+   tone tints it reads. This file opens no cascade layer — the first one opened fixes the order. */

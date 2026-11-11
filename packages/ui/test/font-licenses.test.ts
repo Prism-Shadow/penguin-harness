@@ -79,13 +79,17 @@ interface FontReference {
 }
 
 /**
- * Every `url()` and `@import` in the fonts CSS, placed: a bare `@scope/name/…` specifier, or a
- * relative path that climbs into `node_modules/@scope/name/…`, lands in that package; a relative
- * path to one of our own sheets lands in none.
+ * Every `url()` and `@import` in the fonts CSS — `fonts/` and the theme packs, whose `fonts.css`
+ * `fonts/index.css` imports — placed: a bare `@scope/name/…` specifier, or a relative path that
+ * climbs into `node_modules/@scope/name/…`, lands in that package; a relative path to one of our
+ * own sheets lands in none.
  */
 function fontReferences(): FontReference[] {
   if (!existsSync(FONTS_DIR)) return [];
-  const scan = scanSourceRoots({ fonts: FONTS_DIR }, { repoRoot: REPO_ROOT, extensions: [".css"] });
+  const scan = scanSourceRoots(
+    { fonts: FONTS_DIR, themes: join(SRC_DIR, "themes") },
+    { repoRoot: REPO_ROOT, extensions: [".css"] },
+  );
   const refs: FontReference[] = [];
   const place = (file: { id: string; path: string }, specifier: string) => {
     if (specifier.startsWith("data:")) return;
