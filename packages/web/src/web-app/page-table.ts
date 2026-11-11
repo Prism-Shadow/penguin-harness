@@ -111,6 +111,22 @@ export function removedPagesOf(
   if (removed.length === 0) return pages;
   const under = (path: readonly string[], root: readonly string[]) =>
     root.length > 0 && root.length <= path.length && root.every((s, i) => s === path[i]);
+ * Where home leads: company mode's `home` page (path `*`, features/company/home-redirect.tsx)
+ * (features/company/company-nav.ts `homePath`, which test/page-removal.test.ts holds to this
+ * theirs — whose pattern starts with every non-splat segment of the removed page's pattern (a
+ * trailing splat answers the rest of the URL), so removing
+  // A page whose pattern ends in a splat (`/reports/*`) answers the rest of the URL — its own
+  // bare path included — so every page whose leading segments match it lies under it, however
+  // the pages under it name their parameters (`/reports/:reportId` goes with it). A pattern
+  // that is nothing but the splat (home, `*`) takes only itself: everything would match it,
+  // and the pages answering HOME_PATHS cannot be removed anyway.
+  const under = (path: readonly string[], root: readonly string[]) => {
+    if (root.length === 0) return false;
+    const splat = root[root.length - 1] === "*";
+    const stem = splat ? root.length - 1 : root.length;
+    if (stem === 0 || path.length < stem) return false;
+    return root.slice(0, stem).every((s, i) => s === path[i]);
+  };
   return pages.filter((p) => {
     if (HOME_PATHS.some((home) => matchPath(p.path, home) !== null)) return true;
     if (keys.includes(p.key)) return false;

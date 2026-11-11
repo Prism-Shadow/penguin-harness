@@ -47,6 +47,26 @@ import { DockModule } from "@penguinharness/plugin-terminal/web";
 import { WorkspaceModule } from "@penguinharness/plugin-projects/web";
 import { TracesModule } from "@penguinharness/plugin-usage/web";
 import { AudioModule } from "@penguinharness/plugin-sessions/web";
+import { ChatModule } from "./features/chat/module";
+import { AgentsModule } from "./features/agents/module";
+import { ModelsModule } from "./features/models/module";
+import { PluginsModule } from "./features/plugins/module";
+import { MachinesModule } from "./features/machines/module";
+import { UsageModule } from "./features/usage/module";
+import { BenchmarkModule } from "./features/benchmark/module";
+import { TerminalModule } from "./features/terminal/module";
+import { WorkbenchesModule } from "./features/workbenches/module";
+import { CompanyModule } from "./features/company/module";
+import { BuiltinBrowserModule } from "./features/builtin-browser/module";
+import { SettingsModule } from "./features/settings/module";
+import { SchedulesModule } from "./features/schedules/module";
+import { SessionListModule } from "./features/session-list/module";
+import { ProjectsModule } from "./features/projects/module";
+import { MessagingModule } from "./features/messaging/module";
+import { DockModule } from "./features/dock/module";
+import { WorkspaceModule } from "./features/workspace/module";
+import { TracesModule } from "./features/traces/module";
+import { AudioModule } from "./features/audio/module";
 
 @Module({
   children: [

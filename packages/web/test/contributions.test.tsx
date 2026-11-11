@@ -253,6 +253,7 @@ describe("contributedPagesOf", () => {
     const html = renderToStaticMarkup(
       createElement(ThemeProvider, null, createElement(merged[2]!.Component)),
     );
+    const html = renderToStaticMarkup(h(ThemeProvider, null, h(merged[2]!.Component)));
     expect(html).toContain('title="Hello World"');
   });
 

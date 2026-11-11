@@ -74,6 +74,12 @@ describe("the mocked API", () => {
   it("answers the real ids with the fixtures, and unknown ids with 404", async () => {
     const store = resetStore({ lang: "zh", signedIn: true });
     expect(await api.getContributions()).toEqual({ pages: [], fileRenderers: [], pageRemovals: [], agentTabs: [], sessionTabs: [] });
+      pages: [],
+      fileRenderers: [],
+      pageRemovals: [],
+      agentTabs: [],
+      sessionTabs: [],
+    });
     const me = await api.getMe();
     expect(me.user.isAdmin).toBe(true);
     expect(me.companyMode).toBe(false);
