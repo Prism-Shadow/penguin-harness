@@ -875,12 +875,7 @@ function EmployeeProfileForm({
     >
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <EmployeeAvatar
-            id={employee.agentId}
-            name={employee.name}
-            size={48}
-            className="rounded-lg"
-          />
+          <EmployeeAvatar id={employee.agentId} size={48} className="rounded-lg" />
           <label
             className={`shrink-0 ${buttonClass("secondary", "sm")} ${busy ? "pointer-events-none opacity-60" : ""}`}
           >

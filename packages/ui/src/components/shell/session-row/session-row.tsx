@@ -304,12 +304,7 @@ export function SessionRow({
         >
           {agent !== undefined && (
             <span data-tooltip={agent.name} className="flex shrink-0 items-center">
-              <AgentAvatar
-                id={agent.id}
-                name={agent.name}
-                size={ICON_SIZE.rowLead}
-                className="rounded-sm"
-              />
+              <AgentAvatar id={agent.id} size={ICON_SIZE.rowLead} className="rounded-sm" />
               {/* The avatar is hidden from assistive technology and the hint serves pointers only:
                   the agent's name reaches everyone else as hidden text inside the row's button. */}
               <span className="sr-only">{agent.name}</span>

@@ -77,9 +77,7 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   if (item.kind === "user") {
     return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return (
-    <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded-md" />
-  );
+  return <EmployeeAvatar id={item.id} size={size} className="shrink-0 rounded-md" />;
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */

@@ -568,12 +568,7 @@ export function BenchmarkPage() {
             query parameter, which nothing else on the page would otherwise account for. */}
         {filterAgentId !== null && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <AgentAvatar
-              id={filterAgentId}
-              name={nameOf(filterAgentId)}
-              size={ICON_SIZE.rowLead}
-              className="shrink-0 rounded"
-            />
+            <AgentAvatar id={filterAgentId} size={ICON_SIZE.rowLead} className="shrink-0 rounded" />
             <span
               className="min-w-0 truncate"
               data-tooltip={nameOf(filterAgentId)}

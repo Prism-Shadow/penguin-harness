@@ -39,14 +39,7 @@ export function AgentSelect({
           setOpen(true);
         }}
       >
-        {selected && (
-          <AgentAvatar
-            id={selected.agentId}
-            name={agentDisplayName(selected)}
-            size={16}
-            className="shrink-0 rounded"
-          />
-        )}
+        {selected && <AgentAvatar id={selected.agentId} size={16} className="shrink-0 rounded" />}
         <span className="min-w-0 truncate">
           {selected ? agentDisplayName(selected) : S.common.loading}
         </span>
@@ -69,12 +62,7 @@ export function AgentSelect({
         }}
         renderRow={(agent) => (
           <>
-            <AgentAvatar
-              id={agent.agentId}
-              name={agentDisplayName(agent)}
-              size={20}
-              className="shrink-0 rounded"
-            />
+            <AgentAvatar id={agent.agentId} size={20} className="shrink-0 rounded" />
             <span
               className="min-w-0 flex-1 truncate"
               data-tooltip={[

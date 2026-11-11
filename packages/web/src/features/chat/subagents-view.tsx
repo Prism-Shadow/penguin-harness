@@ -250,11 +250,7 @@ export function SubagentsView({
           {/* Slim identity strip for the conversation below. The spawning call's description
               belongs to its node in the graph above, not here — one line, one place. */}
           <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
-            <AgentAvatar
-              id={activeModel.meta?.agentId ?? active.sessionId}
-              name={activeLabel}
-              size={16}
-            />
+            <AgentAvatar id={activeModel.meta?.agentId ?? active.sessionId} size={16} />
             <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
               {activeLabel}
             </span>

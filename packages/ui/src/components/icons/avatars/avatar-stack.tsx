@@ -1,7 +1,7 @@
 /**
  * A few avatars overlapping in a row, then a "+n" for the rest: who is in a channel, which agents
  * a benchmark has tested. The avatars are decorative — the names belong to the caller's tooltip
- * or label, since a row of initials names nobody — while the count stays readable text.
+ * or label, since a row of faces and initials names nobody — while the count stays readable text.
  *
  * Each avatar is ringed in the canvas colour so overlapping tiles stay apart; the ring follows
  * the avatar's own outline (a disc for an account, the tile's fixed corner for an agent), which
@@ -11,11 +11,11 @@ import { AgentAvatar } from "./agent-avatar";
 import { UserAvatar } from "./user-avatar";
 
 export interface AvatarStackItem {
-  /** The stable id: an agent's tile colour hashes it; an account's disc falls back to its initial. */
+  /** The stable id: an agent's colour hashes it; an account's disc falls back to its initial. */
   id: string;
-  /** Display name supplying the initial. */
+  /** Display name: an account's disc draws its initial (an agent's mascot draws none). */
   name: string;
-  /** Whose avatar: an agent's tinted tile (the default) or an account's disc. */
+  /** Whose avatar: an agent's mascot (the default) or an account's disc. */
   kind?: "agent" | "user";
   /** An account's stored image; an agent has none. */
   src?: string;
@@ -51,7 +51,7 @@ export function AvatarStack({
             {item.kind === "user" ? (
               <UserAvatar userId={item.id} displayName={item.name} avatar={item.src} size={size} />
             ) : (
-              <AgentAvatar id={item.id} name={item.name} size={size} />
+              <AgentAvatar id={item.id} size={size} />
             )}
           </span>
         ))}
