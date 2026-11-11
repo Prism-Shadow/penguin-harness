@@ -657,6 +657,34 @@ The plugins in this section are packages installed on the server: modules the se
 
 The listing carries no grammars: one is tens to hundreds of kilobytes, and only the languages a conversation shows are worth fetching. A grammar response is cached for an hour, since it cannot change without a new App, and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar, because Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code: nothing on this path evaluates anything a plugin ships.
 
+## Theme Packs
+
+A theme pack is a folder with a `pack.json` manifest and a few stylesheets (PRFC-0026). An admin imports one per server as a zip, and every account on that server can pick it. Any pack, built-in or imported, exports to the same zip.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/themes` | The imported packs, in install order: `{themes: ThemePackDto[]}`. The built-in packs are not listed, because the Web App ships them |
+| GET | `/api/themes/:id/files/<path>` | One file the pack serves: its `index.css`, a font or a drawing. Anything else is `404` |
+| POST | `/api/themes[?replace=1]` | Admin only. The body is the raw zip, sent as `application/octet-stream`. Answers `201 {theme}` |
+| DELETE | `/api/themes/:id` | Admin only. Answers `204` |
+| GET | `/api/themes/:id/export` | Any pack, built-in or imported, as a zip attachment |
+
+- A `ThemePackDto` is the normalised manifest (`id`, `names`, `version`, `api`, `base`, `modes`, `swatches`, `accent`, `fonts`, `avatar?`) plus `href` and `v`. `v` is a digest of the pack's content and `href` is `/api/themes/<id>/files/index.css?v=<v>`. A replace that changes anything therefore changes both, so cached copies miss.
+- An import is checked before anything is written. The zip holds `pack.json` at its root or inside one top-level folder. It may hold `tokens.css`, `recipes.css`, `accents.css`, `fonts.css`, `sections/<hook>.css`, `fonts/*.woff2`, `art/*.svg|png|webp`, `README.md`, `LICENSE*` and `LICENSES/*.txt`, and nothing else. Its caps are 200 files, a 16 MiB zip, 24 MiB unpacked and 512 KiB of stylesheets. Every stylesheet is parsed against the grammar of PRFC-0026 and stored as the parser re-emits it, never as uploaded. It is then held to the clean baseline's static rules (R1, R2, R5–R11), with no hit allowed. The stored `index.css` holds nothing of the build. It is served with the app stylesheet's whole cascade layer order in front, so loading it before the app's own sheet, as the pre-paint script does after a reload, leaves the layer order unchanged. The `v` a pack is listed and served at mixes that order in, so a Web App build that changes it moves the address.
+- Refusals:
+  - `400` `theme_invalid`: `details` is `{file, reason, line?, column?}`, pointing at the first thing refused.
+  - `400` `theme_id_reserved`: a built-in pack's id.
+  - `409` `theme_exists`: the id is installed, with `details.themeId`. `replace=1` replaces it.
+  - `413` `theme_too_large`.
+  - `422` `theme_api_unsupported`: a pack written for a newer theme API.
+  - `503` `themes_unavailable`: the server's Web App build carries no built-in pack sources to check against.
+  - `403` `admin_required`: a write by a member.
+- A served file is answered with its type, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable`, `Content-Security-Policy: sandbox; default-src 'none'` and `Cross-Origin-Resource-Policy: same-origin`. Only the files the pack's `installed.json` lists are served.
+- `DELETE` of a built-in pack is `400` `theme_builtin`. An id that is not installed is `404` `theme_not_found`, as is an export of an unknown id.
+- The export of an imported pack is the zip as uploaded. The export of a built-in comes from the served build's own copy of its sources, so it works offline. It is in the shape an import takes: Frost's rules are scoped to `:root[data-theme="modern"]`, and a pack whose faces are the app's shared ones has no `fonts.css`. Frost's export leaves its `recipes.css` behind, because a pack on `"base": "modern"` takes Frost's recipes from the base; its `README.md` says so. To start a pack of your own, export Frost, rename its id in `pack.json` and in its selectors, and import it. Console exports its recipes, whose clean-baseline hits have to be cleared before it imports.
+- Packs live under the data root at `themes/<id>/`, and each upload is kept at `themes/archives/`. They are not synced to machines.
+- Every import, replace and removal sends `themes_changed` to every signed-in user's event stream.
+
 ## Schedules
 
 The paths below omit the `/api/projects/:projectId` prefix.
@@ -1380,7 +1408,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
 | Per Session, as AMSP | `GET /api/sessions/:sessionId/amsp` | The Session's records and `ping` only, as the Agent API serves them; see [The Session stream](/amsp#the-session-stream) |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_archived`, `session_deleted`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, `themes_changed`, company mode's `org_*` events, and for admins `machines_changed` |
 | Per Project's machines | `GET /api/projects/:projectId/machines/events` | Every connected machine's own events, each tagged with the machine it came from, merged from the hub's one subscription per machine (**One event stream per machine within the socket hub**) |
 
 ### Wire Format
@@ -1408,6 +1436,7 @@ export type ServerEvent =
   | { type: "hello" }
   | { type: "heartbeat" }
   | { type: "web_updated"; rev: string }
+  | { type: "themes_changed" }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
@@ -1437,6 +1466,7 @@ export type ServerEvent =
 | `hello` | Handshake on the user channel |
 | `heartbeat` | The stream's own beat, every 20 s: on `/api/events` and on the machines' aggregate, so a reader can tell a live stream from a silent one |
 | `web_updated` | A hot update replaced the served web assets; clients reload |
+| `themes_changed` | A theme pack was imported, replaced or removed; clients read `GET /api/themes` again |
 | `session_created` | A Session now exists: created by the Web App, the CLI, a schedule, or an agent spawning a child |
 | `session_archived` | A Session was archived or unarchived |
 | `session_deleted` | A Session was deleted |

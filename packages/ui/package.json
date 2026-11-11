@@ -27,6 +27,7 @@
     "./highlighter": "./src/components/content/code-block/highlighter-core.ts",
     "./fonts-credits": "./src/fonts/credits.ts",
     "./testing": "./src/testing/index.ts",
+    "./pack-rules": "./src/testing/pack-rules.ts",
     "./site": "./src/site.ts",
     "./site.css": {
       "style": "./src/site.css",
@@ -81,6 +82,7 @@
     "@fontsource/ibm-plex-sans-condensed": "^5.3.0",
     "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/chat-markdown": "workspace:*",
+    "@prismshadow/penguin-theme-pack": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",

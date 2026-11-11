@@ -7,8 +7,9 @@
  * restart; but the CLI imports modules of packages/server at runtime (the lock, the token
  * minting, the version report…) from the server's dist, which the dev server itself, running
  * its source under tsx, never builds — so the prestep builds the server too, JavaScript only
- * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts). Before it comes packages/hmr,
- * which that build inlines and the dev server imports; the server's build script also
+ * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts). Before it come packages/hmr and
+ * packages/theme-pack, which that build inlines and the dev server imports (theme-pack as source,
+ * through an injected copy its build refreshes); the server's build script also
  * regenerates the interface table (src/ifaces.json) the dev server reads. packages/cli is
  * built as well: its dist is what the shim falls back to when the source cannot run (no tsx).
  * So are the plugin packages that carry content (every `@penguinharness/*` but the sandbox
@@ -41,8 +42,8 @@
  *   re-invocation (from packages/server's dev script) is a no-op. The window is
  *   deliberately tiny so a human edit-then-restart cycle always rebuilds.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build a2ui/chat-markdown/core/hmr/server/
- * cli) or `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build a2ui/chat-markdown/core/hmr/theme-pack/
+ * server/cli) or `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
 import { createHash } from "node:crypto";
@@ -232,14 +233,16 @@ try {
         "[dev-prebuild] building core, a2ui, chat-markdown, the server modules the CLI imports, the CLI, and the plugins' tables...",
       );
       // One pnpm invocation, so they run in dependency order: the CLI bundle inlines core,
-      // and the server build inlines hmr, so each has to be rebuilt before its consumer.
+      // and the server build inlines hmr and theme-pack, so each has to be rebuilt before its
+      // consumer. theme-pack is TypeScript source the server reads through its injected copy;
+      // the build is what refreshes that copy, so a dev server sees an edit to the validator.
       // Through each package's `build` script, not tsup directly: that is the script
       // syncInjectedDepsAfterScripts names, so the CLI's injected copy of the server is
       // refreshed with the output.
       const res = spawnSync(
         "pnpm",
         [
-          ...["core", "hmr", "server", "cli"].flatMap((pkg) => [
+          ...["core", "hmr", "theme-pack", "server", "cli"].flatMap((pkg) => [
             "--filter",
             `@prismshadow/penguin-${pkg}`,
           ]),
