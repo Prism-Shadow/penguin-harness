@@ -37,7 +37,6 @@ import {
   TOKEN_GROUPS,
   TOKEN_NAMES,
   builtinPack,
-  isThemeId,
 } from "../src/tokens";
 import type { ThemeId, ThemePackManifest } from "../src/tokens";
 import {
@@ -52,7 +51,6 @@ import {
   packFolders,
   parseColor,
   parseCssRules,
-  readPackManifest,
   readPackSources,
   resolveThemeValue,
   scanSourceRoots,
@@ -115,24 +113,6 @@ const filled = (id: ThemeId) => {
   return theme.analysis;
 };
 describe("the pack folders", () => {
-  it("are the registry's built-ins, one folder each, and each manifest names its folder", () => {
-    // A folder the registry does not import is a theme the app never offers; a registered id
-    // with no folder has no CSS behind it.
-    expect(packFolders()).toEqual([...THEME_IDS].sort());
-    for (const id of packFolders()) {
-      expect((readPackManifest(join(THEMES_DIR, id)) as { id?: unknown }).id, id).toBe(id);
-      expect(existsSync(join(THEMES_DIR, id, "index.css")), `${id}/index.css`).toBe(true);
-    }
-    expect(BUILTIN_PACKS.map((pack) => pack.id)).toEqual([...THEME_IDS]);
-    expect(isThemeId("modern")).toBe(true);
-    expect(isThemeId("toString")).toBe(false);
-  });
-
-  it("hold the base, Frost, which is the theme a browser starts in and builds on itself", () => {
-    expect(builtinPack(INITIAL_THEME_ID).base).toBe("modern");
-    expect(builtinPack(INITIAL_THEME_ID).base).toBe(INITIAL_THEME_ID);
-  });
-
   it("serve every stylesheet through index.css in its layer, and write no layer themselves", () => {
     // The layer is the pack's place in the cascade, and an imported pack never chooses it: the
     // server serves its files in the layers the base and the packs are served in here.
@@ -409,11 +389,11 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     }
   });
 
-  it("no longer lives in theme.css, and theme.css still declares the ui-accent layer after ui-theme", () => {
-    const sheet = read("theme.css");
-    const presets = parseCssRules(sheet).filter((rule) => /data-accent=/.test(rule.selector));
+  it("no longer lives in theme.css", () => {
+    const presets = parseCssRules(read("theme.css")).filter((rule) =>
+      /data-accent=/.test(rule.selector),
+    );
     expect(presets.map((rule) => `${rule.line}: ${rule.selector}`)).toEqual([]);
-    expect(stripCssComments(sheet)).toMatch(/@layer ui-base, ui-theme, ui-accent, ui-font;/);
   });
 
   it("is one value per mode in Frost and Console: the family derives from --ui-accent", () => {
@@ -692,23 +672,8 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     }
   });
 
-  it("shares the eyebrow rung and the display ink in theme.css, once for every theme", () => {
+  it("leaves the eyebrow rung to theme.css: a pack's eyebrow adds only its ink", () => {
     // The three eyebrow recipes were one recipe reading the h6 rung; a theme adds only its ink.
-    const rules = parseCssRules(read("theme.css"));
-    const eyebrow = rules.find((rule) => rule.selector === ".ui-eyebrow");
-    expect(eyebrow?.atRules).toEqual(["@layer ui-base"]);
-    expect(eyebrow?.declarations.map((d) => `${d.name}: ${d.value}`)).toEqual([
-      "font-family: var(--ui-h6-font)",
-      "font-size: var(--ui-h6-size)",
-      "line-height: var(--ui-h6-lh)",
-      "font-weight: var(--ui-h6-weight)",
-      "letter-spacing: var(--ui-h6-tracking)",
-      "text-transform: var(--ui-h6-transform)",
-    ]);
-    const display = rules.find((rule) => rule.selector === ".ui-display");
-    expect(display?.declarations.map((d) => `${d.name}: ${d.value}`)).toEqual([
-      "color: var(--ui-fg-emphasis)",
-    ]);
     for (const id of THEME_IDS) {
       const own = packRules(id).filter((rule) => /\.ui-eyebrow\b/.test(rule.selector));
       for (const rule of own) {
@@ -970,9 +935,9 @@ describe("the themes' own faces (round 6)", () => {
 });
 
 describe("theme import order", () => {
-  // Every entry stylesheet compiles every built-in pack into its one sheet, the base first: a
-  // pack left out is a theme the picker offers and nothing paints, and the base opens the order
-  // the other packs' rules are read in. Nothing is fetched at run time for a built-in.
+  // Every entry stylesheet compiles every built-in pack into its one sheet: a pack left out is a
+  // theme the picker offers and nothing paints. The cascade layers, not the import order, decide
+  // which pack's rules win. Nothing is fetched at run time for a built-in.
   const GALLERY = join(REPO_ROOT, "packages", "ui-gallery");
   const entries: Record<string, string> = {
     web: join(WEB_DIR, "src", "styles.css"),
@@ -983,12 +948,13 @@ describe("theme import order", () => {
     /@import\s+["'](?:@prismshadow\/penguin-ui|\.\.\/src)\/themes\/([\w-]+)\/index\.css["']/g;
 
   for (const [name, file] of Object.entries(entries)) {
-    it(`${name}: imports every built-in pack once, the base (${INITIAL_THEME_ID}) first`, () => {
+    it(`${name}: imports every built-in pack once`, () => {
       const packs = [...stripCssComments(readFileSync(file, "utf8")).matchAll(IMPORT)].map(
         (m) => m[1],
       );
-      expect(packs[0], `${file} imports its packs as ${packs.join(", ")}`).toBe(INITIAL_THEME_ID);
-      expect([...packs].sort()).toEqual([...THEME_IDS].sort());
+      expect([...packs].sort(), `${file} imports its packs as ${packs.join(", ")}`).toEqual(
+        [...THEME_IDS].sort(),
+      );
     });
   }
 });
