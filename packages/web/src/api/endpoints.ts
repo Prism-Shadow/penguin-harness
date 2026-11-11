@@ -72,7 +72,6 @@ import type {
   MemoryImportRequest,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   MessagesResponse,
   MessagingBindingsResponse,
@@ -636,7 +635,7 @@ export const insertSchedulesPlaceholder = (projectId: string, agentId: string) =
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
 
-/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
+/** Base path of an Agent's Memory API; the scope key and a topic's file name are single path segments (never a path). */
 const memoryBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
 
@@ -666,25 +665,38 @@ export const getMemoryFiles = (
     server: machineId,
   });
 
+/**
+ * One memory file's URL. `filePath` is its place in the scope: a topic's name (`MemoryFileInfo.name`)
+ * or a kept file's path (`MemoryFolderFile.path`, `<folder>/<path>`), each segment encoded on its
+ * own and the `/` between them kept.
+ */
+const memoryFileUrl = (projectId: string, agentId: string, scopeKey: string, filePath: string) =>
+  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+
+/** A topic with the files it keeps, or a kept file's text (up to 512 KB of UTF-8). */
 export const getMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
   name: string,
   machineId: string | null = null,
+  filePath: string,
+  machineId: string | null,
 ) =>
-  apiFetch<MemoryFileResponse>(
-    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
-    { server: machineId },
-  );
+  apiFetch<MemoryFileResponse>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
+    server: machineId,
+  });
 
+/** Deletes a topic with its folder (and its index lines), or one kept file. */
 export const deleteMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
   name: string,
+  filePath: string,
+  machineId: string | null,
 ) =>
-  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
+  apiFetch<void>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
     method: "DELETE",
   });
 
@@ -699,8 +711,15 @@ const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =
  */
 export const exportMemoryScope = (projectId: string, agentId: string, scopeKey: string) =>
   apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`);
+/** Zip download URL for one scope's folder (server sets Content-Disposition attachment); the export round-trips through importMemoryScope. */
+export const memoryScopeArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  machineId: string | null,
+): string => apiUrl(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, machineId);
 
-/** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
+/** Writes a scope zip (or a version 1 JSON document) into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
   projectId: string,
   agentId: string,

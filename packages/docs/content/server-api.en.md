@@ -528,10 +528,10 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 | POST | `/agents/:agentId/vault/template-placeholder` | Inserts the `{{VAULT}}` placeholder into the prompt template (owner only) |
 | GET | `/agents/:agentId/memory` | Memory overview |
 | POST | `/agents/:agentId/memory/template-placeholder` | Inserts the `{{MEMORY}}` placeholder into the prompt template |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | Reads one topic file / deletes it |
-| GET | `/agents/:agentId/memory/scopes/:key/export` | Exports one scope as a single JSON document |
-| POST | `/agents/:agentId/memory/scopes/:key/import` | Writes an exported scope back (owner only) |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files, the files each keeps, and the files no topic keeps |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:path` | Reads one file, a topic or a file it keeps / deletes it (a topic with its folder) |
+| GET | `/agents/:agentId/memory/scopes/:key/export` | Exports one scope folder as a zip |
+| POST | `/agents/:agentId/memory/scopes/:key/import` | Writes an exported zip back (owner only) |
 | GET | `/agents/:agentId/archive` | Exports the agent as a zip of its directory; the query picks the parts and the Traces |
 | POST | `/agents/import` | Imports an agent from a zip, or a tar.gz snapshot package, sent as the raw body → 201 `{agent, mode, version, backup?, sessions}` |
 | GET | `/agents/:agentId/skills` | Installed Skills (library installs go through `/plugins`) |
@@ -569,10 +569,10 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 
 - `GET …/memory` returns the Memory switch, whether the prompt template carries `{{MEMORY}}`, and one entry per scope: the user scope (`user`, `kind: "user"`) first, then the Workspaces.
 - In the scope routes, `:key` is a workspace key or `user`.
-- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats.
-- `DELETE …/scopes/:key/files/:name` deletes a topic file and removes its lines from the `MEMORY.md` index.
-- `GET …/scopes/:key/export` returns every topic file of the scope plus its `MEMORY.md` as one JSON document, downloaded as an attachment.
-- `POST …/scopes/:key/import` takes `{payload, mode?, confirm?}`. `mode` is `skip` (the default, which adds only names the scope lacks), `overwrite` (which replaces same-named files) or `replace` (which also deletes what the document omits). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`.
+- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats. Each topic carries `files`: the files in its folder, the topic's file name without `.md` (`csv-tools/` for `csv-tools.md`), at any depth, each with its `path` in the scope (`csv-tools/lib/io.py`), `size` and `modifiedAt`. `orphanFiles` lists, the same way, the files in folders with no topic of their name.
+- `…/scopes/:key/files/:path` takes a file's path in the scope, one URL segment per path segment: a topic's name, or `<folder>/<path>` for a file a topic keeps. `GET` returns a topic with its frontmatter and `files`, or a kept file's text, whose `file` then carries the path as its `name`; a kept file over 512 KB is refused with 413 `memory_file_too_large`, and one that is not UTF-8 text with 415 `memory_file_not_text`. `DELETE` deletes a topic file with its folder and removes its lines from the `MEMORY.md` index, or deletes one kept file and the folders it leaves empty. Neither follows a symlink.
+- `GET …/scopes/:key/export` returns the scope folder as a zip attachment: `MEMORY.md`, every topic file and every folder's files at the zip's root, as the files they are. Past 1,000 files, 5 MB per file or 20 MB in all it returns 413 `memory_too_large`.
+- `POST …/scopes/:key/import` takes `{dataBase64, mode?, confirm?}`, the zip in base64, or `{payload, mode?, confirm?}` with a `version: 1` JSON document, which the export answered with before the zip. A memory is a topic file and the folder of its name, and moves as one; a folder with no topic is a memory of its own, named `<folder>/`. `mode` is `skip` (the default, which adds only memories the scope lacks), `overwrite` (which replaces same-named memories, topic and folder) or `replace` (which also deletes the memories the import omits). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`, whose `details` carry `overwritten` and `removed` as JSON arrays of memory names and `replacesIndex`. A zip entry that is no memory file, climbs out of the scope, hides behind a dot or is a link is refused with 400; when a non-directory stands at a memory's folder or on the way to one of its files, the route returns 409 `memory_folder_not_a_directory`. Either way nothing is written.
 
 ### Plugins and hooks
 

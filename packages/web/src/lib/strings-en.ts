@@ -2801,28 +2801,43 @@ export const en: Strings = {
     deleteTitle: "Delete this memory?",
     deleteConfirm: (name: string): string =>
       `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `This deletes "${name}", the ${files === 1 ? "file" : `${files} files`} it keeps, and its index line in MEMORY.md. This cannot be undone.`,
     deleteDone: "Deleted",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => (n === 1 ? "1 file" : `${n} files`),
+    keptFiles: "Files",
+    keptFilesHint:
+      "Files this memory keeps in its folder of the same name: scripts the agent reuses and what they need, each described in the memory with how to run it. Every later session of this agent may run them through the shell, under that session's sandbox and approvals, and every Project member can read them. Look at a script before you rely on it.",
+    orphanFiles: "Files without a memory",
+    orphanFilesHint:
+      "A folder with no memory of its name beside it, usually left behind when its memory was deleted. Its files are listed here so none is hidden; delete them here, or ask the agent to tidy up.",
+    backToMemory: (title: string): string => `Back to "${title}"`,
+    deleteFileTitle: "Delete this file?",
+    deleteFileConfirm: (path: string): string =>
+      `This deletes ${path}. Whatever the memory's text says about it stays until the agent updates it. This cannot be undone.`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
     exportScope: "Export",
-    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeHint:
+      "Download this group's folder — every memory, the files each keeps and MEMORY.md — as a zip",
     exportScopeLabel: (scope: string): string => `Export ${scope}`,
     importScope: "Import",
-    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeHint: "Restore memories into this group from an exported zip",
     importScopeLabel: (scope: string): string => `Import into ${scope}`,
     importTitle: "Import memories",
     importWhy:
-      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string =>
-      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
+      "Reads a memory group exported from this or another agent: a zip of the group's folder, holding its memories, the files each keeps and its MEMORY.md index. A JSON file an earlier version exported still imports.",
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
     importModeOverwrite: "Take the file's version",
-    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeOverwriteHint:
+      "A memory taken from the file brings its files too, in place of this one's. Memories the file does not carry are left alone.",
     importModeReplace: "Replace the whole group",
-    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importModeReplaceHint:
+      "Every memory the file does not carry is deleted with its files, and so is every folder no memory keeps.",
     importAction: "Import",
     importInvalidFile: "This file is not a memory export.",
     importEmptyFile: "This file carries no memories.",

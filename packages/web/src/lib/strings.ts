@@ -3002,27 +3002,42 @@ export const zh = {
     deleteTitle: "删除这条记忆？",
     deleteConfirm: (name: string): string =>
       `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `将删除「${name}」、它附带的 ${files} 个文件，并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
     deleteDone: "已删除",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => `${n} 个文件`,
+    keptFiles: "文件",
+    keptFilesHint:
+      "这条记忆在同名文件夹里附带的文件：Agent 反复使用的脚本及其所需文件，正文写明各自的用途与运行方式。该 Agent 此后的每个会话都可能经 shell 运行它们，受该会话的沙盒与审批约束；Project 的每位成员都能读到它们。依赖某个脚本之前，先看看它的内容。",
+    orphanFiles: "不属于任何记忆的文件",
+    orphanFilesHint:
+      "旁边没有同名记忆的文件夹，多半是记忆删除后留下的。其中的文件列在这里，不会被隐藏；可以在这里删除，或请 Agent 整理。",
+    backToMemory: (title: string): string => `返回「${title}」`,
+    deleteFileTitle: "删除这个文件？",
+    deleteFileConfirm: (path: string): string =>
+      `将删除 ${path}。记忆正文中对它的说明不会随之删去。此操作不可恢复。`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
     exportScope: "导出",
-    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeHint: "将该组的文件夹（全部记忆、各自附带的文件与 MEMORY.md）下载为一个 zip",
     exportScopeLabel: (scope: string): string => `导出${scope}`,
     importScope: "导入",
-    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeHint: "从导出的 zip 恢复记忆到该组",
     importScopeLabel: (scope: string): string => `导入到${scope}`,
     importTitle: "导入记忆",
     importWhy:
-      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
-    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+      "读取从本 agent 或其他 agent 导出的一组记忆：该组文件夹的 zip，含这组记忆、各自附带的文件与 MEMORY.md 索引。早先版本导出的 JSON 文件照样可以导入。",
     importModeLabel: "当这一组里已有同名记忆时",
     importModeSkip: "保留现有的这条",
     importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
     importModeOverwrite: "改用文件里的版本",
-    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeOverwriteHint:
+      "采用文件版本的记忆，其附带的文件也换成文件里的；文件中没有的记忆保持不变。",
     importModeReplace: "整组替换",
-    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importModeReplaceHint:
+      "文件中没有的记忆连同附带的文件将被删除，不属于任何记忆的文件夹也一并删除。",
     importAction: "导入",
     importInvalidFile: "这个文件不是记忆导出文件。",
     importEmptyFile: "这个文件里没有记忆。",
