@@ -199,6 +199,10 @@ import type {
   TelegramBindingResponse,
   TelegramTestRequest,
   TelegramTestResponse,
+  ThemeInvalidDetails,
+  ThemePackDto,
+  ThemePackImportResponse,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -1828,6 +1832,40 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
+
+// Theme packs (this server's; never a machine's) ---------------------------------------
+
+/**
+ * The theme packs an admin imported on this server, in install order. The built-in packs are
+ * not listed: the app ships them. Re-read on `themes_changed`.
+ */
+export const listThemePacks = () => apiFetch<ThemePacksResponse>("/api/themes", { server: null });
+
+/**
+ * Imports a pack's zip as it is (admins only). An id already installed is 409 `theme_exists`
+ * (`details.themeId`) unless `replace`; a pack the validator refuses is 400 `theme_invalid`
+ * with {@link ThemeInvalidDetails} in `details`.
+ */
+export const importThemePack = (file: Blob, replace = false) =>
+  apiUpload<ThemePackImportResponse>(`/api/themes${replace ? "?replace=1" : ""}`, file, null);
+
+/** Removes an imported pack (admins only); a built-in pack is 400 `theme_builtin`. */
+export const deleteThemePack = (id: string) =>
+  apiFetch<void>(`/api/themes/${encodeURIComponent(id)}`, { method: "DELETE", server: null });
+
+/** Where any pack, built-in or imported, downloads as a zip: an attachment, for a plain link. */
+export const themePackExportUrl = (id: string): string =>
+  `/api/themes/${encodeURIComponent(id)}/export`;
+
+/**
+ * One file an imported pack serves at version `v` (a {@link ThemePackDto}'s `v`): its
+ * `index.css`, which the DTO's `href` already names, or a font or drawing that stylesheet uses.
+ */
+export const themePackFileUrl = (id: string, file: string, v: string): string =>
+  `/api/themes/${encodeURIComponent(id)}/files/${file
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}?v=${encodeURIComponent(v)}`;
 
 /** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
