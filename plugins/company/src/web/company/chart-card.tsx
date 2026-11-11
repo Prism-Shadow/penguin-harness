@@ -185,12 +185,7 @@ export function ChartCard({
         }`}
       >
         <span className="flex items-center gap-2 pr-6">
-          <EmployeeAvatar
-            id={employee.agentId}
-            name={employee.name}
-            size={28}
-            className="shrink-0 rounded-md"
-          />
+          <EmployeeAvatar id={employee.agentId} size={28} className="shrink-0 rounded-md" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm leading-4 font-semibold text-fg">
               {employee.name}

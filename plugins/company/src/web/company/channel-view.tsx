@@ -573,12 +573,7 @@ export function ChannelView() {
         }
         avatar={
           p.kind === "agent" ? (
-            <EmployeeAvatar
-              id={p.id}
-              name={sender.name}
-              size={FACE_PX.message}
-              className="shrink-0 rounded-lg"
-            />
+            <EmployeeAvatar id={p.id} size={FACE_PX.message} className="shrink-0 rounded-lg" />
           ) : undefined
         }
       >

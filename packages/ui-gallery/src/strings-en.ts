@@ -412,6 +412,8 @@ export const en: GalleryStrings = {
         "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
+      "ui-avatar":
+        "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -528,7 +530,8 @@ export const en: GalleryStrings = {
       },
       avatars: {
         title: "Avatars",
-        description: "The user and agent avatars at their sizes, and a stack of them.",
+        description:
+          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them.",
       },
       site: {
         title: "Public site",
@@ -1166,6 +1169,11 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      agentAside: "The active theme's drawing for twelve agents, one in each colour",
+      variants: "Every theme's drawing",
+      variantsAside:
+        "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
+      sizeCaption: (px) => `${px}px`,
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],

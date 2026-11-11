@@ -58,6 +58,7 @@
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
  * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx); an Agent's own picture is an `<img>` host with none |
+ * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx) |
  * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |

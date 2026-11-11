@@ -537,12 +537,7 @@ export function AgentsPage() {
         <div className="min-w-[14rem] flex-1">
           {/* Title line: small avatar + name (+ the machine's SSH address) + agentId + version badge */}
           <div className="flex items-center gap-2">
-            <AgentAvatar
-              id={a.agentId}
-              name={agentDisplayName(a)}
-              size={18}
-              className="shrink-0 rounded"
-            />
+            <AgentAvatar id={a.agentId} size={18} className="shrink-0 rounded" />
             <AgentNameLink
               agentId={a.agentId}
               name={agentDisplayName(a)}

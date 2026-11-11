@@ -689,6 +689,22 @@ export function InstallRow({
         data-tooltip-content="text"
       >
         {name}
+      className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span
+          className="min-w-0 truncate text-sm"
+          data-tooltip={agentId}
+          data-tooltip-extra
+          data-tooltip-content="text"
+        >
+          {name}
+        </span>
+        {machine !== null && (
+          <span className="shrink-0 font-mono text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.machineTag(machine)}
+          </span>
+        )}
       </span>
       {mcp !== null && (
         <McpServerMarks

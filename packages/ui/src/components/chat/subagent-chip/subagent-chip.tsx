@@ -47,7 +47,7 @@ export function SubagentChip({
       onClick={onOpen}
       className="flex w-full items-center gap-2 rounded-md border border-line bg-surface-muted px-3 py-2 text-left transition-colors duration-150 hover:bg-line-muted"
     >
-      <AgentAvatar id={avatarId} name={label} size={16} />
+      <AgentAvatar id={avatarId} size={16} />
       <span className="min-w-0 truncate text-xs font-medium text-fg">{label}</span>
       {tag !== undefined && tag !== "" && (
         <span className="shrink-0 font-mono text-xs text-fg-subtle">{tag}</span>

@@ -77,7 +77,7 @@ export function AgentTopologyView({
               }`}
             >
               <span className="flex w-full min-w-0 items-center gap-1.5">
-                <AgentAvatar id={node.agentId ?? node.sessionId} name={label} size={18} />
+                <AgentAvatar id={node.agentId ?? node.sessionId} size={18} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
                   {label}
                 </span>

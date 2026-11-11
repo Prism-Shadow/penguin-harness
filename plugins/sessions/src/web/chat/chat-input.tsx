@@ -212,12 +212,7 @@ function AgentMenuList({
       onPick={onPick}
       renderRow={(a) => (
         <>
-          <AgentAvatar
-            id={a.agentId}
-            name={agentDisplayName(a)}
-            size={16}
-            className="shrink-0 rounded"
-          />
+          <AgentAvatar id={a.agentId} size={16} className="shrink-0 rounded" />
           <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
           {a.name && a.name !== a.agentId && (
             <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
@@ -1977,14 +1972,7 @@ export function ChatInput({
             key: "target",
             label: target.agentId,
             mono: true,
-            glyph: (
-              <AgentAvatar
-                id={target.agentId}
-                name={agentDisplayName(target)}
-                size={13}
-                className="shrink-0 rounded-sm"
-              />
-            ),
+            glyph: <AgentAvatar id={target.agentId} size={13} className="shrink-0 rounded-sm" />,
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
             tooltipExtra: true,
             removeLabel: S.chat.handoffRemove,

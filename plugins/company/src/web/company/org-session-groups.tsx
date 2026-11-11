@@ -235,12 +235,7 @@ function DeskRow({
           }}
           className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
-          <EmployeeAvatar
-            id={row.agentId}
-            name={row.name}
-            size={FACE_PX.row}
-            className="shrink-0 rounded-md"
-          />
+          <EmployeeAvatar id={row.agentId} size={FACE_PX.row} className="shrink-0 rounded-md" />
           {/* Who, then the note that tells them apart (deskRowLabel); the note yields first
               when the row runs out of room. */}
           <span className="flex min-w-0 flex-1 items-baseline gap-1">
@@ -384,12 +379,7 @@ function TempRow({
           onClick={onOpen}
           className={rowButton(row.active)}
         >
-          <EmployeeAvatar
-            id={row.agentId}
-            name={row.name}
-            size={ICON_SIZE.rowLead}
-            className="shrink-0 rounded"
-          />
+          <EmployeeAvatar id={row.agentId} size={ICON_SIZE.rowLead} className="shrink-0 rounded" />
           <Truncated text={row.title} className="min-w-0 flex-1" />
           {row.activity !== null && (
             <ActivityIcon activity={row.activity} label={sessionActivityLabel(row.activity)} />
@@ -437,7 +427,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             onClick={() => openSession(row.sessionId, row.agentId)}
             className={railItemClass()}
           >
-            <EmployeeAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
+            <EmployeeAvatar id={row.agentId} size={18} className="rounded" />
             {row.activity !== null && (
               <span
                 aria-hidden
@@ -594,12 +584,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             }}
             className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
-            <EmployeeAvatar
-              id={d.agentId}
-              name={d.name}
-              size={FACE_PX.rail}
-              className="rounded-md"
-            />
+            <EmployeeAvatar id={d.agentId} size={FACE_PX.rail} className="rounded-md" />
             {running && (
               <span
                 aria-hidden

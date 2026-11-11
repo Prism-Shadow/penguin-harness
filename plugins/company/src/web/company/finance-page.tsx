@@ -575,7 +575,6 @@ export function FinancePage() {
                           {depth > 0 && <TreeElbow />}
                           <EmployeeAvatar
                             id={employee.agentId}
-                            name={employee.name}
                             size={ICON_SIZE.navRow}
                             className="shrink-0 rounded"
                           />
