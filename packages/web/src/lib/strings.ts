@@ -2613,6 +2613,23 @@ export const zh = {
       `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
     disconnected: (label: string): string => `已断开 ${label}`,
     /**
+     * The question after connecting TokenDance or Penguin Go, when the Project's default model is
+     * in another group (`current`, modelInGroup's answer) or unset: make that group's DeepSeek
+     * V4.1 Flash (`model`, its name alone) the default? The unset case's dialog name is
+     * confirmDefaultTitle.
+     */
+    connectDefaultSwitchTitle: "更换默认模型",
+    connectDefaultOffer: (group: string, current: string, model: string): string =>
+      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model} 吗？更换后，新建的 Session 将默认使用它。`,
+    connectDefaultOfferUnset: (group: string, model: string): string =>
+      `已连接 ${group}。要把 ${model} 设为默认模型吗？新建的 Session 将默认使用它。`,
+    connectDefaultSwitch: "更换",
+    connectDefaultKeep: "保持不变",
+    connectDefaultSet: "设为默认",
+    connectDefaultNotNow: "暂不设置",
+    /** A model named in a sentence where several groups sell the same one. */
+    modelInGroup: (name: string, group: string): string => `${name}（${group}）`,
+    /**
      * A group's account balance in its header (and pinned beside the user name): the sentence
      * spoken behind the amount names the group, the vendor's own figures and the time of the
      * reading. `amounts` and `time` are already formatted.
