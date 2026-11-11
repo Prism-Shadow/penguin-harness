@@ -19,15 +19,7 @@ Every task runs in an isolated Docker container. The four evaluated Harnesses us
 | Pi | 1.4.0 |
 | Codex | 0.162.1 |
 
-| Subset | Source | Tasks |
-| --- | --- | --- |
-| Sec A: Data analysis | Data Analysis Bench | 10 |
-| Sec B: Software engineering | DeepSWE v1.1 | 10 |
-| Sec C: Automated workflows | AutomationBench | 10 |
-| Sec D: Scientific computing | Terminal-Bench-Science 0.1 | 10 |
-| Sec E: Terminal tasks | Terminal-Bench 4.0 | 10 |
-
-We selected 10 tasks from each of these five public benchmarks to form subsets Sec A through Sec E: 50 tasks covering data analysis, software engineering, workflow automation, scientific computing and terminal operations. Selection followed three criteria:
+We selected 10 tasks from each of five public benchmarks to form subsets Sec A through Sec E: 50 tasks covering data analysis, software engineering, workflow automation, scientific computing and terminal operations. Selection followed three criteria:
 
 1. **Hardware and grading requirements:** Every task must run in a single CPU-only container with an 8 GB memory limit and use a deterministic grading script. We verify both that the reference solution earns full marks and that a no-op solution scores zero.
 2. **Domain coverage and cost control:** Each subset first covers all of its upstream benchmark's subdomains, including five programming languages in Sec B, six business departments in Sec C and five scientific disciplines in Sec D. Trial-run measurements then guide selection within each subdomain, favoring tasks that finish on time and use fewer tokens. The total API cost for three runs of the 50 tasks stays within $20.
@@ -37,11 +29,11 @@ The sources, focus and per-task budgets are listed below:
 
 | Subset | Upstream benchmark | What it tests | Time limit per task | Request limit |
 | --- | --- | --- | --- | --- |
-| Sec A | Data Analysis Bench | Clean and analyze information across documents, spreadsheets and databases, then report findings | 15m | 100 |
-| Sec B | DeepSWE v1.1 | Locate defects in real open-source repositories, write patches and pass regression tests | 30m | 250 |
-| Sec C | AutomationBench | Complete multistep workflows through business-system and local-service APIs | 10m | 50 |
-| Sec D | Terminal-Bench-Science 0.1 | Perform scientific computing and modeling in a Linux terminal, including astrophysics and bioinformatics | 40m | 320 |
-| Sec E | Terminal-Bench 4.0 | Troubleshoot systems, repair storage engines and debug builds in a real terminal | 25m | 200 |
+| Sec A: Data analysis | Data Analysis Bench | Clean and analyze information across documents, spreadsheets and databases, then report findings | 15m | 100 |
+| Sec B: Software engineering | DeepSWE v1.1 | Locate defects in real open-source repositories, write patches and pass regression tests | 30m | 250 |
+| Sec C: Automated workflows | AutomationBench | Complete multistep workflows through business-system and local-service APIs | 10m | 50 |
+| Sec D: Scientific computing | Terminal-Bench-Science 0.1 | Perform scientific computing and modeling in a Linux terminal, including astrophysics and bioinformatics | 40m | 320 |
+| Sec E: Terminal tasks | Terminal-Bench 4.0 | Troubleshoot systems, repair storage engines and debug builds in a real terminal | 25m | 200 |
 
 To keep the experiment fair, we configure the containers as follows:
 

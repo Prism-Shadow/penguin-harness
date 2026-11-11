@@ -19,29 +19,21 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 | Pi | 1.4.0 |
 | Codex | 0.162.1 |
 
-| 子集 | 来源 | 题数 |
-| --- | --- | --- |
-| Sec A 数据分析 | Data Analysis Bench | 10 |
-| Sec B 软件工程 | DeepSWE v1.1 | 10 |
-| Sec C 自动化流程 | AutomationBench | 10 |
-| Sec D 科学计算 | Terminal-Bench-Science 0.1 | 10 |
-| Sec E 终端任务 | Terminal-Bench 4.0 | 10 |
+本实验从五个公开 Benchmark 中各筛选 10 道题，组成 Sec A 至 Sec E 五个子集，共计 50 道测试题，覆盖数据分析、软件工程、流程自动化、科学计算和终端操作五类任务场景。题目筛选遵循三项标准：
 
-本实验从上表五个公开 Benchmark 中各筛选 10 道题，组成 Sec A 至 Sec E 五个子集，共计 50 道测试题，覆盖数据分析、软件工程、流程自动化、科学计算和终端操作五类任务场景。题目筛选遵循三项标准：
-
-1. **硬件环境与判分规则：**所有题目均须在单容器、纯 CPU 环境（内存上限 8 GB）下运行，采用确定性脚本自动判分，并通过参考解满分与空操作零分的双向校验。
-2. **领域覆盖与成本控制：**各子集先覆盖上游 Benchmark 的全部细分方向（如 Sec B 的五种编程语言、Sec C 的六个业务部门、Sec D 的五个科学学科），再根据试跑实测数据优先保留同方向内按时完成、Token 消耗较低的题目，将 50 道题运行 3 轮的 API 总成本控制在 20 美元以内。
-3. **任务难度与时限控制：**基于被测模型的 3 轮试跑表现，剔除 Sec A、Sec B、Sec C 中三轮全部满分的简单题并替换为同领域高难度题目；针对试跑全零分的 Sec D，重新筛选题目并将单题时限从 25 分钟上调至 40 分钟、请求上限从 200 轮上调至 320 轮，确保五个子集均具备区分度。
+1. **硬件环境与判分规则**：所有题目均须在单容器、纯 CPU 环境（内存上限 8 GB）下运行，采用确定性脚本自动判分，并通过参考解满分与空操作零分的双向校验。
+2. **领域覆盖与成本控制**：各子集先覆盖上游 Benchmark 的全部细分方向（如 Sec B 的五种编程语言、Sec C 的六个业务部门、Sec D 的五个科学学科），再根据试跑实测数据优先保留同方向内按时完成、Token 消耗较低的题目，将 50 道题运行 3 轮的 API 总成本控制在 20 美元以内。
+3. **任务难度与时限控制**：基于被测模型的 3 轮试跑表现，剔除 Sec A、Sec B、Sec C 中三轮全部满分的简单题并替换为同领域高难度题目；针对试跑全零分的 Sec D，重新筛选题目并将单题时限从 25 分钟上调至 40 分钟、请求上限从 200 轮上调至 320 轮，确保五个子集均具备区分度。
 
 各子集的任务来源、考察内容与单题运行预算如下：
 
 | 子集 | 上游来源 | 考察内容 | 单题时限 | 请求上限 |
 | --- | --- | --- | --- | --- |
-| Sec A | Data Analysis Bench | 跨多源文档、表格与数据库清洗计算并输出结论 | 15m | 100 |
-| Sec B | DeepSWE v1.1 | 在真实开源仓库中定位缺陷、编写补丁并通过回归测试 | 30m | 250 |
-| Sec C | AutomationBench | 调用业务系统与本地服务接口，完成多步骤自动化流程 | 10m | 50 |
-| Sec D | Terminal-Bench-Science 0.1 | 在 Linux 终端完成天体物理、生物信息等科学计算建模 | 40m | 320 |
-| Sec E | Terminal-Bench 4.0 | 在真实终端完成系统排障、存储引擎修复与编译调试 | 25m | 200 |
+| Sec A 数据分析 | Data Analysis Bench | 跨多源文档、表格与数据库清洗计算并输出结论 | 15m | 100 |
+| Sec B 软件工程 | DeepSWE v1.1 | 在真实开源仓库中定位缺陷、编写补丁并通过回归测试 | 30m | 250 |
+| Sec C 自动化流程 | AutomationBench | 调用业务系统与本地服务接口，完成多步骤自动化流程 | 10m | 50 |
+| Sec D 科学计算 | Terminal-Bench-Science 0.1 | 在 Linux 终端完成天体物理、生物信息等科学计算建模 | 40m | 320 |
+| Sec E 终端任务 | Terminal-Bench 4.0 | 在真实终端完成系统排障、存储引擎修复与编译调试 | 25m | 200 |
 
 为了保证实验公平，我们对容器环境做了如下处理：
 
@@ -56,13 +48,13 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 在 PenguinHarness 的 Web 界面中，按以下三步即可复现实验：
 
-**第一步：配置默认模型**
+**第一步**：**配置默认模型**
 
 打开左侧的模型配置页面，在 DeepSeek 分组下点开 DeepSeek V4.1 Flash 配置弹窗，填入 API key 与接口地址 https://api.deepseek.com，设为默认模型并保存：
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-ui_01_model_config-zh.png" width="2372" height="1544" alt="在模型配置页面接入 DeepSeek V4.1 Flash 并设为默认模型" /><figcaption>在模型配置页面接入 DeepSeek V4.1 Flash 并设为默认模型</figcaption></figure>
 
-**第二步：创建组织实验的 Agent**
+**第二步**：**创建组织实验的 Agent**
 
 切换到 Agents 页面，点击右上角的手动创建，在弹窗里填好名称 Harness评测 与 Agent ID harness_evaluation，点击右下角创建：
 
@@ -72,7 +64,7 @@ excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-ui_03_agents_list-zh.png" width="1774" height="834" alt="在 Agents 列表中点击新建对话" /><figcaption>在 Agents 列表中点击新建对话</figcaption></figure>
 
-**第三步：设置思考强度并发送 Prompt**
+**第三步**：**设置思考强度并发送 Prompt**
 
 进入新建对话页面后，确认左下角已选中 Harness评测 与工作目录，在输入框右下角将模型设为 DeepSeek V4.1 Flash、思考强度设为最高：
 
