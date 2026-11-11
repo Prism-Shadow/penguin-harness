@@ -23,6 +23,7 @@ import { bootAppDeps, createApp } from "./app.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { nodeFloorRefusal } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
 import { carriedBody, syncCarriedImage } from "./carried-image.js";
@@ -53,6 +54,7 @@ import type { Auth } from "@penguinharness/plugin-settings/server";
  */
 async function main(): Promise<void> {
   const server = new PenguinServer();
+  server.requireNodeFloor();
   server.loadEnv();
   server.installProxy();
   server.readConfig();
@@ -135,6 +137,19 @@ class PenguinServer {
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
+  /**
+   * Refuses a Node below the floor before anything else runs: `engines` is advice, and a
+   * source checkout's `pnpm dev` (or an npm-installed CLI starting this server) runs on
+   * whatever Node the machine has, where the program fails later and less clearly (see core's
+   * node-floor.ts). The desktop app's server runs on Electron's own Node, above the floor.
+   */
+  requireNodeFloor(): void {
+    const refusal = nodeFloorRefusal();
+    if (refusal === null) return;
+    console.error(refusal);
+    process.exit(EXIT_NODE_BELOW_FLOOR);
+  }
+
   loadEnv(): void {
     loadDotenv({ quiet: true });
   }
@@ -601,6 +616,9 @@ class PenguinServer {
 
 /** Exit code for "another server already owns this data root" (see lock.ts). */
 const EXIT_ALREADY_RUNNING = 3;
+
+/** Exit code for a Node below the floor (core's node-floor.ts): a plain failure. */
+const EXIT_NODE_BELOW_FLOOR = 1;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {

@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
 export const KERNEL_VERSION = "2026-11-10";
+export const KERNEL_VERSION = "2026-11-09";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -243,6 +244,7 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   after the fact it serves, any number of files, listed with relative links in that fact's own
  *   body and never in `MEMORY.md`, run through its interpreter by absolute path, and read before
  *   running one this Session did not write. The memory tab moved.
+ * - `2026-11-09` (current) — `# Tool use` gains the go-ahead rule: hard-to-undo and
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "3ab519fe2fb0394ffe061eb239d70dfbd21fa27e413f25cebaf73e9b307d0077",

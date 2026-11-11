@@ -47,15 +47,39 @@ export interface RunCutoff {
 }
 
 /**
+ * Why a call is put to the host beyond its approval mode — today one kind: a command-policy
+ * `ask` rule matched it (`rule` is that rule's name). A host that receives one must not answer
+ * by mode alone (allow-all would wave the call through): it puts the call to a person, or
+ * denies it when it cannot.
+ */
+export interface ApprovalReason {
+  kind: "policy";
+  rule: string;
+}
+
+/** What `Session` tells an {@link ApproveFn} besides the call itself; empty means an ordinary call, decided by the approval mode. */
+export interface ApprovalContext {
+  /** Present when the Project's security policy asks for a person (see {@link ApprovalReason}). */
+  reason?: ApprovalReason;
+}
+
+/**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
- * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
- * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
- * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
- * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
- * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
+ * `context_engine` calls it once per tool call within a turn, with the call alone. Subagents
+ * forward the parent's approval callback, so the child Agent **inherits the parent Agent's
+ * approval mode**. The third decision, `"forbidden"`, is never a host's answer: `Session.run`
+ * wraps the injected callback with the project sandbox command policy (see
+ * {@link CommandPolicyConfig}). A call a `deny` rule matches answers `"forbidden"` without the
+ * wrapped callback being consulted; a call an `ask` rule matches reaches it with
+ * `context.reason`, which the host answers by asking a person whatever its approval mode. The
+ * context is optional, so a one-argument callback still fits — it then decides an `ask` hit
+ * like any other call.
  * Docs: /docs/interfaces § "ApproveFn".
  */
-export type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+export type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: ApprovalContext,
+) => Promise<ApprovalDecision>;
 
 /**
  * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the
@@ -109,9 +133,16 @@ export type UserPromptFn = (
 ) => Promise<UserPromptOutcome | null>;
 
 /**
- * One command-policy deny rule — plain project-editable data: a name (identifies the rule
- * in the settings UI), a regex source tested against the whitespace-normalized command, an
- * optional free-text description, and a per-rule switch.
+ * What a command-policy hit does: `deny` refuses the call as `"forbidden"` without asking
+ * anyone; `ask` hands it to the host's {@link ApproveFn} with a policy reason, which puts it to
+ * a person whatever the approval mode.
+ */
+export type CommandPolicyAction = "deny" | "ask";
+
+/**
+ * One command-policy rule — plain project-editable data: a name (identifies the rule in the
+ * settings UI), a regex source tested against the whitespace-normalized command, an optional
+ * free-text description, a per-rule switch, and what a hit does.
  * Docs: /docs/configuration § "Command policy".
  */
 export interface CommandPolicyRule {
@@ -122,13 +153,16 @@ export interface CommandPolicyRule {
   description?: string;
   /** Per-rule switch; absent = true. */
   enabled?: boolean;
+  /** What a hit does; absent = `"deny"`. */
+  action?: CommandPolicyAction;
 }
 
 /**
  * The project sandbox command policy (the `[command_policy]` block of
  * `.project_config.toml`, threaded into every Session the Agent creates). `Session.run`
- * wraps the injected approval callback with it, so a hit is denied without the human being
- * asked — under every approval mode. It is Project-owned security config, deliberately
+ * wraps the injected approval callback with it, so a `deny` hit is refused without the human
+ * being asked and an `ask` hit is put to a person — under every approval mode. It is
+ * Project-owned security config, deliberately
  * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
  * new projects like model presets (copied at creation, never rewritten); an absent config
  * or an absent `rules` list means the factory set applies, and `enabled: false` switches
@@ -139,6 +173,6 @@ export interface CommandPolicyRule {
 export interface CommandPolicyConfig {
   /** Master switch; absent = true. */
   enabled?: boolean;
-  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
+  /** The rule list; absent = the factory set (a stored empty list means no rules). A `deny` hit outranks an `ask` hit; within one action the first match in list order names the rule. */
   rules?: CommandPolicyRule[];
 }
