@@ -863,8 +863,14 @@ describe("memory scope export/import", () => {
     await rejects(zipOf({ "t.md": "x", "t/.env": "SECRET=1\n" }), "a hidden kept file");
     await rejects(zipOf({ "t.md": "x", "t/.cache/x": "x" }), "a hidden folder on the way");
     await rejects(zipOf({ "a.md": "x", "A.md": "y" }), "two names one disk takes for one");
-    await rejects(zipOf({ "t.md": "x", "t/ok.py": "x", "t/ok.py/x": "y" }), "a file that is a folder");
-    await rejects(zipOf({ [MEMORY_INDEX_FILENAME]: new Uint8Array([0xff, 0xfe]) }), "an index that is not text");
+    await rejects(
+      zipOf({ "t.md": "x", "t/ok.py": "x", "t/ok.py/x": "y" }),
+      "a file that is a folder",
+    );
+    await rejects(
+      zipOf({ [MEMORY_INDEX_FILENAME]: new Uint8Array([0xff, 0xfe]) }),
+      "an index that is not text",
+    );
     await rejects(Buffer.from("not a zip at all").toString("base64"), "not a zip");
     await rejects(zipOf({ "fine.md": "ok", "../escape.md": "x" }), "one bad entry among good ones");
     expect(await onDisk()).toEqual([]);
@@ -896,16 +902,19 @@ describe("memory scope export/import", () => {
     expect(await onDisk()).toEqual(["tools"]);
   });
 
-  itWithSymlinks("refuses an import whose memory folder is a symlink, never writing through it", async () => {
-    const outside = path.join(t.root, `${agentId}-outside-import`);
-    await fs.mkdir(outside, { recursive: true });
-    await fs.symlink(outside, path.join(wsDir, "tools"));
-    const res = await runImport(
-      zipOf({ "tools.md": topicText("tools", "x"), "tools/run.py": "print(1)\n" }),
-    );
-    expect(res.status).toBe(409);
-    expect(await fs.readdir(outside)).toEqual([]);
-  });
+  itWithSymlinks(
+    "refuses an import whose memory folder is a symlink, never writing through it",
+    async () => {
+      const outside = path.join(t.root, `${agentId}-outside-import`);
+      await fs.mkdir(outside, { recursive: true });
+      await fs.symlink(outside, path.join(wsDir, "tools"));
+      const res = await runImport(
+        zipOf({ "tools.md": topicText("tools", "x"), "tools/run.py": "print(1)\n" }),
+      );
+      expect(res.status).toBe(409);
+      expect(await fs.readdir(outside)).toEqual([]);
+    },
+  );
 
   it("asks for exactly one of a zip and a version 1 document", async () => {
     expect((await owner.post(importPath(), {})).status).toBe(400);
@@ -916,8 +925,7 @@ describe("memory scope export/import", () => {
     expect(both.status).toBe(400);
     expect((await owner.post(importPath(), { dataBase64: 7 })).status).toBe(400);
     expect(
-      (await owner.post(importPath(), { dataBase64: zipOf({ "a.md": "x" }), mode: "wipe" }))
-        .status,
+      (await owner.post(importPath(), { dataBase64: zipOf({ "a.md": "x" }), mode: "wipe" })).status,
     ).toBe(400);
   });
 
@@ -945,12 +953,21 @@ describe("memory scope export/import", () => {
     await rejects(v1Doc([{ name: `bad${NUL}.md`, content: "x" }]), "NUL in the name");
     await rejects(v1Doc([{ name: "n.md", content: 42 }]), "number content");
     await rejects(v1Doc([{ name: "n.md", content: `bin${NUL}ary` }]), "NUL in the content");
-    await rejects(v1Doc([{ name: "a.md", content: "1" }, { name: "a.md", content: "2" }]), "the same name twice");
+    await rejects(
+      v1Doc([
+        { name: "a.md", content: "1" },
+        { name: "a.md", content: "2" },
+      ]),
+      "the same name twice",
+    );
     await rejects(
       v1Doc(Array.from({ length: 501 }, (_, i) => ({ name: `m${i}.md`, content: "x" }))),
       "too many entries",
     );
-    await rejects(v1Doc([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }]), "one oversized file");
+    await rejects(
+      v1Doc([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }]),
+      "one oversized file",
+    );
     await rejects(v1Doc([], { format: "some-other-tool" }), "foreign format");
     await rejects(v1Doc([], { version: 2 }), "a version that was never written");
     expect(await onDisk()).toEqual([]);
@@ -979,9 +996,7 @@ describe("memory scope export/import", () => {
   it("leaves no temporary file behind in the scope directory", async () => {
     expect((await runImport(zipOf({ "a.md": "x", "a/run.sh": "echo\n" }))).status).toBe(200);
     expect((await fs.readdir(wsDir)).filter((n) => n.includes(".tmp"))).toEqual([]);
-    expect((await fs.readdir(path.join(wsDir, "a"))).filter((n) => n.includes(".tmp"))).toEqual(
-      [],
-    );
+    expect((await fs.readdir(path.join(wsDir, "a"))).filter((n) => n.includes(".tmp"))).toEqual([]);
   });
 
   itWithSymlinks(
@@ -996,9 +1011,7 @@ describe("memory scope export/import", () => {
       await fs.mkdir(outside, { recursive: true });
       await fs.symlink(outside, memoryScopeDir(t.root, projectId, agentId, "evil-12345678"));
       expect((await owner.get(exportPath("evil-12345678"))).status).toBe(404);
-      expect((await runImport(zipOf({ "a.md": "x" }), { key: "evil-12345678" })).status).toBe(
-        404,
-      );
+      expect((await runImport(zipOf({ "a.md": "x" }), { key: "evil-12345678" })).status).toBe(404);
       expect(await fs.readdir(outside)).toEqual([]);
     },
   );

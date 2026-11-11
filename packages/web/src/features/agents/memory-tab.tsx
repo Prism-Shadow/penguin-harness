@@ -1136,7 +1136,12 @@ export function MemoryTab({
               ]}
             />
             <div className="flex justify-end">
-              <Button size="sm" variant="primary" disabled={importBusy} onClick={() => void runImport(false)}>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={importBusy}
+                onClick={() => void runImport(false)}
+              >
                 {S.memory.importAction}
               </Button>
             </div>

@@ -537,7 +537,8 @@ export class MemoryService implements Memory {
     const scan = await scanScope(dir);
     const present = new Map<string, { topic: string | null; name: string }>();
     for (const topic of scan.topics) present.set(topicFolderName(topic), { topic, name: topic });
-    for (const folder of orphanFolders(scan)) present.set(folder, { topic: null, name: `${folder}/` });
+    for (const folder of orphanFolders(scan))
+      present.set(folder, { topic: null, name: `${folder}/` });
     const carried = new Set(set.memories.map((m) => m.stem));
     const collides = planned.filter((p) => present.has(p.memory.stem));
     const removedStems =
