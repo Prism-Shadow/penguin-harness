@@ -30,8 +30,8 @@ dependency is dropped.
 | IBM Plex Sans Variable | `themes/geek/fonts.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
 | IBM Plex Sans Condensed | `themes/geek/fonts.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
 | Noto Sans SC Variable | `cjk.css`: fontsource's own sheet, 101 `unicode-range` slices | `@fontsource-variable/noto-sans-sc` | OFL-1.1 |
-| Shantell Sans Variable | `themes/doodle/fonts.css`: latin + latin-ext | `@fontsource-variable/shantell-sans` | OFL-1.1 |
-| LXGW WenKai GB Screen | `themes/doodle/fonts.css` → `themes/doodle/fonts/wenkai.css`: 400, the 48 `unicode-range` slices that hold any character of the GB2312 grid | vendored: `scripts/vendor-wenkai.mjs` copies them from the pinned `lxgw-wenkai-screen-web` 1.530.0 tarball | OFL-1.1, with the author's permission for web-delivery subsets to keep the font's name |
+| Shantell Sans Variable | `shantell-sans.css`: latin + latin-ext | `@fontsource-variable/shantell-sans` | OFL-1.1 |
+| LXGW WenKai GB Screen | `themes/doodle/fonts.css`: 400, the 48 `unicode-range` slices in `themes/doodle/fonts/` that hold any character of the GB2312 grid | vendored: `scripts/vendor-wenkai.mjs` copies them from the pinned `lxgw-wenkai-screen-web` 1.530.0 tarball | OFL-1.1, with the author's permission for web-delivery subsets to keep the font's name |
 
 Why these faces: Mona Sans was Primer's face from W1a (2026-09-30) until 2026-10-02 and stays as a
 pairing option; Primer reads in the platform's own faces. MiSans gives Frost one family for Latin and

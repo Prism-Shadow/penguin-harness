@@ -30,7 +30,7 @@ Settings → Appearance offers a fourth theme, Doodle (卡通, `doodle`), after 
 
 ## Faces
 
-Shantell Sans arrives through `@fontsource-variable/shantell-sans`. LXGW WenKai GB Screen 1.530 is vendored as the 48 slices of its web release that hold the GB2312 grid (2.8 MB) into the pack's `fonts/` by `scripts/vendor-wenkai.mjs`, which pins the tarball's integrity; `vendored-fonts.json` lists it. Both licences ship in `fonts/LICENSES/` and on the Credits page.
+Shantell Sans arrives through `@fontsource-variable/shantell-sans` and is declared with the app's shared faces in `fonts/shantell-sans.css`. LXGW WenKai GB Screen 1.530 is vendored as the 48 slices of its web release that hold the GB2312 grid (2.8 MB) into the pack's `fonts/`, their faces as the pack's `fonts.css`, by `scripts/vendor-wenkai.mjs`, which pins the tarball's integrity; `vendored-fonts.json` lists it. So Doodle exports as a pack an import accepts: its `fonts.css` names only its own `fonts/*.woff2`. Both licences ship in `fonts/LICENSES/` and on the Credits page.
 
 ## Guards
 

@@ -22,8 +22,8 @@
  *   shadow drawn under it in a 12px margin, so the slip needs no fill, shadow, backdrop or filter
  *   of its own and the shadow follows the drawn shape. A slip that only labels (a tooltip, the
  *   launcher's caption) takes the control's corners; the launcher's ball and its fan are drawn
- *   round. A plugin tile, the navigation backdrop and a page's header bar are glass that does not
- *   float and keep Frost's look.
+ *   round. A plugin tile, the navigation backdrop and the public site's header bar
+ *   (`.site-ui-header`) are glass that does not float and keep Frost's look.
  * - Keyboard focus. A clip cuts whatever its box paints, the focus ring included, so a focused
  *   button gives up the clip and its CSS corner returns under the line, with the ring outside it
  *   as in every theme; a focused text field or the focused composer is redrawn in the ring's
@@ -318,7 +318,7 @@
   /* What floats: a slip of paper, its glass image its fill, its line and its shadow. The shadow
      sits in the image's 12px outset, transparent elsewhere, so it never covers a neighbour's text
      and no filter runs. */
-  :root[data-theme="doodle"] .ui-glass:not([data-glass], header) {
+  :root[data-theme="doodle"] .ui-glass:not([data-glass], .site-ui-header) {
     border-style: solid;
     border-width: 1px;
     background-color: transparent;

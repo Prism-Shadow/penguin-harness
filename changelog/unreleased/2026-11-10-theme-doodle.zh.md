@@ -30,7 +30,7 @@
 
 ## 字体
 
-Shantell Sans 经 `@fontsource-variable/shantell-sans` 引入。霞鹜文楷 GB 屏幕阅读版 1.530 由 `scripts/vendor-wenkai.mjs` 从其网页发行包中取出覆盖 GB2312 字符集的 48 个切片（2.8 MB）放入主题包的 `fonts/`，并锁定发行包的完整性校验值；`vendored-fonts.json` 列出了它。两种字体的许可证都随 `fonts/LICENSES/` 发布，并出现在致谢页。
+Shantell Sans 经 `@fontsource-variable/shantell-sans` 引入，与应用共用的字体一起声明在 `fonts/shantell-sans.css`。霞鹜文楷 GB 屏幕阅读版 1.530 由 `scripts/vendor-wenkai.mjs` 从其网页发行包中取出覆盖 GB2312 字符集的 48 个切片（2.8 MB）放入主题包的 `fonts/`，其 `@font-face` 写成主题包的 `fonts.css`，并锁定发行包的完整性校验值；`vendored-fonts.json` 列出了它。卡通因此能导出成导入可接受的主题包：它的 `fonts.css` 只引用自己的 `fonts/*.woff2`。两种字体的许可证都随 `fonts/LICENSES/` 发布，并出现在致谢页。
 
 ## 守护
 
