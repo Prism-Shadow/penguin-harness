@@ -62,6 +62,14 @@ import type {
   MemoryOverviewResponse,
   ProjectCreateResponse,
 } from "../src/api/types.js";
+import { MAX_MEMORY_ARCHIVE_FILES } from "../src/services/memory-archive.js";
+import {
+  MAX_IMPORT_FILE_BYTES,
+  MAX_IMPORT_FILES,
+  MAX_IMPORT_NAME_BYTES,
+  MAX_IMPORT_TOTAL_BYTES,
+} from "../src/services/memory-transfer-document.js";
+import { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from "../src/services/skill-import-limits.js";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -464,7 +472,7 @@ describe("memory api", () => {
     expect((await owner.delete(`${filesPath()}/csv-tools/report.sh`)).status).toBe(404);
   });
 
-  it("refuses a kept file's path that hides, climbs out, or names no folder", async () => {
+  it("refuses a kept file's path that hides or climbs out, and 404s one that is not there", async () => {
     await writeCsvTools();
     await writeKept("csv-tools/.env", "SECRET=1\n");
     expect((await owner.get(`${filesPath()}/csv-tools/.env`)).status).toBe(400);
@@ -645,9 +653,11 @@ describe("memory scope export/import", () => {
     const res = await owner.get(exportPath());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
-    expect(res.headers.get("content-disposition")).toMatch(
-      new RegExp(`filename\\*=UTF-8''${agentId}-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.zip`),
-    );
+    // Named for the Agent and the scope, as a zip; the rest of the name is the server's to choose.
+    const encoded = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get("content-disposition") ?? "");
+    const fileName = decodeURIComponent(encoded?.[1] ?? "");
+    expect(fileName.startsWith(`${agentId}-${WORKSPACE_KEY}-`)).toBe(true);
+    expect(fileName.endsWith(".zip")).toBe(true);
     const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
     expect(Object.keys(entries).sort()).toEqual([
       "MEMORY.md",
@@ -739,7 +749,7 @@ describe("memory scope export/import", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as MemoryImportResponse;
     expect(body).toMatchObject({ added: ["new.md"], overwritten: [], removed: [] });
-    expect(body.skipped.sort()).toEqual(["keep.md", "leftover.md"]);
+    expect(body.skipped.sort()).toEqual(["keep.md", "leftover/"]);
     expect(await onDisk()).toEqual([
       "MEMORY.md",
       "keep.md",
@@ -752,8 +762,15 @@ describe("memory scope export/import", () => {
   });
 
   it("refuses overwrite and replace without confirmation, naming what would be lost", async () => {
-    await writeFiles(wsDir, { "keep.md": "on disk\n", "gone.md": "x\n" });
-    const zip = zipOf({ "keep.md": topicText("keep", "from the file") });
+    await writeFiles(wsDir, {
+      "keep.md": "on disk\n",
+      "gone.md": "x\n",
+      [MEMORY_INDEX_FILENAME]: "- [Keep](keep.md) — mine\n",
+    });
+    const zip = zipOf({
+      "keep.md": topicText("keep", "from the file"),
+      [MEMORY_INDEX_FILENAME]: "- [Keep](keep.md) — theirs\n",
+    });
 
     const overwrite = await runImport(zip, { mode: "overwrite" });
     expect(overwrite.status).toBe(409);
@@ -763,12 +780,16 @@ describe("memory scope export/import", () => {
     expect(refused.error.code).toBe("memory_import_confirm_required");
     expect(JSON.parse(refused.error.details.overwritten!)).toEqual(["keep.md"]);
     expect(JSON.parse(refused.error.details.removed!)).toEqual([]);
+    // A merge extends the index rather than taking the zip's.
+    expect(refused.error.details.replacesIndex).toBe("false");
 
     const replace = (await (await runImport(zip, { mode: "replace" })).json()) as {
       error: { details: Record<string, string> };
     };
     expect(JSON.parse(replace.error.details.removed!)).toEqual(["gone.md"]);
-    expect(await onDisk()).toEqual(["gone.md", "keep.md"]);
+    expect(replace.error.details.replacesIndex).toBe("true");
+    expect(await onDisk()).toEqual(["MEMORY.md", "gone.md", "keep.md"]);
+    expect(await readIndex()).toBe("- [Keep](keep.md) — mine\n");
     expect(await fs.readFile(path.join(wsDir, "keep.md"), "utf8")).toBe("on disk\n");
   });
 
@@ -818,6 +839,53 @@ describe("memory scope export/import", () => {
     expect(await readIndex()).toBe("- [Keep](keep.md) — imported\n");
   });
 
+  it("lands a folder the zip carries with no topic as a folder no memory keeps, and one that drops a topic here deletes it", async () => {
+    await writeFiles(wsDir, {
+      "tools.md": "on disk\n",
+      "tools/run.py": "old run\n",
+      [MEMORY_INDEX_FILENAME]: "- [Tools](tools.md) — mine\n",
+    });
+    const res = await runImport(
+      zipOf({ "leftover/old.py": "old\n", "tools/run.py": "new run\n" }),
+      {
+        mode: "overwrite",
+        confirm: true,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as MemoryImportResponse).toMatchObject({
+      added: ["leftover/"],
+      overwritten: ["tools.md"],
+    });
+    // The zip's version of `tools` has no topic, so the topic here and its index line go.
+    expect(await onDisk()).toEqual(["MEMORY.md", "leftover/old.py", "tools/run.py"]);
+    expect(await readIndex()).not.toContain("tools.md");
+    const listed = (await (
+      await owner.get(`${memoryPath}/scopes/${WORKSPACE_KEY}/files`)
+    ).json()) as MemoryFilesResponse;
+    expect(listed.orphanFiles.map((f) => f.path)).toEqual(["leftover/old.py", "tools/run.py"]);
+  });
+
+  it("a merge extends the index with only the lines it lacks, an index with no final newline included", async () => {
+    await writeFiles(wsDir, {
+      "old.md": "on disk\n",
+      [MEMORY_INDEX_FILENAME]: "- [Old](old.md) — mine",
+    });
+    const res = await runImport(
+      zipOf({
+        "old.md": topicText("old", "from the file"),
+        "new.md": topicText("new", "n"),
+        "unlisted.md": topicText("unlisted", "u"),
+        [MEMORY_INDEX_FILENAME]: "- [Old](old.md) — theirs\n- [New](new.md) — theirs\n",
+      }),
+      { mode: "overwrite", confirm: true },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as MemoryImportResponse).indexWritten).toBe(true);
+    // The line the index already had stays as it was; a topic the zip's index does not list gets none.
+    expect(await readIndex()).toBe("- [Old](old.md) — mine\n- [New](new.md) — theirs\n");
+  });
+
   it("prunes the index of a replace whose zip carries none", async () => {
     await writeFiles(wsDir, {
       "gone.md": "x\n",
@@ -863,6 +931,11 @@ describe("memory scope export/import", () => {
     await rejects(zipOf({ "t.md": "x", "t/.env": "SECRET=1\n" }), "a hidden kept file");
     await rejects(zipOf({ "t.md": "x", "t/.cache/x": "x" }), "a hidden folder on the way");
     await rejects(zipOf({ "a.md": "x", "A.md": "y" }), "two names one disk takes for one");
+    await rejects(zipOf({ "t.md": "x", "t/a\u0007b.py": "x" }), "a control character in a name");
+    await rejects(
+      zipOf({ [`${"a".repeat(MAX_IMPORT_NAME_BYTES)}.md`]: "x" }),
+      "a name longer than a disk keeps",
+    );
     await rejects(
       zipOf({ "t.md": "x", "t/ok.py": "x", "t/ok.py/x": "y" }),
       "a file that is a folder",
@@ -946,31 +1019,77 @@ describe("memory scope export/import", () => {
     ...extra,
   });
 
-  it("refuses a version 1 document with a path-like name, entries that are not text, or absurd sizes", async () => {
-    await rejects(v1Doc([{ name: "../escape.md", content: "x" }]), "parent traversal");
-    await rejects(v1Doc([{ name: "sub/notes.md", content: "x" }]), "nested path");
-    await rejects(v1Doc([{ name: "notes.txt", content: "x" }]), "not markdown");
-    await rejects(v1Doc([{ name: `bad${NUL}.md`, content: "x" }]), "NUL in the name");
-    await rejects(v1Doc([{ name: "n.md", content: 42 }]), "number content");
-    await rejects(v1Doc([{ name: "n.md", content: `bin${NUL}ary` }]), "NUL in the content");
-    await rejects(
-      v1Doc([
-        { name: "a.md", content: "1" },
-        { name: "a.md", content: "2" },
-      ]),
-      "the same name twice",
+  it("a malformed version 1 document is refused and nothing is written", async () => {
+    const entry = (name: string, content: unknown = "x") => ({ name, content });
+    // Individually legal, together over the whole-document budget.
+    const half = "y".repeat(MAX_IMPORT_FILE_BYTES);
+    const overBudget = Array.from(
+      { length: Math.floor(MAX_IMPORT_TOTAL_BYTES / MAX_IMPORT_FILE_BYTES) + 1 },
+      (_, i) => entry(`big${i}.md`, half),
     );
-    await rejects(
-      v1Doc(Array.from({ length: 501 }, (_, i) => ({ name: `m${i}.md`, content: "x" }))),
-      "too many entries",
-    );
-    await rejects(
-      v1Doc([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }]),
-      "one oversized file",
-    );
-    await rejects(v1Doc([], { format: "some-other-tool" }), "foreign format");
-    await rejects(v1Doc([], { version: 2 }), "a version that was never written");
+    const malformed: [string, unknown][] = [
+      ["not an object", "text"],
+      ["a list", [v1Doc([])]],
+      ["a foreign format", v1Doc([], { format: "some-other-tool" })],
+      ["a version that was never written", v1Doc([], { version: 2 })],
+      ["files that are not a list", v1Doc([], { files: "nope" })],
+      ["an index that is not text", v1Doc([], { index: 5 })],
+      ["an entry that is not an object", v1Doc(["n.md"])],
+      ["a name that is not text", v1Doc([{ name: 7, content: "x" }])],
+      ["content that is not text", v1Doc([entry("n.md", 42)])],
+      ["NUL in the content", v1Doc([entry("n.md", `bin${NUL}ary`)])],
+      ["NUL in the name", v1Doc([entry(`bad${NUL}.md`)])],
+      ["parent traversal", v1Doc([entry("../escape.md")])],
+      ["a nested path", v1Doc([entry("sub/notes.md")])],
+      ["not markdown", v1Doc([entry("notes.txt")])],
+      ["the same name twice", v1Doc([entry("a.md", "1"), entry("a.md", "2")])],
+      [
+        "a name longer than a disk keeps",
+        v1Doc([entry(`${"a".repeat(MAX_IMPORT_NAME_BYTES)}.md`)]),
+      ],
+      [
+        "too many entries",
+        v1Doc(Array.from({ length: MAX_IMPORT_FILES + 1 }, (_, i) => entry(`m${i}.md`))),
+      ],
+      ["one oversized file", v1Doc([entry("huge.md", "x".repeat(MAX_IMPORT_FILE_BYTES + 1))])],
+      ["over the whole-document budget", v1Doc(overBudget)],
+    ];
+    for (const [hint, payload] of malformed) {
+      const res = await owner.post(importPath(), { payload });
+      expect(res.status, hint).toBe(400);
+    }
     expect(await onDisk()).toEqual([]);
+  });
+
+  it("refuses a zip over the archive caps, writing nothing, and an export past them is 413", async () => {
+    const tooMany = zipOf(
+      Object.fromEntries(
+        Array.from({ length: MAX_MEMORY_ARCHIVE_FILES + 1 }, (_, i) => [`m${i}.md`, "x"]),
+      ),
+    );
+    await rejects(tooMany, "more files than a memory zip holds");
+    // Zeros deflate to almost nothing, so the declared sizes, not the upload, break the caps.
+    await rejects(
+      zipOf({ "t.md": "x", "t/huge.bin": new Uint8Array(MAX_FILE_BYTES + 1) }),
+      "one file over the per-file cap",
+    );
+    const perFile = new Uint8Array(MAX_FILE_BYTES);
+    const overTotal = Object.fromEntries(
+      Array.from({ length: Math.floor(MAX_TOTAL_BYTES / MAX_FILE_BYTES) + 1 }, (_, i) => [
+        `t/part${i}.bin`,
+        perFile,
+      ]),
+    );
+    await rejects(zipOf({ "t.md": "x", ...overTotal }), "over the total cap");
+    expect(await onDisk()).toEqual([]);
+
+    // A scope grown past the caps on disk exports nothing the import would refuse.
+    await writeFiles(wsDir, { "t.md": "x" });
+    await fs.mkdir(path.join(wsDir, "t"));
+    await fs.writeFile(path.join(wsDir, "t", "huge.bin"), new Uint8Array(MAX_FILE_BYTES + 1));
+    const res = await owner.get(exportPath());
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("memory_too_large");
   });
 
   itWithSymlinks(

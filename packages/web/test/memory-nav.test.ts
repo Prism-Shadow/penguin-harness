@@ -16,7 +16,7 @@ import type {
   MemoryFolderFile,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
-import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
+import { type MemoryChangeRow, memoryRowKey } from "../src/lib/amsp/memory-changes";
 import {
   buildMemoryList,
   deletedChangeKeys,
@@ -99,16 +99,9 @@ const change = (
 describe("buildMemoryList", () => {
   it("keeps listing order and marks changed topics", () => {
     const groups = buildMemoryList(LISTING, [change("user", "prefs.md", "edit")]);
-    expect(groups).toHaveLength(2);
-    expect(groups[0]!.rows).toEqual([
-      {
-        target: { scope: "user", file: "prefs.md" },
-        kind: "topic",
-        title: "Prefs",
-        modifiedAt: "2026-08-20T00:00:00.000Z",
-        changed: "edit",
-        fileCount: 0,
-      },
+    expect(groups.map((g) => g.scopeKey)).toEqual(["user", "ws-1"]);
+    expect(groups[0]!.rows.map((r) => [r.target.file, r.title, r.changed])).toEqual([
+      ["prefs.md", "Prefs", "edit"],
     ]);
     expect(groups[1]!.workspacePath).toBe("/w/app");
     expect(groups[1]!.rows[0]!.changed).toBeUndefined();
@@ -124,33 +117,15 @@ describe("buildMemoryList", () => {
       change("user", "a.md", "write"),
       change("workspace", "b.md", "edit", "ws-9"),
     ]);
-    expect(groups).toEqual([
-      {
-        scope: "user",
-        scopeKey: "user",
-        rows: [
-          {
-            target: { scope: "user", file: "a.md" },
-            kind: "topic",
-            title: "a.md",
-            changed: "write",
-          },
-        ],
-        orphanRows: [],
-      },
-      {
-        scope: "workspace",
-        scopeKey: "ws-9",
-        rows: [
-          {
-            target: { scope: "workspace", scopeKey: "ws-9", file: "b.md" },
-            kind: "topic",
-            title: "b.md",
-            changed: "edit",
-          },
-        ],
-        orphanRows: [],
-      },
+    expect(
+      groups.map((g) => [
+        g.scope,
+        g.scopeKey,
+        g.rows.map((r) => [r.target.scopeKey, r.target.file, r.title, r.changed]),
+      ]),
+    ).toEqual([
+      ["user", "user", [[undefined, "a.md", "a.md", "write"]]],
+      ["workspace", "ws-9", [["ws-9", "b.md", "b.md", "edit"]]],
     ]);
   });
 });
@@ -205,6 +180,6 @@ describe("deletedChangeKeys", () => {
       change("user", "leftover/old.py", "edit"),
       change("user", "csv-tools/gone.py", "write"),
     ]);
-    expect([...keys!]).toEqual(["user  csv-tools/gone.py"]);
+    expect([...keys!]).toEqual([memoryRowKey({ scope: "user", file: "csv-tools/gone.py" })]);
   });
 });

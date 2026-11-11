@@ -544,8 +544,10 @@ export class MemoryService implements Memory {
     const removedStems =
       request.mode === "replace" ? [...present.keys()].filter((stem) => !carried.has(stem)) : [];
     const removed = removedStems.map((stem) => present.get(stem)!.name);
-    const overwritten = request.mode === "skip" ? [] : collides.map((p) => p.name);
-    const skipped = request.mode === "skip" ? collides.map((p) => p.name) : [];
+    // A collision is named for what the scope holds, which is what is kept or replaced.
+    const collidesNames = collides.map((p) => present.get(p.memory.stem)!.name);
+    const overwritten = request.mode === "skip" ? [] : collidesNames;
+    const skipped = request.mode === "skip" ? collidesNames : [];
     const writes =
       request.mode === "skip" ? planned.filter((p) => !present.has(p.memory.stem)) : planned;
     // A memory replaced here has its folder cleared first, so only the folder itself must be a

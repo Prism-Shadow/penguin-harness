@@ -1956,9 +1956,9 @@ export interface MemoryImportResponse {
   mode: MemoryImportMode;
   /** Memories written that the scope did not have. */
   added: string[];
-  /** Memories whose topic and folder were replaced. */
+  /** Memories whose topic and folder were replaced, named as the scope held them. */
   overwritten: string[];
-  /** Memories left untouched because the scope already had them (`skip` only). */
+  /** Memories left untouched because the scope already had them (`skip` only), named as the scope holds them. */
   skipped: string[];
   /** Memories deleted, topic and folder, because `replace` dropped what the import did not carry. */
   removed: string[];

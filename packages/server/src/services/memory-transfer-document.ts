@@ -27,20 +27,20 @@ const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 1;
  * scope directory can be made to hold.
  */
 /** Topic files one document may carry. A scope the model keeps by hand runs to tens of files, so this is far past ordinary use and still a directory that lists. */
-const MAX_IMPORT_FILES = 500;
+export const MAX_IMPORT_FILES = 500;
 
 /** Bytes of one file's text (UTF-8), the index included. A memory that does not fit in 512KB of Markdown is not a memory. */
-const MAX_IMPORT_FILE_BYTES = 512 * 1024;
+export const MAX_IMPORT_FILE_BYTES = 512 * 1024;
 
 /** Bytes across the whole document: one scope directory's total. */
-const MAX_IMPORT_TOTAL_BYTES = 8 * 1024 * 1024;
+export const MAX_IMPORT_TOTAL_BYTES = 8 * 1024 * 1024;
 
 /**
  * Bytes of one file name. The name rule says nothing about length, and a name longer than the
  * filesystem's own limit for a path component fails at the write with ENAMETOOLONG — a 500 for
  * what is plainly a bad request. 255 is that limit on ext4, APFS and NTFS alike.
  */
-const MAX_IMPORT_NAME_BYTES = 255;
+export const MAX_IMPORT_NAME_BYTES = 255;
 
 /**
  * Validates a version 1 document on its way to the server's disk, as the import that writes it
