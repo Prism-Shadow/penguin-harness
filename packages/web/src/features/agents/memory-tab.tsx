@@ -38,7 +38,6 @@ import type {
   MemoryFileInfo,
   MemoryFolderFile,
   MemoryImportMode,
-  MemoryScopeDocument,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
 import {
@@ -71,7 +70,6 @@ import {
   bodyWithoutFrontmatter,
   buttonClass,
   languageForFileName,
-  toastAttention,
   toastError,
   toastSuccess,
   useCopied,
@@ -91,12 +89,13 @@ import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
-  memoryDocumentFileName,
-  parseMemoryScopeDocument,
-  planMemoryImport,
+  importConfirmPlan,
+  memoryUploadOf,
   type MemoryImportPlan,
+  type MemoryUpload,
 } from "./memory-transfer";
 import { toastApiError } from "../../lib/toast-api-error";
+import { downloadArchive } from "../../lib/archive-download";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -221,7 +220,7 @@ export function MemoryTab({
   const [importing, setImporting] = useState<{
     scope: MemoryScopeInfo;
     fileName: string;
-    doc: MemoryScopeDocument;
+    upload: MemoryUpload;
   } | null>(null);
   const [importMode, setImportMode] = useState<MemoryImportMode>("skip");
   const [importPlan, setImportPlan] = useState<MemoryImportPlan | null>(null);
@@ -413,15 +412,11 @@ export function MemoryTab({
   ) => {
     if (!projectId) return;
     try {
-      const res = await api.getMemoryFolderFile(
-        projectId,
-        agentId,
-        scope.scopeKey,
-        file.path,
-        machineId,
-      );
+      // The one file route answers a kept file's path as well as a topic's name.
+      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.path, machineId);
       if (!viewOpen) setSheetSnap("half");
-      setViewing({ kind: "file", scope, file: res.file, topic, content: res.content });
+      const read = { path: file.path, size: res.file.size, modifiedAt: res.file.modifiedAt };
+      setViewing({ kind: "file", scope, file: read, topic, content: res.content });
       setViewOpen(true);
     } catch (e) {
       toastApiError(e);
@@ -475,49 +470,38 @@ export function MemoryTab({
     if (adding) openChatWithDraft(addPrompt, adding.workspacePath);
   };
 
-  /**
-   * Downloads one group as a transfer document. Fetched as JSON and saved through an object URL
-   * rather than followed as a link, so a failed request becomes a toast instead of an error body
-   * saved to disk (the skills tab's export made the same call).
-   */
+  /** Downloads one group's folder as a zip (the shared archive download: a failure is a toast, never a saved error body). */
   const exportScope = async (scope: MemoryScopeInfo) => {
     if (!projectId) return;
     try {
-      const doc = await api.exportMemoryScope(projectId, agentId, scope.scopeKey, machineId);
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
+      await downloadArchive(
+        api.memoryScopeArchiveUrl(projectId, agentId, scope.scopeKey, machineId),
+        `${agentId}-${scope.scopeKey}-memory`,
       );
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = memoryDocumentFileName(agentId, scope.scopeKey, doc.exportedAt);
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      // The file is saved either way; what it could not carry is said, not left to be found.
-      if (doc.omitted.length > 0) {
-        toastAttention(S.memory.exportOmitted(doc.omitted.map((o) => o.path)));
-      }
     } catch (e) {
       toastApiError(e);
     }
   };
 
-  /** Reads the picked file and opens the import modal; a file that is not a document never gets that far. */
+  /** Reads the picked file and opens the import modal; a file that is neither a zip nor a document never gets that far. */
   const pickImport = async (scope: MemoryScopeInfo, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     // Cleared so picking the same file again still fires a change event.
     event.target.value = "";
     if (!file) return;
     try {
-      const doc = parseMemoryScopeDocument(await file.text());
+      const upload = memoryUploadOf(new Uint8Array(await file.arrayBuffer()));
       setImportMode("skip");
-      setImporting({ scope, fileName: file.name, doc });
+      setImporting({ scope, fileName: file.name, upload });
     } catch (e) {
       toastError(e instanceof MemoryDocumentError ? e.message : S.memory.importInvalidFile);
     }
   };
 
+  /**
+   * Sends the import. Without `confirm`, one that would destroy something comes back refused,
+   * naming what is at stake: that opens the confirmation, whose button sends it again confirmed.
+   */
   const runImport = async (confirm: boolean) => {
     if (!projectId || !importing) return;
     setImportBusy(true);
@@ -526,7 +510,7 @@ export function MemoryTab({
         projectId,
         agentId,
         importing.scope.scopeKey,
-        { mode: importMode, confirm, payload: importing.doc },
+        { mode: importMode, confirm, ...importing.upload },
         machineId,
       );
       const touched = res.added.length + res.overwritten.length + res.removed.length;
@@ -541,27 +525,12 @@ export function MemoryTab({
       // The agent card's memory count changed; refresh the list provider too.
       void reloadAgents();
     } catch (e) {
-      toastApiError(e);
+      const plan = confirm ? null : importConfirmPlan(e);
+      if (plan !== null) setImportPlan(plan);
+      else toastApiError(e);
     } finally {
       setImportBusy(false);
     }
-  };
-
-  /** Import's first click: straight through when nothing would be lost, otherwise into the confirmation. */
-  const submitImport = () => {
-    if (!importing) return;
-    const group = groups?.find((g) => g.scope.scopeKey === importing.scope.scopeKey);
-    const plan = planMemoryImport(
-      importing.doc,
-      {
-        names: group?.files.map((f) => f.name) ?? [],
-        orphanFolders: [...new Set(group?.orphanFiles.map((f) => f.path.split("/")[0]!) ?? [])],
-        hasIndex: importing.scope.hasIndex,
-      },
-      importMode,
-    );
-    if (plan.destroys) setImportPlan(plan);
-    else void runImport(false);
   };
 
   const confirmRemove = async () => {
@@ -578,7 +547,7 @@ export function MemoryTab({
           machineId,
         );
       } else {
-        await api.deleteMemoryFolderFile(
+        await api.deleteMemoryFile(
           projectId,
           agentId,
           target.scope.scopeKey,
@@ -885,7 +854,7 @@ export function MemoryTab({
                         aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
                       >
                         <HiddenFileInput
-                          accept=".json,application/json"
+                          accept=".zip,application/zip,.json,application/json"
                           onChange={(e) => void pickImport(scope, e)}
                         />
                         <UploadIcon size={13} />
@@ -1141,7 +1110,7 @@ export function MemoryTab({
           <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
             <p className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-              {S.memory.importFile(importing.fileName, importing.doc.files.length)}
+              {importing.fileName}
             </p>
             <RadioGroup
               label={S.memory.importModeLabel}
@@ -1167,7 +1136,7 @@ export function MemoryTab({
               ]}
             />
             <div className="flex justify-end">
-              <Button size="sm" variant="primary" disabled={importBusy} onClick={submitImport}>
+              <Button size="sm" variant="primary" disabled={importBusy} onClick={() => void runImport(false)}>
                 {S.memory.importAction}
               </Button>
             </div>

@@ -71,10 +71,8 @@ import type {
   MembersResponse,
   MemoryFileResponse,
   MemoryFilesResponse,
-  MemoryFolderFileResponse,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
@@ -696,15 +694,21 @@ router
       return found;
     },
   )
-  // Two segments or more: a file a topic keeps, by its `<folder>/<path>`.
+  // Two segments or more: a file a topic keeps, by its `<folder>/<path>`, read through the same
+  // route as a topic and answered in the same shape.
   .get(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*",
-    (ctx): MemoryFolderFileResponse => {
+    (ctx): MemoryFileResponse => {
       const found = memoryOf(ctx).folderFiles.find(
         (f) => f.scopeKey === ctx.params.scopeKey && f.file.path === ctx.params["*"],
       );
       if (!found) notFound("Memory file");
-      return found;
+      const { path, size, modifiedAt } = found.file;
+      return {
+        scopeKey: found.scopeKey,
+        file: { name: path, title: path, description: "", size, modifiedAt, files: [] },
+        content: found.content,
+      };
     },
   )
   .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) => {
@@ -733,35 +737,14 @@ router
     }
     return empty();
   })
-  .get(
-    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export",
-    (ctx): MemoryScopeExport => {
-      const memory = memoryOf(ctx);
-      const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
-      if (!scope) notFound("Memory scope");
-      return {
-        format: "penguin-memory-scope",
-        version: 2,
-        scopeKey: scope.scopeKey,
-        kind: scope.kind,
-        ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
-        exportedAt: new Date().toISOString(),
-        index: scope.hasIndex ? "# Memory\n" : null,
-        files: memory.files
-          .filter((f) => f.scopeKey === scope.scopeKey)
-          .map((f) => {
-            const folder = `${f.file.name.replace(/\.md$/i, "")}/`;
-            const kept = memory.folderFiles
-              .filter((k) => k.scopeKey === scope.scopeKey && k.file.path.startsWith(folder))
-              .map((k) => ({ path: k.file.path.slice(folder.length), content: k.content }));
-            return kept.length > 0
-              ? { name: f.file.name, content: f.content, files: kept }
-              : { name: f.file.name, content: f.content };
-          }),
-        omitted: [],
-      };
-    },
-  )
+  .get("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export", (ctx) => {
+    const scope = memoryOf(ctx).overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
+    if (!scope) notFound("Memory scope");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${ctx.params.agentId}-${scope.scopeKey}-memory.zip"`,
+    });
+  })
   .post(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/import",
     (ctx): MemoryImportResponse => ({

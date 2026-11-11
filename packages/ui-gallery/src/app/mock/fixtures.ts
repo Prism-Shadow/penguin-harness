@@ -26,7 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
-  MemoryFolderFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -157,6 +157,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -194,7 +201,7 @@ export interface DemoFixtures {
       overview: MemoryOverviewResponse;
       files: MemoryFileResponse[];
       /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
-      folderFiles: MemoryFolderFileResponse[];
+      folderFiles: DemoKeptFile[];
     }
   >;
   vault: Record<string, VaultResponse>;
@@ -1421,7 +1428,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
-    kept: MemoryFolderFileResponse[] = [],
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1441,7 +1448,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     filePath: string,
     content: string,
     days: number,
-  ): MemoryFolderFileResponse => ({
+  ): DemoKeptFile => ({
     scopeKey,
     file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
     content,

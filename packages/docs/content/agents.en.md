@@ -358,8 +358,8 @@ A folder with no memory of its name beside it, usually left behind when its memo
 
 ### Export and import memories
 
-- **Export** on a group's header downloads every memory in the group, with the files each keeps, and the group's `MEMORY.md` as one JSON file. The file name includes the export date and time, so repeated exports do not overwrite each other. A file over 512 KB, one that is not text and one that belongs to no memory are left out of the file, and a notice names them.
-- **Import** on a group's header reads such a file back into the group. Only the Project owner can import.
+- **Export** on a group's header downloads the group's folder as a zip: `MEMORY.md`, every memory and the files each keeps, as the files they are on disk. The file name includes the export date and time, so repeated exports do not overwrite each other.
+- **Import** on a group's header reads such a zip back into the group. A JSON file exported by an earlier version still imports. Only the Project owner can import.
 
 When you import, choose what happens when the group already has a memory with the same name:
 
@@ -373,7 +373,7 @@ If the import would overwrite or delete memories, or replace the group's `MEMORY
 
 A memory moves with its files: the folder of a memory taken from the file holds exactly the file's files afterwards. A folder that belongs to no memory counts as its memory being in the group already.
 
-A file exported before memories kept scripts still imports. A file exported now cannot be imported into a server from before: that server does not know the file's newer format version and refuses it.
+A zip exported now cannot be imported into a server from before: that server takes only the JSON file and refuses it.
 
 ### Memory prompts
 

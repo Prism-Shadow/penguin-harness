@@ -2796,23 +2796,19 @@ export const en: Strings = {
     deleteFileTitle: "Delete this file?",
     deleteFileConfirm: (path: string): string =>
       `This deletes ${path}. Whatever the memory's text says about it stays until the agent updates it. This cannot be undone.`,
-    /** Toast after an export that had to leave files out; the paths follow. */
-    exportOmitted: (paths: string[]): string =>
-      `${paths.length === 1 ? "1 file was" : `${paths.length} files were`} left out of the export (over 512 KB, not text, or kept by no memory): ${paths.join(", ")}`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
     exportScope: "Export",
-    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeHint:
+      "Download this group's folder — every memory, the files each keeps and MEMORY.md — as a zip",
     exportScopeLabel: (scope: string): string => `Export ${scope}`,
     importScope: "Import",
-    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeHint: "Restore memories into this group from an exported zip",
     importScopeLabel: (scope: string): string => `Import into ${scope}`,
     importTitle: "Import memories",
     importWhy:
-      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string =>
-      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
+      "Reads a memory group exported from this or another agent: a zip of the group's folder, holding its memories, the files each keeps and its MEMORY.md index. A JSON file an earlier version exported still imports.",
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",

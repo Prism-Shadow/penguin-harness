@@ -237,16 +237,16 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   runtime tab moved.
  * - `2026-11-10` (current) — the memory prompt names the scripts a fact keeps and gained its
  *   **Scripts:** paragraph: a program the model would otherwise rewrite sits in a folder named
- *   after the fact it serves, any number of files, described with relative links in that fact's
- *   body, run through its interpreter by absolute path, and read before running one this
- *   Session did not write. The memory tab moved.
+ *   after the fact it serves, any number of files, listed with relative links in that fact's own
+ *   body and never in `MEMORY.md`, run through its interpreter by absolute path, and read before
+ *   running one this Session did not write. The memory tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "c1ce239d2ef23ef533b5f00d3ed453e98bd7eb66ac8af9916fd0a5281455effb",
   runtime: "83cffc520d74ff6b307a1371b8e770a1986436ef0632e9f5146fec1a3dc67134",
   tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
-  memory: "4bb7b94b43d6f85a7fffbe954abd6150127ef03108f12875ef1cbda0efba51f7",
+  memory: "a9614cd7bd07f576edbcfc311c32c2fa40a57807a26e069a90c3e526dac272b6",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
   schedules: "c722922eca13a83400d92924e4d1aa8b09964b4081261be81e5149f0eae1119d",
 };

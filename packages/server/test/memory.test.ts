@@ -26,20 +26,17 @@
  *   deleted, and deleting the topic leaves the link's target alone.
  *
  * Moving a scope (export/import):
- * - An export carries every topic file and the index as one attachment (the user scope too, with
- *   no workspace path) and imports into another scope.
+ * - An export is a zip of the scope folder: the index, every topic and every folder's files, as
+ *   files, binary ones included, never the `.workspace` marker. A memory with three files exports
+ *   and imports into another scope as it was.
  * - Import defaults to skip; overwrite and replace need confirmation that names what would be
- *   lost, unless nothing would be; replace deletes what the document does not carry and prunes
- *   the index.
- * - The untrusted document is checked whole before anything is written: a path-like name, a
- *   non-text entry, absurd counts or sizes, a foreign or future format; no temporary file stays.
- * - A topic travels with its files (version 2): exported, they re-import into another scope's
- *   folder of the same name; the files left out (over 512 KB, not text, kept by no topic) are
- *   named. A version 1 document (from before a topic kept files) still imports.
- * - `overwrite` replaces a topic's folder with the document's files; `replace` deletes the
- *   topics the document does not carry with their folders, and the folders no topic keeps,
- *   naming them first. A kept file's path that hides, climbs or clashes is refused, and so is an
- *   import whose topic folder is not a directory, with nothing written.
+ *   lost, unless nothing would be; overwrite replaces a memory's topic and folder; replace deletes
+ *   the memories the zip does not carry, a folder no topic keeps included, and prunes the index.
+ *   A folder with no topic counts as its memory being there.
+ * - The untrusted zip is checked whole before anything is written: an entry that is no memory
+ *   file, climbs out or hides, a link, two names one disk takes for one, a non-zip; and so is an
+ *   import whose memory folder is not a directory. No temporary file stays.
+ * - A version 1 JSON document (exported before the zip) still imports, with its own checks.
  * - Any member exports, only the owner imports, and a non-member learns nothing.
  *
  * One app for the file and one Project per describe; every case works in a plain Agent of its
@@ -48,6 +45,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   MEMORY_INDEX_FILENAME,
@@ -59,12 +57,9 @@ import type {
   AgentConfigResponse,
   MemoryFileResponse,
   MemoryFilesResponse,
-  MemoryFolderFileResponse,
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
-  MemoryTransferFile,
   ProjectCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
@@ -389,9 +384,9 @@ describe("memory api", () => {
 
     const read = (await (
       await owner.get(`${filesPath()}/csv-tools/lib/io.py`)
-    ).json()) as MemoryFolderFileResponse;
+    ).json()) as MemoryFileResponse;
     expect(read.content).toBe("def read(): pass\n");
-    expect(read.file.path).toBe("csv-tools/lib/io.py");
+    expect(read.file.name).toBe("csv-tools/lib/io.py");
     // Reading the topic brings its files along, for a detail view that shows both.
     const topic = (await (
       await owner.get(`${filesPath()}/csv-tools.md`)
@@ -534,6 +529,7 @@ describe("memory scope export/import", () => {
   let projectId: string;
   let memoryPath: string;
   let wsDir: string;
+  let userDir: string;
 
   // Every case moves memories in and out of a plain Agent of its own, in the one Project.
   let agentId: string;
@@ -554,6 +550,7 @@ describe("memory scope export/import", () => {
     expect(made.status, await made.text()).toBe(201);
     memoryPath = `/api/projects/${projectId}/agents/${agentId}/memory`;
     wsDir = memoryScopeDir(t.root, projectId, agentId, WORKSPACE_KEY);
+    userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
     await fs.mkdir(wsDir, { recursive: true });
     await fs.writeFile(path.join(wsDir, ".workspace"), "/home/dev/my-app\n", "utf8");
   });
@@ -561,45 +558,61 @@ describe("memory scope export/import", () => {
   const exportPath = (key = WORKSPACE_KEY) => `${memoryPath}/scopes/${key}/export`;
   const importPath = (key = WORKSPACE_KEY) => `${memoryPath}/scopes/${key}/import`;
 
-  /** A transfer document carrying the given files; its index links each of them unless one is given. */
-  const document = (files: MemoryTransferFile[], index?: string | null): MemoryScopeExport => ({
-    format: "penguin-memory-scope",
-    version: 2,
-    scopeKey: WORKSPACE_KEY,
-    kind: "workspace",
-    exportedAt: "2026-08-20T00:00:00.000Z",
-    index:
-      index === undefined
-        ? `# Memories\n\n${files.map((f) => `- [${f.name}](${f.name}) — imported`).join("\n")}\n`
-        : index,
-    files,
-    omitted: [],
-  });
+  /** A topic file's text, with the frontmatter name the listing reads. */
+  const topicText = (name: string, body: string): string => `---\nname: ${name}\n---\n${body}\n`;
 
-  const topic = (
-    name: string,
-    body: string,
-    kept?: Record<string, string>,
-  ): MemoryTransferFile => ({
-    name,
-    content: `---\nname: ${name}\n---\n${body}\n`,
-    ...(kept !== undefined
-      ? { files: Object.entries(kept).map(([at, content]) => ({ path: at, content })) }
-      : {}),
-  });
+  /** A zip holding the given files at its root, base64 — what the Memory tab uploads. */
+  const zipOf = (files: Record<string, string | Uint8Array>): string =>
+    Buffer.from(
+      zipSync(
+        Object.fromEntries(
+          Object.entries(files).map(([name, data]) => [
+            name,
+            typeof data === "string" ? strToU8(data) : data,
+          ]),
+        ),
+      ),
+    ).toString("base64");
 
-  /** Every regular file under one folder of a scope, by its path inside the folder, sorted; none when there is no such folder. */
-  const keptOnDisk = async (folder: string, dir = wsDir): Promise<string[]> => {
-    const root = path.join(dir, folder);
+  /** Writes files into a scope directory, creating their folders. */
+  const writeFiles = async (dir: string, files: Record<string, string>): Promise<void> => {
+    for (const [rel, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), content, "utf8");
+    }
+  };
+
+  /** The export's entries, by name, as text. */
+  const exported = async (key = WORKSPACE_KEY): Promise<Record<string, string>> => {
+    const res = await owner.get(exportPath(key));
+    expect(res.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    return Object.fromEntries(Object.entries(entries).map(([n, d]) => [n, strFromU8(d)]));
+  };
+
+  /** Posts a zip (base64 string) or a version 1 document (an object) to the import route. */
+  const runImport = async (
+    upload: string | object,
+    opts: { mode?: MemoryImportMode; confirm?: boolean; key?: string } = {},
+  ) =>
+    owner.post(importPath(opts.key), {
+      ...(typeof upload === "string" ? { dataBase64: upload } : { payload: upload }),
+      ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
+      ...(opts.confirm !== undefined ? { confirm: opts.confirm } : {}),
+    });
+
+  /** Every regular file under a scope directory, by its path in the scope, sorted; dotfiles left out. */
+  const onDisk = async (dir = wsDir): Promise<string[]> => {
     const found: string[] = [];
     const walk = async (rel: string): Promise<void> => {
       let entries: Dirent[];
       try {
-        entries = await fs.readdir(path.join(root, rel), { withFileTypes: true });
+        entries = await fs.readdir(path.join(dir, rel), { withFileTypes: true });
       } catch {
         return;
       }
       for (const e of entries) {
+        if (e.name.startsWith(".")) continue;
         const child = rel === "" ? e.name : `${rel}/${e.name}`;
         if (e.isDirectory()) await walk(child);
         else found.push(child);
@@ -609,105 +622,78 @@ describe("memory scope export/import", () => {
     return found.sort();
   };
 
-  const runImport = async (
-    payload: unknown,
-    opts: { mode?: MemoryImportMode; confirm?: boolean; key?: string } = {},
-  ) =>
-    owner.post(importPath(opts.key), {
-      payload,
-      ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
-      ...(opts.confirm !== undefined ? { confirm: opts.confirm } : {}),
+  const readIndex = (dir = wsDir): Promise<string> =>
+    fs.readFile(path.join(dir, MEMORY_INDEX_FILENAME), "utf8");
+
+  const CSV_TOOLS = {
+    "csv-tools.md": topicText("csv-tools", "- [dedupe.py](csv-tools/dedupe.py) — drops duplicates"),
+    "csv-tools/dedupe.py": "print('dedupe')\n",
+    "csv-tools/lib/io.py": "def read(): pass\n",
+    "csv-tools/report.sh": "echo report\n",
+  };
+
+  it("exports the scope folder as a zip: the index, every topic and every folder's files, as files", async () => {
+    await writeFiles(wsDir, {
+      ...CSV_TOOLS,
+      "项目背景.md": topicText("项目背景", "正文"),
+      "leftover/old.py": "print('old')\n",
+      [MEMORY_INDEX_FILENAME]: "- [CSV](csv-tools.md) — tools\n",
     });
-
-  const namesOnDisk = async (): Promise<string[]> =>
-    (await fs.readdir(wsDir))
-      .filter((n) => n.endsWith(".md") && n !== MEMORY_INDEX_FILENAME)
-      .sort();
-
-  const readIndex = (): Promise<string> =>
-    fs.readFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "utf8");
-
-  it("exports every topic file plus the scope's index, as one attachment", async () => {
-    await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
-    await fs.writeFile(path.join(wsDir, "项目背景.md"), "---\nname: 项目背景\n---\n正文\n", "utf8");
-    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [t](t.md) — hook\n", "utf8");
+    // Not text at all: a zip carries it as the file it is.
+    await fs.writeFile(path.join(wsDir, "csv-tools", "data.bin"), Buffer.from([0xff, 0x00, 0x41]));
 
     const res = await owner.get(exportPath());
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toMatch(
-      new RegExp(`filename="${agentId}-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.json"`),
+      new RegExp(`filename\\*=UTF-8''${agentId}-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.zip`),
     );
-    const doc = (await res.json()) as MemoryScopeExport;
-    expect(doc.format).toBe("penguin-memory-scope");
-    expect(doc.version).toBe(2);
-    expect(doc.kind).toBe("workspace");
-    expect(doc.workspacePath).toBe("/home/dev/my-app");
-    // The index travels with the files: only the index enters the model's context.
-    expect(doc.index).toBe("- [t](t.md) — hook\n");
-    expect(doc.files.map((f) => f.name)).toEqual(["testing-conventions.md", "项目背景.md"]);
-    expect(doc.files[0]?.content).toBe(TOPIC);
-    // The .workspace marker is the Harness's, not a memory.
-    expect(doc.files.map((f) => f.name)).not.toContain(".workspace");
-    expect(doc.omitted).toEqual([]);
+    const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    expect(Object.keys(entries).sort()).toEqual([
+      "MEMORY.md",
+      "csv-tools.md",
+      "csv-tools/data.bin",
+      "csv-tools/dedupe.py",
+      "csv-tools/lib/io.py",
+      "csv-tools/report.sh",
+      "leftover/old.py",
+      "项目背景.md",
+    ]);
+    expect([...entries["csv-tools/data.bin"]!]).toEqual([0xff, 0x00, 0x41]);
+    expect(strFromU8(entries["csv-tools.md"]!)).toBe(CSV_TOOLS["csv-tools.md"]);
   });
 
-  it("exports the user scope, creating it on demand, with no workspace path", async () => {
-    const doc = (await (await owner.get(exportPath(USER_SCOPE_KEY))).json()) as MemoryScopeExport;
-    expect(doc.kind).toBe("user");
-    expect(doc.workspacePath).toBeUndefined();
-    // A provisioned Agent starts with an empty user index on disk, so the document carries an
-    // empty string; null is reserved for a scope that has no MEMORY.md at all — as this
-    // Workspace scope, created by hand above, does not.
-    expect(doc.index).toBe("");
-    expect(doc.files).toEqual([]);
-    expect(((await (await owner.get(exportPath())).json()) as MemoryScopeExport).index).toBeNull();
+  it("exports an empty scope's index alone, and no index for a scope that has none", async () => {
+    // A provisioned Agent starts with an empty user index on disk; this Workspace scope, created
+    // by hand above, has no MEMORY.md at all.
+    expect(await exported(USER_SCOPE_KEY)).toEqual({ "MEMORY.md": "" });
+    expect(await exported()).toEqual({});
   });
 
-  it("round-trips one scope's export into another scope", async () => {
-    await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
-    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [T](testing-conventions.md)\n");
-    const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
+  it("moves a memory that keeps three files into another scope, files and all", async () => {
+    await writeFiles(wsDir, {
+      ...CSV_TOOLS,
+      [MEMORY_INDEX_FILENAME]: "- [CSV tools](csv-tools.md) — dedupe and report\n",
+    });
+    const res = await owner.get(exportPath());
+    const zip = Buffer.from(await res.arrayBuffer()).toString("base64");
+    await fs.writeFile(path.join(userDir, MEMORY_INDEX_FILENAME), "- [Mine](mine.md) — mine\n");
 
-    const res = await runImport(doc, { key: USER_SCOPE_KEY });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as MemoryImportResponse).toMatchObject({
+    const imported = await runImport(zip, { key: USER_SCOPE_KEY });
+    expect(imported.status).toBe(200);
+    expect((await imported.json()) as MemoryImportResponse).toMatchObject({
       scopeKey: USER_SCOPE_KEY,
       mode: "skip",
-      added: ["testing-conventions.md"],
+      added: ["csv-tools.md"],
       indexWritten: true,
     });
-    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
-    expect(await fs.readFile(path.join(userDir, "testing-conventions.md"), "utf8")).toBe(TOPIC);
-    expect(await fs.readFile(path.join(userDir, MEMORY_INDEX_FILENAME), "utf8")).toBe(
-      "- [T](testing-conventions.md)\n",
-    );
-  });
-
-  it("carries a topic's three files in its export, and re-imports them into another scope's folder", async () => {
-    await fs.writeFile(path.join(wsDir, "csv-tools.md"), "---\nname: csv-tools\n---\nsee files\n");
-    for (const [at, content] of [
-      ["dedupe.py", "print('dedupe')\n"],
-      ["lib/io.py", "def read(): pass\n"],
-      ["report.sh", "echo report\n"],
-    ]) {
-      await fs.mkdir(path.dirname(path.join(wsDir, "csv-tools", at!)), { recursive: true });
-      await fs.writeFile(path.join(wsDir, "csv-tools", at!), content!);
-    }
-    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [CSV](csv-tools.md) — tools\n");
-
-    const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
-    expect(doc.files.map((f) => [f.name, f.files?.map((k) => k.path)])).toEqual([
-      ["csv-tools.md", ["dedupe.py", "lib/io.py", "report.sh"]],
-    ]);
-    expect(doc.omitted).toEqual([]);
-
-    const res = await runImport(doc, { key: USER_SCOPE_KEY });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as MemoryImportResponse).added).toEqual(["csv-tools.md"]);
-    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
-    expect(await keptOnDisk("csv-tools", userDir)).toEqual(["dedupe.py", "lib/io.py", "report.sh"]);
+    expect(await onDisk(userDir)).toEqual(Object.keys(CSV_TOOLS).concat("MEMORY.md").sort());
     expect(await fs.readFile(path.join(userDir, "csv-tools", "lib", "io.py"), "utf8")).toBe(
       "def read(): pass\n",
+    );
+    // The index gains the memory's one line; its files are listed in its own text, not here.
+    expect(await readIndex(userDir)).toBe(
+      "- [Mine](mine.md) — mine\n- [CSV tools](csv-tools.md) — dedupe and report\n",
     );
     const listed = (await (
       await owner.get(`${memoryPath}/scopes/${USER_SCOPE_KEY}/files`)
@@ -715,26 +701,7 @@ describe("memory scope export/import", () => {
     expect(listed.files.find((f) => f.name === "csv-tools.md")?.files).toHaveLength(3);
   });
 
-  it("names the files an export leaves out: over 512 KB, not text, or kept by no topic", async () => {
-    await fs.writeFile(path.join(wsDir, "tools.md"), "---\nname: tools\n---\nx\n");
-    await fs.mkdir(path.join(wsDir, "tools"));
-    await fs.writeFile(path.join(wsDir, "tools", "ok.py"), "print('ok')\n");
-    await fs.writeFile(path.join(wsDir, "tools", "huge.py"), "x".repeat(512 * 1024 + 1));
-    // Not UTF-8 at all.
-    await fs.writeFile(path.join(wsDir, "tools", "blob.bin"), Buffer.from([0xff, 0xfe, 0x41]));
-    await fs.mkdir(path.join(wsDir, "leftover"));
-    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "print('old')\n");
-
-    const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
-    expect(doc.files[0]?.files).toEqual([{ path: "ok.py", content: "print('ok')\n" }]);
-    expect(doc.omitted).toEqual([
-      { path: "tools/blob.bin", size: 3, reason: "not_text" },
-      { path: "tools/huge.py", size: 512 * 1024 + 1, reason: "too_large" },
-      { path: "leftover/old.py", size: 13, reason: "orphan" },
-    ]);
-  });
-
-  it("still imports a version 1 document, written before a topic kept files", async () => {
+  it("still imports a version 1 JSON document, exported before the zip", async () => {
     const v1 = {
       format: "penguin-memory-scope",
       version: 1,
@@ -742,195 +709,121 @@ describe("memory scope export/import", () => {
       kind: "workspace",
       exportedAt: "2026-08-20T00:00:00.000Z",
       index: "- [Old](old.md) — from an older export\n",
-      files: [{ name: "old.md", content: "---\nname: old\n---\nbody\n" }],
+      files: [{ name: "old.md", content: topicText("old", "body") }],
     };
     const res = await runImport(v1);
     expect(res.status).toBe(200);
     expect(((await res.json()) as MemoryImportResponse).added).toEqual(["old.md"]);
-    expect(await namesOnDisk()).toEqual(["old.md"]);
+    expect(await onDisk()).toEqual(["MEMORY.md", "old.md"]);
     expect(await readIndex()).toBe("- [Old](old.md) — from an older export\n");
   });
 
   // —— The collision policy, branch by branch ——
 
-  it("defaults to skip: an existing memory is kept and the newcomer is indexed beside it", async () => {
-    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
-    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [Keep](keep.md) — mine\n");
-
+  it("defaults to skip: a memory here is kept whole, a folder with no topic counts as one, the newcomer is indexed", async () => {
+    await writeFiles(wsDir, {
+      "keep.md": "on disk\n",
+      "keep/mine.py": "mine\n",
+      "leftover/old.py": "old\n",
+      [MEMORY_INDEX_FILENAME]: "- [Keep](keep.md) — mine\n",
+    });
     const res = await runImport(
-      document([topic("keep.md", "from the file"), topic("new.md", "n")]),
+      zipOf({
+        "keep.md": topicText("keep", "from the file"),
+        "keep/theirs.py": "theirs\n",
+        "leftover.md": topicText("leftover", "from the file"),
+        "new.md": topicText("new", "n"),
+        [MEMORY_INDEX_FILENAME]: "- [New](new.md) — imported\n- [Keep](keep.md) — theirs\n",
+      }),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as MemoryImportResponse;
-    expect(body).toMatchObject({ mode: "skip", added: ["new.md"], skipped: ["keep.md"] });
-    expect(body.overwritten).toEqual([]);
-    expect(body.removed).toEqual([]);
-    // Nothing was lost: the file on disk is untouched.
+    expect(body).toMatchObject({ added: ["new.md"], overwritten: [], removed: [] });
+    expect(body.skipped.sort()).toEqual(["keep.md", "leftover.md"]);
+    expect(await onDisk()).toEqual([
+      "MEMORY.md",
+      "keep.md",
+      "keep/mine.py",
+      "leftover/old.py",
+      "new.md",
+    ]);
     expect(await fs.readFile(path.join(wsDir, "keep.md"), "utf8")).toBe("on disk\n");
-    // The index keeps its own line and gains one for the file that arrived — an unindexed
-    // memory would be one the Agent never reads.
-    const index = await readIndex();
-    expect(index).toContain("- [Keep](keep.md) — mine");
-    expect(index).toContain("- [new.md](new.md) — imported");
-    expect(body.indexWritten).toBe(true);
+    expect(await readIndex()).toBe("- [Keep](keep.md) — mine\n- [New](new.md) — imported\n");
   });
 
   it("refuses overwrite and replace without confirmation, naming what would be lost", async () => {
-    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
-    const doc = document([topic("keep.md", "from the file")]);
+    await writeFiles(wsDir, { "keep.md": "on disk\n", "gone.md": "x\n" });
+    const zip = zipOf({ "keep.md": topicText("keep", "from the file") });
 
-    for (const mode of ["overwrite", "replace"] as const) {
-      const res = await runImport(doc, { mode });
-      expect(res.status).toBe(409);
-      const body = (await res.json()) as { error: { code: string; message: string } };
-      expect(body.error.code).toBe("memory_import_confirm_required");
-      expect(body.error.message).toContain("overwrite 1");
-    }
+    const overwrite = await runImport(zip, { mode: "overwrite" });
+    expect(overwrite.status).toBe(409);
+    const refused = (await overwrite.json()) as {
+      error: { code: string; details: Record<string, string> };
+    };
+    expect(refused.error.code).toBe("memory_import_confirm_required");
+    expect(JSON.parse(refused.error.details.overwritten!)).toEqual(["keep.md"]);
+    expect(JSON.parse(refused.error.details.removed!)).toEqual([]);
+
+    const replace = (await (await runImport(zip, { mode: "replace" })).json()) as {
+      error: { details: Record<string, string> };
+    };
+    expect(JSON.parse(replace.error.details.removed!)).toEqual(["gone.md"]);
+    expect(await onDisk()).toEqual(["gone.md", "keep.md"]);
     expect(await fs.readFile(path.join(wsDir, "keep.md"), "utf8")).toBe("on disk\n");
   });
 
-  it("overwrites same-named memories on confirmation and leaves the rest alone", async () => {
-    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
-    await fs.writeFile(path.join(wsDir, "untouched.md"), "not in the document\n", "utf8");
-
-    const res = await runImport(document([topic("keep.md", "from the file")]), {
-      mode: "overwrite",
-      confirm: true,
+  it("overwrite replaces a memory's topic and folder with the zip's, leaving the rest alone", async () => {
+    await writeFiles(wsDir, {
+      "tools.md": "on disk\n",
+      "tools/run.py": "old run\n",
+      "tools/lib/stale.py": "stale\n",
+      "untouched.md": "not in the zip\n",
     });
+    const res = await runImport(
+      zipOf({ "tools.md": topicText("tools", "from the file"), "tools/run.py": "new run\n" }),
+      { mode: "overwrite", confirm: true },
+    );
     expect(res.status).toBe(200);
     expect((await res.json()) as MemoryImportResponse).toMatchObject({
-      mode: "overwrite",
       added: [],
-      overwritten: ["keep.md"],
+      overwritten: ["tools.md"],
       removed: [],
     });
-    expect(await fs.readFile(path.join(wsDir, "keep.md"), "utf8")).toContain("from the file");
-    // overwrite is a merge: a memory the document does not carry survives.
-    expect(await namesOnDisk()).toEqual(["keep.md", "untouched.md"]);
-  });
-
-  it("replaces the whole scope on confirmation, deleting what the document does not carry", async () => {
-    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
-    await fs.writeFile(path.join(wsDir, "gone.md"), "not in the document\n", "utf8");
-    await fs.writeFile(
-      path.join(wsDir, MEMORY_INDEX_FILENAME),
-      "- [Keep](keep.md) — mine\n- [Gone](gone.md) — mine\n",
-      "utf8",
-    );
-
-    const res = await runImport(document([topic("keep.md", "from the file")]), {
-      mode: "replace",
-      confirm: true,
-    });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as MemoryImportResponse).toMatchObject({
-      mode: "replace",
-      overwritten: ["keep.md"],
-      removed: ["gone.md"],
-      indexWritten: true,
-    });
-    expect(await namesOnDisk()).toEqual(["keep.md"]);
-    // The document's index replaces the old one wholesale; no line survives for a deleted file.
-    const index = await readIndex();
-    expect(index).toContain("- [keep.md](keep.md) — imported");
-    expect(index).not.toContain("gone.md");
-  });
-
-  it("skip keeps a topic and its folder whole, and counts a folder with no topic as that topic", async () => {
-    await fs.writeFile(path.join(wsDir, "tools.md"), "on disk\n", "utf8");
-    await fs.mkdir(path.join(wsDir, "tools"));
-    await fs.writeFile(path.join(wsDir, "tools", "mine.py"), "mine\n");
-    await fs.mkdir(path.join(wsDir, "leftover"));
-    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "old\n");
-
-    const res = await runImport(
-      document([
-        topic("tools.md", "from the file", { "theirs.py": "theirs\n" }),
-        topic("leftover.md", "from the file", { "new.py": "new\n" }),
-      ]),
-    );
-    expect(res.status).toBe(200);
-    expect((await res.json()) as MemoryImportResponse).toMatchObject({
-      added: [],
-      skipped: ["tools.md", "leftover.md"],
-    });
-    expect(await keptOnDisk("tools")).toEqual(["mine.py"]);
-    expect(await keptOnDisk("leftover")).toEqual(["old.py"]);
-  });
-
-  it("overwrite replaces a topic's folder with the document's files, once confirmed", async () => {
-    await fs.writeFile(path.join(wsDir, "tools.md"), "on disk\n", "utf8");
-    await fs.mkdir(path.join(wsDir, "tools", "lib"), { recursive: true });
-    await fs.writeFile(path.join(wsDir, "tools", "run.py"), "old run\n");
-    await fs.writeFile(path.join(wsDir, "tools", "lib", "stale.py"), "stale\n");
-    const doc = document([topic("tools.md", "from the file", { "run.py": "new run\n" })]);
-
-    expect((await runImport(doc, { mode: "overwrite" })).status).toBe(409);
-    expect(await keptOnDisk("tools")).toEqual(["lib/stale.py", "run.py"]);
-
-    const res = await runImport(doc, { mode: "overwrite", confirm: true });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as MemoryImportResponse).overwritten).toEqual(["tools.md"]);
-    // The topic's text describes the document's files, so those are its whole folder now.
-    expect(await keptOnDisk("tools")).toEqual(["run.py"]);
+    // The topic's text describes the zip's files, so those are its whole folder now.
+    expect(await onDisk()).toEqual(["tools.md", "tools/run.py", "untouched.md"]);
     expect(await fs.readFile(path.join(wsDir, "tools", "run.py"), "utf8")).toBe("new run\n");
   });
 
-  it("replace deletes the topic folders the document does not carry, naming them before it does", async () => {
-    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
-    await fs.writeFile(path.join(wsDir, "gone.md"), "not in the document\n", "utf8");
-    await fs.mkdir(path.join(wsDir, "gone"));
-    await fs.writeFile(path.join(wsDir, "gone", "run.sh"), "echo gone\n");
-    await fs.mkdir(path.join(wsDir, "leftover"));
-    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "old\n");
-    const doc = document([topic("keep.md", "from the file", { "run.py": "run\n" })], null);
-
-    const refused = await runImport(doc, { mode: "replace" });
-    expect(refused.status).toBe(409);
-    expect(((await refused.json()) as { error: { message: string } }).error.message).toContain(
-      "delete 2",
-    );
-    expect(await keptOnDisk("gone")).toEqual(["run.sh"]);
-
-    const res = await runImport(doc, { mode: "replace", confirm: true });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as MemoryImportResponse).removed).toEqual(["gone.md", "leftover/"]);
-    const left = (await fs.readdir(wsDir)).sort();
-    expect(left).toEqual([".workspace", "keep", "keep.md"]);
-    expect(await keptOnDisk("keep")).toEqual(["run.py"]);
-  });
-
-  it("refuses an import whose topic folder is not a directory, writing nothing", async () => {
-    await fs.writeFile(path.join(wsDir, "tools"), "not a directory\n", "utf8");
+  it("replace deletes every memory the zip does not carry, a folder with no topic included, and takes its index", async () => {
+    await writeFiles(wsDir, {
+      "keep.md": "on disk\n",
+      "gone.md": "not in the zip\n",
+      "gone/run.sh": "echo gone\n",
+      "leftover/old.py": "old\n",
+      [MEMORY_INDEX_FILENAME]: "- [Keep](keep.md) — mine\n- [Gone](gone.md) — mine\n",
+    });
     const res = await runImport(
-      document([topic("a.md", "x"), topic("tools.md", "x", { "run.py": "print(1)\n" })]),
+      zipOf({
+        "keep.md": topicText("keep", "from the file"),
+        [MEMORY_INDEX_FILENAME]: "- [Keep](keep.md) — imported\n",
+      }),
+      { mode: "replace", confirm: true },
     );
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-      "memory_folder_not_a_directory",
-    );
-    expect(await namesOnDisk()).toEqual([]);
-    expect(await fs.readFile(path.join(wsDir, "tools"), "utf8")).toBe("not a directory\n");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MemoryImportResponse;
+    expect(body.overwritten).toEqual(["keep.md"]);
+    expect(body.removed.sort()).toEqual(["gone.md", "leftover/"]);
+    expect(body.indexWritten).toBe(true);
+    expect(await onDisk()).toEqual(["MEMORY.md", "keep.md"]);
+    expect(await readIndex()).toBe("- [Keep](keep.md) — imported\n");
   });
 
-  itWithSymlinks(
-    "refuses an import whose topic folder is a symlink, never writing through it",
-    async () => {
-      const outside = path.join(t.root, `${agentId}-outside-import`);
-      await fs.mkdir(outside, { recursive: true });
-      await fs.symlink(outside, path.join(wsDir, "tools"));
-      const res = await runImport(document([topic("tools.md", "x", { "run.py": "print(1)\n" })]));
-      expect(res.status).toBe(409);
-      expect(await fs.readdir(outside)).toEqual([]);
-      expect(await namesOnDisk()).toEqual([]);
-    },
-  );
-
-  it("prunes the index of a replace whose document carries none", async () => {
-    await fs.writeFile(path.join(wsDir, "gone.md"), "x\n", "utf8");
-    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [Gone](gone.md) — mine\n");
-
-    const res = await runImport(document([topic("new.md", "n")], null), {
+  it("prunes the index of a replace whose zip carries none", async () => {
+    await writeFiles(wsDir, {
+      "gone.md": "x\n",
+      [MEMORY_INDEX_FILENAME]: "- [Gone](gone.md) — mine\n",
+    });
+    const res = await runImport(zipOf({ "new.md": topicText("new", "n") }), {
       mode: "replace",
       confirm: true,
     });
@@ -942,7 +835,7 @@ describe("memory scope export/import", () => {
   it("needs no confirmation for a destructive mode that would destroy nothing", async () => {
     // The gate is what the import would actually cost, not the mode's name: an empty scope
     // loses nothing either way, and a confirmation naming nothing is just a click.
-    const res = await runImport(document([topic("new.md", "n")]), { mode: "replace" });
+    const res = await runImport(zipOf({ "new.md": topicText("new", "n") }), { mode: "replace" });
     expect(res.status).toBe(200);
     expect((await res.json()) as MemoryImportResponse).toMatchObject({
       added: ["new.md"],
@@ -953,95 +846,114 @@ describe("memory scope export/import", () => {
 
   // —— Rejections on the untrusted write path ——
 
-  /** The NUL byte, built rather than typed: an invisible byte in a source file is nobody's friend. */
-  const NUL = String.fromCharCode(0);
-
-  /** Posts a document (or a whole raw body) that must be refused with 400, having written nothing. */
-  const rejects = async (files: unknown, hint: string): Promise<void> => {
-    const res = await runImport(
-      Array.isArray(files) ? document(files as MemoryTransferFile[]) : files,
-    );
+  /** Posts an upload (or a whole raw body) that must be refused with 400, having written nothing. */
+  const rejects = async (upload: string | object, hint: string): Promise<void> => {
+    const res = await runImport(upload);
     expect(res.status, hint).toBe(400);
   };
 
-  it("rejects a name that is a path, climbs out, or is not a topic file", async () => {
+  it("refuses a zip entry that is no memory file, climbs out or hides, writing nothing", async () => {
     const outside = path.join(t.root, `${agentId}-outside-target.md`);
-    await rejects([topic("../escape.md", "x")], "parent traversal");
-    await rejects([topic("..\\escape.md", "x")], "windows traversal");
-    await rejects([topic("sub/notes.md", "x")], "nested path");
-    await rejects([topic(outside, "x")], "absolute path");
-    await rejects([topic(MEMORY_INDEX_FILENAME, "x")], "the index is not a topic file");
-    await rejects([topic("memory.md", "x")], "the index under another casing");
-    await rejects([topic("t.md", "x", { "../escape.py": "x" })], "a kept file climbing out");
-    await rejects([topic("t.md", "x", { ".env": "x" })], "a hidden kept file");
-    await rejects([topic("t.md", "x", { "lib/.cache/x": "x" })], "a hidden folder on the way");
-    await rejects([topic("t.md", "x", { "a//b.py": "x" })], "an empty segment");
-    await rejects([topic("t.md", "x", { "/etc/passwd": "x" })], "an absolute kept path");
-    await rejects([topic("t.md", "x", { "a\\b.py": "x" })], "a backslash in a kept path");
-    await rejects([topic("t.md", "x", { lib: "x", "lib/io.py": "x" })], "a file that is a folder");
-    await rejects([topic("t.md", "x", { [`bad${NUL}.py`]: "x" })], "NUL in a kept path");
-    await rejects([topic("t.md", "x", { "ok.py": `bin${NUL}ary` })], "NUL in a kept file");
-    await rejects([topic("notes.txt", "x")], "not markdown");
-    await rejects([topic(".workspace", "x")], "the workspace marker");
-    await rejects([topic("", "x")], "empty name");
-    await rejects([topic(`bad${NUL}.md`, "x")], "NUL in the name");
-    // Not one of them reached the filesystem, inside the scope or out.
-    expect(await namesOnDisk()).toEqual([]);
-    expect(await keptOnDisk("t")).toEqual([]);
+    await rejects(zipOf({ "../escape.md": "x" }), "parent traversal");
+    await rejects(zipOf({ "a\\b.md": "x" }), "a backslash");
+    await rejects(zipOf({ [outside]: "x" }), "absolute path");
+    await rejects(zipOf({ "notes.txt": "x" }), "a file at the root that is no topic");
+    await rejects(zipOf({ "memory.md": "x" }), "the index under another casing");
+    await rejects(zipOf({ ".workspace": "/elsewhere\n" }), "the workspace marker");
+    await rejects(zipOf({ "t.md": "x", "t/.env": "SECRET=1\n" }), "a hidden kept file");
+    await rejects(zipOf({ "t.md": "x", "t/.cache/x": "x" }), "a hidden folder on the way");
+    await rejects(zipOf({ "a.md": "x", "A.md": "y" }), "two names one disk takes for one");
+    await rejects(zipOf({ "t.md": "x", "t/ok.py": "x", "t/ok.py/x": "y" }), "a file that is a folder");
+    await rejects(zipOf({ [MEMORY_INDEX_FILENAME]: new Uint8Array([0xff, 0xfe]) }), "an index that is not text");
+    await rejects(Buffer.from("not a zip at all").toString("base64"), "not a zip");
+    await rejects(zipOf({ "fine.md": "ok", "../escape.md": "x" }), "one bad entry among good ones");
+    expect(await onDisk()).toEqual([]);
     await expect(fs.stat(outside)).rejects.toThrow();
   });
 
-  it("writes nothing at all when one entry in the document is bad", async () => {
-    const res = await runImport(document([topic("fine.md", "ok"), topic("../escape.md", "x")]));
-    expect(res.status).toBe(400);
-    expect(await namesOnDisk()).toEqual([]);
+  it("refuses a zip holding a link, whatever it points at", async () => {
+    // A Unix zipper records a symlink as host 3 with S_IFLNK in the external attributes; its data
+    // is the target path, which fflate would otherwise hand back as an ordinary file.
+    const link = Buffer.from(
+      zipSync({
+        "t.md": strToU8("x"),
+        "t/loot.py": [strToU8("/etc/passwd"), { os: 3, attrs: 0o120777 << 16 }],
+      }),
+    ).toString("base64");
+    await rejects(link, "a symlink entry");
+    expect(await onDisk()).toEqual([]);
   });
 
-  it("rejects entries that are not text", async () => {
-    await rejects([{ name: "n.md", content: 42 }], "number content");
-    await rejects([{ name: "n.md", content: { body: "x" } }], "object content");
-    await rejects([{ name: "n.md" }], "missing content");
-    await rejects([{ name: 7, content: "x" }], "non-string name");
-    await rejects(["n.md"], "entry is not an object");
-    await rejects([{ name: "n.md", content: `binary${NUL}payload` }], "NUL in the content");
-    await rejects({ ...document([topic("n.md", "x")]), index: 5 }, "non-string index");
-    expect(await namesOnDisk()).toEqual([]);
+  it("refuses an import whose memory folder is not a directory, writing nothing", async () => {
+    await fs.writeFile(path.join(wsDir, "tools"), "not a directory\n", "utf8");
+    const res = await runImport(
+      zipOf({ "a.md": "x", "tools.md": topicText("tools", "x"), "tools/run.py": "print(1)\n" }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "memory_folder_not_a_directory",
+    );
+    expect(await onDisk()).toEqual(["tools"]);
   });
 
-  it("rejects absurd counts and sizes", async () => {
+  itWithSymlinks("refuses an import whose memory folder is a symlink, never writing through it", async () => {
+    const outside = path.join(t.root, `${agentId}-outside-import`);
+    await fs.mkdir(outside, { recursive: true });
+    await fs.symlink(outside, path.join(wsDir, "tools"));
+    const res = await runImport(
+      zipOf({ "tools.md": topicText("tools", "x"), "tools/run.py": "print(1)\n" }),
+    );
+    expect(res.status).toBe(409);
+    expect(await fs.readdir(outside)).toEqual([]);
+  });
+
+  it("asks for exactly one of a zip and a version 1 document", async () => {
+    expect((await owner.post(importPath(), {})).status).toBe(400);
+    const both = await owner.post(importPath(), {
+      dataBase64: zipOf({ "a.md": "x" }),
+      payload: { format: "penguin-memory-scope", version: 1, files: [] },
+    });
+    expect(both.status).toBe(400);
+    expect((await owner.post(importPath(), { dataBase64: 7 })).status).toBe(400);
+    expect(
+      (await owner.post(importPath(), { dataBase64: zipOf({ "a.md": "x" }), mode: "wipe" }))
+        .status,
+    ).toBe(400);
+  });
+
+  // —— The version 1 document's own checks ——
+
+  /** NUL, built rather than typed: an invisible byte in a source file is nobody's friend. */
+  const NUL = String.fromCharCode(0);
+
+  /** A version 1 document carrying the given entries. */
+  const v1Doc = (files: unknown[], extra: object = {}) => ({
+    format: "penguin-memory-scope",
+    version: 1,
+    scopeKey: WORKSPACE_KEY,
+    kind: "workspace",
+    exportedAt: "2026-08-20T00:00:00.000Z",
+    index: null,
+    files,
+    ...extra,
+  });
+
+  it("refuses a version 1 document with a path-like name, entries that are not text, or absurd sizes", async () => {
+    await rejects(v1Doc([{ name: "../escape.md", content: "x" }]), "parent traversal");
+    await rejects(v1Doc([{ name: "sub/notes.md", content: "x" }]), "nested path");
+    await rejects(v1Doc([{ name: "notes.txt", content: "x" }]), "not markdown");
+    await rejects(v1Doc([{ name: `bad${NUL}.md`, content: "x" }]), "NUL in the name");
+    await rejects(v1Doc([{ name: "n.md", content: 42 }]), "number content");
+    await rejects(v1Doc([{ name: "n.md", content: `bin${NUL}ary` }]), "NUL in the content");
+    await rejects(v1Doc([{ name: "a.md", content: "1" }, { name: "a.md", content: "2" }]), "the same name twice");
     await rejects(
-      Array.from({ length: 501 }, (_, i) => topic(`m${i}.md`, "x")),
+      v1Doc(Array.from({ length: 501 }, (_, i) => ({ name: `m${i}.md`, content: "x" }))),
       "too many entries",
     );
-    await rejects([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }], "one oversized file");
-    // Longer than a path component may be: the write would fail with ENAMETOOLONG, which is a
-    // 500 for what is plainly a bad request.
-    await rejects([topic(`${"a".repeat(253)}.md`, "x")], "an oversized name");
-    // Individually legal, together over the whole-document budget.
-    const half = "y".repeat(512 * 1024);
-    await rejects(
-      Array.from({ length: 17 }, (_, i) => ({ name: `big${i}.md`, content: half })),
-      "over the total budget",
-    );
-    expect(await namesOnDisk()).toEqual([]);
-  });
-
-  it("rejects a foreign or future document, and a body with no document at all", async () => {
-    await rejects({ ...document([]), format: "some-other-tool" }, "foreign format");
-    await rejects({ ...document([]), version: 3 }, "future version");
-    // A version 2 entry is named by its file name: a `path` alone does not name one.
-    await rejects({ ...document([]), files: [{ path: "a.md", content: "x" }] }, "entry by path");
-    await rejects(
-      { ...document([]), files: [{ ...topic("a.md", "x"), files: {} }] },
-      "files is not a list",
-    );
-    await rejects({ ...document([]), files: "not-an-array" }, "files is not an array");
-    await rejects([topic("a.md", "1"), topic("a.md", "2")], "the same name twice");
-    expect((await owner.post(importPath(), {})).status).toBe(400);
-    expect((await owner.post(importPath(), { payload: "text" })).status).toBe(400);
-    expect((await owner.post(importPath(), { payload: document([]), mode: "wipe" })).status).toBe(
-      400,
-    );
+    await rejects(v1Doc([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }]), "one oversized file");
+    await rejects(v1Doc([], { format: "some-other-tool" }), "foreign format");
+    await rejects(v1Doc([], { version: 2 }), "a version that was never written");
+    expect(await onDisk()).toEqual([]);
   });
 
   itWithSymlinks(
@@ -1051,7 +963,7 @@ describe("memory scope export/import", () => {
       await fs.writeFile(outside, "secret\n", "utf8");
       await fs.symlink(outside, path.join(wsDir, "leak.md"));
 
-      const res = await runImport(document([topic("leak.md", "imported body")]), {
+      const res = await runImport(zipOf({ "leak.md": "imported body\n" }), {
         mode: "overwrite",
         confirm: true,
       });
@@ -1059,31 +971,34 @@ describe("memory scope export/import", () => {
       // The link is gone, the memory is a real file inside the scope, and the file it pointed at
       // never saw the write.
       expect((await fs.lstat(path.join(wsDir, "leak.md"))).isSymbolicLink()).toBe(false);
-      expect(await fs.readFile(path.join(wsDir, "leak.md"), "utf8")).toContain("imported body");
+      expect(await fs.readFile(path.join(wsDir, "leak.md"), "utf8")).toBe("imported body\n");
       expect(await fs.readFile(outside, "utf8")).toBe("secret\n");
     },
   );
 
   it("leaves no temporary file behind in the scope directory", async () => {
-    expect((await runImport(document([topic("a.md", "x")]))).status).toBe(200);
-    expect((await fs.readdir(wsDir)).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+    expect((await runImport(zipOf({ "a.md": "x", "a/run.sh": "echo\n" }))).status).toBe(200);
+    expect((await fs.readdir(wsDir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+    expect((await fs.readdir(path.join(wsDir, "a"))).filter((n) => n.includes(".tmp"))).toEqual(
+      [],
+    );
   });
 
   itWithSymlinks(
     "rejects a bad scope key and a scope smuggled in as a symlink, on both routes",
     async () => {
       expect((await owner.get(exportPath("..%2Fescape"))).status).toBe(400);
-      expect((await runImport(document([]), { key: "..%2Fescape" })).status).toBe(400);
+      expect((await runImport(zipOf({}), { key: "..%2Fescape" })).status).toBe(400);
       expect((await owner.get(exportPath("never-run-0badc0de"))).status).toBe(404);
-      expect((await runImport(document([]), { key: "never-run-0badc0de" })).status).toBe(404);
+      expect((await runImport(zipOf({}), { key: "never-run-0badc0de" })).status).toBe(404);
 
       const outside = path.join(t.root, `${agentId}-outside-dir`);
       await fs.mkdir(outside, { recursive: true });
       await fs.symlink(outside, memoryScopeDir(t.root, projectId, agentId, "evil-12345678"));
       expect((await owner.get(exportPath("evil-12345678"))).status).toBe(404);
-      expect(
-        (await runImport(document([topic("a.md", "x")]), { key: "evil-12345678" })).status,
-      ).toBe(404);
+      expect((await runImport(zipOf({ "a.md": "x" }), { key: "evil-12345678" })).status).toBe(
+        404,
+      );
       expect(await fs.readdir(outside)).toEqual([]);
     },
   );
@@ -1095,18 +1010,18 @@ describe("memory scope export/import", () => {
     // Export is reading Agent State, which every Project member may already do file by file.
     expect((await member.get(exportPath())).status).toBe(200);
     // Import can cost the Agent memories, so it follows the Agent State snapshot's owner gate.
-    const denied = await member.post(importPath(), { payload: document([topic("a.md", "x")]) });
+    const denied = await member.post(importPath(), { dataBase64: zipOf({ "a.md": "x" }) });
     expect(denied.status).toBe(403);
     expect(((await denied.json()) as { error: { code: string } }).error.code).toBe(
       "owner_required",
     );
-    expect(await namesOnDisk()).toEqual(["testing-conventions.md"]);
+    expect(await onDisk()).toEqual(["testing-conventions.md"]);
   });
 
   it("404s both routes for a non-member, without leaking that the scope exists", async () => {
     expect((await outsider.get(exportPath())).status).toBe(404);
-    const res = await outsider.post(importPath(), { payload: document([topic("a.md", "x")]) });
+    const res = await outsider.post(importPath(), { dataBase64: zipOf({ "a.md": "x" }) });
     expect(res.status).toBe(404);
-    expect(await namesOnDisk()).toEqual([]);
+    expect(await onDisk()).toEqual([]);
   });
 });

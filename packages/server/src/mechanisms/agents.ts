@@ -14,11 +14,9 @@ import type {
   CaseMaterial,
   MemoryFileResponse,
   MemoryFilesResponse,
-  MemoryFolderFileResponse,
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MemoryScopeInfo,
   VaultResponse,
   VaultUpdateRequest,
@@ -111,39 +109,23 @@ export abstract class Memory {
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse>;
+  /** `filePath` is the file's place in the scope: a topic's name, or `<folder>/<path>` for a file it keeps. */
   abstract readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    fileName: string,
-  ): Promise<MemoryFileResponse>;
-  /** `filePath` is a kept file's place in the scope: `<folder>/<path>`. */
-  abstract readFolderFile(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
     filePath: string,
-  ): Promise<MemoryFolderFileResponse>;
-  abstract exportScope(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-  ): Promise<MemoryScopeExport>;
+  ): Promise<MemoryFileResponse>;
+  /** The scope folder as a zip. */
+  abstract exportScope(projectId: string, agentId: string, scopeKey: string): Promise<Uint8Array>;
   abstract importScope(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    request: { mode: MemoryImportMode; confirm: boolean; payload: unknown },
+    request: { mode: MemoryImportMode; confirm: boolean; payload?: unknown; dataBase64?: string },
   ): Promise<MemoryImportResponse>;
-  /** Deletes a topic file together with the folder of files it keeps. */
+  /** `filePath` as in `readFile`; a topic goes together with the folder of files it keeps. */
   abstract deleteFile(
-    projectId: string,
-    agentId: string,
-    scopeKey: string,
-    fileName: string,
-  ): Promise<void>;
-  /** `filePath` as in `readFolderFile`. */
-  abstract deleteFolderFile(
     projectId: string,
     agentId: string,
     scopeKey: string,

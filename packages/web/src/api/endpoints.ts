@@ -71,11 +71,9 @@ import type {
   MembersResponse,
   MemoryFileResponse,
   MemoryFilesResponse,
-  MemoryFolderFileResponse,
   MemoryImportRequest,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   MessagesResponse,
   MessagingAccountHoldersResponse,
@@ -703,62 +701,35 @@ export const getMemoryFiles = (
     server: machineId,
   });
 
+/**
+ * One memory file's URL. `filePath` is its place in the scope: a topic's name (`MemoryFileInfo.name`)
+ * or a kept file's path (`MemoryFolderFile.path`, `<folder>/<path>`), each segment encoded on its
+ * own and the `/` between them kept.
+ */
+const memoryFileUrl = (projectId: string, agentId: string, scopeKey: string, filePath: string) =>
+  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+
+/** A topic with the files it keeps, or a kept file's text (up to 512 KB of UTF-8). */
 export const getMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
+  filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFileResponse>(
-    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
-    { server: machineId },
-  );
+  apiFetch<MemoryFileResponse>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
+    server: machineId,
+  });
 
+/** Deletes a topic with its folder (and its index lines), or one kept file. */
 export const deleteMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
-  machineId: string | null,
-) =>
-  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-    server: machineId,
-  });
-
-/**
- * A file a topic keeps (or one in a folder no topic keeps), by its place in the scope as the
- * listing gives it (`MemoryFolderFile.path`, `<folder>/<path>`): each segment is encoded on its
- * own and the `/` between them kept, which is how the server tells it from a topic's name.
- */
-const memoryFolderFileUrl = (
-  projectId: string,
-  agentId: string,
-  scopeKey: string,
-  filePath: string,
-) =>
-  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
-
-export const getMemoryFolderFile = (
-  projectId: string,
-  agentId: string,
-  scopeKey: string,
   filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFolderFileResponse>(memoryFolderFileUrl(projectId, agentId, scopeKey, filePath), {
-    server: machineId,
-  });
-
-export const deleteMemoryFolderFile = (
-  projectId: string,
-  agentId: string,
-  scopeKey: string,
-  filePath: string,
-  machineId: string | null,
-) =>
-  apiFetch<void>(memoryFolderFileUrl(projectId, agentId, scopeKey, filePath), {
+  apiFetch<void>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
     method: "DELETE",
     server: machineId,
   });
@@ -766,23 +737,15 @@ export const deleteMemoryFolderFile = (
 const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}`;
 
-/**
- * One scope as a transfer document. Fetched as ordinary JSON rather than followed as a download
- * link so a failure arrives as an ApiError and reaches the user as a toast — a bare `<a download>`
- * would save the error body as a file (the skills tab hit the same wall). The server still sets
- * Content-Disposition, for anyone opening the URL directly.
- */
-export const exportMemoryScope = (
+/** Zip download URL for one scope's folder (server sets Content-Disposition attachment); the export round-trips through importMemoryScope. */
+export const memoryScopeArchiveUrl = (
   projectId: string,
   agentId: string,
   scopeKey: string,
   machineId: string | null,
-) =>
-  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, {
-    server: machineId,
-  });
+): string => apiUrl(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, machineId);
 
-/** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
+/** Writes a scope zip (or a version 1 JSON document) into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
   projectId: string,
   agentId: string,

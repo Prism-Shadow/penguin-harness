@@ -529,10 +529,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | GET | `/agents/:agentId/memory` | 记忆概览 |
 | POST | `/agents/:agentId/memory/template-placeholder` | 在 Prompt 模板中插入 `{{MEMORY}}` 占位符 |
 | GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件、各自附带的文件，以及不属于任何主题的文件 |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取一个主题文件 / 连同其文件夹删除 |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:folder/:path` | 读取 / 删除一个附带的文件 |
-| GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
-| POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:path` | 读取一个文件（主题或其附带的文件）/ 删除它（主题连同其文件夹） |
+| GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域的文件夹导出为 zip |
+| POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的 zip 写回（仅所有者） |
 | GET | `/agents/:agentId/archive` | 把 Agent 导出为其目录的 zip；查询参数选择部件与 Trace |
 | POST | `/agents/import` | 从 zip 或 tar.gz 快照包导入 Agent，请求体为原始文件 → 201 `{agent, mode, version, backup?, sessions}` |
 | GET | `/agents/:agentId/skills` | 已安装的 Skill（从插件库安装需通过 `/plugins`） |
@@ -571,10 +570,9 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `GET …/memory` 返回记忆开关、Prompt 模板是否带有 `{{MEMORY}}`，以及每个作用域的条目：用户作用域（`user`，`kind: "user"`）排在最前，随后是各个 Workspace。
 - 在这些作用域路由中，`:key` 是某个 Workspace 的 key 或 `user`。
 - `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。每个主题带 `files`：其文件夹（主题文件名去掉 `.md`，如 `csv-tools.md` 的 `csv-tools/`）中任意层级的文件，各带在作用域中的 `path`（`csv-tools/lib/io.py`）、`size` 和 `modifiedAt`。`orphanFiles` 以同样形式列出旁边没有同名主题的文件夹中的文件。
-- `DELETE …/scopes/:key/files/:name` 连同文件夹删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行。
-- `GET …/files/:folder/:path` 返回一个附带文件的文本，路径的每一段对应 URL 的一段。超过 512 KB 的文件以 413 `memory_file_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_file_not_text` 拒绝。对同一路径 `DELETE` 删除该文件以及因此变空的文件夹。两者都不跟随符号链接。
-- `GET …/scopes/:key/export` 把作用域的全部主题文件（连同各自附带的文件）和 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。文档为 `version: 2`：主题条目带 `files`，每个文件以 `path` 标明它在主题文件夹中的位置。超过 512 KB 的文件、不是 UTF-8 文本的文件，以及不属于任何主题的文件夹中的文件不写入文档，而是列在 `omitted` 中，附 `path`、`size` 与 `reason`（`too_large`、`not_text` 或 `orphan`）。
-- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。主题连同文件夹一起迁移。`mode` 取 `skip`（默认值，只添加作用域缺少的主题）、`overwrite`（替换同名主题，其文件夹此后恰好是文档中的文件）或 `replace`（还会删除文档中没有的主题及其文件夹，以及不属于任何主题的文件夹；`removed` 把这种文件夹写作 `<folder>/`）。没有同名主题的文件夹视为该主题已存在。凡会覆盖或删除的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。`version: 1` 的文档（不带文件）照常导入。主题文件夹的位置或通往其某个文件的路径上有非目录时，路由返回 409 `memory_folder_not_a_directory`，什么也不写入。
+- `…/scopes/:key/files/:path` 接受文件在作用域中的路径，路径的每一段对应 URL 的一段：主题文件名，或附带文件的 `<folder>/<path>`。`GET` 返回主题（含 frontmatter 与 `files`），或附带文件的文本，此时 `file` 以路径作 `name`；超过 512 KB 的附带文件以 413 `memory_file_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_file_not_text` 拒绝。`DELETE` 连同文件夹删除主题文件，并从 `MEMORY.md` 索引中删掉对应的行；或删除一个附带文件以及因此变空的文件夹。两者都不跟随符号链接。
+- `GET …/scopes/:key/export` 以 zip 附件返回作用域的文件夹：`MEMORY.md`、全部主题文件和各文件夹中的文件都在 zip 根下，原样保存。超过 1,000 个文件、单个文件 5 MB 或总计 20 MB 时返回 413 `memory_too_large`。
+- `POST …/scopes/:key/import` 接受 `{dataBase64, mode?, confirm?}`（zip 的 base64），或 `{payload, mode?, confirm?}`（zip 之前导出的 `version: 1` JSON 文档）。一条记忆是主题文件及其同名文件夹，作为整体迁移；没有主题的文件夹自成一条记忆，记作 `<folder>/`。`mode` 取 `skip`（默认值，只添加作用域缺少的记忆）、`overwrite`（替换同名记忆，主题与文件夹一并替换）或 `replace`（还会删除导入中没有的记忆）。凡会覆盖或删除的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`，其 `details` 以 JSON 数组给出 `overwritten` 与 `removed` 中的记忆名，并附 `replacesIndex`。zip 中不是记忆文件、越出作用域、以点开头或为链接的条目以 400 拒绝；记忆文件夹的位置或通往其文件的路径上有非目录时，路由返回 409 `memory_folder_not_a_directory`。两种情况都什么也不写入。
 
 ### 插件与钩子
 

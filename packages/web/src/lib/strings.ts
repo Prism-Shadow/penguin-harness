@@ -3013,22 +3013,18 @@ export const zh = {
     deleteFileTitle: "删除这个文件？",
     deleteFileConfirm: (path: string): string =>
       `将删除 ${path}。记忆正文中对它的说明不会随之删去。此操作不可恢复。`,
-    /** Toast after an export that had to leave files out; the paths follow. */
-    exportOmitted: (paths: string[]): string =>
-      `有 ${paths.length} 个文件未写入导出文件（超过 512 KB、不是文本，或不属于任何记忆）：${paths.join("、")}`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
     exportScope: "导出",
-    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeHint: "将该组的文件夹（全部记忆、各自附带的文件与 MEMORY.md）下载为一个 zip",
     exportScopeLabel: (scope: string): string => `导出${scope}`,
     importScope: "导入",
-    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeHint: "从导出的 zip 恢复记忆到该组",
     importScopeLabel: (scope: string): string => `导入到${scope}`,
     importTitle: "导入记忆",
     importWhy:
-      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
-    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+      "读取从本 agent 或其他 agent 导出的一组记忆：该组文件夹的 zip，含这组记忆、各自附带的文件与 MEMORY.md 索引。早先版本导出的 JSON 文件照样可以导入。",
     importModeLabel: "当这一组里已有同名记忆时",
     importModeSkip: "保留现有的这条",
     importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",

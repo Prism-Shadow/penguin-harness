@@ -120,16 +120,13 @@ export function ChatMemoryView({
     const scopeKey = target.scope === "user" ? "user" : (target.scopeKey ?? "");
     let cancelled = false;
     setDetail({ key, content: null, failed: false, files: [] });
-    const read = isFolderFilePath(target.file)
-      ? api
-          .getMemoryFolderFile(session.projectId, session.agentId, scopeKey, target.file, machineId)
-          .then((res) => ({ content: res.content, files: [] }))
-      : api
-          .getMemoryFile(session.projectId, session.agentId, scopeKey, target.file, machineId)
-          .then((res) => ({ content: res.content, files: res.file.files }));
-    void read
+    // One route reads both: a topic answers with the files it keeps, a kept file with none.
+    void api
+      .getMemoryFile(session.projectId, session.agentId, scopeKey, target.file, machineId)
       .then((res) => {
-        if (!cancelled) setDetail({ key, ...res, failed: false });
+        if (!cancelled) {
+          setDetail({ key, content: res.content, files: res.file.files, failed: false });
+        }
       })
       .catch(() => {
         if (!cancelled) setDetail({ key, content: null, failed: true, files: [] });

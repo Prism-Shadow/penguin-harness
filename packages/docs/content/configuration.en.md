@@ -519,7 +519,7 @@ A memory can keep scripts: programs the agent would otherwise write again, such 
 The default Memory prompt tells the model to:
 
 - keep the files free of dependencies beyond their interpreter
-- say in the memory's body what each file does and how to run it, with relative links such as `[dedupe.py](csv-tools/dedupe.py)`. The memory keeps its one index line; its files get none
+- list the files in the memory's own body, each with what it does, how to run it and a relative link such as `[dedupe.py](csv-tools/dedupe.py)`, and never in `MEMORY.md`, which keeps one line per memory
 - run a script with `exec_command`, by absolute path through its interpreter (`python3`, `node`, `bash` and so on), because the file tools write files without the execute bit
 - delete the folder together with its memory
 - read a script before running one it did not write in the current Session, and keep secrets in the vault, never in a file
