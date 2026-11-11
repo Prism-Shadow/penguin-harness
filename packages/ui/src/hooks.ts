@@ -285,11 +285,11 @@
  * rules, so a recipe or a utility that fills the mark otherwise still has the mark's colour to
  * outline it in.
  *
- * `ui-avatar` (2026-11-04) is an Agent's default avatar, the ball penguin, drawn once per
+ * `ui-avatar` (2026-11-04) is an Agent's default avatar, the smiling ball penguin, drawn once per
  * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, the
  * base (Frost, and Doodle on it) swaps in `soft` and Console `pixel`, and Primer — and any pack
- * with no drawing of its own — keeps `flat`. Every drawing paints the Agent's palette slot and
- * wears the Agent's expression, both from its id, so only the drawing changes with the theme.
+ * with no drawing of its own — keeps `flat`. Every drawing paints the Agent's palette slot, from
+ * its id, and the same smiling face, so only the drawing changes with the theme.
  */
 export const HOOKS = [
   "ui-glass",
