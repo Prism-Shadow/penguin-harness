@@ -211,9 +211,9 @@ jobs:
         run: ${{ needs.plan.outputs.typecheck_command }}
 
   # Linux runs every affected package. New packages enter the rest shard automatically. The web
-  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and each
-  # uploads the coverage of its half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from
-  # silently skipping.
+  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and the
+  # server suite in two (server-1, server-2), dealt by weight; each job uploads the coverage of its
+  # half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from silently skipping.
   test:
     needs: plan
     if: needs.plan.outputs.tests == 'true'
@@ -233,6 +233,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+          # The gallery's layout checks below need Chromium: it downloads while the build runs.
+          alongside: ${{ matrix.gallery && 'pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium' || '' }}
       # Ubuntu 23.10 and later let only AppArmor-profiled programs create an unprivileged
       # user namespace, and some tests here need one. Changing it takes root and changes the
       # whole machine, so it is a host prerequisite the job sets, not something a test can.
@@ -259,12 +261,13 @@ jobs:
           retention-days: 7
       # Layout the component library only shows in a real engine, measured in the gallery: list
       # rows keep their actions inside the card, attachment tiles keep their image's shape. Run by
-      # the job that tests the gallery (the plan's `gallery`), against its own dev server.
-      - name: Install Chromium (gallery layout checks)
-        if: matrix.gallery
-        run: pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium
+      # the job that tests the gallery (the plan's `gallery`), against the gallery its build step
+      # built (GALLERY_SERVE=build: a third of the dev server's time), in the Chromium the setup
+      # step installed alongside the build.
       - name: Component layout checks (ui-gallery)
         if: matrix.gallery
+        env:
+          GALLERY_SERVE: build
         run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
       - name: Gallery layout failure diagnostics
         if: failure() && matrix.gallery
