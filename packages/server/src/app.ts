@@ -50,7 +50,7 @@ import {
   type Log,
   type ProxyControl,
 } from "./hmr/capabilities.js";
-import { ensureCliShim } from "./services/cli-shim.js";
+import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -301,26 +301,42 @@ export async function bootAppDeps(
   // test hands the tree) is honoured here too, and the process's own console otherwise.
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
-  const shim = ensureCliShim(config.root, config.cliEntry ?? null, {
+  // Which entry `penguin` is, answered once by the shared procedure rather than privately
+  // here: this server's own entry — the record decides only whether a pushed bundle rides
+  // with it. Asked pre-boot for the same reason the shim is written pre-boot — it describes
+  // this installation, not a state a push can change under a running App.
+  const ownCli = {
+    entry: config.cliEntry ?? null,
     execArgs: config.cliLaunch?.execArgs ?? [],
     unavailable: config.cliLaunch?.unavailable ?? null,
+  };
+  const resolvedCli =
+    ownCli.entry === null
+      ? null
+      : await resolveCli({ callerEntry: ownCli.entry, root: config.root });
+  const shimDecision = shimFromResolution(ownCli, resolvedCli);
+  const shim = ensureCliShim(config.root, shimDecision.entry, {
+    execArgs: shimDecision.execArgs,
+    unavailable: shimDecision.unavailable,
     dbPath: config.dbPath,
   });
   if (shim.kind === "written") {
-    // The whole command the shim runs, loader included: which CLI `penguin` is, said once.
+    // The whole command the shim runs, loader included, and the answer it ran under.
     const command = [...shim.execArgs, shim.entry].join(" ");
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command}`);
+    shimLog(
+      `Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command} (${shimDecision.answerName})`,
+    );
   } else if (shim.kind === "stub") {
     shimLog(
       `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
-        `instead of running another installation's: ${shim.reason}`,
+        `instead of running another installation's: ${shim.detail}`,
     );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
     );
   } else {
-    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.detail}`);
   }
 
   // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before

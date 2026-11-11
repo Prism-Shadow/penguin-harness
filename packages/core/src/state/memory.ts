@@ -17,19 +17,33 @@
  *     apart. A Session in a temporary Workspace gets no Workspace scope at all.
  *
  * Each scope directory carries its own `MEMORY.md` index; only the indexes enter the model
- * context, topic bodies are read on demand. Memory lives in Agent State, so it travels with
- * export / import / snapshots and is visible to every Project member who can reach the Agent.
+ * context, topic bodies and the files they keep are read on demand. Memory lives in Agent State,
+ * so it travels with export / import / snapshots and is visible to every Project member who can
+ * reach the Agent.
  *
  * On-disk layout (`agent_state/memory/`):
  *
  *     memory/
  *     ├── user/                        # User scope (no marker: it stands for no path)
- *     │   ├── MEMORY.md                # this scope's index
- *     │   └── <topic>.md
+ *     │   ├── MEMORY.md                # this scope's index, one line per topic
+ *     │   ├── <topic>.md
+ *     │   └── <topic>/                 # optional: the files <topic>.md keeps, any depth
  *     └── <workspace_memory_key>/
  *         ├── .workspace               # the Workspace path this key stands for
  *         ├── MEMORY.md
- *         └── <topic>.md               # frontmatter + body, semantic topics (not per Task/date)
+ *         ├── <topic>.md               # frontmatter + body, semantic topics (not per Task/date)
+ *         └── <topic>/<path>           # e.g. csv-tools/dedupe.py beside csv-tools.md
+ *
+ * A topic may keep reusable scripts — any number of files, in any language, subfolders allowed
+ * — in a folder named after its file without the `.md`; its body says what each file does and
+ * how to run it, with relative links, and its index line stays the only one. A folder with no
+ * topic beside it belongs to no topic. The model writes these files with the file tools and
+ * runs them through `exec_command` and their interpreter, by absolute path: files are written
+ * without the execute bit, and the running Session's sandbox, approval mode and command policy
+ * apply as to any command. A script carries the trust level of a Skill the Agent wrote for
+ * itself — every later Session may run it and every Project member can read it — which is why
+ * only a full-access Session can write one (the sandbox keeps Agent State read-only otherwise)
+ * and secrets stay in the vault.
  *
  * The Harness only decides *where* Memory lives, keeps writes inside that directory, and
  * injects the indexes into the prompt; the model owns the semantics — what is worth keeping,

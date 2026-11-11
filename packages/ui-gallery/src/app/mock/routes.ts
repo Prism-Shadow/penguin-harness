@@ -73,7 +73,6 @@ import type {
   MemoryFilesResponse,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   LanguageIndexResponse,
   MessagesResponse,
@@ -682,6 +681,7 @@ router
       files: memoryOf(ctx)
         .files.filter((f) => f.scopeKey === ctx.params.scopeKey)
         .map((f) => f.file),
+      orphanFiles: [],
     }),
   )
   .get(
@@ -694,35 +694,57 @@ router
       return found;
     },
   )
+  // Two segments or more: a file a topic keeps, by its `<folder>/<path>`, read through the same
+  // route as a topic and answered in the same shape.
+  .get(
+    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*",
+    (ctx): MemoryFileResponse => {
+      const found = memoryOf(ctx).folderFiles.find(
+        (f) => f.scopeKey === ctx.params.scopeKey && f.file.path === ctx.params["*"],
+      );
+      if (!found) notFound("Memory file");
+      const { path, size, modifiedAt } = found.file;
+      return {
+        scopeKey: found.scopeKey,
+        file: { name: path, title: path, description: "", size, modifiedAt, files: [] },
+        content: found.content,
+      };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/:name", (ctx) => {
     const memory = memoryOf(ctx);
+    const folder = `${ctx.params.name!.replace(/\.md$/i, "")}/`;
     memory.files = memory.files.filter(
       (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.name === ctx.params.name),
+    );
+    // The topic's folder goes with it.
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path.startsWith(folder)),
     );
     const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
     if (scope) scope.fileCount = memory.files.filter((f) => f.scopeKey === scope.scopeKey).length;
     return empty();
   })
-  .get(
-    "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export",
-    (ctx): MemoryScopeExport => {
-      const memory = memoryOf(ctx);
-      const scope = memory.overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
-      if (!scope) notFound("Memory scope");
-      return {
-        format: "penguin-memory-scope",
-        version: 1,
-        scopeKey: scope.scopeKey,
-        kind: scope.kind,
-        ...(scope.workspacePath ? { workspacePath: scope.workspacePath } : {}),
-        exportedAt: new Date().toISOString(),
-        index: scope.hasIndex ? "# Memory\n" : null,
-        files: memory.files
-          .filter((f) => f.scopeKey === scope.scopeKey)
-          .map((f) => ({ name: f.file.name, content: f.content })),
-      };
-    },
-  )
+  .delete("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/files/*", (ctx) => {
+    const memory = memoryOf(ctx);
+    const filePath = ctx.params["*"]!;
+    memory.folderFiles = memory.folderFiles.filter(
+      (f) => !(f.scopeKey === ctx.params.scopeKey && f.file.path === filePath),
+    );
+    for (const topic of memory.files) {
+      if (topic.scopeKey !== ctx.params.scopeKey) continue;
+      topic.file = { ...topic.file, files: topic.file.files.filter((k) => k.path !== filePath) };
+    }
+    return empty();
+  })
+  .get("/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/export", (ctx) => {
+    const scope = memoryOf(ctx).overview.scopes.find((s) => s.scopeKey === ctx.params.scopeKey);
+    if (!scope) notFound("Memory scope");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${ctx.params.agentId}-${scope.scopeKey}-memory.zip"`,
+    });
+  })
   .post(
     "/api/projects/:projectId/agents/:agentId/memory/scopes/:scopeKey/import",
     (ctx): MemoryImportResponse => ({
@@ -784,6 +806,7 @@ router
     store.f.memory[id] = {
       overview: { ...store.f.memory[IDS.agents.notes]!.overview, scopes: [] },
       files: [],
+      folderFiles: [],
     };
     return json({ agent } satisfies AgentCreateResponse, 201);
   })

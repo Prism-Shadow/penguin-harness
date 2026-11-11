@@ -15,7 +15,7 @@ import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "./model-catalog/catalog.js";
-import { resolveCliLaunch, type CliLaunch } from "./services/cli-shim.js";
+import { offeredCli, type CliLaunch } from "./services/cli-shim.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -108,7 +108,7 @@ export interface ServerConfig {
    * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the
    * desktop shell passes the bundled one to the server it forks. Otherwise, on a server running
    * from a checkout, that checkout's CLI: its source while the server runs from source, else its
-   * build (resolveCliLaunch). Null = no CLI to offer; see cliLaunch for why.
+   * build (offeredCli). Null = no CLI to offer; see cliLaunch for why.
    *
    * Related to but wider than the self-update endpoint's use of the same variable
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
@@ -160,17 +160,17 @@ function defaultWebDist(): string {
 }
 
 /**
- * The CLI this server offers (services/cli-shim.ts resolveCliLaunch), looked up from this
+ * The CLI this server offers (services/cli-shim.ts offeredCli), looked up from this
  * module's own location: `packages/server/src/…` under tsx — TypeScript source, so the
  * checkout's CLI source is offered — `packages/server/dist/…` when built, the desktop shell's
  * bundle in a source desktop run, all reached by the same walk to the workspace root.
  */
 function cliLaunchFor(env: NodeJS.ProcessEnv): CliLaunch {
   const here = fileURLToPath(import.meta.url);
-  return resolveCliLaunch({
-    explicit: env.PENGUIN_CLI_ENTRY,
+  return offeredCli({
+    explicitEntry: env.PENGUIN_CLI_ENTRY,
     moduleDir: path.dirname(here),
-    source: /\.[cm]?tsx?$/.test(here),
+    runsFromSource: /\.[cm]?tsx?$/.test(here),
     electron: process.versions.electron !== undefined,
   });
 }

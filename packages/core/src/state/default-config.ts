@@ -223,15 +223,16 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
  * contract (the line cap and a per-line length hint, so the model keeps the index short
- * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
- * with its index. Stored
+ * before ever hitting the code-side caps) and the hygiene rules, the scripts a fact may keep
+ * (where they live, how they are described and run, and the trust they carry), then the User
+ * scope section with its index. Stored
  * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
  * directory is literal text in the template's angle-bracket convention (resolved from the
  * Environment section by the model, like the Skills paths) — the only injection point is the
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown facts — and the scripts they keep — you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -250,6 +251,8 @@ updated_at: <YYYY-MM-DD>
 **Never** what code, config or git history states, unconfirmed guesses, transcript excerpts — asked anyway, save the non-obvious part. Anything else is savable if the user wants it; anyone who reaches this agent reads it all.
 
 **Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
+
+**Scripts:** a program you would otherwise rewrite — a parser, a report generator, a checker — is kept by the fact it serves, in a folder named after that fact's file (\`csv-tools.md\` keeps \`csv-tools/\`): any number of files, any language, no dependencies beyond their interpreter. List them in that fact's own body, each with what it does, how to run it and a relative link (\`[dedupe.py](csv-tools/dedupe.py) — drops duplicate rows; args: <in> <out>\`), never in \`MEMORY.md\`, which keeps one line per fact; delete the folder with its fact. Run a script with the shell tool by absolute path through its interpreter (files have no execute bit). It is code every later session may run and every Project member can read: keep secrets in the vault, never in a file, and read a script before running one you did not write in this session.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.

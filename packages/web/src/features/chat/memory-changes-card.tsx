@@ -1,7 +1,8 @@
 /**
  * Memory-change summary card, rendered right below the file-summary card at the end of a
- * root Task (the same card, the UI package's ChangesCard): one row per memory topic file the
- * Task changed through the structured file tools, derived by the stream model
+ * root Task (the same card, the UI package's ChangesCard): one row per memory file the Task
+ * changed through the structured file tools — a topic, or a file a topic keeps in its folder,
+ * shown by its path right under that topic when both changed — derived by the stream model
  * (TaskStatsItem.memoryChanges — see lib/amsp/memory-changes.ts for what qualifies and what is
  * filtered).
  *
@@ -14,7 +15,11 @@
  */
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { type MemoryChangeRow, memoryRowKey } from "../../lib/amsp/memory-changes";
+import {
+  type MemoryChangeRow,
+  memoryRowKey,
+  orderUnderTopics,
+} from "../../lib/amsp/memory-changes";
 
 import { scopeGlyph } from "./memory-view";
 
@@ -32,7 +37,9 @@ export function MemoryChangesCard({
   /** Header text action: open the Memory panel on its list; the action doesn't render if this isn't wired up. */
   onOpenPanel?: () => void;
 }) {
-  const alive = deletedKeys ? rows.filter((row) => !deletedKeys.has(memoryRowKey(row))) : rows;
+  const alive = orderUnderTopics(
+    deletedKeys ? rows.filter((row) => !deletedKeys.has(memoryRowKey(row))) : rows,
+  );
   if (alive.length === 0) return null;
 
   return (
