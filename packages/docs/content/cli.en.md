@@ -261,6 +261,7 @@ Options of `agent create`:
 | --- | --- | --- |
 | `--agent-id <id>` | The agent id, which is also its directory name. Required. | — |
 | `--name <name>` / `--description <text>` | Display name and description. | — |
+| `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
