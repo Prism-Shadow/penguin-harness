@@ -7,10 +7,11 @@
  * face (eyes, beak, a smile) and the blush. No letter is drawn.
  *
  * The face is one broad heart with a small widow's peak, its edge well clear of the eyes, so no
- * eye sits in a ring of its own; the eyes are small. Below 20 px the face keeps only what still
- * resolves — no catch-light, no blush, no smile — and draws its eyes bolder, so each lands on whole
- * dark pixels: a bead eye stays a dot, a closed eye becomes a short dash. A catch-light shows from
- * 48 px up.
+ * eye sits in a ring of its own; the eyes are small. Below 20 px every face becomes two bold bead
+ * dots — a closed eye there antialiases into a dash, and two of them into one bar across the face —
+ * and the catch-light, the blush and the smile are left out, so each eye lands on whole dark
+ * pixels; the faces part from 20 px up. A catch-light shows from 48 px up. The pixel drawing keeps
+ * every face at every size: its cells stay crisp from 16 px.
  *
  * - `flat` (Primer): the rounded-square tile.
  * - `soft` (Frost, and every pack on it — Doodle too): a round tile, the penguin a touch smaller
@@ -59,19 +60,8 @@ function BeadEye({ x, colors, size }: { x: number; colors: AgentColors; size: nu
 }
 
 /** A closed eye: an arc bowed upward (happy) or a flatter one bowed downward (relaxed). */
-function ClosedEye({
-  x,
-  up,
-  colors,
-  size,
-}: {
-  x: number;
-  up: boolean;
-  colors: AgentColors;
-  size: number;
-}) {
-  const small = size < SMALL_PX;
-  const half = small ? 1.4 : 1.25;
+function ClosedEye({ x, up, colors }: { x: number; up: boolean; colors: AgentColors }) {
+  const half = 1.25;
   const [end, bow] = up
     ? [EYE_Y + half * 0.5, EYE_Y - half * 1.5]
     : [EYE_Y - half * 0.3, EYE_Y + half * 0.9];
@@ -79,7 +69,7 @@ function ClosedEye({
     <path
       d={`M${r2(x - half)} ${r2(end)}Q${x} ${r2(bow)} ${r2(x + half)} ${r2(end)}`}
       fill="none"
-      strokeWidth={small ? 2 : 1}
+      strokeWidth="1"
       strokeLinecap="round"
       style={{ stroke: colors.mark }}
     />
@@ -89,10 +79,9 @@ function ClosedEye({
 function Eyes({ expression, colors, size }: AgentDrawingProps) {
   const [left, right] = [12 - EYE_DX, 12 + EYE_DX];
   const bead = (x: number) => <BeadEye x={x} colors={colors} size={size} />;
-  const closed = (x: number, up: boolean) => (
-    <ClosedEye x={x} up={up} colors={colors} size={size} />
-  );
-  switch (expression) {
+  const closed = (x: number, up: boolean) => <ClosedEye x={x} up={up} colors={colors} />;
+  // Below 20 px a closed eye cannot resolve: every face is two bead dots there.
+  switch (size < SMALL_PX ? "bead" : expression) {
     case "happy":
       return (
         <>
