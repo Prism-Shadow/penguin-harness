@@ -11,17 +11,18 @@
  * chance to run. Everything here is derived at use from the configured values; stored
  * config is never rewritten.
  *
- * `OUTPUT_SAFETY_MARGIN` is the single tunable of the margin story: the output floor and
- * the compaction headroom are derived from it (PR #235 review), so their invariants —
- * floor below margin, headroom above margin — cannot drift apart. The three remaining
- * independent facts are `DEFAULT_CONTEXT_WINDOW`, `DEFAULT_MAX_CONTEXT_LENGTH` and
- * `IMAGE_TOKEN_ESTIMATE`.
+ * `OUTPUT_SAFETY_MARGIN` is the tunable of the per-request margin: the output floor is derived
+ * from it (PR #235 review), so the floor cannot drift above the margin. The compaction
+ * reserve ({@link compactionReserve}) is the room a whole compaction needs under the window
+ * and scales with the window instead; {@link COMPACTION_ROUND_ROOM} is the room a tool round
+ * must leave for the summary after it. The remaining independent facts are
+ * `DEFAULT_CONTEXT_WINDOW`, `DEFAULT_MAX_CONTEXT_LENGTH` and `IMAGE_TOKEN_ESTIMATE`.
  *
  * Thinking-level interaction (considered, out of scope): on a high-reasoning session a
  * small derived cap can be consumed by thinking tokens before any visible answer, ending
  * the request as length -> failed. The arithmetic has no notion of the thinking level;
- * the compaction threshold firing `COMPACTION_HEADROOM` below the window keeps caps from
- * staying small for long, which bounds the exposure.
+ * the compaction threshold firing the reserve below the window keeps caps from staying
+ * small for long, which bounds the exposure.
  */
 import type { AmspRecord } from "@prismshadow/amsp/records";
 
@@ -37,7 +38,7 @@ import type { AmspRecord } from "@prismshadow/amsp/records";
  * Not {@link DEFAULT_MAX_CONTEXT_LENGTH}, the compaction-threshold default below — a separate
  * number that happens to concern the same axis. The seeded threshold sits above this
  * assumption, so an entry without a usable `context_window` effectively compacts at
- * `DEFAULT_CONTEXT_WINDOW − COMPACTION_HEADROOM`.
+ * `DEFAULT_CONTEXT_WINDOW − compactionReserve(DEFAULT_CONTEXT_WINDOW)` (112000).
  */
 export const DEFAULT_CONTEXT_WINDOW = 128000;
 
@@ -46,10 +47,10 @@ export const DEFAULT_CONTEXT_WINDOW = 128000;
  * start with, and the value {@link effectiveMaxContextLength}'s callers substitute for an Agent
  * whose config carries none. Set high on purpose, because the model's own `context_window` is
  * the backstop: the effective threshold is the smaller of this value and the window minus
- * {@link COMPACTION_HEADROOM}, taken at use. A window with no room for this value plus that
- * headroom therefore decides the trigger point, so a small-window model still compacts inside
- * its window rather than never; on a roomier window — nearly every built-in catalog entry —
- * this value is what fires. A model entry with no usable `context_window` falls back to
+ * {@link compactionReserve}, taken at use. A window with no room for this value plus that
+ * reserve therefore decides the trigger point, so a small-window model still compacts inside
+ * its window rather than never; on a roomier window (288768 tokens and up) this value is what
+ * fires. A model entry with no usable `context_window` falls back to
  * {@link DEFAULT_CONTEXT_WINDOW}, which is a different number from this one and must not be
  * conflated with it.
  *
@@ -83,25 +84,42 @@ export const OUTPUT_SAFETY_MARGIN = 1024;
  * Floor for the derived output cap: the minimal useful output budget. The clamp never
  * emits a non-positive (or uselessly tiny) `max_tokens` — when the remaining window is
  * smaller than this, compaction should already have fired (its threshold sits
- * `COMPACTION_HEADROOM` below the window); if it hasn't (compaction disabled, or a
+ * {@link compactionReserve} below the window); if it hasn't (compaction disabled, or a
  * misconfigured window), a deterministic small cap is still better than sending a
  * negative/zero cap the provider rejects outright. Derived at half the margin so a
  * floored request still fits inside the window when the input estimate is accurate.
  */
 export const MIN_OUTPUT_TOKENS = Math.floor(OUTPUT_SAFETY_MARGIN / 2);
 
+/** Smallest {@link compactionReserve}: what a 64k window or a smaller one keeps under it. */
+export const COMPACTION_RESERVE_MIN = 8192;
+/** Largest {@link compactionReserve}: what a 256k window or a larger one keeps under it. */
+export const COMPACTION_RESERVE_MAX = 32768;
+
 /**
- * Headroom (tokens) reserved under the model window when deriving the effective compaction
- * threshold: one `OUTPUT_SAFETY_MARGIN` for the margin itself plus the same again (~1k)
- * for the summary request's own output — the compaction request runs through the same
- * per-request clamp, so at the trigger point its output budget is about
- * `COMPACTION_HEADROOM − OUTPUT_SAFETY_MARGIN` minus the compaction prompt; reserving less
- * would clamp the summary to the floor and truncate it. On a 32768 window this makes
- * compaction fire at ≈ 30720 instead of never — the seeded default threshold
- * ({@link DEFAULT_MAX_CONTEXT_LENGTH}, 256000) sits far outside such a window, so without this cap
- * the window's hard limit would always be hit first.
+ * Room under the window a compaction needs: the turn's pending outputs, the Prompt, the
+ * summary's output, the margin. An eighth of the window, at least
+ * {@link COMPACTION_RESERVE_MIN} and at most {@link COMPACTION_RESERVE_MAX}.
+ *
+ * The compaction request runs through the same per-request clamp as any other, so a context
+ * that crosses the threshold exactly leaves that request `reserve − pending outputs − Prompt −
+ * OUTPUT_SAFETY_MARGIN` tokens of output: room for a sectioned summary (and hand-off files)
+ * rather than the floor. On a 32768 window compaction therefore fires at 24576 instead of never
+ * — the seeded default threshold ({@link DEFAULT_MAX_CONTEXT_LENGTH}, 256000) sits far outside
+ * such a window, so without this cap the window's hard limit would always be hit first.
  */
-export const COMPACTION_HEADROOM = OUTPUT_SAFETY_MARGIN * 2;
+export function compactionReserve(window: number): number {
+  const reserve = Math.min(
+    COMPACTION_RESERVE_MAX,
+    Math.max(COMPACTION_RESERVE_MIN, Math.floor(window / 8)),
+  );
+  // Never more than half the window: the smallest usable windows (4096–16384) keep a positive
+  // threshold instead of falling into the `<= 0` range that means compaction is off.
+  return Math.min(reserve, Math.floor(window / 2));
+}
+
+/** Room a tool round needs to leave for the summary that follows it. */
+export const COMPACTION_ROUND_ROOM = 12288;
 
 /**
  * Flat allowance for one image input: provider vision token counts vary widely
@@ -201,19 +219,30 @@ export function effectiveMaxOutputTokens(
 
 /**
  * Effective compaction threshold: the configured `compaction.max_context_length` capped at
- * `context_window − COMPACTION_HEADROOM` — the threshold must stay below the hard window
- * limit by enough to fit the compaction request itself (prompt + summary output + safety
- * margin), otherwise small-window models get rejected by the provider (a non-retryable
- * 400) before compaction even triggers. An unconfigured window (unset, or below
+ * `context_window − compactionReserve(context_window)` — the threshold must stay below the
+ * hard window limit by enough to fit the compaction itself (the turn's pending outputs, the
+ * Prompt, the summary output and the safety margin), otherwise small-window models get
+ * rejected by the provider (a non-retryable 400) before compaction even triggers, or their
+ * summary is clamped to a stub. An unconfigured window (unset, or below
  * {@link MIN_USABLE_CONTEXT_WINDOW}) derives from {@link DEFAULT_CONTEXT_WINDOW}: unlike
  * the output clamp, a threshold derived from the assumption is harmless-to-helpful — it
  * only makes compaction fire by the assumed mark. Not clamped when `<=0` (compaction
- * disabled — the value keeps its "off" meaning); with every usable window at least
- * `MIN_USABLE_CONTEXT_WINDOW`, the derived threshold is always positive and can never
- * silently flip into the "disabled" contract.
+ * disabled — the value keeps its "off" meaning).
  */
 export function effectiveMaxContextLength(configured: number, contextWindow: unknown): number {
   if (configured <= 0) return configured;
   const window = resolveContextWindow(contextWindow) ?? DEFAULT_CONTEXT_WINDOW;
-  return Math.min(configured, window - COMPACTION_HEADROOM);
+  return Math.min(configured, window - compactionReserve(window));
+}
+
+/**
+ * The context size past which a compaction offers no further tool round: the window minus
+ * {@link COMPACTION_ROUND_ROOM}, so a round always leaves room for the summary after it
+ * (`CompactionSettings.roundLimit`). `undefined` for an unconfigured window — like the output
+ * clamp, a hard rule is not derived from an assumption, so an entry without a usable
+ * `context_window` keeps its rounds (bounded by `compaction.max_rounds` alone).
+ */
+export function compactionRoundLimit(contextWindow: unknown): number | undefined {
+  const window = resolveContextWindow(contextWindow);
+  return window === undefined ? undefined : window - COMPACTION_ROUND_ROOM;
 }
