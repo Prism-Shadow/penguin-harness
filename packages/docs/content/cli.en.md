@@ -791,21 +791,20 @@ Sets the CLI's interface language (`en` or `zh`) by writing `PENGUIN_LANG` into 
 Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation, which the CLI's local API token carries, as for `penguin plugin install`.
 
 ```bash
-penguin exec <package> [args...]
+penguin exec <id> [args...]
+penguin exec <package>:<id> [args...]
 ```
 
-The word that names none of the CLI's own commands is looked up among the plugins before the CLI reports an unknown command: the server's listing of plugin commands is matched against it, one package answering runs, and the run's output and exit code are the caller's own. A server that is not running is left alone — the lookup asks only a server that already runs, and one that answers nothing leaves the command line to the CLI's own parse.
+The first word that names none of the CLI's own commands is looked up among the plugins before the CLI reports an unknown command: the server's listing of plugin commands is matched against it, one package answering runs, and the run's output and exit code are the caller's own. A server that is not running is left alone — the lookup asks only a server that already runs, and one that answers nothing leaves the command line to the CLI's own parse.
 
-Two or more plugins answering the same words is ambiguous: the report lists one copyable `penguin exec <package> …` line per candidate (the original argv shell-quoted) and exits with code 2, nothing runs. Name the plugin to resolve it.
+Two or more plugins answering the same words is ambiguous: the report lists one copyable `penguin exec <package>:<id> …` line per candidate (the original argv shell-quoted) and exits with code 2, nothing runs.
 
-`penguin exec` is the unambiguous form: the plugin named is the only candidate. An exact npm name always resolves; a short name (`@scope/name` → `name`) works while exactly one contributing plugin carries it; a short name two plugins carry is an error listing the full names. With no args the run prints that plugin's help. A server that is not running is started, as for any command that needs one.
+`penguin exec <id>` names the command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — resolved exactly against the listing: no prefix, suffix or short-form matching. Every option after the id, `--help` included, belongs to the plugin command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. A server that is not running is started, as for any command that needs one.
 
 ```bash
-penguin exec my-plugin deploy --prod
-penguin exec @scope/my-plugin -- deploy --help   # -- hands every option to the plugin
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
 ```
-
-To pass options to the plugin rather than the CLI, put `--` before the plugin's own arguments, as in the second line above.
 
 ## penguin server / penguin web
 

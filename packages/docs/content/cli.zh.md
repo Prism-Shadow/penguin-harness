@@ -791,21 +791,20 @@ penguin config lang en
 在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
 
 ```bash
-penguin exec <包> [args...]
+penguin exec <id> [args...]
+penguin exec <包>:<id> [args...]
 ```
 
-不属于 CLI 自有命令的词，在 CLI 报未知命令之前先到插件里查证：server 的插件命令列表与之比对，恰有一个包命中即运行，运行打印的内容与退出码就是调用者的。server 未在运行时保持不动——查询只问已在运行的 server，无人应答时命令行交回 CLI 自己的解析。
+不属于 CLI 自有命令的首个词，在 CLI 报未知命令之前先到插件里查证：server 的插件命令列表与之比对，恰有一个包命中即运行，运行打印的内容与退出码就是调用者的。server 未在运行时保持不动——查询只问已在运行的 server，无人应答时命令行交回 CLI 自己的解析。
 
-两个及以上插件命中同样的词即歧义：报告逐候选列出一行可直接复制执行的 `penguin exec <包> …`（原 argv 按 shell 转义）并以退出码 2 结束，什么都不运行。点名插件即可消解。
+两个及以上插件命中同样的词即歧义：报告逐候选列出一行可直接复制执行的 `penguin exec <包>:<id> …`（原 argv 按 shell 转义）并以退出码 2 结束，什么都不运行。
 
-`penguin exec` 是无歧义的形式：被点名的插件是唯一候选。npm 全名永远可解析；短名（`@scope/name` → `name`）在恰好一个贡献者携带它时可用；两个插件都携带的短名报错并列出全名。无参数时打印该插件的帮助。server 未在运行时会被启动，与任何需要 server 的命令一样。
+`penguin exec <id>` 按点分 id 直接点名命令——`sandbox.wsl.restart`，至少两段——对列表精确解析：无前缀、后缀或短名匹配。id 之后的每个选项（`--help` 在内）都属于插件命令。两个插件贡献同一个 id 时，用 npm 全名点名：`penguin exec <包>:<id>`，scope 不可省。`penguin exec ls [包]` 列出插件贡献的 id 与 summary。server 未在运行时会被启动，与任何需要 server 的命令一样。
 
 ```bash
-penguin exec my-plugin deploy --prod
-penguin exec @scope/my-plugin -- deploy --help   # -- 把所有选项交给插件
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 ```
-
-要把选项交给插件而非 CLI，在插件自己的参数之前放 `--`，如上第二行。
 
 ## penguin server / penguin web
 

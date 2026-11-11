@@ -700,7 +700,7 @@ Each run builds a fresh command program from the named package's commands alone:
 
 Errors: `403` `admin_required` when the caller is not an admin, `400` `bad_request` for a body that is not shaped as above, and `404` `unknown_package` when no plugin of that name contributes CLI commands.
 
-The CLI itself dispatches on this listing: a first word that names none of the CLI's own commands is matched against the listed keys, one package answering runs, and two or more answering is reported with one `penguin exec <package> …` line per candidate — see [penguin exec](/cli#penguin-exec).
+The CLI itself dispatches on this listing: a first word that names none of the CLI's own commands is matched against the listed keys, one package answering runs, and two or more answering is reported with one `penguin exec <package>:<id> …` line per candidate — see [penguin exec](/cli#penguin-exec).
 
 ## Schedules
 

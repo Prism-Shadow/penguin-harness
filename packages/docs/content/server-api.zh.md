@@ -700,7 +700,7 @@ interface AgentApiKeyInfo {
 
 错误：调用者非管理员时 `403` `admin_required`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
 
-CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包> …`——见 [penguin exec](/cli#penguin-exec)。
+CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包>:<id> …`——见 [penguin exec](/cli#penguin-exec)。
 
 ## 定时任务
 
