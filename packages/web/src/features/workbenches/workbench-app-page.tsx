@@ -6,27 +6,21 @@
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
  * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
  * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
- * on the same Agent’s workbench tab. The route sits outside the app shell (no ProjectProvider), so the exit
+ * on the same Agent’s workbench tab — or back on the App Center, when the page was opened
+ * from one of its tiles. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
-import {
-  appPageTab,
-  runningWorkbenches,
-  WORKBENCH_UPDATED_EVENT,
-  workbenchTabsOf,
-  type WorkbenchTab,
-} from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
+import { isAppCenterPath } from "../../lib/app-center-path";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
-import { openUserEvents } from "../../api/sse";
+import { useAppPageTab } from "./use-app-page-tab";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
@@ -41,64 +35,31 @@ export function WorkbenchAppPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
-  const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
-  /** The workbench is listed but switched off: it serves no page, and the page says why. */
-  const [off, setOff] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const toAppCenter = isAppCenterPath(returnTo);
+  const { tab, off, failure } = useAppPageTab({
+    projectId,
+    agentId,
+    workbenchId,
+    tabKey,
+    machineId,
+    // This route is outside the app shell, so it holds its own event stream open.
+    ownEvents: true,
+    enabled: !safe,
+  });
   const paletteShortcut = useShortcutLabel("palette.toggle");
-
-  useEffect(() => {
-    if (safe) {
-      setTab(null);
-      return;
-    }
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await api.getWorkbenches(projectId, agentId, machineId);
-        if (!alive) return;
-        const running = runningWorkbenches(res);
-        setOff(
-          res.workbenches.some((w) => w.id === workbenchId) &&
-            !running.some((w) => w.id === workbenchId),
-        );
-        setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
-        setFailure(null);
-      } catch (err) {
-        if (alive) setFailure(err instanceof Error ? err.message : String(err));
-      }
-    };
-    void load();
-    const onUpdated = (e: Event) => {
-      const d = (e as CustomEvent<{ projectId: string; agentId: string }>).detail;
-      if (d.projectId === projectId && d.agentId === agentId) void load();
-    };
-    window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-    // This route is outside the app shell, so the provider that usually holds the event
-    // stream open (and raises the event above) is not mounted: without a stream of its own,
-    // a page shown as the whole app would never notice its workbench being edited or removed.
-    const conn = openUserEvents({
-      onRecord: () => undefined,
-      onServerEvent: (ev) => {
-        if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
-        if (ev.projectId === projectId && ev.agentId === agentId) void load();
-      },
-    });
-    return () => {
-      alive = false;
-      window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
-      conn.close();
-    };
-  }, [safe, projectId, agentId, workbenchId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
       {
         id: "exit-full-page",
-        label: S.workbenches.exitFullPage,
+        label: toAppCenter ? S.workbenches.exitToAppCenter : S.workbenches.exitFullPage,
         keywords: ["exit", "leave", "chat", "full page", "app"],
         run: () => {
           rememberSelection(projectId, agentId);
+          if (isAppCenterPath(returnTo)) {
+            void navigate(returnTo);
+            return;
+          }
           const destination =
             typeof returnTo === "string" && /^\/chat(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(returnTo)
               ? returnTo
@@ -118,7 +79,17 @@ export function WorkbenchAppPage() {
         },
       },
     ],
-    [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
+    [
+      projectId,
+      agentId,
+      navigate,
+      returnTo,
+      toAppCenter,
+      tab?.tabId,
+      workbenchId,
+      tabKey,
+      machineId,
+    ],
   );
 
   usePaletteActions(exit);

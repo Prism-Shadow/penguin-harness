@@ -162,6 +162,12 @@ export const zh = {
       description: "智能体设置的定时任务标签页：周期、下次触发、绑定的会话与模型。",
       how: "智能体 › 智能体设置 › 定时任务标签页。",
     },
+    apps: {
+      title: "应用中心",
+      description:
+        "Project 的应用桌面：图标与名称组成的图块，各构建状态（可用、构建中、加载失败），收纳两个应用的分组，以及页头的「新建分组」。",
+      how: "侧栏 › 应用中心；页头「新建分组」打开命名并勾选应用的对话框；右键图块或空白处打开菜单，拖动图块排序或叠放成分组。",
+    },
     plugins: {
       title: "插件市场",
       description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
@@ -490,7 +496,7 @@ export const zh = {
       pickers: {
         title: "选择器",
         description:
-          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单、右键菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -700,6 +706,12 @@ export const zh = {
         { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
+      contextMenu: "右键菜单",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuTarget: "右键这里",
+      contextOpen: "打开",
+      contextFullScreen: "全屏打开",
       menu: "更多操作",
       menuPin: "置顶",
       menuRename: "重命名",
