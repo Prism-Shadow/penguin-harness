@@ -41,7 +41,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { zipSync } from "fflate";
-import { readPackArchive } from "@prismshadow/penguin-theme-pack";
+import { readPackArchive, type ThemePackManifest } from "@prismshadow/penguin-theme-pack";
 import type { ServerEvent, ThemePackImportResponse, ThemePacksResponse } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import {
@@ -491,8 +491,14 @@ describe("theme packs", () => {
   });
 
   it("exports Frost refused as it is, and imports it once its id alone is renamed", async () => {
+    // The Frost the served build carries, as the UI package ships it.
+    const frost = JSON.parse(
+      await fsp.readFile(path.join(FROST_DIR, "pack.json"), "utf8"),
+    ) as ThemePackManifest;
     const res = await member.get("/api/themes/modern/export");
-    expect(res.headers.get("content-disposition")).toBe('attachment; filename="modern-1.0.0.zip"');
+    expect(res.headers.get("content-disposition")).toBe(
+      `attachment; filename="modern-${frost.version}.zip"`,
+    );
     const zip = new Uint8Array(await res.arrayBuffer());
     const files = readPackArchive(zip);
     // The recipes stay with the base, and the README says so.
@@ -511,7 +517,7 @@ describe("theme packs", () => {
     const upload = await admin.upload("/api/themes", zipOf(renamed, "mine/"));
     expect(upload.status, await upload.clone().text()).toBe(201);
     const { theme } = (await upload.json()) as ThemePackImportResponse;
-    expect(theme).toMatchObject({ id: "mine", base: "modern", names: { en: "Frost" } });
+    expect(theme).toMatchObject({ id: "mine", base: "modern", names: frost.names });
   });
 });
 

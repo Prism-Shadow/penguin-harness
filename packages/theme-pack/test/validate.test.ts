@@ -6,10 +6,10 @@
  * - Given an accepted pack, the served stylesheet carries the tokens, recipes and section skins in
  *   `ui-theme`, the accent presets in `ui-accent` and the faces outside any layer; every url()
  *   naming a pack file points at the pack's files route at its version, and inline images stay.
- * - Given the app sheet's layer order, the kept stylesheet holds none of it (it is the build's,
- *   and the server puts it in front as it serves): alone, loaded before the app's sheet as after a
- *   reload, it would move the app's layers; behind the app's statement it leaves the order the app
- *   sheet alone sets. The served version moves with that order and only with it.
+ * - Given a build's sheets, one with a comment naming a layer and a later one naming layers again,
+ *   a pack is served behind the statement and at the address their real layers give, in the order
+ *   first named (that the statement keeps the app's order and the address moves with a new build's
+ *   order runs in the server's suite, over real imports).
  * - Given the same pack with one value changed, it is served at another version.
  * - Given a pack breaking one rule, it is refused whole, naming the file, the line and why — one
  *   scenario per reason: a remote url(), @import, a prefix test of an input's value, !important, a
@@ -92,20 +92,16 @@ describe("validateThemePack", () => {
     expect(pack.served).toEqual(["index.css", "art/empty.svg", "fonts/hand.woff2"]);
   });
 
-  it("keeps a stylesheet the app sheet's layer statement, put in front, lets load first unharmed", async () => {
-    // The order the compiled app sheet sets, a comment that names a layer not counting.
-    expect(layerOrder(APP_SHEET)).toEqual(APP_LAYERS);
-    const pack = await validateThemePack(doodlePack(), CONTRACT);
-    // After a reload the pre-paint script links the pack's sheet first: alone, it would open its
-    // layers ahead of the app's, under Tailwind's; behind the app's statement it leaves the order.
-    expect(layerOrder(pack.indexCss + APP_SHEET)).not.toEqual(APP_LAYERS);
-    const served = layerStatement(layerOrder(APP_SHEET)) + pack.indexCss;
-    expect(layerOrder(served + APP_SHEET)).toEqual(APP_LAYERS);
-    // The address moves with the order a build puts in front, and only with it.
-    expect(servedVersion(pack.v, APP_LAYERS)).toBe(servedVersion(pack.v, [...APP_LAYERS]));
-    expect(servedVersion(pack.v, ["reset", ...APP_LAYERS])).not.toBe(
-      servedVersion(pack.v, APP_LAYERS),
-    );
+  it("serves a pack behind the layers a build's sheets name first, a layer named in a comment left out", () => {
+    // The compiled app sheet's banner comment names a layer, and a later sheet the page links
+    // names two of its layers again: neither moves what a pack is served with, the statement in
+    // front of it and its address.
+    const sheets = `${APP_SHEET}\n@layer ui-theme{}@layer base{}`;
+    const servedWith = (layers: readonly string[]) => ({
+      statement: layerStatement(layers),
+      v: servedVersion("5e1f0c2a", layers),
+    });
+    expect(servedWith(layerOrder(sheets))).toEqual(servedWith(APP_LAYERS));
   });
 
   it("serves a pack with one value changed at another version", async () => {

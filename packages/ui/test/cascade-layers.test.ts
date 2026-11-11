@@ -6,57 +6,59 @@
  * A layer's place is fixed where the sheet first names it, and a later `@layer a, b;` cannot move
  * one a block already opened. A stylesheet theme.css imported once opened `ui-theme` before the
  * order statement, which put Frost's base above every pack on every page while each file still
- * read correctly on its own. So:
- *
- * - theme.css names the four layers, in order, before anything it imports;
- * - no stylesheet under src/ but theme.css opens `ui-base` or `ui-theme`, and only a pack's
- *   index.css serves a file into one;
- * - each entry sheet that compiles the themes — the Web App's, the gallery's and the published
- *   `styles.css`'s — names the four first in that order once every `@import` is followed the way
- *   the compiler inlines it. (`scripts/check-ui-package.mjs` reads the built `dist/styles.css`
- *   for the same order.)
+ * read correctly on its own. So each entry sheet that compiles the themes — the Web App's, the
+ * gallery's and the published `styles.css`'s — must name the four first in that order once every
+ * `@import` is followed the way the compiler inlines it, wherever a stray layer opens. An import of
+ * this package that its `exports` do not resolve fails the walk instead of leaving it blind.
+ * (`scripts/check-ui-package.mjs` reads the built `dist/styles.css` for the same order.)
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { UI_LAYERS, scanSourceRoots, stripCssComments, unscannedRoots } from "../src/testing";
-import { PACKAGE_DIR, REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
-
-/**
- * Every layer a sheet names, in the order it first names each: a statement (`@layer a, b;`), a
- * block (`@layer a {`) and an import into a layer (`@import "x.css" layer(a)`) all count.
- */
-function layerMentions(css: string): string[] {
-  const seen: string[] = [];
-  const mention = /@layer\s+([^{;]+)[{;]|@import\s[^;]*?\blayer\(\s*([\w.-]+)\s*\)/g;
-  for (const match of stripCssComments(css).matchAll(mention)) {
-    const names = match[1] !== undefined ? match[1].split(",") : [match[2]!];
-    for (const name of names.map((n) => n.trim())) {
-      if (name !== "" && !seen.includes(name)) seen.push(name);
-    }
-  }
-  return seen;
-}
+import { UI_LAYERS, stripCssComments } from "../src/testing";
+import { PACKAGE_DIR, REPO_ROOT, WEB_DIR } from "./helpers/paths";
 
 const ui = (names: readonly string[]) => names.filter((name) => name.startsWith("ui-"));
 
-/** The package's own stylesheet specifiers (`exports`), as a consumer's import names them. */
-const PACKAGE_STYLES: readonly (readonly [prefix: string, dir: string])[] = [
-  ["@prismshadow/penguin-ui/theme.css", join(SRC_DIR, "theme.css")],
-  ["@prismshadow/penguin-ui/fonts.css", join(SRC_DIR, "fonts", "index.css")],
-  ["@prismshadow/penguin-ui/themes/", join(SRC_DIR, "themes") + "/"],
-];
+type ExportTarget = string | { readonly style?: string; readonly default?: string };
+const MANIFEST = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) as {
+  readonly name: string;
+  readonly exports: Readonly<Record<string, ExportTarget>>;
+};
 
-/** Where an `@import` lands, or null for a stylesheet outside the package (Tailwind, fontsource). */
+/**
+ * The package's own specifiers, read from its `exports` as a consumer's import names them, each
+ * with the file a stylesheet import of it gets (the `style` condition first). A `*` in a key
+ * stands for any path under it, as in the manifest.
+ */
+const PACKAGE_STYLES: readonly (readonly [specifier: string, target: string])[] = Object.entries(
+  MANIFEST.exports,
+).flatMap(([key, value]) => {
+  const target = typeof value === "string" ? value : (value.style ?? value.default);
+  return target === undefined ? [] : [[MANIFEST.name + key.slice(1), target] as const];
+});
+
+/**
+ * Where an `@import` lands, or null for a stylesheet of another package (Tailwind, fontsource).
+ * An import of this package that no export resolves throws: skipping it would leave the walk
+ * blind to every layer the file behind it names.
+ */
 function resolveImport(specifier: string, from: string): string | null {
   if (specifier.startsWith(".")) return resolve(dirname(from), specifier);
-  for (const [prefix, target] of PACKAGE_STYLES) {
-    if (specifier === prefix) return target;
-    if (prefix.endsWith("/") && specifier.startsWith(prefix)) {
-      return target + specifier.slice(prefix.length);
+  if (specifier !== MANIFEST.name && !specifier.startsWith(`${MANIFEST.name}/`)) return null;
+  for (const [key, target] of PACKAGE_STYLES) {
+    const star = key.indexOf("*");
+    if (star < 0) {
+      if (specifier === key) return resolve(PACKAGE_DIR, target);
+      continue;
+    }
+    const [head, tail] = [key.slice(0, star), key.slice(star + 1)];
+    if (specifier.startsWith(head) && specifier.endsWith(tail)) {
+      const rest = specifier.slice(head.length, specifier.length - tail.length);
+      return resolve(PACKAGE_DIR, target.replace("*", rest));
     }
   }
-  return null;
+  throw new Error(`${from}: "${specifier}" is not among ${MANIFEST.name}'s exports`);
 }
 
 /**
@@ -99,54 +101,7 @@ const ENTRIES: Readonly<Record<string, string>> = {
 };
 
 describe("the theme layers", () => {
-  it("are named by theme.css, in cascade order, before anything it imports", () => {
-    const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
-    const statement = sheet.search(/@layer\s+ui-base\s*,/);
-    const firstImport = sheet.search(/@import\b/);
-    expect(statement, "theme.css names its layers in one statement").toBeGreaterThanOrEqual(0);
-    expect(statement, "the statement comes before theme.css's first @import").toBeLessThan(
-      firstImport,
-    );
-    expect(ui(layerMentions(sheet))).toEqual([...UI_LAYERS]);
-  });
-
-  it("are recognised wherever a sheet names one — the check is exercised on known shapes", () => {
-    expect(
-      layerMentions(
-        [
-          "/* @layer ui-font; */",
-          '@import "./a.css" layer(ui-theme);',
-          "@layer ui-base, ui-theme;",
-          "@layer ui-accent { .a { color: red } }",
-          "@layer base{.b{color:red}}",
-        ].join("\n"),
-      ),
-    ).toEqual(["ui-theme", "ui-base", "ui-accent", "base"]);
-  });
-
-  it("are opened outside theme.css only by a pack's index.css, for the files it serves", () => {
-    const scan = scanSourceRoots({ ui: SRC_DIR }, { repoRoot: REPO_ROOT, extensions: [".css"] });
-    expect(unscannedRoots(scan)).toEqual([]);
-    const strays = scan.files
-      .filter((file) => file.rel !== "theme.css")
-      .flatMap((file) => {
-        const opened = ui(layerMentions(file.text)).filter(
-          (name) => name === "ui-base" || name === "ui-theme",
-        );
-        const servesPack = /^themes\/[^/]+\/index\.css$/.test(file.rel);
-        const blocks = /@layer\s+ui-(?:base|theme)\b/.test(stripCssComments(file.text));
-        return opened.length > 0 && (!servesPack || blocks)
-          ? [`${file.rel}: ${opened.join(", ")}`]
-          : [];
-      });
-    expect(
-      strays,
-      "Only theme.css opens ui-base and ui-theme; a pack serves its files into them from its " +
-        "index.css with `@import … layer(…)`.",
-    ).toEqual([]);
-  });
-
-  it("are named in the order the imports put them — the walk is exercised on the trap it guards", () => {
+  it("are named in the order the imports put them — the walk is exercised on the trap it guards, and fails on an import it cannot follow", () => {
     // A foundation sheet imported ahead of the statement opens ui-theme first, and the statement
     // can no longer put ui-base under it.
     // Keyed by resolved path, so the walk finds them on any platform's path syntax.
@@ -169,6 +124,8 @@ describe("the theme layers", () => {
     files[at("theme.css")] =
       '@layer ui-base, ui-theme, ui-accent, ui-font;\n@import "./early.css";';
     expect(ui(layerOrderThrough(at("entry.css"), read))).toEqual([...UI_LAYERS]);
+    files[at("pack/index.css")] = `@import "${MANIFEST.name}/no-such-export.css";`;
+    expect(() => layerOrderThrough(at("entry.css"), read)).toThrow(/no-such-export\.css/);
   });
 
   for (const [name, entry] of Object.entries(ENTRIES)) {
