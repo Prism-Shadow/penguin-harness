@@ -96,7 +96,10 @@ export async function layCarriedStore(dir: string, target: string): Promise<Carr
     try {
       await fs.rename(path.join(staging, "store"), destination);
     } catch (err) {
-      if (!["EEXIST", "ENOTEMPTY"].includes((err as NodeJS.ErrnoException).code ?? "")) throw err;
+      // EPERM is what Windows reports for a directory rename onto an existing one;
+      // EEXIST/ENOTEMPTY is the POSIX answer. Both mean "already there".
+      if (!["EEXIST", "ENOTEMPTY", "EPERM"].includes((err as NodeJS.ErrnoException).code ?? ""))
+        throw err;
       // The namespace is already there — but only a complete one counts. Rebuild it when
       // it does not hold everything the record names (a partial copy, a lost file).
       const complete = await carriedStoreComplete(

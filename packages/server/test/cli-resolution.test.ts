@@ -135,7 +135,10 @@ describe("the caller's own entry runs; the record decides what rides with it", (
 
   it("faults a bundle the store lost — not the same answer as nothing pushed", async () => {
     const caller = await makeCaller();
-    const { root } = await makeRoot({ record: { cli: { bundle: "store/cli/abc123.mjs" } }, bundle: false });
+    const { root } = await makeRoot({
+      record: { cli: { bundle: "store/cli/abc123.mjs" } },
+      bundle: false,
+    });
     const resolved = await resolveCli({ callerEntry: caller, root });
     expect(resolved).toMatchObject({ kind: "fault", fault: "record-unsupported" });
     if (resolved.kind === "fault") {

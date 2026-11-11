@@ -53,12 +53,13 @@ export async function syncCarriedImage(root: string, dir: string | null): Promis
       // passing on the store directory itself.
       const prefix = `store/carried/${source.image}/`;
       const pointers = carriedStorePointers(meta.manifest);
-      const complete =
-        pointers.every((value) => value.startsWith(prefix)) &&
-        (await carriedStoreComplete(
-          path.join(root, "hmr", "store", "carried", source.image),
-          pointers.map((value) => value.slice(prefix.length)),
-        ));
+      const outside = pointers.find((value) => !value.startsWith(prefix));
+      const complete = outside
+        ? { ok: false as const, reason: `invalid carried store pointer: ${outside}` }
+        : await carriedStoreComplete(
+            path.join(root, "hmr", "store", "carried", source.image),
+            pointers.map((value) => value.slice(prefix.length)),
+          );
       if (complete.ok) return { kind: "current" };
     }
   }
