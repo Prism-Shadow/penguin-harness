@@ -1,10 +1,8 @@
 /**
- * The Agent mascot's colours and faces (src/components/icons/avatars/agent-palette.ts,
- * agent-expression.ts).
+ * The Agent mascot's colours (src/components/icons/avatars/agent-palette.ts).
  *
- * - Given an Agent's id, its palette slot and its expression are the same on every call, and
- *   realistic ids spread over all twelve slots and every expression.
- * - Given two Agents that share a colour, they can still wear different faces.
+ * - Given an Agent's id, its palette slot is the same on every call, and realistic ids spread over
+ *   all twelve slots.
  * - Given an Agent whose letter tile had hue h, its mascot's slot is the one whose hue anchor lies
  *   within 15° of h: it keeps the colour family it had.
  * - Given any slot, in either mode, the penguin reads on its tile: its coat keeps ≥ 3:1 on the
@@ -16,10 +14,6 @@
  */
 import { describe, expect, it } from "vitest";
 import { avatarHue } from "../src/components/icons/avatars/avatar";
-import {
-  AGENT_EXPRESSIONS,
-  agentExpression,
-} from "../src/components/icons/avatars/agent-expression";
 import { AGENT_PALETTE, agentSlot } from "../src/components/icons/avatars/agent-palette";
 import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
@@ -51,32 +45,13 @@ const IDS = [
   ...Array.from({ length: 300 }, (_, n) => `agent-${n}`),
 ];
 
-describe("an Agent's colour and face", () => {
-  it("are the same for an id every time", () => {
-    for (const id of IDS) {
-      expect(agentSlot(id)).toBe(agentSlot(id));
-      expect(agentExpression(id)).toBe(agentExpression(id));
-    }
-  });
-
-  it("spread realistic ids over every slot and every expression", () => {
+describe("an Agent's colour", () => {
+  it("is the same for an id every time, and realistic ids reach every slot", () => {
+    for (const id of IDS) expect(agentSlot(id)).toBe(agentSlot(id));
     expect(new Set(IDS.map(agentSlot)).size).toBe(AGENT_PALETTE.length);
     for (const id of IDS) {
       expect(agentSlot(id)).toBeGreaterThanOrEqual(0);
       expect(agentSlot(id)).toBeLessThan(AGENT_PALETTE.length);
-    }
-    expect(new Set(IDS.map(agentExpression))).toEqual(new Set(AGENT_EXPRESSIONS));
-  });
-
-  it("let two Agents of one colour wear different faces", () => {
-    const facesBySlot = new Map<number, Set<string>>();
-    for (const id of IDS) {
-      const faces = facesBySlot.get(agentSlot(id)) ?? new Set<string>();
-      faces.add(agentExpression(id));
-      facesBySlot.set(agentSlot(id), faces);
-    }
-    for (const [slot, faces] of facesBySlot) {
-      expect(faces.size, `slot ${slot} wears one face only`).toBeGreaterThan(1);
     }
   });
 

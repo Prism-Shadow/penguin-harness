@@ -1,25 +1,18 @@
 /**
  * 头像: the user avatar at its two rungs, with and without a nickname; the agent avatar — the
- * active theme's drawing for twelve Agents, one in each palette colour and wearing a mix of faces,
- * then one Agent for each face, then every theme's drawing pinned side by side, at 16, 24, 48 and
- * 96 px; and the avatar stack — agents and an account overlapping, then the count of the rest. The
- * page's mode switch shows the other mode.
- * active theme's drawing for twelve Agents, one in each palette colour and wearing a mix of faces,
- * then one Agent for each face, then every theme's drawing pinned side by side, at 16, 24, 48 and
- * 96 px; an agent's own picture at those sizes, beside one whose picture fails to load and draws
- * the default; and the avatar stack — agents and an account overlapping, then the count of the
- * rest. The page's mode switch shows the other mode.
+ * active theme's drawing for twelve Agents, one in each palette colour, then every theme's drawing
+ * pinned side by side, at 16, 24, 48 and 96 px; an agent's own picture at those sizes, beside one
+ * whose picture fails to load and draws the default; and the avatar stack — agents and an account
+ * overlapping, then the count of the rest. The page's mode switch shows the other mode.
  */
 import {
   AGENT_AVATAR_VARIANT_NAMES,
-  AGENT_EXPRESSIONS,
   AGENT_PALETTE,
   AgentAvatar,
   AvatarStack,
   ICON_SIZE,
   USER_AVATAR_SIZE,
   UserAvatar,
-  agentExpression,
   agentSlot,
 } from "@prismshadow/penguin-ui";
 import type { AgentAvatarVariant, ThemeId } from "@prismshadow/penguin-ui";
@@ -56,21 +49,9 @@ function firstId(wanted: (id: string) => boolean): string {
   }
 }
 
-/**
- * Twelve sample Agents, one per palette slot in slot order, each wearing the face its slot's
- * place in the face list gives it, so the row mixes every colour with every face.
- */
+/** Twelve sample Agents, one per palette slot in slot order: the first `agent-<n>` in each. */
 const PALETTE_IDS: readonly string[] = AGENT_PALETTE.map((_, slot) =>
-  firstId(
-    (id) =>
-      agentSlot(id) === slot &&
-      agentExpression(id) === AGENT_EXPRESSIONS[slot % AGENT_EXPRESSIONS.length],
-  ),
-);
-
-/** One sample Agent per face, in the face list's order, each in a different colour. */
-const FACE_IDS: readonly string[] = AGENT_EXPRESSIONS.map((face, i) =>
-  firstId((id) => agentExpression(id) === face && agentSlot(id) === (i * 5) % AGENT_PALETTE.length),
+  firstId((id) => agentSlot(id) === slot),
 );
 
 /** A row of Agents at one size: the active theme's drawing, or the one `variant` pins. */
@@ -136,13 +117,6 @@ export function AvatarsBoard() {
         <div className="lib-stack lib-stack-wide" data-avatar-board="active">
           {SIZES.map((size) => (
             <AvatarRow key={size} ids={PALETTE_IDS} size={size} />
-          ))}
-        </div>
-      </BoardGroup>
-      <BoardGroup title={t.faces} aside={t.facesAside}>
-        <div className="lib-stack lib-stack-wide" data-avatar-board="faces">
-          {SIZES.map((size) => (
-            <AvatarRow key={size} ids={FACE_IDS} size={size} />
           ))}
         </div>
       </BoardGroup>

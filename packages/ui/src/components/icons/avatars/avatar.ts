@@ -16,11 +16,8 @@
  * contract a component may spell a colour of its own.
  */
 
-/**
- * FNV-1a 32-bit hash of a stable key: the bits a tile's hue is cut from, and an Agent's expression
- * from other bits of the same hash (agent-expression.ts).
- */
-export function stableHash(s: string): number {
+/** FNV-1a 32-bit string hash. */
+function hashStr(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -31,7 +28,7 @@ export function stableHash(s: string): number {
 
 /** Deterministic hue (0-359) for a stable key (an agent id, a provider id). */
 export function avatarHue(key: string): number {
-  return stableHash(key) % 360;
+  return hashStr(key) % 360;
 }
 
 /** A letter tile's colours: the translucent tint, and the initial's ink per mode and as one value. */
