@@ -205,7 +205,6 @@ export const en: GalleryStrings = {
   },
   rail: {
     theme: "Theme",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -248,6 +247,22 @@ export const en: GalleryStrings = {
     unset: "unset",
   },
   foundations: {
+    packs: {
+      intro:
+        "Every built-in pack in the registry, and the packs an admin imported on the demo's server, each with its manifest (pack.json): names, what it builds on, version, the theme API it targets, the swatches a picker draws and the face each font role puts first.",
+      name: "Name",
+      base: "Builds on",
+      version: "Version",
+      api: "Theme API",
+      swatches: "Swatches",
+      fonts: "Fonts",
+      isBase: "The base",
+      onFrost: "Frost",
+      foundation: "Foundation",
+      imported: "Imported",
+      importedHint: "A pack imported on the demo's server, read from GET /api/themes",
+      fontRoles: { sans: "reading", ui: "UI", cjk: "CJK", mono: "mono", display: "display" },
+    },
     surfaces: "Surfaces",
     inks: "Inks",
     lines: "Lines",
@@ -543,6 +558,11 @@ export const en: GalleryStrings = {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      packs: {
+        title: "Theme packs",
+        description:
+          "Each pack's manifest: names, what it builds on, version, theme API, swatches and fonts.",
       },
       colour: {
         title: "Colour",

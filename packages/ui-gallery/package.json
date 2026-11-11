@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vite",
     "build": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm --filter @prismshadow/penguin-web gen:ifaces && tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "test:e2e": "playwright test -c e2e/playwright.config.mjs",
     "shots": "node scripts/shots.mjs"
