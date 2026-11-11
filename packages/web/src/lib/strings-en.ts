@@ -2400,6 +2400,16 @@ export const en: Strings = {
     disconnectConfirm: (label: string): string =>
       `Disconnect ${label}? This deletes the group key; models that use it stop working, models with their own key are unaffected.`,
     disconnected: (label: string): string => `Disconnected ${label}`,
+    connectDefaultSwitchTitle: "Switch default model",
+    connectDefaultOffer: (group: string, current: string, model: string): string =>
+      `${group} is connected. The current default model, ${current}, is not in this group. Switch to ${model}? New Sessions will use it by default.`,
+    connectDefaultOfferUnset: (group: string, model: string): string =>
+      `${group} is connected. Make ${model} the default model? New Sessions will use it by default.`,
+    connectDefaultSwitch: "Switch",
+    connectDefaultKeep: "Keep current",
+    connectDefaultSet: "Set as default",
+    connectDefaultNotNow: "Not now",
+    modelInGroup: (name: string, group: string): string => `${name} (${group})`,
     /**
      * A group's account balance in its header (and pinned beside the user name): the sentence
      * spoken behind the amount names the group, the vendor's own figures and the time of the

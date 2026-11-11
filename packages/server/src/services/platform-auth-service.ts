@@ -16,6 +16,8 @@ import { normalizePenguinGoOrigin } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
 import type { ProjectConfigStore } from "@penguinharness/plugin-projects/server";
 import type { PlatformAuthFlowStatusResponse } from "../api/types.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { DefaultModelOffer, PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
   type PlatformCatalogPricing,
@@ -48,6 +50,8 @@ interface Flow {
   status: FlowStatus;
   error?: PlatformAuthFlowStatusResponse["error"];
   applied?: number;
+  /** The default the delivered key offers; answered, like `applied`, on every `completed` poll. */
+  defaultOffer?: DefaultModelOffer;
   apiKey?: string;
   catalog?: PlatformModelCatalog;
   polling?: Promise<void>;
@@ -525,6 +529,7 @@ export class PlatformAuthService {
       // 0 included — as Enter key and the other Connect flows do.
       const result = await this.deps.applyCatalog(flow.projectId, flow.catalog, flow.apiKey, true);
       flow.applied = result.applied;
+      flow.defaultOffer = result.defaultOffer;
       flow.apiKey = undefined;
       flow.catalog = undefined;
       flow.status = "completed";
@@ -542,6 +547,7 @@ export class PlatformAuthService {
       status: flow.status,
       ...(flow.error !== undefined ? { error: flow.error } : {}),
       ...(flow.applied !== undefined ? { applied: flow.applied } : {}),
+      ...(flow.defaultOffer !== undefined ? { defaultOffer: flow.defaultOffer } : {}),
       ...(changed ? { changed: true as const } : {}),
     };
   }

@@ -88,6 +88,7 @@ import type {
   ModelsUpdateRequest,
   PresetSyncRequest,
   PresetSyncResponse,
+  ProviderConnectionResponse,
   ProviderConnectionUpdate,
   ModelTestRequest,
   ModelTestResponse,
@@ -435,14 +436,15 @@ export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
 
 /**
  * One group's connection (`[providers.<id>]`, owner): only the fields the update names change;
- * the models that store none of their own follow it. Answers with the whole table, re-read.
+ * the models that store none of their own follow it. Answers with the whole table, re-read, and
+ * the default model the group's first key offers, if any.
  */
 export const putProviderConnection = (
   projectId: string,
   provider: string,
   body: ProviderConnectionUpdate,
 ) =>
-  apiFetch<ModelsResponse>(
+  apiFetch<ProviderConnectionResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/providers/${encodeURIComponent(provider)}`,
     { method: "PUT", body },
   );
