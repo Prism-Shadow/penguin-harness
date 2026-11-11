@@ -118,7 +118,7 @@ describe("parsePluginIndex", () => {
   });
 
   it("passes an entry's integrity and channels through instead of dropping them", () => {
-    const entry: PluginIndexEntry = {
+    const entry: IndexDocumentEntry = {
       ...VALID_ENTRY,
       integrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       channels: [{ kind: "github", url: "https://github.com/o/r/releases/download/v1/x.tgz" }],
@@ -809,7 +809,7 @@ describe("mergeIndexes", () => {
 });
 
 describe("selectIndexChannel", () => {
-  const entry = (version: string): PluginIndexEntry => ({
+  const entry = (version: string): IndexDocumentEntry => ({
     ...VALID_ENTRY,
     version,
     // Well-formed enough for indexChannelOf: the pin's shape is what is under test here, not its bytes.
