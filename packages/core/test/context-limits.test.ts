@@ -1,11 +1,10 @@
 /**
  * Window-derived request limits (llm/context-limits.ts, issue #218): the per-request
- * output-cap arithmetic, the input-size estimator it feeds on, and the window-derived
- * compaction threshold. All pure functions — no timers, no network.
+ * output-cap arithmetic, the input-size estimator it feeds on, the window-derived
+ * compaction threshold and the round limit. All pure functions — no timers, no network.
  */
 import { describe, expect, it } from "vitest";
 import {
-  COMPACTION_HEADROOM,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_CONTEXT_LENGTH,
   MIN_OUTPUT_TOKENS,
@@ -13,6 +12,7 @@ import {
   OUTPUT_SAFETY_MARGIN,
   approximateMessagesTokens,
   approximateTokens,
+  compactionRoundLimit,
   effectiveMaxContextLength,
   effectiveMaxOutputTokens,
   resolveContextWindow,
@@ -21,12 +21,20 @@ import { toolCallOutput, userText } from "@prismshadow/amsp/records";
 import type { AmspRecord } from "@prismshadow/amsp/records";
 
 describe("the output clamp at the compaction threshold", () => {
-  it("leaves the summary request about 1k tokens of output once the context reaches the threshold", () => {
+  it("leaves the summary request thousands of tokens of output once the context reaches the threshold", () => {
     // Compaction fires at the threshold, and its summary request carries that much input: it
-    // needs room to write a summary, not just the floor.
-    const window = 32768;
-    const threshold = effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, window);
-    expect(effectiveMaxOutputTokens(32000, window, threshold)).toBeGreaterThanOrEqual(1000);
+    // needs room for a sectioned summary (and hand-off files), not just the floor. What it gets
+    // is the reserve under the window less the per-request safety margin: 7168 on a 32k window,
+    // and it grows with the window.
+    const room = (window: number) =>
+      effectiveMaxOutputTokens(
+        32000,
+        window,
+        effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, window),
+      );
+    expect(room(32768)).toBe(8192 - OUTPUT_SAFETY_MARGIN);
+    expect(room(200000)).toBe(25000 - OUTPUT_SAFETY_MARGIN);
+    expect(room(262144)).toBe(32768 - OUTPUT_SAFETY_MARGIN);
   });
 });
 
@@ -167,63 +175,69 @@ describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
 });
 
 describe("effectiveMaxContextLength (window-derived compaction threshold)", () => {
-  it("caps the configured threshold at context_window − COMPACTION_HEADROOM", () => {
-    // A 32k window compacts at ~30.7k rather than at a configured threshold it can never reach.
-    expect(effectiveMaxContextLength(128000, 32768)).toBe(32768 - COMPACTION_HEADROOM);
-    expect(effectiveMaxContextLength(128000, 200000)).toBe(128000); // ample window: unchanged
-    expect(effectiveMaxContextLength(8000, 32768)).toBe(8000); // tighter user setting wins
-    // A window at the sanity minimum still derives a positive threshold, so a usable
-    // window can never flip the value into the "<=0 disables" contract.
-    expect(effectiveMaxContextLength(128000, MIN_USABLE_CONTEXT_WINDOW)).toBe(
-      MIN_USABLE_CONTEXT_WINDOW - COMPACTION_HEADROOM,
+  // The effective threshold is the smaller of the seeded value and the window less the
+  // compaction reserve (an eighth of the window, between 8192 and 32768), so the window decides
+  // on anything too small to hold both and the seeded value decides above that. Covers the
+  // shipped constant rather than a stand-in literal.
+  it("leaves the reserve under the window, and fires at the configured value on a roomy window", () => {
+    // 32k: reserve 8192 — the floor, not an eighth (4096).
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 32768)).toBe(24576);
+    // 128k, 200k: an eighth of the window.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 128000)).toBe(112000);
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 200000)).toBe(175000);
+    // 262k: reserve 32768 — an eighth, and the ceiling.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 262144)).toBe(229376);
+    // From 288768 up the window holds the seeded value plus the full reserve: the configured
+    // number is what fires.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 288768)).toBe(
+      DEFAULT_MAX_CONTEXT_LENGTH,
     );
-  });
-
-  it("derives from DEFAULT_CONTEXT_WINDOW when the window is unconfigured or implausible", () => {
-    expect(effectiveMaxContextLength(128000, undefined)).toBe(
-      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
-    );
-    expect(effectiveMaxContextLength(128000, "unknown")).toBe(
-      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
-    );
-    // A typo'd tiny window counts as unconfigured (resolveContextWindow's sanity
-    // threshold): the threshold derives from the assumption instead of collapsing to a
-    // near-zero value that would compact after every request.
-    expect(effectiveMaxContextLength(128000, 2048)).toBe(
-      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
-    );
-  });
-
-  // The effective threshold is the smaller of the seeded value and the window's cap, so the
-  // window decides on anything too small to hold it and the seeded value decides above that.
-  // Covers the shipped constant rather than a stand-in literal.
-  it("backstops the seeded default threshold with the model's context window", () => {
-    // Windows smaller than the seeded threshold: the window decides, and always leaves
-    // COMPACTION_HEADROOM for the summary request itself.
-    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 32768)).toBe(
-      32768 - COMPACTION_HEADROOM,
-    );
-    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 200000)).toBe(
-      200000 - COMPACTION_HEADROOM,
-    );
-    // No usable window on the entry: the assumed window backstops it just the same, which is
-    // where the two 128000s must not be confused — this is DEFAULT_CONTEXT_WINDOW, not a
-    // threshold default.
-    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, undefined)).toBe(
-      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
-    );
-    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 2048)).toBe(
-      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
-    );
-    // A window roomier than the threshold leaves it alone — the only case where the
-    // configured number is what fires.
     expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 1_000_000)).toBe(
       DEFAULT_MAX_CONTEXT_LENGTH,
     );
+    // A tighter user setting wins over any window.
+    expect(effectiveMaxContextLength(8000, 32768)).toBe(8000);
+  });
+
+  it("derives from DEFAULT_CONTEXT_WINDOW when the window is unconfigured or implausible", () => {
+    // No usable window on the entry: the assumed window backstops the threshold just the same,
+    // which is where the two 128000s must not be confused — this is DEFAULT_CONTEXT_WINDOW, not
+    // a threshold default.
+    const assumed = effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, DEFAULT_CONTEXT_WINDOW);
+    expect(assumed).toBe(112000);
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, undefined)).toBe(assumed);
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, "unknown")).toBe(assumed);
+    // A typo'd tiny window counts as unconfigured (resolveContextWindow's sanity
+    // threshold): the threshold derives from the assumption instead of collapsing to a
+    // near-zero value that would compact after every request.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 2048)).toBe(assumed);
+    expect(
+      effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, MIN_USABLE_CONTEXT_WINDOW - 1),
+    ).toBe(assumed);
   });
 
   it("keeps <=0 as 'compaction disabled'", () => {
     expect(effectiveMaxContextLength(-1, 32768)).toBe(-1); // off: no clamping
     expect(effectiveMaxContextLength(0, 32768)).toBe(0); // off: no clamping
+  });
+});
+
+describe("compactionRoundLimit (the context size past which a compaction offers no tool round)", () => {
+  it("keeps room for the summary under the window", () => {
+    expect(compactionRoundLimit(128000)).toBe(115712);
+    expect(compactionRoundLimit(200000)).toBe(187712);
+    expect(compactionRoundLimit(262144)).toBe(249856);
+  });
+
+  it("is below the threshold on a 32k window, so a compaction there never opens a round", () => {
+    const limit = compactionRoundLimit(32768)!;
+    expect(limit).toBe(20480);
+    expect(limit).toBeLessThan(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 32768));
+  });
+
+  it("sets no limit for an unconfigured window: no hard rule from an assumption", () => {
+    expect(compactionRoundLimit(undefined)).toBeUndefined();
+    expect(compactionRoundLimit("unknown")).toBeUndefined();
+    expect(compactionRoundLimit(2048)).toBeUndefined();
   });
 });
