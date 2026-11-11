@@ -1,4 +1,13 @@
-/** Reconcile the program's carried store with the data root it serves. */
+/**
+ * Reconcile the program's carried store with the data root it serves.
+ *
+ * Design boundary: one server per data root, and the carried image follows
+ * whatever package started last — downgrades are allowed. The image id is a
+ * content hash, so it proves identity, not recency; no version ordering is
+ * applied here. The same-port cold-start race is closed by starting the
+ * reconciliation after listen() holds the root lock; sharing a root between
+ * servers on different ports is unsupported (single-writer data breaks first).
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { readHarnessMeta } from "./harness-meta.js";

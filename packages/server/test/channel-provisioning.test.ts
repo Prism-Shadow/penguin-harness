@@ -225,6 +225,28 @@ describe("the reconciliation is idempotent and defers to a push", () => {
     }
   });
 
+  // The mirror of the upgrade case, fixing the boundary the reconciliation lives
+  // under: the image follows whatever package started last, downgrades included —
+  // the content-hash id proves identity, not recency, so an older package started
+  // after a newer one lays its own image and the record follows it.
+  it("a downgraded installation copies its older body over the newer image's record", async () => {
+    const newDist = await tmp("penguin-sync-downgrade-new-");
+    const newerBody = await packImage(newDist, { ...BUILD, cli: CLI + "// v2\n" });
+    const root = await tmp("penguin-sync-downgrade-root-");
+    await syncCarriedImage(root, newerBody);
+
+    const oldDist = await tmp("penguin-sync-downgrade-old-");
+    const oldBody = await packImage(oldDist);
+    await expect(syncCarriedImage(root, oldBody)).resolves.toMatchObject({ kind: "copied" });
+
+    const meta = await readHarnessMeta(root);
+    if (meta.kind === "meta") {
+      const bundle = await fs.readFile(path.join(root, "hmr", meta.manifest.cli!.bundle!), "utf8");
+      expect(bundle).toBe(CLI);
+    }
+    await expectRecordAndAnswer(root);
+  });
+
   it("a hot-pushed root keeps its record: the copy never outlives a push", async () => {
     const dist = await tmp("penguin-sync-pushed-dist-");
     const body = await packImage(dist);
