@@ -317,6 +317,8 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** More of this server's Agents, after the configured one, each with what its summary says differently. */
+    moreAgents?: Array<Partial<AgentSummary> & { agentId: string }>;
     /** What the Agent carries beyond its library installs (by default nothing). */
     parts?: {
       skills?: SkillMetadataItem[];
@@ -413,9 +415,16 @@ export function agentServer(
     ...o,
     employees: [...o.employees],
   }));
-  /** This server's Agents: the one the suites configure, unless a test deleted it, and every employee. */
+  /**
+   * This server's Agents: the one the suites configure, unless a test deleted it, the further
+   * ones a suite names, and every employee.
+   */
   let localAgentIds = [
-    ...new Set([AGENT_ID, ...organizations.flatMap((o) => o.employees.map((e) => e.agentId))]),
+    ...new Set([
+      AGENT_ID,
+      ...(options.moreAgents ?? []).map((a) => a.agentId),
+      ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
+    ]),
   ];
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
@@ -635,7 +644,11 @@ export function agentServer(
           return {
             ...summaryOf(id),
             name: id === AGENT_ID ? stored.config.name : id,
+            ...(id === AGENT_ID && stored.config.author !== undefined
+              ? { author: stored.config.author }
+              : {}),
             ...(employments.length > 0 ? { employments } : {}),
+            ...options.moreAgents?.find((a) => a.agentId === id),
           };
         }),
         ...(unreadableCharts.length > 0 ? { unreadableCharts } : {}),

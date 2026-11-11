@@ -47,6 +47,7 @@ import { MessagingModule } from "./features/messaging/module";
 import { DockModule } from "./features/dock/module";
 import { WorkspaceModule } from "./features/workspace/module";
 import { TracesModule } from "./features/traces/module";
+import { AudioModule } from "./features/audio/module";
 
 @Module({
   children: [
@@ -74,6 +75,7 @@ import { TracesModule } from "./features/traces/module";
     DockModule,
     WorkspaceModule,
     TracesModule,
+    AudioModule,
   ],
 })
 export class WebRoot {}

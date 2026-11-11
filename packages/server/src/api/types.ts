@@ -803,6 +803,24 @@ export interface ProviderConnectionUpdate {
   clearApiKey?: boolean;
 }
 
+/**
+ * A group just became connected (its first group key landed) and the catalog names a model of
+ * that group as its connect default (TokenDance's and Penguin Go's DeepSeek V4.1 Flash), while
+ * the Project's default sits outside the group or is unset. Reported by the write that stored the
+ * key, which leaves the default as it is: the page asks whether to make `model` the default.
+ */
+export interface DefaultModelOffer {
+  /** The model offered as the default. */
+  model: ModelRefDto;
+  /** The default the Project stores now, outside the group; absent when it has none. */
+  current?: ModelRefDto;
+}
+
+/** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
+export interface ProviderConnectionResponse extends ModelsResponse {
+  defaultOffer?: DefaultModelOffer;
+}
+
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
 export interface ModelUpdateEntry {
   /** Provider group (an independent entry field, always submitted with the request). */
@@ -1184,6 +1202,8 @@ export interface ModelOAuthStatusResponse {
    * would otherwise name a count the server never wrote.
    */
   applied?: number;
+  /** The default model offered on the minted key (see DefaultModelOffer); on every `done` answer. */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1199,6 +1219,8 @@ export interface ModelOAuthCodeRequest {
 export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
+  /** The default model offered on the minted key (see DefaultModelOffer). */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1225,6 +1247,8 @@ export interface PlatformAuthFlowStatusResponse {
   status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
   error?: PlatformAuthFlowErrorCode;
   applied?: number;
+  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
+  defaultOffer?: DefaultModelOffer;
 }
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
@@ -1360,10 +1384,19 @@ export interface PluginUpdateRef {
   version: string;
 }
 
+/**
+ * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
+ * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
+ * hire (`company`). A config without the field, or with any other value, reads as `user`.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
 export interface AgentSummary {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent, as its config reads (absent there = `user`); the Agents page groups by it. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the larger mtime of system_config.yaml / AGENTS.md (unset if stat fails). */
   updatedAt?: string;
@@ -1446,6 +1479,12 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Who is creating the Agent; omitted = `user`. The Web App's dialog sends `user`, the CLI
+   * sends `agent` when it runs inside a Session. Written into the new Agent's config. (An
+   * imported Agent keeps the `author` its package carries: the import moves an Agent.)
+   */
+  author?: AgentAuthor;
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
@@ -1578,6 +1617,8 @@ export interface AgentHooksConfigDto {
 export interface AgentConfigDto {
   name?: string;
   description?: string;
+  /** The effective author: the stored value, `user` when the field is missing or unknown. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
   /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
@@ -1647,6 +1688,7 @@ export interface AgentConfigUpdateRequest {
   config?: {
     name?: string;
     description?: string;
+    author?: AgentAuthor;
     systemPrompt?: string;
     maxTurns?: number;
     model?: AgentModelConfigDto;
@@ -7338,8 +7380,58 @@ export interface WebContribution {
   [key: string]: unknown;
 }
 
+/**
+ * The data of one `WebModule.pages` contribution: its route, where it sits (`main` = the
+ * development nav; `org` = a company-mode page — its path is relative to
+ * `/org/:projectId/:orgId/` and it gets a nav row after the organization's own; `none` =
+ * reachable by URL only), whether it is admin-only, its renderer; its nav row's name in English
+ * and Chinese and its glyph (a name in the web UI's icon registry); and the key of the page it
+ * sits under, if any — one level only, and a page whose parent is absent is not shown.
+ */
+export type WebPageData = {
+  key: string;
+  path: string;
+  nav: "main" | "org" | "none";
+  admin: boolean;
+  renderer: RendererRef;
+  parent?: string;
+  title?: string;
+  titleZh?: string;
+  icon?: string;
+};
+
+/** A page contribution as GET /api/contributions answers it. */
+export type WebPageContribution = WebContribution & WebPageData;
+
+/**
+ * The data of one `WebModule.fileRenderers` contribution: the Workspace files it draws, by
+ * extension (without the dot, compared case-insensitively), and the renderer that draws one.
+ * Where the app shows it is the app's own choice (below a reply's paragraph that links the file).
+ */
+export type WebFileRendererData = {
+  extensions: string[];
+  renderer: RendererRef;
+};
+
+/** A file renderer contribution as GET /api/contributions answers it. */
+export type WebFileRendererContribution = WebContribution & WebFileRendererData;
+
+/**
+ * The data of one `WebModule.pageRemovals` contribution: the key of a page the web app drops —
+ * one of its own or one another plugin contributed. The app drops the routes under the page's
+ * path and the pages under it with it, and keeps the page its catch-all leads to.
+ */
+export type WebPageRemovalData = {
+  key: string;
+};
+
+/** A page removal as GET /api/contributions answers it. */
+export type WebPageRemovalContribution = WebContribution & WebPageRemovalData;
+
 export interface ContributionsResponse {
-  pages: WebContribution[];
+  pages: WebPageContribution[];
+  fileRenderers: WebFileRendererContribution[];
+  pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
 }

@@ -261,6 +261,7 @@ penguin agent create --agent-id <id> [options]
 | --- | --- | --- |
 | `--agent-id <id>` | Agent id，同时也是它的目录名。必填。 | — |
 | `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
+| `--author <author>` | 由谁创建这个 Agent：`user`、`agent` 或 `company`。 | 在对话中运行时为 `agent`，否则为 `user` |
 | `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 

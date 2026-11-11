@@ -18,16 +18,16 @@ reading face (message text, prose, the composer's input opt in with `font-sans`)
 both at one family; Console set its chrome in a mono face until 2026-09-30, and now keeps mono for
 code and a few technical marks (the status-line tags, a step's label and block bar, chart axis
 labels). The display face is the chrome face everywhere: Console's h1 is the Plex Sans bold, and IBM
-Plex Sans Condensed 600 (the old uppercase h1) stays declared in `geek.css` but unnamed until its
+Plex Sans Condensed 600 (the old uppercase h1) stays declared in `themes/geek/fonts.css` but unnamed until its
 dependency is dropped.
 
 | family | files | source | licence |
 | --- | --- | --- | --- |
-| Mona Sans Variable | `github.css`: latin + latin-ext — a pairing option; no theme names it since 2026-10-02 | `@fontsource-variable/mona-sans` | OFL-1.1 |
-| JetBrains Mono Variable | `github.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
-| MiSans | `modern.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
-| IBM Plex Sans Variable | `geek.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
-| IBM Plex Sans Condensed | `geek.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
+| Mona Sans Variable | `themes/github/fonts.css`: latin + latin-ext — a pairing option; no theme names it since 2026-10-02 | `@fontsource-variable/mona-sans` | OFL-1.1 |
+| JetBrains Mono Variable | `themes/github/fonts.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
+| MiSans | `themes/modern/fonts.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
+| IBM Plex Sans Variable | `themes/geek/fonts.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
+| IBM Plex Sans Condensed | `themes/geek/fonts.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
 | Noto Sans SC Variable | `cjk.css`: fontsource's own sheet, 101 `unicode-range` slices | `@fontsource-variable/noto-sans-sc` | OFL-1.1 |
 
 Why these faces: Mona Sans was Primer's face from W1a (2026-09-30) until 2026-10-02 and stays as a
@@ -36,7 +36,7 @@ Chinese, so a zh line sits in the same face as the English around it; no other f
 has Chinese. IBM Plex Sans is Console's main face, chrome and reading text alike, and JetBrains
 Mono, the code face the three themes share, sets its code and its technical marks.
 
-Frost ships two MiSans weights and no more, so `themes/modern.css` turns off weight synthesis: a 600
+Frost ships two MiSans weights and no more, so `themes/modern/recipes.css` turns off weight synthesis: a 600
 or 700 request renders in Medium instead of a synthesized bold, which smears Han strokes. Frost's
 own tokens stop at 500.
 
@@ -45,7 +45,7 @@ own tokens stop at 500.
 Font files and font declarations cost differently:
 
 - **Files.** A browser fetches a font file only when an element's `font-family` names its family
-  and its text falls inside the face's `unicode-range`. Each theme file names only its own
+  and its text falls inside the face's `unicode-range`. Each theme pack names only its own
   families, so a session downloads its theme's faces and nothing else, and only the slices its text
   touches. The consumers' Vite configs never inline a font (`build.assetsInlineLimit`), so every
   slice stays a file of its own.

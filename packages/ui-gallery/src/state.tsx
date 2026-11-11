@@ -4,9 +4,10 @@
  *
  * The provider owns the document root: it applies the theme under test to <html> through the
  * package's own `applyThemeAttributes` (the same contract the app's boot script and theme provider
- * follow) — theme, mode, the accent choice, the text size and the font pairing, which is what makes
- * the size real: every rem in a Foundations board follows `<html style="font-size">`, while the
- * chrome, sized in px, does not — sets `lang` so CJK text shapes as Chinese, and marks the phone
+ * follow) — theme and its base, mode, the accent choice, the text size and the font pairing, which
+ * is what makes the size real: every rem in a Foundations board follows
+ * `<html style="font-size">`, while the chrome, sized in px, does not — sets `lang` so CJK text
+ * shapes as Chinese, and marks the phone
  * view. The framed app gets the same preferences through its own URL (src/app/frame.ts), so the
  * page's root and every frame carry one theme. The gallery chrome never reads those attributes'
  * theme — only `.dark`, to pick its own light or dark palette; nor does the site navbar above it.
