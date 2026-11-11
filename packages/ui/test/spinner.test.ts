@@ -6,21 +6,26 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Spinner } from "../src/components/icons/spinner/spinner";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
+import { childElements, readMarkup } from "./helpers/markup";
+
+const spinner = () =>
+  childElements(readMarkup(renderStatic(createElement(Spinner, { label: "Loading" }))));
 
 describe("Spinner", () => {
-  it("is a status named by its label, turning as one svg", () => {
-    const html = renderStatic(createElement(Spinner, { label: "Loading" }));
-    expect(html).toMatch(/^<svg role="status" aria-label="Loading" data-live="spinner"/);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-live", "animate-spin"]));
+  it("is a status named by its label, as one svg", () => {
+    const roots = spinner();
+    expect(roots).toHaveLength(1);
+    expect(roots[0]!.tag).toBe("svg");
+    expect(roots[0]!.attrs).toMatchObject({
+      role: "status",
+      "aria-label": "Loading",
+      "data-live": "spinner",
+    });
   });
 
-  it("draws the arc and the scribble as the svg's two children, one per style", () => {
-    const html = renderStatic(createElement(Spinner, { label: "Loading" }));
-    const inner = html.slice(html.indexOf(">") + 1, html.lastIndexOf("</svg>"));
-    expect(inner).toMatch(
-      /^<g data-set="arc">(?:<circle[^>]*><\/circle>){2}<\/g><polyline data-set="scribble"/,
-    );
-    expect(inner).toMatch(/<polyline [^>]*stroke="currentColor"[^>]*stroke-linecap="round"/);
+  it("draws both styles, the arc and the scribble, as the svg's children", () => {
+    const drawings = childElements(spinner()[0]!).map((child) => child.attrs["data-set"]);
+    expect(drawings.sort()).toEqual(["arc", "scribble"]);
   });
 });

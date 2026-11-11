@@ -22,6 +22,7 @@ import {
   ChartSwatch,
   barPath,
 } from "../src/components/charts/marks/marks";
+import type { ChartPaint } from "../src/components/charts/marks/marks";
 import { TimelineBar, timelineRadius } from "../src/components/charts/marks/timeline-bar";
 import { DEFAULT_CHART_STYLE } from "../src/components/charts/chart-style";
 import { renderStatic } from "../src/testing";
@@ -30,6 +31,7 @@ import { SRC_DIR } from "./helpers/paths";
 // Each primitive has its own props; the helper only renders one, so it takes any component.
 const render = (type: (props: any) => ReactElement | null, props: object) =>
   renderStatic(createElement(type, props));
+type ChartRole = Extract<ChartPaint, { role: unknown }>["role"];
 
 describe("the chart primitives, in the default theme", () => {
   it("draw a bar at the theme's share of its band, unoutlined, in its slot's colour", () => {
@@ -156,14 +158,14 @@ describe("the chart primitives, in the default theme", () => {
     expect(track).toContain('stroke-opacity="0.3"');
   });
 
-  it("place a timeline bar where the chart says, in its slot's colour", () => {
+  it("place a timeline bar where the chart says, as its slot's mark", () => {
     const html = render(TimelineBar, {
       paint: { series: 0 },
       place: { left: "10%", width: "5%" },
       className: "cursor-pointer",
     });
     expect(html).toContain("left:10%");
-    expect(html).toContain(`--_paint:${DEFAULT_CHART_STYLE.series[0]}`);
+    expect(html).toContain('data-series="1"');
     expect(html).toContain('data-part="bar"');
     expect(html).not.toContain("box-shadow");
   });
@@ -195,19 +197,22 @@ describe("the chart primitives, in the default theme", () => {
     ).toContain("--_paint:transparent");
   });
 
-  it("name a Token kind's mark by its kind, as a slot's mark by its number", () => {
-    const kinds = [
-      ["cacheRead", "cache-read"],
-      ["cacheWrite", "cache-write"],
-      ["output", "output"],
-      ["ref", "ref"],
-    ] as const;
-    for (const [role, series] of kinds) {
+  it("give a named colour's bar and its timeline span the same series, one no other colour has", () => {
+    // The named colours are the roles the default style paints from a `--ui-chart-*` token of
+    // their own; a theme's recipe tells their marks apart by `data-series` alone.
+    const roles = Object.entries(DEFAULT_CHART_STYLE)
+      .filter(([, value]) => typeof value === "string" && value.startsWith("var(--ui-chart-"))
+      .map(([role]) => role as ChartRole);
+    expect(roles.length).toBeGreaterThan(1);
+    const seriesOf = (html: string) => /\bdata-series="([^"]+)"/.exec(html)?.[1];
+    const named = roles.map((role) => {
       const bar = render(ChartBar, { cx: 50, band: 20, y: 10, height: 30, paint: { role } });
-      expect(bar).toContain(`data-series="${series}"`);
       const span = render(TimelineBar, { paint: { role }, place: { left: "0%" } });
-      expect(span).toContain(`data-series="${series}"`);
-    }
+      expect(seriesOf(bar), role).toBeDefined();
+      expect(seriesOf(span), role).toBe(seriesOf(bar));
+      return seriesOf(bar);
+    });
+    expect(new Set(named).size).toBe(roles.length);
   });
 
   it("leave a filled mark's fill to its paint, which an ink's mark takes from its class", () => {

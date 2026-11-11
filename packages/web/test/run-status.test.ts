@@ -2,7 +2,7 @@
  * The chat toolbar's run indicator (features/chat/run-status.tsx).
  *
  * - Given a turn is running, then the toolbar shows the turning hourglass named in words, and the
- *   same words beside it from `sm` up, as the `ui-run` section's mark and label.
+ *   same words beside it, as the `ui-run` section's mark and label.
  * - Given the conversation is compacting, has settled, or never ran, then the toolbar shows
  *   nothing: a compaction is the stream banner's to tell, and the conversation on screen is read.
  */
@@ -28,7 +28,6 @@ describe("RunStatus", () => {
     ).toBe(true);
     const words = parts.find((e) => e.attrs["data-slot"] === "label")!;
     expect(words.children).toEqual([label]);
-    expect(words.attrs.class).toContain("sm:inline");
   });
 
   it("shows nothing while compacting, once settled, or for a conversation that never ran", () => {

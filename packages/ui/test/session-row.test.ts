@@ -12,6 +12,7 @@ import { NAV_FILL } from "../src/components/navigation/nav-list/nav-list";
 import { RowHoverActions, SessionRow } from "../src/components/shell/session-row/session-row";
 import type { SessionRowProps } from "../src/components/shell/session-row/session-row";
 import { classTokens, renderStatic, markupStructure } from "../src/testing";
+import { elementsOf, readMarkup } from "./helpers/markup";
 
 const action = (id: string, label: string, danger = false) => ({
   id,
@@ -50,9 +51,10 @@ describe("SessionRow", () => {
   });
 
   it("marks the open row's button as the current page, and no other row", () => {
-    expect(row({ active: true })).toContain(
-      'data-testid="session-row" data-session-id="s-1" aria-current="page"',
+    const button = elementsOf(readMarkup(row({ active: true }))).find(
+      (e) => e.attrs["data-testid"] === "session-row",
     );
+    expect(button?.attrs["aria-current"]).toBe("page");
     expect(row()).not.toContain("aria-current");
   });
 

@@ -59,37 +59,11 @@ import { analyzeFile, matchesPolicyPath, scanSourceRoots, unscannedRoots } from 
 import type { ClassToken, FileAnalysis, JsxElementInfo, SourceFile } from "../src/testing";
 import { REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
 
-/** Appendix A. Adding a hook is a catalog change: this list, the host table and every theme. */
-const APPENDIX_A = [
-  "ui-glass",
-  "ui-eyebrow",
-  "ui-display",
-  "ui-live",
-  "ui-frame",
-  "ui-underline-nav",
-  "ui-shell",
-  "ui-icon-decor",
-  "ui-tree",
-  "ui-field",
-  "ui-activity",
-  "ui-notice",
-  "ui-chart",
-  "ui-scrim",
-  "ui-stream",
-  "ui-glyph",
-  "ui-widget",
-  "ui-edge",
-  "ui-start",
-  "ui-library",
-  "ui-ledger",
-  "ui-empty",
-  "ui-run",
-];
-
 /**
  * Appendix B: the components that may apply each hook — the web app's own components, which the
- * gallery frames as they are (the package itself renders none). A component is listed only while
- * it exists: the last test below fails on a host no scanned file declares.
+ * gallery frames as they are (the package itself renders none). Keyed by `HOOKS`, so the compiler
+ * asks for an entry for every hook. A component is listed only while it exists: the last test
+ * below fails on a host no scanned file declares.
  *
  * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
  * menus, popovers, tooltips, the floating launcher) and for a plugin or skill tile; the eyebrow and display rungs for the
@@ -105,7 +79,7 @@ const APPENDIX_A = [
  * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
  * one-line note.
  */
-const HOSTS: Readonly<Record<string, readonly string[]>> = {
+const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
   "ui-glass": [
     "ComposerCard",
@@ -319,11 +293,6 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the twenty-three of Appendix A, each with its hosts", () => {
-    expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
-    expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
-  });
-
   it("scans the package and the web app", () => {
     expect(unscannedRoots(SCAN)).toEqual([]);
   });
@@ -361,7 +330,8 @@ describe("style hooks", () => {
         .filter((t) => hooks.has(t.utility))
         .flatMap((t) => {
           const component = componentOf(analysis, t);
-          return component !== null && HOSTS[t.utility]!.includes(component)
+          return component !== null &&
+            HOSTS[t.utility as (typeof HOOKS)[number]].includes(component)
             ? []
             : [`${file.id}:${t.line} ${t.utility} in ${component ?? "module scope"}`];
         });
@@ -370,7 +340,7 @@ describe("style hooks", () => {
       const byProp = analysis.elements
         .filter((e) => ICON_RENDERERS.has(e.tag) && e.attributes.has("decor"))
         .flatMap((e) =>
-          e.component !== null && HOSTS["ui-icon-decor"]!.includes(e.component)
+          e.component !== null && HOSTS["ui-icon-decor"].includes(e.component)
             ? []
             : [`${file.id}:${e.line} decor on <${e.tag}> in ${e.component ?? "module scope"}`],
         );

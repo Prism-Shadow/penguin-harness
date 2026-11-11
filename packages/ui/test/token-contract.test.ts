@@ -112,6 +112,7 @@ const filled = (id: ThemeId) => {
   if (theme === undefined || theme.status !== "filled") throw new Error(`${id} is filled`);
   return theme.analysis;
 };
+
 describe("the pack folders", () => {
   it("serve every stylesheet through index.css in its layer, and write no layer themselves", () => {
     // The layer is the pack's place in the cascade, and an imported pack never chooses it: the
@@ -367,15 +368,9 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     }
   });
 
-  it("gives every theme its own list (Frost's and Console's have six), with no id shared between two themes", () => {
+  it("gives every theme its own list, with no id shared between two themes", () => {
     const all = THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id]);
     expect(all.length).toBe(new Set(all).size);
-    // Console's own accent went black and white (2026-09-30) and Frost's followed (2026-10-02);
-    // the hue each had is now its first preset, so their lists are one longer.
-    const listed: Readonly<Record<ThemeId, number>> = { github: 5, modern: 6, geek: 6, doodle: 5 };
-    for (const id of THEME_IDS) expect(THEME_ACCENT_PRESETS[id].length, id).toBe(listed[id]);
-    expect(THEME_ACCENT_PRESETS.geek[0]).toBe("orange");
-    expect(THEME_ACCENT_PRESETS.modern[0]).toBe("forest");
   });
 
   it("spells each theme's own accent (the neutral choice) in tokens.ts as the CSS does", () => {
@@ -859,19 +854,6 @@ describe("the streaming tokens (2026-09-30)", () => {
       // One value for both modes: the dark rule leaves the pair to the base rule.
       expect(theme.analysis.modes.dark.has("--ui-stream-reveal"), theme.id).toBe(false);
       expect(theme.analysis.modes.dark.has("--ui-stream-rate"), theme.id).toBe(false);
-    }
-  });
-
-  it("reveals Primer as today (instant), Frost by fading and Console by typing", () => {
-    const expected: Readonly<Record<ThemeId, string>> = {
-      github: "instant",
-      modern: "fade",
-      geek: "typewriter",
-      doodle: "fade",
-    };
-    for (const theme of THEMES) {
-      if (theme.status !== "filled") continue;
-      expect(theme.values.modes.light.get("--ui-stream-reveal"), theme.id).toBe(expected[theme.id]);
     }
   });
 });

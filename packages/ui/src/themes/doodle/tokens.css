@@ -15,7 +15,8 @@
  *   dark `#1c1a17` / `#23201d` / `#292622`. The gray bridge is a warm ramp through the same paper
  *   and ink, so the app's palette classes (the terminal's chrome among them) land on paper too.
  * - Text: ink `#2b2521` (11.6:1 on the paper surfaces), muted 5.6:1, subtle 3.9:1; dark body
- *   chalk 11.4:1, the near-white for headings, muted 7.2:1, subtle 5.2:1.
+ *   chalk 12.4:1 (11.1:1 on its own accent's tint), the near-white for headings, muted 7.2:1,
+ *   subtle 5.2:1.
  * - One ink. The theme's own accent is the ink under a paper label in light and the chalk under
  *   the ink in dark, as every theme's own accent is black and white (user decision, 2026-10-02);
  *   the family derives from `--ui-accent`, so a preset — five pens, `accents.css` — sets one
@@ -273,7 +274,7 @@
      near-white kept for headings. `white` stays literal (see Primer's note). ---- */
   --color-white: #ffffff;
   --color-gray-50: #f4efe4;
-  --color-gray-100: #eae3d6;
+  --color-gray-100: #efe8dc;
   --color-gray-200: #d8d0c1;
   --color-gray-300: #cbc2b2;
   --color-gray-400: #bcb2a2;
@@ -293,8 +294,8 @@
   --ui-overlay: #25221f;
   --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
 
-  /* ---- Colour — text: body 11.4:1, headings the near-white, muted 7.2:1, subtle 5.2:1 ---- */
-  --ui-fg: #eae3d6;
+  /* ---- Colour — text: body 12.4:1, headings the near-white, muted 7.2:1, subtle 5.2:1 ---- */
+  --ui-fg: #efe8dc;
   --ui-fg-emphasis: #f4efe4;
   --ui-fg-muted: #bcb2a2;
   --ui-fg-subtle: #a09686;
