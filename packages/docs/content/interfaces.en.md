@@ -83,6 +83,8 @@ interface RunOptions {
 
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+                            // compaction_failure: mid-Task, no next context could be opened
+                            // (the old context is kept, the pending input is carry-over)
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -90,7 +92,7 @@ interface RunCutoff {       // how a run was cut off early
 
 The CLI wires terminal I/O onto this boundary. The Server wires HTTP requests and SSE channels onto it. Any programmatic caller that connects becomes a new Human implementation, with nothing to register.
 
-The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream.
+The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream. A compaction that completes without a full summary is no cutoff: its `compaction_end` is `completed`, carrying the error pair, and the run carries on in the new context.
 
 ## LLMInterface
 

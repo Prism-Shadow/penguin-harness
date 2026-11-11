@@ -3,11 +3,15 @@
  * features/chat/compaction-banner.tsx). The section timings are stream-model.test.ts's.
  *
  * - The result section reads the summary as prose: tags stripped, an unclosed block shown as
- *   far as it streamed, tagless output verbatim, and nothing when nothing streamed.
+ *   far as it streamed, tagless output verbatim, a salvaged summary as the part inside its tag,
+ *   and nothing when nothing streamed.
  * - The result section stays hidden while the request only thinks, appears with the first
- *   summary text, and stays for a completed row but not for a failed one.
+ *   summary text, and stays for a completed row but not for a failed one or a hand-off.
  * - A discard row is never titled as a compaction, running or settled, and a running row never
  *   reads as settled; an unknown mode is titled as a compaction — in both languages.
+ * - A salvaged or handed-off completion is titled as compacted and says why only through its
+ *   status mark's name and tooltip; a fatal end keeps the failed row, and an old Trace's
+ *   abandoned compactions keep their own reason lines — in both languages.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -18,6 +22,7 @@ import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { compactionResultVisible, compactionSummaryText } from "../src/lib/amsp/compaction-summary";
+import type { CompactionItem } from "../src/lib/amsp/stream-model";
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {
@@ -41,6 +46,17 @@ describe("compactionSummaryText", () => {
     expect(compactionSummaryText({ summaryText: "" })).toBe("");
     expect(compactionSummaryText({ summaryText: "   " })).toBe("");
   });
+
+  it("shows a salvaged summary as the part inside its tag, which is what the next context opened with", () => {
+    const raw = "I will summarize now.\n[summary]\n## Request\nfix the links";
+    expect(compactionSummaryText({ summaryText: raw, outcome: "salvaged" })).toBe(
+      "## Request\nfix the links",
+    );
+    // The same draft as a plain summary keeps the lenient reading, preamble and all.
+    expect(compactionSummaryText({ summaryText: raw, outcome: "summary" })).toContain(
+      "I will summarize now.",
+    );
+  });
 });
 
 describe("compactionResultVisible (the result section waits for the thinking to finish)", () => {
@@ -60,6 +76,20 @@ describe("compactionResultVisible (the result section waits for the thinking to 
     expect(compactionResultVisible({ running: false, status: "completed" })).toBe(true);
     expect(compactionResultVisible({ running: false, status: "fatal" })).toBe(false);
     expect(compactionResultVisible({ running: false, status: "aborted" })).toBe(false);
+  });
+
+  it("is shown for a salvaged summary, and never for a hand-off, which wrote none", () => {
+    expect(
+      compactionResultVisible({
+        running: false,
+        status: "completed",
+        outcome: "salvaged",
+        summaryText: "[summary]kept",
+      }),
+    ).toBe(true);
+    expect(
+      compactionResultVisible({ running: false, status: "completed", outcome: "handoff" }),
+    ).toBe(false);
   });
 });
 
@@ -108,5 +138,65 @@ describe.each([
 
   it("titles a mode it does not know as a compaction", () => {
     expect(row("future-mode", false)).toContain(dict.chat.compactionDone("summarize"));
+  });
+
+  /** A settled summarize row as the reducer leaves it. */
+  const settled = (fields: Partial<CompactionItem>) =>
+    renderToStaticMarkup(
+      createElement(CompactionBanner, {
+        item: {
+          kind: "compaction",
+          id: 1,
+          reason: "context",
+          mode: "summarize",
+          running: false,
+          ...fields,
+        },
+        ctx,
+      }),
+    );
+
+  it("says a completion without a full summary on its status mark alone: titled as compacted, the reason as the mark's name and tooltip", () => {
+    const salvaged = settled({
+      status: "completed",
+      outcome: "salvaged",
+      summaryText: "[summary]x",
+    });
+    const handoff = settled({
+      status: "completed",
+      outcome: "handoff",
+      errorMessage: "400 Bad Request",
+    });
+    for (const [html, hint] of [
+      [salvaged, dict.chat.compactionSalvagedHint],
+      [handoff, dict.chat.compactionHandoffHint("400 Bad Request")],
+    ] as const) {
+      expect(html).toContain(dict.chat.compactionDone("summarize"));
+      expect(html).toContain(`aria-label="${hint}"`);
+      expect(html).toContain(`data-tooltip="${hint}"`);
+      // Nothing is written into the row itself: no reason line under the title.
+      expect(html).not.toContain(dict.chat.compactionFailed("fatal", "400 Bad Request"));
+    }
+    expect(handoff).toContain("400 Bad Request");
+    // A full summary's mark stays the plain settled glyph, with nothing to name.
+    const plain = settled({ status: "completed", outcome: "summary", summaryText: "[summary]x" });
+    expect(plain).not.toContain(`aria-label="${dict.chat.compactionSalvagedHint}"`);
+    expect(plain).not.toContain(`aria-label="${dict.chat.compactionHandoffHint()}"`);
+  });
+
+  it("keeps a failed row for a compaction whose next context could not be opened, and an old Trace's abandoned ones read as before", () => {
+    const fatal = settled({ status: "fatal", errorMessage: "no client" });
+    expect(fatal).toContain(dict.chat.compactionTitle("summarize"));
+    expect(fatal).not.toContain(dict.chat.compactionDone("summarize"));
+    expect(fatal).toContain(dict.chat.compactionFailed("fatal", "no client"));
+    for (const legacy of ["retryable", "failed"] as const) {
+      // `failed` is an old Trace's spelling, outside today's StopReason.
+      const html = settled({
+        status: legacy as CompactionItem["status"],
+        errorMessage: "no client",
+      });
+      expect(html).toContain(dict.chat.compactionFailed(legacy, "no client"));
+      expect(html).not.toContain(dict.chat.compactionFailed("fatal", "no client"));
+    }
   });
 });

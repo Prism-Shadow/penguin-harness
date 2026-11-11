@@ -344,7 +344,7 @@ enabled = false
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
-| `compaction.max_rounds` | `3` | summarize 压缩在给出摘要之前可走的工具轮数 |
+| `compaction.max_rounds` | `3` | harness 允许 summarize 压缩在给出摘要之前使用的工具轮数 |
 | `compaction.prompt` | 内置模板 | summarize 模式压缩使用的提示词 |
 | `memory.enabled` | `true` | 记忆是否进入上下文，以及是否准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 块中始终注入的那一半；包含 `{{USER_MEMORY_INDEX}}` |
@@ -367,9 +367,9 @@ enabled = false
 - `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
 - `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
 - `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
-- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
+- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 预留」中较小的一个。预留为窗口的八分之一，至少 8192、至多 32768 Token，为压缩自己的请求和摘要留出空间。因此窗口小的模型会在自己的窗口内触发压缩（32k 窗口在 24,576 处，200k 窗口在 175,000 处）；窗口不小于 288,768 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理，即 112,000。
 - `compaction.max_session_turns`：`-1` 表示不限制。
-- `compaction.max_rounds`：工具轮中模型只能读文件，以及在本 Session 的 scratchpad 里写交接文件；`0` 恢复单次纯文本压缩请求。每轮按缓存读价重读已缓存的上下文，250k 的上下文走三轮，每次压缩约多出 0.75 M 缓存读 Token。见[上下文压缩](/agent-loop#交接文件摘要之前的工具轮)。
+- `compaction.max_rounds`：工具轮由 harness 计数，而不是由模型计数。每轮的结果会写明还剩几轮；没有剩余轮次，或上下文已达 `context_window` − 12288 时，所有工具调用一律拒绝；`0` 或更小时所有工具调用都被拒绝，模型只给出摘要。工具轮中模型只能读文件，以及在本 Session 的 scratchpad 里写交接文件，摘要与它的写入也可以放在同一个回复里。每轮按缓存读价重读已缓存的上下文，250k 的上下文走三轮，每次压缩约多出 0.75 M 缓存读 Token。见[上下文压缩](/agent-loop#交接文件摘要之前的工具轮)。
 - `compaction.prompt`：读取这一节时替换 `{{SCRATCHPAD_DIR}}`（本 Session scratchpad 的绝对路径）与 `{{MAX_ROUNDS}}`。
 - `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **插件**，`schedules.prompt` 在 **定时任务**。
 - `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。

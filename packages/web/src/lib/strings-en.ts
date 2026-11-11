@@ -4549,16 +4549,22 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
+    compactionSalvagedHint:
+      "The summary was cut off; what was written is kept, with a pointer to the earlier Trace.",
+    compactionHandoffHint: (errorMessage?: string): string =>
+      errorMessage !== undefined
+        ? `No summary could be written; the next context opens with a Trace hand-off note instead: ${errorMessage}`
+        : "No summary could be written; the next context opens with a Trace hand-off note instead.",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
-      // retryable = abandoned this time, the standing trigger retries it; fatal = a config
-      // or credential change has to come first. Legacy Traces spell both "failed".
+      // fatal = the next context could not be opened. Old Traces' abandoned compactions:
+      // retryable = given up this time, retried at the next trigger; legacy "failed" = either.
+      if (status === "fatal") {
+        return `failed${detail}, the next context could not be opened; keeping current context`;
+      }
       if (status === "retryable") {
         return `failed${detail}, keeping current context; retries at the next trigger`;
-      }
-      if (status === "fatal") {
-        return `failed${detail}, keeping current context; fix the model configuration to retry`;
       }
       return `failed${detail}, keeping current context`;
     },

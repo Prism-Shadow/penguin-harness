@@ -4792,12 +4792,20 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
+    /** The settled row's status-mark tooltip and accessible name when the compaction completed with a summary cut off before its end: the title stays 压缩完毕, only the mark says it. */
+    compactionSalvagedHint: "摘要没有写完，已保留写出的部分，并附上此前 Trace 的查询方式",
+    /** The same when no summary could be had and the next context opens with the harness's Trace hand-off note; carries the end's error message when there is one. */
+    compactionHandoffHint: (errorMessage?: string): string =>
+      errorMessage !== undefined
+        ? `未能生成摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
+        : "未能生成摘要，新上下文改以 Trace 交接说明开头",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
-      // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+      // fatal = the next context could not be opened. Old Traces' abandoned compactions:
+      // retryable = given up this time, retried at the next trigger; legacy "failed" = either.
+      if (status === "fatal") return `失败${detail}，未能开启新的上下文，保留当前上下文`;
       if (status === "retryable") return `失败${detail}，保留当前上下文，下次触发时重试`;
-      if (status === "fatal") return `失败${detail}，保留当前上下文，需修复模型配置后重试`;
       return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",

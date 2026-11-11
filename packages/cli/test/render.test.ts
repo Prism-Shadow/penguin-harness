@@ -608,6 +608,84 @@ describe("StreamRenderer", () => {
     );
   });
 
+  it("a completion without a full summary says so on its completion line, by whether a cut-off summary was kept; nothing from inside the span prints", () => {
+    const cut = `[summary]\n## Request\n${"Fix the three broken links in the release-notes draft. ".repeat(9)}`;
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // Cut at the output limit, then an empty reply: the cut summary is what was kept.
+    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", cut));
+    r.handle(partialText("stop"));
+    r.handle(requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "malformed",
+        errorMessage: "the response contained no usable summary",
+      }),
+    );
+    // Refused outright with only a short draft before it: the next context opens with the hand-off note.
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(assistantText("[summary]\n## Request\nFix the li"));
+    r.handle(requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 Bad Request" }));
+    r.handle(
+      compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "rejected",
+        errorMessage: "400 Bad Request",
+      }),
+    );
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] done; continuing with the summarized context (summary cut off)",
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context (no summary: Trace hand-off — 400 Bad Request)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("a compaction whose next context could not be opened says the current context was kept", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "[summary]the plan[/summary]"));
+    r.handle(partialText("stop"));
+    r.handle(requestEnd("completed"));
+    r.handle(
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no model client could be built",
+      }),
+    );
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] failed (no model client could be built); the next context could not be opened; keeping the current context",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("the thinking and summary streamed inside a compaction span stay off the terminal (issue #290)", () => {
     // Between the paired events the stream carries the compaction request's thinking and the
     // summary being written as ordinary partial_thinking / partial_text; the CLI keeps its

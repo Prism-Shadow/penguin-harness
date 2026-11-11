@@ -83,6 +83,8 @@ interface RunOptions {
 
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+                            // compaction_failure: mid-Task, no next context could be opened
+                            // (the old context is kept, the pending input is carry-over)
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -90,7 +92,7 @@ interface RunCutoff {       // how a run was cut off early
 
 CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道接上去。任何以编程方式接入的调用方都成为新的 Human 实现，无需注册任何东西。
 
-返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。
+返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。压缩完成但没有完整摘要不算切断：它的 `compaction_end` 是带错误字段的 `completed`，运行在新上下文中继续。
 
 ## LLMInterface
 

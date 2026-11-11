@@ -52,6 +52,7 @@ import {
   isModelMessage,
   parseInPlaceModelSwitch,
   parseUserSteeringText,
+  salvageableSummary,
 } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
@@ -478,6 +479,14 @@ export class StreamRenderer {
   private compactionActive = false;
   private compactionTokens = 0;
   /**
+   * The text the compaction's current request has written so far (never printed), and whether
+   * an earlier request of the span left a summary cut off before its end that is worth keeping
+   * (`salvageableSummary`). A completed end carrying the error pair is told apart by these two —
+   * a kept summary, or the Trace hand-off — by the same rule the Web row applies.
+   */
+  private compactionDraft = "";
+  private compactionSalvaged = false;
+  /**
    * Staged compaction usage: when a compaction event arrives, it's not yet known whether
    * it happened **mid-turn** (a normal request_end still follows in this turn ->
    * attribute to this turn) or **after the turn ended** (nothing follows -> don't
@@ -792,6 +801,12 @@ export class StreamRenderer {
           // delivered between turns) has no streamed copy — it is rendered here, in the
           // steering style.
           const p = payload as TextPayload;
+          // A compaction request's text that no partial carried: read like the partials (see
+          // handlePartialText), never printed.
+          if (this.compactionActive && p.role === "assistant") {
+            this.compactionDraft += p.text;
+            return;
+          }
           if (p.role === "user") {
             const steering = parseUserSteeringText(p.text);
             if (steering !== null) {
@@ -842,6 +857,9 @@ export class StreamRenderer {
           payload.type === "request_end" ||
           payload.type === "approval_decision")
       ) {
+        // Each request writes its own draft: the one before it is kept only as "a cut-off
+        // summary was seen".
+        if (payload.type === "request_begin") this.keepCompactionDraft();
         if (payload.type === "approval_decision") {
           this.renderedDecisions.delete(
             this.callLineKey((payload as ApprovalDecisionPayload).tool_call_id),
@@ -964,6 +982,8 @@ export class StreamRenderer {
         this.finishLine();
         this.compactionActive = true;
         this.compactionTokens = 0;
+        this.compactionDraft = "";
+        this.compactionSalvaged = false;
         this.out.write(`${dim(this.t.compactionStart(p.mode, p.reason), this.c)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "compaction_end") {
@@ -971,6 +991,16 @@ export class StreamRenderer {
         const p = payload as CompactionEndPayload;
         this.finishLine();
         this.compactionActive = false;
+        // A completed end carrying the error pair completed without a full summary: the next
+        // context opens with a summary cut off before its end, or with the Trace hand-off note.
+        this.keepCompactionDraft();
+        const degraded =
+          p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined)
+            ? this.compactionSalvaged
+              ? ("salvaged" as const)
+              : ("handoff" as const)
+            : undefined;
+        this.compactionSalvaged = false;
         // Same accounting as the stats line: total = Session cumulative (parent + child), delta = usage of this compaction.
         const tokens =
           this.compactionTokens > 0
@@ -981,7 +1011,7 @@ export class StreamRenderer {
             : undefined;
         this.compactionTokens = 0;
         this.out.write(
-          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message), this.c)}\n`,
+          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message, degraded), this.c)}\n`,
         );
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_begin") {
@@ -1093,8 +1123,12 @@ export class StreamRenderer {
   private handlePartialText(p: PartialTextPayload): void {
     // Between the paired compaction events the stream carries the summary being written as
     // ordinary partial_text (issue #290): the CLI keeps its one-line compaction progress and
-    // stays quiet — the Web banner is where the streamed text shows.
-    if (this.compactionActive) return;
+    // stays quiet — the Web banner is where the streamed text shows. The text is only read,
+    // for the completion line's verdict on a degraded end.
+    if (this.compactionActive) {
+      if (p.text) this.compactionDraft += p.text;
+      return;
+    }
     if (p.event_type === "stop") {
       this.writeReply(this.replyBlocks.flush());
       this.finishLine();
@@ -1103,6 +1137,12 @@ export class StreamRenderer {
     // Insert a line break when switching from thinking (dim) to body text, to avoid them running together.
     if (this.inDim) this.finishLine();
     if (p.text) this.writeReply(this.replyBlocks.push(p.text));
+  }
+
+  /** Ends the compaction request's draft: notes whether it held a cut-off summary worth keeping. */
+  private keepCompactionDraft(): void {
+    if (salvageableSummary(this.compactionDraft) !== "") this.compactionSalvaged = true;
+    this.compactionDraft = "";
   }
 
   /** Writes the reply text the a2ui filter released; a delta it holds back releases nothing. */
