@@ -1204,8 +1204,6 @@ export const en: Strings = {
   },
   appCenter: {
     title: "App Center",
-    description:
-      "Shortcuts to the workbenches of this Project's agents. Open one here; drag tiles to reorder them, or onto each other to make a folder.",
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
