@@ -9,13 +9,7 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
  * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type {
-  HookName,
-  StreamReveal,
-  TextVariant,
-  ThemeId,
-  ToneName,
-} from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
@@ -237,7 +231,6 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } satisfies Record<ThemeId, string>,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
@@ -289,6 +282,23 @@ export const zh = {
     unset: "未定义",
   },
   foundations: {
+    /** The theme-pack table: each pack's manifest, built-in and imported on the demo's server. */
+    packs: {
+      intro:
+        "注册表里的每个内置主题包，以及演示服务端上管理员导入的主题包，各列出清单 pack.json：名称、基于什么、版本、目标主题 API、选择器用的色样与各字体角色的首选字体。",
+      name: "名称",
+      base: "基于",
+      version: "版本",
+      api: "主题 API",
+      swatches: "色样",
+      fonts: "字体",
+      isBase: "基准",
+      onFrost: "白领",
+      foundation: "基础层",
+      imported: "导入",
+      importedHint: "演示服务端上导入的主题包，读自 GET /api/themes",
+      fontRoles: { sans: "阅读", ui: "界面", cjk: "中文", mono: "等宽", display: "展示" },
+    },
     surfaces: "表面",
     inks: "文字",
     lines: "线条",
@@ -554,6 +564,10 @@ export const zh = {
         title: "附件",
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
+      },
+      packs: {
+        title: "主题包",
+        description: "每个主题包的清单：名称、基于什么、版本、主题 API、色样与字体。",
       },
       colour: {
         title: "颜色",
