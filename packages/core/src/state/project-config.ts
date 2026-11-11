@@ -605,7 +605,8 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * that is not an array reads as absent, i.e. the factory set. A present array is the
  * literal list — invalid entries are dropped individually, which can narrow the deny set,
  * but the write paths validate up front and the file is never hand-edited by design, so
- * this only fires for hand-placed data.
+ * this only fires for hand-placed data. A rule's `action` other than `"deny"` / `"ask"`
+ * reads as absent, i.e. `deny` (the safe direction again).
  *
  * Exported for the server's ProjectConfigService, which holds a cached parse of the same
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
@@ -750,6 +751,7 @@ export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefi
           ? { description: r.description }
           : {}),
         ...(typeof r.enabled === "boolean" ? { enabled: r.enabled } : {}),
+        ...(r.action === "deny" || r.action === "ask" ? { action: r.action } : {}),
       });
     }
     out.rules = rules;

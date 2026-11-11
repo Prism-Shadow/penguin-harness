@@ -3,7 +3,7 @@
  * authoritative state while streaming (history-closing decision), the generation guard
  * against rebuild re-entrancy during replay, resync rebuild (clears the pending table +
  * keeps localDecisions), approval re-delivery keyed by origin composite key + missing
- * card backfill — and, for a call a history window folded, the whole call the approval carries in
+ * card backfill, the command-policy rule an approval names — and, for a call a history window folded, the whole call the approval carries in
  * place of the folded copy — the local answer time an optimistic resolveApproval stamps, and
  * history load failure/retry.
  *
@@ -442,6 +442,27 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     h.controller.handleServer({ type: "approval_request", toolCall: tc });
     expect(h.controller.model.items.filter((i) => i.kind === "tool_call")).toHaveLength(1);
     expect(h.controller.pendingApprovals.has(approvalKey(undefined, "t2"))).toBe(true);
+  });
+
+  it("an approval a command-policy rule asked for keeps the rule, for the card to name", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.resolveLoad([]);
+    await p;
+    const tc = toolCall({
+      name: "exec_command",
+      arguments: '{"cmd":"npm publish"}',
+      toolCallId: "t3",
+    });
+    h.controller.handleServer({
+      type: "approval_request",
+      toolCall: tc,
+      reason: { kind: "policy", rule: "package-publish" },
+    });
+    expect(h.controller.pendingApprovals.get(approvalKey(undefined, "t3"))?.reason).toEqual({
+      kind: "policy",
+      rule: "package-publish",
+    });
   });
 
   it("a pending approval re-delivered after a reload shows the whole call it asks about, not the folded history copy", async () => {

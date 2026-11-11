@@ -1895,7 +1895,7 @@ export const zh = {
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式，命中即拒绝执行，不受审批模式影响。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
+      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式。命中「拒绝」规则即拒绝执行，命中「需确认」规则则等人同意后才执行，都不受审批模式影响；两种规则同时命中时以拒绝为准。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
@@ -1912,7 +1912,28 @@ export const zh = {
     commandPolicyRuleName: "名称",
     commandPolicyRulePattern: "正则表达式",
     commandPolicyRuleDesc: "描述",
+    commandPolicyRuleAction: "命中时",
+    commandPolicyActionDeny: "拒绝",
+    commandPolicyActionAsk: "需确认",
+    commandPolicyAskPill: "需确认",
+    commandPolicyAskPillHint: "命中的命令要等人允许后才运行，不受审批模式影响。",
     commandPolicyInvalidPattern: "正则表达式无效",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "正则表达式",
+    commandPolicyColEnabled: "启用",
+    commandPolicyRuleSwitch: (name: string) => `启用规则 ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `编辑规则 ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `删除规则 ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `规则「${name}」的正则表达式在服务器上无法编译（${reason}），已转到它所在的页。`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `服务器无法编译这条规则的正则表达式：${reason}。编辑或删除它后再保存。`,
+    /** A stored rule the server cannot compile: matching skips it. `reason` is the engine's own words. */
+    commandPolicyRuleSkipped: (reason: string) =>
+      `这台服务器编译不了这条规则的正则表达式（${reason}），匹配命令时会跳过它，它不拦截任何命令。请编辑或删除它。`,
+    /** The row mark beside such a rule's name, as read aloud. */
+    commandPolicyPatternMark: "正则表达式无法编译",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",
@@ -4317,6 +4338,10 @@ Benchmark：
     compact: "压缩上下文",
     approve: "允许",
     deny: "拒绝",
+    /** The approval block's muted line when a command-policy `ask` rule, not the approval mode, sent the call to a person. */
+    approvalPolicyReason: (rule: string) => `由命令策略规则「${rule}」要求确认`,
+    approvalPolicyReasonHint:
+      "Project 命令策略中这条规则要求每次都由人确认，不受当前审批模式影响。可在 Project 设置的安全策略页修改。",
     decisionAllow: "已批准",
     decisionDeny: "已拒绝",
     decisionManual: "手动",

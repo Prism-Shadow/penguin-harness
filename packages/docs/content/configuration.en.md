@@ -217,21 +217,22 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 
 ## Command policy
 
-The `[command_policy]` block is the Project's guardrail for shell commands: a list of deny rules applied at the approval boundary itself.
+The `[command_policy]` block is the Project's guardrail for shell commands: a list of rules applied at the approval boundary itself. A rule either refuses a matching command (`deny`) or holds it until a person allows it (`ask`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | On | Master switch; stored only as `enabled = false` |
-| `[[command_policy.rules]]` | array of tables | The factory set | The deny rules, matched in order. A stored empty list means no rules; an absent list means the factory set |
+| `[[command_policy.rules]]` | array of tables | The factory set | The rules. A stored empty list means no rules; an absent list means the factory set |
 
 Each rule has these keys:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | — | Identifies the rule in the settings UI |
-| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command |
+| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command. It must compile on the server's runtime: a stored rule whose pattern does not is skipped when commands are matched, logged once, and marked on the settings page |
 | `description` | string | — | Optional description |
 | `enabled` | boolean | On | Per-rule switch |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | What a hit does: `deny` refuses the call; `ask` puts it to a person whatever the approval mode. Stored only as `action = "ask"` |
 
 ```toml
 [command_policy]
@@ -241,6 +242,12 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -253,9 +260,12 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 ### Enforcement
 
 - **What it checks:** both tools that reach a shell: `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into a running command).
-- **When it applies:** `Session.run` wraps the injected approval callback with the policy, so a hit is rejected before the host is asked, under every approval mode, allow-all included.
-- **What the model sees:** the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course.
-- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A vetoed call stays forbidden whatever an installed hook answers.
+- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's approval callback with a policy reason, which puts it to a person instead of answering by approval mode (see [Tools & Approval](/tools#approval)). The approval card then says which rule asked.
+- **Which rule wins:** a `deny` hit outranks an `ask` hit wherever the two sit in the list, so adding an `ask` rule never turns a refusal into a question. Among rules with the same action, the first match in list order is the one a decision names.
+- **What the model sees:** for a `deny` hit, the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course. For an `ask` hit, the person's answer, recorded like any other approval.
+- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A call a `deny` rule matches stays forbidden, and a call an `ask` rule matches still goes to a person, whatever an installed hook answers.
+- **Subagents:** a child Session applies the same policy to the callback it inherits, which is the parent's, so an `ask` hit inside a subagent reaches the same person with its reason.
+- **Unattended Sessions:** an organization's desk and ticket Sessions have nobody to ask, so an `ask` hit there is denied at once. `deny-all` denies it too.
 - **Where it lives:** in the Project config, not in Agent State, so an agent that edits its own configuration through its settings cannot reach it.
 - **When edits apply:** the policy is a strict-tier runtime parameter, read once when a model context opens. An edit reaches a running Session at its next rotation (compaction) and new conversations at once.
 
@@ -263,7 +273,9 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 
 The rules are **plain data with no special tiers**. The factory set is seeded into each new Project exactly like the model presets: copied in at creation and never rewritten afterward. Every rule can then be edited, disabled or deleted, and you can add your own. A Project created before the seeding (no stored `rules` list) behaves as the factory set until its first saved edit writes the list. On the settings page, **Restore defaults** loads the factory set back into the editor, and saving writes it.
 
-The factory set is deliberately small. It covers commands whose verbatim execution is destructive with no undo:
+Because seeded rules are never rewritten, a factory rule added in a later release does not reach a Project that already stores its list. The five `ask` rules below are such rules: an existing Project adopts them with **Restore defaults**, which replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the factory set and has them already.
+
+The factory set is deliberately small. Its `deny` rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`
@@ -277,6 +289,18 @@ Four more rules cover the same ground in Windows spellings, since `exec_command`
 - a volume format (`format C:`, `Format-Volume`)
 - a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`)
 - the cmd fork bomb
+
+Five `ask` rules follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done, so it waits for a go-ahead instead of being refused:
+
+| Rule | Matches |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`, `gh pr close` |
+| `gh-release` | `gh release create`, `delete`, `edit` |
+| `git-push-force` | `git push` with `-f`, `--force` or `--force-with-lease` |
+| `git-push-default-branch` | `git push` to `main` or `master`, as a target or a refspec's destination. A bare `git push` names no target, so it cannot be told apart and is left to the agent's prompt |
+| `package-publish` | `npm publish`, `pnpm publish`, `yarn publish` |
+
+They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Tool use` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
 
 ### Matching
 

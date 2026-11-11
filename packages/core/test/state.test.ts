@@ -1454,6 +1454,7 @@ describe("command_policy (sandbox command policy block)", () => {
           enabled: false,
         },
         { name: "no-curl", pattern: "\\bcurl\\b" },
+        { name: "ask-deploy", pattern: "\\bfly deploy\\b", action: "ask" as const },
       ],
     };
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
@@ -1486,6 +1487,7 @@ describe("command_policy (sandbox command policy block)", () => {
         'name = "ok-rule"',
         'pattern = "\\\\bcurl\\\\b"',
         "description = 3", // wrong type -> field dropped, entry kept
+        'action = "warn"', // unknown action -> field dropped, the rule refuses (deny)
         "[[command_policy.rules]]",
         'name = ""', // empty name -> entry dropped
         'pattern = "x"',
