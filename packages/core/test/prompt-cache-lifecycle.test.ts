@@ -515,6 +515,28 @@ describe("the prompt cache across a Session's lifecycle", () => {
     expect(usages[3]!.cache_read_input_tokens, report).toBe(prefixTokens(order[2]!));
   });
 
+  it("after a hand-off the old model receives no further request, and the new context's first request is the same miss, for the same reason, as after a summary", async () => {
+    const { order, onRequest } = ordering();
+    await driveCompaction(onRequest, { handOff: true });
+
+    expect(order.map((request) => request.label)).toEqual([
+      "context 1",
+      "context 1",
+      "context 1",
+      "context 2",
+      "context 2",
+    ]);
+    const usages = replay(order);
+    const reason =
+      "the context reopened and no breakpoint sits after the system prompt, so the fixed " +
+      "prefix the new context resends is not addressable either";
+    expectHits(order, usages, new Map([[3, reason]]));
+    const report = formatCacheReport(order, usages);
+    expect(usages[3]!.cache_read_input_tokens, report).toBe(0);
+    expect(usages[3]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[3]!));
+    expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
+  });
+
   it("a model switch reads 0 on the new model — a new cache line — then hits from there", async () => {
     const { order, onRequest } = ordering();
     await driveModelSwitch(onRequest);
@@ -561,10 +583,14 @@ async function driveThinkingMove(onRequest: (request: RecordedRequest) => void):
   await collect(session.run([userText("task three")], { approve: allowAll }));
 }
 
-/** One Session whose second task crosses the compaction threshold and opens a new context. */
+/**
+ * One Session whose second task crosses the compaction threshold and opens a new context — with
+ * a summary, after a tool round, or (`handOff`) with the hand-off note the harness writes when
+ * the provider refuses the compaction request.
+ */
 async function driveCompaction(
   onRequest: (request: RecordedRequest) => void,
-  opts: { withRound?: boolean } = {},
+  opts: { withRound?: boolean; handOff?: boolean } = {},
 ): Promise<void> {
   const first = recordingModel(
     modelConfig(),
@@ -583,7 +609,9 @@ async function driveCompaction(
             },
           ]
         : []),
-      { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
+      opts.handOff
+        ? { promptTokens: 160, outcome: "rejected" as const }
+        : { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
     ],
     { label: "context 1", onRequest },
   );

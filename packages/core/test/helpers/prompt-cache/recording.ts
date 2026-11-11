@@ -45,9 +45,12 @@ export interface ScriptedReply {
   promptTokens?: number;
   /**
    * How the request ends: cleanly, with a transport drop after the text (the engine
-   * reconnects), or hanging after the text until the caller's signal aborts it.
+   * reconnects), hanging after the text until the caller's signal aborts it, stopped at the
+   * output limit after the text (finish reason `length`: delivered, never committed), or
+   * refused by the provider before anything streams (an HTTP 400).
    */
-  outcome?: "completed" | "retryable-after-text" | "abort-after-text";
+  outcome?:
+    "completed" | "retryable-after-text" | "abort-after-text" | "truncated-after-text" | "rejected";
 }
 
 // ---- What a recording holds -----------------------------------------------
@@ -174,6 +177,10 @@ function untilAborted(signal?: AbortSignal): Promise<void> {
 async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGenerator<UniEvent> {
   const promptTokens = reply.promptTokens ?? DEFAULT_PROMPT_TOKENS;
   if (signal?.aborted) return;
+  if (reply.outcome === "rejected") {
+    // A definitive client error: nothing streams, nothing is committed or billed.
+    throw Object.assign(new Error("400 the request was rejected"), { status: 400 });
+  }
   yield usage(
     {
       cached_tokens: SCRIPTED_CACHED_TOKENS,
@@ -209,6 +216,19 @@ async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGe
   }
   if (reply.outcome === "abort-after-text") {
     await untilAborted(signal);
+    return;
+  }
+  if (reply.outcome === "truncated-after-text") {
+    // Delivered whole but stopped at the output cap: the model takes it back out of history.
+    yield usage(
+      {
+        cached_tokens: null,
+        prompt_tokens: null,
+        thoughts_tokens: null,
+        response_tokens: SCRIPTED_RESPONSE_TOKENS,
+      },
+      "length",
+    );
     return;
   }
 
@@ -250,7 +270,7 @@ const delta = (item: DeltaContentItem): UniEvent => ({
 /** A client-internal stop event: a usage piece and/or the finish reason, which the base class merges. */
 const usage = (
   usageMetadata: UsageMetadata,
-  finishReason: "stop" | "tool_call" | null,
+  finishReason: UniEvent["finish_reason"],
 ): UniEvent => ({
   role: "assistant",
   event_type: "stop",

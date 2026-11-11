@@ -39,6 +39,14 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/amsp/records";
+import {
+  buildCompactionHandoff,
+  closingSpan,
+  compactionCallLines,
+  pickSalvage,
+  spanCalls,
+  spanRequests,
+} from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
   CompactionBeginPayload,
@@ -74,7 +82,11 @@ export interface ResumeResult {
   carryOver: AmspRecord[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
+  /**
+   * Compaction closure in summarize mode: the reconstructed `[context_summary]` the next
+   * context opens with — the summary, a salvaged one marked as cut off, or the hand-off note,
+   * as the closing `compaction_end` says — prepended to the next run's input.
+   */
   pendingSummary?: AmspRecord;
   /**
    * The `[context_summary]` this file's context opened with — or the `[model_switch_from]`
@@ -304,9 +316,9 @@ function toolCallOutputId(msg: AmspRecord): string | null {
 export interface ResumeTraceOptions {
   /**
    * Absolute path of the file `messages` were read from. A context that file's last compaction
-   * closed opens with the summary rebuilt from it, and the summary's trailer names this file
-   * (see buildContextSummaryText) — the one the live engine would have named. Absent: the
-   * summary is rebuilt without a trailer.
+   * closed opens with the summary (or hand-off note) rebuilt from it, and its trailer names this
+   * file (see buildContextSummaryText) — the one the live engine would have named. Absent: the
+   * summary is rebuilt without a trailer, and a hand-off note names no file and quotes nothing.
    */
   tracePath?: string;
   /** The shell the resumed Session runs commands in, wording the trailer's search (see ContextEngineDeps.shell). */
@@ -343,30 +355,46 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         meta,
       };
       if (p.mode !== "summarize") return result;
-      // Reconstruct the summary from the compaction request's output (the assistant text of
-      // the last completed Request of the closing span — the requests before it there, if
-      // any, are its tool rounds). Always rebuilt in the current [context_summary] form —
-      // extractSummary itself still accepts the old <summary> tags an old Trace may contain —
-      // with the trailer naming this file when the caller says which file it is.
-      const summaryText = extractSummary(lastCompletedRequestText(closingSpan(messages)));
-      if (summaryText !== "") {
-        const { tracePath, shell } = opts;
+      // The next context opens with what the live engine opened it with, rebuilt from the
+      // closing span by the functions the engine itself used (engine/compaction-carry.ts):
+      // the summary, with the trailer naming this file when the caller says which file it
+      // is, and under it the compaction's tool calls with their outputs when it made any.
+      const span = closingSpan(messages);
+      const { tracePath, shell } = opts;
+      const transcript =
+        tracePath !== undefined
+          ? { tracePath, ...(shell !== undefined ? { shell } : {}) }
+          : undefined;
+      const callLines = compactionCallLines(spanCalls(span));
+      if (p.error_code === undefined && p.error_message === undefined) {
+        // A full summary: the assistant text of the span's last completed Request (the
+        // requests before it there, if any, are its tool rounds and corrections). Always
+        // rebuilt in the current [context_summary] form — extractSummary itself still accepts
+        // the old <summary> tags an old Trace may contain.
+        const summaryText = extractSummary(lastCompletedRequestText(span));
+        if (summaryText !== "") {
+          result.pendingSummary = userText(
+            buildContextSummaryText(summaryText, transcript, { callLines }),
+          );
+          return result;
+        }
+        // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
+        // have written such a "completed" closure (a compaction never adopts an empty
+        // summary, which would erase the task state). Void the closure and fall through to
+        // turn-by-turn replay — the original context this file still holds is restored, and
+        // the committed compaction turn stays in history like any committed turn.
+      } else {
+        // Completed with the unified error pair: no full summary could be had, and the next
+        // context opened with the longest summary a reply cut off before its end still held,
+        // or — with none — with the hand-off note built from this file.
+        const salvaged = pickSalvage(spanRequests(span));
         result.pendingSummary = userText(
-          buildContextSummaryText(
-            summaryText,
-            tracePath !== undefined
-              ? { tracePath, ...(shell !== undefined ? { shell } : {}) }
-              : undefined,
-          ),
+          salvaged !== null
+            ? buildContextSummaryText(salvaged, transcript, { cutOff: true, callLines })
+            : buildCompactionHandoff(messages, transcript ?? {}),
         );
         return result;
       }
-      // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
-      // have written such a "completed" closure (compaction now fails instead of committing an
-      // empty summary, which would erase the task state). Mirror the current contract: void
-      // the closure and fall through to turn-by-turn replay — the original context this file
-      // still holds is restored, and the committed compaction turn stays in history like any
-      // committed turn.
     }
   }
 
@@ -584,22 +612,6 @@ function lastRequestTotalOf(messages: AmspRecord[]): number {
     if (p.type === "token_usage" && p.request) return p.request.total;
   }
   return 0;
-}
-
-/**
- * The records of the file's last compaction span: from its final `compaction_begin` on (the
- * whole file when it holds none). A span is one compaction's requests — its tool rounds, then
- * the request that wrote the summary — so the last completed request inside it is the summary's
- * for any span, and a request from before the span can never stand in for it.
- */
-function closingSpan(messages: AmspRecord[]): AmspRecord[] {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]!;
-    if (isEventMessage(msg) && (msg.payload as { type?: string }).type === "compaction_begin") {
-      return messages.slice(i);
-    }
-  }
-  return messages;
 }
 
 /** Concatenated assistant text of the last completed Request (on compaction closure, read over the closing span: the compaction request's output). */

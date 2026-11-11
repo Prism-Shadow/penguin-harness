@@ -65,6 +65,14 @@ function configFingerprint(request: RecordedRequest): string {
 const effortOf = (request: RecordedRequest): string | undefined =>
   (request.wireConfig.output_config as { effort?: string } | undefined)?.effort;
 
+/** Drains a generator and gives back what it returned. */
+async function finish<R>(gen: AsyncGenerator<unknown, R>): Promise<R> {
+  for (;;) {
+    const res = await gen.next();
+    if (res.done) return res.value;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -313,11 +321,114 @@ describe("prompt-cache invariants of request assembly", () => {
       { type: "none" },
       { type: "none" },
     ]);
-    // The round's request appends one user turn: the tool results alone, no prompt again.
+    // The round's request appends one user turn: the tool results and the round line, no
+    // prompt again.
     const appended = wireMessage(first.requests[2]!, -1);
     expect(appended.role).toBe("user");
-    expect(blockTypes(appended)).toEqual(["tool_result"]);
+    expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
     expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+  });
+
+  it("a correction after refused tool calls extends the request it follows, with no prompt again", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 150 },
+      // No round is open (no gate): the call is refused, and the model is corrected.
+      {
+        toolCalls: [{ id: "call_x", name: "read_file", args: { path: "/ws/a.ts" } }],
+        promptTokens: 160,
+      },
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 170 },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(3);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([
+      { type: "none" },
+      { type: "none" },
+    ]);
+    // One appended user turn: the refusal answering the call, then the corrective line.
+    const appended = wireMessage(first.requests[2]!, -1);
+    expect(appended.role).toBe("user");
+    expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
+    expect(JSON.stringify(appended)).not.toContain(COMPACTION_PROMPT);
+    expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+  });
+
+  it("the retry of a cut response extends the last committed request and differs from the cut attempt only by one trailing text", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 150 },
+      { text: "[summary]the distilled summ", promptTokens: 160, outcome: "truncated-after-text" },
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(3);
+    const [turn, cut, retry] = first.requests as [
+      RecordedRequest,
+      RecordedRequest,
+      RecordedRequest,
+    ];
+    // The cut response was never committed: the retry extends the turn as the cut one did.
+    expect(diagnoseCacheMiss(turn, cut)).toEqual({ type: "none" });
+    expect(diagnoseCacheMiss(turn, retry)).toEqual({ type: "none" });
+    // Same messages, the last one grown by one text block at its end.
+    expect(retry.wire).toHaveLength(cut.wire.length);
+    expect(retry.wire.slice(0, -1)).toEqual(cut.wire.slice(0, -1));
+    const before = wireMessage(cut, -1);
+    const after = wireMessage(retry, -1);
+    expect(after.content.slice(0, before.content.length)).toEqual(before.content);
+    expect(blockTypes(after).slice(before.content.length)).toEqual(["text"]);
+    expect(configFingerprint(retry)).toBe(configFingerprint(cut));
+  });
+
+  it("a summary with writes makes exactly one request on the old model", async () => {
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 150 },
+      {
+        text: "[summary]the distilled summary[/summary]",
+        toolCalls: [
+          {
+            id: "call_w1",
+            name: "write_file",
+            args: { file_path: "/scratch/handoff/plan.md", content: "the plan" },
+          },
+        ],
+        promptTokens: 160,
+      },
+    ]);
+    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings({ maxRounds: 3 }),
+      compactionToolGate: () => ({ allow: true }),
+      openNextContext: () => ({ llm: second.model }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    expect(first.requests).toHaveLength(2);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([{ type: "none" }]);
+    expect(second.requests).toHaveLength(1);
   });
 
   it("a model switch's compaction request extends the turn it follows on the old model; the new model's first request is a new line carrying its id", async () => {
@@ -396,9 +507,7 @@ describe("prompt-cache invariants of request assembly", () => {
       const payload = res.value.payload as { type?: string; event_type?: string };
       if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
     }
-    await expect(collect(engine.switchContext())).rejects.toThrow(
-      "the target's context could not be assembled",
-    );
+    expect(await finish(engine.switchContext())).toBe("fatal");
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     expect(aborted).toBe("aborted");
@@ -493,9 +602,7 @@ describe("prompt-cache invariants of request assembly", () => {
     });
 
     await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await expect(collect(engine.switchContext(undefined, HANDOFF))).rejects.toThrow(
-      "the target's context could not be assembled",
-    );
+    expect(await finish(engine.switchContext(undefined, HANDOFF))).toBe("fatal");
     await collect(engine.run([userText("task two")], { approve: allowAll }));
 
     // The turn, the failed summary request, the next turn — all on the old model. The summary

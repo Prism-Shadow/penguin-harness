@@ -76,12 +76,61 @@ vi.mock("../src/environment/index.js", async (importOriginal) => {
 // is no longer observable through session_meta (it holds invariants only) — assertions read
 // the construction default from the captured config instead.
 const capturedLLMConfigs = vi.hoisted(() => ({ list: [] as { thinkingLevel?: string }[] }));
+
+/**
+ * The provider stream, scripted for the few tests that run a Session for real: while `replies`
+ * is set, every GenerativeModel constructed has its provider client's stream replaced by one
+ * that answers each request with the next reply, as a text-only response, and keeps the
+ * messages it was sent. Everything above the provider client runs for real. A request past the
+ * script is answered with a text that says so, which the test's assertions then name.
+ */
+const scriptedProvider = vi.hoisted(() => {
+  const state = { replies: null as string[] | null, requests: [] as unknown[] };
+  const install = (model: unknown): void => {
+    const client = (model as { client: { _client: { _streamingResponseInternal: unknown } } })
+      .client._client;
+    client._streamingResponseInternal = async function* (options: { messages: unknown[] }) {
+      state.requests.push(JSON.parse(JSON.stringify(options.messages)) as unknown);
+      const text = state.replies?.shift() ?? "(a request the script did not expect)";
+      const usage = (prompt: number | null, response: number | null) => ({
+        cached_tokens: prompt === null ? null : 0,
+        prompt_tokens: prompt,
+        thoughts_tokens: null,
+        response_tokens: response,
+      });
+      yield {
+        role: "assistant",
+        event_type: "stop",
+        content_items: [],
+        usage_metadata: usage(10, null),
+        finish_reason: null,
+      };
+      yield {
+        role: "assistant",
+        event_type: "delta",
+        content_items: [{ type: "text.delta", text }],
+        usage_metadata: null,
+        finish_reason: null,
+      };
+      yield {
+        role: "assistant",
+        event_type: "stop",
+        content_items: [],
+        usage_metadata: usage(null, 1),
+        finish_reason: "stop",
+      };
+    };
+  };
+  return { state, install };
+});
+
 vi.mock("../src/llm/index.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../src/llm/index.js")>();
   class CapturingGenerativeModel extends mod.GenerativeModel {
     constructor(config: ConstructorParameters<typeof mod.GenerativeModel>[0]) {
       super(config);
       capturedLLMConfigs.list.push(config as { thinkingLevel?: string });
+      if (scriptedProvider.state.replies !== null) scriptedProvider.install(this);
     }
   }
   return { ...mod, GenerativeModel: CapturingGenerativeModel };
@@ -104,6 +153,8 @@ afterEach(async () => {
   if (prevHome === undefined) delete process.env.PENGUIN_HOME;
   else process.env.PENGUIN_HOME = prevHome;
   restoreKeys();
+  scriptedProvider.state.replies = null;
+  scriptedProvider.state.requests = [];
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
 
@@ -127,6 +178,16 @@ async function bootstrapped(session: unknown): Promise<void> {
   const gen = (session as { ensureReady(): AsyncGenerator<unknown> }).ensureReady();
   for await (const _ of gen) {
     // drain: the bootstrap's own events aren't under test here
+  }
+}
+
+/** Runs a Session stream (a run, a compaction, a switch) to its end, keeping what it streamed. */
+async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
+  const all: AmspRecord[] = [];
+  for (;;) {
+    const res = await gen.next();
+    if (res.done) return all;
+    all.push(res.value);
   }
 }
 
@@ -1011,6 +1072,53 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
+  it("the compaction settings stop offering tool rounds near the running model's window, and set no such limit without one", async () => {
+    const proxy = { model_id: "claude-sonnet-4-6", base_url: "https://proxy.invalid/v1" };
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      ...proxy,
+      provider: "sized",
+      api_key: "proxy-key",
+      context_window: 200_000,
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      ...proxy,
+      provider: "unsized",
+      api_key: "proxy-key",
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-round-limit");
+    await fs.mkdir(ws, { recursive: true });
+    type Settings = { maxContextLength: number; roundLimit?: number };
+    /** The settings a Session on `provider`'s entry opens with, and what its checkpoint re-read answers. */
+    async function settingsOn(provider: string): Promise<{ opened?: Settings; read: Settings }> {
+      const session = await agent.createSession({
+        workspaceDir: ws,
+        provider,
+        modelId: proxy.model_id,
+      });
+      try {
+        const deps = (
+          session as unknown as {
+            engineDeps: { compaction?: Settings; readCompaction?: () => Promise<Settings> };
+          }
+        ).engineDeps;
+        return { opened: deps.compaction, read: await deps.readCompaction!() };
+      } finally {
+        session.dispose();
+      }
+    }
+
+    // A 200k window: compaction fires at 175000, and no round is offered past 187712.
+    const sized = await settingsOn("sized");
+    expect(sized.opened).toMatchObject({ maxContextLength: 175000, roundLimit: 187712 });
+    expect(sized.read).toMatchObject({ maxContextLength: 175000, roundLimit: 187712 });
+    // No window on the entry: the threshold derives from the assumed one, the rounds do not.
+    const unsized = await settingsOn("unsized");
+    expect(unsized.opened?.maxContextLength).toBe(112000);
+    expect(unsized.opened?.roundLimit).toBeUndefined();
+    expect(unsized.read.roundLimit).toBeUndefined();
+  });
+
   it("the context opened after compaction is rebuilt whole — prompt, toolset, vault, run settings — and its records describe it", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-rebuild");
@@ -1266,21 +1374,57 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("an Agent State that cannot be assembled fails the context open outright — no silent fallback", async () => {
+  it("an Agent State that stops parsing before a rotation: the Session compacts, reopens the prompt and tools it had, and the opening tells the model", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-unreadable");
     await fs.mkdir(ws, { recursive: true });
-    const session = await agent.createSession({ workspaceDir: ws });
+    scriptedProvider.state.replies = [
+      "Started.",
+      "[summary]\n## Request\nFinish the task.\n## Next steps\nCarry on.\n[/summary]",
+      "Carrying on.",
+    ];
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+    });
+    // The compaction re-read and the opener both report the unreadable file on stderr.
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      await bootstrapped(session);
-      const before = promptOf(session);
+      await drain(session.run([userText("Start the task.")]));
+      const prompt = promptOf(session);
+      const tools = toolNames(lastBuilt()!.tools);
+      const built = capturedLLMConfigs.list.length;
       // system_config.yaml no longer parses — an edit gone wrong mid-context.
       await fs.writeFile(systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "");
 
-      await expect(openNext(session)).rejects.toThrow("Invalid Agent State config");
-      // Nothing was adopted: the Session still describes the context that is running.
-      expect(promptOf(session)).toBe(before);
+      const compaction = await drain(session.compact());
+
+      const end = compaction.find((m) => typeOf(m) === "compaction_end");
+      expect((end?.payload as { status?: string } | undefined)?.status).toBe("completed");
+      // The next context runs on a fresh LLM object with the prompt and tools in force.
+      expect(capturedLLMConfigs.list.length).toBe(built + 1);
+      expect(lastBuilt()!.systemPrompt).toBe(prompt);
+      expect(toolNames(lastBuilt()!.tools)).toEqual(tools);
+      expect(promptOf(session)).toBe(prompt);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "[penguin] the next context could not be assembled from the Agent State: Invalid Agent State config",
+        ),
+      );
+
+      await drain(session.run([userText("Go on.")]));
+
+      // The new context's first request opens with the summary, and tells the model why it
+      // runs on the previous configuration.
+      expect(scriptedProvider.state.replies).toEqual([]);
+      const opening = JSON.stringify(scriptedProvider.state.requests.at(-1));
+      expect(opening).toContain("[context_summary]");
+      expect(opening).toContain(
+        "this Agent's configuration could not be read when this context opened (Invalid Agent State config",
+      );
     } finally {
+      stderr.mockRestore();
       session.dispose();
     }
   });
@@ -1288,15 +1432,6 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
 
 describe("Session.switchModel on a real Agent (the composition layer's half)", () => {
   const TARGET = { provider: "anthropic", modelId: "claude-sonnet-4-6" };
-  /** Runs a switch to its end, keeping what it streamed. */
-  async function drain(gen: AsyncGenerator<AmspRecord, unknown>): Promise<AmspRecord[]> {
-    const all: AmspRecord[] = [];
-    for (;;) {
-      const res = await gen.next();
-      if (res.done) return all;
-      all.push(res.value);
-    }
-  }
   const lastBuilt = () =>
     capturedLLMConfigs.list.at(-1) as
       { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
@@ -1540,6 +1675,51 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       expect(gone).not.toBeInstanceOf(ModelSwitchRefusedError);
       expect((gone as Error).message).toMatch(/is not in the Project config/);
     } finally {
+      session.dispose();
+    }
+  });
+
+  it("an Agent State that stops parsing refuses a switch's context, while a rotation reopens the one in force until the file is fixed", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-unreadable");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const configFile = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const promptOf = () => (session.metaMessage.payload as { system_prompt: string }).system_prompt;
+    try {
+      await bootstrapped(session);
+      const open = openerOf(session);
+      const config = await fs.readFile(configFile, "utf8");
+      const prompt = promptOf();
+      const built = capturedLLMConfigs.list.length;
+      await fs.writeFile(configFile, "");
+
+      // A switch keeps the model it was on: the target's context is refused, nothing is built
+      // for it, and the Session still describes the context that is running.
+      await expect(open({ provider: "anthropic", model_id: "claude-sonnet-4-6" })).rejects.toThrow(
+        "Invalid Agent State config",
+      );
+      expect(capturedLLMConfigs.list.length).toBe(built);
+      expect(session.modelId).toBe("deepseek-flash");
+      expect(promptOf()).toBe(prompt);
+
+      // A rotation on the same file reopens what is running, and says so.
+      const kept = await open();
+      expect(lastBuilt()!.modelId).toBe("deepseek-flash");
+      expect(lastBuilt()!.systemPrompt).toBe(prompt);
+      expect(kept.notice).toContain("Invalid Agent State config");
+      expect(kept.notice).toContain("system_config.yaml");
+
+      // The file is read again at the next rotation: once it parses, the context is assembled
+      // from it and nothing is reported.
+      await fs.writeFile(configFile, config);
+      await fs.writeFile(agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "FIXED");
+      const fixed = await open();
+      expect(fixed.notice).toBeUndefined();
+      expect(lastBuilt()!.systemPrompt).toContain("FIXED");
+    } finally {
+      stderr.mockRestore();
       session.dispose();
     }
   });
