@@ -343,10 +343,10 @@
   }
   /* A toast floats too: the slip in place of Frost's card and its shadow, over no backing (the
      stack's opaque backing would show past the drawn corners). Frost's tone dot stays. */
-  :root[data-theme="doodle"] section[aria-live] > :has(> .ui-notice) {
+  :root[data-theme="doodle"] [aria-live] > :has(> .ui-notice) {
     background-color: transparent;
   }
-  :root[data-theme="doodle"] section[aria-live] .ui-notice {
+  :root[data-theme="doodle"] [aria-live] .ui-notice {
     border-color: transparent;
     background-color: transparent;
     box-shadow: none;
