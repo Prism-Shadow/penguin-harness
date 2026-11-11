@@ -299,8 +299,8 @@ export async function provisionProjectAgents(opts?: {
  * the current library version.
  *
  * Exact semantics: only the identity fields of the existing file are preserved — `name`,
- * `description` and the Agent State `version` (an invalid or missing version normalizes
- * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `description`, `author` and the Agent State `version` (an invalid or missing version
+ * normalizes to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
  * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
  * outside the default schema are dropped, and YAML comments are not
@@ -329,6 +329,8 @@ export async function resetSystemConfigToDefaults(
   const next: SystemConfig = {
     ...(typeof prev.name === "string" ? { name: prev.name } : {}),
     ...(typeof prev.description === "string" ? { description: prev.description } : {}),
+    // Kept as written, an unknown value included: who made the Agent is not a default.
+    ...(prev.author !== undefined ? { author: prev.author } : {}),
     ...defaultSystemConfig(),
     version: agentStateVersion(prev),
   };

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { marksFor } from "../../lib/sidebar-modes";
 import {
   NavRow,
@@ -8,6 +9,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
+  navChildKeysFor,
   navEntryKeysFor,
   splitModeNavItems,
   splitNavEntries,
@@ -29,6 +31,12 @@ interface NavEntryView {
   label: string;
   /** The resolved drawing. */
   glyph: string;
+  /**
+   * The rows this entry carries below it (a page's `parent`), drawn indented: a child has no
+   * pin choice and no drag of its own, and it follows its parent's area (nav-state.ts). The
+   * collapsed rail draws entries only (rail.tsx lights the parent while a child is open).
+   */
+  children?: readonly NavEntryView[];
 }
 
 export function createMainSidebarNavigation(scope: MainSidebarState) {
@@ -53,14 +61,36 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     onNavigate,
   } = scope;
 
+  /** The pages each entry carries below it (nav-state.ts), by the entry's key. */
+  const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
   /** A development-mode page as the nav draws it; nothing for a key with no page. */
   const devNavEntry = (key: NavGroupKey): NavEntryView[] => {
     const page = navPages.find((page) => page.key === key);
     if (page === undefined) return [];
     // A page names itself in the interface's language (PageData.title / titleZh).
     return [
-      { key, to: page.path, label: pageTitle(page, locale), glyph: glyphOf(page.icon ?? key) },
+      {
+        key,
+        to: page.path,
+        label: pageTitle(page, locale),
+        glyph: glyphOf(page.icon ?? key),
+        children: (childKeys.get(key) ?? []).flatMap((child) => devNavRow(child)),
+      },
     ];
+  };
+  /** A page under an entry: a plain indented row — no pin choice and no drag of its own. */
+  const devNavRow = (key: NavGroupKey): NavEntryView[] => {
+    const page = navPages.find((page) => page.key === key);
+    return page === undefined
+      ? []
+      : [
+          {
+            key,
+            to: page.path,
+            label: pageTitle(page, locale),
+            glyph: glyphOf(page.icon ?? key),
+          },
+        ];
   };
 
   /**
@@ -78,6 +108,12 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
         to: item.to,
         label: item.label,
         glyph: glyphOf(item.icon),
+        children: item.children?.map((child) => ({
+          key: child.key,
+          to: child.to,
+          label: child.label,
+          glyph: glyphOf(child.icon),
+        })),
       }));
       return splitModeNavItems(rows, modeNavPins);
     }
@@ -101,13 +137,13 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
    * to, the star included: a live star would be the one control on a row that otherwise answers
    * nothing.
    */
-  const renderNavEntry = ({ key, to, label, glyph }: NavEntryView) => {
+  const renderNavEntry = ({ key, to, label, glyph, children }: NavEntryView) => {
     if (to === null) {
       return <NavRow key={key} surface="muted" label={label} glyph={glyph} href="" disabled />;
     }
     const note = currentMode < 0 ? (notes.get(key) ?? null) : null;
     const pinned = isNavEntryPinned(key);
-    return (
+    const row = (
       <SidebarNavEntry
         key={key}
         label={label}
@@ -154,6 +190,28 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
             }
           : {})}
       />
+    );
+    if (children === undefined || children.length === 0) return row;
+    return (
+      <Fragment key={key}>
+        {row}
+        {children.map((child) => (
+          /* A child has no pin choice and no drag of its own (navChildKeysFor): a plain
+             indented row under its parent, wherever the parent sits. */
+          <div key={child.key} className="ps-5">
+            <NavRow
+              surface="muted"
+              label={child.label}
+              glyph={child.glyph}
+              href={child.to ?? ""}
+              disabled={child.to === null}
+              active={child.to !== null && isCurrentPath(child.to, location.pathname)}
+              renderLink={renderRouterLink}
+              onClick={() => onNavigate?.()}
+            />
+          </div>
+        ))}
+      </Fragment>
     );
   };
 

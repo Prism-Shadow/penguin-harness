@@ -294,6 +294,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.agentsGroupBy",
+    scope: "browser",
+    why: "How the Agents page groups its list (by author or not at all) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Agents page's author sections are folded, by author value (user, agent, company); those values ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.pluginsIncompatibleOnly",
     scope: "browser",
     why: "Whether the Plugins page lists only the plugins this build cannot fully run; a view preference that names no plugin, valid against any root.",

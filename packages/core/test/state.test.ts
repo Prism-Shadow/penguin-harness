@@ -760,7 +760,7 @@ describe("assembleSystemPrompt", () => {
 });
 
 describe("resetSystemConfigToDefaults", () => {
-  it("replaces everything with the current defaults, keeping only name/description/version", async () => {
+  it("replaces everything with the current defaults, keeping only name/description/author/version", async () => {
     await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     // An old on-disk config: custom prompt/runtime/tools plus a key outside the schema.
@@ -769,6 +769,7 @@ describe("resetSystemConfigToDefaults", () => {
       [
         "name: Custom Name",
         "description: Custom description",
+        "author: company",
         "version: 7",
         "system_prompt: Custom prompt with {{PROJECT_DIR}}",
         "max_turns: 5",
@@ -794,6 +795,7 @@ describe("resetSystemConfigToDefaults", () => {
     // Identity fields survive; everything else is the current default.
     expect(written.name).toBe("Custom Name");
     expect(written.description).toBe("Custom description");
+    expect(written.author).toBe("company");
     expect(written.version).toBe(7);
     const defaults = defaultSystemConfig();
     expect(written.system_prompt).toBe(defaults.system_prompt);
@@ -809,7 +811,7 @@ describe("resetSystemConfigToDefaults", () => {
     expect(reloaded.systemConfig.system_prompt).toContain("App Data Dir: {{PROJECT_DIR}}");
   });
 
-  it("normalizes an invalid version to 1 and keeps a missing name/description absent", async () => {
+  it("normalizes an invalid version to 1 and keeps a missing name/description/author absent", async () => {
     await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(configPath, "system_prompt: old\nversion: nonsense\n", "utf8");
@@ -821,6 +823,7 @@ describe("resetSystemConfigToDefaults", () => {
     expect(written.version).toBe(1);
     expect("name" in written).toBe(false);
     expect("description" in written).toBe(false);
+    expect("author" in written).toBe(false);
   });
 
   it("throws for a nonexistent Agent instead of initializing one", async () => {
