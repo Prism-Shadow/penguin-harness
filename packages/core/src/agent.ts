@@ -1583,8 +1583,9 @@ export class Agent {
     // on the model the closing context ran on, or on the one a model switch names
     // (`modelRef`, resolved against the Project config on disk). The Environment is
     // re-equipped with the new toolset and vault, then the context is opened by the same
-    // procedure as the first one — the engine yields the published records live and writes
-    // them at the head of the rotated Trace file.
+    // procedure as the first one — the engine holds the published records until the
+    // compaction's `compaction_end` is written, then yields them, behind it, and writes them at
+    // the head of the rotated Trace file.
     //
     // An Agent State that cannot be assembled (a config that no longer parses) does not end
     // the run on a same-model rotation: the configuration in force is reopened on a fresh LLM

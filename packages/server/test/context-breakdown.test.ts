@@ -342,8 +342,9 @@ describe("TraceService.contextBreakdown", () => {
 
 describe("compactionThresholdFor", () => {
   it("caps the configured threshold at what the window leaves room for", () => {
-    // 2048 tokens of headroom: the compaction request's own prompt and summary have to fit.
-    expect(compactionThresholdFor(256_000, 200_000)).toBe(197_952);
+    // An eighth of a 200k window stays free under it: the turn's pending outputs, the compaction
+    // request's own prompt and the summary have to fit.
+    expect(compactionThresholdFor(256_000, 200_000)).toBe(175_000);
     // Configured below the cap: taken as configured.
     expect(compactionThresholdFor(100_000, 1_000_000)).toBe(100_000);
   });
@@ -353,7 +354,7 @@ describe("compactionThresholdFor", () => {
   });
 
   it("derives from the assumed window when the model configures none", () => {
-    expect(compactionThresholdFor(256_000, undefined)).toBe(125_952);
+    expect(compactionThresholdFor(256_000, undefined)).toBe(112_000);
   });
 
   it("has nothing to mark when compaction is off or the threshold is not inside the window", () => {
