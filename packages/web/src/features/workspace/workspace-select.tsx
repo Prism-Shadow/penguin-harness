@@ -20,7 +20,8 @@ import { baseName } from "./workspace-finder-model";
 /**
  * Shared style for the draft page's pill triggers (a small capsule: icon, short name, collapse
  * arrow). The capsule is the theme's pill radius, so it is round where pills are and square
- * where they are not.
+ * where they are not. Each trigger also carries the `ui-edge` hook, at its call site, so a theme
+ * that draws the edge of what a person presses draws the capsule's too.
  */
 export const pillClass =
   "flex max-w-64 items-center gap-1.5 rounded-[var(--ui-radius-pill)] border border-line-emphasis " +
@@ -177,7 +178,7 @@ export function WorkspaceSelect({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={pillClass}
+        className={`ui-edge ${pillClass}`}
       >
         {folderIcon("ml-0.5")}
         <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>

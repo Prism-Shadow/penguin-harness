@@ -923,7 +923,7 @@ export const en: Strings = {
     },
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console", doodle: "Doodle" },
     themePackFailed: (name: string, shown: string) =>
       `${name}'s stylesheet did not load; showing ${shown}.`,
     themePacks: {
@@ -1038,6 +1038,11 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      marker: "Marker",
+      ballpoint: "Ballpoint",
+      grass: "Grass",
+      crayon: "Crayon",
+      grape: "Grape",
     } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 

@@ -24,6 +24,8 @@ import jetbrainsMono from "./LICENSES/jetbrains-mono.txt?raw";
 import misans from "./LICENSES/misans.txt?raw";
 import monaSans from "./LICENSES/mona-sans.txt?raw";
 import notoSansSc from "./LICENSES/noto-sans-sc.txt?raw";
+import shantellSans from "./LICENSES/shantell-sans.txt?raw";
+import lxgwWenkaiGbScreen from "./LICENSES/lxgw-wenkai-gb-screen.txt?raw";
 import lucide from "../components/icons/sets/LICENSES/lucide.txt?raw";
 import octicons from "../components/icons/sets/LICENSES/octicons.txt?raw";
 
@@ -99,6 +101,24 @@ export const FONT_CREDITS: readonly FontCredit[] = [
     source: "@fontsource-variable/noto-sans-sc",
     licenseTitle: OFL,
     licenseText: notoSansSc,
+  },
+  {
+    id: "shantell-sans",
+    family: "Shantell Sans",
+    themes: namedBy("Shantell Sans"),
+    source: "@fontsource-variable/shantell-sans",
+    licenseTitle: OFL,
+    licenseText: shantellSans,
+  },
+  {
+    // Vendored: the GB2312 slices of the font's web release (`vendored-fonts.json`), under the
+    // OFL with the author's permission for web-delivery subsets to keep the font's name.
+    id: "lxgw-wenkai-gb-screen",
+    family: "LXGW WenKai GB Screen",
+    themes: namedBy("LXGW WenKai GB Screen"),
+    source: "https://github.com/lxgw/LxgwWenKai-Screen",
+    licenseTitle: OFL,
+    licenseText: lxgwWenkaiGbScreen,
   },
 ];
 
