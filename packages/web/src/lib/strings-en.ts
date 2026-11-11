@@ -1613,6 +1613,17 @@ export const en: Strings = {
     commandPolicyAskPillHint:
       "A matching command runs only after a person allows it, whatever the approval mode.",
     commandPolicyInvalidPattern: "Invalid regular expression",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "Pattern",
+    commandPolicyColEnabled: "Enabled",
+    commandPolicyRuleSwitch: (name: string) => `Enable rule ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `Edit rule ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `Delete rule ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `Rule ${name}'s regular expression does not compile on the server (${reason}); its page is shown.`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `The server cannot compile this rule's regular expression: ${reason}. Edit or delete it, then save.`,
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",

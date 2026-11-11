@@ -1738,6 +1738,17 @@ export const zh = {
     commandPolicyAskPill: "需确认",
     commandPolicyAskPillHint: "命中的命令要等人允许后才运行，不受审批模式影响。",
     commandPolicyInvalidPattern: "正则表达式无效",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "正则表达式",
+    commandPolicyColEnabled: "启用",
+    commandPolicyRuleSwitch: (name: string) => `启用规则 ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `编辑规则 ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `删除规则 ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `规则「${name}」的正则表达式在服务器上无法编译（${reason}），已转到它所在的页。`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `服务器无法编译这条规则的正则表达式：${reason}。编辑或删除它后再保存。`,
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",

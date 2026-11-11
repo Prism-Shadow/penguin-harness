@@ -37,6 +37,8 @@ A Project that already stores its rule list keeps it as it is. It adopts the fiv
 
 The rule editor gains a Deny / Ask choice, and an `ask` rule's row carries an "Asks first" pill. `.project_config.toml` stores `action = "ask"` on such a rule.
 
+Every factory pattern now compiles on Node 22 and older engines too: case-insensitive words are spelled as letter classes instead of the ES2025 inline modifier `(?i:…)`, which made saving the list fail there. The rule list becomes a paged table with aligned columns (ten rules a page, the pager and Save held under it), and a save the server refuses over one pattern turns to that rule's page and marks its row.
+
 ## SDK
 
 `ApproveFn` takes an optional second argument, `context?: { reason?: ApprovalReason }`. `Session.run`'s policy wrapper calls the host's callback with `{ reason: { kind: "policy", rule } }` for an `ask` hit, and with the call alone otherwise. The engine never reads the reason. A host that sees a reason puts the call to a person whatever its approval mode. A callback written for the one-argument signature still compiles, and decides an `ask` hit like any other call. A subagent's reason travels through the callback it inherits, and `Session.setSubagentApprovalFallback` now wraps the fallback sink with the command policy. The server's `approval_request` event carries the same `reason` for such a call, and the `approval_decision` record is unchanged.

@@ -14,6 +14,7 @@ import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
+import { patternSyntaxError } from "./command-policy-pattern.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface CommandPolicyRouteDeps {
@@ -42,7 +43,9 @@ interface RuleInput {
  * Validates the `rules` array: every entry needs a non-empty name and a pattern that
  * actually compiles — an uncompilable pattern would be silently skipped at match time
  * (core's tolerant reader), turning a typo into a rule that never fires. Rejecting it here
- * keeps "saved" equal to "enforced".
+ * keeps "saved" equal to "enforced". The refusal names the rule and the engine's reason, and
+ * its `details` carry the rule's name, its index in the list and that reason, so the settings
+ * page can take the person to the row.
  */
 function validateRules(value: unknown): RuleInput[] {
   if (!Array.isArray(value)) {
@@ -52,7 +55,7 @@ function validateRules(value: unknown): RuleInput[] {
     throw new HttpError(400, "invalid_rules", `rules exceeds ${MAX_RULES} entries.`);
   }
   const rules: RuleInput[] = [];
-  for (const entry of value) {
+  for (const [index, entry] of value.entries()) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new HttpError(400, "invalid_rules", "Each rule must be an object.");
     }
@@ -71,13 +74,14 @@ function validateRules(value: unknown): RuleInput[] {
         `Each rule needs a non-empty pattern of at most ${MAX_RULE_PATTERN_LEN} characters.`,
       );
     }
-    try {
-      new RegExp(pattern);
-    } catch {
+    const reason = patternSyntaxError(pattern);
+    if (reason !== null) {
       throw new HttpError(
         400,
         "invalid_rule_pattern",
-        `Rule "${name.trim()}" has an invalid regular expression: ${pattern}`,
+        `Rule "${name.trim()}" has an invalid regular expression: ${reason}.`,
+        undefined,
+        { rule: name.trim(), index: String(index), reason },
       );
     }
     if (description !== undefined && typeof description !== "string") {

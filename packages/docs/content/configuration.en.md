@@ -229,7 +229,7 @@ Each rule has these keys:
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | — | Identifies the rule in the settings UI |
-| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command |
+| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command. Inline modifiers such as `(?i:…)` need Node 24; spell a case-insensitive word as letter classes (`[Rr][Dd]`), as the factory rules do |
 | `description` | string | — | Optional description |
 | `enabled` | boolean | On | Per-rule switch |
 | `action` | `"deny"` \| `"ask"` | `"deny"` | What a hit does: `deny` refuses the call; `ask` puts it to a person whatever the approval mode. Stored only as `action = "ask"` |

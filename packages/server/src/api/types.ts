@@ -1334,7 +1334,9 @@ export interface CommandPolicyRuleDto {
  * `enabled?` plus the full `rules` list (required — a PUT always materializes the list into
  * the config, model-presets style); per-rule `enabled` may be omitted there and defaults to
  * on, per-rule `action` likewise and defaults to `deny`. Owner-only to write; any member may
- * read.
+ * read. A PUT with a pattern this server's engine cannot compile answers 400
+ * `invalid_rule_pattern`, whose `details` name the rule (`rule`), its 0-based place in the
+ * list (`index`) and the engine's reason (`reason`).
  */
 export interface CommandPolicyDto {
   /** Effective master switch; an absent stored value reads as true (the policy defaults on). */

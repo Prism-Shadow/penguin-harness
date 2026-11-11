@@ -10,7 +10,8 @@
  * - A rule's action round-trips: the seeded `ask` rules are served as `ask`, an `ask` rule is
  *   stored as `action = "ask"`, and a `deny` rule — the default — is stored and served
  *   without one.
- * - An uncompilable pattern is refused naming its rule; malformed bodies are refused.
+ * - An uncompilable pattern is refused by its rule's name, its index and the engine's reason,
+ *   never by the pattern's own text; malformed bodies are refused.
  * - The write is read-modify-write: the models table survives.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -156,12 +157,28 @@ describe("project command policy", () => {
     expect((await outsider.put(url, { rules: [] })).status).toBe(404);
   });
 
-  it("rejects an uncompilable pattern with the rule's name in the message", async () => {
-    const res = await owner.put(url, { rules: [{ name: "broken", pattern: "(" }] });
+  it("refuses an uncompilable pattern by the rule's name, its place and the engine's reason, not by its text", async () => {
+    const long = `${"(?:a|b)".repeat(60)}(`;
+    const res = await owner.put(url, {
+      rules: [
+        { name: "fine", pattern: "\\bcurl\\b" },
+        { name: "broken", pattern: long },
+      ],
+    });
     expect(res.status).toBe(400);
     const body = (await res.json()) as ErrorBody;
     expect(body.error.code).toBe("invalid_rule_pattern");
     expect(body.error.message).toContain("broken");
+    expect(body.error.message).toContain("Unterminated group");
+    expect(body.error.message).not.toContain(long);
+    expect(body.error.details).toEqual({
+      rule: "broken",
+      index: "1",
+      reason: "Unterminated group",
+    });
+    // Nothing was stored: the list is still the seeded one.
+    const stored = (await (await owner.get(url)).json()) as CommandPolicyDto;
+    expect(stored.rules.map((r) => r.name)).toContain("rm-recursive-force");
   });
 
   it("rejects malformed bodies (missing rules, bad entries, wrong types)", async () => {

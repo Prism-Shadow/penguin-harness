@@ -37,6 +37,8 @@ Agent 不再自作主张地合并 PR、发布包或强推。这由两层共同�
 
 规则编辑器新增「拒绝 / 需确认」选项，`ask` 规则的列表行带一个「需确认」标签。`.project_config.toml` 在这样的规则上存储 `action = "ask"`。
 
+出厂规则的正则在 Node 22 及更早的引擎上也能编译：大小写不敏感的单词改写为逐字母的字符类，不再用 ES2025 的内联修饰符 `(?i:…)`，它曾让这些引擎上的保存失败。规则列表改为列对齐的分页表格（每页十条，分页器与「保存」固定在表格下方），服务端因某条匹配式拒绝保存时，表格转到该规则所在页并标出这一行。
+
 ## SDK
 
 `ApproveFn` 新增可选的第二个参数 `context?: { reason?: ApprovalReason }`。`Session.run` 的策略包装在 `ask` 命中时以 `{ reason: { kind: "policy", rule } }` 调用宿主的回调，其余调用只传调用本身；引擎从不读取这个原因。收到原因的宿主无论审批模式都把调用交给人决定。按单参数签名写的回调照样能通过编译，只是会像对待其他调用一样决定 `ask` 命中。Subagent 的原因经由它继承的回调传递，`Session.setSubagentApprovalFallback` 现在也会用命令策略包住兜底审批出口。服务端为这样的调用推送的 `approval_request` 事件附带同一个 `reason`，`approval_decision` 记录不变。

@@ -2,8 +2,8 @@
  * Factory command-policy rules — the seed data for a new project's `[command_policy]`
  * block, kept next to the other seeded data (default-config.ts):
  * `defaultProjectConfig` copies them into every new project, and the enforcement side
- * reads the same constant as its "absent = factory set" fallback. Types only, no
- * behavior — so nothing here can drag the tool chain into the state module.
+ * reads the same constant as its "absent = factory set" fallback. Data only, no
+ * matching — so nothing here can drag the tool chain into the state module.
  *
  * Kept deliberately small. The `deny` entries are commands whose verbatim execution is
  * destructive with no undo, so a false negative is worse than the occasional false
@@ -12,6 +12,12 @@
  * they are put to a person rather than refused, so a false positive costs one click. Each
  * pattern assumes the command has been whitespace-normalized (runs collapsed to single
  * spaces) and never crosses a `;`, `|` or `&` separator.
+ *
+ * Every pattern sticks to syntax that every runtime the server ships on, and every browser
+ * the settings page checks a pattern in, compiles: no inline modifier groups (`(?i:…)`, ES2025),
+ * no lookbehind, no named groups, no `v`-flag classes. Node 22 and older reject `(?i:…)`, and
+ * a factory rule one runtime cannot compile is one that guards nothing there and makes every
+ * save of the list fail. Case-insensitive words are spelled with {@link ci} instead.
  * Descriptions are stored data (project-editable after seeding), so they are plain
  * English like the rest of the config file.
  */
@@ -49,10 +55,24 @@ const CMD_START = "(?:^|[\\s;&|(])(?:[^\\s;&|]*/)?";
 const QUOTE = "[\"']?";
 
 /**
+ * Matches `words` in any letter case without a flag or an inline modifier: each ASCII letter
+ * becomes its two-case class and every other character stays as written (`ci("rd")` →
+ * `[Rr][Dd]`); several words become one alternation (`ci("force", "f")` →
+ * `(?:[Ff][Oo][Rr][Cc][Ee]|[Ff])`). Without the `u` flag an `i` match folds no non-ASCII
+ * character onto an ASCII letter, so the classes match exactly what `(?i:…)` did.
+ */
+function ci(...words: string[]): string {
+  const spelled = words.map((word) =>
+    word.replace(/[a-zA-Z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`),
+  );
+  return spelled.length === 1 ? spelled[0]! : `(?:${spelled.join("|")})`;
+}
+
+/**
  * The raw physical-disk device on Windows (`\\.\PhysicalDrive0`) — what `/dev/sda` is on a
  * POSIX host, and destroyed the same way by a raw write.
  */
-const WINDOWS_RAW_DISK = "\\\\\\\\\\.\\\\(?i:physicaldrive)[0-9]+";
+const WINDOWS_RAW_DISK = `\\\\\\\\\\.\\\\${ci("physicaldrive")}[0-9]+`;
 
 /**
  * `git` and its global options up to the subcommand: `git -C <dir>` and `git -c <key=value>`
@@ -103,15 +123,16 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   },
   // The four below are the Windows counterparts of the five above — no new command classes,
   // just the same destruction spelled for pwsh and cmd, which `shell.ts` will happily resolve.
-  // Patterns are case-insensitive inline (`(?i:…)`) because both shells are.
+  // Their command words and switches match in any letter case (spelled with `ci`), because
+  // both shells read them that way.
   {
     name: "windows-recursive-delete",
     // PowerShell `Remove-Item … -Recurse … -Force` (order-independent, `-Rec`/`-r`/`-f`
     // abbreviations included) and the cmd forms `rd|rmdir|del|erase … /s … /q`. cmd allows
     // switches to run together (`/s/q`), so each is only required to appear in the segment.
     pattern:
-      `${CMD_START}(?i:remove-item)(?![a-zA-Z0-9])(?=(?:\\s[^;&|]*)?\\s-(?i:rec[a-z]*|r)(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-(?i:force|f)(?:\\s|$))` +
-      `|${CMD_START}(?i:rmdir|rd|del|erase)(?![a-zA-Z0-9])(?=[^;&|]*/(?i:s)(?![a-zA-Z]))(?=[^;&|]*/(?i:q)(?![a-zA-Z]))`,
+      `${CMD_START}${ci("remove-item")}(?![a-zA-Z0-9])(?=(?:\\s[^;&|]*)?\\s-(?:${ci("rec")}[a-zA-Z]*|${ci("r")})(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-${ci("force", "f")}(?:\\s|$))` +
+      `|${CMD_START}${ci("rmdir", "rd", "del", "erase")}(?![a-zA-Z0-9])(?=[^;&|]*/${ci("s")}(?![a-zA-Z]))(?=[^;&|]*/${ci("q")}(?![a-zA-Z]))`,
     description: "Windows recursive force delete (Remove-Item -Recurse -Force, rd /s /q)",
   },
   {
@@ -119,14 +140,14 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // `format C:` (the drive letter is required, so `pnpm format` is not a hit) and the
     // PowerShell cmdlet.
     pattern:
-      `${CMD_START}(?i:format)(?![a-zA-Z0-9-])(?=[^;&|]*\\s[a-zA-Z]:(?![a-zA-Z0-9]))` +
-      `|${CMD_START}(?i:format-volume)(?![a-zA-Z0-9])`,
+      `${CMD_START}${ci("format")}(?![a-zA-Z0-9-])(?=[^;&|]*\\s[a-zA-Z]:(?![a-zA-Z0-9]))` +
+      `|${CMD_START}${ci("format-volume")}(?![a-zA-Z0-9])`,
     description: "Windows volume format (format C:, Format-Volume) — destroys it wholesale",
   },
   {
     name: "windows-disk-overwrite",
     // A raw write to the physical disk device, and the cmdlet that wipes one.
-    pattern: `${WINDOWS_RAW_DISK}|${CMD_START}(?i:clear-disk)(?![a-zA-Z0-9])`,
+    pattern: `${WINDOWS_RAW_DISK}|${CMD_START}${ci("clear-disk")}(?![a-zA-Z0-9])`,
     description: "Windows raw disk overwrite (\\\\.\\PhysicalDriveN, Clear-Disk)",
   },
   {

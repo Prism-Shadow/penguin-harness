@@ -192,6 +192,38 @@ describe("command policy Windows counterparts", () => {
     expect(hit("npm run format && npm test")).toBeNull();
   });
 
+  it("reads every command word and switch in any letter case, as both shells do", () => {
+    for (const [cmd, rule] of [
+      ["REMOVE-ITEM -RECURSE -FORCE C:\\Data", "windows-recursive-delete"],
+      ["remove-item -REC -F .", "windows-recursive-delete"],
+      ["Remove-Item -R -Force x", "windows-recursive-delete"],
+      ["RMDIR /S /Q dir", "windows-recursive-delete"],
+      ["Rd /s /Q dir", "windows-recursive-delete"],
+      ["DEL /F /S /Q C:\\*", "windows-recursive-delete"],
+      ["Erase /s /q C:\\tmp", "windows-recursive-delete"],
+      ["Format d:", "windows-format-volume"],
+      ["FORMAT-VOLUME -DriveLetter C", "windows-format-volume"],
+      ["format-volume -DriveLetter C", "windows-format-volume"],
+      ["dd if=x of=\\\\.\\PHYSICALDRIVE2", "windows-disk-overwrite"],
+      ["dd if=x of=\\\\.\\physicaldrive2", "windows-disk-overwrite"],
+      ["CLEAR-DISK -Number 1", "windows-disk-overwrite"],
+      ["clear-disk -Number 1", "windows-disk-overwrite"],
+    ] as const) {
+      expect(hit(cmd), cmd).toBe(rule);
+    }
+    // Case is the only thing relaxed: a switch that is not recursive, force or quiet still
+    // does not count, whatever its case.
+    for (const cmd of [
+      "REMOVE-ITEM -RECURSE x",
+      "Remove-Item -Force x",
+      "RD /S dir",
+      "DEL /Q one.txt",
+      "Remove-Item -Rx -Force x",
+    ]) {
+      expect(hit(cmd), cmd).toBeNull();
+    }
+  });
+
   it("catches a raw disk overwrite and the cmd fork bomb", () => {
     expect(hit("dd if=x of=\\\\.\\PhysicalDrive0")).toBe("windows-disk-overwrite");
     expect(hit("Get-Content x > \\\\.\\PhysicalDrive1")).toBe("windows-disk-overwrite");

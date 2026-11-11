@@ -105,8 +105,10 @@ function commandVariants(cmd: string): string[] {
 /**
  * Compiles a rule's pattern, returning null for an invalid regex instead of throwing: a
  * broken rule must not take the whole policy (or the Session) down with it. Write paths
- * validate patterns up front (the server rejects an uncompilable rule), so this only fires
- * for hand-placed data.
+ * validate patterns up front (the server rejects an uncompilable rule), so this fires for
+ * hand-placed data, and for a pattern saved where the engine accepted it and read where it
+ * does not (a file written under Node 24 and read by a CLI on Node 22, say). Such a rule is
+ * skipped: it guards nothing on that engine.
  */
 function compileRule(rule: CommandPolicyRule): RegExp | null {
   try {

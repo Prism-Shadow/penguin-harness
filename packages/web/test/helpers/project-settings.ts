@@ -2,8 +2,9 @@
  * A server behind the package's fetch fake ({@link stubFetch}) for the Project dialogs' suites:
  * the signed-in admin, one Project the admin owns, and the Project's settings the dialog reads
  * — its name, its members, its chat defaults and models, and its command policy, which a PUT
- * replaces and echoes the way the real route does. A test can refuse the next policy PUT, or
- * keep writes in flight with {@link ProjectSettingsServer.hold}.
+ * replaces and echoes the way the real route does. A test can start the policy from rules of
+ * its own, refuse the next policy PUT (with an answer of its own), or keep writes in flight with
+ * {@link ProjectSettingsServer.hold}.
  */
 import type {
   CommandPolicyDto,
@@ -33,20 +34,23 @@ export interface ProjectSettingsServer {
   policy(): CommandPolicyDto;
   /** The bodies of every policy PUT, oldest first. */
   policyPuts(): unknown[];
-  /** The next policy PUT answers this error instead of storing. */
-  refuseNextPolicy(): void;
+  /** The next policy PUT answers this error (a converged 500 unless given) instead of storing. */
+  refuseNextPolicy(answer?: () => Response): void;
   /** Writes wait until {@link ProjectSettingsServer.release} is called (a save in flight). */
   hold(): void;
   release(): void;
 }
 
-export function projectSettingsServer(): ProjectSettingsServer {
+export function projectSettingsServer(
+  rules: CommandPolicyRuleDto[] = [FACTORY_RULE],
+): ProjectSettingsServer {
   let policy: CommandPolicyDto = {
     enabled: true,
-    rules: [FACTORY_RULE],
+    rules,
     defaultRules: [FACTORY_RULE],
   };
-  let refuse = false;
+  const converged = () => apiError(500, "internal", "refused by the test");
+  let refusal: (() => Response) | null = null;
   let held: Array<() => void> | null = null;
   const puts: unknown[] = [];
   const fetch = stubFetch(async (req) => {
@@ -66,9 +70,10 @@ export function projectSettingsServer(): ProjectSettingsServer {
     }
     if (req.path === "/api/projects/p1/command-policy" && req.method === "PUT") {
       puts.push(req.body);
-      if (refuse) {
-        refuse = false;
-        return apiError(500, "internal", "refused by the test");
+      if (refusal !== null) {
+        const answer = refusal;
+        refusal = null;
+        return answer();
       }
       const body = req.body as { enabled: boolean; rules: CommandPolicyRuleDto[] };
       policy = { ...policy, enabled: body.enabled, rules: body.rules };
@@ -80,8 +85,8 @@ export function projectSettingsServer(): ProjectSettingsServer {
     fetch,
     policy: () => policy,
     policyPuts: () => puts,
-    refuseNextPolicy: () => {
-      refuse = true;
+    refuseNextPolicy: (answer = converged) => {
+      refusal = answer;
     },
     hold: () => {
       held = [];
