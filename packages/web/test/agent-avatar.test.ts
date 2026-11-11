@@ -55,27 +55,12 @@ import {
   unmountAll,
   waitFor,
 } from "./helpers/dom";
+import { fakeBrowserImage } from "./helpers/browser-image";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { PROJECT } from "./helpers/project-settings";
 
-/** What the browser's codec would make of the crop: the image boundary, faked. */
+/** What the browser's canvas encodes the cropped square as, through the image-boundary fake. */
 const ENCODED = "data:image/png;base64,iVBORw0KGgo=";
-const codec = vi.hoisted(() => ({ decodes: true }));
-vi.mock("../src/lib/avatar-image", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/lib/avatar-image")>();
-  return {
-    ...actual,
-    loadAvatarImage: async () => {
-      if (!codec.decodes) throw new Error("not an image");
-      const image = document.createElement("img");
-      Object.defineProperty(image, "naturalWidth", { value: 640 });
-      Object.defineProperty(image, "naturalHeight", { value: 480 });
-      return image;
-    },
-    avatarDataUrlFromImage: () => ENCODED,
-    releaseAvatarImage: () => {},
-  };
-});
 
 const toasts = () => toastStore.getState().items.map((t) => t.text);
 
@@ -124,10 +109,13 @@ afterAll(() => setActiveStrings(zh));
 
 describe("the Agent settings page's avatar", () => {
   beforeEach(() => {
-    codec.decodes = true;
+    fakeBrowserImage({ encoded: ENCODED });
     toastStore.setState({ items: [] });
   });
-  afterEach(unmountAll);
+  afterEach(async () => {
+    await unmountAll();
+    vi.restoreAllMocks();
+  });
 
   async function openPage(machineId: string | null = null, tab = "overview") {
     const server = agentServer(
@@ -254,7 +242,7 @@ describe("the Agent settings page's avatar", () => {
   });
 
   it("says a file is unreadable and opens no crop dialog", async () => {
-    codec.decodes = false;
+    fakeBrowserImage({ decodes: false });
     const server = await openPage();
     await pickFile(fileInput(), new File(["x"], "notes.txt", { type: "image/png" }));
     await waitFor(() => toasts().length > 0);

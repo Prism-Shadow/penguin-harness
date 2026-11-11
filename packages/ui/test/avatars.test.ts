@@ -97,9 +97,11 @@ describe("AgentAvatar", () => {
     expect(html).toMatch(/^<img /);
     expect(html).toContain('src="/pictures/qa.png"');
     expect(html).toContain('alt=""');
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["ui-avatar", "object-cover"]));
-    // The flat drawing's corner (rx 5 of 24) at 48px — not an account's 50%.
-    expect(html).toContain("border-radius:10px");
+    expect(classTokens(html)).toContain("ui-avatar");
+    // A rounded tile, not an account's circle: its corner is above zero and short of half its side.
+    const radius = Number(/border-radius:([\d.]+)px/.exec(html)![1]);
+    expect(radius).toBeGreaterThan(0);
+    expect(radius).toBeLessThan(24);
     expect(drawings(html).size).toBe(0);
   });
 

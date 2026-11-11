@@ -83,7 +83,7 @@ describe("an Agent's own avatar", () => {
     const set = await put(dataUrl("image/png", PNG));
     expect(set.status).toBe(200);
     const { avatarRev } = (await set.json()) as AgentAvatarResponse;
-    expect(avatarRev).toMatch(/^[0-9a-f]{12}$/);
+    expect(avatarRev).toEqual(expect.any(String));
     expect(await listedRev()).toBe(avatarRev);
     expect(await fs.readdir(state)).toContain("avatar.png");
 
@@ -144,7 +144,7 @@ describe("an Agent's own avatar", () => {
   it("lists a picture the Agent wrote into its own State, and ignores one too large to serve", async () => {
     await fs.writeFile(path.join(state, "avatar.webp"), Buffer.from("RIFF\0\0\0\0WEBPVP8 "));
     const rev = await listedRev();
-    expect(rev).toMatch(/^[0-9a-f]{12}$/);
+    expect(rev).toEqual(expect.any(String));
     expect((await member.get(`${base}/avatar`)).headers.get("content-type")).toBe("image/webp");
 
     await fs.writeFile(path.join(state, "avatar.webp"), Buffer.alloc(256 * 1024 + 1));

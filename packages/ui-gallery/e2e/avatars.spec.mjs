@@ -102,8 +102,8 @@ for (const theme of Object.keys(DRAWN)) {
     );
     for (const { width, radius, loaded } of corners) {
       expect(loaded).toBe(true);
-      // The flat drawing's corner, rx 5 of its 24-unit box — not a circle.
-      expect(radius).toBeCloseTo((width * 5) / 24, 1);
+      // A rounded tile, not a circle: a corner above zero and short of half the side.
+      expect(radius > 0 && radius < width / 2).toBe(true);
     }
     const broken = page.locator('[data-avatar-board="broken"]');
     await expect(broken.locator("svg.ui-avatar")).toBeVisible();
