@@ -65,6 +65,17 @@ import { migrate } from "@penguinharness/plugin-db/server";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
 import { UiPrefsRepo } from "@penguinharness/plugin-settings/server";
 import { jsonOnlyWrites } from "./auth/middleware.js";
+import { ErrorsRepo } from "./db/repos/errors.js";
+import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
+import { SchedulesRepo } from "./db/repos/schedules.js";
+import { ServerSettingsRepo } from "./db/repos/server-settings.js";
+import { SessionsRepo } from "./db/repos/sessions.js";
+import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { UsersRepo } from "./db/repos/users.js";
+import type { UserRow } from "./db/repos/users.js";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import { originRule } from "./http/public-origin.js";
+import { WEB_APP_CSP } from "./http/page-csp.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "@penguinharness/plugin-terminal/server";
@@ -728,6 +739,11 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
+  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
+  // revalidation updates the stored response's headers, so a shell cached before the policy
+  // existed picks it up without a re-download.
+  if (ext === ".html") headers["Content-Security-Policy"] = WEB_APP_CSP;
   // Announced whenever the answer COULD have varied — on the 304 too, and even when this
   // particular client took no encoding: a shared cache keys on what the header says, so
   // leaving it off is how one client's gzip reaches another that cannot read it.
