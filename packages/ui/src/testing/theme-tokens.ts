@@ -118,11 +118,6 @@ export function packFolders(themesDir: string = THEMES_DIR): string[] {
     .sort();
 }
 
-/** A pack folder's manifest as written, unvalidated. */
-export function readPackManifest(packDir: string): unknown {
-  return JSON.parse(readFileSync(join(packDir, "pack.json"), "utf8"));
-}
-
 /** Reads and analyzes the pack in `themesDir/<id>/`. */
 export function analyzePack(id: string, themesDir: string = THEMES_DIR): ThemeFileAnalysis {
   return analyzeThemeFile(readPackSources(join(themesDir, id)), id);
