@@ -59,14 +59,15 @@ export function contextMenuAnchor(e: ContextMenuEventLike, row: AnchorRect): Anc
 }
 
 /**
- * Shift+F10 — the platform chord for "open the context menu for the focused element".
- * Handled explicitly rather than left to the browser: Windows and Linux browsers
- * synthesize a `contextmenu` event from it, but macOS keyboards have no Menu key and
- * Safari synthesizes nothing, which would stand a keyboard-only Mac user in front of a
- * menu they cannot open.
+ * Shift+F10 — the platform chord for "open the context menu for the focused element" — and the
+ * ContextMenu key that Windows and Linux keyboards carry for the same job. Handled explicitly
+ * rather than left to the browser: Windows and Linux browsers synthesize a `contextmenu` event
+ * from either, but macOS keyboards have no Menu key and Safari synthesizes nothing for the
+ * chord, which would stand a keyboard-only Mac user in front of a menu they cannot open. The
+ * handler prevents the key, so a browser that would also raise its own event opens it once.
  */
 export function isContextMenuKey(e: { key: string; shiftKey: boolean }): boolean {
-  return e.shiftKey && e.key === "F10";
+  return e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
 }
 
 /** Press-and-hold before a touch counts as a context-menu request (ms). */

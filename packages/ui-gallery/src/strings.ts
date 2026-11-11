@@ -9,13 +9,7 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
  * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type {
-  HookName,
-  StreamReveal,
-  TextVariant,
-  ThemeId,
-  ToneName,
-} from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
@@ -168,6 +162,12 @@ export const zh = {
       description: "智能体设置的定时任务标签页：周期、下次触发、绑定的会话与模型。",
       how: "智能体 › 智能体设置 › 定时任务标签页。",
     },
+    apps: {
+      title: "应用中心",
+      description:
+        "Project 的应用桌面：图标与名称组成的图块，各构建状态（可用、构建中、加载失败），收纳两个应用的分组，以及页头的「新建分组」。",
+      how: "侧栏 › 应用中心；页头「新建分组」打开命名并勾选应用的对话框；右键图块或空白处打开菜单，拖动图块排序或叠放成分组。",
+    },
     plugins: {
       title: "插件市场",
       description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
@@ -237,10 +237,6 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客", doodle: "卡通" } satisfies Record<
-      ThemeId,
-      string
-    >,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
@@ -292,6 +288,23 @@ export const zh = {
     unset: "未定义",
   },
   foundations: {
+    /** The theme-pack table: each pack's manifest, built-in and imported on the demo's server. */
+    packs: {
+      intro:
+        "注册表里的每个内置主题包，以及演示服务端上管理员导入的主题包，各列出清单 pack.json：名称、基于什么、版本、目标主题 API、选择器用的色样与各字体角色的首选字体。",
+      name: "名称",
+      base: "基于",
+      version: "版本",
+      api: "主题 API",
+      swatches: "色样",
+      fonts: "字体",
+      isBase: "基准",
+      onFrost: "白领",
+      foundation: "基础层",
+      imported: "导入",
+      importedHint: "演示服务端上导入的主题包，读自 GET /api/themes",
+      fontRoles: { sans: "阅读", ui: "界面", cjk: "中文", mono: "等宽", display: "展示" },
+    },
     surfaces: "表面",
     inks: "文字",
     lines: "线条",
@@ -490,7 +503,7 @@ export const zh = {
       pickers: {
         title: "选择器",
         description:
-          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单、右键菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -564,6 +577,10 @@ export const zh = {
         title: "附件",
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
+      },
+      packs: {
+        title: "主题包",
+        description: "每个主题包的清单：名称、基于什么、版本、主题 API、色样与字体。",
       },
       colour: {
         title: "颜色",
@@ -696,6 +713,12 @@ export const zh = {
         { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
+      contextMenu: "右键菜单",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuTarget: "右键这里",
+      contextOpen: "打开",
+      contextFullScreen: "全屏打开",
       menu: "更多操作",
       menuPin: "置顶",
       menuRename: "重命名",

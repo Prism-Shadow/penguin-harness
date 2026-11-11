@@ -23,7 +23,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { WorkbenchInfo } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchInfo } from "../mechanisms/workbenches.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -483,6 +483,12 @@ export interface UiPrefs {
    * image only when they differ.
    */
   backgroundImageId?: string | null;
+  /**
+   * The account's own arrangement of each Project's App Center, by Project id. Replaced only by
+   * PUT /api/projects/:projectId/app-center/layout (PUT /api/me/prefs refuses it), which checks
+   * the arrangement and lets go of those of Projects that no longer exist.
+   */
+  appCenterLayouts?: Record<string, AppCenterLayout>;
   [key: string]: unknown;
 }
 
@@ -795,6 +801,24 @@ export interface ProviderConnectionUpdate {
   apiKey?: string;
   /** When true, clears the group key (rows with their own key keep it). */
   clearApiKey?: boolean;
+}
+
+/**
+ * A group just became connected (its first group key landed) and the catalog names a model of
+ * that group as its connect default (TokenDance's and Penguin Go's DeepSeek V4.1 Flash), while
+ * the Project's default sits outside the group or is unset. Reported by the write that stored the
+ * key, which leaves the default as it is: the page asks whether to make `model` the default.
+ */
+export interface DefaultModelOffer {
+  /** The model offered as the default. */
+  model: ModelRefDto;
+  /** The default the Project stores now, outside the group; absent when it has none. */
+  current?: ModelRefDto;
+}
+
+/** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
+export interface ProviderConnectionResponse extends ModelsResponse {
+  defaultOffer?: DefaultModelOffer;
 }
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
@@ -1178,6 +1202,8 @@ export interface ModelOAuthStatusResponse {
    * would otherwise name a count the server never wrote.
    */
   applied?: number;
+  /** The default model offered on the minted key (see DefaultModelOffer); on every `done` answer. */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1193,6 +1219,8 @@ export interface ModelOAuthCodeRequest {
 export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
+  /** The default model offered on the minted key (see DefaultModelOffer). */
+  defaultOffer?: DefaultModelOffer;
   error?: ModelOAuthErrorCode;
 }
 
@@ -1219,6 +1247,8 @@ export interface PlatformAuthFlowStatusResponse {
   status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
   error?: PlatformAuthFlowErrorCode;
   applied?: number;
+  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
+  defaultOffer?: DefaultModelOffer;
 }
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
@@ -3837,6 +3867,11 @@ export type ServerEvent =
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
   /**
+   * The server's imported theme packs changed (one was imported, replaced or removed): every
+   * signed-in tab re-reads `GET /api/themes`. No payload; on the user channel of everyone online.
+   */
+  | { type: "themes_changed" }
+  /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what
@@ -3928,6 +3963,8 @@ export type ScheduleServerEvent =
    * version was restored — or switched on or off, by its own switch or the Agent's.
    */
   | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
+  /** A load of a workbench's files has started (the watcher saw an edit, or a list or reload asked for it). */
+  | { type: "workbench_building"; projectId: string; agentId: string; workbenchId: string }
   /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
   | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
 
@@ -5342,6 +5379,58 @@ export interface WorkbenchArchiveInstallResponse {
 }
 
 /**
+ * PATCH /api/projects/:p/agents/:a/workbenches/:id/app-center: the App Center switch. Sets
+ * `penguin.appCenter.show` in the workbench's package.json (nothing else of it) and reloads it;
+ * 409 `workbench_manifest_invalid` when the package.json is not a JSON object to edit.
+ */
+export interface WorkbenchAppCenterRequest {
+  show: boolean;
+}
+
+/** The workbench as the reload after the switch left it, `appCenter` read back from the file. */
+export interface WorkbenchAppCenterResponse {
+  workbench: WorkbenchInfo;
+}
+
+/**
+ * One viewer's arrangement of a Project's App Center: the grid in order, each item an app by its
+ * `<agentId>/<workbenchId>` key or a folder of apps. Kept per account in
+ * `ui_prefs.appCenterLayouts`, by Project id, and written only through
+ * PUT /api/projects/:projectId/app-center/layout.
+ */
+export interface AppCenterLayout {
+  v: 1;
+  items: AppCenterLayoutItem[];
+}
+export type AppCenterLayoutItem =
+  { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
+
+/**
+ * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
+ * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
+ * from the manifests, load status and the loads under way; nothing is compiled.
+ */
+export interface AppCenterResponse {
+  shortcuts: AppCenterShortcut[];
+  /** The viewer's arrangement for this Project; null when they have none (the server's order). */
+  layout: AppCenterLayout | null;
+}
+
+/**
+ * PUT /api/projects/:p/app-center/layout: replaces the viewer's arrangement of the Project's App
+ * Center; `null` restores the server's order. 400 naming the rule a layout breaks, and nothing is
+ * stored: at most 500 items and 1000 app keys in all, each app key `<agentId>/<workbenchId>` (at
+ * most 200 characters) once, folder ids `[A-Za-z0-9_-]{1,32}` once each, folder names 1–40
+ * characters once trimmed (stored trimmed), 1–500 apps per folder.
+ */
+export interface AppCenterLayoutRequest {
+  layout: AppCenterLayout | null;
+}
+export interface AppCenterLayoutResponse {
+  layout: AppCenterLayout | null;
+}
+
+/**
  * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
  * included (each says so in `enabled`).
  */
@@ -5467,6 +5556,117 @@ export interface LanguageIndexResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Theme packs (per server: an admin imports, every account picks; PRFC-0026)
+// ---------------------------------------------------------------------------
+//   GET    /api/themes                  → ThemePacksResponse (any user): the imported packs
+//                                         only, in the order they were installed; the client
+//                                         ships its built-in packs itself
+//   GET    /api/themes/:id/files/<path> → one file the pack serves (any user): its `index.css`,
+//                                         a font or a drawing; 404 for anything else
+//   POST   /api/themes[?replace=1]      → 201 ThemePackImportResponse (admin). The body is the
+//                                         raw zip sent as `application/octet-stream`. Refusals:
+//                                         400 `theme_invalid` (details: ThemeInvalidDetails),
+//                                         400 `theme_id_reserved`, 409 `theme_exists` (details:
+//                                         `themeId`) unless `replace=1`, 413 `theme_too_large`,
+//                                         422 `theme_api_unsupported`, 503 `themes_unavailable`
+//   DELETE /api/themes/:id              → 204 (admin); 400 `theme_builtin`, 404 `theme_not_found`
+//   GET    /api/themes/:id/export       → the pack as a zip attachment (any user), built-in or
+//                                         imported; 404 `theme_not_found`
+// Every write tells every signed-in tab with `themes_changed` on the user event stream.
+
+/** A theme mode, as a manifest names it. */
+export type ThemePackMode = "light" | "dark";
+
+/**
+ * What a pack builds on: `modern`, Frost's token values and its hook recipes (the root carries
+ * `data-theme-base="modern"`); `foundation`, Frost's values only, as the fallback for a name the
+ * pack leaves out.
+ */
+export type ThemePackBase = "modern" | "foundation";
+
+/** The three colours a picker draws for a pack in one mode, as hex. */
+export interface ThemePackSwatch {
+  canvas: string;
+  ink: string;
+  accent: string;
+}
+
+/** One accent preset a pack offers: the `data-accent` id its `accents.css` declares, and its dot. */
+export interface ThemePackAccentPreset {
+  id: string;
+  swatch: string;
+}
+
+/**
+ * An imported pack as the picker and the pre-paint cache read it: its normalised manifest
+ * (`pack.json`), plus where its stylesheet is served and at which version. `v` is a digest of
+ * the pack's content and of the cascade layer order the served Web App build puts in front of its
+ * stylesheet, so it changes when a replace changes anything, or a new build changes that order,
+ * and a cached stylesheet misses; `href` is `/api/themes/<id>/files/index.css?v=<v>`, which the
+ * browser builds from `id` and `v` itself before the first paint.
+ */
+export interface ThemePackDto {
+  /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */
+  id: string;
+  names: { zh: string; en: string };
+  /** The pack's own semver. */
+  version: string;
+  /** The theme API the pack targets; a build implementing a lower one lists it and never loads it. */
+  api: number;
+  base: ThemePackBase;
+  /** The modes the pack declares; a mode it leaves out renders from the base. */
+  modes: ThemePackMode[];
+  swatches: Record<ThemePackMode, ThemePackSwatch>;
+  accent: {
+    /** The theme's own accent per mode: what `neutral` paints. */
+    own: Record<ThemePackMode, string>;
+    /** The presets, in the picker's order. */
+    presets: ThemePackAccentPreset[];
+  };
+  /** The family each stack puts first. */
+  fonts: { sans: string; ui: string; mono: string; cjk: string; display: string };
+  /** The built-in Agent-avatar variant the pack shows, when it shows its own. */
+  avatar?: string;
+  href: string;
+  /** Hex, 8–64 characters. */
+  v: string;
+}
+
+/** GET /api/themes. */
+export interface ThemePacksResponse {
+  themes: ThemePackDto[];
+}
+
+/** POST /api/themes: the pack as it is now installed. */
+export interface ThemePackImportResponse {
+  theme: ThemePackDto;
+}
+
+/** The codes the theme-pack routes refuse with, beside the shared `admin_required`. */
+export type ThemePackErrorCode =
+  | "theme_invalid"
+  | "theme_id_reserved"
+  | "theme_exists"
+  | "theme_too_large"
+  | "theme_api_unsupported"
+  | "theme_builtin"
+  | "theme_not_found"
+  | "themes_unavailable";
+
+/**
+ * `details` of a 400 `theme_invalid`: the first thing the validator refused, so a designer can go
+ * to it. `file` is the entry's path inside the pack (`recipes.css`, `fonts/hand.woff2`, the
+ * entry a zip may not hold); `line` and `column` (1-based, decimal strings) are present when the
+ * refusal points into a stylesheet or the manifest.
+ */
+export interface ThemeInvalidDetails {
+  file: string;
+  reason: string;
+  line?: string;
+  column?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 
@@ -5482,6 +5682,8 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
+  AppCenterShortcut,
+  WorkbenchAppCenter,
   WorkbenchInfo,
   WorkbenchVersion,
   WorkbenchRequest,

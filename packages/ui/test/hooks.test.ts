@@ -109,7 +109,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text", "SiteToc", "SiteSidebarNav"],
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
-  "ui-live": ["Spinner", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
+  // The App Center's install ring turns with the spinner's motion, so it is the spinner's host too.
+  "ui-live": ["Spinner", "InstallRing", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
   // The transcript's cards (the tool call, the activity card — the work group and the harness's
   // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
   // page-level boxes (W4): the card and a table that is its own box.

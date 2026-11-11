@@ -7,8 +7,12 @@
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. Its workbenches are the ones a suite gives it: they reload, restore, export
- * as a zip download, switch on and off (each, and all at once) and are removed, and a zip upload
- * installs the one the suite names. A test can refuse the next write with
+ * as a zip download, switch on and off (each, and all at once) and are removed, a zip upload
+ * installs the one the suite names, and the App Center switch sets their `appCenter.show`. The
+ * Project's App Center lists the ones shown, the way the server derives a shortcut (titles from
+ * the declaration, else the first tab, else the name; broken when the files do not load); a suite
+ * can add or replace one mid-test ({@link AgentServer.putWorkbench}). A test can refuse the next
+ * write with
  * {@link AgentServer.refuseNext}, or read back what was written with {@link AgentServer.writes}.
  *
  * What the Agent carries besides is the suite's too (`parts`): Skills, hook packages, MCP server
@@ -68,6 +72,9 @@ import type {
   AgentConfigResponse,
   AgentMcpServerItem,
   AgentSummary,
+  AppCenterLayout,
+  AppCenterResponse,
+  AppCenterShortcut,
   HookItem,
   PluginUninstallResponse,
   PluginUpdateRef,
@@ -273,6 +280,12 @@ export interface AgentServer {
   setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
+  /** Adds a workbench to the Agent, or replaces the one with its id (an edit on disk, say). */
+  putWorkbench(workbench: WorkbenchInfo): void;
+  /** Whether a workbench's files are being loaded now: the App Center lists it as building. */
+  setBuilding(workbenchId: string, building: boolean): void;
+  /** The viewer's App Center arrangement as the server holds it now (null: the default order). */
+  appCenterLayout(): AppCenterLayout | null;
 }
 
 export function agentServer(
@@ -291,6 +304,8 @@ export function agentServer(
     importedWorkbench?: WorkbenchInfo;
     /** What a workbench's zip download answers instead of the archive. */
     archiveRefusal?: { status: number; code: string };
+    /** The viewer's stored App Center arrangement (by default none). */
+    appCenterLayout?: AppCenterLayout;
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -346,6 +361,8 @@ export function agentServer(
   };
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
+  const building = new Set<string>();
+  let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
   let partSkills = [...(options.parts?.skills ?? [])];
   let partHooks = [...(options.parts?.hooks ?? [])];
   let partMcp = [...(options.parts?.mcpServers ?? [])];
@@ -816,6 +833,34 @@ export function agentServer(
         headers: { "content-disposition": `attachment; filename*=UTF-8''${AGENT_ID}-20261109.zip` },
       });
     }
+    if (path === `/api/projects/${PROJECT_ID}/app-center` && method === "GET") {
+      const shortcuts: AppCenterShortcut[] = workbenches
+        // A workbench switched off, or every one while the Agent-wide switch is off, has no tile.
+        .filter((w) => w.appCenter?.show === true && allOn && !switchedOff.has(w.id))
+        .map((w) => {
+          const first = w.tabs[0];
+          const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
+          return {
+            agentId: AGENT_ID,
+            agentName: stored.config.name ?? AGENT_ID,
+            workbenchId: w.id,
+            title: w.appCenter?.title ?? first?.title ?? w.name,
+            ...(titleZh !== undefined ? { titleZh } : {}),
+            path: `/app/${PROJECT_ID}/${AGENT_ID}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
+            ...(w.appCenter?.tab !== undefined ? { tab: w.appCenter.tab } : {}),
+            ...(building.has(w.id)
+              ? { build: "building" as const }
+              : w.error !== null
+                ? { build: "failed" as const, error: w.error }
+                : { build: "ready" as const }),
+          };
+        });
+      return json({ shortcuts, layout: appCenterLayout } satisfies AppCenterResponse);
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
+      appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;
+      return json({ layout: appCenterLayout });
+    }
     const pluginPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins\/([^/]+)$/.exec(path);
     if (pluginPath !== null && method === "DELETE" && !options.older) {
       const key = installKey(request.machine, decodeURIComponent(pluginPath[1]!));
@@ -898,6 +943,13 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
+      if (action === "app-center" && method === "PATCH") {
+        const { show } = request.body as { show: boolean };
+        const index = workbenches.indexOf(workbench);
+        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        workbenches = workbenches.map((item, i) => (i === index ? next : item));
+        return json({ workbench: listed(next) });
+      }
       if (action === "enabled" && method === "PUT" && !options.older) {
         if ((request.body as { enabled: boolean }).enabled) switchedOff.delete(workbench.id);
         else switchedOff.add(workbench.id);
@@ -1111,6 +1163,14 @@ export function agentServer(
       if (org !== undefined) org.chartUnreadable = unreadable;
     },
     messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
+    putWorkbench: (workbench) => {
+      workbenches = [...workbenches.filter((item) => item.id !== workbench.id), workbench];
+    },
+    setBuilding: (workbenchId, on) => {
+      if (on) building.add(workbenchId);
+      else building.delete(workbenchId);
+    },
+    appCenterLayout: () => appCenterLayout,
   };
 }
 
@@ -1145,7 +1205,16 @@ const unmatchedQuery = (media: string) => ({
 
 export async function mountAgentApp(
   element: ReactElement,
-  { route = "/agents/:agentId", at }: { route?: string; at: string },
+  {
+    route = "/agents/:agentId",
+    at,
+    extra = [],
+  }: {
+    route?: string;
+    at: string;
+    /** More pages beside the one under test, at their own routes (where it navigates to). */
+    extra?: Array<{ path: string; element: ReactElement }>;
+  },
 ) {
   const router = createMemoryRouter(
     [
@@ -1175,6 +1244,7 @@ export async function mountAgentApp(
             : [{ path: "/agents/:agentId", element: h("p", null, "Agent settings") }]),
           // After the page's own route, so a page mounted at a conversation's path still wins.
           { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
+          ...extra,
         ],
       },
     ],

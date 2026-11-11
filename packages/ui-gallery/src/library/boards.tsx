@@ -10,6 +10,7 @@ import { FocusBoard } from "../foundations/focus";
 import { HooksBoard } from "../foundations/hooks";
 import { IconsBoard } from "../foundations/icons";
 import { MotionBoard } from "../foundations/motion";
+import { PacksBoard } from "../foundations/packs";
 import { ShapeBoard } from "../foundations/shape";
 import { TypeBoard } from "../foundations/typography";
 import { AttachmentsBoard } from "./boards/attachments";
@@ -61,6 +62,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   retry: RetryBoard,
   report: ReportBoard,
   attachments: AttachmentsBoard,
+  packs: PacksBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

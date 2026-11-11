@@ -87,6 +87,7 @@ export * from "./components/overlays/dropdown/dropdown";
 export * from "./components/overlays/menu/menu";
 export * from "./components/overlays/portal-panel/context-menu";
 export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/overlays/context-menu/context-menu";
 export * from "./components/forms/select/form-picker";
 export * from "./components/overlays/tooltip/tooltip";
 

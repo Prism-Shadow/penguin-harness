@@ -239,6 +239,13 @@ export interface ModelProviderInfo {
    * and the default sequence below is what places it first for everyone else.
    */
   recommended?: boolean;
+  /**
+   * The model id, in this group, offered as a Project's default model when the group becomes
+   * connected: its first group key lands through the connect flow or the group settings, and the
+   * Project's default is outside the group (services/connect-default-offer.ts). Nothing is
+   * offered when the Project's table no longer holds that row.
+   */
+  connectDefault?: string;
 }
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
@@ -432,6 +439,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     clientType: "openai-chat",
     addable: true,
     recommended: true,
+    connectDefault: "deepseek-v4.1-flash",
     // https://tokendance.space/docs/api-key-oauth
     oauth: {
       authorizeUrl: "https://tokendance.space/auth",
@@ -461,6 +469,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
       url: "https://go.penguin.ooo/api/me/by-key",
       format: "penguin-go",
     },
+    connectDefault: "deepseek-flash",
   },
   {
     // One key serves the whole group, but its models sit on four protocols (see the group's

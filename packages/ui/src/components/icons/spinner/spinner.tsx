@@ -109,3 +109,49 @@ export function Spinner({
     </svg>
   );
 }
+
+/** The ring's stroke, in px: the ring gauges' weight, thin enough not to crowd the icon. */
+const RING_STROKE = 2;
+
+/**
+ * The ring an app's tile wears while the app installs (builds), like a phone app being
+ * installed: one arc on a faint track around the icon, turning at an even pace. It is the
+ * spinner's motion — the same live hook, so a theme re-times both alike and reduced motion leaves
+ * a still arc — drawn at the size of the box it surrounds (px, never the root font tier). It is
+ * decorative: the tile names its state in words.
+ */
+export function InstallRing({ size, className = "" }: { size: number; className?: string }) {
+  const radius = (size - RING_STROKE) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const centre = size / 2;
+  return (
+    <svg
+      aria-hidden
+      data-live="spinner"
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      fill="none"
+      className={`ui-live block animate-spin ${className}`}
+      style={{ transformOrigin: "center" }}
+    >
+      <circle
+        cx={centre}
+        cy={centre}
+        r={radius}
+        stroke="currentColor"
+        strokeWidth={RING_STROKE}
+        opacity="0.2"
+      />
+      <circle
+        cx={centre}
+        cy={centre}
+        r={radius}
+        stroke="currentColor"
+        strokeWidth={RING_STROKE}
+        strokeLinecap="round"
+        strokeDasharray={`${circumference * ARC} ${circumference}`}
+      />
+    </svg>
+  );
+}

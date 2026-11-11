@@ -66,6 +66,7 @@ import {
 
 import type {
   CredentialInfo,
+  DefaultModelOffer,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -247,6 +248,7 @@ import {
 
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /**
@@ -1018,6 +1020,13 @@ export function ModelsPage() {
   const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
   const keyLanded = useRef(false);
+  /**
+   * The default model the key it wrote offers, asked about once the dialog is dismissed: the
+   * dialog reports the outcome first, and a question on top of it would hide that.
+   */
+  const landedOffer = useRef<DefaultModelOffer | undefined>(undefined);
+  /** A connect's offer of its group's model as the default, while the question is open. */
+  const [defaultOffer, setDefaultOffer] = useState<DefaultModelOffer | null>(null);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -1148,6 +1157,13 @@ export function ModelsPage() {
   const envKeysDetected = useMemo(() => detectedEnvKeys(rows ?? []), [rows]);
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
+
+  /** The end of a connect dialog's dismissal: the question its key's offer asks, then a clean slate. */
+  const endConnect = () => {
+    if (landedOffer.current !== undefined) setDefaultOffer(landedOffer.current);
+    keyLanded.current = false;
+    landedOffer.current = undefined;
+  };
 
   /**
    * What the two catalog actions (preset-sync.tsx) run against: this Project's saved table, the
@@ -1914,6 +1930,7 @@ export function ModelsPage() {
           onSaved={(res) => {
             adopt(res);
             setSettingsFor(null);
+            if (res.defaultOffer !== undefined) setDefaultOffer(res.defaultOffer);
           }}
         />
       )}
@@ -1938,10 +1955,11 @@ export function ModelsPage() {
             onClose={() => {
               setOauthFor(null);
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, offer) => {
               keyLanded.current = true;
+              landedOffer.current = offer;
             }}
           />
         ) : (
@@ -1957,17 +1975,35 @@ export function ModelsPage() {
               // `load` also drops this Project's speed results — measurements that cost real API
               // quota and live only in page memory — and a cancelled flow changed nothing.
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, offer) => {
               // The dialog stays open and reports the outcome itself (its `done` phase), because
               // the authorization ran in another tab and a toast would be announced to a window
-              // nobody is looking at. All this seam does is record that the dismissal has a
-              // reload to do.
+              // nobody is looking at. All this seam does is record what the dismissal has to do:
+              // a reload, and the question of the default the key offers.
               keyLanded.current = true;
+              landedOffer.current = offer;
             }}
           />
         ))}
+
+      {/* Waits for `rows`: a connect flow's dismissal reloads the table, and the question names
+          its models from it. */}
+      {projectId && rows && defaultOffer !== null && (
+        <ConnectDefaultOfferConfirm
+          projectId={projectId}
+          offer={defaultOffer}
+          rows={rows}
+          onClose={() => setDefaultOffer(null)}
+          onAccepted={(ref) => {
+            setDefaultModel(ref);
+            // As after any default change here: the draft chat drops its stored model pick and
+            // follows the new default.
+            if (userId) clearDraftModelRef(userId, projectId);
+          }}
+        />
+      )}
 
       {rows && deleteGroupFor !== null && (
         <ConfirmModal
@@ -4230,7 +4266,8 @@ function ModelOAuthDialog({
   /** Models in the group with no key of their own: the ones that will use the new group key. */
   count: number;
   onClose: () => void;
-  onApplied: (applied: number) => void;
+  /** The key landed: how many models use it, and the default model it offers, if any. */
+  onApplied: (applied: number, defaultOffer: DefaultModelOffer | undefined) => void;
 }) {
   /** The route back the user picked. */
   const [manual, setManual] = useState(false);
@@ -4300,7 +4337,7 @@ function ModelOAuthDialog({
           const n = res.applied ?? count;
           setApplied(n);
           setPhase("done");
-          onAppliedRef.current(n);
+          onAppliedRef.current(n, res.defaultOffer);
           return;
         }
         if (res.status === "error") {
@@ -4336,7 +4373,7 @@ function ModelOAuthDialog({
         const n = res.applied ?? count;
         setApplied(n);
         setPhase("done");
-        onAppliedRef.current(n);
+        onAppliedRef.current(n, res.defaultOffer);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);

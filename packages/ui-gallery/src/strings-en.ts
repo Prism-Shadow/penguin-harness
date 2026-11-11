@@ -133,6 +133,12 @@ export const en: GalleryStrings = {
         "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
       how: "Agents › Agent settings › the Schedules tab.",
     },
+    apps: {
+      title: "App Center",
+      description:
+        "The Project's home screen of apps: icon-and-name tiles in each build state (ready, building, failed), a folder holding two apps, and New folder in the header.",
+      how: "Sidebar › App Center; New folder in the header opens the dialog that names a folder and checks its apps; right-click a tile or the empty space for its menu, drag tiles to reorder them or stack them into a folder.",
+    },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",
@@ -205,7 +211,6 @@ export const en: GalleryStrings = {
   },
   rail: {
     theme: "Theme",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console", doodle: "Doodle" },
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -248,6 +253,22 @@ export const en: GalleryStrings = {
     unset: "unset",
   },
   foundations: {
+    packs: {
+      intro:
+        "Every built-in pack in the registry, and the packs an admin imported on the demo's server, each with its manifest (pack.json): names, what it builds on, version, the theme API it targets, the swatches a picker draws and the face each font role puts first.",
+      name: "Name",
+      base: "Builds on",
+      version: "Version",
+      api: "Theme API",
+      swatches: "Swatches",
+      fonts: "Fonts",
+      isBase: "The base",
+      onFrost: "Frost",
+      foundation: "Foundation",
+      imported: "Imported",
+      importedHint: "A pack imported on the demo's server, read from GET /api/themes",
+      fontRoles: { sans: "reading", ui: "UI", cjk: "CJK", mono: "mono", display: "display" },
+    },
     surfaces: "Surfaces",
     inks: "Inks",
     lines: "Lines",
@@ -459,7 +480,7 @@ export const en: GalleryStrings = {
       pickers: {
         title: "Pickers",
         description:
-          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, slider and choice group, switch and toggle rows, swatches, option menu, dropdown, context menu and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -552,6 +573,11 @@ export const en: GalleryStrings = {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      packs: {
+        title: "Theme packs",
+        description:
+          "Each pack's manifest: names, what it builds on, version, theme API, swatches and fonts.",
       },
       colour: {
         title: "Colour",
@@ -703,6 +729,12 @@ export const en: GalleryStrings = {
         },
       ],
       dropdown: "Dropdown",
+      contextMenu: "Context menu",
+      contextMenuHint:
+        "A right-click, Shift+F10, the ContextMenu key or a press and hold on touch opens it; Esc closes it and hands focus back to the target.",
+      contextMenuTarget: "Right-click here",
+      contextOpen: "Open",
+      contextFullScreen: "Open full screen",
       menu: "More actions",
       menuPin: "Pin",
       menuRename: "Rename",
