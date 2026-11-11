@@ -656,11 +656,12 @@ export class ModelScopeAuthProvider {
             options,
           );
         }
-        return this.projectConfig.setGroupApiKey(
+        const { applied } = await this.projectConfig.setGroupApiKey(
           projectId,
           MODELSCOPE_PROVIDER_ID,
           credential.accessToken,
         );
+        return applied;
       },
       readStoredCredential: (projectId) =>
         this.providerAuthTokens.get(projectId, MODELSCOPE_PROVIDER_ID),

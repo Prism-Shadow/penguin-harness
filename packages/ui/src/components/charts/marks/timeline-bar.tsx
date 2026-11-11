@@ -3,7 +3,9 @@
  * absolutely positioned spans. The chart places it (`place`: left and width along the lane)
  * and says what it is (`paint`); the theme decides how it looks — its colour, corner radius,
  * outline (drawn inside the box, so it never changes the bar's size or position) and fill
- * opacity (applied to the fill alone, so a dimmed bar's own opacity class still works).
+ * opacity (applied to the fill alone, so a dimmed bar's own opacity class still works). The fill
+ * is the bar's `--_paint`, which theme.css paints its background from, as an SVG bar's fill, so
+ * a theme may fill it with something else and keep its outline.
  *
  * Bars set end to end (a horizontal stack's segments) say which ends meet a neighbour
  * (`square`): those stay square, so the theme's radius rounds only the stack's free ends, as a
@@ -18,6 +20,7 @@ import type { CSSProperties, HTMLAttributes } from "react";
 import { useChartStyle } from "../chart-style";
 import { resolvePaint } from "./marks";
 import type { ChartPaint } from "./marks";
+import { htmlPaint, seriesAttr } from "./series";
 
 /** Which ends of a bar meet a neighbour's: the start (left), the end (right), or both. */
 export type TimelineBarJoin = "start" | "end" | "both";
@@ -56,18 +59,19 @@ export function TimelineBar({
         : color;
   const outlineColor =
     chart.barStrokeColor === "series" ? (color ?? "currentColor") : chart.barStrokeColor;
-  const style: CSSProperties = {
+  const style = {
     ...place,
-    ...(fill !== undefined ? { backgroundColor: fill } : {}),
+    // The fill, as `--_paint`: theme.css paints the bar's background from it.
+    "--_paint": htmlPaint(fill, paint),
     ...(chart.barRadius > 0 ? { borderRadius: timelineRadius(chart.barRadius, square) } : {}),
     ...(chart.barStroke > 0
       ? { boxShadow: `inset 0 0 0 ${chart.barStroke}px ${outlineColor}` }
       : {}),
-  };
+  } as CSSProperties;
   return (
     <span
       data-part="bar"
-      {...("series" in paint ? { "data-series": paint.series + 1 } : {})}
+      {...seriesAttr(paint)}
       {...rest}
       // The ink class (text-*) makes currentColor the bar's colour, for an outline in it.
       className={`absolute inset-y-0 min-w-[2px] ${fillClass} ${ink} ${className}`.trim()}

@@ -87,7 +87,7 @@ export function PluginsPage() {
       renderItem={(plugin) => (
         <HubCard
           to={`/plugins/${plugin.id}`}
-          lead={<HubTile tone={categoryTone(plugin.category)} src={plugin.icon} glyph="puzzle" />}
+          lead={<HubTile tone={categoryTone(plugin.category)} icon={plugin.icon} glyph="puzzle" />}
           title={titleOf(locale, plugin)}
           facts={[
             ...(plugin.author ? [<CardFact glyph="user">{plugin.author.name}</CardFact>] : []),

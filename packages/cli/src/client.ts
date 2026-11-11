@@ -318,6 +318,17 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
+  /** A file upload or download: `request`'s credentials and errors, the body and answer raw. */
+  async raw(method: string, apiPath: string, body?: Uint8Array): Promise<Response> {
+    const res = await this.fetchAuthed(apiPath, {
+      method,
+      headers: this.headers(body ? { "content-type": "application/octet-stream" } : {}),
+      ...(body ? { body } : {}),
+    });
+    if (!res.ok) throw await this.toError(res);
+    return res;
+  }
+
   /**
    * The authenticated fetch: the one-shot 401 file-token refresh, then the one-shot retry of a
    * 403 `human_required` as the person's stored sign-in.

@@ -31,24 +31,14 @@ import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots
 const SCAN = scanSources();
 
 /**
- * The company modules swept for the rule, relative to `src`. Every page whose surfaces have been
- * gone through belongs here; add one as it is swept, so the list says what has been checked rather
- * than implying the whole feature has.
+ * The company modules the rule holds over, relative to `src`: every `.tsx` under
+ * `features/company/`, read from the scan, so a new page is held to the rule from its first
+ * commit and a renamed one never drops out.
  */
-const MODULES = [
-  "features/company/calendar-page.tsx",
-  "features/company/chart-card.tsx",
-  "features/company/channel-view.tsx",
-  "features/company/finance-page.tsx",
-  "features/company/handbook-page.tsx",
-  "features/company/org-chart-page.tsx",
-  "features/company/org-layout.tsx",
-  "features/company/org-session-groups.tsx",
-  "features/company/overview-page.tsx",
-  "features/company/shared.tsx",
-  "features/company/ticket-dialog.tsx",
-  "features/company/tickets-page.tsx",
-];
+const COMPANY_DIR = "packages/web/src/features/company/";
+const MODULES = SCAN.files
+  .filter((file) => file.id.startsWith(COMPANY_DIR) && file.id.endsWith(".tsx"))
+  .map((file) => file.id.slice("packages/web/src/".length));
 
 /** Host elements that are controls already: a click on one of these is what the element is for. */
 const CONTROLS = new Set([
@@ -152,10 +142,10 @@ function findWholeAreaTargets(): string[] {
 }
 
 describe("company pages", () => {
-  it("scans every source root, and finds every swept module", () => {
+  it("scans every source root, and finds the company modules", () => {
     expectEveryRootScanned(SCAN);
-    // A swept page that was renamed or moved must fail here rather than drop out of the sweep.
-    for (const rel of MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+    // A scan that finds no company module would pass the rule without checking anything.
+    expect(MODULES.length).toBeGreaterThan(0);
   });
 
   it("navigate through named controls, never through a whole card, row or panel", () => {

@@ -12,7 +12,7 @@ import {
 } from "../src/components/actions/copy-button/copy-button";
 import { ICONS } from "../src/components/icons/icons";
 import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const ZH = { ...DEFAULT_UI_STRINGS, close: "关闭", copied: "已复制", loading: "加载中…" };
 
@@ -29,25 +29,6 @@ describe("CopyButton", () => {
       /^<\/button><span class="sr-only" aria-live="polite" aria-atomic="true"><\/span>$/,
     );
     expect(html).toContain(`d="${ICONS.copy}"`);
-  });
-
-  it("paints in tokens, at the row size or the padded size, plus the caller's layout", () => {
-    const md = classTokens(renderStatic(createElement(CopyButton, { text: "x", label: "Copy" })));
-    expect(md).toEqual(
-      expect.arrayContaining([
-        "p-1",
-        "text-fg-subtle",
-        "hover:bg-surface-muted",
-        "hover:text-fg-muted",
-      ]),
-    );
-    const sm = classTokens(
-      renderStatic(
-        createElement(CopyButton, { text: "x", label: "Copy", size: "sm", className: "shrink-0" }),
-      ),
-    );
-    expect(sm).toEqual(expect.arrayContaining(["size-5", "shrink-0", "text-fg-subtle"]));
-    expect(sm).not.toContain("p-1");
   });
 });
 

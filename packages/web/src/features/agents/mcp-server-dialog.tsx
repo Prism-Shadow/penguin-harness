@@ -34,8 +34,9 @@ import {
   toastSuccess,
   useFormDraft,
   useGuardedClose,
+  type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
-import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";

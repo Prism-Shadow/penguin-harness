@@ -24,11 +24,15 @@ import type {
   AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
+  PluginUninstallResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
+  AppCenterResponse,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -47,10 +51,12 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  ContributionsResponse,
   CommandPolicyDto,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HostCommandsResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListResponse,
@@ -119,6 +125,8 @@ import type {
   SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
+  ThemePackDto,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportResponse,
@@ -135,10 +143,11 @@ import type {
   VaultResponse,
   VersionHistoryResponse,
   VersionResponse,
-  WorkbenchInfo,
+  WorkbenchesResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
+import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
@@ -183,6 +192,16 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 }
 
 export const router = new Router();
+
+// The demo boots its own page table and has no server-side plugin contributions: no pages,
+// no file renderers, and nothing removed.
+router.get("/api/contributions", (): ContributionsResponse => ({
+  pages: [],
+  fileRenderers: [],
+  pageRemovals: [],
+  agentTabs: [],
+  sessionTabs: [],
+}));
 
 // ---------------------------------------------------------------------------------------------
 // Auth & user
@@ -2301,6 +2320,35 @@ router
       "content-disposition": `attachment; filename="${params.name}.zip"`,
     }),
   )
+  // A whole plugin at once, as the server does it: the Skills its library entry contributes, its
+  // hook package and the MCP entries it installed (the demo has no workbenches).
+  .delete(
+    "/api/projects/:projectId/agents/:agentId/plugins/:name",
+    (ctx): PluginUninstallResponse => {
+      const installed = installedOf(ctx);
+      const agent = agentOf(ctx);
+      const config = configOf(ctx).config;
+      const name = ctx.params.name ?? "";
+      const plugin = libraryPlugins(ctx.store).find((p) => p.name === name);
+      const skillNames = new Set((plugin?.skills ?? []).map((s) => s.name));
+      const removed = {
+        skills: installed.skills.filter((s) => skillNames.has(s.name)).map((s) => s.name),
+        hooks: installed.hooks.filter((h) => h.name === name).map((h) => h.name),
+        mcpServers: config.mcpServers.filter((e) => e.plugin === name).map((e) => e.name),
+        workbenches: [],
+      };
+      if (removed.skills.length + removed.hooks.length + removed.mcpServers.length === 0) {
+        fail(404, "plugin_not_installed", `Nothing of ${name} is installed on this agent.`);
+      }
+      installed.skills = installed.skills.filter((s) => !skillNames.has(s.name));
+      installed.hooks = installed.hooks.filter((h) => h.name !== name);
+      config.mcpServers = config.mcpServers.filter((e) => e.plugin !== name);
+      agent.skillCount = installed.skills.length;
+      agent.hookCount = installed.hooks.length;
+      agent.pluginUpdates = agent.pluginUpdates.filter((u) => u.name !== name);
+      return { removed };
+    },
+  )
   .delete("/api/projects/:projectId/agents/:agentId/skills/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.skills.length;
@@ -2308,6 +2356,76 @@ router
     if (installed.skills.length === before) notFound("Skill");
     agentOf(ctx).skillCount = installed.skills.length;
     return empty();
+  });
+
+// ---------------------------------------------------------------------------------------------
+// Theme packs
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The one pack an admin imported on the demo's server: warm paper over Frost, tokens and one
+ * accent preset, served as the stylesheet the server would assemble for it.
+ */
+const THEME_PACK: ThemePackDto = {
+  id: "paper",
+  names: { zh: "纸页", en: "Paper" },
+  version: "1.0.0",
+  api: 1,
+  base: "modern",
+  modes: ["light", "dark"],
+  swatches: {
+    light: { canvas: "#f6f1e7", ink: "#2b2521", accent: "#2b2521" },
+    dark: { canvas: "#1c1a17", ink: "#ece4d6", accent: "#ece4d6" },
+  },
+  accent: {
+    own: { light: "#2b2521", dark: "#ece4d6" },
+    presets: [{ id: "ink-blue", swatch: "#2c4f9e" }],
+  },
+  fonts: {
+    sans: "MiSans",
+    ui: "MiSans",
+    mono: "JetBrains Mono Variable",
+    cjk: "MiSans",
+    display: "MiSans",
+  },
+  href: "/api/themes/paper/files/index.css?v=5e1f0c2a",
+  v: "5e1f0c2a",
+};
+
+const THEME_PACK_CSS =
+  '@layer ui-theme{:root[data-theme="paper"]{--ui-canvas:#f6f1e7;--ui-fg:#2b2521;--ui-accent:#2b2521}' +
+  ':root[data-theme="paper"].dark{--ui-canvas:#1c1a17;--ui-fg:#ece4d6;--ui-accent:#ece4d6}}' +
+  '@layer ui-accent{:root[data-theme="paper"][data-accent="ink-blue"]{--ui-accent:#2c4f9e}}';
+
+/** The server's refusal of a write a member may not make. */
+function adminOnly(store: DemoStore): void {
+  if (!store.f.user.isAdmin) {
+    fail(403, "admin_required", "Only an admin can perform this operation.");
+  }
+}
+
+router
+  .get("/api/themes", (): ThemePacksResponse => ({ themes: [THEME_PACK] }))
+  .get("/api/themes/:id/files/*", ({ params }) => {
+    if (params.id !== THEME_PACK.id || params["*"] !== "index.css") notFound("Theme file");
+    return raw(THEME_PACK_CSS, { "content-type": "text/css; charset=utf-8" });
+  })
+  .post("/api/themes", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("import a theme pack");
+  })
+  .delete("/api/themes/:id", ({ store }): unknown => {
+    adminOnly(store);
+    return readOnly("remove a theme pack");
+  })
+  // A built-in pack or the demo's own, as a zip: the demo's bytes stand in for the archive.
+  .get("/api/themes/:id/export", ({ params }) => {
+    const id = params.id!;
+    if (id !== THEME_PACK.id && !isThemeId(id)) notFound("Theme pack");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${id}-1.0.0.zip"`,
+    });
   });
 
 // ---------------------------------------------------------------------------------------------
@@ -2426,17 +2544,17 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
-// Agent State export / import
+// Agent zip export / import
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/export", ({ params }) =>
-    raw("\u001f\u008b demo snapshot", {
-      "content-type": "application/gzip",
-      "content-disposition": `attachment; filename="${params.agentId}.tar.gz"`,
+  .get("/api/projects/:projectId/agents/:agentId/archive", ({ params }) =>
+    raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.agentId}.zip"`,
     }),
   )
-  .post("/api/projects/:projectId/agents/:agentId/import", () => readOnly("import a snapshot"));
+  .post("/api/projects/:projectId/agents/import", () => readOnly("import an Agent"));
 
 // ---------------------------------------------------------------------------------------------
 // Machines (admin)
@@ -2553,7 +2671,10 @@ router
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
-  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
+  // Host commands: a plain server's host offers none, so there is nothing to run.
+  .get("/api/command", (): HostCommandsResponse => ({ commands: [], offers: [] }))
+  .post("/api/command/:command", () => notFound("Host command"));
 
 // ---------------------------------------------------------------------------------------------
 // The agent browser: the demo answers as a server with no desktop shell does, where the only
@@ -2681,11 +2802,20 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get(
-    "/api/projects/:projectId/agents/:agentId/workbenches",
-    (): { workbenches: WorkbenchInfo[] } => ({
-      workbenches: [],
-    }),
+  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
+    workbenches: [],
+    enabled: installedOf(ctx).workbenchesOff !== true,
+  }))
+  .put(
+    "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
+    (ctx): WorkbenchesResponse => {
+      const installed = installedOf(ctx);
+      installed.workbenchesOff = record(ctx.body).enabled === false;
+      return { workbenches: [], enabled: !installed.workbenchesOff };
+    },
+  )
+  .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
+    notFound("Workbench"),
   )
   .post("/api/projects/:projectId/agents/:agentId/workbenches/archive", () =>
     readOnly("import a workbench archive"),
@@ -2708,6 +2838,17 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
+    notFound("Workbench"),
+  )
+  // The App Center lists shortcuts in every build state under a stored arrangement; the demo's
+  // Agents keep no workbench files, so a tile opened in a window finds no page to show.
+  .get("/api/projects/:projectId/app-center", ({ store }): AppCenterResponse => store.f.appCenter)
+  .put("/api/projects/:projectId/app-center/layout", ({ store, body }): AppCenterLayoutResponse => {
+    const layout = (record(body).layout ?? null) as AppCenterLayout | null;
+    store.f.appCenter = { ...store.f.appCenter, layout };
+    return { layout };
+  })
   .get(
     "/api/projects/:projectId/plugins/installed",
     ({ store }): InstalledPluginsResponse => store.f.installedPlugins,

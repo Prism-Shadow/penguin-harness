@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  DefaultModelOffer,
   PlatformAuthFlowErrorCode,
   PlatformAuthFlowStatusResponse,
   PlatformAuthStartResponse,
@@ -32,7 +33,7 @@ export interface KeyAuthTexts {
  * than OAuth/PKCE, and which one applies is the `endpoints` prop's business: Penguin Go polls
  * its own relay, ModelScope polls the harness's authorization bridge. Account metadata never
  * enters this component; a completed flow writes the group key and only reports how many models
- * use it (those without a key of their own).
+ * use it (those without a key of their own), and the default model the key offers, if any.
  */
 export function KeyAuthDialog({
   projectId,
@@ -49,7 +50,7 @@ export function KeyAuthDialog({
   endpoints: KeyAuthEndpoints;
   texts: KeyAuthTexts;
   onClose: () => void;
-  onApplied: (applied: number) => void;
+  onApplied: (applied: number, defaultOffer: DefaultModelOffer | undefined) => void;
 }) {
   // A browser needs a tab opened inside the click, before the server has the URL, or its
   // popup blocker eats the navigation. The desktop shell's window has no popup blocker and its
@@ -120,7 +121,7 @@ export function KeyAuthDialog({
           setPhase("done");
           if (!completedRef.current) {
             completedRef.current = true;
-            onAppliedRef.current(nextApplied);
+            onAppliedRef.current(nextApplied, next.defaultOffer);
           }
           return;
         }
@@ -222,7 +223,7 @@ export function KeyAuthDialog({
       setPhase("done");
       if (!completedRef.current) {
         completedRef.current = true;
-        onAppliedRef.current(nextApplied);
+        onAppliedRef.current(nextApplied, next.defaultOffer);
       }
     } catch (cause) {
       setError(apiErrorText(cause));

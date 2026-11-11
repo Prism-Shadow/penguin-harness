@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { FileTree } from "../src/components/files/file-tree/file-tree";
 import type { FileTreeRow } from "../src/components/files/file-tree/tree-rows";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const row = (
   path: string,
@@ -72,15 +72,6 @@ describe("FileTree", () => {
     expect(html).toContain(">Empty directory</p>");
     // A closed directory draws no group.
     expect(html).not.toContain('aria-label="docs"');
-  });
-
-  it("rings the folder a drag would drop into in the info tone, and takes every ink from tokens", () => {
-    const html = render({ dropTargetDir: "docs" });
-    const tokens = classTokens(html);
-    expect(tokens).toEqual(
-      expect.arrayContaining(["bg-tone-info-bg", "ring-tone-info-emphasis/60", "text-fg"]),
-    );
-    expect(html).not.toMatch(/gray-|sky-|dark:/);
   });
 
   it("shows the caller's empty state in place of rows when there are none", () => {

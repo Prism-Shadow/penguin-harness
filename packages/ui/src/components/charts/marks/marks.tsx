@@ -10,9 +10,13 @@
  * active theme here. A source guard (chart-marks.test.ts, in this package and in the Web App)
  * holds the charts to that.
  *
- * Each primitive writes `data-part` (and `data-series` where a series index exists), so a theme
- * may still restyle a part in CSS — a dashed grid, square points (a point is a rect whose `rx`
- * is its radius, so `rx: 0` squares it), round joins.
+ * Each primitive writes `data-part` (and `data-series` where a mark belongs to a series: a palette
+ * slot's number, or a named colour's token name), so a theme may still restyle a part in CSS — a
+ * dashed grid, square points (a point is a rect whose `rx` is its radius, so `rx: 0` squares it),
+ * round joins. A filled mark (a bar, an area, a point) carries its paint as `--_paint` and takes
+ * its fill from it in theme.css's base rules, so a recipe or a utility that fills it otherwise
+ * still has the mark's colour to outline it in; the HTML marks — a timeline bar, a legend's or a
+ * bubble's swatch — take their background from it the same way.
  *
  * A mark's colour is a `ChartPaint`: a palette slot, one of the named roles (the reference line,
  * the Token kinds), or an `ink` — a Tailwind text class the mark paints with as currentColor,
@@ -23,6 +27,7 @@ import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 import { seriesStroke, useChartStyle } from "../chart-style";
 import type { ChartStyle } from "../chart-style";
 import { curvePath, fitBarWidth } from "./geom";
+import { htmlPaint, seriesAttr } from "./series";
 
 export type ChartPaint =
   /** Palette slot `series` (0-based; cycles past the last). */
@@ -45,9 +50,16 @@ export function resolvePaint(
   return { className: paint.ink };
 }
 
-/** `data-series` for a paint: the 1-based slot, like the tokens (none for a role or an ink). */
-const seriesAttr = (paint: ChartPaint) =>
-  "series" in paint ? { "data-series": paint.series + 1 } : {};
+/**
+ * A filled mark's style: its colour, which an outline drawn in `currentColor` reads, and the
+ * same paint as `--_paint`, which theme.css fills it from — `currentColor` for an ink, whose
+ * colour is its class's.
+ */
+const fillStyle = (color: string | undefined): CSSProperties =>
+  ({
+    ...(color !== undefined ? { color } : {}),
+    "--_paint": color ?? "currentColor",
+  }) as CSSProperties;
 
 /** The gap a flush bar leaves to its neighbour, px. */
 const FLUSH_SEAM = 1;
@@ -113,11 +125,10 @@ export function ChartBar({
     "data-part": "bar",
     ...seriesAttr(paint),
     className: `${ink} ${className}`.trim(),
-    fill: "currentColor",
     ...(chart.barOpacity < 1 ? { fillOpacity: chart.barOpacity } : {}),
     ...outline,
     opacity,
-    style: color !== undefined ? { color } : undefined,
+    style: fillStyle(color),
   };
   const d = top && !flush ? barPath(x, y, width, height, chart.barRadius) : null;
   return d === null ? (
@@ -203,11 +214,10 @@ export function ChartArea({
       data-part="area"
       {...seriesAttr(paint)}
       d={`${curvePath(points, chart.curve)} ${back} Z`}
-      fill="currentColor"
       stroke="none"
       opacity={chart.areaOpacity * strength}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }
@@ -244,10 +254,9 @@ export function ChartPoint({
       width={2 * r}
       height={2 * r}
       rx={r}
-      fill="currentColor"
       opacity={opacity}
       className={ink || undefined}
-      style={color !== undefined ? { color } : undefined}
+      style={fillStyle(color)}
     />
   );
 }
@@ -464,7 +473,12 @@ export function ChartBarHit({
  */
 export type ChartSwatchShape = "square" | "block" | "dash" | "tick" | "chip";
 
-/** A legend or bubble swatch in a paint: a square for a bar series, a dash for a line. */
+/**
+ * A legend or bubble swatch in a paint: a square for a bar series, a dash for a line. It is the
+ * `swatch` part (outside the chart's own root, in a legend or a bubble), naming its shape in
+ * `data-shape` and its series as a mark does, and it carries its paint as `--_paint`, so a theme
+ * that fills a series' bars with something else may fill its swatch alike.
+ */
 export function ChartSwatch({
   paint,
   shape = "square",
@@ -476,7 +490,7 @@ export function ChartSwatch({
 }) {
   const chart = useChartStyle();
   const { color } = resolvePaint(chart, paint);
-  const ink = "ink" in paint ? (paint.swatch ?? "") : "";
+  const ink = "ink" in paint ? `${paint.swatch ?? ""} ${paint.ink}` : "";
   const size =
     shape === "dash"
       ? "h-0.5 w-3 rounded-sm"
@@ -487,9 +501,14 @@ export function ChartSwatch({
           : shape === "chip"
             ? "h-2 w-3 rounded-sm"
             : "h-2 w-2 rounded-[2px]";
-  const style: CSSProperties | undefined =
-    color !== undefined ? { backgroundColor: color } : undefined;
+  const style = { "--_paint": htmlPaint(color, paint) } as CSSProperties;
   return (
-    <span className={`inline-block shrink-0 ${size} ${ink} ${className}`.trim()} style={style} />
+    <span
+      data-part="swatch"
+      data-shape={shape}
+      {...seriesAttr(paint)}
+      className={`inline-block shrink-0 ${size} ${ink} ${className}`.replace(/\s+/g, " ").trim()}
+      style={style}
+    />
   );
 }

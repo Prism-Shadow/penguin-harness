@@ -202,7 +202,7 @@ export function ProgressStack({
 }) {
   const shown = items.filter((i) => i.shown);
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-[100] flex flex-col items-end gap-2 sm:left-auto">
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-toast flex flex-col items-end gap-2 sm:left-auto">
       <p className="sr-only" aria-live="polite">
         {shown
           .filter((i) => !i.leaving)

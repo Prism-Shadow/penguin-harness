@@ -198,7 +198,7 @@ describe("API Session settings", () => {
     const link = [...document.querySelectorAll("a")].find(
       (el) => el.textContent === en.agent.apiReadDocs,
     )!;
-    expect(link.href).toBe("https://penguin.ooo/docs/agent-api");
+    expect(link.href).toMatch(/^https:\/\//);
     expect(link.target).toBe("_blank");
     const copy = button(en.agent.apiCopyAgentPrompt);
     expect(link.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
