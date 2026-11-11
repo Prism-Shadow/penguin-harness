@@ -201,6 +201,10 @@ export interface Messages {
     createId: string;
     createName: string;
     createDescription: string;
+    /** --author: who is creating the agent (user, agent or company); defaults to agent inside a Session. */
+    createAuthor: string;
+    /** --author named none of the three. */
+    createAuthorInvalid(value: string): string;
     /** --plugins: comma-separated library plugin names to seed the new agent with. */
     createPlugins: string;
     created(agentId: string, projectId: string): string;
@@ -1406,6 +1410,9 @@ const en: Messages = {
     createId: "Agent id (directory name; letters, digits, underscores)",
     createName: "Display name (defaults to the id)",
     createDescription: "Description",
+    createAuthor:
+      "Who is creating the agent: user, agent or company (default: agent inside a session, otherwise user)",
+    createAuthorInvalid: (value) => `Unknown --author "${value}": use user, agent or company.`,
     createPlugins:
       "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
@@ -2576,6 +2583,8 @@ const zh: Messages = {
     createId: "Agent id（即目录名；字母、数字、下划线）",
     createName: "显示名（缺省同 id）",
     createDescription: "描述",
+    createAuthor: "由谁创建：user、agent 或 company（缺省：在会话内为 agent，否则为 user）",
+    createAuthorInvalid: (value) => `未知的 --author「${value}」：请用 user、agent 或 company。`,
     createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",

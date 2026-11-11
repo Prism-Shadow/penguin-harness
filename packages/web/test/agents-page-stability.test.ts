@@ -30,7 +30,7 @@ const GPU: FakeMachine = {
 const AGENTS_PATH = `/api/projects/${PROJECT_ID}/agents`;
 
 /** The cards on the page, top to bottom. */
-const cards = () => [...document.querySelectorAll<HTMLElement>(".ui-frame")];
+const cards = () => [...document.querySelectorAll<HTMLElement>("[data-agent-card]")];
 
 /** What a card is: its name, and the machine tag after it when it has one. */
 function describeCard(card: HTMLElement): string {

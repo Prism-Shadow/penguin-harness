@@ -1,7 +1,7 @@
 ---
 name: agent-initialization
 description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an Agent with an in-app workbench, pair with penguin-plugin; for a standalone external program, use penguin-sdk.
-version: 2026.10.14.1
+version: 2026.11.07.1
 ---
 
 # Agent Initialization
@@ -151,7 +151,7 @@ Nothing changes in the middle of a context, so a hook you just wrote will not fi
 
 ## Set name and description
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields unless the user explicitly requested a `thinking_level` change.
+In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields unless the user explicitly requested a `thinking_level` change; leave its `author` as it is.
 
 ## Creating a brand-new agent
 
@@ -164,13 +164,13 @@ mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/hooks" "$TARGET/agent
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State. For a new Agent with a workbench, run the `penguin-plugin` check helper after writing its files: it first refreshes the Project's Agent index, so `host.createSession()` can find a file-created Agent before anybody opens the Agents page.
+Then set the top-level `name`, `description`, `author: agent` (who created the Agent: one you create is `agent`, whatever the copied file says) and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State. For a new Agent with a workbench, run the `penguin-plugin` check helper after writing its files: it first refreshes the Project's Agent index, so `host.createSession()` can find a file-created Agent before anybody opens the Agents page.
 
 ## Validate and report
 
 Before finishing:
 
-- parse `agent_state/system_config.yaml` and confirm `name`, `description`, a positive integer `version`, and the expected `model.thinking_level`;
+- parse `agent_state/system_config.yaml` and confirm `name`, `description`, a positive integer `version`, the expected `model.thinking_level`, and `author: agent` on a brand-new Agent;
 - confirm `agent_state/AGENTS.md` exists and is non-empty;
 - confirm every installed Skill has a parseable `SKILL.md`, and its `name` matches its directory;
 - confirm every installed hook package has a `hooks.json` that parses, that each command it lists is a file inside the package, and that each script ran by hand exits 0 and prints JSON or nothing;
