@@ -1,0 +1,29 @@
+{
+  "api": 1,
+  "id": "doodle",
+  "names": { "zh": "卡通", "en": "Doodle" },
+  "version": "1.0.0",
+  "base": "modern",
+  "modes": ["light", "dark"],
+  "swatches": {
+    "light": { "canvas": "#f6f1e7", "ink": "#2b2521", "accent": "#2b2521" },
+    "dark": { "canvas": "#1c1a17", "ink": "#efe8dc", "accent": "#ece5d6" }
+  },
+  "accent": {
+    "own": { "light": "#2b2521", "dark": "#ece5d6" },
+    "presets": [
+      { "id": "marker", "swatch": "#bb4f27" },
+      { "id": "ballpoint", "swatch": "#2c4f9e" },
+      { "id": "grass", "swatch": "#2f6b45" },
+      { "id": "crayon", "swatch": "#b3261e" },
+      { "id": "grape", "swatch": "#6a46b8" }
+    ]
+  },
+  "fonts": {
+    "sans": "Shantell Sans Variable",
+    "ui": "Shantell Sans Variable",
+    "mono": "JetBrains Mono Variable",
+    "cjk": "LXGW WenKai GB Screen",
+    "display": "Shantell Sans Variable"
+  }
+}

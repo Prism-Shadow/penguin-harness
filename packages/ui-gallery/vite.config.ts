@@ -30,7 +30,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
-import { BOOT_SCRIPT } from "../ui/src/boot";
+import { STATIC_BOOT_SCRIPT } from "../ui/src/boot";
 import { penguinUi } from "../ui/src/vite-plugin";
 import { dropNonWoff2FontSources } from "../web/vite.config";
 import { storageSeedScript } from "./src/app/frame";
@@ -66,11 +66,15 @@ function watchPackageSources(): Plugin {
   };
 }
 
-/** The framed documents, which open with two inline scripts, in the order a frame needs them. */
+/**
+ * The framed documents, which open with two inline scripts, in the order a frame needs them. The
+ * pre-paint script is the static one: the gallery is a static site with no theme server, so its
+ * frames never link an imported pack.
+ */
 const FRAME_DOCUMENTS = ["app.html", "lib.html"];
 
 function frameDocument(): Plugin {
-  const scripts = `${storageSeedScript()};${BOOT_SCRIPT}`;
+  const scripts = `${storageSeedScript()};${STATIC_BOOT_SCRIPT}`;
   return {
     name: "penguin:gallery-frame-document",
     transformIndexHtml: {
@@ -131,6 +135,9 @@ export default defineConfig({
     watchPackageSources(),
   ],
   resolve: { dedupe: ["react", "react-dom"] },
+  // The app's module classes use standard decorators; the dev server must lower them, as in
+  // the app's own config.
+  esbuild: { target: "es2022" },
   build: {
     // Never inline a font, as in the web app: a small slice would otherwise sit in the
     // stylesheet as a data: URI, whatever theme is shown.

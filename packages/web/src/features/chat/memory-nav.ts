@@ -13,12 +13,13 @@ import type {
   MemoryFileKind,
   MemoryScopeInfo,
 } from "@prismshadow/penguin-server/api";
-import type {
-  MemoryChangeOp,
-  MemoryChangeRow,
-  MemoryLocateTarget,
+import {
+  type MemoryChangeOp,
+  type MemoryChangeRow,
+  type MemoryLocateTarget,
+  memoryFileKind,
+  memoryRowKey,
 } from "../../lib/amsp/memory-changes";
-import { memoryFileKind, memoryRowKey } from "../../lib/amsp/memory-changes";
 
 export type MemoryNavMode = { kind: "list" } | { kind: "detail"; target: MemoryLocateTarget };
 

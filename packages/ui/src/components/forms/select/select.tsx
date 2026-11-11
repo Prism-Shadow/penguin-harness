@@ -111,7 +111,7 @@ export function Select({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={`${CONTROL_CLASS} ${sizeClass[size]} ${error ? errorClass : ""} ${className ?? ""}`}
+        className={`ui-edge ${CONTROL_CLASS} ${sizeClass[size]} ${error ? errorClass : ""} ${className ?? ""}`}
       >
         <span className="min-w-0 flex-1 truncate">
           {selected?.label ?? options[0]?.label ?? ""}
@@ -124,7 +124,7 @@ export function Select({
           <div
             ref={panelRef}
             role="listbox"
-            className={`ui-glass ${menuPanelClass} fixed z-[60] max-h-60`}
+            className={`ui-glass ${menuPanelClass} fixed z-popover max-h-60`}
             style={{
               left: position.left,
               width: position.triggerWidth,

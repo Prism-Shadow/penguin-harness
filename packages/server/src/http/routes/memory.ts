@@ -14,10 +14,10 @@
  * `MEMORY.md` index together. The `memory.enabled` switch is Agent configuration and lives on
  * PUT …/agents/:a/config.
  *
- * Import is the one route here that is not a Project-member operation. It follows the Agent State
- * snapshot's split, for the same reason: reading a scope is reading Agent State, which every
+ * Import is the one route here that is not a Project-member operation. It follows the Agent
+ * import's split, for the same reason: reading a scope is reading Agent State, which every
  * member may do, while writing a whole scope at once can cost the Agent memories no member
- * agreed to lose (agent-transfer.ts).
+ * agreed to lose (agent-archive.ts, where overwriting an Agent is the owner's).
  *
  * No route accepts an absolute path: a file is addressed by `agentId` + `scopeKey` + a name
  * inside that scope (under `scripts/` for a script — the path its index line links to), and

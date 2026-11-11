@@ -15,12 +15,20 @@
  * repository reads, so a build without it fails rather than shipping a server whose TSX pages
  * cannot load.
  *
+ * Every build also carries the built-in theme packs' sources (PRFC-0026 「导出」), so a server can
+ * export a built-in pack — the way a person starts a pack of their own — from the very build it
+ * serves, offline: each `src/themes/<id>/` with a `pack.json` lands as `themes/<id>/<file>`, its
+ * fonts excepted. Those are already in the bundle as hashed assets wherever a stylesheet names
+ * them, so `themes/<id>/fonts.json` maps each `fonts/<path>` of the pack to the asset that carries
+ * it rather than shipping a second copy (a font no stylesheet names is copied under the pack). The
+ * server's export reads them there (`/api/themes/:id/export`); nothing in the page loads them.
+ *
  * A vite config imports it by relative path (`../ui/src/vite-plugin`), which the config bundle
  * inlines; it is not one of the package's `exports`. Structural types only, so the package needs
  * no `vite` dependency at run time; `scripts/build-dist.mjs` imports it too.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The slice of Rollup's plugin context the plugin uses. */
@@ -28,11 +36,23 @@ export interface PenguinUiEmitContext {
   emitFile(file: { type: "asset"; fileName: string; source: string | Uint8Array }): string;
 }
 
+/** The slice of an output bundle entry the plugin reads: which source files an asset came from. */
+export interface PenguinUiBundleEntry {
+  type: string;
+  fileName: string;
+  originalFileNames?: readonly string[];
+}
+
 export interface PenguinUiPlugin {
   name: string;
   apply: "build";
+  configResolved: (config: { root: string }) => void;
   buildStart: () => void;
-  generateBundle: (this: PenguinUiEmitContext) => void;
+  generateBundle: (
+    this: PenguinUiEmitContext,
+    options: unknown,
+    bundle: Record<string, PenguinUiBundleEntry>,
+  ) => void;
 }
 
 export interface PenguinUiOptions {
@@ -56,6 +76,68 @@ export function fontLicenseAssets(): { fileName: string; source: string }[] {
       fileName: `${FONT_LICENSES_DIR}/${file}`,
       source: readFileSync(new URL(file, dir), "utf8"),
     }));
+}
+
+/** Where the built-in theme packs' sources land in a consumer's dist. */
+export const THEME_PACKS_DIR = "themes";
+
+/** `src/themes/`, whose folders holding a `pack.json` are the built-in packs. */
+export const builtinThemesDir = (): string => fileURLToPath(new URL("./themes/", import.meta.url));
+
+/** The built-in packs' ids: the folders of `themesDir` that hold a `pack.json`, sorted. */
+export function builtinPackIds(themesDir: string = builtinThemesDir()): string[] {
+  return readdirSync(themesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(join(themesDir, entry.name, "pack.json")))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** Every file of a pack folder by its `/`-separated path in the folder, in path order. */
+export function packFolderFiles(packDir: string): Map<string, Uint8Array> {
+  const files = readdirSync(packDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .map((path) => [relative(packDir, path).split("\\").join("/"), path] as const)
+    .sort(([a], [b]) => (a < b ? -1 : 1));
+  return new Map(files.map(([rel, path]) => [rel, readFileSync(path)]));
+}
+
+/**
+ * The built-in packs' sources as dist assets, with each pack's `fonts.json`: a font the bundle
+ * already carries as `assets/…` (an asset whose original file is that font, relative to `root`)
+ * is mapped to it, any other is copied under the pack.
+ */
+export function themePackAssets(
+  root: string,
+  bundle: Record<string, PenguinUiBundleEntry>,
+  themesDir: string = builtinThemesDir(),
+): { fileName: string; source: Uint8Array | string }[] {
+  const emittedFrom = new Map<string, string>();
+  for (const entry of Object.values(bundle)) {
+    if (entry.type !== "asset") continue;
+    for (const original of entry.originalFileNames ?? []) {
+      emittedFrom.set(resolve(root, original), entry.fileName);
+    }
+  }
+  const out: { fileName: string; source: Uint8Array | string }[] = [];
+  for (const id of builtinPackIds(themesDir)) {
+    const packDir = join(themesDir, id);
+    const fonts: Record<string, string> = {};
+    for (const [rel, source] of packFolderFiles(packDir)) {
+      const fileName = `${THEME_PACKS_DIR}/${id}/${rel}`;
+      if (rel.startsWith("fonts/")) {
+        const emitted = emittedFrom.get(resolve(packDir, rel));
+        fonts[rel] = emitted ?? fileName;
+        if (emitted !== undefined) continue;
+      }
+      out.push({ fileName, source });
+    }
+    out.push({
+      fileName: `${THEME_PACKS_DIR}/${id}/fonts.json`,
+      source: `${JSON.stringify(fonts, null, 2)}\n`,
+    });
+  }
+  return out;
 }
 
 /** `packages/ui/dist/workbench/`, which `pnpm --filter @prismshadow/penguin-ui build` writes. */
@@ -103,16 +185,22 @@ export function dropNonWoff2FontSources(css: string): string {
 
 export function penguinUi(options: PenguinUiOptions = {}): PenguinUiPlugin {
   const runtime = options.workbenchRuntime === true ? workbenchRuntimeDir() : null;
+  let root = process.cwd();
   return {
     name: "penguin:ui",
     // Build only: the dev server serves no dist, and the runtime is read from the build.
     apply: "build",
+    configResolved(config) {
+      // Vite names an asset's original file relative to the project root.
+      root = config.root;
+    },
     buildStart() {
       // Checked before the bundle is built, so a missing runtime costs seconds, not the build.
       if (runtime !== null) assertWorkbenchRuntime(runtime);
     },
-    generateBundle() {
+    generateBundle(_options, bundle) {
       for (const asset of fontLicenseAssets()) this.emitFile({ type: "asset", ...asset });
+      for (const asset of themePackAssets(root, bundle)) this.emitFile({ type: "asset", ...asset });
       if (runtime === null) return;
       assertWorkbenchRuntime(runtime);
       for (const asset of workbenchRuntimeAssets(runtime)) {

@@ -10,8 +10,8 @@
  * updates; only the drawing moves.
  */
 import { Fragment } from "react";
-import { formatNumber, formatTemp, weekdayOf } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiLang, A2uiWeather, A2uiWeatherDay } from "@prismshadow/penguin-core/a2ui";
+import { formatNumber, formatTemp, weekdayOf } from "@prismshadow/a2ui";
+import type { A2uiLang, A2uiWeather, A2uiWeatherDay } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { HBarChart } from "../../charts/cartesian/hbar-chart";

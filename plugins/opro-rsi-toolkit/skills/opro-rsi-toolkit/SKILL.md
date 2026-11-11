@@ -4,7 +4,7 @@ description: >-
   Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a
   frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose
   instructions from the scored history, measure each one, keep the best.
-version: 2026.10.31.1
+version: 2026.11.05.1
 ---
 
 # OPRO
@@ -17,7 +17,7 @@ This Skill is the experiment's controller and needs `run_subagent`; if that tool
 
 - `test_agent_id`: the Target, an existing Agent of this Project, or `create: <id>` for a fresh one. Never the Agent running this Skill: its workers are this Agent.
 - `benchmark_id`: a published Benchmark of this Project; its cases are OPRO's training set. When the user asks for the demo task, build it from `references/demo-task.md` first: it fixes the Target, the Benchmark and the budget.
-- `case_ids`: every case unless the user names a subset. `runs`: Runs per Case, 1 unless given.
+- `case_ids`: every case unless the user names a subset. `runs`: Runs per Case, 1 unless given. A request's `test_repetitions` (the Evaluation Center sends one) gives this count: R runs per case are R complete passes over the Benchmark.
 - The Target's runtime, fixed as `references/evaluation.md` says. The proposer is this Session's model.
 - The method's parameters, with the values of the source script:
 

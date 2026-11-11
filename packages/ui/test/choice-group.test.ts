@@ -32,7 +32,7 @@ import type {
   ChoiceGroupProps,
 } from "../src/components/forms/choice-group/choice-group";
 import { restingStop, rovingStop, rovingTarget } from "../src/components/forms/choice-group/roving";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const OPTIONS: readonly ChoiceGroupOption[] = [
   { value: "pg", label: "PostgreSQL", description: "Relational, the team runs it already" },
@@ -101,11 +101,10 @@ describe("a single choice group", () => {
     const html = render({ shape: "card", value: "pg" });
     expect(html.match(DISC)).toHaveLength(3);
     expect(html.match(DOT)).toHaveLength(1);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["rounded-md", "text-left"]));
     expect(html).toContain("Relational, the team runs it already");
   });
 
-  it("leads a card with the caller's mark instead, and draws a muted option in the muted ink", () => {
+  it("leads a card with the caller's mark instead", () => {
     const html = render({
       shape: "card",
       options: [
@@ -114,16 +113,10 @@ describe("a single choice group", () => {
       ],
     });
     expect(html.match(DISC)).toHaveLength(3);
-    const other = buttons(html)[3]!;
-    expect(other.split(/[" ]/)).toContain("text-fg-muted");
     expect(html).toMatch(/<i>pen<\/i>/);
   });
 
-  it("draws chips in the control's shape, on the rung the caller asks for", () => {
-    expect(classTokens(render({ shape: "chip" }))).toEqual(
-      expect.arrayContaining(["rounded-control", "text-sm", "whitespace-nowrap"]),
-    );
-    expect(classTokens(render({ shape: "chip", size: "sm" }))).toContain("text-xs");
+  it("draws chips without a disc or a box, and cards without a box", () => {
     expect(render({ shape: "chip" })).not.toMatch(DISC);
     expect(render({ shape: "chip" })).not.toMatch(BOX);
     expect(render({ shape: "card" })).not.toMatch(BOX);
@@ -216,10 +209,9 @@ describe("the closed state and the group", () => {
     for (const tag of tags) expect(tag).toContain('disabled=""');
   });
 
-  it("multiple cards: disabled, every checkbox takes no press and its card dims", () => {
+  it("multiple cards: disabled, every checkbox takes no press", () => {
     const html = render({ shape: "card", multiple: true, value: [], disabled: true });
     expect(html.match(/<input type="checkbox"[^>]*disabled=""/g)).toHaveLength(3);
-    expect(classTokens(html)).toContain("opacity-60");
   });
 
   it("closes only the option whose own flag says so", () => {

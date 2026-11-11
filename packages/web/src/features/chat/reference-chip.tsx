@@ -7,8 +7,7 @@
 import { Chip, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { excerptLabel } from "../../lib/selection-menu";
-import { lineSuffix } from "../../lib/workspace-tree";
-import type { ComposerReference } from "../../lib/workspace-tree";
+import { lineSuffix, type ComposerReference } from "../../lib/workspace-tree";
 
 /**
  * A staged reference, split for display: its name, and the quoted lines as a `:from-to` suffix.

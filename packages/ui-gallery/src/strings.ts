@@ -6,18 +6,12 @@
  * accent preset ids and font names stay English in both.
  *
  * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
- * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
- * each covers every id.
+ * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
+ * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type {
-  HookName,
-  StreamReveal,
-  TextVariant,
-  ThemeId,
-  ToneName,
-} from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
 import type { TopicGroupId, TopicId } from "./library/topics";
@@ -101,7 +95,7 @@ export const zh = {
     resources: "资源",
     measure: "度量",
     system: "系统",
-  } as Record<SurfaceGroupId, string>,
+  } satisfies Record<SurfaceGroupId, string>,
   surfaces: {
     chat: {
       title: "对话",
@@ -168,6 +162,12 @@ export const zh = {
       description: "智能体设置的定时任务标签页：周期、下次触发、绑定的会话与模型。",
       how: "智能体 › 智能体设置 › 定时任务标签页。",
     },
+    apps: {
+      title: "应用中心",
+      description:
+        "Project 的应用桌面：图标与名称组成的图块，各构建状态（可用、构建中、加载失败），收纳两个应用的分组，以及页头的「新建分组」。",
+      how: "侧栏 › 应用中心；页头「新建分组」打开命名并勾选应用的对话框；右键图块或空白处打开菜单，拖动图块排序或叠放成分组。",
+    },
     plugins: {
       title: "插件市场",
       description: "插件按分类列出，可换分组、可搜索；点卡片看详情。",
@@ -216,7 +216,7 @@ export const zh = {
       description: "登录页：装饰画布上的登录卡片。任意密码即可登录演示账户。",
       how: "未登录时的任意地址。",
     },
-  } as Record<SurfaceId, SurfaceCopy>,
+  } satisfies Record<SurfaceId, SurfaceCopy>,
   home: {
     eyebrow: "界面画廊",
     title: "Penguin UI",
@@ -237,11 +237,16 @@ export const zh = {
    */
   rail: {
     theme: "主题",
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
-    sizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" } as Record<TextSize, string>,
+    sizeNames: {
+      xs: "特小",
+      s: "小",
+      m: "中",
+      l: "大",
+      xl: "特大",
+    } satisfies Record<TextSize, string>,
     sizeTitle: (name: string, px: number) => `${name} · 根字号 ${px}px`,
     fontLatin: "英文字体",
     fontCjk: "中文字体",
@@ -283,6 +288,23 @@ export const zh = {
     unset: "未定义",
   },
   foundations: {
+    /** The theme-pack table: each pack's manifest, built-in and imported on the demo's server. */
+    packs: {
+      intro:
+        "注册表里的每个内置主题包，以及演示服务端上管理员导入的主题包，各列出清单 pack.json：名称、基于什么、版本、目标主题 API、选择器用的色样与各字体角色的首选字体。",
+      name: "名称",
+      base: "基于",
+      version: "版本",
+      api: "主题 API",
+      swatches: "色样",
+      fonts: "字体",
+      isBase: "基准",
+      onFrost: "白领",
+      foundation: "基础层",
+      imported: "导入",
+      importedHint: "演示服务端上导入的主题包，读自 GET /api/themes",
+      fontRoles: { sans: "阅读", ui: "界面", cjk: "中文", mono: "等宽", display: "展示" },
+    },
     surfaces: "表面",
     inks: "文字",
     lines: "线条",
@@ -303,7 +325,7 @@ export const zh = {
       done: "已完成",
       neutral: "空闲",
       info: "同步中",
-    } as Record<ToneName, string>,
+    } satisfies Record<ToneName, string>,
     charts: "图表序列",
     tokenSeries: "Token 构成",
     code: "代码与差异",
@@ -324,14 +346,14 @@ export const zh = {
       secondary: "取消",
       input: "搜索会话",
       badge: "运行中",
-      menuTier: "z-[60] 菜单",
+      menuTier: "z-popover 菜单",
       menuItems: ["置顶", "重命名", "移动到…"] as readonly string[],
-      backdropTier: "z-50 对话框",
+      backdropTier: "z-modal 对话框",
       dialogTitle: "删除这个会话？",
       dialogBody: "对话记录与 Trace 文件会一并删除。",
       cancel: "取消",
       confirm: "删除",
-      toastTier: "z-[100] 通知",
+      toastTier: "z-toast 通知",
       toast: "已导出 Trace #001",
     },
     radius: "圆角",
@@ -403,11 +425,18 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-widget": "回复里一眼看懂的读数块：天气、时钟、倒计时与指标",
+      "ui-edge":
+        "人按下、输入或写下的框的边：有底色或描边的按钮、输入框与选择框、复选框、单选框、开关、首页的选择器与本人的消息气泡",
+      "ui-start": "首页（新建对话）整体：品牌、三个计数、输入区与示例文件夹",
+      "ui-library": "模型库：按提供方分组的框与其中的模型卡片",
+      "ui-ledger": "单独列出的一组数字：用量汇总卡、公司指标块、Benchmark 卡片的分数",
+      "ui-empty": "空状态：插画、标题、说明与操作",
+      "ui-run": "对话工具栏里的运行指示：图标与「运行中」",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
-    } as Record<HookName, string>,
+    } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
       group: "工作区",
@@ -460,7 +489,7 @@ export const zh = {
   /** The component library: its topics, and the words each board prints. */
   library: {
     title: "组件库",
-    groups: { components: "组件", foundations: "视觉基础" } as Record<TopicGroupId, string>,
+    groups: { components: "组件", foundations: "视觉基础" } satisfies Record<TopicGroupId, string>,
     topics: {
       buttons: {
         title: "按钮",
@@ -474,7 +503,7 @@ export const zh = {
       pickers: {
         title: "选择器",
         description:
-          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+          "下拉选择、同档控件的尺寸、分段控件、滑块与选项组、开关与开关行、色板、选项菜单、下拉菜单、右键菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -549,6 +578,10 @@ export const zh = {
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
       },
+      packs: {
+        title: "主题包",
+        description: "每个主题包的清单：名称、基于什么、版本、主题 API、色样与字体。",
+      },
       colour: {
         title: "颜色",
         description: "表面、文字、线条、强调色、语义色调、图表序列与代码色。",
@@ -560,7 +593,7 @@ export const zh = {
       motion: { title: "动效", description: "进出、显现、布局与时长缓动。" },
       icons: { title: "图标", description: "图标尺寸与 Web App 的图标表。" },
       hooks: { title: "样式钩子", description: "主题可以重绘的结构钩子，逐个示范。" },
-    } as Record<TopicId, { title: string; description: string }>,
+    } satisfies Record<TopicId, { title: string; description: string }>,
     buttons: {
       variants: "变体",
       primary: "保存",
@@ -680,6 +713,12 @@ export const zh = {
         { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
       ] as readonly { value: string; trigger: string; label: string; description: string }[],
       dropdown: "下拉菜单",
+      contextMenu: "右键菜单",
+      contextMenuHint:
+        "右键、Shift+F10、ContextMenu 键或触屏长按都会打开；Esc 关闭并把焦点交还给目标。",
+      contextMenuTarget: "右键这里",
+      contextOpen: "打开",
+      contextFullScreen: "全屏打开",
       menu: "更多操作",
       menuPin: "置顶",
       menuRename: "重命名",
@@ -935,7 +974,7 @@ export const zh = {
         instant: "即时：文字一到就显示，不加动效",
         fade: "淡入：按词显现，每段新到的文字各自淡入，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
-      } as Record<StreamReveal, string>,
+      } satisfies Record<StreamReveal, string>,
       unset: "按即时处理",
       rate: (perSecond: number) => `每秒约 ${Math.round(perSecond)} 字`,
       reduced: "已开启减少动态效果，回答到达即显示",
@@ -1000,7 +1039,7 @@ export const zh = {
         "--ui-chart-point-radius": "数据点半径",
         "--ui-chart-curve": "连线方式（linear / smooth / step）",
         "--ui-chart-area-opacity": "面积填充不透明度（0–1）",
-      } as Record<ChartToken, string>,
+      } satisfies Record<ChartToken, string>,
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
       donutLabels: {
@@ -1236,7 +1275,7 @@ export const zh = {
         eyebrow: "分组标签",
         mono: "sess_7f3a · ~/work/penguin",
         label: "字段标签",
-      } as Record<TextVariant, string>,
+      } satisfies Record<TextVariant, string>,
       inline: { before: "先运行 ", code: "pnpm install", after: " 安装依赖。" },
       prose: "Markdown 正文",
       proseSample:

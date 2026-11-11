@@ -56,9 +56,9 @@ An MCP server may need values before it can connect, such as an API token. The p
 
 When the agent already has an MCP server of the same name that this plugin did not install, the install is refused with the server's name and nothing is written. Rename or remove that server on the agent's **Tools** tab first.
 
-To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits, and removes the plugin's MCP servers from the agent.
+To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits, removes the plugin's MCP servers from the agent, and deletes its workbenches with their data. The server removes every part in one go; if one cannot be removed, the message names it and the rest are removed anyway. The agent's [Plugins tab](/agents#plugins-tab) has the same **Uninstall**, with the parts listed before you confirm.
 
-Any Project member can install, update and uninstall plugins.
+Any Project member can install and update plugins. Only the Project owner can uninstall them.
 
 Other ways to install:
 
@@ -102,13 +102,13 @@ The **Skills** menu lists only the Skills installed on the current agent, and it
 
 ## Manage an agent's Skills
 
-To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Skills** tab.
+To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Plugins** tab. A Skill from a plugin is listed under that plugin; select the plugin's row to see it. A Skill you made or imported is listed under **Not from a plugin**.
 
 - Each row shows a Skill's name, short description and version, with two actions: **Export** downloads the Skill as a zip file, and **Uninstall** deletes its directory.
-- **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work.
+- **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work. Only the Project owner can change it and the **Skills prompt**.
 - **Skills prompt** is the text that introduces the Skill list in the system prompt. Its `{{SKILL_METADATA}}` placeholder becomes one line per installed Skill.
 
-The Skills tab has no update action and cannot add plugins from the library. Update and install plugins on the **Plugins** page.
+To update a plugin's Skills, select **Update** on the plugin's row, or update it on the **Plugins** page. Install plugins from the library on the **Plugins** page.
 
 ### Import a Skill
 
@@ -116,14 +116,14 @@ You can import a Skill from outside the library in two ways. The first is recomm
 
 To import it through a chat:
 
-1. On the **Skills** tab, select **Import skill**.
+1. On the **Plugins** tab, select **Import**, then **Skill**.
 2. In **Skill source**, enter a web page, a GitHub repository or directory, a local path, or an install command from another ecosystem, such as `npx skills add <name>`.
 3. Select **Open a new chat**. A new chat opens with the prompt filled in. You can also select **Copy prompt** to use the prompt elsewhere.
 4. Send the message. The agent reads the source in full, checks that it is safe, and installs the Skill. If the `skill-porting` Skill is installed, the agent follows its process.
 
 To upload a zip file:
 
-1. On the **Skills** tab, select **Import skill**.
+1. On the **Plugins** tab, select **Import**, then **Skill**.
 2. Under **Upload a skill zip**, select **Choose zip file**. The zip must hold `SKILL.md` at its root, or exactly one top-level directory that contains `SKILL.md`.
 3. If a Skill with the same name is already installed, confirm with **Overwrite**. Overwriting replaces all of its files.
 
@@ -137,7 +137,7 @@ Hook packages usually come with a plugin from the library, but any directory und
 
 A conversation reads the installed packages each time it opens a model context: when it starts, after each compaction, and when it resumes. A package written into the directory therefore runs in new conversations at once, and in a conversation already open from its next compaction. An install, zip import or uninstall through the Web App or the API reaches open conversations sooner, from their next turn, because the server rebuilds the agent's runtimes once they are idle.
 
-To manage one agent's hook packages, open **Agents**, select the agent, and open the **Hooks** tab.
+To manage one agent's hook packages, open **Agents**, select the agent, and open the **Plugins** tab. A hook package from a plugin is listed under that plugin, one you imported under **Not from a plugin**.
 
 - **Enable hooks** turns hooks on or off for the whole agent, not one package at a time. With it on, every Session the agent starts runs all installed hook packages. With it off, no Session runs hooks, and the packages stay installed. The change takes effect from the next turn, in open conversations too; a Task that is already running keeps its hooks unless a compaction opens a new context before the Task ends. Only the Project owner can change this switch.
 - Each row shows a package's name, the hook points it runs at, its description and version, with **Export** and **Uninstall**.
@@ -146,14 +146,14 @@ To manage one agent's hook packages, open **Agents**, select the agent, and open
 
 To import it through a chat:
 
-1. On the **Hooks** tab, select **Import hook**.
+1. On the **Plugins** tab, select **Import**, then **Hook package**.
 2. In **Hook source**, enter a URL, a GitHub repository, a local path, a description of the hook you want, or another tool's hook configuration, such as the `hooks` block of a Claude Code `settings.json`.
 3. Select **Open a new chat**, or **Copy prompt**.
 4. Send the message. The agent reads the source, reviews every script, and installs the package on this agent.
 
 To upload a zip file:
 
-1. On the **Hooks** tab, select **Import hook**.
+1. On the **Plugins** tab, select **Import**, then **Hook package**.
 2. Under **Upload a hook package zip**, select **Choose zip file**. The zip must hold `hooks.json` and the scripts at its root, or in exactly one top-level directory. Every command in `hooks.json` must name a file inside the zip.
 3. If a package with the same name is already installed, confirm with **Overwrite**.
 
@@ -261,7 +261,7 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | AI App Development | `agent-development` | Agent development on PenguinHarness, with six Skills: `agent-initialization` (set an agent up from a requirement: its `AGENTS.md`, Skills and hooks), `penguin-sdk` (build agent/AI/RAG apps on the SDK, or connect a program to an agent over the Agent API; it asks which way first), `penguin-plugin` (build the workbenches an agent keeps beside its chat), `unified-llm-api` (call model APIs through `@prismshadow/mmsp`), `penguin-config` (manage model keys, defaults and Vault secrets) and `penguin-orchestration` (drive agents, Sessions, costs and schedules from a shell) |
 | | `agent-evaluation` | Agent Evaluation, with two Skills: `benchmark-design` (design and calibrate a capability Benchmark, or import a published Benchmark package) and `agent-evaluation` (execute and score one isolated case). The Default RSI Toolkit measures through it |
 | | `model-development` | Model development on your own hardware, with three Skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
-| | `skill-porting` | Port Skills from external sources (plugin marketplaces, skills.sh registries, GitHub repos or local folders) into the agent after review and normalization, or, with its `plugin-porting` Skill, turn a whole Codex or Claude Code plugin into a PenguinHarness plugin package and install it on the server |
+| | `skill-porting` | Port Skills from external sources (plugin marketplaces, skills.sh registries, GitHub repos or local folders) into the agent after review and normalization, or, with its `plugin-porting` Skill, turn a whole Codex or Claude Code plugin into a PenguinHarness plugin package and install it on the server, or, with its `agent-porting` Skill, migrate an agent from Claude Code, Codex, DeepSeek Harness, Qoder, Qwen Code or WorkBuddy into a new agent (see [Import an agent](/agents#import-an-agent)) |
 | Agent Sandbox | `sandbox-bwrap`, `sandbox-seatbelt`, `sandbox-wsl`, `sandbox-dsh` | Server plugins rather than library content: the backends that confine every command an agent runs, installed on the server by an admin. See [Server plugins](#server-plugins) and [Settings](/settings#sandbox) |
 
 ## How it works
@@ -483,7 +483,7 @@ A plugin declares a workbench with a `PluginLibraryModule.workbenches` entry, `{
 
 Installing the plugin copies the workbench into the agent's `agent_state/workbenches/<id>/` directory, inside its Agent State, where the workbenches an agent writes for itself live too. Updates replace shipped source files and retain ticket state and history. A name already used by another plugin or a manually created workbench is refused. Uninstalling removes the workbench and its state, and its earlier versions are no longer listed.
 
-Every successful load that changes a workbench's source records a version: a commit in `agent_state.git/`, a bare git repository beside the agent's `agent_state/` that the server writes itself, so git does not have to be installed. Only the workbench's source is committed; its `state.json`, the server's `.build/` and `.harness/`, `node_modules/`, the vault and the rest of the Agent State never are. Restoring a version makes the source exactly that version and reloads it, leaving `state.json` as it is. Because the repository sits outside the Agent State, snapshots, exports and imports of the Agent State neither carry nor touch it. With git installed you can read the history, for example `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`; never commit to the repository or delete it. To restore, remove, export or import a workbench, see [Workbenches tab](/agents#workbenches-tab).
+Every successful load that changes a workbench's source records a version: a commit in `agent_state.git/`, a bare git repository beside the agent's `agent_state/` that the server writes itself, so git does not have to be installed. Only the workbench's source is committed; its `state.json`, the server's `.build/` and `.harness/`, `node_modules/`, the vault and the rest of the Agent State never are. Restoring a version makes the source exactly that version and reloads it, leaving `state.json` as it is. Because the repository sits outside the Agent State, snapshots, exports and imports of the Agent State neither carry nor touch it. With git installed you can read the history, for example `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`; never commit to the repository or delete it. To switch a workbench off, or to restore, remove, export or import one, see [Plugins tab](/agents#plugins-tab).
 
 A workbench can follow the Sessions it starts while the agent works. Its page imports `../sdk/workbench.js`, a page SDK the server serves beside every workbench, and `followSession(sessionId)` reads that Session's [AMSP records](/amsp-records) with the signed-in user's access, so the answer appears as the agent writes it; `abortSession(sessionId)` stops the turn. The workbench's server code gets the same records from `host.subscribe(sessionId, listener)`. Starting turns and saving results stay in the workbench's own handler; reading results with `host.sessionResult` and polling still work. A workbench never needs an Agent API key for this.
 
@@ -511,5 +511,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 The components follow the user's theme, accent, font and light or dark mode by themselves. Style the page's own elements with a stylesheet of your own that reads the `--ui-*` variables; Tailwind classes on your own markup are not available.
 
 Pages written in plain HTML and JavaScript keep working and take the app's look through `/workbench-ui.css`: its `--wb-*` variables and `wb-*` classes follow the user's theme, accent, font and light or dark mode, and `wb-badge` with a `data-tone` attribute colours a status. The `--wb-*` names are only ever added to; to restyle a page, redeclare them on `:root`. Once a workbench has a TSX page, all of its pages get the components' stylesheet instead, so convert its pages together.
+
+A workbench page is see-through: a page that sets no background of its own shows the app's surface under it, the theme's page colour or your wallpaper, as the conversation does. For a solid page, set `body { background: var(--wb-canvas); }` (in a TSX page's stylesheet, `var(--ui-canvas)`).
 
 The built-in `penguin-support` plugin provides the default Project's support Agent with the `penguin-support` Skill and a customer support workbench: a centered question list, a new-question dialog and conversation details with follow-ups. While a question runs, its dialog shows the answer as it is written and what the agent is doing, with a **Stop** button. A new version arrives as a plugin update; an installed copy is only replaced when you update it. It can also be installed on other Agents.

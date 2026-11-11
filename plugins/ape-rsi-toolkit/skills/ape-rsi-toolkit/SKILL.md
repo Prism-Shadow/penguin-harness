@@ -4,7 +4,7 @@ description: >-
   Reproduce APE (Large Language Models are Human-Level Prompt Engineers, Zhou et al. 2022)
   on an agent and a frozen Benchmark, or on the house-style brief demo task shipped with
   this Skill: induce instructions from input/output examples, measure each one, keep the best.
-version: 2026.10.31.1
+version: 2026.11.05.1
 ---
 
 # APE
@@ -17,7 +17,7 @@ This Skill is the experiment's controller and needs `run_subagent`; if that tool
 
 - `test_agent_id`: the Target, an existing Agent of this Project, or `create: <id>` for a fresh one. Never the Agent running this Skill: its workers are this Agent.
 - `benchmark_id`: a published Benchmark of this Project; its cases are APE's selection set (the source's `eval_data`). When the user asks for the demo task, build it from `references/demo-task.md` first: it fixes the Target, the Benchmark, the demonstrations and the budget, so ask nothing.
-- `case_ids`: every case unless the user names a subset. `runs`: Runs per Case, 1 unless given.
+- `case_ids`: every case unless the user names a subset. `runs`: Runs per Case, 1 unless given. A request's `test_repetitions` (the Evaluation Center sends one) gives this count: R runs per case are R complete passes over the Benchmark.
 - Demonstrations: the input/output pairs the proposer induces from (the source's `prompt_gen_data`).
   - The demo task ships five.
   - Otherwise ask for a file of pairs, or for explicit permission naming the Cases whose gold answers may serve as outputs; those Cases then leave the selection set. A private answer is not authorized because it exists.

@@ -323,6 +323,8 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   // `400 penguin_go_protocol_fixed`. An id that is neither a built-in group nor a
   // user-group name is `400 invalid_provider`; a base URL that is not an absolute http(s) URL
   // is a 400 too (parseProviderUpdate), the same check the whole-table PUT's `providers` gets.
+  // A group's first key offers its connect default as the default model (`defaultOffer`, the
+  // default itself untouched); the whole-table PUT carries its own default and offers nothing.
   app.put("/providers/:provider", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);

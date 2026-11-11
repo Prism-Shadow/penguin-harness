@@ -4,6 +4,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfigView } from "../services/agent-config-service.js";
 import type {
+  AgentAuthor,
   AgentConfigUpdateRequest,
   AgentDeletionInfo,
   AgentKernelUpdateResponse,
@@ -26,7 +27,7 @@ import type {
   WorkspaceFileContent,
   WorkspaceFileReadOptions,
 } from "../services/workspace-files-service.js";
-import type { AgentListItem } from "../services/agent-service.js";
+import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,
@@ -44,6 +45,7 @@ export abstract class AgentConfig {
   ): Promise<{
     name?: string;
     description?: string;
+    author: AgentAuthor;
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
@@ -54,6 +56,12 @@ export abstract class AgentConfig {
     agentId: string,
     req: AgentConfigUpdateRequest,
   ): Promise<void>;
+  /** Writes `author` only into a config that has none; false when it had one or there is no config. */
+  abstract stampMissingAuthor(
+    projectId: string,
+    agentId: string,
+    author: AgentAuthor,
+  ): Promise<boolean>;
   abstract resetConfig(projectId: string, agentId: string): Promise<void>;
   abstract kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse>;
   abstract insertTemplatePlaceholder(
@@ -69,24 +77,23 @@ export abstract class AgentConfig {
   ): Promise<VaultResponse>;
 }
 
+/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
+export interface AgentPackage {
+  bytes: Buffer<ArrayBufferLike>;
+  /** Given the package's `traces/` once its State is in place, before the staging goes. */
+  landTraces?: (dir: string) => Promise<void>;
+}
+
 /** Snapshots: the mechanism SnapshotService implements. */
 @Interface()
 export abstract class Snapshots {
   abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract ensureSnapshot(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string }>;
-  abstract exportArchive(
-    projectId: string,
-    agentId: string,
-  ): Promise<{ version: number; file: string; fileName: string }>;
   abstract importArchive(
     projectId: string,
     agentId: string,
-    archive: Buffer<ArrayBufferLike>,
-    opts: { confirm: boolean; preSnapshot?: boolean },
-  ): Promise<{ version: number }>;
+    pkg: AgentPackage,
+    opts: { preSnapshot: boolean },
+  ): Promise<{ version: number; backup?: string }>;
 }
 
 /** Memory: the mechanism MemoryService implements. */
@@ -187,11 +194,7 @@ export abstract class AgentLifecycle {
   abstract createAgent(
     projectId: string,
     agentId: string,
-    name?: string,
-    description?: string,
-    skillNames?: readonly string[],
-    directory?: { path: string; names: readonly string[] },
-    archive?: Buffer<ArrayBufferLike>,
+    creation?: AgentCreation,
   ): Promise<AgentListItem>;
   abstract pluginVersion(
     projectId: string,

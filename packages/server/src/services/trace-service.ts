@@ -349,6 +349,12 @@ export interface TraceSessionIndex {
   insertOrIgnore?(row: SessionRow): void;
 }
 
+/** One Session's Trace files to import: each one's date directory, index and content. */
+export interface ImportedSession {
+  sessionId: string;
+  files: readonly { date: string; index: number; body: string }[];
+}
+
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
 interface TraceSessionFacts {
@@ -2184,50 +2190,86 @@ export class TraceService implements Traces {
     if (typeof sessionId !== "string" || !IMPORT_SESSION_ID_RE.test(sessionId)) {
       throw invalid("session_meta carries a missing or invalid session_id.");
     }
-    const duplicate = () =>
-      new HttpError(
+    const ts = Date.parse(first.timestamp);
+    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
+    // Normalize to exactly one trailing newline (the JSONL convention the writer follows).
+    const body = content.replace(/\n+$/, "") + "\n";
+    const { skipped } = await this.importSessions(projectId, agentId, [
+      { sessionId, files: [{ date, index: 1, body }] },
+    ]);
+    if (skipped.length > 0) {
+      throw new HttpError(
         409,
         "trace_session_exists",
         `A Session with id ${sessionId} already exists here; a duplicate Trace cannot be imported.`,
       );
-    // A Session id is the identity everywhere — the sessions table keys on it, the frontend
-    // dedupes rows by it, and /chat/:sessionId routes by it — so the check spans the whole
-    // install, not just the receiving Agent. Importing the same Trace under a second Agent
-    // used to "succeed" into a Session nothing could own: no row could be inserted beside
-    // the existing one, and the list folded the two into a single conversation, leaving a
-    // group's count one above the rows it could ever show.
-    if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
-    if (this.sessions?.findById?.(sessionId)) throw duplicate();
-    const ts = Date.parse(first.timestamp);
-    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
-    const index = 1;
-    const dir = path.join(tracesDir(this.root, projectId, agentId), date);
-    await fs.mkdir(dir, { recursive: true });
-    const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
-    const body = content.replace(/\n+$/, "") + "\n";
+    }
+    return { sessionId, index: 1, date };
+  }
+
+  /**
+   * Lands Sessions' Trace files in the Agent's traces/<date>/ under their own indexes and
+   * registers each once as a Session of this Agent. A Session id is the identity everywhere —
+   * the sessions table keys on it, the frontend dedupes rows by it, /chat/:sessionId routes by
+   * it — so one whose id is anywhere in the install is skipped: a second copy would be a Session
+   * nothing could own.
+   */
+  async importSessions(
+    projectId: string,
+    agentId: string,
+    sessions: readonly ImportedSession[],
+  ): Promise<{ imported: number; skipped: string[] }> {
+    // One forced pass for the whole set: the index is never the authority for absence.
+    await this.index.reconcileAgent(projectId, agentId, { force: true });
+    const skipped: string[] = [];
+    for (const { sessionId, files } of sessions) {
+      const taken =
+        this.store.listFilesBySession(projectId, agentId, sessionId).length > 0 ||
+        this.sessions?.findById?.(sessionId);
+      if (taken || !(await this.writeShards(projectId, agentId, sessionId, files))) {
+        skipped.push(sessionId);
+        continue;
+      }
+      // Write-time registration, from the bytes in hand (no re-read). The earliest shard goes
+      // last: the Session's facts are the ones its head names.
+      for (const file of [...files].sort((a, b) => b.index - a.index)) {
+        this.index.registerImportedFile({
+          projectId,
+          agentId,
+          sessionId,
+          fileIndex: file.index,
+          date: file.date,
+          sizeBytes: Buffer.byteLength(file.body, "utf8"),
+          records: parseTraceLines(file.body),
+        });
+      }
+      this.indexImportedSession(projectId, agentId, sessionId);
+    }
+    return { imported: sessions.length - skipped.length, skipped };
+  }
+
+  /** Writes one Session's shards whole or not at all; false when one exists (`wx`: one racer wins). */
+  private async writeShards(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    files: ImportedSession["files"],
+  ): Promise<boolean> {
+    const written: string[] = [];
     try {
-      // Normalize to exactly one trailing newline (the JSONL convention the writer
-      // follows). `wx` closes the check-then-write race: two concurrent imports of the
-      // same new session id both pass the locateAll check, but only one can create the
-      // file — the loser's EEXIST maps to the same 409 as the pre-check.
-      await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
+      for (const { date, index, body } of files) {
+        const dir = path.join(tracesDir(this.root, projectId, agentId), date);
+        await fs.mkdir(dir, { recursive: true });
+        const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
+        await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
+        written.push(file);
+      }
+      return true;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "EEXIST") throw duplicate();
+      await Promise.all(written.map((file) => fs.rm(file, { force: true }).catch(() => {})));
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
       throw err;
     }
-    // Write-time registration: this path knows the file's identity and already holds the
-    // parsed records, so the index row + session facts land synchronously (no re-read).
-    this.index.registerImportedFile({
-      projectId,
-      agentId,
-      sessionId,
-      fileIndex: index,
-      date,
-      sizeBytes: Buffer.byteLength(body, "utf8"),
-      records,
-    });
-    this.indexImportedSession(projectId, agentId, sessionId);
-    return { sessionId, index, date };
   }
 
   /**

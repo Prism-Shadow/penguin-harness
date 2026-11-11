@@ -31,8 +31,8 @@
  * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
  * and keeps what is being typed.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+
 import type {
   MemoryFileInfo,
   MemoryImportMode,
@@ -73,8 +73,9 @@ import {
   toastSuccess,
   useCopied,
   useFormDraft,
+  type SheetSnap,
 } from "@prismshadow/penguin-ui";
-import type { SheetSnap } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -90,8 +91,8 @@ import {
   memoryDocumentFileName,
   parseMemoryScopeDocument,
   planMemoryImport,
+  type MemoryImportPlan,
 } from "./memory-transfer";
-import type { MemoryImportPlan } from "./memory-transfer";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
