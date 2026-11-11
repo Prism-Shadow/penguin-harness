@@ -8,7 +8,8 @@
  * - Given the same Agent twice, its avatar is drawn the same both times.
  * - Given a pinned drawing, only that drawing is drawn, outside the hook, so no theme hides it.
  * - Given two Agents in different palette slots, their penguins are painted differently.
- * - Given a small avatar, the face drops the cheeks it cannot resolve; from 20 px up they show.
+ * - Given a small avatar, the face drops the cheeks it cannot resolve and every face is drawn as
+ *   the same two dots; from 20 px up the cheeks show and the faces differ.
  * - Given the pixel drawing from 16 px up, its cells land on whole CSS pixels; below 16 px it
  *   scales to the box, antialiased.
  * - An account's disc is drawn in tokens, and a stack shows a few avatars then a count, with the
@@ -87,6 +88,18 @@ describe("AgentAvatar", () => {
       expect(at(16), `${variant} at 16px`).not.toContain(blush);
       expect(at(24), `${variant} at 24px`).toContain(blush);
     }
+  });
+
+  it("draws every face as the same two dots below 20px, and tells the faces apart from 20px up", () => {
+    const ids = Array.from({ length: 400 }, (_, n) => `agent-${n}`);
+    const happy = ids.find((id) => agentExpression(id) === "happy")!;
+    const bead = ids.find(
+      (id) => agentExpression(id) === "bead" && agentSlot(id) === agentSlot(happy),
+    )!;
+    const flat = (id: string, size: number) =>
+      drawings(avatar({ id, size, variant: "flat" })).get("flat")!;
+    expect(flat(happy, 16)).toBe(flat(bead, 16));
+    expect(flat(happy, 24)).not.toBe(flat(bead, 24));
   });
 
   it("lays the pixel penguin on whole pixels from 16px up, and scales it into a smaller box", () => {
