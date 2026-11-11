@@ -35,16 +35,20 @@ It is already compiled, so your project needs no Tailwind. It holds:
 
 ## Theme and dark mode
 
-Set the theme on the root element:
+Set the theme on the root element. Every theme is a pack over Frost, the base: Frost's values
+apply to any root, and its look (the frosted menus, the lineless activity rows, the banded
+settings rows) applies where `data-theme-base="modern"` says the pack builds on it.
+`applyThemeAttributes` (`@prismshadow/penguin-ui/boot`) writes both attributes from the id.
 
 | On `<html>` | Values | When absent |
 | --- | --- | --- |
-| `data-theme` | `github` (Primer), `modern` (Frost), `geek` (Console) | `github` |
+| `data-theme` | `modern` (Frost), `geek` (Console), `github` (Primer) | Frost's values |
+| `data-theme-base` | `modern` with Frost and any pack built on it (`BUILTIN_PACKS`, `base`) | none of Frost's recipes |
 | `class` | `dark` for dark mode | light mode |
 | `data-accent` | an accent preset the active theme lists (`ACCENT_PRESETS`) | the theme's own accent |
 
 ```html
-<html data-theme="modern" class="dark"></html>
+<html data-theme="modern" data-theme-base="modern" class="dark"></html>
 ```
 
 ## Fonts (optional)

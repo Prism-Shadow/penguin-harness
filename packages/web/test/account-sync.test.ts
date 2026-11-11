@@ -9,7 +9,8 @@
  *   not hold leaves the cache, which reads as the default — except a field with an edit the
  *   account has not acknowledged, which keeps the cached value and goes up again. The cached
  *   image is fetched only when its id is not the account's, and dropped when the account has
- *   none.
+ *   none. A theme id this build does not ship is cached as the account holds it and reads as the
+ *   initial theme.
  * - A cached draft key maps to the account's `<kind>:<id>` key and back for every kind, a user
  *   named "session" included; another user's key maps to nothing.
  * - Given a first sign-in, cached drafts the account lacks go up, except form answers (their keys
@@ -20,6 +21,7 @@
  *   send failed stays pending across a reload and wins over the account's older value at the next
  *   sign-in.
  */
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeCached } from "../src/lib/account-sync/cache";
 import { accountKeyOf, cacheKeyOf, planDrafts } from "../src/lib/account-sync/drafts";
@@ -32,6 +34,7 @@ import {
   stopAccountSync,
   syncPendingKey,
 } from "../src/lib/account-sync/sync";
+import { readThemePrefs } from "../src/state/theme-prefs";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import { memoryStorage, stubLocalStorage } from "./helpers/storage";
 
@@ -73,6 +76,23 @@ describe("reading the account's preferences into the cache", () => {
     ]);
     expect(plan.upload).toEqual(["lang"]);
     expect(plan.image).toBe("fetch");
+  });
+
+  it("caches a theme this build does not ship as the account holds it, and paints the initial theme", () => {
+    // A pack another build of the server imported, or one since removed: the account's choice is
+    // cached as it is, so it survives this browser, and reading it falls back without a write.
+    const storage = cached();
+    const plan = planPrefs({ themeId: "sakura" }, storage, {
+      importing: false,
+      pending: new Set(),
+    });
+    expect(plan.cache).toContainEqual(["penguin.themeId", "sakura"]);
+    for (const [key, value] of plan.cache) {
+      if (value === null) storage.removeItem(key);
+      else storage.setItem(key, value);
+    }
+    expect(readThemePrefs(storage).themeId).toBe(INITIAL_THEME_ID);
+    expect(storage.getItem("penguin.themeId")).toBe("sakura");
   });
 
   it("fetches the image only when it is not the cached one, and drops it when the account has none", () => {

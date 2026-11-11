@@ -110,8 +110,8 @@ Rules:
   or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
   solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
-  surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
-  *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
+  surfaces marks actually sit on — white and gray-50 in light, and the values Primer
+  *overrides* for dark (`packages/ui/src/themes/github/tokens.css`: gray-950 is `#000000`, gray-900 is
   `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
