@@ -1229,6 +1229,8 @@ export const zh = {
       "关闭后，这个 Agent 的所有工作台都会停用：对话页和应用中心不再显示它们，页面也打不开。每个工作台的开关、数据和历史版本都会保留，重新打开即恢复原样。",
     /** One workbench's own switch (its accessible name). */
     enableOne: (name: string) => `启用 ${name}`,
+    /** The word beside a workbench's own switch, which flips it too. */
+    enableLabel: "启用",
     /** Why a workbench's switch is greyed: the Agent-wide one is off. */
     offByAll: "「启用工作台」已关闭，先打开它",
     /** The full-page route of a switched-off workbench. */
@@ -1283,8 +1285,116 @@ export const zh = {
     /** An import whose files were written but did not load: the load's own error follows. */
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "显示在应用中心",
+    showInAppCenterHint:
+      "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "应用中心",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "打开",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "更多",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "历史版本",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "退出全页模式（回到应用中心）",
+  },
+  appCenter: {
+    title: "应用中心",
+    description:
+      "本 Project 各 Agent 的 Workbench 快捷入口。点开即用；拖动图块可排序，叠放即成分组。",
+    loading: "加载中…",
+    emptyTitle: "应用中心还是空的",
+    empty:
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「应用中心」开关后，它就会出现在这里。",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "加载失败",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "构建中",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}，来自 ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。构建中，完成后即可打开`,
+    failedTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。加载失败，菜单中可查看错误`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
+    folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
+    folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
+    newFolder: "新建分组",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "新建分组",
+    menu: {
+      open: "打开",
+      openFullScreen: "全屏打开",
+      moveTo: "移动到…",
+      moveForward: "向前移动",
+      moveBackward: "向后移动",
+      removeFromFolder: "移出分组",
+      removeFromAppCenter: "从应用中心移除",
+      viewInSettings: "在 Agent 设置中查看",
+      showError: "查看错误",
+      rename: "重命名",
+      dissolve: "解散分组",
+      restoreDefault: "恢复默认排列",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "新建分组…",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "返回",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "移入分组",
+      newFolderWith: "与其组成新分组",
+    },
+    restoreTitle: "恢复默认排列",
+    restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",
+    restoreConfirm: "恢复默认",
+    renameTitle: "重命名分组",
+    folderNameLabel: "分组名称",
+    folderNameHint: "最多 40 个字符",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "新建分组",
+    newFolderApps: "放入的应用",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `在「${name}」中，选中后移入新分组`,
+    newFolderCreate: "创建",
+    errorTitle: (title: string) => `${title} 加载失败`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
+    /** The windowed app's title bar. */
+    windowClose: "关闭，回到应用中心",
+    windowFullScreen: "全屏打开",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    aiCreateTitle: "用 AI 创建应用",
+    aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
+    aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "请把它做成你自己的 Workbench（工作台页面），不要另建独立项目：先按 web-design Skill 定下界面，再按 penguin-plugin Skill 编写并检查加载结果；在它的 package.json 中设置 penguin.appCenter.show 为 true，让它出现在应用中心。完成后告诉我它的名称。",
+    aiCreateExamples: {
+      board: {
+        label: "每日待办看板",
+        description: "按状态分列的卡片，可新增、拖动与删除",
+        prompt:
+          "做一个每日待办看板：按「待办 / 进行中 / 已完成」三列放卡片，可以新增、拖动和删除，数据保存在工作台里。",
+      },
+      digest: {
+        label: "网页摘要",
+        description: "粘贴链接，由 Agent 读完给出要点",
+        prompt:
+          "做一个网页摘要工具：我粘贴一个链接，Agent 读完后给出三行摘要和要点，历史记录按时间倒序列出。",
+      },
+      expenses: {
+        label: "报销登记",
+        description: "表单、按月汇总与导出",
+        prompt: "做一个报销登记工具：填写日期、金额、类别和备注，按月汇总，可以导出 CSV。",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness 历史",
