@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.11.03.1
+version: 2026.11.04.1
 ---
 
 # Agent Workbench with Penguin Plugins
@@ -350,6 +350,8 @@ A workbench page is a separate document, so it inherits nothing from the app's s
 **A TSX page** (*Pages in TSX*) gets the components' stylesheet from the server, and the Web App leaves `/workbench-ui.css` out of it: no `--wb-*` variables, no `wb-*` classes. The components follow the theme by themselves and take their look from props such as `variant`, `tone` and `size` (`<Badge tone="done">Resolved</Badge>`). Style your own elements in a stylesheet of your own, under class names of your own, reading the tokens the components paint with: `--ui-canvas`, `--ui-surface`, `--ui-fg`, `--ui-fg-muted`, `--ui-line`, `--ui-accent`, `--ui-accent-fg`, `--ui-radius-md`, `--ui-font-mono`, and `--ui-tone-<tone>-fg`, `-bg` and `-line`. No Tailwind classes on your own elements: only the classes the components use are compiled, so some would work by chance and the rest silently do nothing. No rules on bare elements (`button`, `input`, `table`): yours would beat the components' own, which sit in cascade layers, and for the same reason never link `/workbench-ui.css` into a TSX page.
 
 **A plain-JS page** gets `/workbench-ui.css` injected first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one), e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
+
+**The page is see-through.** In the app a page's body paints nothing, so whatever the app shows under the chat — the theme's page colour, the Frost sheet, the user's wallpaper — shows through the page as it does under the conversation. Leave the body without a background to keep that. For a solid sheet (a drawing surface, a page that must not show an image behind it), paint the app's opaque page colour yourself: `body { background: var(--wb-canvas); }` on a plain page, `var(--ui-canvas)` in a TSX page's stylesheet. A background your own rules set always wins. Cards, inputs and buttons keep their own fills.
 
 Keep empty alerts hidden. A component rule such as `.notice { display: flex }` overrides the browser's default `[hidden]` styling; the shared stylesheet preserves `[hidden]`, and standalone custom CSS should do the same. Check both empty and populated states.
 

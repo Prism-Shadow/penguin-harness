@@ -33,6 +33,7 @@ import type {
   CommandPolicyRule,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, sameClientType } from "./client-type.js";
@@ -154,15 +155,12 @@ export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
  * Thinking levels storable in `[default_chat]`: the selectable tiers only — never
  * `"none"` (the project default is a fallback for Agents without an explicit level, and
  * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
+ * One ladder with the levels `run_subagent` takes (SUBAGENT_THINKING_LEVELS), so the two cannot
+ * disagree.
  */
 export type DefaultChatThinkingLevel = Exclude<ThinkingLevelName, "none">;
-export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
+export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
+  SUBAGENT_THINKING_LEVELS;
 
 /**
  * New-chat defaults (`[default_chat]`): per-Project prefill for newly created chats.

@@ -25,6 +25,7 @@ import {
 } from "../../lib/workbench-theme";
 import {
   FILL_APP_MESSAGE,
+  runningWorkbenches,
   settleActiveTab,
   WORKBENCH_UPDATED_EVENT,
   workbenchAppPath,
@@ -78,10 +79,12 @@ export function useWorkbenchTabs(
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
       if (asked.current !== mine || isSafeMode()) return;
+      // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
+      const running = runningWorkbenches(res);
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(res.workbenches, machineId),
-        notices: workbenchNoticesOf(res.workbenches),
+        tabs: workbenchTabsOf(running, machineId),
+        notices: workbenchNoticesOf(running),
       });
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
@@ -358,7 +361,9 @@ export function WorkbenchFrame({
 
   const historyId = `workbench-history-${tab.workbenchId}`;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+    // No fill of its own: the bar and the page sit on the surface the window shows through (the
+    // chat column's canvas, a wallpaper), as the chat does.
+    <div className="flex h-full min-h-0 flex-col">
       <div
         hidden={bare}
         className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400"

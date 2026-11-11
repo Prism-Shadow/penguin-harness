@@ -1,5 +1,6 @@
 import { sidebarDeps } from "./deps";
 import { currentModeIndex, sectionsIn } from "./modes";
+import { useLocale } from "../../state/locale";
 import { useMemo, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import {
@@ -13,11 +14,10 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
-import { navKeysFor } from "./nav-state";
+import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -31,7 +31,8 @@ import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
 
 /**
- * The folded navigation column: the unfold button on top; below it, in product-specified order,
+ * The folded navigation column: the unfold button on top (in the desktop window it is the title
+ * band's sidebar toggle instead, and the rail has none); below it, in product-specified order,
  * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
  * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
  * sidebar's avatar does. No logo.
@@ -46,10 +47,11 @@ import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
  * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
  * strings as the pinned nav's, so the rail follows the UI language with it.
  */
-export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const { user } = useAuth();
-  const { locale } = useLocale();
   const navPages = navPagesOf(useWebAppPages());
+  const { locale } = useLocale();
+  const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
@@ -123,6 +125,9 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                   label: pageTitle(page, locale),
                   icon: glyphOf(page.icon ?? key),
                   note: notes.get(key) ?? null,
+                  childPaths: (childKeys.get(key) ?? []).flatMap(
+                    (child) => navPages.find((page) => page.key === child)?.path ?? [],
+                  ),
                 },
               ];
         });
@@ -170,13 +175,15 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
     <Rail
       head={
-        <RailItem
-          label={S.nav.expandSidebar}
-          tooltip={expandTitle}
-          glyph={ICONS.chevronRightPipe}
-          onClick={onExpand}
-          className="shrink-0"
-        />
+        onExpand === undefined ? undefined : (
+          <RailItem
+            label={S.nav.expandSidebar}
+            tooltip={expandTitle}
+            glyph={ICONS.chevronRightPipe}
+            onClick={onExpand}
+            className="shrink-0"
+          />
+        )
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar

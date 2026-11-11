@@ -377,7 +377,7 @@ export function EvaluationDetailModal({
           onClose={() => setAsking(false)}
           title={S.benchmark.askEvaluationTitle}
           description={S.benchmark.askEvaluationDescription}
-          question={S.benchmark.askEvaluationDefault}
+          question={S.benchmark.askEvaluationExamples.explain.prompt}
           examples={askEvaluationExamples()}
           tail={askEvaluationTail(askParams(benchmarkId, evaluation, labelText, currency))}
         />

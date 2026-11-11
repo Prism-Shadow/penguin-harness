@@ -32,7 +32,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   ModelProtocolDetectRequest,
-  ModelsResponse,
+  ProviderConnectionResponse,
   ProviderConnectionDto,
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
@@ -245,7 +245,7 @@ export type GroupSaveResult =
   | { kind: "invalid"; baseUrlError: string }
   | { kind: "unchanged" }
   | { kind: "dismissed" }
-  | { kind: "saved"; res: ModelsResponse };
+  | { kind: "saved"; res: ProviderConnectionResponse };
 
 /**
  * One Save of the group settings: the base URL checked (providerBaseUrlError, nothing sent on a
@@ -319,8 +319,8 @@ export function ProviderSettingsDialog({
   /** Env-fallback variables the server reported a value for (see the page's detectedEnvKeys). */
   detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
-  /** The table the server answered with, once the group's connection is written. */
-  onSaved: (res: ModelsResponse) => void;
+  /** The table the server answered with, once the group's connection is written, and the default model a first key offers, if any. */
+  onSaved: (res: ProviderConnectionResponse) => void;
 }) {
   // Dirty means a Save would send something: the draft is compared as the update it makes.
   const form = useFormDraft(initialDraft(group), {

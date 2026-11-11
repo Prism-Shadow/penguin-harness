@@ -5,11 +5,15 @@
  * consumer `@Use`s it and hands it to its components through its own deps, so none of them
  * imports the chat page's draft files.
  *
- * `Chat` carries the page's slot, `sessionTabs`: tabs beside the conversation that another module
- * draws (the Agent's workflow pages), so the page names none of them.
+ * `Chat` carries the page's slots: `sessionTabs`, tabs beside the conversation that another module
+ * draws (the Agent's workflow pages), so the page names none of them; and `fileRenderers`, the
+ * named components a server's file renderer rule may pick to draw a Workspace file below the reply
+ * paragraph that links it (lib/file-renderers.ts).
  */
 import type { ComponentType } from "react";
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
+
+import type { FileRenderer } from "../../lib/file-renderers";
 
 /** One parked draft as a list shows it: unsent new-chat text set aside for later. */
 export interface ParkedDraft {
@@ -52,20 +56,36 @@ export interface SessionTabProps {
   /** The machine the conversation runs on; null = this server (and the draft page). */
   machineId: string | null;
   /**
-   * Whether the tab currently covers the page below its strip (a shown workbench frame does).
-   * The page stays mounted and laid out but hides what is covered, so no dock layer that paints
-   * above the page shows through it (the bottom dock's boundary handle, a fullscreen surface).
+   * Where the tab's own window mounts (through a portal): the area under the strips that the
+   * Chat window fills, so the tab's window is a sibling of Chat there (`AppWindow`). Null until
+   * the page has laid it out.
    */
-  onCoveredChange?: (covered: boolean) => void;
+  windows: HTMLElement | null;
+  /**
+   * Called while the tab's window is shown over Chat with how to show Chat again (deselect the
+   * tab), and with null once it is not. While any tab's window is shown the page hides the Chat
+   * window — mounted and laid out, but unpainted and inert — and a dock shortcut calls the
+   * function first, so the key switches to Chat and then acts on its dock there.
+   */
+  onWindowShown?: (showChat: (() => void) | null) => void;
 }
 
 /**
  * Tabs beside the conversation, mounted at the top of the chat page for as long as the page is.
- * It draws its own strip (nothing while it has no tab) and may cover the page below the strip.
+ * It draws its own strip (nothing while it has no tab) and may show a window of its own in place
+ * of Chat below the strip.
  */
 export type SessionTab = ComponentType<SessionTabProps>;
+
+/** The data half of a `fileRenderers` contribution. */
+export interface FileRendererData {
+  /** The name a rule's `builtin` renderer names it by. */
+  name: string;
+}
 
 export interface ChatSlots {
   /** A strip of tabs above the conversation. */
   sessionTabs: Slot<SessionTabData, SessionTab>;
+  /** A named file renderer. */
+  fileRenderers: Slot<FileRendererData, FileRenderer>;
 }

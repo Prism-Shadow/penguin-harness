@@ -41,7 +41,7 @@ The plugins are data, not code — there is nothing to build here. The loader, i
 
 ```bash
 pnpm --filter @prismshadow/penguin-core build       # includes the plugin loader
-pnpm --filter @prismshadow/penguin-core test        # loader, README tables, the hook scripts against fake Traces
+pnpm --filter @prismshadow/penguin-core test        # loader, the hook scripts against fake Traces
 ```
 
 `penguin-support` supplies the default Project's customer support agent with a documentation Skill and the `workbenches/support/` app. It is not installed on General Agent. Workbench code is copied through the same plugin install path as Skills, into the agent's `agent_state/workbenches/`; updates preserve `state.json` and the workbench's version history in `agent_state.git/`, beside the Agent State. Each workbench declares a dated `penguin.version` in its own package.json. A workbench-only package can also be installed from the library.

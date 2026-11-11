@@ -332,6 +332,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | --- | --- | --- |
 | `name` | — | Agent display name; falls back to the id |
 | `description` | — | Agent description |
+| `author` | `user` | Who created the agent: `user`, `agent` or `company` |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `kernel_version` | The current kernel version | Which generation of the built-in defaults the config is based on (a date string) |
 | `system_prompt` | Built-in template | Required; the only template with placeholder substitution |
@@ -358,6 +359,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 
 ### Field details
 
+- `author`: `user` for an agent a person created in the Web App, `agent` for one an agent created (**Create with AI**, or `penguin agent create` run inside a conversation), `company` for one company mode created. A missing or unknown value reads as `user`. You can change it on the **Overview** tab, and the **Agents** page can group by it.
 - `kernel_version`: stamped at creation, when defaults are restored and at a kernel update. It is unrelated to `version` and never changed by your edits. A missing value means the config predates the mechanism, which counts as outdated.
 - `max_turns`: `-1` means unlimited; a positive integer caps the Task.
 - `model.max_tokens`: `-1` means no cap (the provider default). Each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model is never asked for more than fits.
@@ -365,7 +367,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` − 2048. A small-window model therefore compacts inside its window, while a window above 258048 fires at this number. An entry with no `context_window` assumes a 128000 window.
 - `compaction.max_session_turns`: `-1` means unlimited.
-- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Skills**, and `schedules.prompt` on **Schedules**.
+- `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Plugins**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
 - `schedules.enabled`: when off, the server still fires tasks; the model just is not taught the task system.
@@ -410,15 +412,15 @@ compaction:
 
 An existing agent always runs with its on-disk config as written; newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel, and the settings page and the agents list show an update hint. Two actions on the settings overview adopt the current defaults.
 
-**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, **Skills**, **Memory**, **Vault**, **Schedules**):
+**Update kernel** is a lossless merge, done one settings tab at a time (**System Prompt**, **Runtime**, **Tools**, the Skills settings on **Plugins**, **Memory**, **Vault**, **Schedules**):
 
 - A tab the config lacks entirely, or one whose hash still matches a *recorded* generation's built-in default, is rewritten from the current defaults. This is also how tools added by a later version reach an existing agent.
 - A tab you have changed in any way stays unchanged **in full** and is listed in the result. If you edit one built-in tool, the whole **Tools** tab is kept: tools you added and tools you deleted both survive, and that tab stops following new defaults until you restore defaults.
-- `name`, `description`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
+- `name`, `description`, `author`, `version`, `hooks` and `tools.mcpServers` belong to no tab and are never touched.
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 

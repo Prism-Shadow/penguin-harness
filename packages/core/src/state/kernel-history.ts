@@ -126,13 +126,24 @@ export function computeKernelTabHashes(config: unknown): Partial<Record<KernelTa
   return hashes;
 }
 
+/** A `YYYY-MM-DD` stamp as one comparable day number (month and day may be unpadded), or null when it is no date. */
+function stampDay(stamp: string): number | null {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(stamp);
+  return m === null ? null : Number(m[1]) * 10_000 + Number(m[2]) * 100 + Number(m[3]);
+}
+
 /**
  * Whether a stored kernel stamp is behind the current one: a missing stamp (every config
- * from before the mechanism) always counts as outdated; date strings compare
- * lexicographically, so a stamp from a *newer* build (e.g. after a downgrade) does not.
+ * from before the mechanism) always counts as outdated; dates compare as dates, so a stamp
+ * from a *newer* build (e.g. after a downgrade) does not, and an unpadded month or day cannot
+ * sort out of order. A stamp that is no date keeps the plain string comparison it always had.
  */
 export function isKernelOutdated(kernelVersion: string | null | undefined): boolean {
-  return typeof kernelVersion !== "string" || kernelVersion < KERNEL_VERSION;
+  if (typeof kernelVersion !== "string") return true;
+  const stored = stampDay(kernelVersion);
+  const current = stampDay(KERNEL_VERSION);
+  if (stored !== null && current !== null) return stored < current;
+  return kernelVersion < KERNEL_VERSION;
 }
 
 /**

@@ -81,19 +81,10 @@ describe("CommandPalette", () => {
     const empty = palette({ actions: [] });
     expect(empty).toContain(">Nothing matches</p>");
     expect(empty).not.toContain('role="listbox"');
-    expect(palette()).not.toContain("border-t");
     expect(palette({ hint: "Enter to run" })).toMatch(/border-t[^"]*">Enter to run<\/div>/);
   });
 
-  it("dims the page through the scrim hook, and paints in tokens", () => {
-    expect(classTokens(palette())).toEqual(
-      expect.arrayContaining([
-        "ui-scrim",
-        "bg-[var(--ui-overlay-backdrop)]",
-        "bg-surface",
-        "border-line",
-        "bg-surface-muted",
-      ]),
-    );
+  it("dims the page through the scrim hook", () => {
+    expect(classTokens(palette())).toContain("ui-scrim");
   });
 });

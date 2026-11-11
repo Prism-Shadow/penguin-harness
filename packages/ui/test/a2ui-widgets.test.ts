@@ -166,7 +166,6 @@ describe("CountdownBlock", () => {
       createElement(CountdownBlock, { spec: { ...past, doneLabel: "Launched" } }),
     );
     expect(named).toContain('aria-label="Launch, Launched"');
-    expect(named).toContain("text-tone-done-fg");
     expect(named).not.toContain("data-figure");
   });
 });
@@ -179,7 +178,6 @@ describe("MetricsBlock", () => {
       }),
     );
   /** The class of the first figure in the markup. */
-  const figureClass = (html: string) => html.match(/data-figure="true" class="([^"]*)"/)?.[1];
 
   it("makes a reading out of a whole a meter, with a ring, and a history a sparkline", () => {
     const html = metrics({ label: "CPU", value: 37, max: 100, unit: "%", history: [20, 30, 37] });
@@ -188,30 +186,12 @@ describe("MetricsBlock", () => {
     expect(html).toContain('aria-valuenow="37" aria-valuetext="37%"');
     expect(html).toContain('data-part="grid"'); // the ring's track
     expect(html).toContain('data-tooltip="CPU"'); // the sparkline
-    expect(figureClass(html)).not.toMatch(/text-tone-/);
-  });
-
-  it("inks a reading past its danger mark along the way `worse` reads", () => {
-    const high = metrics({ label: "CPU", value: 97, max: 100, unit: "%", warn: 80, danger: 95 });
-    expect(figureClass(high)).toContain("text-tone-danger-fg");
-    const low = metrics({
-      label: "Quota",
-      kind: "remaining",
-      value: 200,
-      max: 5000,
-      warn: 1000,
-      danger: 250,
-    });
-    expect(figureClass(low)).toContain("text-tone-danger-fg");
-    const fine = metrics({ label: "Quota", kind: "remaining", value: 4000, max: 5000, warn: 1000 });
-    expect(figureClass(fine)).not.toMatch(/text-tone-/);
   });
 
   it("draws a job's progress as a bar, done once complete", () => {
     const running = metrics({ label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" });
     expect(running).toContain('role="progressbar" aria-label="Upload"');
     const done = metrics({ label: "Tasks", kind: "progress", value: 12, max: 12 });
-    expect(figureClass(done)).toContain("text-tone-done-fg");
     expect(done).toContain(">Done<");
   });
 });

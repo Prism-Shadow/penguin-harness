@@ -18,7 +18,7 @@ const SHELL = readFileSync(join(__dirname, "..", "index.html"), "utf8");
 const HOME_TITLE = /<title>([^<]*)<\/title>/.exec(SHELL)![1]!;
 const HOME_DESCRIPTION = /<meta\s+name="description"\s+content="([^"]*)"/.exec(SHELL)![1]!;
 const titleOf = (html: string) => /<title[^>]*>([^<]*)<\/title>/.exec(html)?.[1];
-const HOME_IMAGE = "https://penguin.ooo/og-cover.png";
+const HOME_IMAGE = /<meta\s+property="og:image"\s+content="([^"]*)"/.exec(SHELL)![1]!;
 
 const META = {
   title: "AMSP — Agent Message Stream Protocol | PenguinHarness",

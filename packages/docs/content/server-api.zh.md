@@ -532,8 +532,8 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
 | GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
 | POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
-| GET | `/agents/:agentId/export` | 导出 Agent State 快照（tar.gz 下载） |
-| POST | `/agents/:agentId/import` | 导入快照：`{dataBase64, confirm?}`；不带 `confirm` 且版本冲突时返回 409 |
+| GET | `/agents/:agentId/archive` | 把 Agent 导出为其目录的 zip；查询参数选择部件与 Trace |
+| POST | `/agents/import` | 从 zip 或 tar.gz 快照包导入 Agent，请求体为原始文件 → 201 `{agent, mode, version, backup?, sessions}` |
 | GET | `/agents/:agentId/skills` | 已安装的 Skill（从插件库安装需通过 `/plugins`） |
 | POST | `/agents/:agentId/skills/template-placeholder` | 在 Prompt 模板中插入 `{{SKILLS}}` 占位符 |
 | POST | `/agents/:agentId/skills/archive` | 从 zip 安装 Skill：`{dataBase64, overwrite?}` → 返回 201 和 Skill 列表 |
@@ -556,7 +556,10 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ### Agent 路由
 
-- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
+- `GET /agents` 给每个 Agent 带上 `author`（`user`、`agent` 或 `company`；配置里没有时视为 `user`）。Project 中某个组织的员工若配置里没有 `author`，列表第一次被读取时会为它写入 `author: company`。这是为该字段出现之前创建的 Agent 做的一次性迁移。
+- `POST /agents` 接受 `{agentId, name?, description?, author?, plugins?, skillsDirectory?, directorySkills?}`，返回 201 和 `{agent}`。`author` 缺省为 `user`，`user`、`agent`、`company` 以外的取值返回 400。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。
+- `GET …/archive` 返回 `<agentId>-<yyyymmdd>.zip`，即磁盘上的 Agent 目录：`<agentId>/agent_state/…`，以及所选 Session 全部分文件的 `<agentId>/traces/<date>/<session>_<NNN>.jsonl`。查询参数 `skills`、`hooks`、`memory`、`workbenches`、`workbenchData`（各 Workbench 的 `state.json`）与 `schedules` 取 `0` 或 `1`，除 `schedules` 外缺省都为 `1`；`traces` 取 `none`（缺省）、`last:<N>`（1~500，按最近活跃，Subagent 会话随其父）或 `<yyyy-mm-dd>..<yyyy-mm-dd>`（按日期目录，含两端）。快照排除的内容从不进包：`.vault.toml`、`*.penguin-tmp*`、`.git` 条目，以及 Workbench 的 `.build/` 与 `node_modules/`。Trace 中不少于 8 个字符的 vault 值写作 `[vault:<KEY>]`；配置原样导出，直接写在配置里的凭据也会随包带出。超出导入上限的导出返回 413 `archive_too_large`。
+- `POST /agents/import?agentId=<id>&overwrite=1` 的请求体就是文件本身，以 `application/octet-stream` 发送：最大 64MB，解包后至多 512MB、20 000 个条目。id 先取查询参数，没有则取 zip 的顶层目录名；tar.gz 快照包（1.0 之前仍接受）必须带查询参数。id 未被占用时新建 Agent，任何成员都可以。已被占用时返回 409 `agent_exists`（`details.agentId`），除非带 `overwrite=1`：仅 Project 所有者可用（否则 403），先把当前 State 打包为 `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`（即 `backup`）。两种情况都以改名换入包内的 `agent_state/` 并保留 vault；Agent 的 Session、其他 Trace 与 API 密钥都保留。zip 含链接、条目越出顶层目录、名字含控制字符或两个名字只差大小写，或包里没有可读的 `system_config.yaml` 时返回 400，什么也不写。缺 `system_prompt` 的 `system_config.yaml` 叠加在模板配置之上（对象逐键合并，数组与标量整体替换），并按配置写入的同一套校验检查。随后 `traces/` 中的每个 Session 落为该 Agent 的 Session；本安装已有同 id 的跳过，并列在 `sessions.skipped` 中。导入的 Agent 保留其 `system_config.yaml` 里的 `author`（没有时视为 `user`）。
 - `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。只有当条目与该 Agent 已保存的某个条目完全一致（名称与 `config` 都相同）时，才会像对话连接时一样，从 Agent 的 Vault 填入条目中的 `${KEY}` 引用；Vault 缺键时返回 `{ok: false, error}`，`error` 以 `needs setup:` 开头并列出键名，不会连接任何服务器。新的或改动过、又引用了 Vault 的条目返回 `{ok: false, saveFirst: true, error}`：什么都不填入，也不连接任何服务器，调用方因此无法把 Vault 中的值发往自己指定的地址。先保存条目，再测试。响应从不回显条目内容。
 - `POST …/config/kernel-update` 是 `reset` 的无损版本。它把缺失或仍保持旧默认值的设置标签页升级到当前默认值（记入 `advanced`），完整保留已自定义的标签页（记入 `kept`），并写入新的默认值版本（`kernelVersion`）。
 - `template-placeholder` 路由都是幂等的。Vault 和 Skills 两个路由会在 Prompt 模板中插入 `{{VAULT}}` 或 `{{SKILLS}}`；如果模板里是旧版硬编码的 `# Vault` 或 `# Skills` 小节，则替换成对应的占位符。记忆路由插入 `{{MEMORY}}`，在记忆功能推出之前创建的 Agent 就是通过它接入记忆的。
@@ -694,12 +697,12 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ## 组织（公司模式）
 
-以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写。没有任何路由会删除组织：`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
+以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写；只有 Project 的所有者可以删除组织。暂停（`status: paused`）让组织停下来，同时保留它的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/` | 列出组织 / 创建组织 |
-| GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
+| GET / PATCH / DELETE | `/:orgId` | 组织概览 / 修改组织设置 / 删除组织（仅所有者） |
 | GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
 | POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
 | PATCH / DELETE | `/:orgId/employees/:agentId` | 修改员工 / 将员工移出组织 |
@@ -737,6 +740,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
 - `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
+- `DELETE /:orgId` 仅限所有者（成员得到 403）。它把组织目录移入 Project 的回收目录 `organizations/.trash/<orgId>-<时间>/`，移回原处即可恢复。带 `?deleteAgents=1&agentIds=a,b` 时（`agentIds` 是调用方确认框列出的待删 Agent），随后把列出的每名员工的 Agent（包括 CEO 的）永久删除，与 `DELETE /api/projects/:projectId/agents/:agentId` 删除单个 Agent 完全一样。带 `deleteAgents=1` 却没有 `agentIds` 时返回 400，什么都不删除。返回 200 `{orgId, deletedAgents: [{agentId, deletion}], keptAgents: [{agentId, reason}], failedAgents: [{agentId, code, message}]}`。没有删除的员工都保留并注明 `reason`：`builtin`；本 Project 另一个组织也雇用它时为 `employed_elsewhere`；另一个组织的 `org_chart.yaml` 无法读取期间，所有员工都为 `employment_unknown`，这些组织列在响应的 `unreadableCharts` 中（`GET /agents` 在列表旁也带同一字段）；不在 `agentIds` 里时为 `not_confirmed`，例如确认框显示之后才招募的员工。`agentIds` 中不是本组织员工的 id 会被忽略。删除被拒绝的 Agent（文件夹被其他程序占用，或期间又被招募）连同错误列在 `failedAgents` 中，其余 Agent 照常删除。不带这个参数时三个列表都为空，员工全部保留为 Agent。
 
 组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
 
@@ -863,7 +867,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 错误表把同一天里来源、错误码、分类和消息都相同的记录合为一行，带上次数 `count`、最近一次的时间 `ts` 和首次的时间 `firstTs`。`offset`、`limit` 和 `rows` 按行计；`total` 和仪表盘的汇总数字按记录计。`GET /usage` 与 `GET /usage/errors` 都接受可选的 `utcOffsetMinutes`，即读者所在时区相对 UTC 向东的分钟数（−840 到 840），它决定「同一天」按哪一天算；不传时按服务器自己的日期。
 - `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
 - `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。分页列表使用与 Session 列表相同的两个类别，不含不属于任何类别的 `subagent` 与 `company` 会话；不带 `limit` 的完整目录列出所有 Trace。
-- 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
+- 任何成员都可以下载 Trace。导入只有所有者能做，与用包覆盖 Agent 一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
 
 ## Session 级端点
 
@@ -895,7 +899,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
 - `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
 - `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
-- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的记录历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、窗口按切分时的口径所含的 Task 数（`units`：一次 Prompt 连同其图片算一个，逐页加载到 N 个 Task 的客户端由此与 `tailLimit` 计数一致）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`，`live=run` 则要求它的运行接续形式；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /history-lines` 是本服务端读取已连接机器上 Session 所用的接口（经 API 套接字调用；每个服务端都为自己的 Session 应答）。它恰好接受 `tailLimit=n`、`before=<游标>&limit=n`、`full=1`、`body=<ref>`、`fill=only[&file=<键>]` 之一，另可带 `budget=<字节>`（窗口的字节预算，按图片引用、正文折叠后的形态计，窗口展开的子 Agent 会话记录一并计入）、`fill=1`（交付窗口后继续发送该 Session 的其余各行）与 `have=`（base64url 编码的 JSON：每个 Trace 文件的 inode 与设备号（十进制字符串）、创建时间、调用方持有的每一段 `[lo, hi)` 及其首尾的散列，以及只持有一部分的行）。流在读取任何内容之前就开始并发出节拍。随后依次为 `window`（`/messages` 随记录附带的信封、该 Session 及其子 Agent 会话的 Trace 文件、窗口在其上的布局、重记录的折叠形态与各阶段总量；超过一帧时改为若干 `window-part`，各段文本拼接即其 JSON）、`lines` 与 `part`（只发整行，最新的段在前，超过一帧的单行拆成若干片，每片注明所属行的起点）、`ready`、只持有一部分的行的余下部分（只有窗口自身的轻行才在 `ready` 之前发）、重行与补齐部分，最后是 `done`。每个事件至多 32 KiB 文本。inode 相同、且双方都知道创建时间时创建时间也相同，才是调用方复制的那个文件（设备号从不比较，创建时间等于变更时间的视为未知）；不是同一文件，或大小、区段边界、序号、锚点不符时，标为 `reset` 并从头重发；只持有一部分的行若不符，只把该行整行重发。流开始后才发现无法应答的（`body` 的 ref 不指向该 Session 的行）以 `error` 事件结束。早于这条路由的服务端在套接字上答 `421` `not_on_socket`。无权读取该 Session 的管理员（本服务端读取机器所用的身份）在这里与 `trace-body` 上得到 `403` `session_forbidden`，拒绝因此不会被当成删除；其他无权读取的用户与所有 Session 路由一样得到 `404` `session_not_found`。
 - `GET /trace-body?ref=` 以流的形式取回历史窗口折叠掉的一个值（超过 16 KiB 的工具输出、图片、工具调用参数中的长字符串或思考文本，由 `elided` 条目的 `ref` 指明），事件为 `progress`、`part`（`{windowId, offset, text, last}`）与 `done`。ref 本身不授权任何读取：只有其 Agent 与 Session 都是合法 id，且其 Session 就是该 Session 或其历史展开所及的子 Agent 会话时才应答，行从该 Session 自身索引定位到的文件中读取；其余一律 404 `trace_body_not_found`。
@@ -926,6 +930,29 @@ interface MessagesResponse {
 
 `cursor` 和 `fragments` 在 Trace 读取开始之前一并原子捕获。先连接事件流的客户端（见[推荐的客户端模式](#推荐的客户端模式)）在历史之后应用它们：游标的 epoch 与已缓冲 SSE 事件的 epoch 一致时，丢弃所有 seq 不高于游标的缓冲 partial 事件，因为 `fragments` 已经包含那些内容。接着客户端把 `fragments` 送入正常的 reducer，再重放缓冲中剩下的部分。游标从不丢弃缓冲中的完整消息；那些交给常规的重叠去重处理。Session 空闲时不返回 `live`。
 
+#### 运行接续：`live=run`
+
+要把一次进行中的运行按流式的原样接着显示下去的客户端（如 CLI 的 `chat`），在完整读取或尾窗读取上加 `live=run`。此时不论 Session 是否在运行都附带 `live`，并多出两个与 `cursor` 在同一 tick 内捕获的字段：
+
+```ts
+interface RunFormLive {
+  cursor: string;
+  fragments: AmspRecord[];
+  // The Session's status at the cursor.
+  status: "idle" | "running" | "compacting";
+  // The current run's records (one Task with the Tasks a stop hook or a goal loop continues
+  // it with, or one compaction outside a Task) in publish order: each streamed fragment's
+  // deltas folded into its `partial_* start`, its `stop` and complete message as published.
+  // Empty while idle.
+  records: AmspRecord[];
+  // How many of the run's oldest records the server no longer holds (it keeps 8 MiB per run);
+  // absent when none.
+  omitted?: number;
+}
+```
+
+`messages` 随之截至当前运行的首条记录之前，这次运行只在 `records` 里出现一次；从运行中途开始的窗口不含它的任何记录。运行进行中不再追加暂存输入，因为运行的记录已经带着它。读取期间才开始的运行同样在其首条记录处截断，它的记录从事件流上到达。客户端先订阅、后读取，依次渲染 `messages`、`records` 与事件流上的事件：同一 epoch 下 seq 不高于游标的记录事件与 `task_state` 一律跳过，因为 `messages`、`records` 与 `status` 已经包含它们的内容；其余服务端事件（含审批请求）照常处理，无需重叠去重。`before` 页忽略 `live=run`；早于运行接续的服务端在响应中不带 `status`。
+
 ### 分叉
 
 `tracePosition` 是历史响应的元数据，不属于持久化的记录信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
@@ -936,7 +963,7 @@ interface MessagesResponse {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -951,8 +978,9 @@ interface MessagesResponse {
 | POST | `/compact` | 开始上下文压缩：202 |
 | POST | `/switch-model` | 在本 Session 内切换模型：202；从未运行过的 Session 返回 200 与更新后的 Session |
 
-- `POST /tasks` 响应 `{sessionId, queued?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
+- `POST /tasks` 响应 `{sessionId, queued?, steered?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
+- `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。

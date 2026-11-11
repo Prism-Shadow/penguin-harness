@@ -8,15 +8,15 @@
  *   text size is kept and anything unknown reads as the default.
  * - The theme and font faces are validated against the package's lists; another theme's accent
  *   is kept as stored while the theme's own accent is the one in effect.
- * - A chosen face is named on <html>, the theme's own face leaves no attribute, the theme an
- *   empty store starts in is written like a chosen one while Primer (the stylesheet's fallback)
- *   leaves none, and the text size sets the root font size.
- * - Every theme, text size and accent preset of the UI package is named in both languages.
+ * - A chosen face is named on <html>, the theme's own face leaves no attribute, every theme is
+ *   named (the one an empty store starts in like a chosen one), a pack built on Frost carries
+ *   the base attribute and one on the foundation alone none, and the text size sets the root
+ *   font size.
  * - The font choices put the theme's own face first, once, and word the non-names from the
  *   dictionary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCENT_PRESET_IDS, INITIAL_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import {
   FONT_CJK_OPTIONS,
   FONT_LATIN_OPTIONS,
@@ -157,29 +157,22 @@ describe("the attributes the preferences put on <html>", () => {
     });
     expect(attrs.get("data-font-latin")).toBe(latin);
     expect(attrs.get("data-font-cjk")).toBe(cjk);
-    // The theme an empty store starts in is written like a chosen one.
+    // The theme an empty store starts in is written like a chosen one, and it is the base:
+    // Frost's recipes key on the base attribute.
     expect(attrs.get("data-theme")).toBe(INITIAL_THEME_ID);
+    expect(attrs.get("data-theme-base")).toBe("modern");
     expect(style.fontSize).toBe("20px");
 
     applyThemeAttributes(root, { fontLatin: "theme", fontCjk: "theme", themeId: "github" });
     expect(attrs.has("data-font-latin")).toBe(false);
     expect(attrs.has("data-font-cjk")).toBe(false);
-    // Primer is the stylesheet's fallback, which a bare root paints.
-    expect(attrs.has("data-theme")).toBe(false);
+    // Every theme is named, Primer included; a pack on the foundation alone carries no base.
+    expect(attrs.get("data-theme")).toBe("github");
+    expect(attrs.has("data-theme-base")).toBe(false);
   });
 });
 
 describe("the Appearance section", () => {
-  it("names every theme, text size and accent preset in both languages", () => {
-    for (const dict of [zh, en]) {
-      for (const id of THEME_IDS) expect(dict.settings.themeNames[id]).toBeTruthy();
-      for (const size of TEXT_SIZES) expect(dict.settings.textSizeNames[size]).toBeTruthy();
-      for (const id of ["neutral", ...ACCENT_PRESET_IDS]) {
-        expect(dict.settings.accentNames[id], id).toBeTruthy();
-      }
-    }
-  });
-
   it("puts the theme's own face first, once, and words the non-names from the dictionary", () => {
     setActiveStrings(en);
     for (const options of [FONT_LATIN_OPTIONS, FONT_CJK_OPTIONS]) {

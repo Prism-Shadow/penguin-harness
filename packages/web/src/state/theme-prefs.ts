@@ -10,7 +10,7 @@
 import {
   ACCENT_PRESET_IDS,
   INITIAL_THEME_ID,
-  THEME_IDS,
+  isThemeId,
   resolveAccent,
   type ThemeId,
 } from "@prismshadow/penguin-ui";
@@ -42,10 +42,14 @@ export const TOOL_ALIASES_KEY = "penguin.toolAliases";
 /** "Use the theme's own face" — stored like any other choice, applied as no attribute at all. */
 export const FONT_FOLLOWS_THEME = "theme";
 
-/** The stored theme, or the one a browser starts in when it stores none (or an unknown one). */
+/**
+ * The stored theme, or the one a browser starts in when it stores none (or an unknown one). An
+ * id this build does not ship — a pack since removed, or one an account brought from another
+ * server — reads as the initial theme and stays stored as it is: the reader never writes.
+ */
 export function readThemeId(storage: PrefStorage): ThemeId {
   const stored = storage.getItem(THEME_STORAGE_KEYS.themeId);
-  return THEME_IDS.find((id) => id === stored) ?? INITIAL_THEME_ID;
+  return isThemeId(stored) ? stored : INITIAL_THEME_ID;
 }
 
 /**

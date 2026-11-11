@@ -197,6 +197,18 @@ export function hasButton(name: string): boolean {
   );
 }
 
+/** The row of an open menu whose label (its own line, apart from any description) is `label`. */
+export function menuItem(label: string): HTMLElement {
+  const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')];
+  const found = rows.find((row) =>
+    [...row.querySelectorAll("span")].some(
+      (line) => line.children.length === 0 && line.textContent?.trim() === label,
+    ),
+  );
+  if (found === undefined) throw new Error(`no menu item labelled ${JSON.stringify(label)}`);
+  return found;
+}
+
 /** The text field named `label` (its `aria-label`, or the label it is associated with). */
 export function field(label: string): HTMLInputElement | HTMLTextAreaElement {
   const fields = [

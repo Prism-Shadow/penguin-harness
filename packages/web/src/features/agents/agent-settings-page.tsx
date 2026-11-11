@@ -1,13 +1,14 @@
 /**
- * Agent settings page: eleven tabs —
+ * Agent settings page: nine tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
- * family: Agent State — State version, snapshot export-import and the copyable State
+ * family: Agent State — State version, export / replace from file and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
- * Hooks (hooks-tab.tsx), Workbenches (workbenches-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: the
+ * Agent's plugins with their Skills, hook packages, MCP servers and workbenches, and its own),
+ * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
+ * the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  *
@@ -16,17 +17,18 @@
  * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
  * switch, Back, a sidebar link and the browser's back button are all navigations that the
  * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
- * tools table's `call_description` included. A snapshot import asks before it replaces the
+ * tools table's `call_description` included. A replace from file asks before it replaces the
  * Agent State.
  *
  * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
  * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
  */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
+  AgentAuthor,
   AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -41,13 +43,13 @@ import {
   GlyphIcon,
   FieldLabel,
   ICON_SIZE,
-  HiddenFileInput,
   ICONS,
   InfoPopover,
   Input,
   OptionMenu,
   PageFrame,
   PageHeader,
+  Select,
   Skeleton,
   Switch,
   Table,
@@ -65,7 +67,6 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -88,16 +89,16 @@ import {
   type ToolRowDraft,
 } from "./tools-form";
 
-import { SkillsTab } from "./skills-tab";
-import { WorkbenchesTab } from "./workbenches-tab";
-import { HooksTab } from "./hooks-tab";
+import { PluginsTab } from "./plugins-tab";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
+import { AGENT_AUTHORS } from "./agent-groups";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
-import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
 import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
 
@@ -106,9 +107,7 @@ type TabKey =
   | "prompt"
   | "runtime"
   | "tools"
-  | "skills"
-  | "hooks"
-  | "workbenches"
+  | "plugins"
   | "memory"
   | "vault"
   | "schedules"
@@ -118,14 +117,27 @@ type TabKey =
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
  * validated against the live TABS keys — not a hardcoded list — so newly added tabs
  * deep-link without touching this helper; missing/unknown values fall back to the default.
+ * An alias names the tab that took a retired one's place.
  */
 export function resolveTabKey<K extends string>(
   raw: string | null,
   tabs: ReadonlyArray<{ key: K }>,
   fallback: K,
+  aliases: Readonly<Record<string, K>> = {},
 ): K {
-  return tabs.some((t) => t.key === raw) ? (raw as K) : fallback;
+  const key = raw !== null && Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
+  return tabs.some((t) => t.key === key) ? (key as K) : fallback;
 }
+
+/**
+ * The tabs the Plugins tab replaced. Bookmarks and the docs still link to them, so they stay
+ * aliases for good rather than for a while.
+ */
+const RETIRED_TABS: Readonly<Record<string, TabKey>> = {
+  skills: "plugins",
+  hooks: "plugins",
+  workbenches: "plugins",
+};
 
 export function AgentSettingsPage() {
   // Read inside the component: after a language switch remount, this picks up the current dictionary.
@@ -134,9 +146,7 @@ export function AgentSettingsPage() {
     { key: "prompt", label: S.agent.tabPrompt },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
-    { key: "skills", label: S.agent.tabSkills },
-    { key: "hooks", label: S.agent.tabHooks },
-    { key: "workbenches", label: S.agent.tabWorkbenches },
+    { key: "plugins", label: S.agent.tabPlugins },
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
@@ -153,11 +163,12 @@ export function AgentSettingsPage() {
   const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
 
   // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
-  // missing or unknown values fall back to "overview"). A switch only writes the address, so
+  // missing or unknown values fall back to "overview", a retired tab opens the one that took
+  // its place). A switch only writes the address, so
   // it is a navigation: while the open tab holds unsaved edits the app's leave guard asks
   // before it happens, and the tab on screen never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview");
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", RETIRED_TABS);
   /** The machine the Agent lives on (`?machine=`); null for this server. */
   const machineId = machineInSearch(searchParams);
   /**
@@ -227,15 +238,8 @@ export function AgentSettingsPage() {
   /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
   const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
 
-  /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
-  const onImported = useCallback(
-    (version: number) => {
-      toastSuccess(S.agent.importDone(version));
-      load();
-      void reloadAgents();
-    },
-    [load, reloadAgents],
-  );
+  /** A replace from file landed (the dialog said so): it overwrote the entire Agent State, so every tab's data needs a refresh. */
+  const onImported = useCallback(() => load(), [load]);
 
   /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
   const onConfigReset = useCallback(() => {
@@ -277,11 +281,12 @@ export function AgentSettingsPage() {
           Object.keys(changed).length === 1 &&
           changed.compaction !== undefined;
         toastSuccess(compactionOnly ? S.agent.savedTakesEffectNow : S.agent.savedTakesEffect);
-        // Name/description changes affect the breadcrumb and list display; a builtin-tools
-        // change moves the card's tool count.
+        // Name/description changes affect the breadcrumb and list display, an author change
+        // moves the card to another group, and a builtin-tools change moves its tool count.
         if (
           update.config?.name !== undefined ||
           update.config?.description !== undefined ||
+          update.config?.author !== undefined ||
           update.config?.toolsBuiltin !== undefined
         ) {
           void reloadAgents();
@@ -383,10 +388,12 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "workbenches" && (
-            <WorkbenchesTab key={`${projectId}:${agentId}`} agentId={agentId} />
+          {tab === "plugins" && (
+            <PluginsTab
+              key={`${projectId}:${machineId ?? ""}:${agentId}`}
+              agentId={agentId}
+              onConfigChanged={refreshConfig}
+            />
           )}
           {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "schedules" && (
@@ -456,15 +463,19 @@ async function saveWith(
 interface OverviewDraft {
   name: string;
   description: string;
+  author: AgentAuthor;
 }
 
 const overviewDraftOf = (config: AgentConfigDto): OverviewDraft => ({
   name: config.name ?? "",
   description: config.description ?? "",
+  // An older server reports no author; its Agents read as made by a person.
+  author: config.author ?? "user",
 });
 
-/** What Save sends: both fields trimmed. */
+/** What Save sends: the two text fields trimmed. */
 const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
+  ...draft,
   name: draft.name.trim(),
   description: draft.description.trim(),
 });
@@ -480,7 +491,7 @@ function OverviewTab({
   data: AgentConfigResponse;
   agentId: string;
   onSave: SaveFn;
-  onImported: (version: number) => void;
+  onImported: () => void;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
 }) {
@@ -490,14 +501,8 @@ function OverviewTab({
   const machineId = useAgentLocation();
   const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  /** A picked snapshot package awaiting the overwrite confirmation: an import replaces the whole Agent State. */
-  const [pendingImport, setPendingImport] = useState<{ name: string; dataBase64: string } | null>(
-    null,
-  );
-  // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [kernelOpen, setKernelOpen] = useState(false);
@@ -542,46 +547,11 @@ function OverviewTab({
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
     if (draft.name !== stored.name) config.name = draft.name;
     if (draft.description !== stored.description) config.description = draft.description;
+    if (draft.author !== stored.author) config.author = draft.author;
     void saveWith(
       setSaving,
       () => onSave({ config }),
       (res) => form.adopt(overviewDraftOf(res.config)),
-    );
-  };
-
-  const runImport = async (dataBase64: string, confirm: boolean) => {
-    if (!projectId) return;
-    setImporting(true);
-    setImportError(null);
-    try {
-      const res = await api.importAgent(
-        projectId,
-        agentId,
-        { dataBase64, ...(confirm ? { confirm: true } : {}) },
-        machineId,
-      );
-      setConflict(null);
-      onImported(res.version);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "version_conflict") {
-        setConflict(dataBase64); // resend with confirm: true after confirming
-      } else {
-        setConflict(null);
-        setImportError(apiErrorText(e));
-      }
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setImportError(null);
-    fileToBase64(file).then(
-      (dataBase64) => setPendingImport({ name: file.name, dataBase64 }),
-      () => setImportError(S.common.unknownError),
     );
   };
 
@@ -600,13 +570,27 @@ function OverviewTab({
         value={form.draft.description}
         onChange={(e) => form.patch({ description: e.target.value })}
       />
+      {/* A field of the overview form like the two above: Save writes it, Reset puts it back. */}
+      <Select
+        size="sm"
+        label={S.agent.authorLabel}
+        info={S.agent.authorInfo}
+        value={form.draft.author}
+        onChange={(e) => form.patch({ author: e.target.value as AgentAuthor })}
+      >
+        {AGENT_AUTHORS.map((author) => (
+          <option key={author} value={author}>
+            {S.agent.authors[author]}
+          </option>
+        ))}
+      </Select>
       <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
           boxes; per user feedback the sections separate with a top rule and the values
-          carry the visual weight): title row with the snapshot transfer actions on the
-          right (export is available to any member; import overwrites the entire Agent
-          State, so it is visible only to owners), labeled value rows below — light
+          carry the visual weight): title row with the transfer actions on the right (export
+          is available to any member; a replace overwrites the entire Agent State, so it is
+          visible only to owners), labeled value rows below — light
           text-xs labels over dark font-semibold values. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -615,26 +599,13 @@ function OverviewTab({
             <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            {projectId && (
-              <a
-                href={api.agentExportUrl(projectId, agentId, machineId)}
-                download
-                className={SNAPSHOT_BUTTON_CLASS}
-              >
-                {S.agent.exportSnapshot}
-              </a>
-            )}
+            <Button size="sm" onClick={() => setExportOpen(true)}>
+              {S.agent.exportOpen}
+            </Button>
             {isOwner && (
-              <label
-                className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput
-                  accept={SNAPSHOT_ACCEPT}
-                  disabled={importing}
-                  onChange={onPickFile}
-                />
-                {importing ? S.agent.importing : S.agent.importSnapshot}
-              </label>
+              <Button size="sm" onClick={() => setReplaceOpen(true)}>
+                {S.agent.replaceOpen}
+              </Button>
             )}
           </div>
         </div>
@@ -665,9 +636,6 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        {importError && (
-          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
-        )}
       </section>
 
       {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
@@ -754,41 +722,24 @@ function OverviewTab({
         )}
       </section>
 
-      {/* Overwrite confirmation, before every import: the package replaces the whole Agent
-          State. An overwrite, not a deletion, so it takes the primary (pencil) tone. A package
-          that is not newer still meets the version-conflict prompt below. */}
-      <ConfirmModal
-        open={pendingImport !== null}
-        title={S.agent.importSnapshot}
-        tone="primary"
-        onClose={() => setPendingImport(null)}
-        onConfirm={() => {
-          if (pendingImport !== null) void runImport(pendingImport.dataBase64, false);
-          setPendingImport(null);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {pendingImport !== null ? S.agent.importConfirmBody(pendingImport.name) : ""}
-        </p>
-      </ConfirmModal>
-
-      {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
-      <ConfirmModal
-        open={conflict !== null}
-        title={S.agent.importConflictTitle}
-        busy={importing}
-        tone="primary"
-        onClose={() => setConflict(null)}
-        onConfirm={() => {
-          if (conflict !== null) void runImport(conflict, true);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
-      </ConfirmModal>
+      {projectId && exportOpen && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={agentId}
+          agentName={data.config.name || agentId}
+          machineId={machineId}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {projectId && replaceOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          replace={{ agentId, name: data.config.name || agentId }}
+          machineId={machineId}
+          onClose={() => setReplaceOpen(false)}
+          onImported={onImported}
+        />
+      )}
 
       {/* Kernel update confirmation: lossless by design, but it still rewrites config fields —
           confirm-first like the sibling reset, with the primary (overwrite) tone rather than

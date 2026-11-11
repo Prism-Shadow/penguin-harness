@@ -1,4 +1,5 @@
 /** Stable identifiers for Penguin Go's key-authorization flow. */
+import type { DefaultModelOffer } from "../api/types.js";
 
 export const PLATFORM_CLIENT_ID = "penguin-harness";
 
@@ -32,10 +33,12 @@ export interface PlatformModelCatalog {
 }
 
 /**
- * Catalog merge result. `updated` counts changes to existing prices, promotions or routes.
+ * Catalog merge result. `updated` counts changes to existing prices, promotions or routes;
+ * `defaultOffer` is the default an authorization's first group key offers, if any.
  */
 export interface PlatformModelApplyResult {
   added: number;
   updated: number;
   applied: number;
+  defaultOffer?: DefaultModelOffer;
 }

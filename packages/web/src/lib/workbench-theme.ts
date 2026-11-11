@@ -6,7 +6,14 @@
  * Rather than recompute the theme (two copies of one fact), the app copies what it has already
  * resolved onto the frame's root: the light/dark class, the theme attributes, every token of
  * the UI package's contract (`TOKEN_NAMES`) and the root font size, and into its head the
- * `@font-face` rules of the faces the app bundles. public/workbench-ui.css — injected first in
+ * `@font-face` rules of the faces the app bundles.
+ *
+ * The frame is see-through: the root also gets `data-workbench-frame`, on which both stylesheets
+ * a page can carry leave its body unpainted (a page's own background still wins), and the app's
+ * `color-scheme` as an inline style. A browser paints an opaque canvas under a frame whose
+ * document's color scheme differs from the frame element's, so the two must agree for the theme's
+ * page surface — the Frost sheet, a wallpaper, Console's paper — to show through as it does under
+ * the chat. public/workbench-ui.css — injected first in
  * the frame's head, so the page's own rules still win — maps the workbench's stable `--wb-*`
  * names onto those tokens. A page that hardcodes its colours keeps them; a page that writes plain
  * HTML, or uses the `--wb-*` (or `--ui-*`) names, follows the app through a theme, mode, accent
@@ -24,9 +31,9 @@
  * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
 import {
-  DEFAULT_THEME_ID,
-  THEME_IDS,
+  INITIAL_THEME_ID,
   TOKEN_NAMES,
+  isThemeId,
   resolveAccent,
   type ThemeId,
 } from "@prismshadow/penguin-ui";
@@ -48,6 +55,9 @@ export const PENGUIN_UI_ATTR = "data-penguin-ui";
 
 /** Marks the frame's `<style>` that holds the copied `@font-face` rules. */
 export const WORKBENCH_FONTS_ATTR = "data-workbench-fonts";
+
+/** Marks a page's root as shown in the app's frame, where its body is left unpainted. */
+export const WORKBENCH_FRAME_ATTR = "data-workbench-frame";
 
 /**
  * Names copied before the token contract reached the frame, kept because pages may read them:
@@ -76,13 +86,16 @@ const LEGACY_THEME_VARS = [
 export const WORKBENCH_THEME_VARS: readonly string[] = [...TOKEN_NAMES, ...LEGACY_THEME_VARS];
 
 /**
- * Root attributes copied to the frame. `data-theme` is always written (the app leaves it off
- * for the stylesheet's fallback theme, which a page has no stylesheet to fall back to);
- * `data-accent` names the preset actually painted and is absent when the theme's own accent
- * shows; `data-font-latin` / `data-font-cjk` are absent when the theme's own faces apply.
+ * Root attributes copied to the frame. `data-theme` is always written, as the app writes it;
+ * `data-theme-base` is copied as the app's root carries it (`modern` for a pack built on Frost,
+ * absent for one on the foundation alone), so the shared components' stylesheet in a page
+ * compiled from TSX draws the same recipes as the app; `data-accent` names the preset actually
+ * painted and is absent when the theme's own accent shows; `data-font-latin` / `data-font-cjk`
+ * are absent when the theme's own faces apply.
  */
 export const WORKBENCH_THEME_ATTRS = [
   "data-theme",
+  "data-theme-base",
   "data-accent",
   "data-font-latin",
   "data-font-cjk",
@@ -109,7 +122,7 @@ interface AppRoot {
 
 function themeIdOf(root: AppRoot): ThemeId {
   const id = root.getAttribute("data-theme");
-  return (THEME_IDS as readonly string[]).includes(id ?? "") ? (id as ThemeId) : DEFAULT_THEME_ID;
+  return isThemeId(id) ? id : INITIAL_THEME_ID;
 }
 
 /**
@@ -130,7 +143,7 @@ export function readAppTheme(
   const attrs: WorkbenchTheme["attrs"] = { "data-theme": themeId };
   const accent = resolveAccent(themeId, root.getAttribute("data-accent"));
   if (accent !== null) attrs["data-accent"] = accent;
-  for (const name of ["data-font-latin", "data-font-cjk"] as const) {
+  for (const name of ["data-theme-base", "data-font-latin", "data-font-cjk"] as const) {
     const value = root.getAttribute(name);
     if (value !== null && value !== "") attrs[name] = value;
   }
@@ -274,6 +287,8 @@ export function applyWorkbenchTheme(doc: Document, theme: WorkbenchTheme): void 
   if (!root) return;
   root.classList.toggle("dark", theme.dark);
   root.classList.toggle("light", !theme.dark);
+  root.setAttribute(WORKBENCH_FRAME_ATTR, "");
+  root.style.colorScheme = theme.dark ? "dark" : "light";
   for (const name of WORKBENCH_THEME_ATTRS) {
     const value = theme.attrs[name];
     if (value === undefined) root.removeAttribute(name);

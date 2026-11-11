@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import { marksFor } from "../../lib/sidebar-modes";
 import {
+  NavRow,
   SidebarAccountButton,
   SidebarNavEntry,
   UpdateDot,
@@ -7,8 +9,9 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
-  isNavPinned,
+  navChildKeysFor,
   navEntryKeysFor,
+  splitModeNavItems,
   splitNavEntries,
   type NavEntryKey as NavGroupKey,
 } from "../../lib/sidebar-nav-state";
@@ -19,6 +22,22 @@ import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
 import type { MainSidebarState } from "../../features/session-list";
+
+/** One page entry as the nav draws it, in either mode. */
+interface NavEntryView {
+  key: string;
+  /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
+  to: string | null;
+  label: string;
+  /** The resolved drawing. */
+  glyph: string;
+  /**
+   * The rows this entry carries below it (a page's `parent`), drawn indented: a child has no
+   * pin choice and no drag of its own, and it follows its parent's area (nav-state.ts). The
+   * collapsed rail draws entries only (rail.tsx lights the parent while a child is open).
+   */
+  children?: readonly NavEntryView[];
+}
 
 export function createMainSidebarNavigation(scope: MainSidebarState) {
   const {
@@ -33,64 +52,102 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
     navCollapsed,
     navPages,
     navPins,
+    modeNavPins,
     pinFocusRef,
     navToggleRef,
     setNavPinned,
+    isNavEntryPinned,
     navEntryDragProps,
     onNavigate,
   } = scope;
 
-  /**
-   * Company mode's nav rows: the organization's six pages (COMPANY_NAV_KEYS) — channels are not
-   * among them, they are the list below — all in the fold, with no pins and no drag. Always
-   * mounted — the fold animates their height to zero and turns them inert.
-   */
-  const companyNavItems: Array<{
-    key: string;
-    /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
-    to: string | null;
-    label: string;
-    /** The resolved drawing: the contribution names the glyph in the registry. */
-    icon: string;
-  }> =
-    currentMode < 0
+  /** The pages each entry carries below it (nav-state.ts), by the entry's key. */
+  const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
+  /** A development-mode page as the nav draws it; nothing for a key with no page. */
+  const devNavEntry = (key: NavGroupKey): NavEntryView[] => {
+    const page = navPages.find((page) => page.key === key);
+    if (page === undefined) return [];
+    // A page names itself in the interface's language (PageData.title / titleZh).
+    return [
+      {
+        key,
+        to: page.path,
+        label: pageTitle(page, locale),
+        glyph: glyphOf(page.icon ?? key),
+        children: (childKeys.get(key) ?? []).flatMap((child) => devNavRow(child)),
+      },
+    ];
+  };
+  /** A page under an entry: a plain indented row — no pin choice and no drag of its own. */
+  const devNavRow = (key: NavGroupKey): NavEntryView[] => {
+    const page = navPages.find((page) => page.key === key);
+    return page === undefined
       ? []
-      : [...modeStates[currentMode]!.navItems].map((item) => ({
-          ...item,
-          icon: glyphOf(item.icon),
-        }));
+      : [
+          {
+            key,
+            to: page.path,
+            label: pageTitle(page, locale),
+            glyph: glyphOf(page.icon ?? key),
+          },
+        ];
+  };
 
   /**
-   * Development mode's entries by area (nav-state.ts): New chat, then the main
-   * nav's pages minus the entries this user's role cannot reach, each pinned or
-   * collapsible, both areas in page order. New chat is always pinned and renders in its
-   * fixed slot above the scroll area, so the pinned rows here are the pages after it.
+   * The nav's page entries by area, in the current mode. Development mode (nav-state.ts): the
+   * main nav's pages minus the entries this user's role cannot reach, after New chat, which is
+   * always pinned and drawn as a plain row at the head of the fixed block. A contributed mode:
+   * its own rows (company mode: the organization's six pages and the company-mode pages plugins
+   * add — channels are not among them, they are the list below), none pinned until the user
+   * pins one. Both areas keep their order.
    */
-  const navSplit = splitNavEntries(navEntryKeysFor(navPages, user?.isAdmin === true), navPins);
-  const pinnedNavPages = navSplit.pinned.filter(isNavPage);
-  const collapsibleNavPages = navSplit.collapsible.filter(isNavPage);
+  const navAreas: { pinned: NavEntryView[]; collapsible: NavEntryView[] } = (() => {
+    if (currentMode >= 0) {
+      const rows = modeStates[currentMode]!.navItems.map((item) => ({
+        key: item.key,
+        to: item.to,
+        label: item.label,
+        glyph: glyphOf(item.icon),
+        children: item.children?.map((child) => ({
+          key: child.key,
+          to: child.to,
+          label: child.label,
+          glyph: glyphOf(child.icon),
+        })),
+      }));
+      return splitModeNavItems(rows, modeNavPins);
+    }
+    const split = splitNavEntries(navEntryKeysFor(navPages, user?.isAdmin === true), navPins);
+    return {
+      pinned: split.pinned.filter(isNavPage).flatMap(devNavEntry),
+      collapsible: split.collapsible.filter(isNavPage).flatMap(devNavEntry),
+    };
+  })();
 
   /**
-   * One development-mode page entry: the package's pinnable nav row, bound to its route, its
-   * badge trail, its pin choice and its drag. Four entries sit on a badge trail — Agents (an
+   * One page entry: the package's pinnable nav row, bound to its route, its badge trail, its pin
+   * choice and its drag. In development mode four entries sit on a badge trail — Agents (an
    * outdated kernel, fixed on the Agent settings page two clicks down), Plugins, Models and the
    * Cost Center (each cleared on the page itself). The row's own label is visible, so the hint
    * only adds what the dot means, and the accessible name keeps the label as its prefix. The dot
    * hangs at the row's right edge, vertically centred on the row.
+   *
+   * A row with nowhere to go (company mode before there is an organization) keeps its place —
+   * the area its pin choice puts it in — and its glyph, muted, with nothing to click, drag or tab
+   * to, the star included: a live star would be the one control on a row that otherwise answers
+   * nothing.
    */
-  const renderNavEntry = (key: NavGroupKey) => {
-    const page = navPages.find((page) => page.key === key);
-    if (page === undefined) return null;
-    const to = page.path;
-    // A page names itself in the interface's language (PageData.title / titleZh).
-    const label = pageTitle(page, locale);
-    const note = notes.get(key) ?? null;
-    const pinned = isNavPinned(key, navPins);
-    return (
+  const renderNavEntry = ({ key, to, label, glyph, children }: NavEntryView) => {
+    if (to === null) {
+      return <NavRow key={key} surface="muted" label={label} glyph={glyph} href="" disabled />;
+    }
+    const note = currentMode < 0 ? (notes.get(key) ?? null) : null;
+    const pinned = isNavEntryPinned(key);
+    const row = (
       <SidebarNavEntry
         key={key}
         label={label}
-        glyph={glyphOf(page.icon ?? key)}
+        glyph={glyph}
         href={to}
         active={isCurrentPath(to, location.pathname)}
         renderLink={renderRouterLink}
@@ -133,6 +190,28 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
             }
           : {})}
       />
+    );
+    if (children === undefined || children.length === 0) return row;
+    return (
+      <Fragment key={key}>
+        {row}
+        {children.map((child) => (
+          /* A child has no pin choice and no drag of its own (navChildKeysFor): a plain
+             indented row under its parent, wherever the parent sits. */
+          <div key={child.key} className="ps-5">
+            <NavRow
+              surface="muted"
+              label={child.label}
+              glyph={child.glyph}
+              href={child.to ?? ""}
+              disabled={child.to === null}
+              active={child.to !== null && isCurrentPath(child.to, location.pathname)}
+              renderLink={renderRouterLink}
+              onClick={() => onNavigate?.()}
+            />
+          </div>
+        ))}
+      </Fragment>
     );
   };
 
@@ -181,10 +260,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
   );
   return {
     ...scope,
-    companyNavItems,
-    navSplit,
-    pinnedNavPages,
-    collapsibleNavPages,
+    navAreas,
     renderNavEntry,
     accountRow,
   };

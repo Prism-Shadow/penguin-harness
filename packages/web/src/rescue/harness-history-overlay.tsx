@@ -242,9 +242,9 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
 
   return createPortal(
     <div
-      // z-50 like Modal's overlay: a portaled menu or tooltip (z-[60]) opened from inside still paints above it.
+      // The `modal` layer like Modal's overlay: a portaled menu or tooltip opened from inside still paints above it.
       // ui-scrim: the overlay is the dimmed layer, with the panel inside it.
-      className="ui-scrim anim-fade fixed inset-0 z-50 bg-black/45"
+      className="ui-scrim anim-fade fixed inset-0 z-modal bg-black/45"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -258,7 +258,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         aria-label={t.title}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className="anim-pop absolute inset-x-3 bottom-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
+        className="anim-pop absolute inset-x-3 bottom-3 top-[calc(var(--window-band-height,0px)+0.75rem)] flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
       >
         <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
           <div>

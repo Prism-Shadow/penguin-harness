@@ -13,7 +13,12 @@ import { glyphOf } from "../../lib/nav-icons";
 import { useLocation, useMatch } from "react-router";
 import { RailDivider } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { ModeState, SidebarMode, SidebarSection } from "../../lib/sidebar-contributions";
+import type {
+  ModeNavItem,
+  ModeState,
+  SidebarMode,
+  SidebarSection,
+} from "../../lib/sidebar-contributions";
 import { useCompany } from "./company-state";
 import { CompanyBetaBadge } from "./company-beta";
 import { COMPANY_NAV_ICONS } from "./company-nav-icons";
@@ -46,9 +51,10 @@ function useCompanyMode(): ModeState {
       return isOrgRoute(location.pathname) ? "/chat" : null;
     },
     // The organization's six pages — channels are not among them, they are the list below —
-    // all in the fold, with no pins and no drag. With no organization the six keep their
-    // places, disabled: the pages exist, they just have no organization to show yet, and a nav
-    // that empties itself reads as a broken shell rather than as an empty one.
+    // each a favourite or in the fold at the user's choice, none favourited by default. With no
+    // organization the six keep their places, disabled: the pages exist, they just have no
+    // organization to show yet, and a nav that empties itself reads as a broken shell rather
+    // than as an empty one.
     navItems: [
       ...COMPANY_NAV_KEYS.map((key) => ({
         key,
@@ -56,15 +62,15 @@ function useCompanyMode(): ModeState {
         label: S.nav.org[key],
         icon: COMPANY_NAV_ICONS[key],
       })),
-      ...contributedPages.map((page) => ({
-        key: page.key,
-        to:
+      ...orgNavRowsOf(
+        contributedPages,
+        (page) =>
           navOrg === null
             ? null
             : `/org/${encodeURIComponent(navOrg.projectId)}/${encodeURIComponent(navOrg.orgId)}/${page.path.replace(/^\/+/, "")}`,
-        label: (locale === "zh" ? page.titleZh : page.title) ?? page.title ?? page.key,
-        icon: glyphOf(page.icon ?? page.key),
-      })),
+        (page) => (locale === "zh" ? page.titleZh : page.title) ?? page.title ?? page.key,
+        (page) => glyphOf(page.icon ?? page.key),
+      ),
     ],
   };
 }
@@ -136,3 +142,52 @@ function DesksRail() {
 }
 
 export const companyDesks: SidebarSection = { Full: Desks, Rail: DesksRail };
+
+/**
+ * The company-mode nav rows for the organization's contributed pages, with each page's
+ * hierarchy honored: a page with a `parent` that is one of these pages hangs as an indented
+ * child row under it; a page without a `parent` sits at the top level in table order. A page
+ * whose `parent` is not among these pages has nowhere to hang here — the table kept it routed
+ * (it passed parentedPagesOf over the merged table), but the company nav lists only what it
+ * can place. The children carry no children of their own (one level only, as parentedPagesOf
+ * holds for the whole table).
+ */
+export interface OrgNavPage {
+  key: string;
+  path: string;
+  parent?: string;
+  /** The row's name in English and in Chinese, and its glyph's name in the icon registry. */
+  title?: string;
+  titleZh?: string;
+  icon?: string;
+}
+
+export function orgNavRowsOf(
+  pages: readonly OrgNavPage[],
+  toOf: (page: OrgNavPage) => string | null,
+  labelOf: (page: OrgNavPage) => string,
+  iconOf: (page: OrgNavPage) => string,
+): readonly ModeNavItem[] {
+  const itemOf = (page: OrgNavPage): ModeNavItem => ({
+    key: page.key,
+    to: toOf(page),
+    label: labelOf(page),
+    icon: iconOf(page),
+  });
+  const byKey = new Map(pages.map((page) => [page.key, page]));
+  const childrenOf = new Map<string, ModeNavItem[]>();
+  const top: ModeNavItem[] = [];
+  for (const page of pages) {
+    if (page.parent === undefined) top.push(itemOf(page));
+    else {
+      const parent = byKey.get(page.parent);
+      if (parent === undefined) continue;
+      const children = childrenOf.get(parent.key) ?? [];
+      children.push(itemOf(page));
+      childrenOf.set(parent.key, children);
+    }
+  }
+  return top.map((item) =>
+    childrenOf.has(item.key) ? { ...item, children: childrenOf.get(item.key) } : item,
+  );
+}

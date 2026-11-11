@@ -18,12 +18,19 @@
  * whose files cannot be read or exceed the caps: one bad Skill must not hide the rest.
  *
  * Discovery is metadata-only. Auxiliary files are the installable payload, so they are read for
- * the names actually picked (`resolveDirectorySkills`) and never for a listing.
+ * the names actually picked (`resolveDirectorySkills`) and never for a listing. A Skill's icon is
+ * whichever `icon.<ext>` its directory carries, read by core's reader (a plain file within the
+ * icon cap, its format told by its bytes), the same one an installed Skill's is read with.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseSkillFrontmatter, PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
-import type { SkillMetadata } from "@prismshadow/penguin-core";
+import {
+  isIconFileName,
+  parseSkillFrontmatter,
+  PLUGIN_NAME_PATTERN,
+  readInstalledIcon,
+} from "@prismshadow/penguin-core";
+import type { IconImage, SkillMetadata } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import {
   MAX_ARCHIVE_FILES,
@@ -40,7 +47,7 @@ export type SkillSourceDir = (typeof SKILL_SOURCE_DIRS)[number];
 /** A Skill found on disk: library-shaped, so `installSkill` takes it unchanged. */
 export interface DirectorySkill extends SkillMetadata {
   content: string;
-  icon?: string;
+  icon?: IconImage;
   files?: Record<string, string>;
   /** Which of the two layouts it came from — shown in the picker so the origin is visible. */
   source: SkillSourceDir;
@@ -96,11 +103,12 @@ function isSafeSkillFilePath(rel: string): boolean {
 }
 
 /**
- * Reads one of a Skill's two named files (`SKILL.md`, `icon.svg`), or undefined when it is not
- * there. `lstat` first, and only a regular file within the per-file cap is read: a symlink named
- * `icon.svg` is how a file outside the Skill directory would otherwise be handed back verbatim in
- * a listing, a FIFO would block the read (and its libuv threadpool thread) forever, and a size
- * taken from the stat refuses an oversized file before it is in memory rather than after.
+ * Reads a Skill's `SKILL.md`, or undefined when it is not there. `lstat` first, and only a
+ * regular file within the per-file cap is read: a symlink named `SKILL.md` is how a file outside
+ * the Skill directory would otherwise be handed back verbatim in a listing, a FIFO would block
+ * the read (and its libuv threadpool thread) forever, and a size taken from the stat refuses an
+ * oversized file before it is in memory rather than after. The icon is read by core's reader,
+ * which holds to the same discipline.
  */
 async function readSkillFile(file: string): Promise<string | undefined> {
   let stat;
@@ -116,8 +124,8 @@ async function readSkillFile(file: string): Promise<string | undefined> {
 
 /**
  * Auxiliary files a SKILL.md ships alongside it (`reference/API.md` and the like), with the
- * archive caps applied across the whole Skill. `SKILL.md` and `icon.svg` are handled by the
- * caller and excluded here so they are not written twice.
+ * archive caps applied across the whole Skill. `SKILL.md` and the icon are handled by the caller
+ * and excluded here so they are not written twice.
  */
 async function readAuxiliaryFiles(dir: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
@@ -133,7 +141,7 @@ async function readAuxiliaryFiles(dir: string): Promise<Record<string, string>> 
       // Non-regular entries are skipped, symlinks included: a link is how a file outside the
       // Skill directory would otherwise be read.
       if (!entry.isFile()) continue;
-      if (relChild === "SKILL.md" || relChild === "icon.svg") continue;
+      if (relChild === "SKILL.md" || isIconFileName(relChild)) continue;
       if (!isSafeSkillFilePath(relChild)) continue;
       const child = path.join(abs, entry.name);
       // The caps come off the stat, so an oversized file never reaches the heap.
@@ -160,7 +168,7 @@ async function readSkillEntry(
   if (content === undefined) return null;
   const metadata = parseSkillFrontmatter(content);
   if (!metadata) return null;
-  const icon = await readSkillFile(path.join(abs, "icon.svg"));
+  const icon = await readInstalledIcon(abs);
   return {
     ...metadata,
     // The directory name is authoritative: it is what the Skill installs as, and frontmatter
@@ -202,6 +210,19 @@ export async function discoverDirectorySkills(dir: string): Promise<DirectorySki
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * One discovered Skill's icon, by the discovery's rules (the same roots in the same precedence,
+ * the same names), or undefined when it has none or is not an installable Skill there.
+ */
+export async function directorySkillIcon(
+  dir: string,
+  name: string,
+): Promise<IconImage | undefined> {
+  if (!PLUGIN_NAME_PATTERN.test(name)) return undefined;
+  const found = (await discoverDirectorySkills(dir)).find((skill) => skill.name === name);
+  return found?.icon;
 }
 
 /**

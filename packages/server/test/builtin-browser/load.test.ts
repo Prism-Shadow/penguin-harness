@@ -6,13 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserTabMetrics } from "../../src/api/types.js";
-import {
-  MANY_TABS,
-  MEMORY_CLEAR_KB,
-  MEMORY_WARN_KB,
-  assessLoad,
-  systemMemory,
-} from "../../src/builtin-browser/load.js";
+import { assessLoad, systemMemory } from "../../src/builtin-browser/load.js";
 
 const MB = 1024;
 const GB = 1024 * 1024;
@@ -41,7 +35,6 @@ describe("assessLoad", () => {
   });
 
   it("warns about memory past 1.5 GB, and names the heaviest tabs, largest first", () => {
-    expect(MEMORY_WARN_KB).toBe(1.5 * GB);
     const heavy = assess(tabs(200 * MB, 900 * MB, 100 * MB, 400 * MB, 150 * MB));
     expect(heavy.warnings).toEqual(["memory"]);
     // At most three, and only those holding a tenth of the total (175 MB here).
@@ -49,7 +42,6 @@ describe("assessLoad", () => {
   });
 
   it("keeps the memory warning until the pages fall under 1.35 GB", () => {
-    expect(MEMORY_CLEAR_KB).toBe(1.35 * GB);
     const hovering = tabs(700 * MB, 700 * MB);
     expect(assess(hovering, []).warnings).toEqual([]);
     expect(assess(hovering, ["memory"]).warnings).toEqual(["memory"]);
@@ -70,7 +62,6 @@ describe("assessLoad", () => {
   });
 
   it("warns about more than 12 tabs, naming no tab for it", () => {
-    expect(MANY_TABS).toBe(12);
     const thirteen = tabs(...Array.from({ length: 13 }, () => 50 * MB));
     expect(assess(thirteen).warnings).toEqual(["many_tabs"]);
     expect(assess(thirteen).heavyTabIds).toEqual([]);

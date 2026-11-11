@@ -14,12 +14,7 @@ import {
   refusedPlugins,
   saidYes,
 } from "../../../scripts/deploy-unsatisfied-plugins.mjs";
-import {
-  LEAVE_OUT,
-  UNSATISFIED_PLUGINS_HEADER,
-  answerPush,
-  openPushSlip,
-} from "../src/hmr/push-plugins.js";
+import { acceptsLeavingOut, answerPush, openPushSlip } from "../src/hmr/push-plugins.js";
 import { HotResources } from "@prismshadow/penguin-hmr";
 import type { UnsatisfiedPlugin } from "../src/api/types.js";
 
@@ -29,9 +24,13 @@ const PLUGINS: UnsatisfiedPlugin[] = [
 ];
 
 describe("deploy.mjs and a push refused for unsatisfied plugins", () => {
-  it("sends the header the server reads", () => {
-    expect(SCRIPT_HEADER).toBe(UNSATISFIED_PLUGINS_HEADER);
-    expect(SCRIPT_LEAVE_OUT).toBe(LEAVE_OUT);
+  it("sends the header the server reads as leaving the plugins out", () => {
+    const push = new Request("http://target.test/api/hmr/push", {
+      method: "POST",
+      headers: { [SCRIPT_HEADER]: SCRIPT_LEAVE_OUT },
+    });
+    expect(acceptsLeavingOut(push)).toBe(true);
+    expect(acceptsLeavingOut(new Request("http://target.test/api/hmr/push"))).toBe(false);
   });
 
   it("reads the plugins out of the server's refusal", async () => {

@@ -11,9 +11,14 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
+import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
+import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
+import { EVOLUTION_DEMO } from "./evolution-demo";
+import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -34,6 +39,9 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The desktop window's title band: back and forward through the pages visited. */
+    back: "后退",
+    forward: "前进",
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
@@ -50,6 +58,14 @@ export const zh = {
       finance: "财务",
       handbook: "手册",
     },
+  },
+
+  /** The desktop window's own buttons, which the page draws at the title band's right end. */
+  window: {
+    minimize: "最小化",
+    maximize: "最大化",
+    restore: "向下还原",
+    close: "关闭",
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
@@ -1118,7 +1134,7 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
-    } as Record<string, string>,
+    } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
   commandPalette: {
@@ -1167,9 +1183,17 @@ export const zh = {
   workbenches: {
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
-    empty: "这个 Agent 还没有工作台。",
-    agentTabDesc: "管理这个 Agent 的工作台，可打开应用、重新加载、查看历史版本或移除。",
     open: "打开工作台",
+    /** The Agent-wide switch on the Plugins tab, and what it does. */
+    enableAll: "启用工作台",
+    enableAllHint:
+      "关闭后，这个 Agent 的所有工作台都会停用：对话页和应用中心不再显示它们，页面也打不开。每个工作台的开关、数据和历史版本都会保留，重新打开即恢复原样。",
+    /** One workbench's own switch (its accessible name). */
+    enableOne: (name: string) => `启用 ${name}`,
+    /** Why a workbench's switch is greyed: the Agent-wide one is off. */
+    offByAll: "「启用工作台」已关闭，先打开它",
+    /** The full-page route of a switched-off workbench. */
+    offPage: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",
 
@@ -1550,13 +1574,17 @@ export const zh = {
       /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
       placeholder: (reason: string): string =>
         `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
+      /**
+       * Why the proposal fell through, keyed by the server's reason code: one phrase for every
+       * code the contract declares and no other, held by the `satisfies` (and the English
+       * dictionary by `Strings`).
+       */
       reasons: {
         no_default_model: "未配置默认模型",
         model_failed: "模型调用失败",
         unusable_answer: "模型回答不可用",
         no_ascii: "名称里没有可转写的英文",
-      },
+      } satisfies Record<SemanticIdSuggestReason, string>,
       /** A reason a newer server named and this build does not know. */
       reasonUnknown: "原因未知",
     },
@@ -1752,6 +1780,25 @@ export const zh = {
     listTitle: "Agents",
     searchPlaceholder: "搜索 Agent：id / 名称 / 描述",
     searchEmpty: "没有匹配的 Agent",
+    /** The list's grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Agent 分组方式",
+    groupBy: { author: "按作者分组", none: "不分组" },
+    /** The section titles of the grouping by author, in the order the list shows them. */
+    authorGroups: {
+      user: "用户创建",
+      agent: "智能体创建",
+      company: "公司模式创建",
+    } satisfies Record<AgentAuthor, string>,
+    /** A group header's count. */
+    agentCount: (n: number): string => `${n} 个 Agent`,
+    /** The Overview tab's author select: its label, its options and what the "?" beside it says. */
+    authorLabel: "作者",
+    authors: { user: "用户", agent: "智能体", company: "公司模式" } satisfies Record<
+      AgentAuthor,
+      string
+    >,
+    authorInfo:
+      "这个 Agent 是怎么来的：用户手动创建、智能体在对话中创建，或在公司模式中创建。智能体列表可以按它分组。",
     create: "创建 Agent",
     createTitle: "创建 Agent",
     id: "Agent id",
@@ -1783,13 +1830,8 @@ export const zh = {
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
     createDirSkillsClear: "不从目录导入",
-    /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
-    createSnapshot: "从快照初始化",
-    createSnapshotPick: "选择快照包",
-    createSnapshotHint:
-      "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
-    createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
-    createSnapshotClear: "移除已选快照包",
+    /** The create dialog's footer line: an Agent from an exported file is the page's 「导入 Agent」. */
+    createFromFileHint: "要从导出的文件新建 Agent？",
     /**
      * The "Create with AI" dialog, a separate surface from the create form above: its title, the
      * lead line, the prompt box's placeholder, the clickable examples and the fixed instruction
@@ -1841,7 +1883,7 @@ export const zh = {
     aiCreateTail: [
       "请使用 agent-initialization 技能，在当前 Project 中按上面的描述新建一个智能体：",
       "- 上面给了 agent id 就用它，否则取一个简短的语义 id（小写字母开头，可含数字、下划线或连字符）；目标目录已存在时停下来告诉我，不要覆盖。",
-      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，把角色与行为规则写进它的 agent_state/AGENTS.md。",
+      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，并把 author 设为 agent（由智能体创建），把角色与行为规则写进它的 agent_state/AGENTS.md。",
       "- 只从插件库（default_agent 已安装的技能目录）复制它真正需要的技能，不要多装。",
       "- 不要改动其他智能体；完成后按技能要求做校验。",
       "最后告诉我：新智能体的 id、安装了哪些技能，以及怎样开始和它对话（Agents 页该智能体卡片上的「新建对话」）。",
@@ -1863,9 +1905,7 @@ export const zh = {
     tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
-    tabSkills: "技能",
-    tabWorkbenches: "工作台",
-    tabHooks: "钩子",
+    tabPlugins: "插件",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     tabApi: "API",
@@ -2053,23 +2093,74 @@ export const zh = {
     /** A removal that stopped short: the operating system's reason, and when the rest goes. */
     deleteRetryOnRestart: (error: string): string =>
       `${error}。其余文件会在服务端下次启动时再删除。`,
-    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    /** Agent State section: the State version with the export / replace actions, plus the copyable State path. */
     stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
-    exportSnapshot: "导出快照",
-    importSnapshot: "导入快照",
+    transferDesc:
+      "「导出…」把该 Agent 打成一个 zip；「从文件替换…」用导出的文件替换它的 Agent State，对话、保险柜与 API 密钥保留，替换前先写一份备份快照。",
+    exportOpen: "导出…",
+    replaceOpen: "从文件替换…",
+    exportAgent: "导出 Agent",
+    importAgent: "导入 Agent",
+    exportTitle: (name: string): string => `导出 Agent：${name}`,
+    exportInclude: "包含",
+    /** The parts an export can include that have no tab of their own (they share the Plugins tab). */
+    exportSkills: "技能",
+    exportHooks: "钩子",
+    exportWorkbenches: "工作台",
+    exportWorkbenchData: "含其数据",
+    exportSchedulesHint: "导入后会按计划运行",
+    exportTraces: "对话",
+    exportTracesNone: "不含",
+    exportTracesLast: "最近 N 条",
+    exportTracesRange: "日期范围",
+    exportTracesCount: "对话条数",
+    exportTracesFrom: "起始日期",
+    exportTracesTo: "结束日期",
+    exportVaultNote: "保险柜从不进包；配置里直接写的字面值会原样带出。",
+    exportAction: "导出",
+    exporting: "导出中…",
+    replaceTitle: (name: string): string => `从文件替换：${name}`,
+    migrateTitle: "从其他框架迁移",
+    migrateInfo:
+      "Project 的默认 Agent 会在新对话里用 agent-porting 技能读取来源、建好新的 Agent，并说明哪些内容没能迁移。Prompt 只填进输入框，发送由你决定。",
+    migrateFramework: "来源框架",
+    /** The framework list's last choice; the products keep their own names (agent-migration.ts). */
+    migrateOther: "其他",
+    migratePath: "路径",
+    /** The label for 「其他」, where the field is required: there is no default directory to read. */
+    migratePathOther: "路径或说明",
+    /** The migration chat's prompt; `framework` is null for 「其他」. */
+    migratePrompt: (framework: string | null, source: string, projectId: string): string =>
+      [
+        framework === null
+          ? `把这个来源迁移成 PenguinHarness 的一个新 Agent：${source}`
+          : `把 ${framework} 的配置迁移成 PenguinHarness 的一个新 Agent，来源：${source}`,
+        "用 agent-porting 技能完成迁移：",
+        "- 完整读取来源：指令文件、技能、命令、MCP 服务器、钩子、子 Agent 与记忆；只读，不改动来源里的任何文件。",
+        "- 绝不复制密钥、令牌或密码的值，只记下需要填写的键名。",
+        "- 在临时目录里按技能说明的 Agent zip 布局写出新 Agent。",
+        `- 运行 \`penguin agent import <该目录> --project-id ${projectId}\` 导入；id 已被占用时用 --agent-id 换一个。`,
+        "- 最后告诉我：新 Agent 的 id，映射了哪些内容，哪些没能映射及原因，以及需要在保险柜里填写的键。",
+      ].join("\n"),
+    importFileTitle: "导入文件",
+    importFileHint: ".zip；1.0 之前也接受旧的 .tar.gz 快照包",
+    importPick: "选择文件",
+    importAction: "导入",
     importing: "导入中…",
-    importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
-    importConflictTitle: "版本冲突",
-    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
-    importConfirmBody: (file: string): string =>
-      `用「${file}」替换整个 Agent State？现有内容都会被快照包取代（Vault 保留），导入前会自动为当前版本存一份快照。`,
-    importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    importExists: (id: string): string => `id ${id} 已存在`,
+    importRename: "改用其他 id",
+    importOverwrite: "覆盖现有 Agent",
+    replaceAction: "替换",
+    overwriteTitle: "替换 Agent State",
+    overwriteBody: (agentId: string, file: string): string =>
+      `用「${file}」替换「${agentId}」的 Agent State？文件里没有的部件、它的对话、保险柜与 API 密钥保留；替换前会先写一份备份快照。`,
+    importDone: (name: string, overwritten: boolean, imported: number, skipped: number): string =>
+      `${overwritten ? "已覆盖" : "已导入"} Agent「${name}」；对话：导入 ${imported} 个，略过已有的 ${skipped} 个`,
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
-      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称、描述与作者。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
     /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
     kernelTitle: "内核",
@@ -2084,7 +2175,7 @@ export const zh = {
     kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
-      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、作者、版本号与 MCP Server 不受影响。确认继续？",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
         ? `内核已更新至 ${version}，${advanced} 个设置页跟进新默认`
@@ -2344,7 +2435,7 @@ export const zh = {
       "openai-chat": "OpenAI Chat Completions",
       "google-genai": "Google GenAI (generateContent)",
       mmsp: "MMSP",
-    } as Record<string, string | undefined>,
+    } satisfies Record<ProtocolClientType, string> as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
     /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
@@ -2526,6 +2617,23 @@ export const zh = {
     disconnectConfirm: (label: string): string =>
       `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
     disconnected: (label: string): string => `已断开 ${label}`,
+    /**
+     * The question after connecting TokenDance or Penguin Go, when the Project's default model is
+     * in another group (`current`, modelInGroup's answer) or unset: make that group's DeepSeek
+     * V4.1 Flash (`model`, its name alone) the default? The unset case's dialog name is
+     * confirmDefaultTitle.
+     */
+    connectDefaultSwitchTitle: "更换默认模型",
+    connectDefaultOffer: (group: string, current: string, model: string): string =>
+      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model} 吗？更换后，新建的 Session 将默认使用它。`,
+    connectDefaultOfferUnset: (group: string, model: string): string =>
+      `已连接 ${group}。要把 ${model} 设为默认模型吗？新建的 Session 将默认使用它。`,
+    connectDefaultSwitch: "更换",
+    connectDefaultKeep: "保持不变",
+    connectDefaultSet: "设为默认",
+    connectDefaultNotNow: "暂不设置",
+    /** A model named in a sentence where several groups sell the same one. */
+    modelInGroup: (name: string, group: string): string => `${name}（${group}）`,
     /**
      * A group's account balance in its header (and pinned beside the user name): the sentence
      * spoken behind the amount names the group, the vendor's own figures and the time of the
@@ -3248,13 +3356,68 @@ export const zh = {
       "插件可能带有 MCP 服务器：stdio 服务器是 Agent 会话开始时在本服务器上运行的命令，远程服务器是本服务器会去连接的地址。",
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the Agent's plugins and the parts each brought, the Agent's own parts last. */
+  agentPlugins: {
+    tabDesc:
+      "这个 Agent 装了哪些插件，以及每个插件带来的技能、钩子、MCP 服务器和工作台。卸载插件会一次删掉它的全部部件。你自己创建或导入的部件列在最后。",
+    /** Appended to the description for a member. */
+    readOnlyHint: "开关、技能提示词和卸载插件只有 Project 所有者可以操作。",
+    importAction: "导入",
+    importMenu: "导入什么",
+    importSkill: "技能",
+    importHook: "钩子包",
+    importWorkbench: "工作台",
+    importChatOrZip: "上传 zip，或在对话中让 Agent 导入",
+    importZip: "上传 zip",
+    browseLibrary: "浏览插件库",
+    installedTitle: "已装插件",
+    empty: "这个 Agent 还没有装插件。点「浏览插件库」挑一个装上。",
+    ownTitle: "不属于插件",
+    /** What a plugin brought to this Agent, beside its name: "3 个技能、钩子、1 个工作台". */
+    partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
+      [
+        skills > 0 ? `${skills} 个技能` : "",
+        hooks ? "钩子" : "",
+        mcp > 0 ? `${mcp} 个 MCP 服务器` : "",
+        workbenches > 0 ? `${workbenches} 个工作台` : "",
+      ]
+        .filter((part) => part !== "")
+        .join("、"),
+    /** A plugin's status on this Agent, and what it means on hover. */
+    status: {
+      installed: "已安装",
+      update: "可更新",
+      incomplete: "不完整",
+      "not-in-library": "不在插件库",
+    },
+    statusHint: {
+      installed: "这个插件的部件都在。",
+      update: "插件库里有更新的版本。点「更新」换成新版本。",
+      incomplete: "这个插件少了一些部件。点「更新」把它们装回来。",
+      "not-in-library": "管理员已把这个插件从插件库中删除，所以无法更新。",
+    },
+    /** The parts the uninstall confirmation lists, one per line. */
+    partSkill: (name: string) => `技能：${name}`,
+    partHook: (name: string) => `钩子包：${name}`,
+    partMcp: (name: string) => `MCP 服务器：${name}`,
+    partWorkbench: (name: string) => `工作台：${name}`,
+    uninstallBody: (plugin: string, agent: string) =>
+      `将从 ${agent} 删除 ${plugin} 的以下部件，本地改动也会一起删除：`,
+    uninstallWorkbenchData:
+      "工作台的数据和历史版本会一起删除。只想暂时不用的话，关掉它的开关即可。",
+    /** A part the server could not remove, and why; the rest were removed. */
+    failedPart: (name: string, error: string) => `${name}（${error}）`,
+    uninstallPartly: (plugin: string, failed: string) =>
+      `${plugin} 已卸载，但这些部件没能删除：${failed}`,
+    updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /** An MCP server row: what keeps it from connecting, and where it is edited. */
+    mcpNeedsSetup: "待设置",
+    mcpNeedsSignIn: "需登录",
+    mcpEdit: "去「工具」编辑",
+  },
+
+  /** An Agent's hook packages on its Plugins tab (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
-    agentTabDesc:
-      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
-    agentTabEmpty: "尚未安装任何钩子包",
-    /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "启用钩子的开关仅 Project owner 可用。",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
     exportHook: "打包导出",
@@ -3338,16 +3501,13 @@ export const zh = {
     skillCount: (n: number): string => `${n} 个技能`,
     /** The plugin library's per-Agent update button, and the confirm buttons of every update dialog. */
     updateAction: "更新",
-    /** Settings Skills tab: toast after uninstalling one skill. */
+    /** Toast after uninstalling one skill from an Agent. */
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
-    /** Agent settings "Skills" tab (installed list + import modal). */
-    agentTabDesc:
-      "该 Agent 已安装的技能（agent_state/skills/，文件即事实来源）：元数据注入系统提示词，正文由模型按需读取；卸载会删除整个技能目录。",
-    agentTabEmpty: "尚未安装任何技能",
+    /** An Agent's Skills on its Plugins tab (rows + import modal). */
     exportSkill: "打包导出",
     importSkill: "导入技能",
     importChatTitle: "推荐：让 Agent 在对话中安装",
@@ -3417,7 +3577,7 @@ export const zh = {
       high: "高",
       xhigh: "极高",
       max: "最高",
-    } as Readonly<Record<string, string>>,
+    } satisfies Record<ThinkingLevelName, string> as Readonly<Record<string, string>>,
     /** Dropdown-row variant of the name above: choosing is where the wire value earns its place, so a menu row annotates the Chinese name with the value the pick will send. Only the composer's own dropdown uses it — a native `<select>` renders the picked option's text on the collapsed control too, which would put the annotation straight back onto a trigger. */
     thinkingLevelMenuName: (name: string, level: string): string => `${name} (${level})`,
     /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
@@ -3765,12 +3925,12 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
         prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
-- id：\`finite_choice_agent\`
+- id：\`${EVOLUTION_DEMO.agentId}\`
 - 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
 - installed_skills：\`[]\`
 
 Benchmark：
-- id：\`contextual-choice-adaptation\`
+- id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
@@ -3785,8 +3945,8 @@ Benchmark：
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
-- test_agent_id：\`finite_choice_agent\`
-- benchmark_id：\`contextual-choice-adaptation\`
+- test_agent_id：\`${EVOLUTION_DEMO.agentId}\`
+- benchmark_id：\`${EVOLUTION_DEMO.benchmarkId}\`
 - capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
 - runs：\`3\`
 - desired_score：\`>=95\`
@@ -5050,6 +5210,17 @@ Benchmark：
 
   files: {
     title: "文件",
+    /**
+     * A reply's audio player (features/audio): the play/pause button's name, the seek bar's name
+     * and value text, what the spinner announces while the file loads, and the line the player
+     * becomes when the file cannot be played.
+     */
+    audioPlay: (name: string) => `播放 ${name}`,
+    audioPause: (name: string) => `暂停 ${name}`,
+    audioSeek: (name: string) => `${name} 的播放位置`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed}，共 ${total}`,
+    audioLoading: (name: string) => `正在加载 ${name}`,
+    audioUnavailable: (name: string) => `无法播放 ${name}：文件不存在或格式不受支持。`,
     upload: "上传",
     download: "下载",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
@@ -5389,8 +5560,7 @@ Benchmark：
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
       "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
-    askEvaluationDefault: "解释这次评估的结果。",
-    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    /** The box opens on `explain`, which leads the examples, so a reader who tried another can bring it back. */
     askEvaluationExamples: {
       explain: {
         label: "解释这次评估的结果",
@@ -5447,8 +5617,7 @@ Benchmark：
     askCaseTitle: "问 AI：这道题",
     askCaseDescription:
       "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
-    askCaseDefault: "解释这道题考什么、怎样才算答好。",
-    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    /** As for the evaluation dialog: the box opens on `explain`, which leads the examples. */
     askCaseExamples: {
       explain: {
         label: "解释这道题考什么、怎样才算答好",
@@ -5893,13 +6062,37 @@ Benchmark：
     pause: "暂停组织",
     resume: "恢复组织",
     deleteOrg: "删除组织",
-    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgDesc:
+      "把组织移入 Project 的回收目录，默认同时永久删除只受雇于它的 Agent。内置 Agent 与另受雇于其他组织的 Agent 保留。",
     deleteOrgConfirm:
-      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。随组织删除的 Agent 连同它们的全部对话永久删除，无法恢复。保留的 Agent 仍是 Project 的 Agent，工位与工单的对话也保留，但组织不在了，就没有页面再列出它们；旧 CEO 的 Agent 还在时，这个 id 不能用来新建组织。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    /** The confirmation's checkbox; the count is null until the organization's Agents are read. */
+    deleteOrgAgents: (count: number | null) =>
+      count === null ? "同时删除该公司的 Agent" : `同时删除该公司的 Agent（${count} 个）`,
+    deleteOrgWillDelete: (names: string) => `将永久删除：${names}`,
+    deleteOrgWillKeep: (names: string) => `保留：${names}`,
+    deleteOrgKeptBuiltin: (name: string) => `${name}（内置）`,
+    deleteOrgKeptElsewhere: (name: string, orgNames: string) => `${name}（另受雇于 ${orgNames}）`,
+    deleteOrgKeptUnknown: (name: string) => `${name}（无法确认任职）`,
+    /** Under the checkbox while another organization's chart cannot be read: nobody is deleted then. */
+    deleteOrgChartUnreadable: (orgNames: string) =>
+      `${orgNames} 的员工树无法读取，无法确认谁只受雇于此；修好之前不会删除任何 Agent。`,
+    deleteOrgAgentsLoadFailed:
+      "该组织的 Agent 读取失败。请重试；或者只删除组织，它的 Agent 都会保留。",
+    /** Appended to the delete's toast: employees kept although the confirmation listed them as going, or never listed them. */
+    deleteOrgKeptAfterAll: (names: string) => `；保留了 ${names}（确认之后情况有变）`,
+    deleteOrgKeptUnreadableAfterAll: (names: string, orgNames: string) =>
+      `；保留了 ${names}，因为另一个组织的员工树无法读取：${orgNames}`,
+    /** The delete's answer was lost, but the organization is gone: it was deleted. */
+    deletedAnswerLost: (orgId: string) => `组织 ${orgId} 已删除，但没有收到应答；列表已重新读取`,
     deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
     deleted: (orgId: string) => `组织 ${orgId} 已删除`,
+    deletedWithAgents: (orgId: string, count: number) =>
+      `组织 ${orgId} 已删除，连同 ${count} 个 Agent`,
+    deleteOrgAgentsFailed: (orgId: string, names: string) =>
+      `组织 ${orgId} 已删除，但这些 Agent 未能删除：${names}`,
     pauseInfo:
-      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
+      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。暂停不会删除任何东西：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {
@@ -6565,6 +6758,8 @@ Benchmark：
       machine_no_answer: "机器没有回应。",
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
+      plugin_not_installed: "这个 Agent 上已经没有这个插件的任何部件。",
+      workbench_disabled: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
       machine_answered: "机器给出的应答无法使用，请重试。",
       trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",

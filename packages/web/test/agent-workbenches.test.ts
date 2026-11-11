@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 /**
- * Agent settings list UI and handler-only workbenches together, with open and management actions.
+ * A workbench's row on the Agent settings page's Plugins tab, a handler-only one included (one the
+ * user made, so it is listed under "Not from a plugin"), with its open and management actions.
  * - Opening a workbench selects its owning Agent and tab in a new conversation.
  * - Reload failures remain recoverable; history can restore a recorded version.
  * - Cancelling removal writes nothing; confirming removes only that workbench and refreshes the list.
@@ -20,7 +21,7 @@ import {
   buttonIn,
   topDialog,
 } from "./helpers/agent-app";
-import { button, click, pressScrim, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, hasButton, pressScrim, unmountAll, waitFor } from "./helpers/dom";
 
 const info = (tabs: WorkbenchInfo["tabs"]): WorkbenchInfo => ({
   id: "support",
@@ -46,7 +47,7 @@ async function open(tabs: WorkbenchInfo["tabs"] = []) {
     ],
   });
   const router = await mountAgentApp(h(AgentSettingsPage), {
-    at: `/agents/${AGENT_ID}?tab=workbenches`,
+    at: `/agents/${AGENT_ID}?tab=plugins`,
   });
   await waitFor(() => document.body.textContent?.includes("Support") === true);
   return { server, router };
@@ -80,6 +81,8 @@ it("manages a handler-only workbench, retries failed reload and restores a recor
   await click(button(`${en.workbenches.history} Support`));
   expect(topDialog().textContent).toContain("previous");
   await click(buttonIn(topDialog(), en.workbenches.restore));
+  // Restore asks first: nothing is rolled back until the question is answered.
+  expect(server.writes().filter((request) => request.path.endsWith("/rollback"))).toEqual([]);
   await click(buttonIn(topDialog(), en.workbenches.restore));
   expect(server.writes().find((request) => request.path.endsWith("/rollback"))?.body).toEqual({
     revision: "previous",
@@ -98,5 +101,6 @@ it("cancels without deleting, then removes only after confirmation", async () =>
       .filter((request) => request.method === "DELETE")
       .map((request) => request.path),
   ).toEqual([`/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/support`]);
-  expect(document.body.textContent).toContain(en.workbenches.empty);
+  await waitFor(() => !hasButton(`${en.workbenches.remove} Support`));
+  expect(document.body.textContent).not.toContain(en.agentPlugins.ownTitle);
 });

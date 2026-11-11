@@ -1,11 +1,11 @@
 /**
  * Foundations › Shape & depth: the things radius, border and shadow are for, in one stack — a page
  * card with its controls and a box nested at the inner radius, a menu dropped from the card's head
- * (glass in Frost), a dialog over the dimmed page and a toast above everything — each layer naming
- * the stacking tier it takes. Then the app window through `.ui-shell`, where a theme decides how
- * its two columns relate (Frost's frosted column on a flat field, Console's ruled columns,
- * Primer's plain window). Below it, the radius steps, the border widths and the five shadow levels on
- * plain boxes.
+ * (glass in Frost), a dialog over the dimmed page and a toast above everything — each naming the
+ * layer of the scale it takes (`z-popover`, `z-modal`, `z-toast`). Then the app window through
+ * `.ui-shell`, where a theme decides how its two columns relate (Frost's frosted column on a flat
+ * field, Console's ruled columns, Primer's plain window). Below it, the radius steps, the border
+ * widths and the five shadow levels on plain boxes.
  */
 import { useGallery } from "../state";
 import { BoardGroup, ShellSpecimen } from "./shared";
