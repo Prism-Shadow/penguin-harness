@@ -26,6 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFile,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -156,6 +157,13 @@ export const DEFAULT_MODEL: ModelRef = {
 // Rows
 // ---------------------------------------------------------------------------------------------
 
+/** A file a demo memory keeps in its folder, with its text: what the file route reads back. */
+export interface DemoKeptFile {
+  scopeKey: string;
+  file: MemoryFolderFile;
+  content: string;
+}
+
 export interface DemoFixtures {
   lang: Lang;
   now: number;
@@ -187,7 +195,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: DemoKeptFile[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -1412,6 +1428,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: DemoKeptFile[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
@@ -1421,10 +1438,43 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
+    scopeKey: string,
+    filePath: string,
+    content: string,
+    days: number,
+  ): DemoKeptFile => ({
+    scopeKey,
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
+    content,
+  });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1473,10 +1523,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1486,6 +1538,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1495,6 +1548,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 
