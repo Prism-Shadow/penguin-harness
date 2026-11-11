@@ -184,13 +184,14 @@ export function ShortcutsFolder({
       {open && (
         /* No fixed height and no scroll: SHORTCUT_MAX_COUNT bounds this folder to a built-in
            folder's height plus the New-shortcut row. */
-        <div className={examplePanelClass}>
+        <div data-slot="rows" className={examplePanelClass}>
           {loaded && (
             <ul className="space-y-1.5">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
                     type="button"
+                    data-slot="row"
                     data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
@@ -218,6 +219,7 @@ export function ShortcutsFolder({
                 <li>
                   <button
                     type="button"
+                    data-slot="row"
                     data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
                     className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}

@@ -56,6 +56,7 @@ import {
 } from "@prismshadow/penguin-core/kernel";
 
 import { beforeAll, describe, expect, it } from "vitest";
+import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import table from "../src/ifaces.json";
 import { bootWeb, WebRoot } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
@@ -99,7 +100,8 @@ import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
 import { DockModule } from "../src/features/dock/module";
 import { ChatModule } from "../src/features/chat/module";
-import { sessionTabsOf } from "../src/features/chat/deps";
+import { fileRenderersOf, sessionTabsOf } from "../src/features/chat/deps";
+import { AudioFile } from "../src/features/audio/audio-file";
 import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
 
 let pages: readonly WebAppPage[] = [];
@@ -112,6 +114,7 @@ let rows: RowExtensions | null = null;
 let sessionListSection: unknown = null;
 let dockPanels: readonly Contributed[] = [];
 let sessionTabs: readonly Contributed[] = [];
+let fileRenderers: readonly Contributed[] = [];
 
 /** A slot's code halves in the order the shell mounts them. */
 const codeByOrder = (list: readonly Contributed[]): unknown[] =>
@@ -160,6 +163,7 @@ beforeAll(async () => {
   const chat = Object.assign(new ChatModule(), {
     setup(ctx: ClassCtx) {
       sessionTabs = ctx.contributions.sessionTabs ?? [];
+      fileRenderers = ctx.contributions.fileRenderers ?? [];
       ChatModule.prototype.setup.call(chat, ctx);
     },
   });
@@ -209,6 +213,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
+      { key: "apps", admin: false, released: true },
       { key: "models", admin: false, released: true },
       { key: "plugins", admin: false, released: true },
       { key: "machines", admin: true, released: true },
@@ -221,6 +226,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
+      { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {
@@ -287,7 +293,10 @@ describe("the booted page table", () => {
       pageRenderers.map((c) => [c.data.name as string, c.code as ComponentType]),
     );
     const answer = {
-      pages: remote,
+      // As the server might send it: the app checks each entry's fields itself.
+      pages: remote as readonly object[] as ContributionsResponse["pages"],
+      fileRenderers: [],
+      pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],
       quickStarts: [],
@@ -426,5 +435,10 @@ describe("the booted chat slot", () => {
   it("the chat page receives the workflow tab strip", () => {
     expect(sessionTabsOf(sessionTabs).map(({ Tab }) => Tab)).toEqual([WorkbenchSessionTab]);
     expect(sessionTabs.map((c) => c.from)).toEqual(["WorkbenchesModule"]);
+  });
+
+  it("the chat page's file renderer registry holds the audio module's player as `audio`", () => {
+    expect([...fileRenderersOf(fileRenderers)]).toEqual([["audio", AudioFile]]);
+    expect(fileRenderers.map((c) => c.from)).toEqual(["AudioModule"]);
   });
 });

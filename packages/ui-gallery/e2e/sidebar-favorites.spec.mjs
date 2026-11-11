@@ -1,8 +1,8 @@
 /**
  * The sidebar's fixed block — New chat and the favourite entries — measured where only a browser
  * can: the framed app (`app.html`, development mode, the demo admin's nav) with its real layout.
- * The defaults favourite Agents, Models and Plugins; Machines, the Cost Center and the Evaluation
- * Center sit in the fold at the top of the conversation list.
+ * The defaults favourite Agents, the App Center, Models and Plugins; Machines, the Cost Center and
+ * the Evaluation Center sit in the fold at the top of the conversation list.
  *
  * - Given a window too short for the conversation list, when the list scrolls, New chat and the
  *   favourites do not move while the fold rides up with the list; when a folded entry's star is
@@ -23,7 +23,7 @@ import { test, expect } from "@playwright/test";
 /** New chat is a button, a page entry a link; a name may carry an update note after the label. */
 const NEW_CHAT = { role: "button", name: "New chat", exact: true };
 const entry = (label) => ({ role: "link", name: new RegExp(`^${label}\\b`) });
-const FIXED = [NEW_CHAT, entry("Agents"), entry("Models"), entry("Plugins")];
+const FIXED = [NEW_CHAT, entry("Agents"), entry("App Center"), entry("Models"), entry("Plugins")];
 const FOLDED = [entry("Machines"), entry("Cost Center"), entry("Evaluation Center")];
 
 /** Opens a conversation in the framed app at the given window size and returns the sidebar. */

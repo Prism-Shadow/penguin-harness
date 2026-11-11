@@ -1056,8 +1056,47 @@ export const zh = {
       storageError: "无法保存背景设置，请检查此浏览器的本地存储空间或权限。",
     },
     themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
-    /** Display names of the three themes; the ids stay github / modern / geek. */
-    themeNames: { github: "朴素", modern: "白领", geek: "极客" },
+    /** Display names of the built-in themes, keyed by their ids. */
+    themeNames: { github: "朴素", modern: "白领", geek: "极客", doodle: "卡通" },
+    /** The theme row's line while the chosen imported pack's stylesheet has not loaded. */
+    themePackFailed: (name: string, shown: string) =>
+      `「${name}」的样式没能加载，当前显示「${shown}」。`,
+    /** Settings → Appearance, the theme-pack group: every pack this server offers. */
+    themePacks: {
+      title: "主题包",
+      versionLabel: (version: string) => `v${version}`,
+      idHint: (id: string) => `id：${id}`,
+      /** What a pack builds on: Frost itself, a pack on Frost, a pack on the foundation alone. */
+      base: { root: "基准", modern: "基于白领", foundation: "独立" },
+      baseHint: {
+        root: "其他主题包都建立在白领之上：主题包没有写的令牌与配方，显示的是白领的。",
+        modern: "沿用白领的取值与钩子配方，只改它声明的部分。",
+        foundation: "白领的取值只为它兜底，不用白领的钩子配方。",
+      },
+      newerApi: "需要更新的版本",
+      newerApiHint: "这个主题包是为更新版本的应用写的，升级之后才能选用。",
+      export: "导出",
+      exportLabel: (name: string) => `导出主题包「${name}」`,
+      remove: "移除",
+      removeLabel: (name: string) => `移除主题包「${name}」`,
+      importTitle: "导入主题包",
+      importHint: "选择 .zip 文件，不超过 16 MB。",
+      importPick: "选择文件…",
+      importing: "正在导入…",
+      adminOnly: "只有管理员可以导入或移除主题包。",
+      tooLarge: "主题包不能超过 16 MB。",
+      invalid: (where: string, reason: string) => `主题包未通过检查：${where}：${reason}`,
+      imported: (name: string) => `已导入「${name}」，可在「主题」中选用。`,
+      replaced: (name: string) => `已替换「${name}」。`,
+      replaceTitle: (name: string) => `替换已安装的「${name}」？`,
+      replaceBody: (name: string) =>
+        `替换已安装的「${name}」？服务器上已有同 id 的这个主题包，替换后，选用它的账号都会换上这次导入的版本。`,
+      replace: "替换",
+      removeTitle: (name: string) => `移除主题包「${name}」？`,
+      removeBody: (name: string) =>
+        `移除主题包「${name}」？选用它的账号会改用白领；之后再导入同一 id 的主题包，它们会自动换回。`,
+      removed: (name: string) => `已移除「${name}」。`,
+    },
     colorMode: "明暗",
     colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
@@ -1134,6 +1173,11 @@ export const zh = {
       gold: "金",
       cobalt: "钴蓝",
       orange: "橙红",
+      marker: "马克笔橙",
+      ballpoint: "圆珠笔蓝",
+      grass: "草绿",
+      crayon: "蜡笔红",
+      grape: "葡萄紫",
     } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
@@ -1190,6 +1234,8 @@ export const zh = {
       "关闭后，这个 Agent 的所有工作台都会停用：对话页和应用中心不再显示它们，页面也打不开。每个工作台的开关、数据和历史版本都会保留，重新打开即恢复原样。",
     /** One workbench's own switch (its accessible name). */
     enableOne: (name: string) => `启用 ${name}`,
+    /** The word beside a workbench's own switch, which flips it too. */
+    enableLabel: "启用",
     /** Why a workbench's switch is greyed: the Agent-wide one is off. */
     offByAll: "「启用工作台」已关闭，先打开它",
     /** The full-page route of a switched-off workbench. */
@@ -1272,8 +1318,116 @@ export const zh = {
     /** An import whose files were written but did not load: the load's own error follows. */
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "显示在应用中心",
+    showInAppCenterHint:
+      "在应用中心显示这个工作台的快捷入口；会改写它的 package.json，并记为一个版本。",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "应用中心",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "打开",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "更多",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "历史版本",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "退出全页模式（回到应用中心）",
+  },
+  appCenter: {
+    title: "应用中心",
+    description:
+      "本 Project 各 Agent 的 Workbench 快捷入口。点开即用；拖动图块可排序，叠放即成分组。",
+    loading: "加载中…",
+    emptyTitle: "应用中心还是空的",
+    empty:
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「应用中心」开关后，它就会出现在这里。",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "加载失败",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "构建中",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}，来自 ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。构建中，完成后即可打开`,
+    failedTip: (title: string, agent: string) =>
+      `${title}，来自 ${agent}。加载失败，菜单中可查看错误`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
+    folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
+    folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
+    newFolder: "新建分组",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "新建分组",
+    menu: {
+      open: "打开",
+      openFullScreen: "全屏打开",
+      moveTo: "移动到…",
+      moveForward: "向前移动",
+      moveBackward: "向后移动",
+      removeFromFolder: "移出分组",
+      removeFromAppCenter: "从应用中心移除",
+      viewInSettings: "在 Agent 设置中查看",
+      showError: "查看错误",
+      rename: "重命名",
+      dissolve: "解散分组",
+      restoreDefault: "恢复默认排列",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "新建分组…",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "返回",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "移入分组",
+      newFolderWith: "与其组成新分组",
+    },
+    restoreTitle: "恢复默认排列",
+    restoreBody: "应用中心将回到默认顺序：你的排序与分组都会清除，应用本身不受影响。",
+    restoreConfirm: "恢复默认",
+    renameTitle: "重命名分组",
+    folderNameLabel: "分组名称",
+    folderNameHint: "最多 40 个字符",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "新建分组",
+    newFolderApps: "放入的应用",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `在「${name}」中，选中后移入新分组`,
+    newFolderCreate: "创建",
+    errorTitle: (title: string) => `${title} 加载失败`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
+    /** The windowed app's title bar. */
+    windowClose: "关闭，回到应用中心",
+    windowFullScreen: "全屏打开",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    aiCreateTitle: "用 AI 创建应用",
+    aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
+    aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "请把它做成你自己的 Workbench（工作台页面），不要另建独立项目：先按 web-design Skill 定下界面，再按 penguin-plugin Skill 编写并检查加载结果；在它的 package.json 中设置 penguin.appCenter.show 为 true，让它出现在应用中心。完成后告诉我它的名称。",
+    aiCreateExamples: {
+      board: {
+        label: "每日待办看板",
+        description: "按状态分列的卡片，可新增、拖动与删除",
+        prompt:
+          "做一个每日待办看板：按「待办 / 进行中 / 已完成」三列放卡片，可以新增、拖动和删除，数据保存在工作台里。",
+      },
+      digest: {
+        label: "网页摘要",
+        description: "粘贴链接，由 Agent 读完给出要点",
+        prompt:
+          "做一个网页摘要工具：我粘贴一个链接，Agent 读完后给出三行摘要和要点，历史记录按时间倒序列出。",
+      },
+      expenses: {
+        label: "报销登记",
+        description: "表单、按月汇总与导出",
+        prompt: "做一个报销登记工具：填写日期、金额、类别和备注，按月汇总，可以导出 CSV。",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -2640,6 +2794,23 @@ export const zh = {
     disconnectConfirm: (label: string): string =>
       `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
     disconnected: (label: string): string => `已断开 ${label}`,
+    /**
+     * The question after connecting TokenDance or Penguin Go, when the Project's default model is
+     * in another group (`current`, modelInGroup's answer) or unset: make that group's DeepSeek
+     * V4.1 Flash (`model`, its name alone) the default? The unset case's dialog name is
+     * confirmDefaultTitle.
+     */
+    connectDefaultSwitchTitle: "更换默认模型",
+    connectDefaultOffer: (group: string, current: string, model: string): string =>
+      `已连接 ${group}。当前默认模型 ${current} 不在这个分组里，要换成 ${model} 吗？更换后，新建的 Session 将默认使用它。`,
+    connectDefaultOfferUnset: (group: string, model: string): string =>
+      `已连接 ${group}。要把 ${model} 设为默认模型吗？新建的 Session 将默认使用它。`,
+    connectDefaultSwitch: "更换",
+    connectDefaultKeep: "保持不变",
+    connectDefaultSet: "设为默认",
+    connectDefaultNotNow: "暂不设置",
+    /** A model named in a sentence where several groups sell the same one. */
+    modelInGroup: (name: string, group: string): string => `${name}（${group}）`,
     /**
      * A group's account balance in its header (and pinned beside the user name): the sentence
      * spoken behind the amount names the group, the vendor's own figures and the time of the
@@ -5211,6 +5382,17 @@ Benchmark：
 
   files: {
     title: "文件",
+    /**
+     * A reply's audio player (features/audio): the play/pause button's name, the seek bar's name
+     * and value text, what the spinner announces while the file loads, and the line the player
+     * becomes when the file cannot be played.
+     */
+    audioPlay: (name: string) => `播放 ${name}`,
+    audioPause: (name: string) => `暂停 ${name}`,
+    audioSeek: (name: string) => `${name} 的播放位置`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed}，共 ${total}`,
+    audioLoading: (name: string) => `正在加载 ${name}`,
+    audioUnavailable: (name: string) => `无法播放 ${name}：文件不存在或格式不受支持。`,
     upload: "上传",
     download: "下载",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
@@ -6741,6 +6923,14 @@ Benchmark：
       password_mismatch: "当前密码不正确。",
       invalid_password: "密码至少 8 位。",
       admin_required: "仅管理员可执行此操作。",
+      theme_invalid: "主题包未通过检查。",
+      theme_id_reserved: "这个 id 属于内置主题。请在 pack.json 里换一个 id 再导入。",
+      theme_exists: "服务器上已有同 id 的主题包。",
+      theme_too_large: "主题包超出了导入限制。",
+      theme_api_unsupported: "这个主题包是为更新版本的应用写的。",
+      theme_builtin: "内置主题包不能移除。",
+      theme_not_found: "该主题包已不存在。",
+      themes_unavailable: "这个服务端的构建不含内置主题包的源文件，暂时无法导入或导出主题包。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
       trace_body_not_found: "这段内容已不在这个对话的 Trace 中。",

@@ -41,6 +41,11 @@ export interface ModeNavItem {
   label: string;
   /** A name in the UI package's icon registry. */
   icon: string;
+  /**
+   * The rows this one carries below it (a contributed page's `parent`), drawn indented — the
+   * expanded nav renders them; the collapsed rail draws no row for a child (its parent lights).
+   */
+  children?: readonly ModeNavItem[];
 }
 
 /** A contributed mode's state for one render. */

@@ -4,13 +4,21 @@
  * packages included — and the "Import workbench" dialog. The files are the truth, so the tab
  * reads its lists again after every action.
  *
- * A row opens, reloads, shows the history of, exports or removes one, and switches it on or off.
- * The switch is the Project owner's and commits at once; while the Agent-wide "Enable
- * workbenches" is off every row's switch is greyed at its own value, and a server older than the
- * switches gets none. A workbench that does not run (its own switch or the Agent-wide one is off)
- * has nothing to open or reload; its history, restore, export and removal stay. Everything but
- * the switch is member-level, matching the workbench routes, and goes to the server the Agent
- * lives on.
+ * A row says what its controls do (workbench-row.tsx): its two switches carry their words
+ * ("Enable", "App Center"), "Open" is a text button, and the rest — reload, version history,
+ * export, remove — are the rows of its "More" menu.
+ *
+ * - The Enable switch is the Project owner's and commits at once; while the Agent-wide "Enable
+ *   workbenches" is off every row's switch is greyed at its own value, and a server older than
+ *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
+ *   is off) has nothing to open or reload; its history, restore, export and removal stay.
+ * - The App Center switch, on a row of an Agent on this server (the App Center lists those
+ *   only), commits at once too: it rewrites `penguin.appCenter.show` in the workbench's
+ *   package.json, and the reload that follows (none while it does not run) records the edit as
+ *   a version. A refused write puts the switch back where the file says.
+ *
+ * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
+ * the server the Agent lives on.
  *
  * "Import workbench" is the Skills import's dialog (chat-or-zip-import-dialog.tsx): a chat in
  * which this Agent reviews and installs a workbench from a pasted source (workbench-import.ts),
@@ -22,18 +30,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type { IconRef, WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  ConfirmModal,
-  DownloadIcon,
-  GlyphIcon,
-  IconButton,
-  ICONS,
-  ICON_SIZE,
-  ListRow,
-  Modal,
-  Switch,
-} from "@prismshadow/penguin-ui";
+import { Button, ConfirmModal, ListRow, Modal, Switch } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
@@ -43,11 +40,11 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
-import { SkillTile } from "../skills";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
+import { AppCenterToggle, LabelledSwitch, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
 function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
@@ -95,20 +92,60 @@ function WorkbenchSwitch({
     options.onSwitched(res.workbench);
   });
   const allOff = options.allEnabled === false;
+  const disabled = setting.busy || allOff || !options.canSwitch;
   return (
-    <Switch
+    <LabelledSwitch text={S.workbenches.enableLabel} disabled={disabled}>
+      <Switch
+        checked={setting.value}
+        disabled={disabled}
+        onChange={(next) => void setting.set(next)}
+        aria-label={S.workbenches.enableOne(title)}
+        {...(allOff ? { title: S.workbenches.offByAll, "data-tooltip-extra": true } : {})}
+      />
+    </LabelledSwitch>
+  );
+}
+
+/**
+ * One workbench's App Center switch: `penguin.appCenter.show` in its package.json, written at once
+ * and adopted from the answer, rolled back with a toast when refused.
+ */
+function WorkbenchAppCenterSwitch({
+  workbench,
+  title,
+  options,
+}: {
+  workbench: WorkbenchInfo;
+  title: string;
+  options: WorkbenchRowsOptions;
+}) {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
+    if (!projectId) return;
+    const res = await api.setWorkbenchAppCenter(
+      projectId,
+      options.agentId,
+      workbench.id,
+      show,
+      null,
+    );
+    options.onSwitched(res.workbench);
+  });
+  return (
+    <AppCenterToggle
+      title={title}
       checked={setting.value}
-      disabled={setting.busy || allOff || !options.canSwitch}
-      onChange={(next) => void setting.set(next)}
-      aria-label={S.workbenches.enableOne(title)}
-      {...(allOff ? { title: S.workbenches.offByAll, "data-tooltip-extra": true } : {})}
+      disabled={setting.busy}
+      onChange={(show) => void setting.set(show)}
     />
   );
 }
 
 /**
  * The rows of an Agent's workbenches, and the history dialog and the confirmation (restore,
- * remove) they share. `icon` on a row is its plugin's icon; the anvil without one.
+ * remove) they share. `icon` on a row is its plugin's icon, shown when the workbench declares no
+ * App Center icon of its own; the anvil without either.
  */
 export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   row: (workbench: WorkbenchInfo, icon?: IconRef) => ReactNode;
@@ -163,7 +200,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
       <ListRow
         key={`workbench:${workbench.id}`}
         as="li"
-        leading={<SkillTile icon={icon} name={workbench.id} fallback={ICONS.anvil} />}
+        leading={<WorkbenchMark workbench={workbench} pluginIcon={icon} />}
         title={title}
         description={workbench.error ?? workbench.id}
         meta={workbench.version ? `v${workbench.version}` : undefined}
@@ -176,10 +213,13 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
                 options={options}
               />
             )}
+            {machineId === null && (
+              <WorkbenchAppCenterSwitch workbench={workbench} title={title} options={options} />
+            )}
             {first && running && projectId && (
-              <IconButton
-                label={`${S.workbenches.open} ${title}`}
-                title={S.workbenches.open}
+              <Button
+                size="sm"
+                aria-label={`${S.workbenches.open} ${title}`}
                 onClick={() =>
                   void navigate("/chat/new", {
                     state: {
@@ -197,26 +237,21 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
                   })
                 }
               >
-                <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
-              </IconButton>
+                {S.workbenches.openAction}
+              </Button>
             )}
-            {running && (
-              <IconButton
-                label={`${S.workbenches.reload} ${title}`}
-                title={S.workbenches.reload}
-                disabled={busy}
-                onClick={() =>
-                  void act(() => api.reloadWorkbench(projectId!, agentId, workbench.id, machineId))
-                }
-              >
-                <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
-              </IconButton>
-            )}
-            <IconButton
-              label={`${S.workbenches.history} ${title}`}
-              title={S.workbenches.history}
+            <WorkbenchRowMenu
+              title={title}
               disabled={busy}
-              onClick={() =>
+              onReload={
+                running
+                  ? () =>
+                      void act(() =>
+                        api.reloadWorkbench(projectId!, agentId, workbench.id, machineId),
+                      )
+                  : undefined
+              }
+              onHistory={() =>
                 void act(async () =>
                   setHistory({
                     workbench,
@@ -226,26 +261,9 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
                   }),
                 )
               }
-            >
-              <GlyphIcon d={ICONS.history} size={ICON_SIZE.iconButton} />
-            </IconButton>
-            <IconButton
-              label={`${S.workbenches.exportWorkbench} ${title}`}
-              title={S.workbenches.exportWorkbench}
-              disabled={busy}
-              onClick={() => void exportWorkbench(workbench)}
-            >
-              <DownloadIcon size={ICON_SIZE.iconButton} />
-            </IconButton>
-            <IconButton
-              label={`${S.workbenches.remove} ${title}`}
-              title={S.workbenches.remove}
-              variant="danger"
-              disabled={busy}
-              onClick={() => setConfirm({ workbench })}
-            >
-              <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-            </IconButton>
+              onExport={() => void exportWorkbench(workbench)}
+              onRemove={() => setConfirm({ workbench })}
+            />
           </>
         }
       />

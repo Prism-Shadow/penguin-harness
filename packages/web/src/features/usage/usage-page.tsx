@@ -78,19 +78,26 @@ function SummaryRow({
 }) {
   const tone = muted ? "text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100";
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+    <div data-slot="row" className="flex items-baseline justify-between gap-2">
+      <span data-slot="label" className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
         {label}
         {sup && <sup className="ml-px">*</sup>}
       </span>
-      <span className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}>
+      <span
+        data-slot="figure"
+        className={`min-w-0 truncate font-mono text-sm font-semibold tabular-nums ${tone}`}
+      >
         {value}
       </span>
     </div>
   );
 }
 
-/** Usage summary card: a title + Token / request count / cost each on their own row. */
+/**
+ * Usage summary card: a title + Token / request count / cost each on their own row. It carries
+ * the `ui-ledger` hook, its rows the `row` slot, each a `label` beside its `figure`, so a theme
+ * may set the three cards apart as a ledger of their own.
+ */
 function SummaryCard({
   title,
   bucket,
@@ -101,7 +108,7 @@ function SummaryCard({
   currency: "USD" | "CNY";
 }) {
   return (
-    <Card>
+    <Card className="ui-ledger">
       <CardHeader title={title} />
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />

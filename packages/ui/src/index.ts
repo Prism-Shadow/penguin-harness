@@ -87,6 +87,7 @@ export * from "./components/overlays/dropdown/dropdown";
 export * from "./components/overlays/menu/menu";
 export * from "./components/overlays/portal-panel/context-menu";
 export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/overlays/context-menu/context-menu";
 export * from "./components/forms/select/form-picker";
 export * from "./components/overlays/tooltip/tooltip";
 
@@ -131,6 +132,8 @@ export * from "./components/overlays/progress-toasts/progress-toasts";
 // language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
 // `./highlighter` subpath, so no static import of this barrel reaches it.
 export * from "./components/content/prose/prose";
+export { ProseBlockTrailerProvider } from "./components/content/prose/block-trailer";
+export type { ProseBlockTrailer } from "./components/content/prose/block-trailer";
 export * from "./components/content/prose/markdown-plugins";
 export * from "./components/content/prose/site-markdown-plugins";
 export * from "./components/content/code-block/code-block";

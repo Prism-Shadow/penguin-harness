@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   BACKGROUND_STORAGE_KEYS,
   BOOT_SCRIPT,
+  STATIC_BOOT_SCRIPT,
   BOOT_WALLPAPER_PROPERTIES,
   DEFAULT_TEXT_SIZE,
   FONT_CJK_OPTIONS,
@@ -30,16 +31,20 @@ import {
   isFontCjk,
   isFontLatin,
   readBackground,
+  readCachedThemePack,
   readTextSize,
   releaseBootWallpaper,
+  themePackHref,
 } from "../src/boot";
 import type { AccentChoice } from "../src/boot";
 import {
   ACCENT_PRESET_IDS,
-  DEFAULT_THEME_ID,
   INITIAL_THEME_ID,
   THEME_ACCENT_PRESETS,
+  THEME_API,
   THEME_IDS,
+  builtinPack,
+  isThemeId,
 } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import { WEB_DIR } from "./helpers/paths";
@@ -101,6 +106,7 @@ function fakeStorage(stored: Record<string, string | null>, throwing = false) {
 const snapshot = (root: FakeRoot, storage: { map: Map<string, string> }) => ({
   dark: root.classes.has("dark"),
   theme: root.dataset.theme,
+  themeBase: root.dataset.themeBase,
   accent: root.dataset.accent,
   fontLatin: root.dataset.fontLatin,
   fontCjk: root.dataset.fontCjk,
@@ -114,10 +120,17 @@ const snapshot = (root: FakeRoot, storage: { map: Map<string, string> }) => ({
  * script leaks no global — a case below holds that — so runs cannot see each other.)
  */
 const compiled = new Script(BOOT_SCRIPT);
+/** The static sites' variant, with no cached-pack branch. */
+const compiledStatic = new Script(STATIC_BOOT_SCRIPT);
 const context = createContext({ document: {}, localStorage: {}, matchMedia: () => ({}) });
 
 /** Runs the script against the given storage and system preference. */
-function runBoot(stored: Record<string, string | null>, systemDark: boolean, throwing = false) {
+function runBoot(
+  stored: Record<string, string | null>,
+  systemDark: boolean,
+  throwing = false,
+  script = compiled,
+) {
   const root = fakeRoot();
   const localStorage = fakeStorage(stored, throwing);
   context.document = { documentElement: root };
@@ -125,7 +138,7 @@ function runBoot(stored: Record<string, string | null>, systemDark: boolean, thr
   context.matchMedia = (query: string) => ({
     matches: query === "(prefers-color-scheme: dark)" && systemDark,
   });
-  compiled.runInContext(context);
+  script.runInContext(context);
   return snapshot(root, localStorage);
 }
 
@@ -193,13 +206,19 @@ describe("BOOT_SCRIPT", () => {
                       [THEME_STORAGE_KEYS.fontCjk]: cjk,
                     };
                     cases++;
-                    const boot = runBoot(stored, systemDark);
-                    const provider = viaProvider(stored, systemDark);
-                    if (JSON.stringify(boot) !== JSON.stringify(provider)) {
-                      mismatches.push(
-                        `${JSON.stringify(stored)} system=${systemDark ? "dark" : "light"}: ` +
-                          `boot ${JSON.stringify(boot)} vs provider ${JSON.stringify(provider)}`,
-                      );
+                    const provider = JSON.stringify(viaProvider(stored, systemDark));
+                    // The static sites' variant paints the same wherever no pack is cached.
+                    for (const [name, script] of [
+                      ["BOOT_SCRIPT", compiled],
+                      ["STATIC_BOOT_SCRIPT", compiledStatic],
+                    ] as const) {
+                      const boot = JSON.stringify(runBoot(stored, systemDark, false, script));
+                      if (boot !== provider) {
+                        mismatches.push(
+                          `${name} ${JSON.stringify(stored)} system=${systemDark ? "dark" : "light"}: ` +
+                            `boot ${boot} vs provider ${provider}`,
+                        );
+                      }
                     }
                   }
     expect(cases).toBeGreaterThan(10_000);
@@ -248,18 +267,22 @@ describe("BOOT_SCRIPT", () => {
     expect(root.style.fontSize).toBe("18px");
   });
 
-  it("opens a browser that stores no theme, or an unknown one, in the initial theme, and Primer as a bare root", () => {
-    // The theme a fresh browser starts in is written to the root like a chosen one; the stylesheet
-    // alone paints its fallback, Primer, which is how a stored choice of Primer is painted.
+  it("opens a browser that stores no theme, or an unknown one, in the initial theme, and names every theme with its base", () => {
+    // The theme a fresh browser starts in is written to the root like a chosen one, and every
+    // stored theme is named, Primer included: a bare root paints the base, Frost. A pack built
+    // on Frost carries the base attribute its recipes key on; one on the foundation alone none.
     for (const stored of [null, "retro"]) {
-      expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: stored }, false).theme, `${stored}`).toBe(
-        INITIAL_THEME_ID,
-      );
+      expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: stored }, false), `${stored}`).toMatchObject({
+        theme: INITIAL_THEME_ID,
+        themeBase: "modern",
+      });
     }
-    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: DEFAULT_THEME_ID }, false).theme).toBe(
-      undefined,
-    );
-    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: "geek" }, false).theme).toBe("geek");
+    for (const id of THEME_IDS) {
+      const painted = runBoot({ [THEME_STORAGE_KEYS.themeId]: id }, false);
+      expect(painted.theme, id).toBe(id);
+      expect(painted.themeBase, id).toBe(builtinPack(id).base === "modern" ? "modern" : undefined);
+    }
+    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: "github" }, false).themeBase).toBeUndefined();
   });
 
   it("knows every preset every theme lists, and writes one under any theme", () => {
@@ -295,6 +318,7 @@ describe("BOOT_SCRIPT", () => {
     expect(runBoot({}, true, true)).toEqual({
       dark: false,
       theme: undefined,
+      themeBase: undefined,
       accent: undefined,
       fontLatin: undefined,
       fontCjk: undefined,
@@ -303,14 +327,174 @@ describe("BOOT_SCRIPT", () => {
     });
   });
 
-  it("leaves no global behind", () => {
-    const context: Record<string, unknown> = {
-      document: { documentElement: fakeRoot() },
-      localStorage: fakeStorage({}),
-      matchMedia: () => ({ matches: false }),
+  it("leaves no global behind, nor does the static sites' variant", () => {
+    for (const script of [BOOT_SCRIPT, STATIC_BOOT_SCRIPT]) {
+      const context: Record<string, unknown> = {
+        document: { documentElement: fakeRoot() },
+        localStorage: fakeStorage({}),
+        matchMedia: () => ({ matches: false }),
+      };
+      runInNewContext(script, context);
+      expect(Object.keys(context).sort()).toEqual(["document", "localStorage", "matchMedia"]);
+    }
+  });
+});
+
+describe("a cached imported pack", () => {
+  // An imported pack the server lists, as the browser caches its entry: an id the build does not
+  // ship, the theme API it targets, the version its stylesheet is served at, its base and its
+  // presets. The script links its stylesheet during parsing and names it on the root; everything
+  // the cache holds is checked first, and the address is built, never read.
+  const PACK = {
+    id: "sakura",
+    names: { zh: "樱", en: "Sakura" },
+    api: THEME_API,
+    v: "0123abcd",
+    base: "modern",
+    accent: { own: { light: "#2b2521", dark: "#ece4d6" }, presets: [{ id: "petal" }] },
+  };
+  const lists: (string | null)[] = [
+    null,
+    "{not json",
+    "{}",
+    JSON.stringify([PACK]),
+    JSON.stringify([{ ...PACK, base: "foundation" }]),
+    JSON.stringify([{ ...PACK, base: undefined }]),
+    JSON.stringify([{ ...PACK, api: THEME_API + 1 }]),
+    JSON.stringify([{ ...PACK, api: "1" }]),
+    JSON.stringify([{ ...PACK, v: "../../x" }]),
+    JSON.stringify([{ ...PACK, accent: { presets: [{ id: "Petal!" }, null, "petal"] } }]),
+    JSON.stringify([{ ...PACK, accent: null }]),
+    JSON.stringify([null, 3, [], { ...PACK, id: "maple" }, PACK, { ...PACK, v: "ffffffff" }]),
+    JSON.stringify([{ ...PACK, id: "modern" }]),
+  ];
+  const themes = [null, "sakura", "maple", "modern", "github", "toString", 'x" onload="y', "null"];
+  const accents = [null, "petal", "forest", "Petal!"];
+
+  /** Runs the script with a document that records what it writes into the head. */
+  function bootWithPacks(stored: Record<string, string | null>) {
+    const root = fakeRoot();
+    const writes: string[] = [];
+    const localStorage = fakeStorage(stored);
+    context.document = { documentElement: root, write: (html: string) => void writes.push(html) };
+    context.localStorage = localStorage;
+    context.matchMedia = () => ({ matches: false });
+    compiled.runInContext(context);
+    return { ...snapshot(root, localStorage), writes };
+  }
+
+  /** The same stored values through the readers the provider uses. */
+  function viaReaders(stored: Record<string, string | null>) {
+    const storage = fakeStorage(stored);
+    const themeId = stored[THEME_STORAGE_KEYS.themeId] ?? null;
+    const accent = stored[THEME_STORAGE_KEYS.accent] ?? null;
+    const pack = readCachedThemePack(storage, themeId);
+    const root = fakeRoot();
+    const id = isThemeId(themeId) ? themeId : (pack?.id ?? INITIAL_THEME_ID);
+    const listed =
+      (ACCENT_PRESET_IDS as readonly (string | null)[]).includes(accent) ||
+      (pack !== null && pack.presets.includes(accent ?? ""));
+    applyThemeAttributes(root as unknown as HTMLElement, {
+      dark: false,
+      themeId: id as ThemeId,
+      ...(pack === null ? {} : { themeBase: pack.base }),
+      accent: listed ? (accent as AccentChoice) : "neutral",
+      textSize: readTextSize(storage),
+      fontLatin: "theme",
+      fontCjk: "theme",
+    });
+    const writes =
+      pack === null
+        ? []
+        : [
+            `<link rel="stylesheet" data-theme-pack="${pack.id}" href="${themePackHref(pack.id, pack.v)}">`,
+          ];
+    return { ...snapshot(root, storage), writes };
+  }
+
+  it("paints what the provider's readers say, and links the stylesheet they name, for every combination", () => {
+    const mismatches: string[] = [];
+    for (const list of lists)
+      for (const themeId of themes)
+        for (const accent of accents) {
+          const stored = {
+            [THEME_STORAGE_KEYS.themePacks]: list,
+            [THEME_STORAGE_KEYS.themeId]: themeId,
+            [THEME_STORAGE_KEYS.accent]: accent,
+          };
+          const boot = bootWithPacks(stored);
+          const readers = viaReaders(stored);
+          if (JSON.stringify(boot) !== JSON.stringify(readers)) {
+            mismatches.push(
+              `${JSON.stringify(stored)}: ${JSON.stringify(boot)} vs ${JSON.stringify(readers)}`,
+            );
+          }
+        }
+    expect(mismatches.slice(0, 5)).toEqual([]);
+  });
+
+  it("names a cached pack with its base, links its stylesheet, and takes its presets", () => {
+    const painted = bootWithPacks({
+      [THEME_STORAGE_KEYS.themePacks]: JSON.stringify([PACK]),
+      [THEME_STORAGE_KEYS.themeId]: "sakura",
+      [THEME_STORAGE_KEYS.accent]: "petal",
+    });
+    expect(painted).toMatchObject({ theme: "sakura", themeBase: "modern", accent: "petal" });
+    expect(painted.writes).toEqual([
+      '<link rel="stylesheet" data-theme-pack="sakura" href="/api/themes/sakura/files/index.css?v=0123abcd">',
+    ]);
+  });
+
+  it("paints the initial theme for a pack the cache lacks, or one this build cannot load", () => {
+    for (const list of [null, JSON.stringify([{ ...PACK, api: THEME_API + 1 }])]) {
+      const painted = bootWithPacks({
+        [THEME_STORAGE_KEYS.themePacks]: list,
+        [THEME_STORAGE_KEYS.themeId]: "sakura",
+      });
+      expect(painted).toMatchObject({ theme: INITIAL_THEME_ID, themeBase: "modern", writes: [] });
+      // The stored choice is left as it is: the reader never writes it back.
+      expect(painted.stored[THEME_STORAGE_KEYS.themeId]).toBe("sakura");
+    }
+  });
+
+  it("is never linked by the static sites' script, which has no theme server to link from", () => {
+    // The gallery's frames are a static site: a cached pack there would point at an /api/themes
+    // the site does not have. The static script paints the initial theme, takes only built-in
+    // presets, and writes nothing into the head.
+    for (const list of lists) {
+      const root = fakeRoot();
+      const writes: string[] = [];
+      context.document = { documentElement: root, write: (html: string) => void writes.push(html) };
+      context.localStorage = fakeStorage({
+        [THEME_STORAGE_KEYS.themePacks]: list,
+        [THEME_STORAGE_KEYS.themeId]: "sakura",
+        [THEME_STORAGE_KEYS.accent]: "petal",
+      });
+      context.matchMedia = () => ({ matches: false });
+      compiledStatic.runInContext(context);
+      expect(writes, `${list}`).toEqual([]);
+      expect(root.dataset.theme, `${list}`).toBe(INITIAL_THEME_ID);
+      expect(root.dataset.accent, `${list}`).toBeUndefined();
+    }
+  });
+
+  it("still applies the other preferences when the document refuses the link", () => {
+    const root = fakeRoot();
+    context.document = {
+      documentElement: root,
+      write: () => {
+        throw new Error("document.write is blocked");
+      },
     };
-    runInNewContext(BOOT_SCRIPT, context);
-    expect(Object.keys(context).sort()).toEqual(["document", "localStorage", "matchMedia"]);
+    context.localStorage = fakeStorage({
+      [THEME_STORAGE_KEYS.themePacks]: JSON.stringify([PACK]),
+      [THEME_STORAGE_KEYS.themeId]: "sakura",
+      [THEME_STORAGE_KEYS.textSize]: "l",
+    });
+    context.matchMedia = () => ({ matches: false });
+    compiled.runInContext(context);
+    expect(root.dataset.theme).toBe("sakura");
+    expect(root.style.fontSize).toBe(TEXT_SIZE_PX.l);
   });
 });
 

@@ -3,21 +3,24 @@
  * the theme's pill radius; the rest of a tag's look — its type size and line-height among it —
  * from the badge tokens; a count in tabular figures that caps at `max`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Badge, Count } from "../src/components/feedback/badge/badge";
 import type { BadgeProps } from "../src/components/feedback/badge/badge";
-import { THEME_IDS, THEME_MODES, TONES } from "../src/tokens";
+import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES, TONES } from "../src/tokens";
+import type { ThemeId, ThemeModeName } from "../src/tokens";
 import {
-  analyzeThemeFile,
+  analyzePack,
   classTokens,
   markupStructure,
-  modeDeclarations,
   renderStatic,
+  resolveThemeValue,
 } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
+
+/** A token as a theme resolves it in a mode: its own value, or the base's it leaves the name to. */
+const BASE = analyzePack(INITIAL_THEME_ID);
+const valueIn = (id: ThemeId, mode: ThemeModeName, name: string) =>
+  resolveThemeValue(name, mode, analyzePack(id), BASE) ?? undefined;
 
 const render = (props: Omit<BadgeProps, "children">, text = "failed") =>
   renderStatic(createElement(Badge, { ...props, children: text }));
@@ -27,13 +30,12 @@ describe("Badge", () => {
     // Where the ring has a width, the tone's tint must be absent: a tint and its own line on one
     // tag is the doubled edge the outline weight exists to avoid.
     for (const id of THEME_IDS) {
-      const css = readFileSync(join(SRC_DIR, "themes", `${id}.css`), "utf8");
-      const theme = analyzeThemeFile(css, id);
       for (const mode of THEME_MODES) {
-        const values = modeDeclarations(theme, mode);
-        if (values.get("--ui-badge-soft-ring") === "0px") continue;
+        if (valueIn(id, mode, "--ui-badge-soft-ring") === "0px") continue;
         for (const tone of TONES) {
-          expect(values.get(`--ui-tone-${tone}-bg`), `${id} ${mode} ${tone}`).toBe("transparent");
+          expect(valueIn(id, mode, `--ui-tone-${tone}-bg`), `${id} ${mode} ${tone}`).toBe(
+            "transparent",
+          );
         }
       }
     }
@@ -65,17 +67,15 @@ describe("Badge", () => {
     // its small rung, and on a line-height of its own so its height does not follow the row's.
     const rem = (value: string | undefined) => /^(\d*\.?\d+)rem$/.exec(value ?? "")?.[1];
     for (const id of THEME_IDS) {
-      const theme = analyzeThemeFile(
-        readFileSync(join(SRC_DIR, "themes", `${id}.css`), "utf8"),
-        id,
-      );
-      const values = modeDeclarations(theme, "light");
-      const size = rem(values.get("--ui-badge-size"));
-      const small = rem(values.get("--ui-text-small-size"));
+      const size = rem(valueIn(id, "light", "--ui-badge-size"));
+      const small = rem(valueIn(id, "light", "--ui-text-small-size"));
       expect(size, `${id} --ui-badge-size is a rem length`).toBeDefined();
       expect(small, `${id} --ui-text-small-size is a rem length`).toBeDefined();
       expect(Number(size), id).toBeLessThan(Number(small));
-      expect(rem(values.get("--ui-badge-lh")), `${id} --ui-badge-lh is a rem length`).toBeDefined();
+      expect(
+        rem(valueIn(id, "light", "--ui-badge-lh")),
+        `${id} --ui-badge-lh is a rem length`,
+      ).toBeDefined();
     }
   });
 

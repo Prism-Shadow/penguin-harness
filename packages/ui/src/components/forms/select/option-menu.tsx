@@ -118,7 +118,7 @@ export function OptionMenu<T extends string>({
         aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen((v) => !v)}
         className={
-          `flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60 ${controlBase} ${sizeClass[size]} ${error ? errorClass : ""}` +
+          `ui-edge flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60 ${controlBase} ${sizeClass[size]} ${error ? errorClass : ""}` +
           (fullWidth ? " w-full justify-between" : "")
         }
       >

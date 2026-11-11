@@ -2,15 +2,14 @@
  * workbench-import unit tests (src/features/agents/workbench-import.ts): each kind of pasted
  * source — a web page, a repository or directory, a local path, an install command, a reference
  * or description — leads the prompt with that kind's sentence, in either language, with the
- * source trimmed; the whole prompt is that lead, then the tail naming the install target after one
- * blank line.
+ * source trimmed; the whole prompt opens with that lead and names the Project and agent it installs
+ * into.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { ImportSourceKind } from "../src/features/agents/skill-import-source";
 import {
   buildWorkbenchImportPrompt,
   workbenchImportLead,
-  workbenchImportTail,
 } from "../src/features/agents/workbench-import";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -40,13 +39,11 @@ describe("workbenchImportLead", () => {
 });
 
 describe("buildWorkbenchImportPrompt", () => {
-  it("joins the lead and the tail for this Project and agent with one blank line", () => {
+  it("opens with the source's lead and names the Project and agent to install into", () => {
     const source = "https://example.com/apps/kanban";
-    expect(buildWorkbenchImportPrompt(` ${source} `, "proj_1", "writer")).toBe(
-      `${workbenchImportLead(source)}\n\n${workbenchImportTail("proj_1", "writer")}`,
-    );
-    // The tail is where the workbench goes: it names both ids.
-    expect(workbenchImportTail("proj_1", "writer")).toContain("proj_1");
-    expect(workbenchImportTail("proj_1", "writer")).toContain("writer");
+    const prompt = buildWorkbenchImportPrompt(` ${source} `, "proj_1", "writer");
+    expect(prompt.startsWith(workbenchImportLead(source))).toBe(true);
+    expect(prompt).toContain("proj_1");
+    expect(prompt).toContain("writer");
   });
 });

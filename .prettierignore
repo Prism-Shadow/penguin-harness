@@ -14,6 +14,10 @@ packages/desktop/skills/
 # Frost's MiSans slices and their @font-face sheet, written by scripts/build-misans.py (a
 # formatter pass would read as drift against the script's own output)
 packages/ui/src/fonts/misans/
+# Doodle's LXGW WenKai slices and their sheet, the pack's fonts.css, written by
+# scripts/vendor-wenkai.mjs (likewise)
+packages/ui/src/themes/doodle/fonts/
+packages/ui/src/themes/doodle/fonts.css
 
 # the a2ui skill's checker, an esbuild bundle written by scripts/build-a2ui-check.mjs whose header
 # hashes its sources (a formatter pass would change the file the hash test compares)

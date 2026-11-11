@@ -1,7 +1,8 @@
 /**
  * The entry of the published stylesheet, `dist/styles.css` (scripts/build-dist.mjs): Tailwind's
- * base reset and utilities, the token bridge and the three themes, compiled once so that a page or
- * a project using the package needs no Tailwind of its own. The build puts the components' own CSS
+ * base reset and utilities, the token bridge and the built-in theme packs (the base, Frost, first),
+ * compiled once so that a page or a project using the package needs no Tailwind of its own. The
+ * build puts the components' own CSS
  * (prose, tables, charts, KaTeX) after this file, in the order the components import it, which is
  * the order the Web App's bundle gets.
  *
@@ -10,9 +11,10 @@
  */
 @import "tailwindcss" source(none);
 @import "../src/theme.css";
-@import "../src/themes/github.css";
-@import "../src/themes/modern.css";
-@import "../src/themes/geek.css";
+@import "../src/themes/modern/index.css";
+@import "../src/themes/github/index.css";
+@import "../src/themes/geek/index.css";
+@import "../src/themes/doodle/index.css";
 
 /* A Workbench page compiled from TSX carries this sheet. In the app's frame (the root the app marks
    `data-workbench-frame`) the page is see-through like a plain one: its body paints nothing, so the
