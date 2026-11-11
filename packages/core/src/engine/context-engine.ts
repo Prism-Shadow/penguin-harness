@@ -500,8 +500,8 @@ interface TurnRetryState {
  * Both loops retry the same set on the same backoff ladder, and by default with the same
  * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
  * set explicitly (issue #170 — a compaction request is an ordinary LLM request and gets the
- * turn loop's patience). Compaction takes one member out of the set: a response cut at its
- * output cap is a correction there, asked again at once (see summarizeContext).
+ * turn loop's patience). Compaction takes one cause out of it: a response cut at its output
+ * cap (`output_truncated`) is a correction there, asked again at once (see summarizeContext).
  *
  * One rule is the turn loop's alone: received content resets its ladder. A compaction's
  * ladder spans the whole compaction and never resets: it is bounded so that a provider which
@@ -1950,7 +1950,9 @@ export class ContextEngine {
     // undefined when it will not: mirrors the branches below, or the countdown is a lie.
     const plannedRetry = (o: LLMOutcome): number | undefined => {
       if (o.status === "fatal") {
-        return o.errorCode === "rejected" && !imagesStripped && hasInputImages(input) ? 0 : undefined;
+        return o.errorCode === "rejected" && !imagesStripped && hasInputImages(input)
+          ? 0
+          : undefined;
       }
       if (o.errorCode === "output_truncated") {
         return corrections < MAX_COMPACTION_CORRECTIONS ? 0 : undefined;
@@ -1976,7 +1978,10 @@ export class ContextEngine {
           attempts += 1;
           corrections += 1;
           if (corrections > MAX_COMPACTION_CORRECTIONS) {
-            end = { errorCode: "malformed", errorMessage: "the response contained no usable summary" };
+            end = {
+              errorCode: "malformed",
+              errorMessage: "the response contained no usable summary",
+            };
             break;
           }
           input = [await line(EMPTY_LINE)];
@@ -2110,7 +2115,11 @@ export class ContextEngine {
     yield* this.adoptContext(next);
     this.openingSummary = opening;
     // A hand-off absorbed nothing: the text input the compaction held rides on behind the note.
-    return { status: "completed", opening, residual: summary !== null ? [] : folded.filter(isTextMessage) };
+    return {
+      status: "completed",
+      opening,
+      residual: summary !== null ? [] : folded.filter(isTextMessage),
+    };
   }
 
   /**

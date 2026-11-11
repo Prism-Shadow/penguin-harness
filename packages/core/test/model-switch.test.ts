@@ -14,7 +14,9 @@
  * When the summary cannot be had, the switch hands the history over by its Trace path instead
  * (the `/model` handoff's `[model_switch_from]` block, naming this Session and the file it
  * leaves): the model the Session is on is no longer reachable — it is then sent nothing — or
- * the summary request ends other than completed or stopped. Only a stop keeps the old model.
+ * the compaction got neither a summary nor a salvageable part of one, the block being the last
+ * rung of its ladder. Only a stop, or a target whose context cannot be opened, keeps the old
+ * model.
  *
  * Covered here with fake collaborators: the two engine shapes (completed turns: a summarize
  * compaction; none — a context a compaction just closed, or an open one that has not answered
@@ -1055,7 +1057,7 @@ describe("in-session model switch", () => {
       outcome: { status: "fatal", errorCode: "rejected", errorMessage: "prompt is too long" },
     },
   ] satisfies { why: string; outcome: LLMOutcome }[])(
-    "a summary that fails on the old model ($why) hands the history over by Trace path: the failed pair stays on the old file, and the target's file opens with the handoff the stream carries after the meta",
+    "a summary that fails on the old model ($why) with nothing salvageable hands the history over by Trace path: the old file's pair ends completed with the reason, and the target's file opens with the handoff the stream carries after the meta",
     async ({ outcome }) => {
       const llmA = new ScriptedLLM(
         [{ messages: [assistantText("answer one"), usage(50, 50)] }, { messages: [], outcome }],
@@ -1077,8 +1079,9 @@ describe("in-session model switch", () => {
       expect(llmA.calls).toHaveLength(2);
       expect(compactionEvents(all)[1]).toMatchObject({
         reason: "manual",
-        status: outcome.status,
+        status: "completed",
         error_code: outcome.errorCode,
+        error_message: outcome.errorMessage,
       });
       expect(h.opens).toEqual([MODEL_B]);
       expect(h.session.modelId).toBe(MODEL_B.model_id);
@@ -1089,10 +1092,11 @@ describe("in-session model switch", () => {
       const handoff = all.at(-1)!;
       expectHandoff(textOf(handoff), oldPath, MODEL_A);
 
-      // A's file ends with the failed pair; B's opens with its meta, its toolset and the handoff.
+      // A's file ends with the pair; B's opens with its meta, its toolset and the handoff.
       expect((await readTrace(oldPath)).at(-1)!.payload).toMatchObject({
         type: "compaction_end",
-        status: outcome.status,
+        status: "completed",
+        error_code: outcome.errorCode,
       });
       const opened = await readTrace(h.trace.currentPath());
       expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
@@ -1187,7 +1191,7 @@ describe("in-session model switch", () => {
 
       expect(result).toBe("completed");
       expect(compactionEvents(all)[1]).toMatchObject({
-        status: "retryable",
+        status: "completed",
         error_code: errorCode,
       });
       expect(all.slice(-2).map((m) => m.type)).toEqual(["session_meta", "model_msg"]);
@@ -1231,7 +1235,43 @@ describe("in-session model switch", () => {
     expect(h.session.modelId).toBe(MODEL_A.model_id);
   });
 
-  it("a target whose context cannot be opened after the compaction completed fails the switch: the Session stays on its model, and so does the next compaction", async () => {
+  it("a switch whose summary was cut opens the target with the salvaged summary, not the block", async () => {
+    const salvaged = `## Request\n${"the request, at length. ".repeat(30)}`;
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        {
+          messages: [assistantText(`[summary]${salvaged}`)],
+          outcome: { status: "retryable", errorCode: "network", errorMessage: "socket hang up" },
+        },
+      ],
+      "A",
+    );
+    const llmB = new ScriptedLLM([{ messages: [assistantText("on B"), usage(20, 70)] }], "B");
+    const handoff = userText("[model_switch_from]\nhandoff\n[/model_switch_from]");
+    const engine = new ContextEngine({
+      llm: llmA,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      compactionMaxReconnects: 0,
+      openNextContext: () => ({ llm: llmB, sessionMeta: sessionMeta(metaFor(MODEL_B)) }),
+    });
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    const { all, result } = await collectWithReturn(engine.switchContext(undefined, handoff));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    expect(result).toBe("completed");
+    expect(compactionEvents(all)[1]).toMatchObject({ status: "completed", error_code: "network" });
+    // The stream ends on the meta: the block is not what the context opens with.
+    expect(all.at(-1)!.type).toBe("session_meta");
+    expect(llmB.calls[0]!.map(textOf)).toEqual([
+      buildContextSummaryText(salvaged.trim(), undefined, { cutOff: true }),
+      "task two",
+    ]);
+  });
+
+  it("a switch whose opener throws ends fatal and stays on the old model, and so does the next compaction", async () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
@@ -1243,14 +1283,24 @@ describe("in-session model switch", () => {
     // Nothing is prepared for a context on B: the opener throws.
     const h = harness(traces, { llmA, llms: { [MODEL_A.model_id]: [new ScriptedLLM([], "A2")] } });
     sessions.push(h.session);
+    const oldPath = h.trace.currentPath();
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
 
-    await expect(collect(switchTo(h.session, MODEL_B))).rejects.toThrow(
-      /no LLM prepared for a context on model-b/,
-    );
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+
+    expect(result).toBe("fatal");
+    expect(compactionEvents(all)[1]).toMatchObject({
+      status: "fatal",
+      error_message: "no LLM prepared for a context on model-b",
+    });
+    expect(hasMeta(all)).toBe(false);
     expect(h.opens).toEqual([MODEL_B]);
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
+    expect((await readTrace(oldPath)).at(-1)!.payload).toMatchObject({
+      type: "compaction_end",
+      status: "fatal",
+    });
 
     // The failed switch's target is not held: the next rotation keeps the running model.
     await collect(h.session.compact());
@@ -1619,7 +1669,7 @@ describe("in-session model switch", () => {
     expect(llmB.calls[0]!.map(textOf)).toEqual([sourceBlock, "go on"]);
   });
 
-  it("a stop right after a failed summary keeps the old model: nothing is opened, and the next run extends the old context", async () => {
+  it("a stop after a failed summary and before the fallback keeps the old model: nothing is opened, and the next run extends the old context", async () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
@@ -1642,7 +1692,8 @@ describe("in-session model switch", () => {
         result = res.value;
         break;
       }
-      if ((res.value.payload as { type?: string }).type === "compaction_end") controller.abort();
+      const p = res.value.payload as { type?: string; status?: string };
+      if (p.type === "request_end" && p.status === "fatal") controller.abort();
     }
 
     expect(result).toBe("aborted");
@@ -1669,9 +1720,12 @@ describe("in-session model switch", () => {
     const oldPath = h.trace.currentPath();
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
 
-    await expect(collect(switchTo(h.session, MODEL_B))).rejects.toThrow(
-      /no LLM prepared for a context on model-b/,
-    );
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+    expect(result).toBe("fatal");
+    expect(compactionEvents(all)[1]).toMatchObject({
+      status: "fatal",
+      error_message: "no LLM prepared for a context on model-b",
+    });
     expect(h.session.modelId).toBe(MODEL_A.model_id);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`]);
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
