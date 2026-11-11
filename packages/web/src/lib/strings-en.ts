@@ -1647,6 +1647,18 @@ export const en: Strings = {
     listTitle: "Agents",
     searchPlaceholder: "Search agents: id / name / description",
     searchEmpty: "No agent matches that.",
+    groupByLabel: "Group agents by",
+    groupBy: { author: "Group by author", none: "No grouping" },
+    authorGroups: {
+      user: "Created by users",
+      agent: "Created by agents",
+      company: "Created in company mode",
+    },
+    agentCount: (n: number): string => (n === 1 ? "1 agent" : `${n} agents`),
+    authorLabel: "Author",
+    authors: { user: "User", agent: "Agent", company: "Company mode" },
+    authorInfo:
+      "How this agent came to be: created by a user, created by an agent in a conversation, or created in company mode. The Agents list can be grouped by it.",
     create: "Create agent",
     createTitle: "Create agent",
     id: "Agent id",
@@ -1723,7 +1735,7 @@ export const en: Strings = {
     aiCreateTail: [
       "Use the agent-initialization skill to create a new agent in the current Project from the description above:",
       "- Use the agent id given above if there is one; otherwise pick a short semantic id (starting with a lowercase letter; letters, digits, underscores or hyphens). If the target directory already exists, stop and tell me instead of overwriting it.",
-      "- Start from default_agent's system_config.yaml, set its name, description and version, and write the role and rules into its agent_state/AGENTS.md.",
+      "- Start from default_agent's system_config.yaml, set its name, description and version, set author to agent (an agent created it), and write the role and rules into its agent_state/AGENTS.md.",
       "- Copy only the skills it really needs from the plugin library (the skill directories default_agent carries); do not over-equip it.",
       "- Do not touch any other agent; run the skill's validation when done.",
       "Finish by telling me the new agent's id, the skills you installed, and how to start a conversation with it (the New chat button on its card on the Agents page).",
@@ -1998,7 +2010,7 @@ export const en: Strings = {
     resetConfigTitle: "Restore default configuration",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
-      "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
+      "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name, description and author. Like a skill update this cannot be undone. Continue?",
     resetConfigDone: "Configuration restored to the current defaults",
     kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
@@ -2010,7 +2022,7 @@ export const en: Strings = {
     kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
-      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, author, the State version and MCP servers are unaffected. Continue?",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
         ? `Kernel updated to ${version}; ${advanced} tab(s) now follow the new defaults`
@@ -4913,6 +4925,13 @@ Scenarios:
 
   files: {
     title: "Files",
+    audioPlay: (name: string) => `Play ${name}`,
+    audioPause: (name: string) => `Pause ${name}`,
+    audioSeek: (name: string) => `Position in ${name}`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed} of ${total}`,
+    audioLoading: (name: string) => `Loading ${name}`,
+    audioUnavailable: (name: string) =>
+      `Cannot play ${name}: the file is missing or its format is not supported.`,
     upload: "Upload",
     download: "Download",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */

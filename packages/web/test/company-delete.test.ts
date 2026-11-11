@@ -80,7 +80,7 @@ const agentListRead = new RegExp(`^${agentsPath}$`);
 
 /** The Agents page's card named `name` (an employee's name is its id here), or undefined when it is not listed. */
 function cardOf(name: string): HTMLElement | undefined {
-  return [...document.querySelectorAll<HTMLElement>(".ui-frame")].find(
+  return [...document.querySelectorAll<HTMLElement>("[data-agent-card]")].find(
     (card) => card.querySelector("a")?.textContent === name,
   );
 }

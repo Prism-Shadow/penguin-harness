@@ -1354,10 +1354,19 @@ export interface PluginUpdateRef {
   version: string;
 }
 
+/**
+ * Who made an Agent (`author` in system_config.yaml): a person in the Web App (`user`), an
+ * agent working in a Session (`agent`), or company mode creating an organization's CEO or a new
+ * hire (`company`). A config without the field, or with any other value, reads as `user`.
+ */
+export type AgentAuthor = "user" | "agent" | "company";
+
 export interface AgentSummary {
   agentId: string;
   name?: string;
   description?: string;
+  /** Who made the Agent, as its config reads (absent there = `user`); the Agents page groups by it. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   createdAt?: string;
   /** Last config modification time: the larger mtime of system_config.yaml / AGENTS.md (unset if stat fails). */
   updatedAt?: string;
@@ -1440,6 +1449,12 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Who is creating the Agent; omitted = `user`. The Web App's dialog sends `user`, the CLI
+   * sends `agent` when it runs inside a Session. Written into the new Agent's config. (An
+   * imported Agent keeps the `author` its package carries: the import moves an Agent.)
+   */
+  author?: AgentAuthor;
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
@@ -1572,6 +1587,8 @@ export interface AgentHooksConfigDto {
 export interface AgentConfigDto {
   name?: string;
   description?: string;
+  /** The effective author: the stored value, `user` when the field is missing or unknown. This server always sends it; absent (a machine on an older server) reads as `user`. */
+  author?: AgentAuthor;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
   /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
@@ -1641,6 +1658,7 @@ export interface AgentConfigUpdateRequest {
   config?: {
     name?: string;
     description?: string;
+    author?: AgentAuthor;
     systemPrompt?: string;
     maxTurns?: number;
     model?: AgentModelConfigDto;
@@ -7391,8 +7409,58 @@ export interface WebContribution {
   [key: string]: unknown;
 }
 
+/**
+ * The data of one `WebModule.pages` contribution: its route, where it sits (`main` = the
+ * development nav; `org` = a company-mode page — its path is relative to
+ * `/org/:projectId/:orgId/` and it gets a nav row after the organization's own; `none` =
+ * reachable by URL only), whether it is admin-only, its renderer; its nav row's name in English
+ * and Chinese and its glyph (a name in the web UI's icon registry); and the key of the page it
+ * sits under, if any — one level only, and a page whose parent is absent is not shown.
+ */
+export type WebPageData = {
+  key: string;
+  path: string;
+  nav: "main" | "org" | "none";
+  admin: boolean;
+  renderer: RendererRef;
+  parent?: string;
+  title?: string;
+  titleZh?: string;
+  icon?: string;
+};
+
+/** A page contribution as GET /api/contributions answers it. */
+export type WebPageContribution = WebContribution & WebPageData;
+
+/**
+ * The data of one `WebModule.fileRenderers` contribution: the Workspace files it draws, by
+ * extension (without the dot, compared case-insensitively), and the renderer that draws one.
+ * Where the app shows it is the app's own choice (below a reply's paragraph that links the file).
+ */
+export type WebFileRendererData = {
+  extensions: string[];
+  renderer: RendererRef;
+};
+
+/** A file renderer contribution as GET /api/contributions answers it. */
+export type WebFileRendererContribution = WebContribution & WebFileRendererData;
+
+/**
+ * The data of one `WebModule.pageRemovals` contribution: the key of a page the web app drops —
+ * one of its own or one another plugin contributed. The app drops the routes under the page's
+ * path and the pages under it with it, and keeps the page its catch-all leads to.
+ */
+export type WebPageRemovalData = {
+  key: string;
+};
+
+/** A page removal as GET /api/contributions answers it. */
+export type WebPageRemovalContribution = WebContribution & WebPageRemovalData;
+
 export interface ContributionsResponse {
-  pages: WebContribution[];
+  pages: WebPageContribution[];
+  fileRenderers: WebFileRendererContribution[];
+  pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
 }
