@@ -37,9 +37,15 @@ export async function syncCarriedImage(root: string, dir: string | null): Promis
       // Same image as the record: usually current. But a record naming a store that lost
       // a file (a partial copy, a pruned artifact) is not usable — laying the carried
       // body again is what repairs it, and the immutable namespace makes that safe.
+      // The record's pointers already carry the namespace (store/carried/<image>/…), so
+      // the strip here is that whole prefix, not just `store/`.
+      const prefix = `store/carried/${source.image}/`;
+      const pointers = carriedStorePointers(meta.manifest).map((value) =>
+        value.startsWith(prefix) ? value.slice(prefix.length) : "",
+      );
       const complete = await carriedStoreComplete(
         path.join(root, "hmr", "store", "carried", source.image),
-        carriedStorePointers(meta.manifest).map((value) => value.slice("store/".length)),
+        pointers,
       );
       if (complete.ok) return { kind: "current" };
     }
