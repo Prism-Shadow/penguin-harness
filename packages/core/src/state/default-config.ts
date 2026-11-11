@@ -223,16 +223,16 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
  * contract (the line cap and a per-line length hint, so the model keeps the index short
- * before ever hitting the code-side caps) and the hygiene rules, the scripts a scope may keep
- * (how they are indexed and run, and the trust they carry), then the User scope section with
- * its index. Stored
+ * before ever hitting the code-side caps) and the hygiene rules, the scripts a fact may keep
+ * (where they live, how they are described and run, and the trust they carry), then the User
+ * scope section with its index. Stored
  * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
  * directory is literal text in the template's angle-bracket convention (resolved from the
  * Environment section by the model, like the Skills paths) — the only injection point is the
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown facts — and reusable scripts — you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown facts — and the scripts they keep — you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -252,7 +252,7 @@ updated_at: <YYYY-MM-DD>
 
 **Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
 
-**Scripts:** a program you would otherwise rewrite — a parser, a report generator, a checker — goes in the scope's \`scripts/\` directory (any language, one self-contained file, no dependencies beyond its interpreter, a usage comment at the top). Index it like a fact with how to run it: \`- [Title](scripts/name.py) — what it does · run: python3 scripts/name.py <args>\`. Run it with the shell tool by absolute path through its interpreter (files have no execute bit). It is code every later session may run and every Project member can read: keep secrets in the vault, never in the file, and read a script before running one you did not write in this session.
+**Scripts:** a program you would otherwise rewrite — a parser, a report generator, a checker — is kept by the fact it serves, in a folder named after that fact's file (\`csv-tools.md\` keeps \`csv-tools/\`): any number of files, any language, no dependencies beyond their interpreter. The fact's body says what each file does and how to run it, with relative links (\`[dedupe.py](csv-tools/dedupe.py) — drops duplicate rows; args: <in> <out>\`); delete the folder with its fact. Run a script with the shell tool by absolute path through its interpreter (files have no execute bit). It is code every later session may run and every Project member can read: keep secrets in the vault, never in a file, and read a script before running one you did not write in this session.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.

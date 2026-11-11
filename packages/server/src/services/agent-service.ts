@@ -43,7 +43,7 @@ import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import { migrateWorkbenches } from "../workbenches/migrate.js";
 import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { memoryFileCount } from "./memory-service.js";
+import { isTopicFileName } from "./memory-service.js";
 import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
@@ -493,7 +493,7 @@ export class AgentService implements AgentLifecycle {
     }
   }
 
-  /** Number of memories: topic files and scripts (each scope's MEMORY.md index not counted) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
+  /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
   private async memoryCount(projectId: string, agentId: string): Promise<number> {
     const base = memoryDir(this.root, projectId, agentId);
     let scopes: Dirent[];
@@ -503,7 +503,16 @@ export class AgentService implements AgentLifecycle {
       return 0;
     }
     const counts = await Promise.all(
-      scopes.filter((d) => d.isDirectory()).map((d) => memoryFileCount(path.join(base, d.name))),
+      scopes
+        .filter((d) => d.isDirectory())
+        .map(async (d) => {
+          try {
+            const files = await fs.readdir(path.join(base, d.name), { withFileTypes: true });
+            return files.filter((f) => f.isFile() && isTopicFileName(f.name)).length;
+          } catch {
+            return 0;
+          }
+        }),
     );
     return counts.reduce((sum, n) => sum + n, 0);
   }

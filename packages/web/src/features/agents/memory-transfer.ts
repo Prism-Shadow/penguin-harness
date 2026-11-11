@@ -21,12 +21,11 @@ import { S } from "../../lib/strings";
 
 /** Format marker of a scope document, typed against the DTO so this literal cannot drift from the server's. */
 const SCOPE_FORMAT: MemoryScopeDocument["format"] = "penguin-memory-scope";
-/** The version the server writes: entries addressed by `path`, scripts included. */
+/** The version the server writes: a topic may carry the files its folder keeps. */
 const SCOPE_FORMAT_VERSION: MemoryScopeExport["version"] = 2;
 /**
- * The topics-only version from before scripts, entries named by `name`; the server still imports
- * it. Retired with the server's reader at 1.0 (server services/memory-transfer-document.ts says
- * what goes).
+ * The version from before a topic kept files; the server still imports it. Retired with the
+ * server's reader at 1.0 (server services/memory-transfer-document.ts says what goes).
  */
 const SCOPE_FORMAT_VERSION_TOPICS_ONLY: MemoryScopeExportV1["version"] = 1;
 
@@ -38,24 +37,16 @@ export class MemoryDocumentError extends Error {
   }
 }
 
-/** Whether an entry has its text and its place under the key its version uses (`path`, or a version 1 topic's `name`). */
-function isTransferEntry(value: unknown, locator: "path" | "name"): boolean {
+function isTransferFile(value: unknown): boolean {
   if (value === null || typeof value !== "object") return false;
   const entry = value as Record<string, unknown>;
-  return typeof entry[locator] === "string" && typeof entry.content === "string";
-}
-
-/** Where each of a document's memories sits in its scope — `prefers-pnpm.md`, `scripts/dedupe-csv.py` — the paths the listing and the import response use too. */
-export function documentPaths(doc: MemoryScopeDocument): string[] {
-  return doc.version === SCOPE_FORMAT_VERSION_TOPICS_ONLY
-    ? doc.files.map((f) => f.name)
-    : doc.files.map((f) => f.path);
+  return typeof entry.name === "string" && typeof entry.content === "string";
 }
 
 /**
  * Reads a picked file's text as a scope document, of either version the server imports. Only the
- * shape is checked here — names, sizes and counts are the server's to enforce, and a second copy
- * of those bounds would only drift.
+ * shape is checked here — names, paths, sizes and counts are the server's to enforce, and a second
+ * copy of those bounds would only drift.
  */
 export function parseMemoryScopeDocument(text: string): MemoryScopeDocument {
   let parsed: unknown;
@@ -74,8 +65,7 @@ export function parseMemoryScopeDocument(text: string): MemoryScopeDocument {
   ) {
     throw new MemoryDocumentError(S.memory.importInvalidFile);
   }
-  const locator = doc.version === SCOPE_FORMAT_VERSION ? "path" : "name";
-  if (!Array.isArray(doc.files) || !doc.files.every((f) => isTransferEntry(f, locator))) {
+  if (!Array.isArray(doc.files) || !doc.files.every(isTransferFile)) {
     throw new MemoryDocumentError(S.memory.importInvalidFile);
   }
   if (doc.files.length === 0 && typeof doc.index !== "string") {
@@ -86,13 +76,22 @@ export function parseMemoryScopeDocument(text: string): MemoryScopeDocument {
 
 /** What the scope holds right now, as the tab already knows it. */
 export interface MemoryScopeState {
-  /** Paths of the memories listed in the group (`MemoryFileInfo.path`): topics and scripts. */
-  paths: readonly string[];
+  /** Topic file names listed in the group. */
+  names: readonly string[];
+  /** Folders in the group that no topic keeps (`leftover` for `leftover/old.py`). */
+  orphanFolders: readonly string[];
   /** Whether the scope has a `MEMORY.md` index. */
   hasIndex: boolean;
 }
 
-/** What one import mode would do to that scope, memory by memory (each named by its path). */
+/** The folder a topic keeps its files in: its file name without the `.md`. */
+const folderOf = (name: string): string => name.slice(0, -".md".length);
+
+/**
+ * What one import mode would do to that scope, memory by memory. A memory moves with its folder,
+ * and a folder no topic keeps counts as its topic being there (the server's rule); `removed`
+ * names such a folder as `<folder>/`.
+ */
 export interface MemoryImportPlan {
   /** Memories the scope does not have yet. */
   added: string[];
@@ -113,16 +112,23 @@ export function planMemoryImport(
   scope: MemoryScopeState,
   mode: MemoryImportMode,
 ): MemoryImportPlan {
-  const present = new Set(scope.paths);
-  const paths = documentPaths(doc);
-  const carried = new Set(paths);
-  const collides = paths.filter((p) => present.has(p));
-  const added = paths.filter((p) => !present.has(p));
+  const names = doc.files.map((f) => f.name);
+  const strays = new Set(scope.orphanFolders);
+  const present = new Set(scope.names);
+  const isPresent = (name: string): boolean => present.has(name) || strays.has(folderOf(name));
+  const carried = new Set(names);
+  const carriedFolders = new Set(names.map(folderOf));
+  const collides = names.filter(isPresent);
+  const added = names.filter((name) => !isPresent(name));
   const overwritten = mode === "skip" ? [] : collides;
   const skipped = mode === "skip" ? collides : [];
-  // A version 1 document carries no scripts, so `replace` deletes the scope's scripts too: the
-  // confirmation names them like any other memory.
-  const removed = mode === "replace" ? [...present].filter((p) => !carried.has(p)) : [];
+  const removed =
+    mode === "replace"
+      ? [
+          ...scope.names.filter((name) => !carried.has(name)),
+          ...scope.orphanFolders.filter((f) => !carriedFolders.has(f)).map((f) => `${f}/`),
+        ]
+      : [];
   const replacesIndex = mode === "replace" && scope.hasIndex && doc.index !== null;
   return {
     added,

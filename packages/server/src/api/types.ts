@@ -1795,37 +1795,44 @@ export interface MemoryScopeInfo {
   kind: "user" | "workspace";
   /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
   workspacePath?: string;
-  /** Number of memories in the directory: its Markdown topic files plus the scripts under `scripts/` (the `MEMORY.md` index not counted). */
+  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted; the files a topic keeps are part of that topic). */
   fileCount: number;
   /** Whether the directory holds a `MEMORY.md` index, so an import confirmation can say whether one would be replaced. */
   hasIndex: boolean;
-  /** Most recent mtime among the directory's topic files and scripts (ISO 8601); unset when it holds neither. */
+  /** Most recent mtime among the directory's topic files and the files they keep (ISO 8601); unset when it holds no topic file. */
   updatedAt?: string;
 }
 
 /**
- * What a memory file is: a `topic` — a Markdown fact directly in the scope directory — or a
- * `script` — a program the Agent keeps in the scope's `scripts/` directory, in any language.
+ * One file kept in a folder of a scope: a topic's folder — named after its file without the
+ * `.md`, beside it (`csv-tools/` for `csv-tools.md`) — or a folder that belongs to no topic.
+ * Any regular file, in any language, at any depth under the folder.
  */
-export type MemoryFileKind = "topic" | "script";
-
-/** One memory file, as listed (a topic's frontmatter only — the body is fetched per file). */
-export interface MemoryFileInfo {
-  /** File name, e.g. `prefers-pnpm.md`, or a script's `dedupe-csv.py`. */
-  name: string;
-  /** Where the file sits inside the scope directory: the name for a topic, `scripts/<name>` for a script. This is what the file routes, the index links and a transfer document address it by. */
+export interface MemoryFolderFile {
+  /** Its place in the scope directory, folder first: `csv-tools/dedupe.py`, `csv-tools/lib/io.py`. The file routes address it by this path. */
   path: string;
-  kind: MemoryFileKind;
-  /** A topic's frontmatter `name`, falling back to the file name; a script's file name. */
+  /** File size in bytes. */
+  size: number;
+  /** File mtime (ISO 8601). */
+  modifiedAt: string;
+}
+
+/** One memory topic file, as listed (frontmatter only — the body is fetched per file). */
+export interface MemoryFileInfo {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
+  name: string;
+  /** Frontmatter `name`; falls back to the file name. */
   title: string;
-  /** A topic's frontmatter `description`; empty when the file declares none, and for a script. */
+  /** Frontmatter `description`; empty when the file declares none. */
   description: string;
-  /** A topic's frontmatter `updated_at`, verbatim; unset for a script. */
+  /** Frontmatter `updated_at`, verbatim. */
   updatedAt?: string;
   /** File size in bytes. */
   size: number;
   /** File mtime (ISO 8601). */
   modifiedAt: string;
+  /** The files the topic keeps in its folder, at every depth, in path order; empty when it keeps none. */
+  files: MemoryFolderFile[];
 }
 
 /** GET …/memory — the tab's landing payload: the switch and every scope group, user scope first. */
@@ -1843,45 +1850,66 @@ export interface MemoryOverviewResponse {
 export interface MemoryFilesResponse {
   scopeKey: string;
   files: MemoryFileInfo[];
+  /** Files in folders with no topic of their name beside them (`notes/` without `notes.md`). They belong to no memory, and are listed so that none is hidden. */
+  orphanFiles: MemoryFolderFile[];
 }
 
-/** GET …/memory/scopes/:key/files/:name, and …/files/scripts/:name for a script */
+/** GET …/memory/scopes/:key/files/:name */
 export interface MemoryFileResponse {
   scopeKey: string;
   file: MemoryFileInfo;
   content: string;
 }
 
-/** One memory inside a transfer document: where it sat in its scope, and its whole text. */
-export interface MemoryTransferFile {
-  /** Its place inside the scope directory: `prefers-pnpm.md` for a topic, `scripts/dedupe-csv.py` for a script — never absolute, never deeper than `scripts/`. */
-  path: string;
-  /** The file's full text (a topic's frontmatter included). */
+/** GET …/memory/scopes/:key/files/<folder>/<path> — a kept file's text, up to 512 KB of UTF-8. */
+export interface MemoryFolderFileResponse {
+  scopeKey: string;
+  file: MemoryFolderFile;
   content: string;
 }
 
-/** A script the scope holds that its export leaves out, so the reader can say what did not travel. */
+/** One file a topic keeps, inside a transfer document. */
+export interface MemoryTransferFolderFile {
+  /** Its path inside the topic's folder, `/`-separated: `dedupe.py`, `lib/io.py` — never absolute, never climbing out. */
+  path: string;
+  /** The file's full text. */
+  content: string;
+}
+
+/** One topic file inside a transfer document: the name it had in its scope, its whole text, and the files it keeps. */
+export interface MemoryTransferFile {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md` — a name, never a path. */
+  name: string;
+  /** The file's full Markdown text, frontmatter included. */
+  content: string;
+  /** The files in the topic's folder; absent when it keeps none. */
+  files?: MemoryTransferFolderFile[];
+}
+
+/** A file the scope holds that its export leaves out, so the reader can say what did not travel. */
 export interface MemoryOmittedFile {
-  /** `scripts/<name>`. */
+  /** Its place in the scope directory, as `MemoryFolderFile.path`. */
   path: string;
   /** Bytes on disk. */
   size: number;
-  /** `too_large` — over the 512 KB a memory file may hold; `not_text` — not UTF-8 text (a NUL byte counts). */
-  reason: "too_large" | "not_text";
+  /**
+   * `too_large` — over the 512 KB a memory file may hold; `not_text` — not UTF-8 text (a NUL
+   * byte counts); `orphan` — in a folder that belongs to no topic, so no entry carries it.
+   */
+  reason: "too_large" | "not_text" | "orphan";
 }
 
 /**
  * GET …/memory/scopes/:key/export, and the body a POST …/import carries back: everything one
- * scope holds, as one JSON document — the topic files, the scripts, and the scope's own
- * `MEMORY.md`.
+ * scope holds, as one JSON document — the topic files with the files they keep, and the scope's
+ * own `MEMORY.md`.
  */
 export interface MemoryScopeExport {
   /** Format marker, so a foreign JSON file is refused with a clear reason rather than half-imported. */
   format: "penguin-memory-scope";
   /**
-   * Document version. 2 added scripts and addresses every entry by `path`; a reader of this
-   * version still accepts version 1 (`MemoryScopeExportV1`), while a server from before it
-   * refuses version 2.
+   * Document version. 2 added the files a topic keeps; a reader of this version still accepts
+   * version 1 (`MemoryScopeExportV1`), while a server from before it refuses version 2.
    */
   version: 2;
   /** The scope this was exported from. Informational: an import writes into the scope its URL names. */
@@ -1894,17 +1922,16 @@ export interface MemoryScopeExport {
   /** The scope's `MEMORY.md`, or null when the scope has none. Only the index reaches the model's context. */
   index: string | null;
   files: MemoryTransferFile[];
-  /** Scripts listed in the scope but not carried here. Informational: an import does not read it. */
+  /** Files listed in the scope but not carried here. Informational: an import does not read it. */
   omitted: MemoryOmittedFile[];
 }
 
-/** A version 1 document: written before scripts, topics only, each entry named by its file name. An import still reads it. */
+/** A version 1 document: written before a topic kept files, topics only. An import still reads it. */
 export interface MemoryScopeExportV1 extends Omit<
   MemoryScopeExport,
   "version" | "files" | "omitted"
 > {
   version: 1;
-  /** `name` is the topic's file name inside the scope, e.g. `prefers-pnpm.md`. */
   files: { name: string; content: string }[];
 }
 
@@ -1912,11 +1939,14 @@ export interface MemoryScopeExportV1 extends Omit<
 export type MemoryScopeDocument = MemoryScopeExport | MemoryScopeExportV1;
 
 /**
- * What an import does with a name the target scope already holds:
- *   - `skip` — keep what is on disk, write only names the scope does not have (destroys nothing);
- *   - `overwrite` — replace a same-named file's content;
- *   - `replace` — additionally delete every memory (topic or script) the document does not carry.
- * The two destructive modes require `confirm`.
+ * What an import does with a topic the target scope already holds. A topic moves with its
+ * folder, so each mode acts on the two together:
+ *   - `skip` — keep what is on disk, write only topics the scope does not have (destroys nothing);
+ *   - `overwrite` — replace a same-named topic, its folder replaced by the document's files;
+ *   - `replace` — additionally delete every topic the document does not carry, its folder with
+ *     it, and every folder that belongs to no topic.
+ * A folder that belongs to no topic counts as that topic being present. The two destructive
+ * modes require `confirm`.
  */
 export type MemoryImportMode = "skip" | "overwrite" | "replace";
 
@@ -1929,17 +1959,17 @@ export interface MemoryImportRequest {
   payload: MemoryScopeDocument;
 }
 
-/** What one import did, memory by memory (each named by its `path` in the scope), so the UI can report it rather than claim success. */
+/** What one import did, topic by topic, so the UI can report it rather than claim success. */
 export interface MemoryImportResponse {
   scopeKey: string;
   mode: MemoryImportMode;
-  /** Paths written that the scope did not have. */
+  /** Topic names written that the scope did not have. */
   added: string[];
-  /** Paths whose existing content was replaced. */
+  /** Topic names whose existing content (and folder) was replaced. */
   overwritten: string[];
-  /** Paths left untouched because the scope already had them (`skip` only). */
+  /** Topic names left untouched because the scope already had them (`skip` only). */
   skipped: string[];
-  /** Paths deleted because `replace` dropped everything the document did not carry. */
+  /** What `replace` deleted because the document did not carry it: topic names, whose folders went with them, and folders that belonged to no topic (`notes/`). */
   removed: string[];
   /** Whether the scope's `MEMORY.md` was written or extended. */
   indexWritten: boolean;

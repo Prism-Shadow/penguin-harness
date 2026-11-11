@@ -14,15 +14,16 @@
  *   Agent list counts memories across scopes minus the indexes.
  * - A non-member gets 404 on every route.
  *
- * Scripts (`scripts/<name>` in a scope):
- * - A scope's scripts are listed after its topics, by path, and counted; one is read back as
- *   text. A dotfile, a subdirectory and anything under them stay out of the listing.
- * - A script over 512 KB or not UTF-8 text is still listed, but reading it is refused with a
- *   reason (413 / 415).
- * - Deleting a script prunes its index line and leaves a topic of the same stem alone; a script
- *   name that hides or carries a separator is refused.
- * - A `scripts` that is not a real directory (a file, a planted symlink) holds no scripts: nothing
- *   under it is listed or read, and an import that brings scripts is refused with nothing written.
+ * The files a topic keeps (`<topic>/` beside `<topic>.md`, any depth):
+ * - A topic lists with the files of its folder and counts once; each file reads back as text, a
+ *   dotfile and a symlink inside the folder stay out. A folder with no topic beside it is listed
+ *   apart, never dropped.
+ * - A kept file over 512 KB or not UTF-8 text is still listed, but reading it is refused with a
+ *   reason (413 / 415); a path that hides, climbs or is a single name is refused.
+ * - Deleting the topic removes its folder (a symlink inside it is unlinked, never followed) and
+ *   its index line; deleting one file removes the folders it leaves empty, the topic stays.
+ * - A topic's folder planted as a symlink holds no files: nothing under it is listed, read or
+ *   deleted, and deleting the topic leaves the link's target alone.
  *
  * Moving a scope (export/import):
  * - An export carries every topic file and the index as one attachment (the user scope too, with
@@ -32,16 +33,19 @@
  *   the index.
  * - The untrusted document is checked whole before anything is written: a path-like name, a
  *   non-text entry, absurd counts or sizes, a foreign or future format; no temporary file stays.
- * - An export carries the scripts beside the topics (version 2, every entry by `path`) and names
- *   the scripts it leaves out (over 512 KB, not text); imported back, the scripts land in
- *   `scripts/` with their index lines; `replace` deletes a script the document does not carry.
- * - A version 1 document (topics by `name`, from before scripts) still imports; more than 100
- *   scripts, or a script path that nests or hides, is refused.
+ * - A topic travels with its files (version 2): exported, they re-import into another scope's
+ *   folder of the same name; the files left out (over 512 KB, not text, kept by no topic) are
+ *   named. A version 1 document (from before a topic kept files) still imports.
+ * - `overwrite` replaces a topic's folder with the document's files; `replace` deletes the
+ *   topics the document does not carry with their folders, and the folders no topic keeps,
+ *   naming them first. A kept file's path that hides, climbs or clashes is refused, and so is an
+ *   import whose topic folder is not a directory, with nothing written.
  * - Any member exports, only the owner imports, and a non-member learns nothing.
  *
  * One app for the file and one Project per describe; every case works in a plain Agent of its
  * own.
  */
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -55,6 +59,7 @@ import type {
   AgentConfigResponse,
   MemoryFileResponse,
   MemoryFilesResponse,
+  MemoryFolderFileResponse,
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
@@ -130,10 +135,18 @@ describe("memory api", () => {
 
   const filesPath = (key = WORKSPACE_KEY) => `${memoryPath}/scopes/${key}/files`;
 
-  /** Writes a script the way the model's write_file would: creating the scope's scripts/ first. */
-  const writeScript = async (name: string, content: string | Buffer): Promise<void> => {
-    await fs.mkdir(path.join(wsDir, "scripts"), { recursive: true });
-    await fs.writeFile(path.join(wsDir, "scripts", name), content);
+  /** Writes a file under a folder of the Workspace scope the way the model's write_file would: creating its folders first. */
+  const writeKept = async (filePath: string, content: string | Buffer): Promise<void> => {
+    await fs.mkdir(path.dirname(path.join(wsDir, filePath)), { recursive: true });
+    await fs.writeFile(path.join(wsDir, filePath), content);
+  };
+
+  /** csv-tools.md and the three files its folder keeps, one of them a folder down. */
+  const writeCsvTools = async (): Promise<void> => {
+    await fs.writeFile(path.join(wsDir, "csv-tools.md"), "---\nname: csv-tools\n---\nsee files\n");
+    await writeKept("csv-tools/dedupe.py", "print('dedupe')\n");
+    await writeKept("csv-tools/lib/io.py", "def read(): pass\n");
+    await writeKept("csv-tools/report.sh", "echo report\n");
   };
 
   it("overview reports the switch, the user scope, and one entry per Workspace", async () => {
@@ -348,121 +361,159 @@ describe("memory api", () => {
     const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
     await fs.mkdir(userDir, { recursive: true });
     await fs.writeFile(path.join(userDir, "prefers-pnpm.md"), "---\nname: p\n---\nx\n", "utf8");
-    // A script is a memory too.
-    await writeScript("dedupe-csv.py", "print('x')\n");
+    // The files a topic keeps are part of that memory, not memories of their own.
+    await writeKept("testing-conventions/run.sh", "echo run\n");
 
     const body = (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as {
       agents: { agentId: string; memoryCount: number }[];
     };
     const agent = body.agents.find((a) => a.agentId === agentId);
-    expect(agent?.memoryCount).toBe(3);
+    expect(agent?.memoryCount).toBe(2);
   });
 
-  // —— Scripts ——
+  // —— The files a topic keeps ——
 
-  it("lists a scope's scripts after its topics, reads one back as text, and counts it", async () => {
-    await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
-    const script = "# Usage: python3 dedupe-csv.py <in> <out>\nprint('dedupe')\n";
-    await writeScript("dedupe-csv.py", script);
-    await writeScript("Makefile", "all:\n");
-    // What the scripts directory holds besides scripts: a temporary dotfile and a subdirectory.
-    await writeScript(".dedupe-csv.py.tmp-1", "half-written");
-    await fs.mkdir(path.join(wsDir, "scripts", "lib"), { recursive: true });
-    await fs.writeFile(path.join(wsDir, "scripts", "lib", "helper.py"), "x = 1\n", "utf8");
+  it("lists a topic with the three files its folder keeps, reads each back, and counts the topic once", async () => {
+    await writeCsvTools();
+    // What a folder holds besides kept files: a temporary dotfile the Harness's own writes leave.
+    await writeKept("csv-tools/.dedupe.py.tmp-1", "half-written");
 
     const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
-    expect(list.files.map((f) => [f.kind, f.path])).toEqual([
-      ["topic", "testing-conventions.md"],
-      ["script", "scripts/dedupe-csv.py"],
-      ["script", "scripts/Makefile"],
+    expect(list.files.map((f) => f.name)).toEqual(["csv-tools.md"]);
+    expect(list.files[0]?.files.map((f) => [f.path, f.size])).toEqual([
+      ["csv-tools/dedupe.py", 16],
+      ["csv-tools/lib/io.py", 17],
+      ["csv-tools/report.sh", 12],
     ]);
-    expect(list.files[1]).toMatchObject({
-      name: "dedupe-csv.py",
-      title: "dedupe-csv.py",
-      description: "",
-      size: Buffer.byteLength(script),
-    });
+    expect(list.orphanFiles).toEqual([]);
 
     const read = (await (
-      await owner.get(`${filesPath()}/scripts/dedupe-csv.py`)
-    ).json()) as MemoryFileResponse;
-    expect(read.content).toBe(script);
-    expect(read.file.kind).toBe("script");
+      await owner.get(`${filesPath()}/csv-tools/lib/io.py`)
+    ).json()) as MemoryFolderFileResponse;
+    expect(read.content).toBe("def read(): pass\n");
+    expect(read.file.path).toBe("csv-tools/lib/io.py");
+    // Reading the topic brings its files along, for a detail view that shows both.
+    const topic = (await (await owner.get(`${filesPath()}/csv-tools.md`)).json()) as MemoryFileResponse;
+    expect(topic.file.files).toHaveLength(3);
 
     const overview = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
-    expect(overview.scopes.find((sc) => sc.scopeKey === WORKSPACE_KEY)?.fileCount).toBe(3);
+    expect(overview.scopes.find((sc) => sc.scopeKey === WORKSPACE_KEY)?.fileCount).toBe(1);
   });
 
-  it("lists a script over 512 KB and one that is not text, but refuses to read either, saying why", async () => {
-    await writeScript("huge.py", "x".repeat(512 * 1024 + 1));
-    // Valid UTF-8 with a NUL byte: an import would refuse it, so it is not shown as text either.
-    await writeScript("nul.txt", "bin\u0000ary");
+  it("lists the files of a folder with no topic beside it apart, rather than dropping them", async () => {
+    await fs.writeFile(path.join(wsDir, "kept.md"), "---\nname: kept\n---\nx\n");
+    await writeKept("leftover/old.py", "print('old')\n");
 
     const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
-    expect(list.files.map((f) => f.path)).toEqual(["scripts/huge.py", "scripts/nul.txt"]);
+    expect(list.files.map((f) => [f.name, f.files])).toEqual([["kept.md", []]]);
+    expect(list.orphanFiles.map((f) => f.path)).toEqual(["leftover/old.py"]);
+    expect((await owner.get(`${filesPath()}/leftover/old.py`)).status).toBe(200);
+  });
 
-    const huge = await owner.get(`${filesPath()}/scripts/huge.py`);
+  it("lists a kept file over 512 KB and one that is not text, but refuses to read either, saying why", async () => {
+    await fs.writeFile(path.join(wsDir, "big.md"), "---\nname: big\n---\nx\n");
+    await writeKept("big/huge.py", "x".repeat(512 * 1024 + 1));
+    // Valid UTF-8 with a NUL byte: an import would refuse it, so it is not shown as text either.
+    await writeKept("big/nul.txt", "bin\u0000ary");
+
+    const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
+    expect(list.files[0]?.files.map((f) => f.path)).toEqual(["big/huge.py", "big/nul.txt"]);
+
+    const huge = await owner.get(`${filesPath()}/big/huge.py`);
     expect(huge.status).toBe(413);
     expect(((await huge.json()) as { error: { code: string } }).error.code).toBe(
-      "memory_script_too_large",
+      "memory_file_too_large",
     );
-    const nul = await owner.get(`${filesPath()}/scripts/nul.txt`);
+    const nul = await owner.get(`${filesPath()}/big/nul.txt`);
     expect(nul.status).toBe(415);
     expect(((await nul.json()) as { error: { code: string } }).error.code).toBe(
-      "memory_script_not_text",
+      "memory_file_not_text",
     );
   });
 
-  it("deletes a script and prunes its index line, leaving a topic of the same stem alone", async () => {
-    await writeScript("report.md", "# a script that happens to be Markdown\n");
-    await fs.writeFile(path.join(wsDir, "report.md"), "---\nname: report\n---\nbody\n", "utf8");
+  it("deletes a topic with its folder and its index line, leaving another topic's folder alone", async () => {
+    await writeCsvTools();
+    await fs.writeFile(path.join(wsDir, "other.md"), "---\nname: other\n---\nx\n");
+    await writeKept("other/keep.sh", "echo keep\n");
     await fs.writeFile(
       path.join(wsDir, MEMORY_INDEX_FILENAME),
-      "- [Report](report.md) — the fact\n" +
-        "- [Report script](scripts/report.md) — builds it · run: node scripts/report.md\n",
-      "utf8",
+      "- [CSV tools](csv-tools.md) — dedupe and report\n- [Other](other.md) — other\n",
     );
 
-    expect((await owner.delete(`${filesPath()}/scripts/report.md`)).status).toBe(204);
-    expect(await fs.readdir(path.join(wsDir, "scripts"))).toEqual([]);
-    expect(await fs.readdir(wsDir)).toContain("report.md");
+    expect((await owner.delete(`${filesPath()}/csv-tools.md`)).status).toBe(204);
+    const left = (await fs.readdir(wsDir)).sort();
+    expect(left).not.toContain("csv-tools.md");
+    expect(left).not.toContain("csv-tools");
+    expect(await fs.readdir(path.join(wsDir, "other"))).toEqual(["keep.sh"]);
     expect(await fs.readFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "utf8")).toBe(
-      "- [Report](report.md) — the fact\n",
+      "- [Other](other.md) — other\n",
     );
-    expect((await owner.delete(`${filesPath()}/scripts/report.md`)).status).toBe(404);
-    expect((await owner.get(`${filesPath()}/scripts/report.md`)).status).toBe(404);
   });
 
-  it("refuses a script name that hides or carries a separator", async () => {
-    await writeScript(".env", "SECRET=1\n");
-    expect((await owner.get(`${filesPath()}/scripts/.env`)).status).toBe(400);
-    expect((await owner.delete(`${filesPath()}/scripts/.env`)).status).toBe(400);
-    expect((await owner.get(`${filesPath()}/scripts/..%2F..%2Fescape.py`)).status).toBe(400);
-    expect((await owner.get(`${filesPath()}/scripts/lib%2Fhelper.py`)).status).toBe(400);
-    expect(await fs.readdir(path.join(wsDir, "scripts"))).toEqual([".env"]);
+  it("deletes one kept file and the folders it leaves empty, keeping the topic", async () => {
+    await writeCsvTools();
+
+    expect((await owner.delete(`${filesPath()}/csv-tools/lib/io.py`)).status).toBe(204);
+    expect((await fs.readdir(path.join(wsDir, "csv-tools"))).sort()).toEqual([
+      "dedupe.py",
+      "report.sh",
+    ]);
+    expect((await owner.delete(`${filesPath()}/csv-tools/dedupe.py`)).status).toBe(204);
+    expect((await owner.delete(`${filesPath()}/csv-tools/report.sh`)).status).toBe(204);
+    // The topic's last file took its folder with it; the topic itself is the model's to remove.
+    const left = await fs.readdir(wsDir);
+    expect(left).toContain("csv-tools.md");
+    expect(left).not.toContain("csv-tools");
+    expect((await owner.delete(`${filesPath()}/csv-tools/report.sh`)).status).toBe(404);
   });
 
-  it("finds no scripts in a scope whose scripts is a file", async () => {
-    await fs.writeFile(path.join(wsDir, "scripts"), "not a directory\n", "utf8");
-    const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
-    expect(list.files).toEqual([]);
-    expect((await owner.get(`${filesPath()}/scripts/x.py`)).status).toBe(404);
-    expect((await owner.delete(`${filesPath()}/scripts/x.py`)).status).toBe(404);
+  it("refuses a kept file's path that hides, climbs out, or names no folder", async () => {
+    await writeCsvTools();
+    await writeKept("csv-tools/.env", "SECRET=1\n");
+    expect((await owner.get(`${filesPath()}/csv-tools/.env`)).status).toBe(400);
+    expect((await owner.delete(`${filesPath()}/csv-tools/.env`)).status).toBe(400);
+    expect((await owner.get(`${filesPath()}/csv-tools/..%2F..%2Fescape.py`)).status).toBe(400);
+    expect((await owner.get(`${filesPath()}/csv-tools/a%5Cb.py`)).status).toBe(400);
+    expect((await owner.get(`${filesPath()}/csv-tools/missing.py`)).status).toBe(404);
+    expect(await fs.readdir(path.join(wsDir, "csv-tools"))).toContain(".env");
   });
 
   itWithSymlinks(
-    "neither lists, reads nor deletes through a scripts directory planted as a symlink",
+    "neither lists, reads nor deletes through a topic folder planted as a symlink",
     async () => {
-      const outside = path.join(t.root, `${agentId}-outside-scripts`);
+      const outside = path.join(t.root, `${agentId}-outside-folder`);
       await fs.mkdir(outside, { recursive: true });
       await fs.writeFile(path.join(outside, "loot.py"), "secret\n", "utf8");
-      await fs.symlink(outside, path.join(wsDir, "scripts"));
+      await fs.writeFile(path.join(wsDir, "tools.md"), "---\nname: tools\n---\nx\n");
+      await fs.symlink(outside, path.join(wsDir, "tools"));
 
       const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
-      expect(list.files).toEqual([]);
-      expect((await owner.get(`${filesPath()}/scripts/loot.py`)).status).toBe(404);
-      expect((await owner.delete(`${filesPath()}/scripts/loot.py`)).status).toBe(404);
+      expect(list.files.map((f) => [f.name, f.files])).toEqual([["tools.md", []]]);
+      expect(list.orphanFiles).toEqual([]);
+      expect((await owner.get(`${filesPath()}/tools/loot.py`)).status).toBe(404);
+      expect((await owner.delete(`${filesPath()}/tools/loot.py`)).status).toBe(404);
+      // The topic goes; what the link points at is not its folder and is never touched.
+      expect((await owner.delete(`${filesPath()}/tools.md`)).status).toBe(204);
       expect(await fs.readdir(outside)).toEqual(["loot.py"]);
+    },
+  );
+
+  itWithSymlinks(
+    "skips a symlink inside a topic's folder, and deleting the topic unlinks it without following it",
+    async () => {
+      const outside = path.join(t.root, `${agentId}-outside-lib`);
+      await fs.mkdir(outside, { recursive: true });
+      await fs.writeFile(path.join(outside, "secret.py"), "secret\n", "utf8");
+      await writeCsvTools();
+      await fs.symlink(outside, path.join(wsDir, "csv-tools", "vendor"));
+
+      const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
+      expect(list.files[0]?.files.map((f) => f.path)).not.toContain("csv-tools/vendor/secret.py");
+      expect((await owner.get(`${filesPath()}/csv-tools/vendor/secret.py`)).status).toBe(404);
+
+      expect((await owner.delete(`${filesPath()}/csv-tools.md`)).status).toBe(204);
+      expect(await fs.readdir(wsDir)).not.toContain("csv-tools");
+      expect(await fs.readdir(outside)).toEqual(["secret.py"]);
     },
   );
 
@@ -472,8 +523,8 @@ describe("memory api", () => {
     expect((await outsider.get(filesPath())).status).toBe(404);
     expect((await outsider.get(`${filesPath()}/x.md`)).status).toBe(404);
     expect((await outsider.delete(`${filesPath()}/x.md`)).status).toBe(404);
-    expect((await outsider.get(`${filesPath()}/scripts/x.py`)).status).toBe(404);
-    expect((await outsider.delete(`${filesPath()}/scripts/x.py`)).status).toBe(404);
+    expect((await outsider.get(`${filesPath()}/x/run.sh`)).status).toBe(404);
+    expect((await outsider.delete(`${filesPath()}/x/run.sh`)).status).toBe(404);
   });
 });
 
@@ -517,24 +568,40 @@ describe("memory scope export/import", () => {
     exportedAt: "2026-08-20T00:00:00.000Z",
     index:
       index === undefined
-        ? `# Memories\n\n${files.map((f) => `- [${f.path}](${f.path}) — imported`).join("\n")}\n`
+        ? `# Memories\n\n${files.map((f) => `- [${f.name}](${f.name}) — imported`).join("\n")}\n`
         : index,
     files,
     omitted: [],
   });
 
-  const topic = (name: string, body: string): MemoryTransferFile => ({
-    path: name,
+  const topic = (name: string, body: string, kept?: Record<string, string>): MemoryTransferFile => ({
+    name,
     content: `---\nname: ${name}\n---\n${body}\n`,
+    ...(kept !== undefined
+      ? { files: Object.entries(kept).map(([at, content]) => ({ path: at, content })) }
+      : {}),
   });
 
-  const script = (name: string, body: string): MemoryTransferFile => ({
-    path: `scripts/${name}`,
-    content: body,
-  });
-
-  const scriptsOnDisk = async (dir = wsDir): Promise<string[]> =>
-    (await fs.readdir(path.join(dir, "scripts")).catch(() => [] as string[])).sort();
+  /** Every regular file under one folder of a scope, by its path inside the folder, sorted; none when there is no such folder. */
+  const keptOnDisk = async (folder: string, dir = wsDir): Promise<string[]> => {
+    const root = path.join(dir, folder);
+    const found: string[] = [];
+    const walk = async (rel: string): Promise<void> => {
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(path.join(root, rel), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const child = rel === "" ? e.name : `${rel}/${e.name}`;
+        if (e.isDirectory()) await walk(child);
+        else found.push(child);
+      }
+    };
+    await walk("");
+    return found.sort();
+  };
 
   const runImport = async (
     payload: unknown,
@@ -571,30 +638,11 @@ describe("memory scope export/import", () => {
     expect(doc.workspacePath).toBe("/home/dev/my-app");
     // The index travels with the files: only the index enters the model's context.
     expect(doc.index).toBe("- [t](t.md) — hook\n");
-    expect(doc.files.map((f) => f.path)).toEqual(["testing-conventions.md", "项目背景.md"]);
+    expect(doc.files.map((f) => f.name)).toEqual(["testing-conventions.md", "项目背景.md"]);
     expect(doc.files[0]?.content).toBe(TOPIC);
     // The .workspace marker is the Harness's, not a memory.
-    expect(doc.files.map((f) => f.path)).not.toContain(".workspace");
+    expect(doc.files.map((f) => f.name)).not.toContain(".workspace");
     expect(doc.omitted).toEqual([]);
-  });
-
-  it("exports the scripts beside the topics, and names the ones it leaves out", async () => {
-    await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
-    await fs.mkdir(path.join(wsDir, "scripts"));
-    await fs.writeFile(path.join(wsDir, "scripts", "dedupe-csv.py"), "print('d')\n", "utf8");
-    await fs.writeFile(path.join(wsDir, "scripts", "huge.py"), "x".repeat(512 * 1024 + 1), "utf8");
-    // Not UTF-8 at all.
-    await fs.writeFile(path.join(wsDir, "scripts", "blob.bin"), Buffer.from([0xff, 0xfe, 0x41]));
-
-    const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
-    expect(doc.files).toEqual([
-      { path: "testing-conventions.md", content: TOPIC },
-      { path: "scripts/dedupe-csv.py", content: "print('d')\n" },
-    ]);
-    expect(doc.omitted).toEqual([
-      { path: "scripts/blob.bin", size: 3, reason: "not_text" },
-      { path: "scripts/huge.py", size: 512 * 1024 + 1, reason: "too_large" },
-    ]);
   });
 
   it("exports the user scope, creating it on demand, with no workspace path", async () => {
@@ -629,31 +677,58 @@ describe("memory scope export/import", () => {
     );
   });
 
-  it("round-trips a scope's scripts into another scope, creating its scripts directory and index lines", async () => {
-    await fs.mkdir(path.join(wsDir, "scripts"));
-    await fs.writeFile(path.join(wsDir, "scripts", "dedupe-csv.py"), "print('d')\n", "utf8");
-    await fs.writeFile(
-      path.join(wsDir, MEMORY_INDEX_FILENAME),
-      "- [Dedupe CSV](scripts/dedupe-csv.py) — drops duplicates · run: python3 scripts/dedupe-csv.py\n",
-    );
+  it("carries a topic's three files in its export, and re-imports them into another scope's folder", async () => {
+    await fs.writeFile(path.join(wsDir, "csv-tools.md"), "---\nname: csv-tools\n---\nsee files\n");
+    for (const [at, content] of [
+      ["dedupe.py", "print('dedupe')\n"],
+      ["lib/io.py", "def read(): pass\n"],
+      ["report.sh", "echo report\n"],
+    ]) {
+      await fs.mkdir(path.dirname(path.join(wsDir, "csv-tools", at!)), { recursive: true });
+      await fs.writeFile(path.join(wsDir, "csv-tools", at!), content!);
+    }
+    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [CSV](csv-tools.md) — tools\n");
+
     const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
-    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
-    // The user scope keeps an index of its own, so the import extends it rather than taking the document's.
-    await fs.writeFile(path.join(userDir, MEMORY_INDEX_FILENAME), "- [Mine](mine.md) — mine\n");
+    expect(doc.files.map((f) => [f.name, f.files?.map((k) => k.path)])).toEqual([
+      ["csv-tools.md", ["dedupe.py", "lib/io.py", "report.sh"]],
+    ]);
+    expect(doc.omitted).toEqual([]);
 
     const res = await runImport(doc, { key: USER_SCOPE_KEY });
     expect(res.status).toBe(200);
-    expect(((await res.json()) as MemoryImportResponse).added).toEqual(["scripts/dedupe-csv.py"]);
-    expect(await fs.readFile(path.join(userDir, "scripts", "dedupe-csv.py"), "utf8")).toBe(
-      "print('d')\n",
+    expect(((await res.json()) as MemoryImportResponse).added).toEqual(["csv-tools.md"]);
+    const userDir = memoryScopeDir(t.root, projectId, agentId, USER_SCOPE_KEY);
+    expect(await keptOnDisk("csv-tools", userDir)).toEqual(["dedupe.py", "lib/io.py", "report.sh"]);
+    expect(await fs.readFile(path.join(userDir, "csv-tools", "lib", "io.py"), "utf8")).toBe(
+      "def read(): pass\n",
     );
-    expect(await fs.readFile(path.join(userDir, MEMORY_INDEX_FILENAME), "utf8")).toBe(
-      "- [Mine](mine.md) — mine\n" +
-        "- [Dedupe CSV](scripts/dedupe-csv.py) — drops duplicates · run: python3 scripts/dedupe-csv.py\n",
-    );
+    const listed = (await (
+      await owner.get(`${memoryPath}/scopes/${USER_SCOPE_KEY}/files`)
+    ).json()) as MemoryFilesResponse;
+    expect(listed.files.find((f) => f.name === "csv-tools.md")?.files).toHaveLength(3);
   });
 
-  it("still imports a version 1 document, written before scripts, topics by name", async () => {
+  it("names the files an export leaves out: over 512 KB, not text, or kept by no topic", async () => {
+    await fs.writeFile(path.join(wsDir, "tools.md"), "---\nname: tools\n---\nx\n");
+    await fs.mkdir(path.join(wsDir, "tools"));
+    await fs.writeFile(path.join(wsDir, "tools", "ok.py"), "print('ok')\n");
+    await fs.writeFile(path.join(wsDir, "tools", "huge.py"), "x".repeat(512 * 1024 + 1));
+    // Not UTF-8 at all.
+    await fs.writeFile(path.join(wsDir, "tools", "blob.bin"), Buffer.from([0xff, 0xfe, 0x41]));
+    await fs.mkdir(path.join(wsDir, "leftover"));
+    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "print('old')\n");
+
+    const doc = (await (await owner.get(exportPath())).json()) as MemoryScopeExport;
+    expect(doc.files[0]?.files).toEqual([{ path: "ok.py", content: "print('ok')\n" }]);
+    expect(doc.omitted).toEqual([
+      { path: "tools/blob.bin", size: 3, reason: "not_text" },
+      { path: "tools/huge.py", size: 512 * 1024 + 1, reason: "too_large" },
+      { path: "leftover/old.py", size: 13, reason: "orphan" },
+    ]);
+  });
+
+  it("still imports a version 1 document, written before a topic kept files", async () => {
     const v1 = {
       format: "penguin-memory-scope",
       version: 1,
@@ -668,40 +743,6 @@ describe("memory scope export/import", () => {
     expect(((await res.json()) as MemoryImportResponse).added).toEqual(["old.md"]);
     expect(await namesOnDisk()).toEqual(["old.md"]);
     expect(await readIndex()).toBe("- [Old](old.md) — from an older export\n");
-  });
-
-  it("replace deletes a script the document does not carry, once confirmed, and prunes its index line", async () => {
-    await fs.mkdir(path.join(wsDir, "scripts"));
-    await fs.writeFile(path.join(wsDir, "scripts", "old.sh"), "echo old\n", "utf8");
-    await fs.writeFile(
-      path.join(wsDir, MEMORY_INDEX_FILENAME),
-      "- [Old](scripts/old.sh) — run: bash scripts/old.sh\n",
-    );
-    const doc = document([topic("keep.md", "k"), script("new.sh", "echo new\n")], null);
-
-    const refused = await runImport(doc, { mode: "replace" });
-    expect(refused.status).toBe(409);
-    expect(await scriptsOnDisk()).toEqual(["old.sh"]);
-
-    const res = await runImport(doc, { mode: "replace", confirm: true });
-    expect(res.status).toBe(200);
-    expect((await res.json()) as MemoryImportResponse).toMatchObject({
-      added: ["keep.md", "scripts/new.sh"],
-      removed: ["scripts/old.sh"],
-    });
-    expect(await scriptsOnDisk()).toEqual(["new.sh"]);
-    expect(await readIndex()).not.toContain("old.sh");
-  });
-
-  it("refuses an import that brings scripts into a scope whose scripts is not a directory, writing nothing", async () => {
-    await fs.writeFile(path.join(wsDir, "scripts"), "not a directory\n", "utf8");
-    const res = await runImport(document([topic("a.md", "x"), script("b.py", "print(1)\n")]));
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-      "memory_scripts_not_a_directory",
-    );
-    expect(await namesOnDisk()).toEqual([]);
-    expect(await fs.readFile(path.join(wsDir, "scripts"), "utf8")).toBe("not a directory\n");
   });
 
   // —— The collision policy, branch by branch ——
@@ -789,6 +830,96 @@ describe("memory scope export/import", () => {
     expect(index).not.toContain("gone.md");
   });
 
+  it("skip keeps a topic and its folder whole, and counts a folder with no topic as that topic", async () => {
+    await fs.writeFile(path.join(wsDir, "tools.md"), "on disk\n", "utf8");
+    await fs.mkdir(path.join(wsDir, "tools"));
+    await fs.writeFile(path.join(wsDir, "tools", "mine.py"), "mine\n");
+    await fs.mkdir(path.join(wsDir, "leftover"));
+    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "old\n");
+
+    const res = await runImport(
+      document([
+        topic("tools.md", "from the file", { "theirs.py": "theirs\n" }),
+        topic("leftover.md", "from the file", { "new.py": "new\n" }),
+      ]),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as MemoryImportResponse).toMatchObject({
+      added: [],
+      skipped: ["tools.md", "leftover.md"],
+    });
+    expect(await keptOnDisk("tools")).toEqual(["mine.py"]);
+    expect(await keptOnDisk("leftover")).toEqual(["old.py"]);
+  });
+
+  it("overwrite replaces a topic's folder with the document's files, once confirmed", async () => {
+    await fs.writeFile(path.join(wsDir, "tools.md"), "on disk\n", "utf8");
+    await fs.mkdir(path.join(wsDir, "tools", "lib"), { recursive: true });
+    await fs.writeFile(path.join(wsDir, "tools", "run.py"), "old run\n");
+    await fs.writeFile(path.join(wsDir, "tools", "lib", "stale.py"), "stale\n");
+    const doc = document([topic("tools.md", "from the file", { "run.py": "new run\n" })]);
+
+    expect((await runImport(doc, { mode: "overwrite" })).status).toBe(409);
+    expect(await keptOnDisk("tools")).toEqual(["lib/stale.py", "run.py"]);
+
+    const res = await runImport(doc, { mode: "overwrite", confirm: true });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as MemoryImportResponse).overwritten).toEqual(["tools.md"]);
+    // The topic's text describes the document's files, so those are its whole folder now.
+    expect(await keptOnDisk("tools")).toEqual(["run.py"]);
+    expect(await fs.readFile(path.join(wsDir, "tools", "run.py"), "utf8")).toBe("new run\n");
+  });
+
+  it("replace deletes the topic folders the document does not carry, naming them before it does", async () => {
+    await fs.writeFile(path.join(wsDir, "keep.md"), "on disk\n", "utf8");
+    await fs.writeFile(path.join(wsDir, "gone.md"), "not in the document\n", "utf8");
+    await fs.mkdir(path.join(wsDir, "gone"));
+    await fs.writeFile(path.join(wsDir, "gone", "run.sh"), "echo gone\n");
+    await fs.mkdir(path.join(wsDir, "leftover"));
+    await fs.writeFile(path.join(wsDir, "leftover", "old.py"), "old\n");
+    const doc = document([topic("keep.md", "from the file", { "run.py": "run\n" })], null);
+
+    const refused = await runImport(doc, { mode: "replace" });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: { message: string } }).error.message).toContain(
+      "delete 2",
+    );
+    expect(await keptOnDisk("gone")).toEqual(["run.sh"]);
+
+    const res = await runImport(doc, { mode: "replace", confirm: true });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as MemoryImportResponse).removed).toEqual(["gone.md", "leftover/"]);
+    const left = (await fs.readdir(wsDir)).sort();
+    expect(left).toEqual([".workspace", "keep", "keep.md"]);
+    expect(await keptOnDisk("keep")).toEqual(["run.py"]);
+  });
+
+  it("refuses an import whose topic folder is not a directory, writing nothing", async () => {
+    await fs.writeFile(path.join(wsDir, "tools"), "not a directory\n", "utf8");
+    const res = await runImport(
+      document([topic("a.md", "x"), topic("tools.md", "x", { "run.py": "print(1)\n" })]),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "memory_folder_not_a_directory",
+    );
+    expect(await namesOnDisk()).toEqual([]);
+    expect(await fs.readFile(path.join(wsDir, "tools"), "utf8")).toBe("not a directory\n");
+  });
+
+  itWithSymlinks(
+    "refuses an import whose topic folder is a symlink, never writing through it",
+    async () => {
+      const outside = path.join(t.root, `${agentId}-outside-import`);
+      await fs.mkdir(outside, { recursive: true });
+      await fs.symlink(outside, path.join(wsDir, "tools"));
+      const res = await runImport(document([topic("tools.md", "x", { "run.py": "print(1)\n" })]));
+      expect(res.status).toBe(409);
+      expect(await fs.readdir(outside)).toEqual([]);
+      expect(await namesOnDisk()).toEqual([]);
+    },
+  );
+
   it("prunes the index of a replace whose document carries none", async () => {
     await fs.writeFile(path.join(wsDir, "gone.md"), "x\n", "utf8");
     await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [Gone](gone.md) — mine\n");
@@ -835,17 +966,22 @@ describe("memory scope export/import", () => {
     await rejects([topic(outside, "x")], "absolute path");
     await rejects([topic(MEMORY_INDEX_FILENAME, "x")], "the index is not a topic file");
     await rejects([topic("memory.md", "x")], "the index under another casing");
+    await rejects([topic("t.md", "x", { "../escape.py": "x" })], "a kept file climbing out");
+    await rejects([topic("t.md", "x", { ".env": "x" })], "a hidden kept file");
+    await rejects([topic("t.md", "x", { "lib/.cache/x": "x" })], "a hidden folder on the way");
+    await rejects([topic("t.md", "x", { "a//b.py": "x" })], "an empty segment");
+    await rejects([topic("t.md", "x", { "/etc/passwd": "x" })], "an absolute kept path");
+    await rejects([topic("t.md", "x", { "a\\b.py": "x" })], "a backslash in a kept path");
+    await rejects([topic("t.md", "x", { lib: "x", "lib/io.py": "x" })], "a file that is a folder");
+    await rejects([topic("t.md", "x", { [`bad${NUL}.py`]: "x" })], "NUL in a kept path");
+    await rejects([topic("t.md", "x", { "ok.py": `bin${NUL}ary` })], "NUL in a kept file");
     await rejects([topic("notes.txt", "x")], "not markdown");
     await rejects([topic(".workspace", "x")], "the workspace marker");
     await rejects([topic("", "x")], "empty name");
     await rejects([topic(`bad${NUL}.md`, "x")], "NUL in the name");
-    await rejects([script("lib/helper.py", "x")], "a script in a subdirectory");
-    await rejects([script("../../escape.py", "x")], "a script climbing out");
-    await rejects([script(".env", "x")], "a hidden script");
-    await rejects([script("", "x")], "a script with no name");
     // Not one of them reached the filesystem, inside the scope or out.
     expect(await namesOnDisk()).toEqual([]);
-    expect(await scriptsOnDisk()).toEqual([]);
+    expect(await keptOnDisk("t")).toEqual([]);
     await expect(fs.stat(outside)).rejects.toThrow();
   });
 
@@ -871,10 +1007,6 @@ describe("memory scope export/import", () => {
       Array.from({ length: 501 }, (_, i) => topic(`m${i}.md`, "x")),
       "too many entries",
     );
-    await rejects(
-      Array.from({ length: 101 }, (_, i) => script(`s${i}.py`, "x")),
-      "too many scripts",
-    );
     await rejects([{ name: "huge.md", content: "x".repeat(512 * 1024 + 1) }], "one oversized file");
     // Longer than a path component may be: the write would fail with ENAMETOOLONG, which is a
     // 500 for what is plainly a bad request.
@@ -886,14 +1018,14 @@ describe("memory scope export/import", () => {
       "over the total budget",
     );
     expect(await namesOnDisk()).toEqual([]);
-    expect(await scriptsOnDisk()).toEqual([]);
   });
 
   it("rejects a foreign or future document, and a body with no document at all", async () => {
     await rejects({ ...document([]), format: "some-other-tool" }, "foreign format");
     await rejects({ ...document([]), version: 3 }, "future version");
-    // Each version names its entries one way: a version 2 entry carrying only a name is not one.
-    await rejects({ ...document([]), files: [{ name: "a.md", content: "x" }] }, "v1 entry in v2");
+    // A version 2 entry is named by its file name: a `path` alone does not name one.
+    await rejects({ ...document([]), files: [{ path: "a.md", content: "x" }] }, "entry by path");
+    await rejects({ ...document([]), files: [{ ...topic("a.md", "x"), files: {} }] }, "files is not a list");
     await rejects({ ...document([]), files: "not-an-array" }, "files is not an array");
     await rejects([topic("a.md", "1"), topic("a.md", "2")], "the same name twice");
     expect((await owner.post(importPath(), {})).status).toBe(400);

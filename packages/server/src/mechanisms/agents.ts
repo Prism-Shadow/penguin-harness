@@ -14,6 +14,7 @@ import type {
   CaseMaterial,
   MemoryFileResponse,
   MemoryFilesResponse,
+  MemoryFolderFileResponse,
   MemoryImportMode,
   MemoryImportResponse,
   MemoryOverviewResponse,
@@ -110,13 +111,19 @@ export abstract class Memory {
     agentId: string,
     scopeKey: string,
   ): Promise<MemoryFilesResponse>;
-  /** `filePath` is the memory's place in the scope: a topic's name, or `scripts/<name>`. */
   abstract readFile(
     projectId: string,
     agentId: string,
     scopeKey: string,
-    filePath: string,
+    fileName: string,
   ): Promise<MemoryFileResponse>;
+  /** `filePath` is a kept file's place in the scope: `<folder>/<path>`. */
+  abstract readFolderFile(
+    projectId: string,
+    agentId: string,
+    scopeKey: string,
+    filePath: string,
+  ): Promise<MemoryFolderFileResponse>;
   abstract exportScope(
     projectId: string,
     agentId: string,
@@ -128,8 +135,15 @@ export abstract class Memory {
     scopeKey: string,
     request: { mode: MemoryImportMode; confirm: boolean; payload: unknown },
   ): Promise<MemoryImportResponse>;
-  /** `filePath` as in `readFile`. */
+  /** Deletes a topic file together with the folder of files it keeps. */
   abstract deleteFile(
+    projectId: string,
+    agentId: string,
+    scopeKey: string,
+    fileName: string,
+  ): Promise<void>;
+  /** `filePath` as in `readFolderFile`. */
+  abstract deleteFolderFile(
     projectId: string,
     agentId: string,
     scopeKey: string,

@@ -3,12 +3,19 @@
  * back behavior, the list view-model (markers; deleted topics absent once the listing is
  * loaded; change-derived rows while it is not), and the deleted-key filter set.
  *
- * - Given a script the conversation wrote and the listing carries under `scripts/`, the list
- *   shows it by its path, marked changed, and the memory-changes card does not treat it as
- *   deleted.
+ * Files a topic keeps (`<topic>/<path>`):
+ * - A file the conversation wrote into a topic's folder is listed right under that topic, by
+ *   its path, and the topic row counts its files; untouched files stay off the list.
+ * - Such a file is still there as far as the memory-changes card is concerned, so the card
+ *   keeps its row; one that was deleted afterwards is filtered out like a topic.
+ * - Files in a folder no topic keeps are listed apart, not dropped.
  */
 import { describe, expect, it } from "vitest";
-import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MemoryFileInfo,
+  MemoryFolderFile,
+  MemoryScopeInfo,
+} from "@prismshadow/penguin-server/api";
 import type { MemoryChangeRow } from "../src/lib/amsp/memory-changes";
 import {
   buildMemoryList,
@@ -40,28 +47,40 @@ function scopeInfo(
   return { fileCount: 0, hasIndex: true, ...overrides };
 }
 
-function fileInfo(name: string, title = name): MemoryFileInfo {
-  return {
-    name,
-    path: name,
-    kind: "topic",
-    title,
-    description: "",
-    size: 1,
-    modifiedAt: "2026-08-20T00:00:00.000Z",
-  };
+function kept(filePath: string): MemoryFolderFile {
+  return { path: filePath, size: 1, modifiedAt: "2026-08-21T00:00:00.000Z" };
 }
 
-/** A script as the listing gives it: under `scripts/`, its name for a title. */
-function scriptInfo(name: string): MemoryFileInfo {
-  return { ...fileInfo(name), path: `scripts/${name}`, kind: "script" };
+function fileInfo(name: string, title = name, files: MemoryFolderFile[] = []): MemoryFileInfo {
+  return { name, title, description: "", size: 1, modifiedAt: "2026-08-20T00:00:00.000Z", files };
 }
 
 const LISTING: ScopeFiles[] = [
-  { info: scopeInfo({ scopeKey: "user", kind: "user" }), files: [fileInfo("prefs.md", "Prefs")] },
+  {
+    info: scopeInfo({ scopeKey: "user", kind: "user" }),
+    files: [fileInfo("prefs.md", "Prefs")],
+    orphanFiles: [],
+  },
   {
     info: scopeInfo({ scopeKey: "ws-1", kind: "workspace", workspacePath: "/w/app" }),
     files: [fileInfo("conventions.md")],
+    orphanFiles: [],
+  },
+];
+
+/** A user scope whose csv-tools memory keeps three files, beside a folder no memory keeps. */
+const WITH_FILES: ScopeFiles[] = [
+  {
+    info: scopeInfo({ scopeKey: "user", kind: "user" }),
+    files: [
+      fileInfo("csv-tools.md", "CSV tools", [
+        kept("csv-tools/dedupe.py"),
+        kept("csv-tools/lib/io.py"),
+        kept("csv-tools/report.sh"),
+      ]),
+      fileInfo("prefs.md", "Prefs"),
+    ],
+    orphanFiles: [kept("leftover/old.py")],
   },
 ];
 
@@ -88,6 +107,7 @@ describe("buildMemoryList", () => {
         title: "Prefs",
         modifiedAt: "2026-08-20T00:00:00.000Z",
         changed: "edit",
+        fileCount: 0,
       },
     ]);
     expect(groups[1]!.workspacePath).toBe("/w/app");
@@ -109,13 +129,9 @@ describe("buildMemoryList", () => {
         scope: "user",
         scopeKey: "user",
         rows: [
-          {
-            target: { scope: "user", file: "a.md" },
-            kind: "topic",
-            title: "a.md",
-            changed: "write",
-          },
+          { target: { scope: "user", file: "a.md" }, kind: "topic", title: "a.md", changed: "write" },
         ],
+        orphanRows: [],
       },
       {
         scope: "workspace",
@@ -128,37 +144,36 @@ describe("buildMemoryList", () => {
             changed: "edit",
           },
         ],
+        orphanRows: [],
       },
     ]);
   });
 });
 
-describe("a script in the listing", () => {
-  const listing: ScopeFiles[] = [
-    LISTING[0]!,
-    { ...LISTING[1]!, files: [fileInfo("conventions.md"), scriptInfo("dedupe.py")] },
-  ];
-  const wrote = [change("workspace", "scripts/dedupe.py", "write", "ws-1")];
-
-  it("is listed by its path after the topics, with this conversation's change marked", () => {
-    const rows = buildMemoryList(listing, wrote)[1]!.rows;
-    expect(rows.map((r) => [r.kind, r.title, r.changed])).toEqual([
-      ["topic", "conventions.md", undefined],
-      ["script", "scripts/dedupe.py", "write"],
+describe("buildMemoryList — the files a topic keeps", () => {
+  it("lists a file the conversation wrote right under the topic that keeps it, by its path", () => {
+    const groups = buildMemoryList(WITH_FILES, [change("user", "csv-tools/lib/io.py", "write")]);
+    expect(groups[0]!.rows.map((r) => [r.kind, r.title, r.changed])).toEqual([
+      ["topic", "CSV tools", undefined],
+      ["file", "csv-tools/lib/io.py", "write"],
+      ["topic", "Prefs", undefined],
     ]);
-    expect(rows[1]!.target).toEqual({
-      scope: "workspace",
-      scopeKey: "ws-1",
-      file: "scripts/dedupe.py",
-    });
+    // The topic row says how many files it keeps; the ones nobody touched stay off the list.
+    expect(groups[0]!.rows[0]!.fileCount).toBe(3);
   });
 
-  it("is not mistaken for a deleted file by the memory-changes card", () => {
-    expect([...deletedChangeKeys(listing, wrote)!]).toEqual([]);
+  it("lists the files of a folder no topic keeps apart, rather than dropping them", () => {
+    const groups = buildMemoryList(WITH_FILES, [change("user", "leftover/old.py", "edit")]);
+    expect(groups[0]!.orphanRows.map((r) => [r.title, r.changed])).toEqual([
+      ["leftover/old.py", "edit"],
+    ]);
   });
 
-  it("reads as a script from its path while the listing has not loaded", () => {
-    expect(buildMemoryList(null, wrote)[0]!.rows[0]!.kind).toBe("script");
+  it("while the listing has not loaded, a changed kept file shows as a file row", () => {
+    const groups = buildMemoryList(null, [change("user", "csv-tools/dedupe.py", "write")]);
+    expect(groups[0]!.rows.map((r) => [r.kind, r.title])).toEqual([
+      ["file", "csv-tools/dedupe.py"],
+    ]);
   });
 });
 
@@ -177,5 +192,14 @@ describe("deletedChangeKeys", () => {
 
   it("empty set when every changed file is still listed", () => {
     expect([...deletedChangeKeys(LISTING, [change("user", "prefs.md", "edit")])!]).toEqual([]);
+  });
+
+  it("keeps a file the conversation wrote into a topic's folder, and drops one deleted since", () => {
+    const keys = deletedChangeKeys(WITH_FILES, [
+      change("user", "csv-tools/report.sh", "write"),
+      change("user", "leftover/old.py", "edit"),
+      change("user", "csv-tools/gone.py", "write"),
+    ]);
+    expect([...keys!]).toEqual(["user  csv-tools/gone.py"]);
   });
 });

@@ -26,6 +26,7 @@ import type {
   MeResponse,
   MemberInfo,
   MemoryFileResponse,
+  MemoryFolderFileResponse,
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
@@ -187,7 +188,15 @@ export interface DemoFixtures {
   machines: MachinesResponse;
   version: VersionResponse;
   update: UpdateCheckResponse;
-  memory: Record<string, { overview: MemoryOverviewResponse; files: MemoryFileResponse[] }>;
+  memory: Record<
+    string,
+    {
+      overview: MemoryOverviewResponse;
+      files: MemoryFileResponse[];
+      /** The files the topics keep in their folders (`<topic>/<path>`), each with its text. */
+      folderFiles: MemoryFolderFileResponse[];
+    }
+  >;
   vault: Record<string, VaultResponse>;
   /** Each Agent's public API settings, keyed by Agent id; an Agent missing here never had them set. */
   agentApi: Record<string, AgentApiSettings>;
@@ -275,7 +284,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       skillCount: 3,
       hookCount: 1,
       pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
-      memoryCount: 5,
+      memoryCount: 4,
       // Its API is on: see `agentApi` below.
       apiEnabled: true,
     },
@@ -1412,40 +1421,53 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     description: string,
     content: string,
     days: number,
+    kept: MemoryFolderFileResponse[] = [],
   ): MemoryFileResponse => ({
     scopeKey,
     file: {
       name,
-      path: name,
-      kind: "topic",
       title,
       description,
       updatedAt: dayKey(ago(days)),
       size: content.length,
       modifiedAt: iso(ago(days)),
+      files: kept.map((k) => k.file),
     },
     content,
   });
-  /** A script the Agent keeps under a scope's `scripts/`: no frontmatter, its name is its title. */
-  const memoryScript = (
+  /** A file a topic keeps in its folder: `filePath` is `<topic>/<path>`. */
+  const keptFile = (
     scopeKey: string,
-    name: string,
+    filePath: string,
     content: string,
     days: number,
-  ): MemoryFileResponse => ({
+  ): MemoryFolderFileResponse => ({
     scopeKey,
-    file: {
-      name,
-      path: `scripts/${name}`,
-      kind: "script",
-      title: name,
-      description: "",
-      size: content.length,
-      modifiedAt: iso(ago(days)),
-    },
+    file: { path: filePath, size: content.length, modifiedAt: iso(ago(days)) },
     content,
   });
   const workspaceScope = "docs-expert-4f2a9c";
+  // The corpus topic keeps the checker it describes, a folder of its own beside it.
+  const corpusFiles = [
+    keptFile(
+      workspaceScope,
+      "corpus-layout/broken-links.py",
+      [
+        "# Usage: python3 broken-links.py <docs-dir>",
+        "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
+        "import pathlib, re, sys",
+        "",
+        "root = pathlib.Path(sys.argv[1])",
+        'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
+        'for page in sorted(root.rglob("*.md")):',
+        '    for target in link.findall(page.read_text(encoding="utf-8")):',
+        "        if not (page.parent / target).exists():",
+        '            print(f"{page.relative_to(root)}: {target}")',
+        "",
+      ].join("\n"),
+      2,
+    ),
+  ];
   const memory: DemoFixtures["memory"] = {
     [IDS.agents.docs]: {
       overview: {
@@ -1458,7 +1480,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             scopeKey: workspaceScope,
             kind: "workspace",
             workspacePath: IDS.workspace,
-            fileCount: 2,
+            fileCount: 1,
             hasIndex: true,
             updatedAt: iso(ago(2)),
           },
@@ -1494,28 +1516,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           "corpus-layout.md",
           L("语料库结构", "Corpus layout"),
           L("corpus/ 下按上游仓库分目录。", "corpus/ is split by upstream repository."),
-          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n`,
+          `---\nname: ${L("语料库结构", "Corpus layout")}\nupdated_at: ${dayKey(ago(2))}\n---\n\ncorpus/claude-code-docs/ · corpus/penguin-docs/\n\n${L("检查失效链接：", "Check for broken links:")} [broken-links.py](corpus-layout/broken-links.py) — python3 broken-links.py <docs-dir>\n`,
           2,
-        ),
-        memoryScript(
-          workspaceScope,
-          "broken-links.py",
-          [
-            "# Usage: python3 broken-links.py <docs-dir>",
-            "# Prints every relative Markdown link under <docs-dir> whose target file is missing.",
-            "import pathlib, re, sys",
-            "",
-            "root = pathlib.Path(sys.argv[1])",
-            'link = re.compile(r"\\]\\(([^)#\\s]+\\.md)")',
-            'for page in sorted(root.rglob("*.md")):',
-            '    for target in link.findall(page.read_text(encoding="utf-8")):',
-            "        if not (page.parent / target).exists():",
-            '            print(f"{page.relative_to(root)}: {target}")',
-            "",
-          ].join("\n"),
-          2,
+          corpusFiles,
         ),
       ],
+      folderFiles: corpusFiles,
     },
     [IDS.agents.notes]: {
       overview: {
@@ -1525,6 +1531,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
     [IDS.agents.general]: {
       overview: {
@@ -1534,6 +1541,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
       },
       files: [],
+      folderFiles: [],
     },
   };
 

@@ -2750,7 +2750,24 @@ export const en: Strings = {
     deleteTitle: "Delete this memory?",
     deleteConfirm: (name: string): string =>
       `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `This deletes "${name}", the ${files === 1 ? "file" : `${files} files`} it keeps, and its index line in MEMORY.md. This cannot be undone.`,
     deleteDone: "Deleted",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => (n === 1 ? "1 file" : `${n} files`),
+    keptFiles: "Files",
+    keptFilesHint:
+      "Files this memory keeps in its folder of the same name: scripts the agent reuses and what they need, each described in the memory with how to run it. Every later session of this agent may run them through the shell, under that session's sandbox and approvals, and every Project member can read them. Look at a script before you rely on it.",
+    orphanFiles: "Files without a memory",
+    orphanFilesHint:
+      "A folder with no memory of its name beside it, usually left behind when its memory was deleted. Its files are listed here so none is hidden; delete them here, or ask the agent to tidy up.",
+    backToMemory: (title: string): string => `Back to "${title}"`,
+    deleteFileTitle: "Delete this file?",
+    deleteFileConfirm: (path: string): string =>
+      `This deletes ${path}. Whatever the memory's text says about it stays until the agent updates it. This cannot be undone.`,
+    /** Toast after an export that had to leave files out; the paths follow. */
+    exportOmitted: (paths: string[]): string =>
+      `${paths.length === 1 ? "1 file was" : `${paths.length} files were`} left out of the export (over 512 KB, not text, or kept by no memory): ${paths.join(", ")}`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
@@ -2769,9 +2786,11 @@ export const en: Strings = {
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
     importModeOverwrite: "Take the file's version",
-    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeOverwriteHint:
+      "A memory taken from the file brings its files too, in place of this one's. Memories the file does not carry are left alone.",
     importModeReplace: "Replace the whole group",
-    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importModeReplaceHint:
+      "Every memory the file does not carry is deleted with its files, and so is every folder no memory keeps.",
     importAction: "Import",
     importInvalidFile: "This file is not a memory export.",
     importEmptyFile: "This file carries no memories.",
@@ -2785,16 +2804,6 @@ export const en: Strings = {
     importDone: (added: number, overwritten: number, removed: number): string =>
       `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
     importNothingNew: "Nothing to import — this group already has every memory in the file",
-    scriptsGroup: "Scripts",
-    scriptsGroupHint:
-      "Programs the agent keeps in this group's scripts/ folder to reuse, each listed in MEMORY.md with how to run it. Every later session of this agent may run them through the shell, under that session's sandbox and approvals, and every Project member can read them. Look at a script before you rely on it.",
-    scriptCount: (n: number): string => (n === 1 ? "1 script" : `${n} scripts`),
-    deleteScriptTitle: "Delete this script?",
-    deleteScriptConfirm: (path: string): string =>
-      `This deletes ${path} and removes its index line from MEMORY.md. This cannot be undone.`,
-    /** Toast after an export that had to leave scripts out; the paths follow. */
-    exportOmitted: (paths: string[]): string =>
-      `${paths.length === 1 ? "1 script was" : `${paths.length} scripts were`} left out of the file (over 512 KB, or not text): ${paths.join(", ")}`,
   },
 
   vault: {

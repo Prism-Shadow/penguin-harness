@@ -2970,7 +2970,24 @@ export const zh = {
     deleteTitle: "删除这条记忆？",
     deleteConfirm: (name: string): string =>
       `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `将删除「${name}」、它附带的 ${files} 个文件，并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
     deleteDone: "已删除",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => `${n} 个文件`,
+    keptFiles: "文件",
+    keptFilesHint:
+      "这条记忆在同名文件夹里附带的文件：Agent 反复使用的脚本及其所需文件，正文写明各自的用途与运行方式。该 Agent 此后的每个会话都可能经 shell 运行它们，受该会话的沙盒与审批约束；Project 的每位成员都能读到它们。依赖某个脚本之前，先看看它的内容。",
+    orphanFiles: "不属于任何记忆的文件",
+    orphanFilesHint:
+      "旁边没有同名记忆的文件夹，多半是记忆删除后留下的。其中的文件列在这里，不会被隐藏；可以在这里删除，或请 Agent 整理。",
+    backToMemory: (title: string): string => `返回「${title}」`,
+    deleteFileTitle: "删除这个文件？",
+    deleteFileConfirm: (path: string): string =>
+      `将删除 ${path}。记忆正文中对它的说明不会随之删去。此操作不可恢复。`,
+    /** Toast after an export that had to leave files out; the paths follow. */
+    exportOmitted: (paths: string[]): string =>
+      `有 ${paths.length} 个文件未写入导出文件（超过 512 KB、不是文本，或不属于任何记忆）：${paths.join("、")}`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
@@ -2988,9 +3005,10 @@ export const zh = {
     importModeSkip: "保留现有的这条",
     importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
     importModeOverwrite: "改用文件里的版本",
-    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeOverwriteHint: "采用文件版本的记忆，其附带的文件也换成文件里的；文件中没有的记忆保持不变。",
     importModeReplace: "整组替换",
-    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importModeReplaceHint:
+      "文件中没有的记忆连同附带的文件将被删除，不属于任何记忆的文件夹也一并删除。",
     importAction: "导入",
     importInvalidFile: "这个文件不是记忆导出文件。",
     importEmptyFile: "这个文件里没有记忆。",
@@ -3004,16 +3022,6 @@ export const zh = {
     importDone: (added: number, overwritten: number, removed: number): string =>
       `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
     importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
-    scriptsGroup: "脚本",
-    scriptsGroupHint:
-      "Agent 存放在这一组 scripts/ 目录里、供反复使用的程序，每个都在 MEMORY.md 中列一行并写明运行方式。该 Agent 此后的每个会话都可能经 shell 运行它们，受该会话的沙盒与审批约束；Project 的每位成员都能读到它们。依赖某个脚本之前，先看看它的内容。",
-    scriptCount: (n: number): string => `${n} 个脚本`,
-    deleteScriptTitle: "删除这个脚本？",
-    deleteScriptConfirm: (path: string): string =>
-      `将删除 ${path} 并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
-    /** Toast after an export that had to leave scripts out; the paths follow. */
-    exportOmitted: (paths: string[]): string =>
-      `有 ${paths.length} 个脚本未写入导出文件（超过 512 KB 或不是文本）：${paths.join("、")}`,
   },
 
   vault: {
