@@ -154,6 +154,8 @@ export const BUNDLED_FONT_FAMILIES = {
   MiSans: "MiSans",
   "Noto Sans SC": "Noto Sans SC Variable",
   "JetBrains Mono": "JetBrains Mono Variable",
+  "Shantell Sans": "Shantell Sans Variable",
+  "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
 } as const;
 export type BundledFontName = keyof typeof BUNDLED_FONT_FAMILIES;
 
@@ -338,7 +340,8 @@ export type AccentChoice = "neutral" | AccentPreset;
 export interface ThemeAttributes {
   /** The resolved mode (a `system` preference already resolved against the media query). */
   dark: boolean;
-  themeId: ThemeId;
+  /** A built-in pack's id ({@link ThemeId}) or an imported pack's: either is written as it is. */
+  themeId: string;
   /**
    * What the pack builds on, written beside the id as `data-theme-base`. Left out, a built-in
    * pack's manifest says, and any other pack builds on Frost (`modern`), as a manifest does that

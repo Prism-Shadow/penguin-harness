@@ -292,6 +292,13 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
     if (body.backgroundImageId !== undefined) {
       throw badRequest("backgroundImageId is set by PUT /api/me/background-image, not the prefs.");
     }
+    // Checked, and pruned of Projects that are gone, by its own route; written here it would be
+    // neither.
+    if (body.appCenterLayouts !== undefined) {
+      throw badRequest(
+        "appCenterLayouts is set by PUT /api/projects/:projectId/app-center/layout, not the prefs.",
+      );
+    }
     validateAccountSettings(body);
     const merged = { ...readPrefs(deps.prefsRepo, c.var.user.userId), ...(body as UiPrefs) };
     deps.prefsRepo.set(c.var.user.userId, JSON.stringify(merged));

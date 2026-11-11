@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The Skill, hook and Benchmark import dialogs under the settings commit model: the Agent
- * settings Plugins tab's Import skill (features/agents/agent-skills.tsx) and Import hook
- * (features/agents/agent-hooks.tsx), each opened from the tab's Import menu, and the Evaluation
- * Center's Import benchmark
+ * The Skill, hook, workbench and Benchmark import dialogs under the settings commit model: the
+ * Agent settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
+ * (features/agents/agent-hooks.tsx) and Import workbench (features/agents/agent-workbenches.tsx),
+ * each opened from the tab's Import menu, and the Evaluation Center's Import benchmark
  * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
- * dialog's draft; every scenario runs on all three.
+ * dialog's draft; every scenario runs on all four.
  *
  * - Closing with a source typed asks first, and "keep editing" keeps it; a source typed back to
  *   empty is no change, and the dialog closes at once.
@@ -111,6 +111,14 @@ const DIALOGS: ImportDialog[] = [
     openChat: en.hooks.importOpenChat,
     uploading: en.hooks.importUploading,
     archive: "/hooks/archive",
+  },
+  {
+    name: "Import workbench",
+    open: () => openFromTab(en.agentPlugins.importWorkbench),
+    source: en.workbenches.importSourceLabel,
+    openChat: en.workbenches.importOpenChat,
+    uploading: en.workbenches.importUploading,
+    archive: "/workbenches/archive",
   },
   {
     name: "Import benchmark",

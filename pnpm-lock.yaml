@@ -744,6 +744,9 @@ importers:
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -787,6 +790,12 @@ importers:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -815,6 +824,31 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/theme-pack:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      css-tree:
+        specifier: ^3.2.1
+        version: 3.2.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -897,6 +931,9 @@ importers:
       '@fontsource-variable/noto-sans-sc':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource-variable/shantell-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/ibm-plex-sans-condensed':
         specifier: ^5.3.0
         version: 5.3.0
@@ -906,6 +943,9 @@ importers:
       '@prismshadow/chat-markdown':
         specifier: workspace:*
         version: link:../chat-markdown
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: link:../theme-pack
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -2015,6 +2055,9 @@ packages:
   '@fontsource-variable/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-lNar1dF7Ik/lHNPo/7JWG0TolXY29LtsqYgMvEysooZ5bsO9uH4shJmRrwyJ3PjyTPljhpMJEK0jDuLSU4vJ1w==}
 
+  '@fontsource-variable/shantell-sans@5.3.0':
+    resolution: {integrity: sha512-FPdHvSi6cngE/DMVCm7Xlls70U0b4/NMJLlcAPvVoq6eot1X8tNOZMRc22Rh9KoAfmmBz7yjsSXvpsYmkhXXVQ==}
+
   '@fontsource/ibm-plex-sans-condensed@5.3.0':
     resolution: {integrity: sha512-fQyBpwbkguP4azjq7Cw8h/J3C/d8MFAzXOiSoFxyKCUK4x0XKrWEh3tGdTxhDM0HctVRQilQo1zGoyxDHLm5jQ==}
 
@@ -2423,6 +2466,10 @@ packages:
 
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-theme-pack@file:packages/theme-pack':
+    resolution: {directory: packages/theme-pack, type: directory}
     engines: {node: '>=24'}
 
   '@protobufjs/aspromise@1.1.2':
@@ -6762,6 +6809,8 @@ snapshots:
 
   '@fontsource-variable/noto-sans-sc@5.3.0': {}
 
+  '@fontsource-variable/shantell-sans@5.3.0': {}
+
   '@fontsource/ibm-plex-sans-condensed@5.3.0': {}
 
   '@google/genai@2.24.0(supports-color@10.2.2)':
@@ -7337,6 +7386,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
@@ -7395,6 +7445,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
@@ -7453,6 +7504,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
+      css-tree: 3.2.1
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.13.13
@@ -7474,6 +7526,19 @@ snapshots:
       - micromark-util-types
       - supports-color
       - utf-8-validate
+      - zod
+
+  '@prismshadow/penguin-theme-pack@file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      css-tree: 3.2.1
+      fflate: 0.8.3
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
       - zod
 
   '@protobufjs/aspromise@1.1.2': {}

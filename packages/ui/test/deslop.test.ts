@@ -180,6 +180,17 @@ describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () =
     expect(probe(`${x} .ui-frame { background-image: url("art/paper.png"); }`)).toEqual(["R1"]);
     expect(probe(`${x} .ui-glass { background-image: url("art/slip.png"); }`)).toEqual([]);
     expect(probe(`${x} .ui-frame { clip-path: polygon(0 0, 100% 0, 50% 100%); }`)).toEqual(["R1"]);
+    // An image or a shape laid through a private property is read through it.
+    const pen = `${x} { --_pen: url("data:image/png;base64,AA=="); --_cut: shape(from 0 0, close); }`;
+    expect(probe(`${pen} ${x} .ui-frame { border-image: var(--_pen) 9 / 9px; }`)).toEqual(["R1"]);
+    expect(probe(`${pen} ${x} .ui-frame { clip-path: var(--_cut); }`)).toEqual(["R1"]);
+    expect(
+      probe(`${pen} ${x} .ui-edge { border-image: var(--_pen) 9; clip-path: var(--_cut); }`),
+    ).toEqual([]);
+    expect(
+      probe(`${pen} ${x} section[aria-live] .ui-notice { border-image: var(--_pen) 9; }`),
+    ).toEqual([]);
+    expect(probe(`${x} .ui-edge { box-shadow: 0 0 0 1px red; }`)).toEqual(["R8"]);
     expect(probe(`${x} .row::before { content: ""; border-left: 2px solid; }`)).toEqual(["R5"]);
     expect(probe(`${x} .ui-tree [data-depth]::before { content: ""; }`)).toEqual([]);
     expect(probe(`${x} .row::after { content: none; }`)).toEqual([]);

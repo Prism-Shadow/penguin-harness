@@ -923,7 +923,45 @@ export const en: Strings = {
     },
     themeInfo:
       "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
-    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console", doodle: "Doodle" },
+    themePackFailed: (name: string, shown: string) =>
+      `${name}'s stylesheet did not load; showing ${shown}.`,
+    themePacks: {
+      title: "Theme packs",
+      versionLabel: (version: string) => `v${version}`,
+      idHint: (id: string) => `id: ${id}`,
+      base: { root: "Base", modern: "On Frost", foundation: "Standalone" },
+      baseHint: {
+        root: "Every other pack builds on Frost: a token or recipe a pack leaves out shows Frost's.",
+        modern: "Takes Frost's values and hook recipes, and changes only what it declares.",
+        foundation: "Falls back to Frost's values, without Frost's hook recipes.",
+      },
+      newerApi: "Needs a newer version",
+      newerApiHint:
+        "This pack was written for a newer version of the app; update the app to pick it.",
+      export: "Export",
+      exportLabel: (name: string) => `Export the theme pack ${name}`,
+      remove: "Remove",
+      removeLabel: (name: string) => `Remove the theme pack ${name}`,
+      importTitle: "Import a theme pack",
+      importHint: "A .zip file, up to 16 MB.",
+      importPick: "Choose file…",
+      importing: "Importing…",
+      adminOnly: "Only an admin can import or remove theme packs.",
+      tooLarge: "A theme pack can be at most 16 MB.",
+      invalid: (where: string, reason: string) =>
+        `The theme pack did not pass the checks: ${where}: ${reason}`,
+      imported: (name: string) => `Imported ${name}. Pick it under Theme.`,
+      replaced: (name: string) => `Replaced ${name}.`,
+      replaceTitle: (name: string) => `Replace the installed ${name}?`,
+      replaceBody: (name: string) =>
+        `Replace the installed ${name}? This server already has a pack with this id; every account that picked it gets the version you are importing.`,
+      replace: "Replace",
+      removeTitle: (name: string) => `Remove the theme pack ${name}?`,
+      removeBody: (name: string) =>
+        `Remove the theme pack ${name}? Accounts that picked it switch to Frost, and switch back when a pack with the same id is imported again.`,
+      removed: (name: string) => `Removed ${name}.`,
+    },
     colorMode: "Mode",
     colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
@@ -1000,6 +1038,11 @@ export const en: Strings = {
       gold: "Gold",
       cobalt: "Cobalt",
       orange: "Orange",
+      marker: "Marker",
+      ballpoint: "Ballpoint",
+      grass: "Grass",
+      crayon: "Crayon",
+      grape: "Grape",
     } satisfies Record<AccentChoice, string> as Record<string, string>,
   },
 
@@ -1050,6 +1093,8 @@ export const en: Strings = {
       "With it off, none of this agent's workbenches run: they leave the chat page and the App Center, and their pages stop opening. Each workbench keeps its own switch, its data and its versions, and turning this back on restores them as they were.",
     /** One workbench's own switch (its accessible name). */
     enableOne: (name: string) => `Enable ${name}`,
+    /** The word beside a workbench's own switch, which flips it too. */
+    enableLabel: "Enable",
     /** Why a workbench's switch is greyed: the Agent-wide one is off. */
     offByAll: "Enable workbenches is off. Turn it on first.",
     /** The full-page route of a switched-off workbench. */
@@ -1095,8 +1140,39 @@ export const en: Strings = {
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
-    importAction: "Import zip",
     importTitle: "Import workbench",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews its pages and server code, then installs the workbench on this agent and reloads it — more reliable than a bare upload.",
+    importSourceLabel: "Workbench source",
+    importSourceHint:
+      "A web page / GitHub repo or directory / local path / an install command from another ecosystem / a description",
+    importSourcePlaceholder: "https://…, a git repo, /path/to/workbench, or a description",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Per-source lead sentence of the generated import prompt; composed with importPromptTail by buildWorkbenchImportPrompt (features/agents/workbench-import.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string =>
+        `Please read this page and import the workbench it describes: ${s}.`,
+      repoUrl: (s: string): string =>
+        `Please fetch this repository or directory (git clone or fetch it directly), locate the workbench directory holding its package.json, and import it: ${s}.`,
+      localPath: (s: string): string =>
+        `Please read the workbench files under this local path directly and import them: ${s}.`,
+      command: (s: string): string =>
+        `This is an install command from another ecosystem — do not run it blindly: work out what it would install, fetch the same content from its repository or registry, then import it as a workbench: ${s}.`,
+      reference: (s: string): string =>
+        `Please resolve this reference or description to its source (repository, marketplace, or docs page) and import it as a workbench: ${s}.`,
+    },
+    /** The fixed tail joined after the lead (features/agents/workbench-import.ts): the review step, the package layout and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read every file of the source in full before installing anything. A workbench's pages run inside the app and its server handlers run on this server, so review it for anything that sends data out, runs commands it does not need, or reaches outside its own directory; if anything looks wrong, stop and tell me instead of installing it.",
+        `Once it is safe, lay it out the way the penguin-plugin skill describes (package.json with penguin.modules, index.ts and ui/), put it in agent_state/workbenches/<id>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the workbench id), reload it and check that it loads, then tell me what it does and which pages it adds.`,
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a workbench zip",
     importUploadDesc:
       "package.json at the zip root, or exactly one top-level directory containing it (the directory name is the workbench id); no state.json, hidden files or node_modules.",
     importUploadAction: "Choose zip file",
@@ -1109,8 +1185,118 @@ export const en: Strings = {
     importLoadFailedToast: (error: string): string =>
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
-    /** The row's icon button: downloads the workbench's source as a zip. */
+    /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
+    /** The row's switch (its accessible name, with the title): whether the workbench has a shortcut in the App Center. */
+    showInAppCenter: "Show in the App Center",
+    showInAppCenterHint:
+      "Show a shortcut to this workbench in the App Center. This rewrites its package.json and is recorded as a version.",
+    /** The words beside the row's switch, which flip it too. */
+    appCenterLabel: "App Center",
+    /** The row's text button: opens the workbench beside a new chat. */
+    openAction: "Open",
+    /** The row's "⋯" button, which holds its other actions. */
+    more: "More",
+    /** The More menu's row that lists the recorded versions. */
+    historyAction: "Version history",
+    /** The full page's way out when it was opened from the App Center. */
+    exitToAppCenter: "Exit full page (back to the App Center)",
+  },
+  appCenter: {
+    title: "App Center",
+    loading: "Loading…",
+    emptyTitle: "The App Center is empty",
+    empty:
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “App Center” switch on, it appears here.",
+    /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
+    broken: "Failed to load",
+    /** A tile whose app is still being built: it opens once the build is done. */
+    building: "Building",
+    /** A tile's hint: its whole title and the Agent that owns it. */
+    tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
+    buildingTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Building; it opens once the build is done`,
+    failedTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
+    tileName: (title: string, agent: string, state: string | null) =>
+      state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
+    folderName: (name: string, count: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
+    newFolder: "New folder",
+    /** The page header's button that opens the new-folder dialog. */
+    newFolderAction: "New folder",
+    menu: {
+      open: "Open",
+      openFullScreen: "Open full screen",
+      moveTo: "Move to…",
+      moveForward: "Move forward",
+      moveBackward: "Move backward",
+      removeFromFolder: "Remove from folder",
+      removeFromAppCenter: "Remove from the App Center",
+      viewInSettings: "View in agent settings",
+      showError: "Show error",
+      rename: "Rename",
+      dissolve: "Ungroup",
+      restoreDefault: "Restore default order",
+      /** Opens the new-folder dialog: the empty space's first row, and the first row of "Move to…". */
+      newFolder: "New folder…",
+      /** The first row of the "Move to…" page, back to the menu. */
+      back: "Back",
+      /** "Move to…": the folders it can join, then the apps it can make a new folder with. */
+      toFolders: "Into a folder",
+      newFolderWith: "Into a new folder with",
+    },
+    restoreTitle: "Restore default order",
+    restoreBody:
+      "The App Center goes back to its default order: your order and folders are cleared. The apps themselves are not changed.",
+    restoreConfirm: "Restore default",
+    renameTitle: "Rename folder",
+    folderNameLabel: "Folder name",
+    folderNameHint: "Up to 40 characters",
+    /** The new-folder dialog: a name, and the apps to put in it. */
+    newFolderTitle: "New folder",
+    newFolderApps: "Apps to put in it",
+    /** An app already in a folder: picking it takes it out of that one. */
+    newFolderInFolder: (name: string) => `In “${name}”; picking it moves it to the new folder`,
+    newFolderCreate: "Create",
+    errorTitle: (title: string) => `${title} failed to load`,
+    /** A failed tile with no recorded message (an older status file). */
+    errorUnknown: "No error message was recorded. Open the app to see how it loads.",
+    /** The windowed app's title bar. */
+    windowClose: "Close, back to the App Center",
+    windowFullScreen: "Open full screen",
+    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
+    machinesNote:
+      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    aiCreateTitle: "Create an app with AI",
+    aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
+    aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",
+    /** The fixed instruction after the user's draft: a Workbench of the Agent's own, shown here. */
+    aiCreateTail:
+      "Build it as a workbench of your own, not as a separate project: settle the interface with the web-design Skill, then write it and check that it loads with the penguin-plugin Skill. In its package.json, set penguin.appCenter.show to true so it appears in the App Center. Tell me its name when you are done.",
+    aiCreateExamples: {
+      board: {
+        label: "Daily to-do board",
+        description: "Cards in columns by status, to add, drag and delete",
+        prompt:
+          "Make a daily to-do board: cards in three columns, To do, Doing and Done, which I can add, drag and delete, with the data kept in the workbench.",
+      },
+      digest: {
+        label: "Page digest",
+        description: "Paste a link and the agent reads it for you",
+        prompt:
+          "Make a page digest tool: I paste a link, the agent reads the page and gives a three-line summary and the key points, and past digests are listed newest first.",
+      },
+      expenses: {
+        label: "Expense log",
+        description: "A form, monthly totals and an export",
+        prompt:
+          "Make an expense log: enter the date, amount, category and a note, see totals by month, and export them as CSV.",
+      },
+    },
   },
   harnessHistory: {
     title: "Harness history",
@@ -3182,7 +3368,6 @@ export const en: Strings = {
     importHook: "Hook package",
     importWorkbench: "Workbench",
     importChatOrZip: "Upload a zip, or have the agent import it in a chat",
-    importZip: "Upload a zip",
     browseLibrary: "Browse plugin library",
     installedTitle: "Installed plugins",
     empty: "No plugins on this agent yet. Select Browse plugin library to add one.",
@@ -6488,6 +6673,16 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      theme_invalid: "The theme pack did not pass the checks.",
+      theme_id_reserved:
+        "That id belongs to a built-in theme. Give the pack another id in pack.json, then import it.",
+      theme_exists: "This server already has a theme pack with that id.",
+      theme_too_large: "The theme pack is over the import limits.",
+      theme_api_unsupported: "This theme pack was written for a newer version of the app.",
+      theme_builtin: "A built-in theme pack cannot be removed.",
+      theme_not_found: "That theme pack no longer exists.",
+      themes_unavailable:
+        "This server's build carries no built-in theme pack sources, so theme packs cannot be imported or exported for now.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       trace_body_not_found: "This part is no longer in the conversation's Trace.",

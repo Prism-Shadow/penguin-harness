@@ -23,6 +23,9 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
+  AppCenterResponse,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
   BackgroundImageResponse,
@@ -209,6 +212,10 @@ import type {
   TelegramBindingResponse,
   TelegramTestRequest,
   TelegramTestResponse,
+  ThemeInvalidDetails,
+  ThemePackDto,
+  ThemePackImportResponse,
+  ThemePacksResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -236,6 +243,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchAppCenterRequest,
+  WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallRequest,
   WorkbenchArchiveInstallResponse,
   WorkbenchEnabledRequest,
@@ -1954,6 +1963,40 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
+// Theme packs (this server's; never a machine's) ---------------------------------------
+
+/**
+ * The theme packs an admin imported on this server, in install order. The built-in packs are
+ * not listed: the app ships them. Re-read on `themes_changed`.
+ */
+export const listThemePacks = () => apiFetch<ThemePacksResponse>("/api/themes", { server: null });
+
+/**
+ * Imports a pack's zip as it is (admins only). An id already installed is 409 `theme_exists`
+ * (`details.themeId`) unless `replace`; a pack the validator refuses is 400 `theme_invalid`
+ * with {@link ThemeInvalidDetails} in `details`.
+ */
+export const importThemePack = (file: Blob, replace = false) =>
+  apiUpload<ThemePackImportResponse>(`/api/themes${replace ? "?replace=1" : ""}`, file, null);
+
+/** Removes an imported pack (admins only); a built-in pack is 400 `theme_builtin`. */
+export const deleteThemePack = (id: string) =>
+  apiFetch<void>(`/api/themes/${encodeURIComponent(id)}`, { method: "DELETE", server: null });
+
+/** Where any pack, built-in or imported, downloads as a zip: an attachment, for a plain link. */
+export const themePackExportUrl = (id: string): string =>
+  `/api/themes/${encodeURIComponent(id)}/export`;
+
+/**
+ * One file an imported pack serves at version `v` (a {@link ThemePackDto}'s `v`): its
+ * `index.css`, which the DTO's `href` already names, or a font or drawing that stylesheet uses.
+ */
+export const themePackFileUrl = (id: string, file: string, v: string): string =>
+  `/api/themes/${encodeURIComponent(id)}/files/${file
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}?v=${encodeURIComponent(v)}`;
+
 /** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
@@ -2782,12 +2825,13 @@ const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
  * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
- * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
+ * the workbenches of an Agent that only a machine has are asked of THAT machine's server, and the
+ * list's icons are re-rooted onto it (api/machine-icons.ts).
  */
 export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
-  });
+  }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -2879,6 +2923,30 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
+export const setWorkbenchAppCenter = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchAppCenterResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/app-center`,
+    { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
+  );
+/**
+ * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
+ * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ */
+export const getAppCenter = (projectId: string) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+/** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
+export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
+  apiFetch<AppCenterLayoutResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/app-center/layout`,
+    { method: "PUT", body: { layout } },
+  );
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**

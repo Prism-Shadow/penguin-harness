@@ -272,6 +272,9 @@ try {
     pathToFileURL(fromProject.resolve("react-dom/server")).href
   );
   const lib = await import(pathToFileURL(join(installed, "dist/index.js")).href);
+  // A style hook is anatomy a theme pack may give a recipe or leave alone (a section hook has no
+  // rule in any built-in pack), so a hook class is no class without a rule.
+  const hooks = new Set(lib.HOOKS);
   const noop = () => {};
   const samples = {
     Button: ["primary", "secondary", "danger", "ghost", "link"].map((variant) =>
@@ -326,7 +329,14 @@ try {
     for (const cls of new Set(classes)) {
       // Tailwind's `group` and `peer` mark an element for a variant on another, and the markers
       // name an element for code that looks for it: none has a rule of its own.
-      if (/^(?:group|peer)(?:\/[\w-]+)?$/.test(cls) || MARKERS.has(cls) || ruled.has(cls)) continue;
+      if (
+        /^(?:group|peer)(?:\/[\w-]+)?$/.test(cls) ||
+        MARKERS.has(cls) ||
+        hooks.has(cls) ||
+        ruled.has(cls)
+      ) {
+        continue;
+      }
       unruled.push(`${name}: .${cls} has no rule in styles.css`);
     }
   }

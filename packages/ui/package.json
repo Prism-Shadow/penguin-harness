@@ -2,7 +2,7 @@
   "name": "@prismshadow/penguin-ui",
   "version": "0.2.18",
   "type": "module",
-  "description": "PenguinHarness UI: the React components, design tokens and three themes of the PenguinHarness Web App, with a precompiled stylesheet and optional fonts.",
+  "description": "PenguinHarness UI: the React components, design tokens and four themes of the PenguinHarness Web App, with a precompiled stylesheet and optional fonts.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,6 +27,7 @@
     "./highlighter": "./src/components/content/code-block/highlighter-core.ts",
     "./fonts-credits": "./src/fonts/credits.ts",
     "./testing": "./src/testing/index.ts",
+    "./pack-rules": "./src/testing/pack-rules.ts",
     "./site": "./src/site.ts",
     "./site.css": {
       "style": "./src/site.css",
@@ -46,7 +47,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "sync:font-licenses": "node scripts/sync-font-licenses.mjs",
-    "fonts:misans": "uv run scripts/build-misans.py"
+    "fonts:misans": "uv run scripts/build-misans.py",
+    "fonts:wenkai": "node scripts/vendor-wenkai.mjs",
+    "draw:doodle": "node scripts/draw-doodle-edges.mjs"
   },
   "peerDependencies": {
     "react": "^19.1.0",
@@ -78,9 +81,11 @@
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/mona-sans": "^5.3.0",
     "@fontsource-variable/noto-sans-sc": "^5.3.0",
+    "@fontsource-variable/shantell-sans": "^5.3.0",
     "@fontsource/ibm-plex-sans-condensed": "^5.3.0",
     "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/chat-markdown": "workspace:*",
+    "@prismshadow/penguin-theme-pack": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
