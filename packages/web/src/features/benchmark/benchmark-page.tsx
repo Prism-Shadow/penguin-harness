@@ -40,6 +40,7 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
@@ -153,6 +154,7 @@ function TestedAgents({
   agentIds: readonly string[];
   nameOf: (agentId: string) => string;
 }) {
+  const avatarSrc = useAgentAvatarSrc();
   if (agentIds.length === 0) return null;
   return (
     <div
@@ -162,7 +164,11 @@ function TestedAgents({
       data-tooltip-extra
     >
       <AvatarStack
-        items={agentIds.map((agentId) => ({ id: agentId, name: nameOf(agentId) }))}
+        items={agentIds.map((agentId) => ({
+          id: agentId,
+          name: nameOf(agentId),
+          src: avatarSrc(agentId),
+        }))}
         max={AVATARS_SHOWN}
         size={ICON_SIZE.rowLead}
       />
@@ -386,6 +392,7 @@ export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const navigate = useNavigate();
   const { currentProject, currentAgent, agents } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   const { machineIds, machineLabels } = useSessions();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
@@ -568,7 +575,12 @@ export function BenchmarkPage() {
             query parameter, which nothing else on the page would otherwise account for. */}
         {filterAgentId !== null && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <AgentAvatar id={filterAgentId} size={ICON_SIZE.rowLead} className="shrink-0 rounded" />
+            <AgentAvatar
+              id={filterAgentId}
+              size={ICON_SIZE.rowLead}
+              className="shrink-0 rounded"
+              src={avatarSrc(filterAgentId)}
+            />
             <span
               className="min-w-0 truncate"
               data-tooltip={nameOf(filterAgentId)}

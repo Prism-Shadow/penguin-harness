@@ -1469,6 +1469,12 @@ export interface AgentSummary {
    * every one of them; development mode lists employees in a section of their own.
    */
   employments?: Employment[];
+  /**
+   * Present when the Agent has a picture of its own (`agent_state/avatar.<png|jpg|webp>`): its
+   * content revision. The image is served at `GET …/agents/:agentId/avatar` (append it as
+   * `?rev=` — the image is cached for good). Absent, surfaces draw the default avatar.
+   */
+  avatarRev?: string;
 }
 
 /** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
@@ -4934,6 +4940,17 @@ export interface AgentArchiveImportResponse {
     /** The package's Sessions this install already has, by id: their Traces were not imported. */
     skipped: string[];
   };
+}
+
+/** PUT /api/projects/:projectId/agents/:agentId/avatar. */
+export interface AgentAvatarRequest {
+  /** A png, jpeg or webp data URL of at most 131072 characters; `null` removes the picture. */
+  avatar: string | null;
+}
+
+/** What PUT …/avatar answers: the picture's new revision, absent once it was removed. */
+export interface AgentAvatarResponse {
+  avatarRev?: string;
 }
 
 // ---------------------------------------------------------------------------

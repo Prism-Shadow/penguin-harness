@@ -50,6 +50,7 @@ import {
   UpdateDot,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { downloadArchive } from "../agents/archive-download";
@@ -187,6 +188,7 @@ export interface PluginCardProps {
 export function PluginCard(props: PluginCardProps) {
   const { row, status, usage, categoryTitle, targets, installed } = props;
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   const sharedId = useId();
   const plugin = row.library;
   const [detailOpen, setDetailOpen] = useState(false);
@@ -539,6 +541,7 @@ export function PluginCard(props: PluginCardProps) {
                 key={t.key}
                 agentId={t.agent.agentId}
                 name={agentDisplayName(t.agent)}
+                avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
                 machine={t.machine?.label ?? null}
                 installed={usage?.usedBy.includes(t.key) ?? false}
                 outdated={behind.includes(t.key)}
@@ -753,6 +756,7 @@ export interface RowHold {
 export function InstallRow({
   agentId,
   name,
+  avatarSrc,
   machine = null,
   installed,
   outdated,
@@ -765,6 +769,8 @@ export function InstallRow({
 }: {
   agentId: string;
   name: string;
+  /** The Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc?: string | undefined;
   /** The ssh alias of the machine the Agent lives on; null for this server. */
   machine?: string | null;
   installed: boolean;
@@ -789,7 +795,7 @@ export function InstallRow({
     <div
       className={`flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60 ${held?.off === true ? "opacity-60" : ""}`}
     >
-      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" />
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" src={avatarSrc} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span
           className="min-w-0 truncate text-sm"

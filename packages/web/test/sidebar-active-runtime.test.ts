@@ -20,14 +20,20 @@ vi.mock("../src/state/auth", () => ({
   useAuth: () => ({ user: { userId: "u", isAdmin: false }, sessionVia: null }),
 }));
 vi.mock("../src/state/locale", () => ({ useLocale: () => ({ locale: "en" }) }));
-vi.mock("../src/state/project", () => ({
-  useProject: () => ({
+vi.mock("../src/state/project", () => {
+  // The rows' avatar lookup reads the Project through `useProjectIfAny`, the rest through
+  // `useProject`: both see the one Project.
+  const project = () => ({
     currentProject: fixture.project,
     agents: fixture.empty,
     setCurrentAgentId: vi.fn(),
-  }),
-  agentDisplayName: (a: { name: string }) => a.name,
-}));
+  });
+  return {
+    useProject: project,
+    useProjectIfAny: project,
+    agentDisplayName: (a: { name: string }) => a.name,
+  };
+});
 vi.mock("../src/state/sessions", () => ({
   useSessions: () => ({
     sessions: fixture.empty,

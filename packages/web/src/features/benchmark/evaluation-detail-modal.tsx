@@ -200,12 +200,15 @@ function askParams(
 export function EvaluationDetailModal({
   benchmarkId,
   evaluation,
+  avatarSrc,
   caseTitles,
   currency,
   onClose,
 }: {
   benchmarkId: string;
   evaluation: BenchmarkEvaluation;
+  /** The tested Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc: string | undefined;
   caseTitles: ReadonlyMap<string, string>;
   currency: Currency;
   onClose: () => void;
@@ -266,6 +269,7 @@ export function EvaluationDetailModal({
                   id={evaluation.agentId}
                   size={ICON_SIZE.rowLead}
                   className="shrink-0 rounded"
+                  src={avatarSrc}
                 />
               )}
               <span className="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">

@@ -18,6 +18,7 @@ import type { MainSidebarState } from "./main-sidebar-controller";
 export function renderMainGroupByAgent(scope: MainSidebarState) {
   const {
     agents,
+    avatarSrc,
     countsByAgent,
     loading,
     byAgent,
@@ -59,7 +60,14 @@ export function renderMainGroupByAgent(scope: MainSidebarState) {
               {...drag.header}
               open={!collapsed}
               onToggle={() => toggleGroup(agent.agentId)}
-              icon={<AgentAvatar id={agent.agentId} size={18} className="shrink-0 rounded" />}
+              icon={
+                <AgentAvatar
+                  id={agent.agentId}
+                  size={18}
+                  className="shrink-0 rounded"
+                  src={avatarSrc(agent.agentId)}
+                />
+              }
               label={agentDisplayName(agent)}
               uppercase
               {...(employeeNote === null ? {} : { title: employeeNote })}
