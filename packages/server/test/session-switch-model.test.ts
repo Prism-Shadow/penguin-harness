@@ -8,10 +8,10 @@
  * pair, each 409 code, 202 for a streamed switch and 200 for a Session that never ran — and the
  * bookkeeping the contract implies: the index row and the runtime entry move to the new model
  * (so `GET /` and the compaction threshold follow it, and a client re-reading the Session on the
- * new context's `session_meta` already finds it) — by summary or, when the compaction fails, by
- * Trace handoff — stay put when the switch is stopped, and usage is attributed to the model that
- * served each request — the switch's own compaction request to the previous model, the next Task
- * to the new one.
+ * new context's `session_meta` already finds it) — by summary or, when the compaction gets no
+ * summary, by Trace handoff — stay put when the switch is stopped or the target's context cannot
+ * be opened, and usage is attributed to the model that served each request — the switch's own
+ * compaction request to the previous model, the next Task to the new one.
  *
  * A Session that is not in memory is loaded the ordinary way first, through the real loader and
  * core: one whose model was removed from the Project config hands its history over by Trace path
@@ -38,7 +38,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import { buildModelSwitchMessage, parseModelSwitchMessage } from "@prismshadow/amsp/markers";
-import type { AmspRecord, StopReason, TokenCounts } from "@prismshadow/penguin-core";
+import type { AmspRecord, ErrorCode, StopReason, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   ModelRefDto,
   ServerEvent,
@@ -82,11 +82,21 @@ type SwitchBehaviour =
    */
   | { kind: "held" }
   /**
-   * The compaction pair streams; `status` is how it ends — `completed` with the summary, a
-   * failure by Trace handoff (the switch still completes), `aborted` with no switch. `gate`
-   * parks the compaction until it settles (or the signal fires).
+   * The compaction pair streams; `status` is how it ends. `completed`: the next context opens on
+   * the target — with the summary, or, when `degraded` gives the end its error pair (no summary
+   * could be had), with the Trace handoff right after its meta. `aborted` (a stop) and `fatal`
+   * (the target's context could not be opened; the end says why): no switch, the model kept.
+   * `gate` parks the compaction until it settles (or the signal fires).
    */
-  | { kind: "stream"; status: StopReason; gate?: Promise<void> };
+  | {
+      kind: "stream";
+      status: StopReason;
+      degraded?: { errorCode: ErrorCode; errorMessage: string };
+      gate?: Promise<void>;
+    };
+
+/** What the fake's opener reports when the target's context cannot be opened. */
+const OPEN_FAILURE = "Invalid Agent State config: system_config.yaml is empty";
 
 interface SwitchFake extends RuntimeSession {
   provider: string;
@@ -109,7 +119,8 @@ const aborted = (signal: AbortSignal): Promise<void> =>
  * between a plain manual pair, and the getters move only once the new context is open — after
  * the completed `compaction_end` and before the new context's `session_meta` is yielded, exactly
  * as core adopts the opened context before it yields that context's meta — so the manager
- * follows the runtime in the real order.
+ * follows the runtime in the real order. A context that could not be opened is never adopted:
+ * the `fatal` end is the stream's last record, and the getters stay where they were.
  */
 function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake {
   const fake: SwitchFake = {
@@ -149,8 +160,13 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
       yield tokenUsage(counts(4000), counts(4000));
       if (behaviour.gate) await Promise.race([behaviour.gate, aborted(opts.signal)]);
       const status: StopReason = opts.signal.aborted ? "aborted" : behaviour.status;
-      yield compactionEnd({ reason: "manual", mode: "summarize", status });
-      if (status !== "aborted") {
+      if (status === "completed") {
+        yield compactionEnd({
+          reason: "manual",
+          mode: "summarize",
+          status,
+          ...(behaviour.degraded ? { attempt: 1, ...behaviour.degraded } : {}),
+        });
         // The new context opens on the target: the getters follow it from here. Its opener's
         // toolset record comes first, and its session_meta — main-session, no origin — is the
         // last record on the stream.
@@ -168,7 +184,7 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
           source: "user",
         });
         // No summary: the handoff names this Session's file instead.
-        if (status !== "completed") {
+        if (behaviour.degraded) {
           yield userText(
             buildModelSwitchMessage({
               sessionId: SID,
@@ -179,6 +195,12 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
         }
         return "completed";
       }
+      yield compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status,
+        ...(status === "fatal" ? { attempt: 1, errorMessage: OPEN_FAILURE } : {}),
+      });
       return status;
     },
   };
@@ -503,12 +525,23 @@ describe("POST /switch-model", () => {
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
   });
 
-  it("a failed compaction still switches, by Trace handoff: the handoff follows the meta, the row moves, and the failed request bills to the previous model", async () => {
-    adopt(switchFake(A, { kind: "stream", status: "fatal" }));
+  it("a compaction that gets no summary still switches, by Trace handoff: its end is completed with the error pair, the handoff follows the meta, the row moves, and the compaction request bills to the previous model", async () => {
+    adopt(
+      switchFake(A, {
+        kind: "stream",
+        status: "completed",
+        degraded: { errorCode: "rejected", errorMessage: "prompt is too long" },
+      }),
+    );
     const feed = listen();
     expect((await api.post(url, B)).status).toBe(202);
     await waitFor(() => feed.states().includes("idle"));
-    expect((feed.messages[2]!.payload as { status: string }).status).toBe("fatal");
+    expect(feed.messages[2]!.payload).toMatchObject({
+      type: "compaction_end",
+      status: "completed",
+      error_code: "rejected",
+      error_message: "prompt is too long",
+    });
     expect(feed.kinds()).toEqual([
       "compaction_begin",
       "token_usage",
@@ -527,6 +560,40 @@ describe("POST /switch-model", () => {
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
     await waitFor(() => usageModels().length === 2);
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
+  });
+
+  it("a switch whose target context cannot be opened ends `fatal`: its end says why, no meta follows, the row stays on the previous model, nobody is told, and the next Task bills to it", async () => {
+    const fake = switchFake(A, { kind: "stream", status: "fatal" });
+    adopt(fake);
+    const heard: ModelRefDto[] = [];
+    t.deps.manager.onModelChanged((_sessionId, model) => void heard.push(model));
+    const feed = listen();
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => feed.states().includes("idle"));
+
+    expect(feed.states()).toEqual(["compacting", "idle"]);
+    expect(feed.kinds()).toEqual(["compaction_begin", "token_usage", "compaction_end"]);
+    expect(feed.messages[2]!.payload).toMatchObject({
+      type: "compaction_end",
+      status: "fatal",
+      error_message: OPEN_FAILURE,
+    });
+    expect(feed.rowAtMeta).toEqual([]);
+    expect(row()).toMatchObject(A);
+    expect(fake.modelId).toBe(A.modelId);
+    expect(heard).toEqual([]);
+    // The one record a person has to look at: the context could not be replaced.
+    expect(t.deps.errorsRepo.recent(PROJECT).map((r) => [r.code, r.kind])).toEqual([
+      ["compaction_failed", "unexpected"],
+    ]);
+
+    // Idle, and still the Session's: the next Task runs, and bills to the model it was on.
+    const task = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "still on A" }],
+    });
+    expect(task.status).toBe(202);
+    await waitFor(() => usageModels().length === 2);
+    expect(usageModels()).toEqual([A.modelId, A.modelId]);
   });
 
   it("an aborted switch (POST /abort mid-compaction) ends `aborted` and leaves the row on the previous model", async () => {

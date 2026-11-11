@@ -28,8 +28,10 @@
  *   is expected under the tool's name, and a denial is none.
  * - Parallel and nested (child Session) calls never swap names or reasons, and a child's
  *   failures are attributed to the child Agent and Session.
- * - An abandoned compaction is one unexpected row carrying its attempts and error; its own
- *   failed requests, streamed inside its span, add no LLM row of their own.
+ * - A compaction that completed without a full summary (its end carries the error pair) is one
+ *   expected row carrying its attempts and why; one whose next context could not be opened, or
+ *   an older core's abandoned one, is one unexpected row; the two never dedup each other. Its
+ *   own failed requests, streamed inside its span, add no LLM row of their own.
  *
  * Through HTTP (onError):
  * - A business error is expected, an internal one unexpected with a 500, each attributed to
@@ -941,10 +943,93 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— Compaction ——
 
-  it("an abandoned compaction records one error row; the message carries attempts and the error", () => {
-    // Issue #170: a compaction is an ordinary LLM request whose failures core retries under
-    // the standard budget — a retryable end means the retries ran out, and the cost
-    // center's row shows how many attempts were spent and what the last failure was.
+  it("a compaction refused by the model completes degraded: one expected row naming why, no LLM row", () => {
+    // The request was refused, so the next context opened with the harness's hand-off note:
+    // the run carried on, nobody has to step in, and the row tells why the summary is missing.
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 190_000, turns: 12 }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "compaction",
+      kind: "expected",
+      code: "compaction_degraded",
+      message:
+        "summarize compaction completed without a full summary after 1 attempt: prompt is too long; the next context opens with a salvaged summary or a Trace hand-off.",
+      project_id: "p1",
+      agent_id: "a1",
+      session_id: "s1",
+    });
+  });
+
+  it("a degraded completion whose end carries only the error code gives the code as the reason", () => {
+    // The transport ladder ran out on requests that reported no detail of their own.
+    const got = feed([
+      compactionBegin({ reason: "turns", mode: "summarize", context: 900, turns: 40 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", attempt: 2 }),
+      compactionEnd({
+        reason: "turns",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "timeout",
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_degraded",
+      kind: "expected",
+      message:
+        "summarize compaction completed without a full summary after 2 attempts: timeout; the next context opens with a salvaged summary or a Trace hand-off.",
+    });
+  });
+
+  it("a compaction whose next context could not be opened is unexpected, and no degraded row dedups it away", () => {
+    // A degraded completion, then a compaction that could not open its next context at all —
+    // the original context is kept, and the trigger still holds: a human has to look.
+    const got = feed([
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no client can be built for the model",
+      }),
+    ]);
+    expect(got.map((r) => [r.code, r.kind])).toEqual([
+      ["compaction_degraded", "expected"],
+      ["compaction_failed", "unexpected"],
+    ]);
+    expect(got[1]!.message).toBe(
+      "summarize compaction failed after 1 attempt: no client can be built for the model; the next context could not be opened; original context kept.",
+    );
+  });
+
+  it("an older core's abandoned compaction records one error row; the message carries attempts and the error", () => {
+    // Issue #170: an older core gave up on a compaction whose retries ran out and ended it
+    // `retryable`, keeping the context; the cost center's row shows how many attempts were
+    // spent and what the last failure was.
     const got = feed([
       compactionEnd({
         reason: "context",

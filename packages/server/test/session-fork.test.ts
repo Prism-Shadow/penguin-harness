@@ -18,7 +18,8 @@
  * - A Trace with Task records is cut after the selected Task's task_end, before the next Task's
  *   task_begin: the fork never ends on an unclosed Task.
  * - A compaction summary's hand-off file paths and its trailer's Trace file are rewritten to the
- *   fork's scratchpad copy and the fork's copy of the file.
+ *   fork's scratchpad copy and the fork's copy of the file; a quoted compaction tool call's JSON
+ *   arguments (a Windows path's backslashes doubled) are rewritten too.
  * - An in-session switch's Trace handoff is rewritten to name the fork and the fork's copy of the
  *   file it points at.
  * - Concurrent forks get unique Sessions and never overwrite the source.
@@ -49,6 +50,8 @@ import {
   buildContextSummaryText,
   buildModelSwitchMessage,
   parseInPlaceModelSwitch,
+  transcribeToolCall,
+  transcribeToolCallOutput,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import type {
@@ -60,6 +63,7 @@ import { apiClient, createTestApp, provisionUser, writeTraceFile, waitFor } from
 import type { TestApp } from "./helpers.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { rewriteSummaryPaths } from "../src/services/trace-service.js";
 import { fakeSession } from "./fixtures/session.js";
 
 const SID = "session-2026-08-14-10-00-00-aabbcc01";
@@ -925,5 +929,39 @@ describe("session fork", () => {
       position: { fileIndex: 1, ordinal: 4 },
     });
     expect(response.status).toBe(404);
+  });
+});
+
+describe("a forked summary's paths", () => {
+  const FORK = "session-2026-08-14-10-05-00-ddeeff02";
+  // Windows-shaped on every platform: the directory's native, model-visible and JSON spellings
+  // then differ wherever the suite runs, which is the case the rewrite has to cover.
+  const scratchpads = String.raw`C:\Users\u\.penguin\data\p1\agents\default_agent\scratchpad`;
+  const traces = String.raw`C:\Users\u\.penguin\data\p1\agents\default_agent\traces\2026-08-14`;
+
+  /** A summary naming a hand-off file, the quoted compaction write of it, and its trailer. */
+  function summaryOf(sessionId: string): string {
+    const plan = `${scratchpads}\\${sessionId}\\handoff\\plan.md`;
+    return buildContextSummaryText(
+      [
+        `## Files\n${modelVisiblePath(plan)}: the release plan`,
+        transcribeToolCall(
+          "write_file",
+          "toolu_h1",
+          JSON.stringify({ file_path: plan, content: "1. Tag v1." }),
+        ),
+        transcribeToolCallOutput("toolu_h1", "completed", `Created "${plan}" (1 lines, 10 bytes).`),
+      ].join("\n"),
+      { tracePath: `${traces}\\${sessionId}_001.jsonl`, shell: "powershell" },
+    );
+  }
+
+  it("a quoted tool call's JSON arguments name the fork's scratchpad, as do its output, the summary and the trailer", () => {
+    expect(
+      rewriteSummaryPaths(summaryOf(SID), `${scratchpads}\\${SID}`, `${scratchpads}\\${FORK}`, {
+        source: SID,
+        fork: FORK,
+      }),
+    ).toBe(summaryOf(FORK));
   });
 });

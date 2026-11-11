@@ -199,25 +199,37 @@ function rewriteForkText(
 
 /**
  * A `[context_summary]` text with the source Session's paths made the fork's: every mention of
- * the source scratchpad directory (in either spelling — the native one, and the model-visible
- * one the compaction Prompt hands the model) and every Trace file named after the source
- * Session (`<source>_NNN.jsonl`, the trailer's line among them; the fork's copies keep the date
- * folder and the index).
+ * the source scratchpad directory and every Trace file named after the source Session
+ * (`<source>_NNN.jsonl`, the trailer's line among them; the fork's copies keep the date folder
+ * and the index).
+ *
+ * The directory is matched in three spellings: the native one, the model-visible one the
+ * compaction Prompt hands the model, and the native one as a JSON string spells it — a quoted
+ * `[tool_call]` line carries the call's arguments as JSON, where a Windows path has doubled
+ * backslashes. On POSIX the three coincide. Exported so the spellings are asserted directly
+ * whatever platform the suite runs on.
  */
-function rewriteSummaryPaths(
+export function rewriteSummaryPaths(
   text: string,
   sourceScratchpad: string,
   forkScratchpad: string,
   sessions: { source: string; fork: string },
 ): string {
+  // The JSON spelling goes first: it is the longest, so no shorter spelling is replaced inside it.
+  const spellings = new Map<string, string>([
+    [jsonSpelling(sourceScratchpad), jsonSpelling(forkScratchpad)],
+    [sourceScratchpad, forkScratchpad],
+    [modelVisiblePath(sourceScratchpad), modelVisiblePath(forkScratchpad)],
+  ]);
   let out = text;
-  const spellings = new Set([sourceScratchpad, modelVisiblePath(sourceScratchpad)]);
-  for (const source of spellings) {
-    const target = source === sourceScratchpad ? forkScratchpad : modelVisiblePath(forkScratchpad);
-    out = out.split(source).join(target);
-  }
+  for (const [source, target] of spellings) out = out.split(source).join(target);
   const traceFile = new RegExp(`${escapeRegExp(sessions.source)}(_\\d{3}\\.jsonl)`, "g");
   return out.replace(traceFile, `${sessions.fork}$1`);
+}
+
+/** `value` as it reads inside a JSON string literal (backslashes and quotes escaped). */
+function jsonSpelling(value: string): string {
+  return JSON.stringify(value).slice(1, -1);
 }
 
 function escapeRegExp(value: string): string {

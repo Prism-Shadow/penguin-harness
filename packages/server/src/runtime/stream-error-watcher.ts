@@ -171,8 +171,8 @@ export class StreamErrorWatcher {
   private readonly originCtx = new Map<string, { agentId: string; sessionId: string }>();
   /**
    * Sessions (by origin key) inside a compaction span: its own requests stream there, tool
-   * rounds included, and a failed one is the compaction's — its `compaction_end` is recorded
-   * once as `compaction_failed`, never as an LLM failure besides.
+   * rounds included, and a failed one is the compaction's — its `compaction_end` speaks for it
+   * once (see observeCompactionEnd), never an LLM failure besides.
    */
   private readonly compacting = new Set<string>();
 
@@ -348,17 +348,26 @@ export class StreamErrorWatcher {
   }
 
   /**
-   * A failed compaction becomes its own error record (source = `compaction`) — a compaction
-   * is an ordinary LLM request whose failures (unusable summary and transport alike) core
-   * retries under the standard budget, so a `failed` end means the retries ran out
-   * (issue #170). This is the single record a failed compaction produces: the compaction
-   * request's own request_begin/request_end pair is written to Trace only and never reaches
-   * this stream, so the llm-source records above cannot double-count it. `completed` is not
-   * an error and `aborted` is a user interrupt — neither is recorded. kind is unexpected for
-   * the same reason `llm_failed` is: the budget is exhausted, and while the original context
-   * is kept, the trigger still holds — the session keeps re-entering compaction until a
-   * human changes something. The message carries the attempts and the last error detail
-   * (compaction_end's share of the RetryDetail block) so the cost center shows what failed.
+   * A compaction's outcome as its own error record (source = `compaction`). Its requests stream
+   * between the paired events but are never read as LLM failures (see `compacting`): the
+   * `compaction_end` speaks for all of them, once.
+   *
+   * - `completed` carrying the unified error pair (`error_code` / `error_message`) is a degraded
+   *   completion: no full summary could be had — the request was refused, the transport ladder
+   *   or the corrections ran out — so the next context opened with a salvaged summary or the
+   *   harness's Trace hand-off note. Expected (`compaction_degraded`): the run carried on and
+   *   nobody has to step in, but the cost center shows why the summary is missing.
+   * - `fatal`: the next context could not be opened at all, so the original context is kept
+   *   (and a mid-Task run ends there). Unexpected (`compaction_failed`): the trigger still
+   *   holds, and the Session keeps re-entering compaction until a human changes something.
+   * - `retryable`, and its retired spelling `failed`, end an older core's abandoned compaction
+   *   (the engine no longer abandons one): recorded as before.
+   * - `completed` without the pair (a full summary) and `aborted` (a user interrupt) are not
+   *   errors.
+   *
+   * The message carries the attempts and the error detail (compaction_end's share of the
+   * RetryDetail block). The two codes stay apart so the short-window dedup on
+   * `(source, code, Project)` never drops a run-ending failure as a repeat of a degraded one.
    */
   private observeCompactionEnd(msg: AmspRecord, key: string): void {
     const p = msg.payload as {
@@ -366,21 +375,40 @@ export class StreamErrorWatcher {
       reason?: string;
       status?: StopReason;
       attempt?: number;
+      error_code?: string;
       error_message?: string;
     };
-    // Abandoned (retryable — made up at the next trigger) and fatal ends both record;
-    // legacy Traces spell the abandoned case "failed".
     const status = p.status as string | undefined;
-    if (status !== "retryable" && status !== "fatal" && status !== "failed") return;
+    const mode = p.mode ?? "summarize";
     const attempts =
       typeof p.attempt === "number" && p.attempt > 0
         ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
         : "";
-    const detail =
-      typeof p.error_message === "string" && p.error_message ? `: ${p.error_message}` : "";
+    const detail = (text: unknown): string =>
+      typeof text === "string" && text !== "" ? `: ${text}` : "";
+    if (status === "completed") {
+      // Either half of the pair marks the completion degraded — the same test replay applies.
+      if (p.error_code === undefined && p.error_message === undefined) return;
+      this.errors.record({
+        source: "compaction",
+        err: `${mode} compaction completed without a full summary${attempts}${detail(p.error_message || p.error_code)}; the next context opens with a salvaged summary or a Trace hand-off.`,
+        ctx: this.ctxFor(key),
+        code: "compaction_degraded",
+        kind: "expected",
+      });
+      return;
+    }
+    let err: string;
+    if (status === "fatal") {
+      err = `${mode} compaction failed${attempts}${detail(p.error_message)}; the next context could not be opened; original context kept.`;
+    } else if (status === "retryable" || status === "failed") {
+      err = `${mode} compaction failed${attempts}${detail(p.error_message)}; trigger ${p.reason ?? "unknown"}, original context kept.`;
+    } else {
+      return;
+    }
     this.errors.record({
       source: "compaction",
-      err: `${p.mode ?? "summarize"} compaction failed${attempts}${detail}; trigger ${p.reason ?? "unknown"}, original context kept.`,
+      err,
       ctx: this.ctxFor(key),
       code: "compaction_failed",
       kind: "unexpected",
