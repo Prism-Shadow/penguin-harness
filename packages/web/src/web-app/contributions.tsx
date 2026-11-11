@@ -11,11 +11,13 @@ import {
 
 import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
+import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-renderers";
+
 import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
-import type { WebAppPage } from "./page-table";
+import { parentedPagesOf, removedPagesOf, type WebAppPage } from "./page-table";
 
 /** What the store holds for the current user. */
 export interface ContributionsState {
@@ -119,7 +121,8 @@ function rendererOf(raw: unknown): RendererRef | null {
  * order after the last compiled page, each keeping the renderer it named. An entry is skipped
  * when it lacks a key or a path, when a compiled page (or an earlier entry) owns its key or
  * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
- * `renderers`.
+ * `renderers`. Its nav name, glyph and parent are kept when they are strings; whether its
+ * parent can hold it is decided over the merged table (parentedPagesOf).
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
  * mounts it under the organization layout (features/company/org-routes.tsx) and the router
@@ -137,7 +140,7 @@ export function contributedPagesOf(
   let order = compiled.reduce((last, p) => Math.max(last, p.order), 0);
   const out = [...compiled];
   for (const entry of answer.pages) {
-    const { key, nav, admin, released } = entry;
+    const { key, nav, admin, released, parent, title, titleZh, icon } = entry;
     if (typeof key !== "string" || key === "" || keys.has(key)) continue;
     if (typeof entry.path !== "string") continue;
     const org = nav === "org";
@@ -149,7 +152,7 @@ export function contributedPagesOf(
     if (renderer === null) continue;
     const Component =
       "iframe" in renderer
-        ? framePageFor(renderer.iframe.src, key)
+        ? framePageFor(renderer.iframe.src, typeof title === "string" ? title : key)
         : renderers.get(renderer.builtin);
     if (Component === undefined) {
       console.warn(
@@ -168,6 +171,10 @@ export function contributedPagesOf(
       admin: admin === true,
       released: released !== false,
       order: ++order,
+      ...(typeof title === "string" ? { title } : {}),
+      ...(typeof titleZh === "string" ? { titleZh } : {}),
+      ...(typeof icon === "string" ? { icon } : {}),
+      ...(typeof parent === "string" ? { parent } : {}),
       renderer,
       Component,
     });
@@ -175,9 +182,69 @@ export function contributedPagesOf(
   return out;
 }
 
+/**
+ * The answer's file renderer rules this build can read, in the server's order: extensions are
+ * strings, dropped of a leading dot and lowercased (empty ones dropped), and the renderer is a
+ * `builtin` name. Anything else — no extensions left, an iframe renderer, a missing field, an
+ * answer from a server that sends no such list — is skipped. Whether the name is in this build's
+ * registry is the conversation's question, not this one's.
+ */
+export function fileRendererRulesOf(
+  answer: ContributionsResponse | null,
+): readonly FileRendererRule[] {
+  const entries: unknown = answer?.fileRenderers;
+  if (!Array.isArray(entries)) return NO_RULES;
+  const rules: FileRendererRule[] = [];
+  for (const entry of entries as Array<Record<string, unknown> | null>) {
+    if (entry === null || typeof entry !== "object" || typeof entry.id !== "string") continue;
+    const builtin = (entry.renderer as { builtin?: unknown } | undefined)?.builtin;
+    if (typeof builtin !== "string" || builtin === "" || !Array.isArray(entry.extensions)) continue;
+    const extensions = (entry.extensions as unknown[])
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.replace(/^\./, "").toLowerCase())
+      .filter((e) => e !== "");
+    if (extensions.length > 0) rules.push({ id: entry.id, extensions, builtin });
+  }
+  return rules;
+}
+
+const NO_RULES: readonly FileRendererRule[] = [];
+
+/**
+ * The keys of the pages the answer removes, in the server's order: an entry is read when its key
+ * is a non-empty string; anything else, and an answer that sends no such list, is skipped.
+ */
+export function pageRemovalsOf(answer: ContributionsResponse | null): readonly string[] {
+  const entries: unknown = answer?.pageRemovals;
+  if (!Array.isArray(entries)) return NO_REMOVALS;
+  return (entries as Array<{ key?: unknown } | null>)
+    .map((entry) => entry?.key)
+    .filter((key): key is string => typeof key === "string" && key !== "");
+}
+
+const NO_REMOVALS: readonly string[] = [];
+
+/**
+ * The table the router and the nav read: the compiled pages with the contributed ones appended,
+ * the removed ones dropped from both, and then every page whose parent is gone — so a removed
+ * page takes the pages under it along.
+ */
+export function pageTableFor(
+  compiled: readonly WebAppPage[],
+  answer: ContributionsResponse | null,
+  renderers: ReadonlyMap<string, ComponentType>,
+): readonly WebAppPage[] {
+  return parentedPagesOf(
+    removedPagesOf(contributedPagesOf(compiled, answer, renderers), pageRemovalsOf(answer)),
+  );
+}
+
 /** The answer's parts besides the pages, for the features that read them (web-app/index.ts). */
 
-/** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
+/**
+ * Holds the signed-in user's contributions — the merged page table and the file renderer rules —
+ * for everything under the router.
+ */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
   const signedIn = useAuth().user?.userId ?? null;
@@ -192,7 +259,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const pending = current ? state.pending : userId !== null;
   const value = useMemo<WebAppPagesValue>(
     () => ({
-      pages: contributedPagesOf(compiled, answer, pageRenderers),
+      pages: pageTableFor(compiled, answer, pageRenderers),
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],
@@ -200,7 +267,14 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
     }),
     [compiled, answer, pageRenderers, pending, store],
   );
-  return <PagesContext.Provider value={value}>{children}</PagesContext.Provider>;
+  const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
+  return (
+    <PagesContext.Provider value={value}>
+      <FileRendererRulesContext.Provider value={rules}>
+        {children}
+      </FileRendererRulesContext.Provider>
+    </PagesContext.Provider>
+  );
 }
 
 export { useContributions, useWebAppPages, useWebAppPagesPending } from "../lib/web-app-pages";

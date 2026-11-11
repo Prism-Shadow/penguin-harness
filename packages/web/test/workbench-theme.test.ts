@@ -3,6 +3,7 @@
  * document, and what is stamped on the frame's. What is read includes the names published
  * pages read from before the token contract (the body font stack, the gray scale).
  */
+import { INITIAL_THEME_ID } from "@prismshadow/penguin-ui";
 import { describe, expect, it } from "vitest";
 import {
   applyWorkbenchTheme,
@@ -54,14 +55,24 @@ describe("workbench theme", () => {
     expect(theme.fontFaces).toBe("@font-face{}");
   });
 
-  it("names the theme the app leaves implicit, and only an accent the theme paints", () => {
-    // Primer is the app root without data-theme; blue is one of its presets, orange is not.
-    expect(readAppTheme(appRoot([], "16px", { "data-accent": "blue" }), () => "").attrs).toEqual({
-      "data-theme": "github",
-      "data-accent": "blue",
+  it("copies the theme and its base as the app writes them, and only an accent the theme paints", () => {
+    // Primer is a pack on the foundation alone, so its root carries no base; blue is one of its
+    // presets, orange is not.
+    const primer = (accent: string) =>
+      readAppTheme(appRoot([], "16px", { "data-theme": "github", "data-accent": accent }), () => "")
+        .attrs;
+    expect(primer("blue")).toEqual({ "data-theme": "github", "data-accent": "blue" });
+    expect(primer("orange")).toEqual({ "data-theme": "github" });
+    // Frost's recipes key on the base, so a page carrying the components' stylesheet draws them
+    // only when the base comes along.
+    const frost = appRoot([], "16px", { "data-theme": "modern", "data-theme-base": "modern" });
+    expect(readAppTheme(frost, () => "").attrs).toEqual({
+      "data-theme": "modern",
+      "data-theme-base": "modern",
     });
-    expect(readAppTheme(appRoot([], "16px", { "data-accent": "orange" }), () => "").attrs).toEqual({
-      "data-theme": "github",
+    // A root naming no theme the build ships reads as the theme a browser starts in.
+    expect(readAppTheme(appRoot([], "16px"), () => "").attrs).toEqual({
+      "data-theme": INITIAL_THEME_ID,
     });
     expect(readAppTheme(appRoot([], "14px"), () => "").dark).toBe(false);
   });
@@ -95,7 +106,7 @@ describe("workbench theme", () => {
     const theme: WorkbenchTheme = {
       dark: true,
       fontSize: "16px",
-      attrs: { "data-theme": "modern", "data-accent": "forest" },
+      attrs: { "data-theme": "modern", "data-theme-base": "modern", "data-accent": "forest" },
       vars: { "--ui-accent": "#006838", "--ui-fg": "#e8e8e8" },
       fontFaces: '@font-face { font-family: "MiSans"; }',
     };
@@ -116,14 +127,22 @@ describe("workbench theme", () => {
     applyWorkbenchTheme(doc.document, {
       ...theme,
       dark: false,
-      attrs: { "data-theme": "modern" },
+      attrs: { "data-theme": "modern", "data-theme-base": "modern" },
       vars: { "--ui-accent": "#232527" },
     });
     expect(doc.classes).toEqual({ dark: false, light: true });
-    expect(doc.attributes).toEqual({ "data-theme": "modern", [WORKBENCH_FRAME_ATTR]: "" });
+    expect(doc.attributes).toEqual({
+      "data-theme": "modern",
+      "data-theme-base": "modern",
+      [WORKBENCH_FRAME_ATTR]: "",
+    });
     expect(doc.properties).toEqual({ "--ui-accent": "#232527" });
     expect(doc.head).toHaveLength(2);
     expect(doc.writes).toEqual({ properties: 3, fonts: 1 });
+
+    // A pack on the foundation alone takes the base off the frame, as the app's root drops it.
+    applyWorkbenchTheme(doc.document, { ...theme, attrs: { "data-theme": "geek" } });
+    expect(doc.attributes).toEqual({ "data-theme": "geek", [WORKBENCH_FRAME_ATTR]: "" });
   });
 
   it("gives a page carrying the components' stylesheet no base stylesheet, and still themes it", () => {

@@ -4925,6 +4925,13 @@ Scenarios:
 
   files: {
     title: "Files",
+    audioPlay: (name: string) => `Play ${name}`,
+    audioPause: (name: string) => `Pause ${name}`,
+    audioSeek: (name: string) => `Position in ${name}`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed} of ${total}`,
+    audioLoading: (name: string) => `Loading ${name}`,
+    audioUnavailable: (name: string) =>
+      `Cannot play ${name}: the file is missing or its format is not supported.`,
     upload: "Upload",
     download: "Download",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */

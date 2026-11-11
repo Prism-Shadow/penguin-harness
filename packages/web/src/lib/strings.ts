@@ -5184,6 +5184,17 @@ Benchmark：
 
   files: {
     title: "文件",
+    /**
+     * A reply's audio player (features/audio): the play/pause button's name, the seek bar's name
+     * and value text, what the spinner announces while the file loads, and the line the player
+     * becomes when the file cannot be played.
+     */
+    audioPlay: (name: string) => `播放 ${name}`,
+    audioPause: (name: string) => `暂停 ${name}`,
+    audioSeek: (name: string) => `${name} 的播放位置`,
+    audioPosition: (elapsed: string, total: string) => `${elapsed}，共 ${total}`,
+    audioLoading: (name: string) => `正在加载 ${name}`,
+    audioUnavailable: (name: string) => `无法播放 ${name}：文件不存在或格式不受支持。`,
     upload: "上传",
     download: "下载",
     /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */

@@ -4,9 +4,10 @@
  *
  * A workbench page is a separate document: Tailwind never sees it, and the app's theme stops at
  * the frame boundary. So the app copies what it has RESOLVED onto this document's root
- * (lib/workbench-theme.ts): the `light` / `dark` class, `data-theme`, `data-accent`,
- * `data-font-latin` / `data-font-cjk`, the root font size, every `--ui-*` token of the shared UI
- * package's contract (packages/ui/src/tokens.ts), and the bundled fonts' `@font-face` rules.
+ * (lib/workbench-theme.ts): the `light` / `dark` class, `data-theme`, `data-theme-base`,
+ * `data-accent`, `data-font-latin` / `data-font-cjk`, the root font size, every `--ui-*` token of
+ * the shared UI package's contract (packages/ui/src/tokens.ts), and the bundled fonts'
+ * `@font-face` rules.
  *
  * Two vocabularies follow from that:
  * - `--wb-*` and the `wb-*` classes are the workbench's own, stable names. Each `--wb-*` is mapped

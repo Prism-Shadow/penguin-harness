@@ -7294,8 +7294,58 @@ export interface WebContribution {
   [key: string]: unknown;
 }
 
+/**
+ * The data of one `WebModule.pages` contribution: its route, where it sits (`main` = the
+ * development nav; `org` = a company-mode page — its path is relative to
+ * `/org/:projectId/:orgId/` and it gets a nav row after the organization's own; `none` =
+ * reachable by URL only), whether it is admin-only, its renderer; its nav row's name in English
+ * and Chinese and its glyph (a name in the web UI's icon registry); and the key of the page it
+ * sits under, if any — one level only, and a page whose parent is absent is not shown.
+ */
+export type WebPageData = {
+  key: string;
+  path: string;
+  nav: "main" | "org" | "none";
+  admin: boolean;
+  renderer: RendererRef;
+  parent?: string;
+  title?: string;
+  titleZh?: string;
+  icon?: string;
+};
+
+/** A page contribution as GET /api/contributions answers it. */
+export type WebPageContribution = WebContribution & WebPageData;
+
+/**
+ * The data of one `WebModule.fileRenderers` contribution: the Workspace files it draws, by
+ * extension (without the dot, compared case-insensitively), and the renderer that draws one.
+ * Where the app shows it is the app's own choice (below a reply's paragraph that links the file).
+ */
+export type WebFileRendererData = {
+  extensions: string[];
+  renderer: RendererRef;
+};
+
+/** A file renderer contribution as GET /api/contributions answers it. */
+export type WebFileRendererContribution = WebContribution & WebFileRendererData;
+
+/**
+ * The data of one `WebModule.pageRemovals` contribution: the key of a page the web app drops —
+ * one of its own or one another plugin contributed. The app drops the routes under the page's
+ * path and the pages under it with it, and keeps the page its catch-all leads to.
+ */
+export type WebPageRemovalData = {
+  key: string;
+};
+
+/** A page removal as GET /api/contributions answers it. */
+export type WebPageRemovalContribution = WebContribution & WebPageRemovalData;
+
 export interface ContributionsResponse {
-  pages: WebContribution[];
+  pages: WebPageContribution[];
+  fileRenderers: WebFileRendererContribution[];
+  pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
 }
