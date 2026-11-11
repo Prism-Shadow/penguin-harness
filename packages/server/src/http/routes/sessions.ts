@@ -1124,6 +1124,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         type: "approval_request" as const,
         toolCall: p.toolCall,
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
+        ...(p.reason !== undefined ? { reason: p.reason } : {}),
       })),
     ];
     return sseEndpoint(c, channel, {

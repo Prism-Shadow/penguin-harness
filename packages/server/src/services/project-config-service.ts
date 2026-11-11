@@ -36,6 +36,7 @@ import {
   atomicWriteFile,
   DEFAULT_CHAT_THINKING_LEVELS,
   DEFAULT_COMMAND_POLICY_RULES,
+  commandPolicyPatternError,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
   parsePluginTables,
@@ -263,14 +264,21 @@ function optStr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
 
-/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on). */
+/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on); `action` only where it departs from `deny`, as it is stored. */
 function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPolicyRuleDto[] {
-  return rules.map((r) => ({
-    name: r.name,
-    pattern: r.pattern,
-    ...(r.description !== undefined ? { description: r.description } : {}),
-    enabled: r.enabled !== false,
-  }));
+  return rules.map((r) => {
+    // A stored pattern this engine cannot compile is skipped at match time; say so here, so
+    // the settings page can mark the rule rather than show it as if it guarded anything.
+    const patternError = commandPolicyPatternError(r.pattern);
+    return {
+      name: r.name,
+      pattern: r.pattern,
+      ...(r.description !== undefined ? { description: r.description } : {}),
+      enabled: r.enabled !== false,
+      ...(r.action === "ask" ? { action: "ask" as const } : {}),
+      ...(patternError !== null ? { patternError } : {}),
+    };
+  });
 }
 
 /** Leniently reads a paired reference table (default_model / vision_model); returns undefined on a shape mismatch (including the old string format). */
@@ -1160,14 +1168,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * always materializes the full rule list into the file — model-presets style: once
    * written, later factory changes never rewrite it — storing per field only what departs
    * from the defaults (`enabled = false`, a rule's `enabled = false`, a non-empty
-   * description). Read-modify-write like setChatDefaults, preserving every other key.
-   * Returns the block as re-read.
+   * description, a rule's `action = "ask"`). Read-modify-write like setChatDefaults,
+   * preserving every other key. Returns the block as re-read.
    */
   async setCommandPolicy(
     projectId: string,
     req: {
       enabled?: boolean;
-      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+      rules: {
+        name: string;
+        pattern: string;
+        description?: string;
+        enabled?: boolean;
+        action?: "deny" | "ask";
+      }[];
     },
   ): Promise<CommandPolicyDto> {
     const raw = await this.readRaw(projectId);
@@ -1180,6 +1194,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         ? { description: r.description }
         : {}),
       ...(r.enabled === false ? { enabled: false } : {}),
+      ...(r.action === "ask" ? { action: "ask" } : {}),
     }));
     await this.writeRaw(projectId, { ...raw, command_policy: block });
     return this.getCommandPolicy(projectId);

@@ -218,21 +218,22 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 ## 命令策略
 
-`[command_policy]` 块是 Project 为 shell 命令设下的护栏：一组在审批边界直接生效的拒绝规则。
+`[command_policy]` 块是 Project 为 shell 命令设下的护栏：一组在审批边界直接生效的规则。每条规则对命中的命令要么直接拒绝（`deny`），要么等人允许后才放行（`ask`）。
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `enabled` | 布尔 | 启用 | 总开关；只以 `enabled = false` 的形式存储 |
-| `[[command_policy.rules]]` | 表数组 | 出厂规则集 | 拒绝规则，按顺序匹配。存储为空列表表示没有规则；不存储列表则表示使用出厂规则集 |
+| `[[command_policy.rules]]` | 表数组 | 出厂规则集 | 规则列表。存储为空列表表示没有规则；不存储列表则表示使用出厂规则集 |
 
 每条规则包含以下键：
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `name` | 字符串 | — | 在设置界面中标识这条规则 |
-| `pattern` | 字符串 | — | JavaScript 正则表达式源码，与空白符归一化后的命令匹配 |
+| `pattern` | 字符串 | — | JavaScript 正则表达式源码，与空白符归一化后的命令匹配。须能在服务端的运行时上编译：编译不过的已存规则在匹配命令时被跳过，记一次日志，并在设置页标出 |
 | `description` | 字符串 | — | 可选的描述 |
 | `enabled` | 布尔 | 启用 | 单条规则的开关 |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | 命中后怎么办：`deny` 拒绝调用；`ask` 无论审批模式都交人决定。只以 `action = "ask"` 的形式存储 |
 
 ```toml
 [command_policy]
@@ -242,6 +243,12 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -254,9 +261,12 @@ enabled = false
 ### 生效方式
 
 - **检查范围：** 两个会触达 shell 的工具：`exec_command` 的 `cmd`（启动的命令）和 `input_command` 的 `chars`（往运行中的命令键入的内容）。
-- **生效时机：** `Session.run` 会用策略包住注入的审批回调，所以只要命中规则，在任何审批模式下（`allow-all` 也不例外）都会在询问宿主之前直接拒绝。
-- **模型看到什么：** 一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法。
-- **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。策略否决的调用，无论已安装的钩子给出什么答复，都保持禁止。
+- **生效时机：** `Session.run` 会用策略包住注入的审批回调，在任何审批模式下（`allow-all` 也不例外）都生效。命中 `deny` 规则，在询问宿主之前直接拒绝；命中 `ask` 规则，带着策略原因交给宿主的审批回调，由它交给人决定而不按审批模式作答（见[工具与审批](/tools#审批)），审批卡片会写明是哪条规则要求确认。
+- **以哪条为准：** 无论两者在列表里的先后，`deny` 命中都优先于 `ask` 命中，所以新增一条 `ask` 规则不会把原本的拒绝变成询问。同一种规则之间，以列表中第一条命中的规则命名这次决定。
+- **模型看到什么：** 命中 `deny` 时，是一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法；命中 `ask` 时，是人的决定，与其他审批一样记录。
+- **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。无论已安装的钩子给出什么答复，命中 `deny` 规则的调用都保持禁止，命中 `ask` 规则的调用仍交人决定。
+- **Subagent：** 子 Session 对继承来的审批回调施加同一套策略，而这个回调就是父 Session 的，所以 Subagent 里的 `ask` 命中会带着原因交给同一个人。
+- **无人值守的 Session：** 组织的工位与工单 Session 无人可问，`ask` 命中当场拒绝；`deny-all` 下同样拒绝。
 - **存放位置：** 策略存放在 Project 配置里，而不是 Agent State 里，所以 Agent 通过自身设置修改配置时碰不到它。
 - **修改何时生效：** 策略属于严格层级的运行时参数，只在模型上下文开启时读取一次。改动要等运行中的 Session 下一次轮换（压缩）才生效，新对话则立即生效。
 
@@ -264,7 +274,9 @@ enabled = false
 
 规则就是**普通数据，没有特殊层级**。出厂规则集会像模型预设一样预置到每个新建 Project 里：创建时复制一份，之后绝不重写。此后每条规则都能编辑、停用或删除，你也可以添加自己的规则。在预置机制上线之前创建的 Project（存储中没有 `rules` 列表）会按出厂规则集运作，直到第一次保存编辑、把列表写进去为止。设置页面上的 **恢复默认** 会把出厂规则集重新载入编辑器，保存后写回。
 
-出厂规则集刻意保持精简，只覆盖那些原样执行就会造成破坏、且无法撤销的命令：
+由于预置的规则之后绝不重写，后续版本新增的出厂规则不会自动进入已经存储了规则列表的 Project。下面五条 `ask` 规则就属于这种情况：已有的 Project 通过 **恢复默认** 采纳它们，保存后会替换整张列表（包括自定义规则）。从未保存过规则列表的 Project 本就按出厂规则集运作，已经包含它们。
+
+出厂规则集刻意保持精简。其中的 `deny` 规则只覆盖那些原样执行就会造成破坏、且无法撤销的命令：
 
 - 同时带递归和强制标志的 `rm`
 - `mkfs`
@@ -278,6 +290,18 @@ enabled = false
 - 卷格式化（`format C:`、`Format-Volume`）
 - 裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）
 - cmd 版的 fork 炸弹
+
+其后是五条 `ask` 规则。它们覆盖的命令都会作用到本机之外、难以收回，却也是人很可能确实想做的日常操作，所以等人同意，而不是直接拒绝：
+
+| 规则 | 匹配 |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`、`gh pr close` |
+| `gh-release` | `gh release create`、`delete`、`edit` |
+| `git-push-force` | 带 `-f`、`--force` 或 `--force-with-lease` 的 `git push` |
+| `git-push-default-branch` | 推到 `main` 或 `master` 的 `git push`，作为目标或 refspec 的目的端。不写目标的 `git push` 无从判别，留给 Agent 的提示词 |
+| `package-publish` | `npm publish`、`pnpm publish`、`yarn publish` |
+
+与所有规则一样，它们只匹配文本：`gh pr merge --help` 和 `npm publish --dry-run` 也会要求确认（点一下即可），而经别名、脚本或 API 调用做同一件事则会绕过。默认系统提示词的 `# Tool use` 小节要求 Agent 在做这些动作以及同一类动作之前先征得同意。
 
 ### 匹配规则
 

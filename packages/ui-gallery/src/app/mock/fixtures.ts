@@ -1667,10 +1667,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
     },
     {
-      name: "no-force-push",
+      name: "git-push-force",
       pattern: "git\\s+push\\s+.*--force",
-      description: L("强制推送", "Force pushing"),
+      description: L("强制推送会改写共享历史", "A force-push rewrites shared history"),
       enabled: true,
+      action: "ask",
     },
     {
       name: "no-curl-pipe-sh",
