@@ -213,6 +213,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
+      { key: "apps", admin: false, released: true },
       { key: "models", admin: false, released: true },
       { key: "plugins", admin: false, released: true },
       { key: "machines", admin: true, released: true },
@@ -225,6 +226,7 @@ describe("the booted page table", () => {
     const nav = navPagesOf(pages);
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
+      { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {

@@ -157,6 +157,34 @@ export function writeLoadStatus(
   }
 }
 
+/** What `.build/status.json` records of the last load of a folder. */
+export interface LoadStatus {
+  /** The revision that load read; null when the file does not say. */
+  revision: string | null;
+  failed: boolean;
+  /** The load error, when the file records one. */
+  error: string | null;
+}
+
+/** The last load's status as {@link writeLoadStatus} left it; null when there is none to read. */
+export async function readLoadStatus(dir: string): Promise<LoadStatus | null> {
+  const file = path.join(dir, BUILD_DIR, STATUS_FILE);
+  let status: unknown;
+  try {
+    status = JSON.parse(await fs.promises.readFile(file, "utf8"));
+  } catch {
+    // Never loaded here, or the file was cut short: it says nothing.
+    return null;
+  }
+  // Whatever else the file holds, a field it lacks reads as unsaid.
+  const { revision, ok, error } = (status ?? {}) as Record<string, unknown>;
+  return {
+    revision: typeof revision === "string" ? revision : null,
+    failed: ok === false,
+    error: typeof error === "string" ? error : null,
+  };
+}
+
 /** Drops the emitted code of every revision but `keep` (the one now serving). */
 export function pruneBuilds(dir: string, keep: string): void {
   const base = path.join(dir, BUILD_DIR);

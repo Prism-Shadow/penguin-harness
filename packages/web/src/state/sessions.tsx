@@ -29,6 +29,9 @@ import type { UserEventHandler } from "./user-events";
 import { WORKBENCH_UPDATED_EVENT } from "@prismshadow/penguin-web/internal";
 import { publishUserEvent } from "../lib/omni/user-events";
 import { mergeCounts, mostRecentFirst } from "@prismshadow/penguin-web/internal";
+import { WORKBENCH_BUILDING_EVENT, WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
+import { publishUserEvent } from "../lib/amsp/user-events";
+import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
   forgetSessionMachines,
   machineForSession,
@@ -1480,6 +1483,14 @@ export function applyUserEvent(
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_UPDATED_EVENT, {
         detail: { projectId: ev.projectId, agentId: ev.agentId },
+      }),
+    );
+    return;
+  }
+  if (ev.type === "workbench_building") {
+    window.dispatchEvent(
+      new CustomEvent(WORKBENCH_BUILDING_EVENT, {
+        detail: { projectId: ev.projectId, agentId: ev.agentId, workbenchId: ev.workbenchId },
       }),
     );
     return;

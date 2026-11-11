@@ -176,7 +176,8 @@ describe("a workbench's archives on the Plugins tab", () => {
     ) {
       saved.push(this.download);
     });
-    await click(button(`${en.workbenches.exportWorkbench} Support`));
+    await click(button(`${en.workbenches.more} Support`));
+    await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => saved.length === 1);
     expect(saved).toEqual(["support-v1.zip"]);
     const download = server
@@ -188,7 +189,8 @@ describe("a workbench's archives on the Plugins tab", () => {
   it("says why the server refused an export, and saves nothing", async () => {
     await openTab({ archiveRefusal: { status: 413, code: "workbench_too_large" } });
     const click_ = vi.spyOn(HTMLAnchorElement.prototype, "click");
-    await click(button(`${en.workbenches.exportWorkbench} Support`));
+    await click(button(`${en.workbenches.more} Support`));
+    await click(menuItem(en.workbenches.exportWorkbench));
     await waitFor(() => toasts("error").length === 1);
     expect(toasts("error")).toEqual([en.errors.byCode.workbench_too_large]);
     expect(click_).not.toHaveBeenCalled();

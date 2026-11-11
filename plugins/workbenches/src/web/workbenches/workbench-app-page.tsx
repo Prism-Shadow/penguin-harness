@@ -6,11 +6,12 @@
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
  * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
  * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
- * on the same Agent’s workbench tab. The route sits outside the app shell (no ProjectProvider), so the exit
+ * on the same Agent’s workbench tab — or back on the App Center, when the page was opened
+ * from one of its tiles. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
@@ -26,6 +27,13 @@ import {
 import { rememberSelection } from "@prismshadow/penguin-web/internal";
 import { AppPalette } from "@prismshadow/penguin-web/internal";
 import { openUserEvents } from "@prismshadow/penguin-web/internal";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { S } from "../../lib/strings";
+import { rememberSelection } from "../../state/project";
+import { isAppCenterPath } from "../../lib/app-center-path";
+import { useSafeMode } from "../../rescue/safe-mode";
+import { usePaletteActions } from "../../lib/palette-actions";
+import { useAppPageTab } from "./use-app-page-tab";
 import { WorkbenchFrame } from "./workbench-tabs";
 
 export function WorkbenchAppPage() {
@@ -39,10 +47,17 @@ export function WorkbenchAppPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
-  const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
-  /** The workbench is listed but switched off: it serves no page, and the page says why. */
-  const [off, setOff] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const toAppCenter = isAppCenterPath(returnTo);
+  const { tab, off, failure } = useAppPageTab({
+    projectId,
+    agentId,
+    workbenchId,
+    tabKey,
+    machineId,
+    // This route is outside the app shell, so it holds its own event stream open.
+    ownEvents: true,
+    enabled: !safe,
+  });
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
   useEffect(() => {
@@ -89,10 +104,14 @@ export function WorkbenchAppPage() {
     () => [
       {
         id: "exit-full-page",
-        label: S.workbenches.exitFullPage,
+        label: toAppCenter ? S.workbenches.exitToAppCenter : S.workbenches.exitFullPage,
         keywords: ["exit", "leave", "chat", "full page", "app"],
         run: () => {
           rememberSelection(projectId, agentId);
+          if (isAppCenterPath(returnTo)) {
+            void navigate(returnTo);
+            return;
+          }
           const destination =
             typeof returnTo === "string" && /^\/chat(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(returnTo)
               ? returnTo
@@ -112,7 +131,17 @@ export function WorkbenchAppPage() {
         },
       },
     ],
-    [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
+    [
+      projectId,
+      agentId,
+      navigate,
+      returnTo,
+      toAppCenter,
+      tab?.tabId,
+      workbenchId,
+      tabKey,
+      machineId,
+    ],
   );
 
   return (

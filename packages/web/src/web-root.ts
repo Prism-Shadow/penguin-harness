@@ -49,6 +49,7 @@ import { TracesModule } from "@penguinharness/plugin-usage/web";
 import { AudioModule } from "@penguinharness/plugin-sessions/web";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "./features/agents/module";
+import { AppCenterModule } from "./features/app-center/module";
 import { ModelsModule } from "./features/models/module";
 import { PluginsModule } from "./features/plugins/module";
 import { MachinesModule } from "./features/machines/module";
@@ -76,6 +77,7 @@ import { AudioModule } from "./features/audio/module";
     SessionsModule,
     ChatModule,
     AgentsModule,
+    AppCenterModule,
     ModelsModule,
     PluginsModule,
     MachinesModule,

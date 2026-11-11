@@ -70,6 +70,11 @@ describe("isContextMenuKey", () => {
     expect(isContextMenuKey({ key: "F10", shiftKey: true })).toBe(true);
   });
 
+  it("is the ContextMenu key too, with or without Shift", () => {
+    expect(isContextMenuKey({ key: "ContextMenu", shiftKey: false })).toBe(true);
+    expect(isContextMenuKey({ key: "ContextMenu", shiftKey: true })).toBe(true);
+  });
+
   it("ignores a bare F10 and other shifted keys, so the row eats no ordinary typing", () => {
     expect(isContextMenuKey({ key: "F10", shiftKey: false })).toBe(false);
     expect(isContextMenuKey({ key: "F11", shiftKey: true })).toBe(false);

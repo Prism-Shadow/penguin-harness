@@ -21,6 +21,14 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  AppCenterLayout,
+  AppCenterLayoutResponse,
+  AppCenterResponse,
+  BackgroundImagePutResponse,
+  BackgroundImageRequest,
+  BackgroundImageResponse,
+  DraftsPatchRequest,
+  DraftsResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -228,6 +236,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkbenchAppCenterRequest,
+  WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallRequest,
   WorkbenchArchiveInstallResponse,
   WorkbenchEnabledRequest,
@@ -2653,7 +2663,8 @@ const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
  * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
- * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
+ * the workbenches of an Agent that only a machine has are asked of THAT machine's server, and the
+ * list's icons are re-rooted onto it (api/machine-icons.ts).
  */
 export const getWorkbenches = (
   projectId: string,
@@ -2664,7 +2675,7 @@ export const getWorkbenches = (
 export const getWorkbenches = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
-  });
+  }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -2733,6 +2744,30 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
+export const setWorkbenchAppCenter = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchAppCenterResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/app-center`,
+    { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
+  );
+/**
+ * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
+ * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ */
+export const getAppCenter = (projectId: string) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+/** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
+export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
+  apiFetch<AppCenterLayoutResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/app-center/layout`,
+    { method: "PUT", body: { layout } },
+  );
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**

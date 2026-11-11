@@ -3,9 +3,10 @@
  * mode every entry — New chat, then the pages below — is either PINNED (a favourite), always
  * shown in the fixed block under the switcher, or COLLAPSIBLE, inside the area a nav-row-wide
  * chevron button under it folds away (arrow up = collapse; collapsed, the button stays — arrow
- * down — as the way back). New chat, Agents, Models and Plugins are pinned by default; the user
- * moves an entry across with the row's star or by dragging it into or out of the collapsible
- * area. Both areas keep page order, and with nothing collapsible there is no chevron. A
+ * down — as the way back). New chat, Agents, the App Center, Models and Plugins are pinned by
+ * default; the user moves an entry across with the row's star or by dragging it into or out of
+ * the collapsible area. Both areas keep page order, and with nothing collapsible there is no
+ * chevron. A
  * contributed mode's rows (company mode's pages) split the same way, with none pinned by
  * default and each mode's choices kept apart (see the section at the end).
  *
@@ -87,10 +88,15 @@ export function navEntryKeysFor(
   return [NEW_CHAT_ENTRY, ...navKeysFor(pages, isAdmin)];
 }
 
-/** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
+/**
+ * Entries pinned until the user says otherwise; every other entry, a page added later included,
+ * starts collapsible. The App Center is the Project's home screen, and a home screen folded away
+ * is not one.
+ */
 export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
   NEW_CHAT_ENTRY,
   "agents",
+  "apps",
   "models",
   "plugins",
 ]);

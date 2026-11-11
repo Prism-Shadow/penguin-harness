@@ -19,6 +19,7 @@
  * history every successful load commits to the Agent State repository — which is what makes an
  * Agent's own edits to its workbench reversible.
  */
+import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
@@ -28,6 +29,7 @@ import type {
   WorkbenchTabRenderer,
 } from "@prismshadow/penguin-server/api";
 export type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchTabRenderer } from "@prismshadow/penguin-server/api";
+import type { IconRef } from "../api/types.js";
 
 /** A version of a workbench: a commit of the Agent State repository that changed its folder. */
 export interface WorkbenchVersion {
@@ -158,10 +160,59 @@ export interface WorkbenchTab {
   renderer: WorkbenchTabRenderer;
 }
 /**
+ * How a workbench asks to appear in its Project's App Center: `penguin.appCenter` in its own
+ * package.json, beside `penguin.version` and `penguin.modules`. Absent, or `show: false`, the
+ * workbench has no shortcut there.
+ */
+export interface WorkbenchAppCenter {
+  show: boolean;
+  /** At most 60 characters; the first tab's title, else the package name, when absent. */
+  title?: string;
+  /** At most 60 characters; the first tab's `titleZh` when absent. */
+  titleZh?: string;
+  /**
+   * An image file under `ui/`, at most 256 KB: SVG, PNG, JPEG, WebP, GIF or AVIF, its extension
+   * naming the format its bytes are, and an SVG holding no script, handler or outside reference.
+   * A letter tile when absent.
+   */
+  icon?: string;
+  /** The key of the tab the shortcut opens; the first tab when absent. */
+  tab?: string;
+}
+
+/** One tile of the App Center: a workbench whose manifest asks to be shown. */
+export interface AppCenterShortcut {
+  agentId: string;
+  agentName: string;
+  workbenchId: string;
+  title: string;
+  titleZh?: string;
+  /**
+   * The declared icon: `url` is its route under the workbench with the image's content revision
+   * (`…/app-center/icon?rev=<hash>`), so a changed icon is a new URL, and `tint` says whether it
+   * is a monochrome SVG drawn in the text colour. Absent without a declared icon that reads clean.
+   */
+  icon?: IconRef;
+  /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
+  path: string;
+  /** The tab the shortcut opens when the declaration names one; else the workbench's first. */
+  tab?: string;
+  /**
+   * Where its build stands on this server: "building" while a load of its files is under way or
+   * queued, "failed" when the last load recorded in `.build/status.json` failed, else "ready"
+   * (a workbench this process has not loaded yet is ready: opening it loads it).
+   */
+  build: "ready" | "building" | "failed";
+  /** With build "failed": the load error `.build/status.json` records. */
+  error?: string;
+}
+
+/**
  * One workbench as the server holds it. One that does not run (its own switch or the Agent-wide
  * one is off) is listed from its folder alone, never loaded for the listing: `revision` and
  * `uiRev` are its source's as it stands on disk (so history still marks the current version),
- * `tabs` and `hints` are empty, `error` is null (nothing was tried) and `loadedAt` is null.
+ * `tabs` and `hints` are empty, `error` is null (nothing was tried) and `loadedAt` is null;
+ * `appCenter` and `icon` are read from its package.json as for one that runs.
  */
 export interface WorkbenchInfo {
   id: string;
@@ -185,6 +236,13 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
+  /** What the current package.json declares for the App Center; absent when nothing, or nothing valid (a hint says why). */
+  appCenter?: WorkbenchAppCenter;
+  /**
+   * The icon that declaration names, shown in the App Center or not: the same `IconRef` its
+   * shortcut carries (the icon route with the image's revision). Absent without one that reads clean.
+   */
+  icon?: IconRef;
   /**
    * Its own switch: false while a `.disabled` marker sits in its folder. It runs only while this
    * and the Agent-wide switch (`WorkbenchesResponse.enabled`) are both on; a disabled one is not
@@ -311,6 +369,32 @@ export abstract class Workbenches {
    * versions are no longer listed. The instance goes with it.
    */
   abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  /**
+   * The App Center of a Project: a shortcut for every workbench of its Agents on this server
+   * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
+   * the manifests, each one's last load status and the loads under way — nothing is loaded or
+   * compiled. From then on the Agents' folders are watched, so an edit loads and is announced.
+   */
+  abstract appCenter(projectId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * The icon a workbench's App Center declaration names, read and checked again; null when the
+   * workbench is unknown, its declaration does not hold up, or it names no icon.
+   */
+  abstract appCenterIcon(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<IconImage | null>;
+  /**
+   * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
+   * then reloads the workbench — which records the edit as a version like any other.
+   */
+  abstract setAppCenter(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
   /**
    * Lets go of everything held for one Agent before its folder is deleted or its State is
    * replaced: the folder watcher, pending reloads, loads in flight and the loaded instances. A
