@@ -83,15 +83,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     };
     let res: Omit<AgentArchiveImportResponse, "agent" | "sessions">;
     if (!(await deps.agents.takenAgentIds(projectId)).includes(agentId)) {
-      const created = await deps.agents.createAgent(
-        projectId,
-        agentId,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        pkg,
-      );
+      const created = await deps.agents.createAgent(projectId, agentId, { archive: pkg });
       res = { mode: "created", version: created.version };
     } else {
       if (c.req.query("overwrite") !== "1") {
