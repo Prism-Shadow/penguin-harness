@@ -9,7 +9,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 | Category | Plugins |
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit` |
-| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
+| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 
@@ -20,6 +20,8 @@ The four `sandbox-*` packages are not library content but server modules: Agent 
 `a2ui` makes replies easier to read and act on: a choice, a form with every basic control (one or several lines of text, a number, a slider, one or several options, a dropdown, a switch, a date and a time), a procedure in steps, a callout, a Mermaid diagram, a basic chart drawn from data (line, area, bar, pie, scatter, histogram or gauge), or a weather, clock, countdown, metrics or system-resource widget (the data widgets are built on the basic charts) written as a fenced block inside ordinary Markdown, which the Web App renders with its own components (a pick fills the composer as plain text) and every other surface shows as readable text. The skill carries STE-style writing rules for Chinese and English, two hand-written, dependency-free scripts that print ready-made blocks from real data (`scripts/weather.mjs` reads Open-Meteo, `scripts/sysinfo.mjs` the machine it runs on), and `scripts/check.mjs`, a self-contained bundle of the `@prismshadow/a2ui` grammar (`pnpm build:a2ui-check` regenerates it; the package's test fails when it is stale) that validates every block, scores the draft and prints the self-review rubric before the reply is sent.
 
 `browser-automation` drives the agent browser through `penguin browser` — the desktop app's built-in browser, or the user's own Chrome through the PenguinHarness Browser extension: GenericAgent's scan → act → check loop over simplified HTML, trusted clicks and typing, and the user's own sign-ins, with Amazon orders as the worked example.
+
+`trace-lookup` teaches an Agent to read its own Trace files: where a Session's files are, and how to search one for the lines a detail sits on and read only those, for when a `[context_summary]` or `[model_switch_from]` block names the Trace of the context it continues from.
 
 `agent-development` is building on PenguinHarness itself: `agent-initialization` sets an agent up from a requirement, `penguin-sdk` connects a program to an agent (embedded with the SDK or over the Agent API), `penguin-plugin` builds the workbenches an agent keeps beside its chat, `unified-llm-api` calls any model through one API, and `penguin-config` and `penguin-orchestration` drive settings, agents, Sessions, costs and schedules from the shell.
 
