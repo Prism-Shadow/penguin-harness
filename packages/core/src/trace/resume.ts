@@ -314,6 +314,8 @@ export interface ResumeTraceOptions {
   tracePath?: string;
   /** The shell the resumed Session runs commands in, wording the trailer's search (see ContextEngineDeps.shell). */
   shell?: string;
+  /** The hand-off note's template in force at resume (see CompactionSettings.handoffNote). */
+  handoffNote?: string;
 }
 
 /**

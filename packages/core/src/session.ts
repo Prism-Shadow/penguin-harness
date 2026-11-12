@@ -488,7 +488,7 @@ export class Session {
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.compactionToolGate ? { compactionToolGate: config.compactionToolGate } : {}),
-      buildHandoff: () => this.compactionHandoff(),
+      buildHandoff: (template) => this.compactionHandoff(template),
       ...(config.shell !== undefined ? { shell: config.shell } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
@@ -1124,7 +1124,7 @@ export class Session {
    * the one being closed, since the rotation comes after it; an unreadable file gives the note
    * without its digest.
    */
-  private async compactionHandoff(): Promise<AmspRecord> {
+  private async compactionHandoff(template?: string): Promise<AmspRecord> {
     const tracePath = this.trace?.currentPath?.();
     const records =
       tracePath !== undefined ? await readTraceTolerant(tracePath).catch(() => []) : [];
@@ -1132,6 +1132,7 @@ export class Session {
       buildCompactionHandoff(records, {
         ...(tracePath !== undefined ? { tracePath } : {}),
         ...(this.shell !== undefined ? { shell: this.shell } : {}),
+        ...(template !== undefined ? { template } : {}),
       }),
     );
   }

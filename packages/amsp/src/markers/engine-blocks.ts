@@ -46,13 +46,15 @@ function transcriptLines(lead: string, transcript: CompactedTranscript): string[
  * Under the summary, after a blank line, come the extras that apply and, given the compacted
  * context's Trace file, the trailer naming it. All of it is plain text inside the block, so a
  * reader that knows the block by its prefix reads an old summary the same way; with neither,
- * the block is exactly what it was before they existed.
+ * the block is exactly what it was before they existed. A string `trace` is the Trace file's
+ * path alone.
  */
 export function buildContextSummaryText(
   summary: string,
-  transcript?: CompactedTranscript,
+  trace?: CompactedTranscript | string,
   extras?: ContextSummaryExtras,
 ): string {
+  const transcript = typeof trace === "string" ? { tracePath: trace } : trace;
   const lines: string[] = [];
   if (extras?.callLines !== undefined && extras.callLines.length > 0) {
     lines.push(COMPACTION_CALLS_HEADER, ...extras.callLines);

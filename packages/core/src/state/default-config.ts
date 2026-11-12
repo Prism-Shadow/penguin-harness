@@ -118,6 +118,10 @@ export interface CompactionConfig {
   max_rounds?: number;
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
+  /** The line sent after each tool round of a summarize compaction; defaults to {@link DEFAULT_COMPACTION_REMINDER}, blank sends none. */
+  reminder?: string;
+  /** The note a context opens with when no summary could be had; defaults to {@link DEFAULT_COMPACTION_HANDOFF_NOTE}, blank gives the quoted data alone. */
+  handoff_note?: string;
 }
 
 /** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
@@ -651,6 +655,30 @@ Workspace files that matter (read or changed), and every hand-off file, each wit
 ## Next steps
 The remaining work in order, and the exact next action.
 [/summary]`;
+
+/** Built-in default `compaction.reminder`: `{{ROUNDS_USED}}` and `{{ROUNDS_LEFT}}` are filled when it is sent. */
+export const DEFAULT_COMPACTION_REMINDER =
+  "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.";
+
+/**
+ * Built-in default `compaction.handoff_note`: `{{ERROR}}`, `{{USER_MESSAGES}}`, `{{LAST_TURN}}`
+ * and `{{TRACE_PATH}}` are filled from the closing Trace file.
+ */
+export const DEFAULT_COMPACTION_HANDOFF_NOTE = `No summary of the earlier conversation could be written, so the harness wrote this note in its place. That conversation is no longer in your context; what is quoted below is copied from its Trace file, shortened where marked.
+
+Why there is no summary (if it is about size, do not rebuild the same input: read large files and outputs in parts):
+{{ERROR}}
+
+The user's messages, oldest first:
+{{USER_MESSAGES}}
+
+The last completed turn:
+{{LAST_TURN}}
+
+Trace file (JSONL, one record per line): {{TRACE_PATH}}
+Hand-off files written earlier, if any, are under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/.
+
+Carry on with the task from where it stopped. Consent does not carry over: anything that needed a go-ahead is asked again.`;
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution

@@ -123,6 +123,13 @@ export interface CompactionSettings {
    * room the summary still needs); resolved by the composition layer. Absent: no limit.
    */
   roundLimit?: number;
+  /**
+   * The line sent behind a non-summary reply's tool outputs; `{{ROUNDS_USED}}` and
+   * `{{ROUNDS_LEFT}}` are filled when it is sent. Blank: no line.
+   */
+  reminder?: string;
+  /** The hand-off note's template (see ContextEngineDeps.buildHandoff). Blank: the quoted data alone. */
+  handoffNote?: string;
 }
 
 /** What the gate answers for one call (see ContextEngineDeps.compactionToolGate). */
@@ -297,10 +304,11 @@ export interface ContextEngineDeps {
   compactionToolGate?: CompactionToolGate;
   /**
    * Builds the hand-off note a compaction opens the next context with when no summary could be
-   * had: a user text record the composition layer derives from the Trace file being closed.
-   * Absent or throwing, the engine writes a bare note of its own.
+   * had: a user text record the composition layer derives from the Trace file being closed,
+   * filling `template` (CompactionSettings.handoffNote) when one is given. Absent or throwing,
+   * the engine writes a bare note of its own.
    */
-  buildHandoff?: () => AmspRecord | Promise<AmspRecord>;
+  buildHandoff?: (template?: string) => AmspRecord | Promise<AmspRecord>;
   /**
    * The shell the Session's commands run in (the system prompt's `Shell:` value), used only to
    * word the Trace-query hint in the `[context_summary]` trailer for that shell. Absent: the

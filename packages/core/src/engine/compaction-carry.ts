@@ -134,6 +134,11 @@ export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: 
   };
 }
 
+/** The assistant text of the span's last completed request, "" when none completed. */
+export function lastCompletedReply(span: AmspRecord[]): string {
+  return readSpan(span).requests.findLast((r) => r.status === "completed")?.text ?? "";
+}
+
 /**
  * The compaction's tool calls as the next context reads them: each `[tool_call]` line followed by
  * its `[tool_call_output]` line, in call order, the latest {@link MAX_COMPACTION_CALLS} at most
@@ -185,7 +190,7 @@ const SUMMARY_TAG_LINES: ReadonlySet<string> = new Set([
  */
 export function buildCompactionHandoff(
   file: AmspRecord[],
-  opts: { tracePath?: string; shell?: string },
+  opts: { tracePath?: string; shell?: string; template?: string },
 ): string {
   const { tracePath, shell } = opts;
   if (tracePath === undefined) {
