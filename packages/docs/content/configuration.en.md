@@ -217,21 +217,22 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 
 ## Command policy
 
-The `[command_policy]` block is the Project's guardrail for shell commands: a list of deny rules applied at the approval boundary itself.
+The `[command_policy]` block is the Project's guardrail for shell commands: a list of rules applied at the approval boundary itself. A rule either refuses a matching command (`deny`) or holds it until a person allows it (`ask`).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | On | Master switch; stored only as `enabled = false` |
-| `[[command_policy.rules]]` | array of tables | The factory set | The deny rules, matched in order. A stored empty list means no rules; an absent list means the factory set |
+| `[[command_policy.rules]]` | array of tables | The factory set | The rules. A stored empty list means no rules; an absent list means the factory set |
 
 Each rule has these keys:
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `name` | string | — | Identifies the rule in the settings UI |
-| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command |
+| `pattern` | string | — | JavaScript regex source, matched against the whitespace-normalized command. It must compile on the server's runtime: a stored rule whose pattern does not is skipped when commands are matched, logged once, and marked on the settings page |
 | `description` | string | — | Optional description |
 | `enabled` | boolean | On | Per-rule switch |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | What a hit does: `deny` refuses the call; `ask` puts it to a person whatever the approval mode. Stored only as `action = "ask"` |
 
 ```toml
 [command_policy]
@@ -241,6 +242,12 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -253,9 +260,12 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 ### Enforcement
 
 - **What it checks:** both tools that reach a shell: `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into a running command).
-- **When it applies:** `Session.run` wraps the injected approval callback with the policy, so a hit is rejected before the host is asked, under every approval mode, allow-all included.
-- **What the model sees:** the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course.
-- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A vetoed call stays forbidden whatever an installed hook answers.
+- **When it applies:** `Session.run` wraps the injected approval callback with the policy, under every approval mode, allow-all included. A `deny` hit is rejected before the host is asked. An `ask` hit goes to the host's approval callback with a policy reason, which puts it to a person instead of answering by approval mode (see [Tools & Approval](/tools#approval)). The approval card then says which rule asked.
+- **Which rule wins:** a `deny` hit outranks an `ask` hit wherever the two sit in the list, so adding an `ask` rule never turns a refusal into a question. Among rules with the same action, the first match in list order is the one a decision names.
+- **What the model sees:** for a `deny` hit, the fixed line `Tool call denied by policy.`, distinct from a person's cancellation, so the model changes course. For an `ask` hit, the person's answer, recorded like any other approval.
+- **Hooks:** the policy outranks a [pre-tool-use hook's](/agent-loop#pre-tool-use-hooks) `allow`. A call a `deny` rule matches stays forbidden, and a call an `ask` rule matches still goes to a person, whatever an installed hook answers.
+- **Subagents:** a child Session applies the same policy to the callback it inherits, which is the parent's, so an `ask` hit inside a subagent reaches the same person with its reason.
+- **Unattended Sessions:** an organization's desk and ticket Sessions have nobody to ask, so an `ask` hit there is denied at once. `deny-all` denies it too.
 - **Where it lives:** in the Project config, not in Agent State, so an agent that edits its own configuration through its settings cannot reach it.
 - **When edits apply:** the policy is a strict-tier runtime parameter, read once when a model context opens. An edit reaches a running Session at its next rotation (compaction) and new conversations at once.
 
@@ -263,7 +273,9 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 
 The rules are **plain data with no special tiers**. The factory set is seeded into each new Project exactly like the model presets: copied in at creation and never rewritten afterward. Every rule can then be edited, disabled or deleted, and you can add your own. A Project created before the seeding (no stored `rules` list) behaves as the factory set until its first saved edit writes the list. On the settings page, **Restore defaults** loads the factory set back into the editor, and saving writes it.
 
-The factory set is deliberately small. It covers commands whose verbatim execution is destructive with no undo:
+Because seeded rules are never rewritten, a factory rule added in a later release does not reach a Project that already stores its list. The five `ask` rules below are such rules: an existing Project adopts them with **Restore defaults**, which replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the factory set and has them already.
+
+The factory set is deliberately small. Its `deny` rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`
@@ -277,6 +289,18 @@ Four more rules cover the same ground in Windows spellings, since `exec_command`
 - a volume format (`format C:`, `Format-Volume`)
 - a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`)
 - the cmd fork bomb
+
+Five `ask` rules follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done, so it waits for a go-ahead instead of being refused:
+
+| Rule | Matches |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`, `gh pr close` |
+| `gh-release` | `gh release create`, `delete`, `edit` |
+| `git-push-force` | `git push` with `-f`, `--force` or `--force-with-lease` |
+| `git-push-default-branch` | `git push` to `main` or `master`, as a target or a refspec's destination. A bare `git push` names no target, so it cannot be told apart and is left to the agent's prompt |
+| `package-publish` | `npm publish`, `pnpm publish`, `yarn publish` |
+
+They match text, like every rule: `gh pr merge --help` and `npm publish --dry-run` ask too (one click), and the same action through an alias, a script or an API call walks past. The default system prompt's `# Tool use` section asks the agent to get a go-ahead for these actions and the wider class they belong to.
 
 ### Matching
 
@@ -458,13 +482,17 @@ agent_state/memory/
 └── my-app-a81f32c4/              # one Workspace
     ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
-    └── testing-conventions.md
+    ├── testing-conventions.md
+    ├── csv-tools.md
+    └── csv-tools/                # optional: the scripts csv-tools.md keeps
+        ├── dedupe.py
+        └── lib/io.py
 ```
 
 Each scope has its own `MEMORY.md` index, and different agents never share Memory, even in the same Workspace. Because Memory lives in Agent State, it travels with export, import and snapshots.
 
 > [!WARNING]
-> Every Project member who can reach the agent can read its Memory. Keep credentials and sensitive personal data out of it.
+> Every Project member who can reach the agent can read its Memory, scripts included. Keep credentials and sensitive personal data out of it.
 
 To read or delete memories, or to ask the agent to edit them, use the **Memory** tab of the [agent settings](/agents).
 
@@ -508,6 +536,24 @@ The prompt rules out:
 
 Anything else can be saved if the user wants it. For corrections and decisions, the model adds **Why:** and **How to apply:** lines. A memory that proves wrong is deleted together with its index line. Dates are written absolute (`YYYY-MM-DD`), because relative dates mean nothing to a later Session.
 
+### Scripts
+
+A memory can keep scripts: programs the agent would otherwise write again, such as a parser, a report generator or a checker. They sit in a folder named after the memory's file without `.md`, beside it: `csv-tools.md` keeps `csv-tools/`. The folder holds any number of files, in any language and with any extension, in subfolders if the scripts need them. A memory has no folder until the agent writes its first file there.
+
+The default Memory prompt tells the model to:
+
+- keep the files free of dependencies beyond their interpreter
+- list the files in the memory's own body, each with what it does, how to run it and a relative link such as `[dedupe.py](csv-tools/dedupe.py)`, and never in `MEMORY.md`, which keeps one line per memory
+- run a script with `exec_command`, by absolute path through its interpreter (`python3`, `node`, `bash` and so on), because the file tools write files without the execute bit
+- delete the folder together with its memory
+- read a script before running one it did not write in the current Session, and keep secrets in the vault, never in a file
+
+Scripts have no tool of their own. A run is an ordinary `exec_command`, shown in the conversation like any other command, and the Session's sandbox, approval mode and command policy apply to it. Writing a script needs full access, as any write to Memory does: a confining [sandbox](/settings#sandbox) keeps Agent State read-only.
+
+A script carries the trust of a Skill the agent wrote for itself. Every later Session of the agent may run it, and every Project member who can reach the agent can read it on the **Memory** tab, under the memory that keeps it. A folder with no memory of its name beside it belongs to no memory; the tab lists its files apart, under **Files without a memory**.
+
+An agent created before scripts existed keeps its stored Memory prompt, which does not mention them, until a [kernel update](#kernel-updates) brings in the current one.
+
 ### Injection
 
 Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. Each `MEMORY.md` lists its scope's memories one per line, as `- [Title](file.md) — hook` with links relative to the scope directory. The model updates the index together with the file, deletions included, so the two never disagree.
@@ -524,7 +570,7 @@ Limits:
 - A blank index injects an explicit "nothing saved yet" note.
 - Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for an index with a few enormous lines. Past a cap, a truncation note tells the model to open the full `MEMORY.md` itself. The file on disk is never touched.
 - The default Memory prompt states the line cap and asks for index lines under about 150 characters, so the model keeps the index short before it reaches the caps. The character backstop exists only in code.
-- The model reads topic bodies on demand.
+- The model reads topic bodies and the files they keep on demand.
 
 The two halves are separate config keys because substitution has no conditionals. A temporary Workspace must never receive the Workspace section (its directory line and the rule for choosing a scope), so that half is simply not appended there. The harness only decides where Memory lives and keeps writes inside it. Deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 

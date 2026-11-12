@@ -46,9 +46,13 @@ import {
   NIGHTLY_INDEX_URL,
   builtinPluginRegistry,
   cachedRegistry,
+  compareSemver,
   httpPluginRegistry,
+  isSemver,
   mergeIndexes,
+  newestPerName,
   parsePluginIndex,
+  selectIndexChannel,
 } from "../src/plugin/registry.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { resolveServerConfig } from "../src/config.js";
@@ -100,11 +104,26 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, descriptionZh: 1 },
       { ...VALID_ENTRY, title: 1 },
       { ...VALID_ENTRY, titleZh: [] },
+      { ...VALID_ENTRY, integrity: "md5-abc" },
+      { ...VALID_ENTRY, integrity: 7 },
+      { ...VALID_ENTRY, channels: "github" },
+      { ...VALID_ENTRY, channels: [{ kind: "github" }] },
+      { ...VALID_ENTRY, channels: [{ url: "https://x" }] },
+      { ...VALID_ENTRY, channels: [null] },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
         /malformed entry at index 1/,
       );
     }
+  });
+
+  it("passes an entry's integrity and channels through instead of dropping them", () => {
+    const entry: IndexDocumentEntry = {
+      ...VALID_ENTRY,
+      integrity: "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      channels: [{ kind: "github", url: "https://github.com/o/r/releases/download/v1/x.tgz" }],
+    };
+    expect(parsePluginIndex([entry], "test")).toEqual([entry]);
   });
 });
 
@@ -169,6 +188,99 @@ describe("httpPluginRegistry", () => {
     await expect(httpPluginRegistry(url, respond('{"plugins":[]}')).index()).rejects.toThrow(
       /not an array/,
     );
+  });
+
+  it("revalidates with If-None-Match, and a 304 is answered from the cache, not an error", async () => {
+    const calls = fakeFetch((call) =>
+      call.headers.get("if-none-match") !== null
+        ? new Response(null, { status: 304, headers: { etag: '"a"' } })
+        : jsonResponse([VALID_ENTRY], 200, { etag: '"a"' }),
+    );
+    const registry = httpPluginRegistry(url, calls.fetch);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls[0]!.headers.get("if-none-match")).toBeNull();
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"a"');
+    expect(calls.calls).toHaveLength(2);
+  });
+
+  it("keeps working when the etag churns but the document does not (a Pages quirk)", async () => {
+    let etag = 0;
+    const calls = fakeFetch(() => jsonResponse([VALID_ENTRY], 200, { etag: `"v${++etag}"` }));
+    const registry = httpPluginRegistry(url, calls.fetch);
+    const first = await registry.index();
+    const second = await registry.index();
+    expect(calls.calls).toHaveLength(2);
+    // The new etag is what the next revalidation speaks.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"v1"');
+    // The document did not change, so the entries parsed once are the entries served twice.
+    expect(second).toBe(first);
+    expect(await registry.index()).toBe(first);
+    expect(calls.calls[2]!.headers.get("if-none-match")).toBe('"v2"');
+  });
+
+  it("caches by body hash when the server sends no etag at all", async () => {
+    const calls = fakeFetch(() => jsonResponse([VALID_ENTRY]));
+    const registry = httpPluginRegistry(url, calls.fetch);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(await registry.index()).toEqual([VALID_ENTRY]);
+    expect(calls.calls).toHaveLength(2);
+    // No etag was ever sent, so no revalidation header either.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBeNull();
+  });
+
+  it("a 304 with nothing in hand is an error, not an answer", async () => {
+    // A 304 revalidates a document this registry is holding; without one it is a server
+    // talking nonsense, and the read fails rather than inventing entries.
+    const calls = fakeFetch(() => new Response(null, { status: 304, headers: { etag: '"a"' } }));
+    await expect(httpPluginRegistry(url, calls.fetch).index()).rejects.toThrow(/HTTP 304/);
+    expect(calls.calls).toHaveLength(1);
+  });
+
+  it("reads that overlap queue, so a stale completion cannot rewind the state a newer read wrote", async () => {
+    // Two reads start together and the index churns between their answers: the first read's
+    // bytes arrive only after the second read has taken the newer document. Answered as they
+    // finished, the older read would write v1 over v2 and the next revalidation would speak
+    // a dead etag; queued, the second read follows the first and the state stays coherent.
+    const v1 = [VALID_ENTRY];
+    const v2 = [{ ...VALID_ENTRY, description: "the second edition" }];
+    const release: Array<() => void> = [];
+    const gated = (body: unknown, etag: string) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            release.push(() => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            });
+          },
+        }),
+        { status: 200, headers: { etag } },
+      );
+    const calls = fakeFetch((_call, index) =>
+      index === 0
+        ? gated(v1, '"E1"')
+        : index === 1
+          ? jsonResponse(v2, 200, { etag: '"E2"' })
+          : new Response(null, { status: 304, headers: { etag: '"E2"' } }),
+    );
+    const registry = httpPluginRegistry(url, calls.fetch);
+    const first = registry.index();
+    const second = registry.index();
+    // The first read's fetch only happens after the registry's own setup awaits; a tick lets
+    // it reach the gated body before the gate opens.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release[0]!();
+    expect(await first).toEqual(v1);
+    const secondValue = await second;
+    expect(secondValue).toEqual(v2);
+    // The second read ran after the first had settled, revalidating against its etag.
+    expect(calls.calls[1]!.headers.get("if-none-match")).toBe('"E1"');
+    // The third read revalidates against the document the second read left: the churned
+    // index is served from a 304, the very entries the second read parsed.
+    const third = await registry.index();
+    expect(calls.calls[2]!.headers.get("if-none-match")).toBe('"E2"');
+    expect(third).toBe(secondValue);
   });
 });
 
@@ -555,6 +667,92 @@ describe("cachedRegistry", () => {
   });
 });
 
+describe("compareSemver", () => {
+  // The chain semver.org §11 itself gives, in ascending order.
+  const chain = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+  ];
+  it("ranks the spec's own example chain in order", () => {
+    for (let i = 0; i < chain.length - 1; i += 1) {
+      expect(compareSemver(chain[i]!, chain[i + 1]!)).toBeLessThan(0);
+      expect(compareSemver(chain[i + 1]!, chain[i]!)).toBeGreaterThan(0);
+      expect(compareSemver(chain[i]!, chain[i]!)).toBe(0);
+    }
+  });
+
+  it("compares numeric identifiers by value, not as strings", () => {
+    // The trap: "alpha.10" sorts before "alpha.2" as text, after it as a semver.
+    expect(compareSemver("0.0.1-alpha.2", "0.0.1-alpha.10")).toBeLessThan(0);
+    expect(compareSemver("0.10.0", "0.9.0")).toBeGreaterThan(0);
+  });
+
+  it("ranks a prerelease below the release it belongs to, and ignores build metadata", () => {
+    expect(compareSemver("0.0.1-alpha.2", "0.0.1")).toBeLessThan(0);
+    expect(compareSemver("1.0.0+x", "1.0.0+y")).toBe(0);
+    expect(compareSemver("1.0.0+x", "1.0.0")).toBe(0);
+  });
+
+  it("refuses to rank a version that does not parse", () => {
+    expect(isSemver("0.0.3")).toBe(true);
+    expect(isSemver("0.0.1-alpha.2")).toBe(true);
+    expect(isSemver("latest")).toBe(false);
+    expect(isSemver("1.0")).toBe(false);
+    expect(() => compareSemver("latest", "0.0.3")).toThrow();
+  });
+});
+
+describe("newestPerName", () => {
+  it("keeps the highest version per name, in the document's order", () => {
+    const kept = newestPerName([
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.2" },
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.3" },
+      { ...VALID_ENTRY, name: "@example/b", version: "1.0.0" },
+      { ...VALID_ENTRY, name: "@example/a", version: "0.0.10" },
+    ]);
+    expect(kept.map((e) => [e.name, e.version])).toEqual([
+      ["@example/b", "1.0.0"],
+      ["@example/a", "0.0.10"],
+    ]);
+  });
+
+  it("never lets a prerelease outrank the release, but ranks prereleases among themselves", () => {
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "0.0.1-alpha.2" },
+        { ...VALID_ENTRY, version: "0.0.1" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.1"]);
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "0.0.1-alpha.2" },
+        { ...VALID_ENTRY, version: "0.0.1-alpha.10" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.1-alpha.10"]);
+  });
+
+  it("ranks a version that parses over one that does not, and keeps the first otherwise", () => {
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "latest" },
+        { ...VALID_ENTRY, version: "0.0.3" },
+      ]).map((e) => e.version),
+    ).toEqual(["0.0.3"]);
+    expect(
+      newestPerName([
+        { ...VALID_ENTRY, version: "1.0.0+one" },
+        { ...VALID_ENTRY, version: "1.0.0+two" },
+      ]).map((e) => e.version),
+    ).toEqual(["1.0.0+one"]);
+  });
+});
+
 describe("mergeIndexes", () => {
   const remoteEntry: IndexDocumentEntry = {
     ...VALID_ENTRY,
@@ -585,6 +783,75 @@ describe("mergeIndexes", () => {
     // A dead remote shortens the listing; it does not empty it.
     expect(entries.map((e) => e.name)).toEqual([VALID_ENTRY.name]);
     expect(failures).toEqual([{ source: "remote", error: "index answered HTTP 503" }]);
+  });
+
+  it("carries one row per name: a document's several versions collapse to the newest", async () => {
+    const { entries } = await mergeIndexes([
+      stubRegistry("remote", [
+        { ...remoteEntry, version: "0.0.2" },
+        { ...remoteEntry, version: "0.0.3" },
+      ]).registry,
+    ]);
+    expect(entries.map((e) => e.version)).toEqual(["0.0.3"]);
+  });
+
+  it("the first source wins a name even where a later source's version is newer", async () => {
+    // What this deployment ships stays what the page describes, whatever a published index
+    // claims: a newer remote row does not outrank the shipped package.
+    const mine = { ...VALID_ENTRY, description: "the shipped one", version: "1.0.0" };
+    const theirs = { ...VALID_ENTRY, description: "the published one", version: "2.0.0" };
+    const { entries } = await mergeIndexes([
+      stubRegistry("builtin", [mine]).registry,
+      stubRegistry("remote", [theirs]).registry,
+    ]);
+    expect(entries).toEqual([mine]);
+  });
+});
+
+describe("selectIndexChannel", () => {
+  const entry = (version: string): IndexDocumentEntry => ({
+    ...VALID_ENTRY,
+    version,
+    // Well-formed enough for indexChannelOf: the pin's shape is what is under test here, not its bytes.
+    integrity:
+      "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    channels: [
+      { kind: "github", url: `https://github.com/o/r/releases/download/v${version}/x.tgz` },
+    ],
+  });
+  // Deliberately out of order: the index is a publisher's array, and the newest row is not
+  // necessarily the last one.
+  const versions = ["2.0.0", "0.1.0", "1.2.9", "1.4.2", "1.2.0"].map(entry);
+
+  it("no version, or npm's latest, takes the highest the index carries, whatever order it lists", () => {
+    expect(selectIndexChannel(versions, undefined).channel?.version).toBe("2.0.0");
+    expect(selectIndexChannel(versions, "latest").channel?.version).toBe("2.0.0");
+    expect(selectIndexChannel([...versions].reverse(), "latest").channel?.version).toBe("2.0.0");
+  });
+
+  it("an exact version (a leading v tolerated) takes the entry that names it", () => {
+    expect(selectIndexChannel(versions, "1.2.0").channel?.version).toBe("1.2.0");
+    expect(selectIndexChannel(versions, "v1.2.0").channel?.version).toBe("1.2.0");
+  });
+
+  it("a caret takes the newest in the same major at or above the request; a tilde, the same minor", () => {
+    expect(selectIndexChannel(versions, "^1.2.3").channel?.version).toBe("1.4.2");
+    expect(selectIndexChannel(versions, "~1.2.3").channel?.version).toBe("1.2.9");
+    expect(selectIndexChannel(versions, "~1.2.3").channel?.version).not.toBe("1.2.0");
+  });
+
+  it("a version no entry satisfies refuses, listing what the index carries", () => {
+    const resolved = selectIndexChannel(versions, "^1.5.0");
+    expect(resolved.channel).toBeNull();
+    expect(resolved.fault).toMatch(/no version of it matches \^1\.5\.0/);
+    expect(resolved.fault).toMatch(/2\.0\.0, 0\.1\.0, 1\.2\.9, 1\.4\.2, 1\.2\.0/);
+  });
+
+  it("any other tag or range refuses rather than guessing what it means", () => {
+    const next = selectIndexChannel(versions, "next");
+    expect(next.channel).toBeNull();
+    expect(next.fault).toMatch(/by version only/);
+    expect(selectIndexChannel(versions, "1.x").channel).toBeNull();
   });
 });
 

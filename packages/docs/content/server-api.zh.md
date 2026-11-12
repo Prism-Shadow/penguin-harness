@@ -433,7 +433,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 - `DELETE /api/projects/:projectId` 仅限所有者。`default_project` 与 CLI 共享，无法删除：返回 `409` `cannot_delete_default_project`。
 - 成员的写操作仅限所有者。桌面模式下，成员相关路由同样返回 `403 desktop_single_user`；参见[用户管理（仅管理员）](#用户管理仅管理员)。
 - `chat-defaults` 对应 `[default_chat]` 配置块：`{agentId?, workspace?, approvalMode?, thinkingLevel?}`。任何成员都可以读取，只有所有者可以替换。PUT 会替换整个块：省略的键清除对应默认值，空请求体则移除整个块。`agentId` 必须指向 Project 中已存在的 Agent（否则返回 `400` `unknown_agent`）。`workspace` 只是预填值，创建 Session 时才会校验；留空表示临时 Workspace。`thinkingLevel` 用作未在自身配置里设置思考等级的 Agent 的兜底值，不接受 `none`。默认模型不属于这个块，由模型相关路由管理。
-- `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?}]}`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 编译失败返回 `400` `invalid_rule_pattern`，其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
+- `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?}]}`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 在服务端的引擎上编译失败返回 `400` `invalid_rule_pattern`，其 `details` 给出规则名 `rule`、规则在列表中从 0 起的下标 `index` 与引擎给的原因 `reason`；其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
 
 ### 语义化 id 提议
 
@@ -528,10 +528,10 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | POST | `/agents/:agentId/vault/template-placeholder` | 在 Prompt 模板中插入 `{{VAULT}}` 占位符（仅所有者） |
 | GET | `/agents/:agentId/memory` | 记忆概览 |
 | POST | `/agents/:agentId/memory/template-placeholder` | 在 Prompt 模板中插入 `{{MEMORY}}` 占位符 |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件 |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
-| GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
-| POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件、各自附带的文件，以及不属于任何主题的文件 |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:path` | 读取一个文件（主题或其附带的文件）/ 删除它（主题连同其文件夹） |
+| GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域的文件夹导出为 zip |
+| POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的 zip 写回（仅所有者） |
 | GET | `/agents/:agentId/archive` | 把 Agent 导出为其目录的 zip；查询参数选择部件与 Trace |
 | POST | `/agents/import` | 从 zip 或 tar.gz 快照包导入 Agent，请求体为原始文件 → 201 `{agent, mode, version, backup?, sessions}` |
 | GET | `/agents/:agentId/skills` | 已安装的 Skill（从插件库安装需通过 `/plugins`） |
@@ -569,10 +569,10 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 - `GET …/memory` 返回记忆开关、Prompt 模板是否带有 `{{MEMORY}}`，以及每个作用域的条目：用户作用域（`user`，`kind: "user"`）排在最前，随后是各个 Workspace。
 - 在这些作用域路由中，`:key` 是某个 Workspace 的 key 或 `user`。
-- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。
-- `DELETE …/scopes/:key/files/:name` 删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行。
-- `GET …/scopes/:key/export` 把作用域的全部主题文件连同 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。
-- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。`mode` 取 `skip`（默认值，只添加作用域缺少的文件）、`overwrite`（替换同名文件）或 `replace`（还会删除文档中没有包含的文件）。凡会覆盖或删除文件的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。
+- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。每个主题带 `files`：其文件夹（主题文件名去掉 `.md`，如 `csv-tools.md` 的 `csv-tools/`）中任意层级的文件，各带在作用域中的 `path`（`csv-tools/lib/io.py`）、`size` 和 `modifiedAt`。`orphanFiles` 以同样形式列出旁边没有同名主题的文件夹中的文件。
+- `…/scopes/:key/files/:path` 接受文件在作用域中的路径，路径的每一段对应 URL 的一段：主题文件名，或附带文件的 `<folder>/<path>`。`GET` 返回主题（含 frontmatter 与 `files`），或附带文件的文本，此时 `file` 以路径作 `name`；超过 512 KB 的附带文件以 413 `memory_file_too_large` 拒绝，不是 UTF-8 文本的以 415 `memory_file_not_text` 拒绝。`DELETE` 连同文件夹删除主题文件，并从 `MEMORY.md` 索引中删掉对应的行；或删除一个附带文件以及因此变空的文件夹。两者都不跟随符号链接。
+- `GET …/scopes/:key/export` 以 zip 附件返回作用域的文件夹：`MEMORY.md`、全部主题文件和各文件夹中的文件都在 zip 根下，原样保存。超过 1,000 个文件、单个文件 5 MB 或总计 20 MB 时返回 413 `memory_too_large`。
+- `POST …/scopes/:key/import` 接受 `{dataBase64, mode?, confirm?}`（zip 的 base64），或 `{payload, mode?, confirm?}`（zip 之前导出的 `version: 1` JSON 文档）。一条记忆是主题文件及其同名文件夹，作为整体迁移；没有主题的文件夹自成一条记忆，记作 `<folder>/`。`mode` 取 `skip`（默认值，只添加作用域缺少的记忆）、`overwrite`（替换同名记忆，主题与文件夹一并替换）或 `replace`（还会删除导入中没有的记忆）。凡会覆盖或删除的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`，其 `details` 以 JSON 数组给出 `overwritten` 与 `removed` 中的记忆名，并附 `replacesIndex`。zip 中不是记忆文件、越出作用域、以点开头或为链接的条目以 400 拒绝；记忆文件夹的位置或通往其文件的路径上有非目录时，路由返回 409 `memory_folder_not_a_directory`。两种情况都什么也不写入。
 
 ### 插件与钩子
 
@@ -684,6 +684,23 @@ interface AgentApiKeyInfo {
 - 导入的包导出所存的原 zip。内置包取自服务器所带构建里它的源文件，离线可用。导出的形状就是导入所收的形状：白领的规则限定到 `:root[data-theme="modern"]`，字体全是应用共用字体的包不带 `fonts.css`。白领导出时不带 `recipes.css`，因为 `"base": "modern"` 的包从基准沿用白领的配方，导出的 `README.md` 写明了这一点。要做自己的主题包，就导出白领，把 `pack.json` 与选择器里的 id 改成自己的，再导入。极客会带着配方导出，配方里的干净底线命中要先清掉才能导入。
 - 主题包存在数据根的 `themes/<id>/`，每次上传的原 zip 留在 `themes/archives/`。主题包不同步到机器。
 - 每次导入、覆盖与删除，都向每个登录用户的事件流发送 `themes_changed`。
+
+## 插件提供的 CLI 命令
+
+插件可以向 `penguin` CLI 贡献命令。命令与插件的其他部分一起住在 server 的模块树里，因此知道它们的是 server，CLI 通过两条路由触达：一条列出，另一条运行。列出对任何已登录用户开放；运行插件的代码是管理员操作。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行 |
+| POST | `/api/cli/commands/run` | 仅管理员。将 `args` 对一个包的命令解析，应答它们打印的内容与退出码 |
+
+运行请求是 `{package, args, language, prog}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。应答是 `{exitCode, stdout, stderr}`。
+
+每次运行都只用被点名包的命令新建一个命令程序：每条命令位于其 key 定位的节点上、以所请求语言的 summary 作描述，`args` 对这个程序解析。无参数时打印该包的帮助并以 0 退出；用法错误按 commander 的原样报出、带 commander 自己的退出码；命令自身失败以退出码 1 返回、消息在 stderr 上。输出是缓冲的，不作流式传输：命令通过 context 写下的一切，以及程序为帮助与用法错误打印的一切，在运行结束时随应答一次到达。一次运行不会波及 server——失败的命令不影响 server 与它的其他路由。
+
+错误：调用者非管理员时 `403` `admin_required`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
+
+CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包>:<id> …`——见 [penguin exec](/cli#penguin-exec)。
 
 ## 定时任务
 

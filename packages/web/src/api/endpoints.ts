@@ -7,6 +7,8 @@ import type {
   AgentApiKeyCreateResponse,
   AgentApiResponse,
   AgentApiUpdateRequest,
+  AgentAvatarRequest,
+  AgentAvatarResponse,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
@@ -74,7 +76,6 @@ import type {
   MemoryImportRequest,
   MemoryImportResponse,
   MemoryOverviewResponse,
-  MemoryScopeExport,
   MeResponse,
   MessagesResponse,
   MessagingAccountHoldersResponse,
@@ -277,8 +278,8 @@ import type {
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, apiUpload } from "./client";
 import { iconsOn } from "./machine-icons";
+import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
@@ -670,7 +671,7 @@ export const insertSchedulesPlaceholder = (
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
 
-/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
+/** Base path of an Agent's Memory API; the scope key and a topic's file name are single path segments (never a path). */
 const memoryBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
 
@@ -702,26 +703,35 @@ export const getMemoryFiles = (
     server: machineId,
   });
 
+/**
+ * One memory file's URL. `filePath` is its place in the scope: a topic's name (`MemoryFileInfo.name`)
+ * or a kept file's path (`MemoryFolderFile.path`, `<folder>/<path>`), each segment encoded on its
+ * own and the `/` between them kept.
+ */
+const memoryFileUrl = (projectId: string, agentId: string, scopeKey: string, filePath: string) =>
+  `${memoryFilesBase(projectId, agentId, scopeKey)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+
+/** A topic with the files it keeps, or a kept file's text (up to 512 KB of UTF-8). */
 export const getMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
+  filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<MemoryFileResponse>(
-    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
-    { server: machineId },
-  );
+  apiFetch<MemoryFileResponse>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
+    server: machineId,
+  });
 
+/** Deletes a topic with its folder (and its index lines), or one kept file. */
 export const deleteMemoryFile = (
   projectId: string,
   agentId: string,
   scopeKey: string,
-  name: string,
+  filePath: string,
   machineId: string | null,
 ) =>
-  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
+  apiFetch<void>(memoryFileUrl(projectId, agentId, scopeKey, filePath), {
     method: "DELETE",
     server: machineId,
   });
@@ -729,23 +739,15 @@ export const deleteMemoryFile = (
 const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}`;
 
-/**
- * One scope as a transfer document. Fetched as ordinary JSON rather than followed as a download
- * link so a failure arrives as an ApiError and reaches the user as a toast — a bare `<a download>`
- * would save the error body as a file (the skills tab hit the same wall). The server still sets
- * Content-Disposition, for anyone opening the URL directly.
- */
-export const exportMemoryScope = (
+/** Zip download URL for one scope's folder (server sets Content-Disposition attachment); the export round-trips through importMemoryScope. */
+export const memoryScopeArchiveUrl = (
   projectId: string,
   agentId: string,
   scopeKey: string,
   machineId: string | null,
-) =>
-  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, {
-    server: machineId,
-  });
+): string => apiUrl(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, machineId);
 
-/** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
+/** Writes a scope zip (or a version 1 JSON document) into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
   projectId: string,
   agentId: string,
@@ -2218,6 +2220,36 @@ export const benchmarkCaseFileUrl = (
   );
 };
 
+// An Agent's own avatar (agent_state/avatar.<ext>) ---------------------------------------------
+
+const agentAvatarPath = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/avatar`;
+
+/**
+ * Where an Agent's own picture is served from — through its machine for a machine's Agent. `rev`
+ * (the list's `avatarRev`) makes the URL the image's own, so it is cached for good.
+ */
+export const agentAvatarUrl = (
+  projectId: string,
+  agentId: string,
+  rev: string,
+  machineId: string | null,
+): string =>
+  `${apiUrl(agentAvatarPath(projectId, agentId), machineId)}?rev=${encodeURIComponent(rev)}`;
+
+/** Sets the Agent's own picture from a data URL (png, jpeg or webp); `null` removes it. */
+export const putAgentAvatar = (
+  projectId: string,
+  agentId: string,
+  avatar: string | null,
+  machineId: string | null,
+) =>
+  apiFetch<AgentAvatarResponse>(agentAvatarPath(projectId, agentId), {
+    method: "PUT",
+    body: { avatar } satisfies AgentAvatarRequest,
+    server: machineId,
+  });
+
 // Agent zip export / import ----------------------------------------------------------------
 
 /** The zip export with its parts query; a browser-followed URL, so the proxy prefix is in it (downloadArchive fetches it). */
@@ -2983,6 +3015,84 @@ export const installPlugin = (
     method: "POST",
     body: machineId === null ? { specifier } : { specifier, machineId },
   });
+
+/** How a channel install reports its download as it arrives: bytes so far, the total when known. */
+export type InstallProgressListener = (received: number, total: number | null) => void;
+
+/**
+ * The same install as {@link installPlugin}, read as it arrives: the server answers a
+ * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
+ * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
+ * `error` event carries the status the JSON answer would have had, and is raised as an
+ * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ */
+export const installPluginStream = async (
+  projectId: string,
+  specifier: string,
+  machineId: string | null,
+  onProgress: InstallProgressListener,
+): Promise<InstalledPluginsResponse> => {
+  const response = await apiFetchStream(pluginsPath(projectId), {
+    method: "POST",
+    body: machineId === null ? { specifier } : { specifier, machineId },
+    headers: { accept: "text/event-stream" },
+  });
+  for await (const { event, data } of sseEvents(response)) {
+    if (event === "result") return JSON.parse(data) as InstalledPluginsResponse;
+    if (event === "download") {
+      const progress = JSON.parse(data) as { received: number; total: number | null };
+      onProgress(progress.received, progress.total);
+    } else if (event === "error") {
+      const failure = JSON.parse(data) as { status: number; code: string; message: string };
+      throw new ApiError(failure.status, failure.code, failure.message);
+    }
+    // `npm` marks the hand-off and carries nothing to read; anything unknown is skipped so a
+    // newer server can add events this page has not heard of.
+  }
+  throw new ApiError(0, "network_error", "the stream ended with no result.");
+};
+
+/**
+ * Reads a `text/event-stream` answer one event at a time: a blank line ends an event, whose
+ * `event:` names it and whose `data:` lines join with newlines into its payload. Text decodes
+ * incrementally, so a chunk split inside a multi-byte character still lands whole.
+ */
+async function* sseEvents(response: Response): AsyncGenerator<{ event: string; data: string }> {
+  const body = response.body;
+  if (!body) throw new ApiError(0, "network_error", "the answer carried no stream.");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (buffer.trim() !== "")
+          throw new ApiError(0, "network_error", "the stream ended mid-event.");
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf("\n\n");
+      while (cut !== -1) {
+        const lines = buffer.slice(0, cut).split("\n");
+        buffer = buffer.slice(cut + 2);
+        const event = lines
+          .find((line) => line.startsWith("event:"))
+          ?.slice("event:".length)
+          .trim();
+        if (event === undefined) continue; // a comment or a keep-alive with no event name
+        const data = lines
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trim())
+          .join("\n");
+        yield { event, data };
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
  * machine's own table; the package leaves this server's disk once nothing asks it to run here.

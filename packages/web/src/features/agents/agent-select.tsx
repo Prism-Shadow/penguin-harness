@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { pillClass } from "../workspace";
@@ -12,12 +13,16 @@ export function AgentSelect({
   selected,
   onSelect,
   empty,
+  machineId = null,
 }: {
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
   empty: string;
+  /** The machine `agents` lives on, for their pictures; null for this server. */
+  machineId?: string | null;
 }) {
+  const avatarSrc = useAgentAvatarSrc();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLocaleLowerCase();
@@ -42,9 +47,9 @@ export function AgentSelect({
         {selected && (
           <AgentAvatar
             id={selected.agentId}
-            name={agentDisplayName(selected)}
             size={16}
             className="shrink-0 rounded"
+            src={avatarSrc(selected.agentId, machineId)}
           />
         )}
         <span className="min-w-0 truncate">
@@ -71,9 +76,9 @@ export function AgentSelect({
           <>
             <AgentAvatar
               id={agent.agentId}
-              name={agentDisplayName(agent)}
               size={20}
               className="shrink-0 rounded"
+              src={avatarSrc(agent.agentId, machineId)}
             />
             <span
               className="min-w-0 flex-1 truncate"

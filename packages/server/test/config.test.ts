@@ -76,7 +76,7 @@ describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
 
   it("falls through to the checkout lookup on a blank value, like unset", () => {
     // This test runs from the checkout's source, as `pnpm dev` runs the server, so the lookup
-    // offers the checkout's CLI source (see cli-shim.test.ts for resolveCliLaunch itself); the
+    // offers the checkout's CLI source (see cli-shim.test.ts for offeredCli itself); the
     // claim here is only that a blank value is not treated as an entry.
     const blank = resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: "   " });
     const unset = resolveServerConfig({ ...base });

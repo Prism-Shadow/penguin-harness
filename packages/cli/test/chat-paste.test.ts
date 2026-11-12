@@ -69,7 +69,7 @@ function startChat(): Tty {
   });
   const program = new Command();
   program.exitOverride();
-  registerChatCommand(program, getMessages("en"));
+  registerChatCommand(program.command("chat"), getMessages("en"));
   const done = program.parseAsync(["node", "penguin", "chat"]).finally(() => {
     Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
   });

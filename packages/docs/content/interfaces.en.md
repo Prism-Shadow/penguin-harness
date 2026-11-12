@@ -190,7 +190,14 @@ interface GenerativeModelConfig {
 
 ```ts
 type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDecision>;
+type ApproveFn = (
+  toolCall: AmspRecord<ToolCallPayload>,
+  context?: ApprovalContext, // why the call needs a person, when the command policy says so
+) => Promise<ApprovalDecision>;
+interface ApprovalContext {
+  reason?: ApprovalReason;
+}
+type ApprovalReason = { kind: "policy"; rule: string }; // a command-policy `ask` rule matched
 ```
 
 | Rule | Behavior |
@@ -200,7 +207,9 @@ type ApproveFn = (toolCall: AmspRecord<ToolCallPayload>) => Promise<ApprovalDeci
 | No callback injected | The engine denies everything (the conservative default) |
 | Subagents | A subagent inherits its parent's approval callback, invoked with an `origin` tag, so the approval policy spans the whole delegation tree |
 
-`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a vetoed command gets `"forbidden"` before the host is asked at all.
+`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a command a `deny` rule matches gets `"forbidden"` before the host is asked at all. A command an `ask` rule matches reaches the callback with `{ reason: { kind: "policy", rule } }`: the host must not answer it by approval mode alone, and puts it to a person (the server does so under every mode but `deny-all`). Every other call arrives with no second argument, as before. The engine itself always calls with the call alone and never reads the reason.
+
+The second argument is optional, so a callback written for the one-argument signature still compiles; it then decides an `ask` hit like any other call. A child Session forwards nothing extra: the callback it inherits is the parent's policy wrapper, and the child's reason travels with the call through it.
 
 Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 

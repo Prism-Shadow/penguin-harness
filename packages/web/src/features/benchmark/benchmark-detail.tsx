@@ -37,7 +37,8 @@ import {
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
@@ -188,11 +189,14 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
 /** One evaluation record: a clickable row; the detail it used to unfold is a dialog of its own. */
 function EvaluationRow({
   evaluation,
+  avatarSrc,
   machineName,
   onOpen,
   currency,
 }: {
   evaluation: BenchmarkEvaluation;
+  /** The tested Agent's own picture, when it has one (lib/agent-avatar.ts). */
+  avatarSrc: string | undefined;
   /**
    * The ssh alias of the machine whose scoreboard recorded this round, when the Benchmark is
    * held in more than one place — otherwise null, and nothing is said. A row read without
@@ -230,6 +234,7 @@ function EvaluationRow({
               id={evaluation.agentId}
               size={ICON_SIZE.rowLead}
               className="shrink-0 rounded"
+              src={avatarSrc}
             />
             <span className="min-w-0 truncate font-mono">{evaluation.agentId}</span>
           </span>
@@ -373,6 +378,9 @@ export function BenchmarkDetail({
 }) {
   const { currency } = useTheme();
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
+  /** A round's Agent's picture: the Agent of the machine whose scoreboard recorded it. */
+  const pictureOf = (ev: MergedEvaluation) => avatarSrc(ev.agentId ?? "", ev.machineId);
   const description = benchmarkDescription(bm, locale);
   const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
@@ -457,6 +465,7 @@ export function BenchmarkDetail({
                     <EvaluationRow
                       key={index}
                       evaluation={ev}
+                      avatarSrc={pictureOf(ev)}
                       machineName={bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null}
                       onOpen={() => setOpenEvaluationIndex(index)}
                       currency={currency}
@@ -471,6 +480,7 @@ export function BenchmarkDetail({
         <EvaluationDetailModal
           benchmarkId={bm.id}
           evaluation={openEvaluation}
+          avatarSrc={pictureOf(openEvaluation)}
           caseTitles={caseTitles}
           currency={currency}
           onClose={() => setOpenEvaluationIndex(null)}

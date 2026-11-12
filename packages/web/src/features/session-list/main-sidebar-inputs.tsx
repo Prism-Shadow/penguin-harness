@@ -3,6 +3,7 @@ import { useLocation, useMatch, useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useSessions } from "../../state/sessions";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useCompany } from "../../lib/company-context";
@@ -28,6 +29,8 @@ export function useMainSidebarInputs(
   const { user, sessionVia } = useAuth();
   const { locale } = useLocale();
   const { currentProject, agents, setCurrentAgentId } = useProject();
+  /** Each Agent's own picture, for the group headers (lib/agent-avatar.ts). */
+  const avatarSrc = useAgentAvatarSrc();
   const {
     sessions: allSessions,
     byAgent: allByAgent,
@@ -78,6 +81,7 @@ export function useMainSidebarInputs(
     locale,
     currentProject,
     agents,
+    avatarSrc,
     setCurrentAgentId,
     allSessions,
     allByAgent,

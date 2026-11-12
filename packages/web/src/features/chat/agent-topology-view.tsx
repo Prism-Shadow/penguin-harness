@@ -20,6 +20,7 @@ export function AgentTopologyView({
   nodes,
   selectedId,
   labelFor,
+  avatarFor,
   onSelect,
 }: {
   nodes: TopologyNode[];
@@ -27,6 +28,8 @@ export function AgentTopologyView({
   selectedId: string | null;
   /** Resolved display label for a node (the view owns name resolution; the graph only renders it). */
   labelFor: (node: TopologyNode) => string;
+  /** A node's Agent's own picture, when it has one (resolved by the view, like the label). */
+  avatarFor: (node: TopologyNode) => string | undefined;
   onSelect: (node: TopologyNode) => void;
 }) {
   const layout = layoutTopology(nodes);
@@ -77,7 +80,7 @@ export function AgentTopologyView({
               }`}
             >
               <span className="flex w-full min-w-0 items-center gap-1.5">
-                <AgentAvatar id={node.agentId ?? node.sessionId} name={label} size={18} />
+                <AgentAvatar id={node.agentId ?? node.sessionId} size={18} src={avatarFor(node)} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
                   {label}
                 </span>

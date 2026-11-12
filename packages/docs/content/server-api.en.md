@@ -433,7 +433,7 @@ Projects, their members, and the Project-wide settings stored in `.project_confi
 - `DELETE /api/projects/:projectId` is owner only. `default_project` is shared with the CLI and cannot be deleted: `409` `cannot_delete_default_project`.
 - Member writes are owner only. In desktop mode the member routes also answer `403 desktop_single_user`; see [User Administration (admin only)](#user-administration-admin-only).
 - `chat-defaults` is the `[default_chat]` block: `{agentId?, workspace?, approvalMode?, thinkingLevel?}`. Any member can read it, and only the owner can replace it. A PUT replaces the whole block: an omitted key clears that default, and an empty body removes the block. `agentId` must name an existing agent of the Project (otherwise `400` `unknown_agent`). `workspace` is a prefill and is not checked until a Session is created; an empty value means a temporary Workspace. `thinkingLevel` is the fallback for agents whose config sets none, and `none` is not accepted. The default model is not part of this block; it stays with the model routes.
-- `command-policy` is the `[command_policy]` block: `{enabled?, rules: [{name, pattern, description?, enabled?}]}`. Any member can read it, and only the owner can replace it. A PUT always carries the full rule list (an empty array means no rules), with at most 64 rules. Each rule needs a name of up to 64 characters and a pattern of up to 512 characters that compiles as a regular expression, and a description may have up to 300 characters. A pattern that does not compile returns `400` `invalid_rule_pattern`, any other malformed rule returns `400` `invalid_rules`, and a non-boolean `enabled` returns `400` `invalid_enabled`. See [Command policy](/configuration#command-policy).
+- `command-policy` is the `[command_policy]` block: `{enabled?, rules: [{name, pattern, description?, enabled?}]}`. Any member can read it, and only the owner can replace it. A PUT always carries the full rule list (an empty array means no rules), with at most 64 rules. Each rule needs a name of up to 64 characters and a pattern of up to 512 characters that compiles as a regular expression, and a description may have up to 300 characters. A pattern that does not compile on the server's engine returns `400` `invalid_rule_pattern`, whose `details` carry the rule's name (`rule`), its 0-based place in the list (`index`) and the engine's `reason`; any other malformed rule returns `400` `invalid_rules`, and a non-boolean `enabled` returns `400` `invalid_enabled`. See [Command policy](/configuration#command-policy).
 
 ### Semantic id proposals
 
@@ -528,10 +528,10 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 | POST | `/agents/:agentId/vault/template-placeholder` | Inserts the `{{VAULT}}` placeholder into the prompt template (owner only) |
 | GET | `/agents/:agentId/memory` | Memory overview |
 | POST | `/agents/:agentId/memory/template-placeholder` | Inserts the `{{MEMORY}}` placeholder into the prompt template |
-| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files |
-| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | Reads one topic file / deletes it |
-| GET | `/agents/:agentId/memory/scopes/:key/export` | Exports one scope as a single JSON document |
-| POST | `/agents/:agentId/memory/scopes/:key/import` | Writes an exported scope back (owner only) |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | Lists one scope's topic files, the files each keeps, and the files no topic keeps |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:path` | Reads one file, a topic or a file it keeps / deletes it (a topic with its folder) |
+| GET | `/agents/:agentId/memory/scopes/:key/export` | Exports one scope folder as a zip |
+| POST | `/agents/:agentId/memory/scopes/:key/import` | Writes an exported zip back (owner only) |
 | GET | `/agents/:agentId/archive` | Exports the agent as a zip of its directory; the query picks the parts and the Traces |
 | POST | `/agents/import` | Imports an agent from a zip, or a tar.gz snapshot package, sent as the raw body → 201 `{agent, mode, version, backup?, sessions}` |
 | GET | `/agents/:agentId/skills` | Installed Skills (library installs go through `/plugins`) |
@@ -569,10 +569,10 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 
 - `GET …/memory` returns the Memory switch, whether the prompt template carries `{{MEMORY}}`, and one entry per scope: the user scope (`user`, `kind: "user"`) first, then the Workspaces.
 - In the scope routes, `:key` is a workspace key or `user`.
-- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats.
-- `DELETE …/scopes/:key/files/:name` deletes a topic file and removes its lines from the `MEMORY.md` index.
-- `GET …/scopes/:key/export` returns every topic file of the scope plus its `MEMORY.md` as one JSON document, downloaded as an attachment.
-- `POST …/scopes/:key/import` takes `{payload, mode?, confirm?}`. `mode` is `skip` (the default, which adds only names the scope lacks), `overwrite` (which replaces same-named files) or `replace` (which also deletes what the document omits). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`.
+- `GET …/scopes/:key/files` lists one scope's topic files with their frontmatter and file stats. Each topic carries `files`: the files in its folder, the topic's file name without `.md` (`csv-tools/` for `csv-tools.md`), at any depth, each with its `path` in the scope (`csv-tools/lib/io.py`), `size` and `modifiedAt`. `orphanFiles` lists, the same way, the files in folders with no topic of their name.
+- `…/scopes/:key/files/:path` takes a file's path in the scope, one URL segment per path segment: a topic's name, or `<folder>/<path>` for a file a topic keeps. `GET` returns a topic with its frontmatter and `files`, or a kept file's text, whose `file` then carries the path as its `name`; a kept file over 512 KB is refused with 413 `memory_file_too_large`, and one that is not UTF-8 text with 415 `memory_file_not_text`. `DELETE` deletes a topic file with its folder and removes its lines from the `MEMORY.md` index, or deletes one kept file and the folders it leaves empty. Neither follows a symlink.
+- `GET …/scopes/:key/export` returns the scope folder as a zip attachment: `MEMORY.md`, every topic file and every folder's files at the zip's root, as the files they are. Past 1,000 files, 5 MB per file or 20 MB in all it returns 413 `memory_too_large`.
+- `POST …/scopes/:key/import` takes `{dataBase64, mode?, confirm?}`, the zip in base64, or `{payload, mode?, confirm?}` with a `version: 1` JSON document, which the export answered with before the zip. A memory is a topic file and the folder of its name, and moves as one; a folder with no topic is a memory of its own, named `<folder>/`. `mode` is `skip` (the default, which adds only memories the scope lacks), `overwrite` (which replaces same-named memories, topic and folder) or `replace` (which also deletes the memories the import omits). Anything that would overwrite or delete needs `confirm`, otherwise the route returns 409 `memory_import_confirm_required`, whose `details` carry `overwritten` and `removed` as JSON arrays of memory names and `replacesIndex`. A zip entry that is no memory file, climbs out of the scope, hides behind a dot or is a link is refused with 400; when a non-directory stands at a memory's folder or on the way to one of its files, the route returns 409 `memory_folder_not_a_directory`. Either way nothing is written.
 
 ### Plugins and hooks
 
@@ -684,6 +684,23 @@ A theme pack is a folder with a `pack.json` manifest and a few stylesheets (PRFC
 - The export of an imported pack is the zip as uploaded. The export of a built-in comes from the served build's own copy of its sources, so it works offline. It is in the shape an import takes: Frost's rules are scoped to `:root[data-theme="modern"]`, and a pack whose faces are the app's shared ones has no `fonts.css`. Frost's export leaves its `recipes.css` behind, because a pack on `"base": "modern"` takes Frost's recipes from the base; its `README.md` says so. To start a pack of your own, export Frost, rename its id in `pack.json` and in its selectors, and import it. Console exports its recipes, whose clean-baseline hits have to be cleared before it imports.
 - Packs live under the data root at `themes/<id>/`, and each upload is kept at `themes/archives/`. They are not synced to machines.
 - Every import, replace and removal sends `themes_changed` to every signed-in user's event stream.
+
+## Plugin-Contributed CLI Commands
+
+A plugin may contribute commands to the `penguin` CLI. The commands live in the server's tree with the rest of the plugin, so the server is the one that knows them, and the CLI reaches them through two routes: one lists them, the other runs one. Listing is open to any signed-in user; running a plugin's code is an admin operation.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/cli/commands` | Every plugin command, with its package: `{commands: [{package, key, summary}]}` — `key` is the command path (`a.b.c` answers `penguin a b c ARGS`) and `summary` carries one line per language |
+| POST | `/api/cli/commands/run` | Admin only. Parses `args` against one package's commands and answers with what they printed and their exit code |
+
+The run request is `{package, args, language, prog}`: `package` is the plugin package as the listing names it, `args` the arguments as they would follow the program name, `language` (`"en"` or `"zh"`) for the summaries and the command's own text, and `prog` the program name usage lines print (`penguin`, or `penguin exec <plugin>`). The answer is `{exitCode, stdout, stderr}`.
+
+Each run builds a fresh command program from the named package's commands alone: every command sits on the node its key locates, described by its summary in the requested language, and `args` is parsed against that program. With no arguments the run prints the package's help and exits 0; a usage error is reported as commander prints it, with commander's own exit code; the command's own failure comes back as exit code 1 with its message on stderr. Output is buffered, not streamed: everything the command writes through its context, and what the program prints for help and usage errors, arrives in the response when the run ends. A run never escapes into the server — a command that fails leaves the server and its other routes untouched.
+
+Errors: `403` `admin_required` when the caller is not an admin, `400` `bad_request` for a body that is not shaped as above, and `404` `unknown_package` when no plugin of that name contributes CLI commands.
+
+The CLI itself dispatches on this listing: a first word that names none of the CLI's own commands is matched against the listed keys, one package answering runs, and two or more answering is reported with one `penguin exec <package>:<id> …` line per candidate — see [penguin exec](/cli#penguin-exec).
 
 ## Schedules
 

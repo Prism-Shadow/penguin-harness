@@ -143,7 +143,13 @@ export abstract class ProjectConfigStore {
     projectId: string,
     req: {
       enabled?: boolean;
-      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+      rules: {
+        name: string;
+        pattern: string;
+        description?: string;
+        enabled?: boolean;
+        action?: "deny" | "ask";
+      }[];
     },
   ): Promise<CommandPolicyDto>;
   abstract getPricing(

@@ -724,6 +724,13 @@
     display: none;
   }
 
+  /* An Agent's default avatar is drawn in every style at once too (the `ui-avatar` hook): every
+     pack starts from the flat drawing, and a pack that draws its own swaps the two in its recipes —
+     so a pack with no drawing of its own, an imported one included, shows the flat one. */
+  .ui-avatar > [data-variant]:not([data-variant="flat"]) {
+    display: none;
+  }
+
   /* A stream host whose edge is live (the caret is its last child) says so as a number a theme's
      veil can multiply: 1 there, 0 everywhere else (the property's initial value), so a recipe
      that transitions it eases its veil in and out. `--_stream-veil` is private to the recipes

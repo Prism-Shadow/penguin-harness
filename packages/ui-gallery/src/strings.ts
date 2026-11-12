@@ -436,6 +436,8 @@ export const zh = {
       "ui-stream": "正在流式输出的文字（回答、思考、压缩摘要、工具输出）：各主题决定新文字如何出现",
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
+      "ui-avatar":
+        "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
     } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -537,7 +539,10 @@ export const zh = {
         description:
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
       },
-      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
+      avatars: {
+        title: "头像",
+        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+      },
       site: {
         title: "公开站点",
         description:
@@ -1133,6 +1138,13 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一",
+      variants: "各主题的画法",
+      variantsAside: "同一只笑脸圆球企鹅，每套主题一种画法；颜色只随智能体",
+      sizeCaption: (px: number) => `${px}px`,
+      picture: "智能体自己的图片",
+      pictureAside: "上传的图片保持智能体的圆角方块；读不出来时画缺省头像",
+      pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
       userNames: ["admin", "演示管理员"] as readonly string[],

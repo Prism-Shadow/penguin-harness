@@ -1895,7 +1895,7 @@ export const zh = {
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式，命中即拒绝执行，不受审批模式影响。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
+      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式。命中「拒绝」规则即拒绝执行，命中「需确认」规则则等人同意后才执行，都不受审批模式影响；两种规则同时命中时以拒绝为准。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
@@ -1912,7 +1912,28 @@ export const zh = {
     commandPolicyRuleName: "名称",
     commandPolicyRulePattern: "正则表达式",
     commandPolicyRuleDesc: "描述",
+    commandPolicyRuleAction: "命中时",
+    commandPolicyActionDeny: "拒绝",
+    commandPolicyActionAsk: "需确认",
+    commandPolicyAskPill: "需确认",
+    commandPolicyAskPillHint: "命中的命令要等人允许后才运行，不受审批模式影响。",
     commandPolicyInvalidPattern: "正则表达式无效",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "正则表达式",
+    commandPolicyColEnabled: "启用",
+    commandPolicyRuleSwitch: (name: string) => `启用规则 ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `编辑规则 ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `删除规则 ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `规则「${name}」的正则表达式在服务器上无法编译（${reason}），已转到它所在的页。`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `服务器无法编译这条规则的正则表达式：${reason}。编辑或删除它后再保存。`,
+    /** A stored rule the server cannot compile: matching skips it. `reason` is the engine's own words. */
+    commandPolicyRuleSkipped: (reason: string) =>
+      `这台服务器编译不了这条规则的正则表达式（${reason}），匹配命令时会跳过它，它不拦截任何命令。请编辑或删除它。`,
+    /** The row mark beside such a rule's name, as read aloud. */
+    commandPolicyPatternMark: "正则表达式无法编译",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",
@@ -2996,27 +3017,42 @@ export const zh = {
     deleteTitle: "删除这条记忆？",
     deleteConfirm: (name: string): string =>
       `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `将删除「${name}」、它附带的 ${files} 个文件，并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
     deleteDone: "已删除",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => `${n} 个文件`,
+    keptFiles: "文件",
+    keptFilesHint:
+      "这条记忆在同名文件夹里附带的文件：Agent 反复使用的脚本及其所需文件，正文写明各自的用途与运行方式。该 Agent 此后的每个会话都可能经 shell 运行它们，受该会话的沙盒与审批约束；Project 的每位成员都能读到它们。依赖某个脚本之前，先看看它的内容。",
+    orphanFiles: "不属于任何记忆的文件",
+    orphanFilesHint:
+      "旁边没有同名记忆的文件夹，多半是记忆删除后留下的。其中的文件列在这里，不会被隐藏；可以在这里删除，或请 Agent 整理。",
+    backToMemory: (title: string): string => `返回「${title}」`,
+    deleteFileTitle: "删除这个文件？",
+    deleteFileConfirm: (path: string): string =>
+      `将删除 ${path}。记忆正文中对它的说明不会随之删去。此操作不可恢复。`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
     exportScope: "导出",
-    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeHint: "将该组的文件夹（全部记忆、各自附带的文件与 MEMORY.md）下载为一个 zip",
     exportScopeLabel: (scope: string): string => `导出${scope}`,
     importScope: "导入",
-    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeHint: "从导出的 zip 恢复记忆到该组",
     importScopeLabel: (scope: string): string => `导入到${scope}`,
     importTitle: "导入记忆",
     importWhy:
-      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
-    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+      "读取从本 agent 或其他 agent 导出的一组记忆：该组文件夹的 zip，含这组记忆、各自附带的文件与 MEMORY.md 索引。早先版本导出的 JSON 文件照样可以导入。",
     importModeLabel: "当这一组里已有同名记忆时",
     importModeSkip: "保留现有的这条",
     importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
     importModeOverwrite: "改用文件里的版本",
-    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeOverwriteHint:
+      "采用文件版本的记忆，其附带的文件也换成文件里的；文件中没有的记忆保持不变。",
     importModeReplace: "整组替换",
-    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importModeReplaceHint:
+      "文件中没有的记忆连同附带的文件将被删除，不属于任何记忆的文件夹也一并删除。",
     importAction: "导入",
     importInvalidFile: "这个文件不是记忆导出文件。",
     importEmptyFile: "这个文件里没有记忆。",
@@ -3299,6 +3335,8 @@ export const zh = {
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
+    /** A channel install's download: the percent while the total is known, a pulse before that. */
+    downloading: (percent: number | null) => (percent === null ? "下载中…" : `下载中 ${percent}%`),
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
@@ -3655,6 +3693,8 @@ export const zh = {
       count === 1
         ? "有 1 个插件来源仍在加载，加载完成后其中的插件会出现在这里。"
         : `有 ${count} 个插件来源仍在加载，加载完成后其中的插件会出现在这里。`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading: "插件索引仍在下载，搜索结果暂时不含未加载来源的插件，稍等片刻再试。",
     copySpecifier: "复制包名",
   },
 
@@ -4317,6 +4357,10 @@ Benchmark：
     compact: "压缩上下文",
     approve: "允许",
     deny: "拒绝",
+    /** The approval block's muted line when a command-policy `ask` rule, not the approval mode, sent the call to a person. */
+    approvalPolicyReason: (rule: string) => `由命令策略规则「${rule}」要求确认`,
+    approvalPolicyReasonHint:
+      "Project 命令策略中这条规则要求每次都由人确认，不受当前审批模式影响。可在 Project 设置的安全策略页修改。",
     decisionAllow: "已批准",
     decisionDeny: "已拒绝",
     decisionManual: "手动",

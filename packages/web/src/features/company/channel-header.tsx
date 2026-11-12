@@ -43,7 +43,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
-import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
+import { EmployeeAvatar, FACE_PX, useEmployeeAvatarSrc } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
@@ -77,9 +77,7 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   if (item.kind === "user") {
     return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return (
-    <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded-md" />
-  );
+  return <EmployeeAvatar id={item.id} size={size} className="shrink-0 rounded-md" />;
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */
@@ -95,6 +93,7 @@ function MemberPopover({
   openingDesk: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const pictureOf = useEmployeeAvatarSrc();
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: () => setOpen(false),
@@ -116,7 +115,11 @@ function MemberPopover({
       >
         {/* The first few only: the count beside the stack already says how many there are. */}
         <AvatarStack
-          items={members.slice(0, AVATAR_STACK).map(memberAvatarItem)}
+          items={members.slice(0, AVATAR_STACK).map((member) => {
+            const item = memberAvatarItem(member);
+            const src = item.kind === "user" ? undefined : pictureOf(item.id);
+            return src === undefined ? item : { ...item, src };
+          })}
           size={ICON_SIZE.groupHeaderAvatar}
         />
         <span className="tabular-nums">{S.company.channels.memberCount(members.length)}</span>

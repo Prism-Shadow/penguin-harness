@@ -40,14 +40,14 @@ function removing(entries: Array<Record<string, unknown>>): PluginHost {
 async function bootedWith(
   host: PluginHost,
 ): Promise<{ t: TestApp; removals: unknown; logged: string }> {
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
   try {
     const t = await createTestApp({ plugins: host });
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     const body = (await (await admin.get("/api/contributions")).json()) as ContributionsResponse;
-    return { t, removals: body.pageRemovals, logged: warn.mock.calls.flat().join("\n") };
+    return { t, removals: body.pageRemovals, logged: log.mock.calls.flat().join("\n") };
   } finally {
-    warn.mockRestore();
+    log.mockRestore();
   }
 }
 

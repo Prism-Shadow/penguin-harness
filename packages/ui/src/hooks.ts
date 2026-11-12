@@ -57,6 +57,8 @@
  * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
+ * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx); an Agent's own picture is an `<img>` host with none |
+ * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
@@ -282,6 +284,14 @@
  * takes its fill from `--_paint`, its own colour as the primitive resolved it, in theme.css's base
  * rules, so a recipe or a utility that fills the mark otherwise still has the mark's colour to
  * outline it in.
+ *
+ * `ui-avatar` (2026-11-04) is an Agent's default avatar, the smiling ball penguin, drawn once per
+ * theme's language like a glyph: the foundation shows the `flat` drawing and hides the rest, the
+ * base (Frost, and Doodle on it) swaps in `soft` and Console `pixel`, and Primer — and any pack
+ * with no drawing of its own — keeps `flat`. Every drawing paints the Agent's palette slot, from
+ * its id, and the same smiling face, so only the drawing changes with the theme. An Agent with a
+ * picture of its own (2026-11-07) is that picture, an `<img>` host with no drawings, in the flat
+ * tile's rounded square: a pack that treats the avatar's box treats both alike.
  */
 export const HOOKS = [
   "ui-glass",
@@ -307,6 +317,7 @@ export const HOOKS = [
   "ui-ledger",
   "ui-empty",
   "ui-run",
+  "ui-avatar",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

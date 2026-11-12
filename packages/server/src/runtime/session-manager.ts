@@ -308,7 +308,7 @@ export interface RuntimeSession {
     messages: AmspRecord[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
-  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`, which wraps it with the command policy). Optional. */
   setSubagentApprovalFallback?(approve: ApproveFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
@@ -1070,7 +1070,8 @@ export class SessionManager {
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
-    // session idle included.
+    // session idle included. Core wraps the sink with the command policy, so a child's `ask`
+    // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
     if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
   }
@@ -1086,7 +1087,8 @@ export class SessionManager {
    * is denied here instead of waiting for an answer that is never coming (see `unattended`
    * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
    * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
-   * stamps later is covered from its next decision on.
+   * stamps later is covered from its next decision on. The same holds for an `ask` hit, so
+   * an organization's Session never gets a `gh pr merge` through: nobody can say yes.
    */
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
@@ -1100,6 +1102,7 @@ export class SessionManager {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          ...(pending.reason !== undefined ? { reason: pending.reason } : {}),
         }),
     });
   }

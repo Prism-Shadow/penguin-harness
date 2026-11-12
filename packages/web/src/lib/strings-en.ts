@@ -1775,7 +1775,7 @@ export const en: Strings = {
     deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
     /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
     commandPolicyInfo:
-      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression; a hit is refused outright whatever the approval mode allows. It is an accident guardrail: a command assembled at run time is not covered.",
+      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression. A hit on a Deny rule is refused outright and a hit on an Ask rule waits for a person's go-ahead, whatever the approval mode allows; a Deny hit wins over an Ask hit. It is an accident guardrail: a command assembled at run time is not covered.",
     commandPolicyEnable: "Enable policy",
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",
@@ -1792,7 +1792,29 @@ export const en: Strings = {
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
     commandPolicyRuleDesc: "Description",
+    commandPolicyRuleAction: "On a match",
+    commandPolicyActionDeny: "Deny",
+    commandPolicyActionAsk: "Ask",
+    commandPolicyAskPill: "Asks first",
+    commandPolicyAskPillHint:
+      "A matching command runs only after a person allows it, whatever the approval mode.",
     commandPolicyInvalidPattern: "Invalid regular expression",
+    /** The rule table's column titles where the editor's field labels would not fit. */
+    commandPolicyColPattern: "Pattern",
+    commandPolicyColEnabled: "Enabled",
+    commandPolicyRuleSwitch: (name: string) => `Enable rule ${name}`,
+    commandPolicyEditRuleNamed: (name: string) => `Edit rule ${name}`,
+    commandPolicyDeleteRuleNamed: (name: string) => `Delete rule ${name}`,
+    /** Save refused because the server cannot compile one rule's pattern; `reason` is the engine's own words. */
+    commandPolicyPatternRejected: (name: string, reason: string) =>
+      `Rule ${name}'s regular expression does not compile on the server (${reason}); its page is shown.`,
+    commandPolicyPatternRejectedHint: (reason: string) =>
+      `The server cannot compile this rule's regular expression: ${reason}. Edit or delete it, then save.`,
+    /** A stored rule the server cannot compile: matching skips it. `reason` is the engine's own words. */
+    commandPolicyRuleSkipped: (reason: string) =>
+      `This server cannot compile this rule's regular expression (${reason}), so matching skips it and it blocks nothing. Edit or delete it.`,
+    /** The row mark beside such a rule's name, as read aloud. */
+    commandPolicyPatternMark: "Pattern does not compile",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -2779,28 +2801,43 @@ export const en: Strings = {
     deleteTitle: "Delete this memory?",
     deleteConfirm: (name: string): string =>
       `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteWithFilesConfirm: (name: string, files: number): string =>
+      `This deletes "${name}", the ${files === 1 ? "file" : `${files} files`} it keeps, and its index line in MEMORY.md. This cannot be undone.`,
     deleteDone: "Deleted",
+    /** Count of the files a memory keeps in its folder, beside its title. */
+    fileCount: (n: number): string => (n === 1 ? "1 file" : `${n} files`),
+    keptFiles: "Files",
+    keptFilesHint:
+      "Files this memory keeps in its folder of the same name: scripts the agent reuses and what they need, each described in the memory with how to run it. Every later session of this agent may run them through the shell, under that session's sandbox and approvals, and every Project member can read them. Look at a script before you rely on it.",
+    orphanFiles: "Files without a memory",
+    orphanFilesHint:
+      "A folder with no memory of its name beside it, usually left behind when its memory was deleted. Its files are listed here so none is hidden; delete them here, or ask the agent to tidy up.",
+    backToMemory: (title: string): string => `Back to "${title}"`,
+    deleteFileTitle: "Delete this file?",
+    deleteFileConfirm: (path: string): string =>
+      `This deletes ${path}. Whatever the memory's text says about it stays until the agent updates it. This cannot be undone.`,
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
     exportScope: "Export",
-    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeHint:
+      "Download this group's folder — every memory, the files each keeps and MEMORY.md — as a zip",
     exportScopeLabel: (scope: string): string => `Export ${scope}`,
     importScope: "Import",
-    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeHint: "Restore memories into this group from an exported zip",
     importScopeLabel: (scope: string): string => `Import into ${scope}`,
     importTitle: "Import memories",
     importWhy:
-      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
-    importFile: (name: string, count: number): string =>
-      `${name} — ${count === 1 ? "1 memory" : `${count} memories`}`,
+      "Reads a memory group exported from this or another agent: a zip of the group's folder, holding its memories, the files each keeps and its MEMORY.md index. A JSON file an earlier version exported still imports.",
     importModeLabel: "When this group already has a memory of the same name",
     importModeSkip: "Keep the one that is here",
     importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
     importModeOverwrite: "Take the file's version",
-    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeOverwriteHint:
+      "A memory taken from the file brings its files too, in place of this one's. Memories the file does not carry are left alone.",
     importModeReplace: "Replace the whole group",
-    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importModeReplaceHint:
+      "Every memory the file does not carry is deleted with its files, and so is every folder no memory keeps.",
     importAction: "Import",
     importInvalidFile: "This file is not a memory export.",
     importEmptyFile: "This file carries no memories.",
@@ -3097,6 +3134,9 @@ export const en: Strings = {
     uninstall: "Remove",
     install: "Install",
     installing: "Installing…",
+    /** A channel install's download: the percent while the total is known, a pulse before that. */
+    downloading: (percent: number | null) =>
+      percent === null ? "Downloading…" : `Downloading ${percent}%`,
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
@@ -3460,6 +3500,9 @@ export const en: Strings = {
       count === 1
         ? "One plugin source is still loading. Its plugins will appear here when it answers."
         : `${count} plugin sources are still loading. Their plugins will appear here when they answer.`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading:
+      "The plugin index is still downloading; results do not yet include plugins from sources that have not loaded. Try again shortly.",
     copySpecifier: "Copy specifier",
   },
 
@@ -4115,6 +4158,9 @@ Scenarios:
     compact: "Compact context",
     approve: "Allow",
     deny: "Deny",
+    approvalPolicyReason: (rule: string) => `Confirmation required by command-policy rule ${rule}`,
+    approvalPolicyReasonHint:
+      "This rule of the Project's command policy asks a person every time, whatever the approval mode. Change it on the security page of the Project settings.",
     decisionAllow: "Approved",
     decisionDeny: "Denied",
     decisionManual: "manual",

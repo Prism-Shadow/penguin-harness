@@ -9,7 +9,8 @@ import {
   browserUrl,
   cliEntryFor,
   describeReadinessFailure,
-  registerServeCommands,
+  registerServerCommand,
+  registerWebCommand,
   resolvePort,
   supervisorDecision,
   waitForReady,
@@ -64,14 +65,16 @@ describe("browserUrl (wildcard listen addresses map to 127.0.0.1)", () => {
   });
 });
 
-describe("registerServeCommands (command registration)", () => {
-  it("registers the server and web top-level commands; web defaults to open=true (--no-open turns it off)", () => {
+describe("registerServerCommand / registerWebCommand (command registration)", () => {
+  it("fills in the server and web nodes; web defaults to open=true (--no-open turns it off)", () => {
     const program = new Command();
-    registerServeCommands(program, getMessages("en"));
-    const names = program.commands.map((c) => c.name());
-    expect(names).toContain("server");
-    expect(names).toContain("web");
-    const web = program.commands.find((c) => c.name() === "web")!;
+    const t = getMessages("en");
+    const server = program.command("server");
+    registerServerCommand(server, t);
+    const web = program.command("web");
+    registerWebCommand(web, t);
+    expect(server.options.map((o) => o.long)).toEqual(["--port", "--host"]);
+    expect(web.options.map((o) => o.long)).toContain("--no-open");
     expect(web.opts().open).toBe(true);
   });
 });

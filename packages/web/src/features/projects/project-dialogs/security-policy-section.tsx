@@ -1,28 +1,55 @@
 import { useEffect, useState } from "react";
-import type { CommandPolicyDto, CommandPolicyRuleDto } from "@prismshadow/penguin-server/api";
+import type {
+  CommandPolicyActionDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
+  FieldLegend,
   Input,
+  Pager,
+  Segmented,
   SettingRow,
   Switch,
+  toastError,
   toastSuccess,
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
+import { ApiError } from "../../../api/client";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { useInstantSetting } from "../../../lib/instant-setting";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
+import { RuleTable, pageCountOf, pageOf, type RejectedRule } from "./command-policy-table";
 
+/**
+ * The row a refused Save is about: the server answers a pattern it cannot compile with that
+ * rule's place in the list it was sent, its name and the engine's reason. Null for any other
+ * failure, or when that place does not hold that rule.
+ */
+function refusedPattern(
+  err: unknown,
+  sent: CommandPolicyRuleDto[],
+): { index: number; reason: string } | null {
+  if (!(err instanceof ApiError) || err.code !== "invalid_rule_pattern") return null;
+  const index = Number(err.details?.index);
+  if (!Number.isInteger(index) || sent[index]?.name !== err.details?.rule) return null;
+  return { index, reason: err.details?.reason ?? "" };
+}
+
+/** Field-level equality for the security page's dirty check (description "" ≡ absent, action deny ≡ absent). */
 export function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
   return (
     a.name === b.name &&
     a.pattern === b.pattern &&
     (a.description ?? "") === (b.description ?? "") &&
-    a.enabled === b.enabled
+    a.enabled === b.enabled &&
+    (a.action ?? "deny") === (b.action ?? "deny")
   );
 }
 
@@ -43,13 +70,19 @@ export function RuleEditor({
       name: initial?.name ?? "",
       pattern: initial?.pattern ?? "",
       desc: initial?.description ?? "",
+      action: initial?.action ?? ("deny" as CommandPolicyActionDto),
     },
     {
       ...(scope !== undefined ? { scope } : {}),
-      normalize: (d) => ({ name: d.name.trim(), pattern: d.pattern.trim(), desc: d.desc.trim() }),
+      normalize: (d) => ({
+        name: d.name.trim(),
+        pattern: d.pattern.trim(),
+        desc: d.desc.trim(),
+        action: d.action,
+      }),
     },
   );
-  const { name, pattern, desc } = form.draft;
+  const { name, pattern, desc, action } = form.draft;
   const [err, setErr] = useState<string | undefined>(undefined);
 
   const apply = () => {
@@ -68,6 +101,8 @@ export function RuleEditor({
       pattern: p,
       ...(d !== "" ? { description: d } : {}),
       enabled: initial?.enabled ?? true,
+      // Stored only where it departs from the default, as the server serves it back.
+      ...(action === "ask" ? { action } : {}),
     });
   };
 
@@ -118,6 +153,20 @@ export function RuleEditor({
         maxLength={300}
         onChange={(e) => form.patch({ desc: e.target.value })}
       />
+      {/* What a hit does: refuse it, or wait for a person whatever the approval mode. The
+          fieldset's legend names the two options as one question. */}
+      <fieldset className="min-w-0 sm:w-56">
+        <FieldLegend>{S.project.commandPolicyRuleAction}</FieldLegend>
+        <Segmented<CommandPolicyActionDto>
+          cols={2}
+          value={action}
+          onChange={(next) => form.patch({ action: next })}
+          options={[
+            { value: "deny", label: S.project.commandPolicyActionDeny },
+            { value: "ask", label: S.project.commandPolicyActionAsk },
+          ]}
+        />
+      </fieldset>
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>
           {S.common.cancel}
@@ -150,6 +199,7 @@ export function SecurityPolicySection({
         pattern: r.pattern,
         description: r.description ?? "",
         enabled: r.enabled,
+        action: r.action ?? "deny",
       })),
   });
   const rules = form.draft;
@@ -164,6 +214,12 @@ export function SecurityPolicySection({
   const [editing, setEditing] = useState<number | "new" | null>(null);
   /** "Restore defaults" awaiting confirmation: it replaces every rule in the list. */
   const [confirmRestore, setConfirmRestore] = useState(false);
+  /** The table's page; held past the last page only until the next render clamps it. */
+  const [page, setPage] = useState(0);
+  const pageCount = pageCountOf(rules.length);
+  const shownPage = Math.min(page, pageCount - 1);
+  /** The rule the last Save was refused over, marked on its row until that row changes. */
+  const [rejected, setRejected] = useState<RejectedRule | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +228,8 @@ export function SecurityPolicySection({
     setSaved(null);
     setLoadError(null);
     setEditing(null);
+    setPage(0);
+    setRejected(null);
     api
       .getCommandPolicy(projectId)
       .then((res) => {
@@ -188,6 +246,7 @@ export function SecurityPolicySection({
   const restoreDefaults = () => {
     if (saved === null) return;
     setRules(saved.defaultRules.map((r) => ({ ...r })));
+    setPage(0);
     setConfirmRestore(false);
   };
   /** Already the factory set: there is nothing to restore, so the button rests disabled. */
@@ -203,9 +262,21 @@ export function SecurityPolicySection({
       const stored = await api.putCommandPolicy(projectId, { enabled: saved.enabled, rules });
       setSaved(stored);
       form.adopt(stored.rules);
+      setRejected(null);
       toastSuccess(S.common.saved);
     } catch (e) {
-      toastApiError(e);
+      // A pattern the server cannot compile may sit on a page the person is not looking at:
+      // turn to it and mark its row, so the toast's rule name has somewhere to point.
+      const refused = refusedPattern(e, rules);
+      if (refused === null) {
+        toastApiError(e);
+      } else {
+        setRejected({ rule: rules[refused.index]!, reason: refused.reason });
+        setPage(pageOf(refused.index));
+        toastError(
+          S.project.commandPolicyPatternRejected(rules[refused.index]!.name, refused.reason),
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -266,30 +337,39 @@ export function SecurityPolicySection({
                 </div>
               )}
             </div>
-            <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-              {/* The add form opens at the TOP of the list, right under the Add button that
-                  asked for it: the factory rules alone make the list taller than the dialog's
-                  scroll box, so a form appended after them would open below the fold and the
-                  click would look like it did nothing. The rule it applies stays where it was
-                  typed for the same reason. Deny rules are order-independent — every enabled
-                  match refuses, and list order only picks which rule name the refusal
-                  reports — so the head of the list is as good a home as the tail. */}
-              {editing === "new" && (
-                <RuleEditor
-                  initial={null}
-                  scope={PROJECT_SETTINGS_SCOPE}
-                  onApply={(nr) => {
-                    setRules([nr, ...rules]);
-                    setEditing(null);
-                  }}
-                  onCancel={() => setEditing(null)}
-                />
-              )}
-              {rules.map((r, i) =>
-                editing === i ? (
+            {/* The add form opens above the table, right under the Add button that asked for
+                it, whichever page is showing; the rule it applies goes to the head of the list,
+                so the table turns to the first page to show it there. The rules are
+                order-independent — a deny match refuses wherever it sits, even past an ask
+                match, and list order only picks which rule name a decision reports — so the
+                head of the list is as good a home as the tail. */}
+            {editing === "new" && (
+              <RuleEditor
+                initial={null}
+                scope={PROJECT_SETTINGS_SCOPE}
+                onApply={(nr) => {
+                  setRules([nr, ...rules]);
+                  setPage(0);
+                  setEditing(null);
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            )}
+            {rules.length === 0 && editing !== "new" ? (
+              <p className="border-t border-line-muted py-3 text-xs text-fg-muted">
+                {S.project.commandPolicyEmpty}
+              </p>
+            ) : (
+              <RuleTable
+                rules={rules}
+                page={shownPage}
+                isOwner={isOwner}
+                locked={busy || !enabled}
+                editing={editing}
+                rejected={rejected}
+                editor={(i) => (
                   <RuleEditor
-                    key={`edit-${i}`}
-                    initial={r}
+                    initial={rules[i]!}
                     scope={PROJECT_SETTINGS_SCOPE}
                     onApply={(nr) => {
                       setRules(rules.map((x, j) => (j === i ? nr : x)));
@@ -297,75 +377,50 @@ export function SecurityPolicySection({
                     }}
                     onCancel={() => setEditing(null)}
                   />
-                ) : (
-                  <div
-                    key={`${r.name}-${i}`}
-                    className={`flex items-center gap-3 py-2.5 ${r.enabled ? "" : "opacity-60"}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{r.name}</p>
-                      {r.description !== undefined && (
-                        <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
-                      )}
-                      <p
-                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
-                        data-tooltip={r.pattern}
-                        data-tooltip-content="code"
-                      >
-                        {r.pattern}
-                      </p>
-                    </div>
-                    {isOwner ? (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Switch
-                          checked={r.enabled}
-                          disabled={busy || !enabled}
-                          onChange={(v) =>
-                            setRules(rules.map((x, j) => (j === i ? { ...x, enabled: v } : x)))
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy || !enabled || editing !== null}
-                          onClick={() => setEditing(i)}
-                        >
-                          {S.project.commandPolicyEditRule}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy || !enabled || editing !== null}
-                          onClick={() => setRules(rules.filter((_, j) => j !== i))}
-                        >
-                          {S.common.delete}
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="shrink-0 text-xs text-gray-400">
-                        {r.enabled ? S.project.commandPolicyOn : S.project.commandPolicyOff}
-                      </span>
-                    )}
-                  </div>
-                ),
-              )}
-              {rules.length === 0 && editing !== "new" && (
-                <p className="py-3 text-xs text-gray-400">{S.project.commandPolicyEmpty}</p>
-              )}
-            </div>
+                )}
+                onToggle={(i, v) =>
+                  setRules(rules.map((x, j) => (j === i ? { ...x, enabled: v } : x)))
+                }
+                onEdit={setEditing}
+                onDelete={(i) => {
+                  setRules(rules.filter((_, j) => j !== i));
+                  setPage(Math.min(shownPage, pageCountOf(rules.length - 1) - 1));
+                }}
+              />
+            )}
           </div>
-          {isOwner && (
-            <div className="mt-2 flex justify-end border-t border-gray-100 pt-3 dark:border-gray-800/60">
-              {/* Blocked while a rule editor is open, like every other control here: the
-                  editor is keyed by index, so a save that replaced the list underneath it
-                  would leave a stale draft that Apply then writes over the wrong rule. */}
-              <Button
-                size="sm"
-                disabled={busy || !form.dirty || editing !== null || policySwitch.busy}
-                onClick={() => void save()}
-              >
-                {S.common.save}
-              </Button>
+          {/* Under the table, held to the dialog's bottom edge while the rows scroll beneath it,
+              so Save is in reach however many rules the page shows. A sticky box stops short of
+              its scroller's padding, so it reaches 1rem (the dialog body's bottom padding) past
+              it and pads that back inside — no row shows through below it — and the negative
+              margin gives the same 1rem back where it rests at the end of the list. Its fill is
+              the dialog's own. The page steps rest while a rule editor is open: the editor
+              belongs to a row of the page it was opened on. */}
+          {(isOwner || pageCount > 1) && (
+            <div className="sticky -bottom-4 z-sticky-head -mb-4 flex min-h-10 items-center justify-between gap-2 border-t border-line-muted bg-overlay pt-2 pb-6">
+              {pageCount > 1 ? (
+                <Pager
+                  page={shownPage}
+                  pageCount={pageCount}
+                  onChange={setPage}
+                  disabled={editing !== null}
+                  className="-ml-1.5"
+                />
+              ) : (
+                <span />
+              )}
+              {isOwner && (
+                // Blocked while a rule editor is open, like every other control here: the
+                // editor is keyed by index, so a save that replaced the list underneath it
+                // would leave a stale draft that Apply then writes over the wrong rule.
+                <Button
+                  size="sm"
+                  disabled={busy || !form.dirty || editing !== null || policySwitch.busy}
+                  onClick={() => void save()}
+                >
+                  {S.common.save}
+                </Button>
+              )}
             </div>
           )}
         </>

@@ -6,7 +6,7 @@
  *
  * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
  * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph,
- * widget.
+ * widget, avatar.
  * `.ui-glass` and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens,
  * and the page behind a dialog is dimmed, not blurred. The manifest says `base: "foundation"`,
  * so none of Frost's recipes apply under Console: a hook without a recipe here is the host's own
@@ -463,4 +463,13 @@
   stroke-linecap: butt;
   stroke-linejoin: miter;
   shape-rendering: crispEdges;
+}
+
+/* An Agent's avatar is the pixel drawing, like the icons: the ball penguin on whole pixels from
+   16 px up, on a square tile. */
+:root[data-theme="geek"] .ui-avatar > [data-variant="flat"] {
+  display: none;
+}
+:root[data-theme="geek"] .ui-avatar > [data-variant="pixel"] {
+  display: inline;
 }
