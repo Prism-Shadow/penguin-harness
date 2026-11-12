@@ -557,9 +557,7 @@ function renderChannelDetail(d: OrgChannelDetail, t: Messages): string {
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerOrgCommand(program: Command, t: Messages): void {
-  const org = program.command("org").description(t.org.desc);
-
+export function registerOrgCommand(org: Command, t: Messages): void {
   org
     .command("ls")
     .description(t.org.lsDesc)

@@ -62,9 +62,7 @@ function writtenLine(t: Messages, item: ScheduleItem): string {
   );
 }
 
-export function registerScheduleCommand(program: Command, t: Messages): void {
-  const schedule = program.command("schedule").description(t.schedule.desc);
-
+export function registerScheduleCommand(schedule: Command, t: Messages): void {
   schedule
     .command("ls")
     .description(t.schedule.lsDesc)

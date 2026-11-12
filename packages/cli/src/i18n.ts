@@ -1,4 +1,5 @@
 import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+import type { CliCommandMessages } from "@prismshadow/penguin-core/cli";
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 /**
@@ -35,7 +36,7 @@ export function resolveLanguage(): Language {
   return v === "zh" ? "zh" : "en";
 }
 
-export interface Messages {
+export interface Messages extends CliCommandMessages {
   // —— Command/option help descriptions ——
   cliDescription: string;
   versionDesc: string;
@@ -78,7 +79,6 @@ export interface Messages {
     hint(command: string, usage: string): string;
   };
   config: {
-    desc: string;
     modelDesc: string;
     addDesc: string;
     addModelId: string;
@@ -121,7 +121,6 @@ export interface Messages {
     vaultValue: string;
   };
   run: {
-    desc: string;
     message: string;
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
@@ -142,8 +141,6 @@ export interface Messages {
   };
   /** `penguin session`: the group that lists, reads, messages and renames sessions. */
   session: {
-    /** Group description. */
-    desc: string;
     /** `penguin session rename`'s own description. */
     renameDesc: string;
     /** rename's optional session_id argument. */
@@ -154,7 +151,6 @@ export interface Messages {
     renamed(sessionId: string, title: string): string;
   };
   chat: {
-    desc: string;
     resume: string;
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
@@ -195,7 +191,6 @@ export interface Messages {
   };
   /** `penguin agent`: agent listing and creation. */
   agent: {
-    desc: string;
     lsDesc: string;
     createDesc: string;
     createId: string;
@@ -294,7 +289,6 @@ export interface Messages {
   };
   /** `penguin project`: project listing. */
   project: {
-    desc: string;
     lsDesc: string;
     colId(): string;
     colName(): string;
@@ -302,7 +296,6 @@ export interface Messages {
   };
   /** `penguin plugin`: the plugins installed on the server (an admin's, via the local API token). */
   plugin: {
-    desc: string;
     listDesc: string;
     installDesc: string;
     /** `install --overwrite`: replace another version of an uploaded package directory. */
@@ -349,7 +342,6 @@ export interface Messages {
   };
   /** `penguin cost`: token/cost aggregates. */
   cost: {
-    desc: string;
     days: string;
     from: string;
     to: string;
@@ -370,7 +362,6 @@ export interface Messages {
   };
   /** `penguin schedule`: scheduled-task listing and management (a validated writer over the schedules API; the TOML file stays the single source of truth). */
   schedule: {
-    desc: string;
     lsDesc: string;
     addDesc: string;
     updateDesc: string;
@@ -415,7 +406,6 @@ export interface Messages {
   };
   /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
   org: {
-    desc: string;
     lsDesc: string;
     createDesc: string;
     showDesc: string;
@@ -703,7 +693,6 @@ export interface Messages {
   };
   /** `penguin browser`: the desktop app's built-in browser (commands/browser.ts, browser-output.ts). */
   browser: {
-    desc: string;
     statusDesc: string;
     tabsDesc: string;
     openDesc: string;
@@ -883,8 +872,6 @@ export interface Messages {
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
   chatThinkingConfigured(): string;
   serve: {
-    serverDesc: string;
-    webDesc: string;
     port: string;
     host: string;
     noOpen: string;
@@ -894,7 +881,6 @@ export interface Messages {
   };
   /** `penguin server reset-admin-password`: help text and every line the command can print. */
   auth: {
-    desc: string;
     loginDesc: string;
     statusDesc: string;
     logoutDesc: string;
@@ -926,17 +912,7 @@ export interface Messages {
     noServer(root: string): string;
     failed(detail: string): string;
   };
-  /** `penguin server status`: help text. */
-  serverStatus: {
-    /** One-line description in `penguin server --help`. */
-    desc: string;
-  };
-  /** `penguin server stop`: help text. */
-  serverStop: {
-    desc: string;
-  };
   resetPassword: {
-    desc: string;
     /** Refusal while a live server owns the data root (stop it first, then retry). */
     serverRunning(url: string): string;
     /** The root has no Web database: nothing to reset. */
@@ -950,12 +926,10 @@ export interface Messages {
   };
   /** `penguin version`: help text only — the command's output is data, never prose. */
   version: {
-    description: string;
     json: string;
   };
   /** `penguin update`: help text and every line the command can print. */
   update: {
-    desc: string;
     check: string;
     releaseOpt: string;
     yes: string;
@@ -997,6 +971,42 @@ export interface Messages {
     downloadBaseMustBeHttps(name: string): string;
     ossUnavailable(): string;
     installerFetchFailed(sources: InstallerSource[]): string;
+  };
+
+  /** `penguin exec <id> [args…]`: a plugin command by its dotted id, run by the server. */
+  exec: {
+    /** The variadic arguments' help text: the id and everything handed to the plugin command. */
+    argsArg: string;
+    /** `penguin exec ls`: lists the plugin commands, in the style of `penguin agent ls`. */
+    lsDesc: string;
+    /** The ls argument's help text: one plugin's commands only, by its full npm name. */
+    lsPackageArg: string;
+    /** The table header of the package column (the full-listing form). */
+    colPackage(): string;
+    /** The table header of the id column. */
+    colId(): string;
+    /** The table header of the summary column. */
+    colSummary(): string;
+    /** A single word was given where a dotted id belongs (an id is two segments or more). */
+    invalidId(word: string): string;
+    /** No plugin command contributes this id. */
+    unknownId(id: string): string;
+    /** The ids that are contributed, listed after the unknown-id error (empty: none is). */
+    keys(keys: readonly string[]): string;
+    /** No plugin on the server contributes commands under the package name given. */
+    unknownPackage(name: string): string;
+    /** The plugins that do, listed after the unknown-package error (empty: none does). */
+    candidates(packages: readonly string[]): string;
+    /** The id is contributed by more than one plugin: only `<package>:<id>` is unambiguous. */
+    collision(key: string, packages: readonly string[]): string;
+  };
+
+  /** The ambiguity report: one argv matched commands from two or more plugins. */
+  ambiguous: {
+    /** The header; `words` is the argv's command words, `packages` the matching package count. */
+    header(words: string, packages: number): string;
+    /** The closing note: what to do once one of the `exec` lines has run. */
+    note(): string;
   };
 
   // —— Runtime output ——
@@ -1255,6 +1265,7 @@ function headerZh(
 }
 
 const en: Messages = {
+  language: "en",
   cliDescription: "PenguinHarness CLI",
   versionDesc: "output the version number",
   common: {
@@ -1287,7 +1298,6 @@ const en: Messages = {
       `Usage: ${command} ${usage}  (run \`${command} --help\` for every option)`,
   },
   config: {
-    desc: "Manage Project configuration",
     modelDesc: "Manage models, their groups' connections and the default model",
     addDesc:
       "Add or update a model; without --model-id, set a group's connection (API key, base URL, protocol)",
@@ -1343,7 +1353,6 @@ const en: Messages = {
     vaultValue: "Variable value, written to the Agent's agent_state/.vault.toml",
   },
   run: {
-    desc: "Run a single Task",
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
@@ -1360,7 +1369,6 @@ const en: Messages = {
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
   chat: {
-    desc: "Open the interactive REPL",
     resume:
       "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session (/switch-model changes the model inside the chat, compacting first)",
     verbose:
@@ -1387,7 +1395,6 @@ const en: Messages = {
     noReplyYet: () => "(no assistant reply yet)",
   },
   session: {
-    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
     renameDesc:
       "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
     renameSessionId:
@@ -1404,7 +1411,6 @@ const en: Messages = {
       "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
-    desc: "Manage the project's agents",
     lsDesc: "List the project's agents",
     createDesc: "Create an agent",
     createId: "Agent id (directory name; letters, digits, underscores)",
@@ -1494,14 +1500,12 @@ const en: Messages = {
       `${dir} is past what an import takes (20,000 files, 512MB, 64MB zipped); nothing was sent.`,
   },
   project: {
-    desc: "Manage projects",
     lsDesc: "List the projects this account can reach",
     colId: () => "ID",
     colName: () => "NAME",
     colRole: () => "ROLE",
   },
   plugin: {
-    desc: "Manage the plugins installed on the server (admin)",
     listDesc:
       "List the server modules the Project lists and the plugins of Skills, hooks or MCP servers installed on the server",
     installDesc:
@@ -1543,7 +1547,6 @@ const en: Messages = {
     removed: (name) => `Removed ${name}.`,
   },
   cost: {
-    desc: "Show token usage and cost (summary card by default; --by prints a grouped table)",
     days: "Trailing window in days (sets --from/--to)",
     from: "Range start (yyyy-mm-dd); requires --to",
     to: "Range end (yyyy-mm-dd); requires --from",
@@ -1562,7 +1565,6 @@ const en: Messages = {
     colGroup: (dimension) => dimension.toUpperCase(),
   },
   schedule: {
-    desc: "Manage scheduled tasks",
     lsDesc: "List the project's scheduled tasks (all agents unless --agent-id is given)",
     addDesc:
       "Create a scheduled task (writes the schedule file through the API; enabled by default — use --disabled to opt out)",
@@ -1599,7 +1601,6 @@ const en: Messages = {
     colStatus: () => "STATUS",
   },
   org: {
-    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
     lsDesc: "List the project's organizations",
     createDesc:
       "Create an organization: its CEO Agent, the CEO's desk session and the initialization run",
@@ -1870,7 +1871,6 @@ const en: Messages = {
     colPrincipal: () => "PRINCIPAL",
   },
   browser: {
-    desc: "The agent browser: read pages, run JavaScript, click and type, import sign-ins",
     statusDesc: "Whether the agent browser is available, which backend it is, and its tabs",
     tabsDesc: "List the open tabs (* marks the active one)",
     openDesc:
@@ -2064,9 +2064,6 @@ const en: Messages = {
   },
   chatThinkingConfigured: () => "agent default",
   serve: {
-    serverDesc:
-      "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
-    webDesc: "Start the Web service and open the UI in a browser once it is ready",
     port: "Listen port (falls back to the PORT env var, default 7364)",
     host: "Listen address (falls back to the HOST env var, default 127.0.0.1)",
     noOpen: "Do not open a browser automatically",
@@ -2074,7 +2071,6 @@ const en: Messages = {
     app: "Open one workbench page as the whole app: <project>/<agent>/<workbench>[/<tab>] (Ctrl+P or Ctrl+Shift+P in the page opens the command palette to leave)",
   },
   auth: {
-    desc: "Sign in to a PenguinHarness server from the terminal",
     loginDesc: "Sign in with a password and remember the session",
     statusDesc: "Show the remembered session, if there is one",
     logoutDesc: "Revoke the remembered session and forget it",
@@ -2109,14 +2105,7 @@ const en: Messages = {
       `${root} has no web.db — no server has ever run on this data root, so there is no account to mint for.`,
     failed: (detail) => `Could not mint a token: ${detail}`,
   },
-  serverStatus: {
-    desc: "Print this data root's server state and machine id as one line of JSON",
-  },
-  serverStop: {
-    desc: "Stop the server running on this data root and report the outcome as JSON",
-  },
   resetPassword: {
-    desc: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
     serverRunning: (url) =>
       `A PenguinHarness server is running on this data root: ${url}\n` +
       `Stop it first, then run \`penguin server reset-admin-password\` again.`,
@@ -2132,11 +2121,9 @@ const en: Messages = {
       "Start the service (`penguin web`): it will print a sign-in link that claims the account — usable until a password is set.",
   },
   version: {
-    description: "Show which build is running",
     json: "Print the full build info as JSON (the body of GET /api/version)",
   },
   update: {
-    desc: "Upgrade this PenguinHarness install in place",
     check: "Only report the current and latest versions; change nothing",
     releaseOpt:
       "Target a specific release tag instead of the latest (e.g. v0.1.2 or 0.1.2); named --release because -v/--version is the CLI's own version flag",
@@ -2203,6 +2190,37 @@ const en: Messages = {
               : "GitHub",
         )
         .join(" or ")}. Check your network and retry.`,
+  },
+
+  exec: {
+    argsArg: "The command's dotted id, then the arguments and options handed to it",
+    lsDesc: "List the commands the plugins contribute",
+    lsPackageArg: "List only this plugin's commands: its npm name, scope included",
+    colPackage: () => "Package",
+    colId: () => "Id",
+    colSummary: () => "Summary",
+    invalidId: (word) =>
+      `'${word}' is not a command id: an id is the command's dotted path, two segments or more (sandbox.deploy, for example). Run 'penguin exec ls' to see the ids.`,
+    unknownId: (id) => `No plugin contributes a command with the id '${id}'.`,
+    keys: (keys) =>
+      keys.length === 0
+        ? "No plugin on the server contributes commands."
+        : `Command ids: ${keys.join(", ")}.`,
+    unknownPackage: (name) => `No plugin on the server contributes commands as '${name}'.`,
+    candidates: (packages) =>
+      packages.length === 0
+        ? "No plugin on the server contributes commands."
+        : `Plugins with commands: ${packages.join(", ")}.`,
+    collision: (key, packages) =>
+      `'${key}' is contributed by more than one plugin (${packages.join(
+        ", ",
+      )}); name it fully: penguin exec <package>:${key}.`,
+  },
+
+  ambiguous: {
+    header: (words, packages) =>
+      `Ambiguous command: '${words}' matches commands from ${packages} plugins. Run the one you meant:`,
+    note: () => "Note: after it runs, tell the user which plugin's command that was.",
   },
 
   header: headerEn,
@@ -2442,6 +2460,7 @@ const en: Messages = {
 };
 
 const zh: Messages = {
+  language: "zh",
   cliDescription: "PenguinHarness CLI",
   versionDesc: "输出版本号",
   common: {
@@ -2472,7 +2491,6 @@ const zh: Messages = {
       `用法：${command} ${usage}（运行 \`${command} --help\` 查看全部选项）`,
   },
   config: {
-    desc: "管理 Project 配置",
     modelDesc: "管理模型、分组连接信息与默认模型",
     addDesc: "新增或更新一个模型；不带 --model-id 即设置分组的连接信息（API key、base URL、协议）",
     addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 MMSP）；不给即设置分组的连接信息",
@@ -2520,7 +2538,6 @@ const zh: Messages = {
     vaultValue: "变量值，写入该 Agent 的 agent_state/.vault.toml",
   },
   run: {
-    desc: "单次运行一个 Task",
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
@@ -2536,7 +2553,6 @@ const zh: Messages = {
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
-    desc: "打开交互式 REPL",
     resume:
       "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session（会话内可用 /switch-model 切换模型，会先压缩上下文）",
     verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
@@ -2562,7 +2578,6 @@ const zh: Messages = {
     noReplyYet: () => "（还没有助手回复）",
   },
   session: {
-    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
     renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
     renameSessionId:
       "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
@@ -2577,7 +2592,6 @@ const zh: Messages = {
     timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
-    desc: "管理 Project 的 Agent",
     lsDesc: "列出 Project 的 Agent",
     createDesc: "创建 Agent",
     createId: "Agent id（即目录名；字母、数字、下划线）",
@@ -2663,14 +2677,12 @@ const zh: Messages = {
       `${dir} 超出导入上限（20 000 个文件、512MB、压缩后 64MB），未发送任何内容。`,
   },
   project: {
-    desc: "管理 Project",
     lsDesc: "列出当前账号可用的 Project",
     colId: () => "ID",
     colName: () => "名称",
     colRole: () => "角色",
   },
   plugin: {
-    desc: "管理服务端安装的插件（管理员）",
     listDesc: "列出 Project 启用的服务端模块，以及服务端安装的 Skill / 钩子 / MCP Server 插件",
     installDesc:
       "把插件安装到服务端：npm 包名（@scope/name、name@1.2.3）、指向 git 仓库或 tarball 的 https 链接，或本地插件包目录（先用插件库的读取器校验，去掉 node_modules 打成 zip 后上传）。服务端模块插件会立即载入，正在进行的 Agent 运行会被中止",
@@ -2708,7 +2720,6 @@ const zh: Messages = {
     removed: (name) => `已移除 ${name}。`,
   },
   cost: {
-    desc: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
     days: "最近 n 天（自动换算为 --from/--to）",
     from: "起始日期（yyyy-mm-dd）；须与 --to 成对",
     to: "结束日期（yyyy-mm-dd）；须与 --from 成对",
@@ -2727,7 +2738,6 @@ const zh: Messages = {
     colGroup: (dimension) => dimension.toUpperCase(),
   },
   schedule: {
-    desc: "管理定时任务",
     lsDesc: "列出 Project 的定时任务（未指定 --agent-id 时覆盖全部 Agent）",
     addDesc: "创建定时任务（经 API 写入任务文件；缺省即启用——用 --disabled 关闭）",
     updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
@@ -2762,7 +2772,6 @@ const zh: Messages = {
     colStatus: () => "状态",
   },
   org: {
-    desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
     lsDesc: "列出 Project 的组织",
     createDesc: "创建组织：生成 CEO Agent、开 CEO 的工位会话并发起初始化会话",
     showDesc: "概览：员工与状态、看板计数、预算占用、待处理事项",
@@ -3008,7 +3017,6 @@ const zh: Messages = {
     colPrincipal: () => "主体",
   },
   browser: {
-    desc: "Agent 浏览器：读取页面、运行 JavaScript、点击与输入、导入登录状态",
     statusDesc: "Agent 浏览器是否可用、使用哪种后端，以及它的标签页",
     tabsDesc: "列出打开的标签页（* 标出当前标签页）",
     openDesc: "在当前标签页打开 URL（没有标签页时新开一个）；--new-tab 则在新标签页打开",
@@ -3192,9 +3200,6 @@ const zh: Messages = {
   },
   chatThinkingConfigured: () => "Agent 配置值",
   serve: {
-    serverDesc:
-      "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
-    webDesc: "启动 Web 服务，就绪后用浏览器打开界面",
     port: "监听端口（其次取环境变量 PORT，缺省 7364）",
     host: "监听地址（其次取环境变量 HOST，缺省 127.0.0.1）",
     noOpen: "不自动打开浏览器",
@@ -3202,7 +3207,6 @@ const zh: Messages = {
     app: "以某个 workbench 页面占满整个应用打开：<project>/<agent>/<workbench>[/<tab>]（页面内按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可退出）",
   },
   auth: {
-    desc: "在终端里登录 PenguinHarness 服务",
     loginDesc: "用密码登录并记住会话",
     statusDesc: "显示已记住的会话",
     logoutDesc: "吊销并忘记已记住的会话",
@@ -3235,14 +3239,7 @@ const zh: Messages = {
     noServer: (root) => `${root} 上没有 web.db——该数据根上从未运行过服务，因此没有可签发的账号。`,
     failed: (detail) => `签发失败：${detail}`,
   },
-  serverStatus: {
-    desc: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
-  },
-  serverStop: {
-    desc: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
-  },
   resetPassword: {
-    desc: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
     serverRunning: (url) =>
       `该数据根目录已有 PenguinHarness 服务在运行：${url}\n` +
       `请先停止它，再重新执行 \`penguin server reset-admin-password\`。`,
@@ -3255,11 +3252,9 @@ const zh: Messages = {
       "启动服务（`penguin web`），它会打印一条登录链接用于认领该账号——在密码被设置之前一直有效。",
   },
   version: {
-    description: "显示当前运行的是哪个构建",
     json: "以 JSON 输出完整构建信息（即 GET /api/version 的响应体）",
   },
   update: {
-    desc: "原地升级当前的 PenguinHarness 安装",
     check: "只报告当前版本与最新版本，不做任何修改",
     releaseOpt:
       "指定目标版本而不是最新版（如 v0.1.2 或 0.1.2）；之所以叫 --release，是因为 -v/--version 是 CLI 自身的版本参数",
@@ -3322,6 +3317,33 @@ const zh: Messages = {
       const trailingSpace = /[A-Za-z]$/.test(sourceText) ? " " : "";
       return `无法从${leadingSpace}${sourceText}${trailingSpace}下载安装脚本。请检查网络后重试。`;
     },
+  },
+
+  exec: {
+    argsArg: "命令的点分 id，其后全部交给插件命令的参数与选项",
+    lsDesc: "列出各插件贡献的命令",
+    lsPackageArg: "只列这一个插件的命令：npm 名，scope 不可省略",
+    colPackage: () => "插件",
+    colId: () => "Id",
+    colSummary: () => "摘要",
+    invalidId: (word) =>
+      `'${word}' 不是命令 id：id 是命令的点分路径，至少两段（例如 sandbox.deploy）。运行 'penguin exec ls' 查看全部 id。`,
+    unknownId: (id) => `没有插件贡献 id 为 '${id}' 的命令。`,
+    keys: (keys) =>
+      keys.length === 0 ? "服务端没有贡献命令的插件。" : `可用的命令 id：${keys.join("、")}。`,
+    unknownPackage: (name) => `服务端没有以 '${name}' 为名贡献命令的插件。`,
+    candidates: (packages) =>
+      packages.length === 0
+        ? "服务端没有贡献命令的插件。"
+        : `贡献命令的插件：${packages.join("、")}。`,
+    collision: (key, packages) =>
+      `'${key}' 被多个插件贡献（${packages.join("、")}），请写全：penguin exec <插件名>:${key}。`,
+  },
+
+  ambiguous: {
+    header: (words, packages) =>
+      `命令有歧义：'${words}' 同时命中 ${packages} 个插件的命令。请执行你所指的那一行：`,
+    note: () => "注：执行之后，把实际运行的是哪个插件的命令告诉用户。",
   },
 
   header: headerZh,
