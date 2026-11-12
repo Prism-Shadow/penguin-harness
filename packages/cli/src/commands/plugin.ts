@@ -54,6 +54,8 @@ import {
 import { renderTable } from "@prismshadow/penguin-server/cli";
 import { zipFolder } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 const installedPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
@@ -84,6 +86,9 @@ function moduleState(t: Messages, row: InstalledPlugin): string {
  * the server): an existing directory holding a package.json — given as an absolute path, `./x`,
  * `../x`, `~/x`, or a bare name that happens to be such a directory here.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export function packageDirectory(arg: string): string | null {
   const expanded =
     arg === "~" ? os.homedir() : arg.startsWith("~/") ? path.join(os.homedir(), arg.slice(2)) : arg;
@@ -265,4 +270,30 @@ export function registerPluginCommand(plugin: Command, t: Messages): void {
       }
       process.stdout.write(`${t.plugin.removed(name)}\n`);
     });
+}
+
+/** `penguin plugin`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.plugin",
+        key: "plugin",
+        summary: {
+          en: "Manage the plugins installed on the server (admin)",
+          zh: "管理服务端安装的插件（管理员）",
+        },
+      },
+    ],
+  },
+})
+export class PluginCommand {
+  @Bind("cli.plugin") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerPluginCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

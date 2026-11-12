@@ -81,7 +81,11 @@ import {
 import { SessionView, type SessionViewOptions } from "../session-view.js";
 import { listAgentSessions } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
 
 /** What the prompt answers when a run starts while it waits: the main loop follows it. */
@@ -1059,5 +1063,31 @@ function clearCurrentLine(rl: Interface, rli: RlInternals, out: NodeJS.WritableS
   } else {
     out.write("\r\x1b[K");
     rl.prompt(true);
+  }
+}
+
+/** `penguin chat`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.chat",
+        key: "chat",
+        summary: {
+          en: "Open the interactive REPL",
+          zh: "打开交互式 REPL",
+        },
+      },
+    ],
+  },
+})
+export class ChatCommand {
+  @Bind("cli.chat") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerChatCommand(node(command), ctx.messages);
+      },
+    };
   }
 }
