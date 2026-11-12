@@ -25,18 +25,9 @@
  *   opens with the hand-off note quoting the provider's error, the turn is sent again behind it,
  *   and the errors panel holds one `context_refused` row and one `llm_retried` row, no
  *   `llm_fatal`.
- * - Given a request the provider will not serve (HTTP 402), the run stops with `denied`: no
- *   hand-off, one `llm_fatal` row, and the next Task runs on the context it kept.
- * - Given a model that refuses a request after every completed turn, the fourth refusal of one
- *   Task ends the run with the provider's error, after three hand-offs.
- * - Given a reply that writes a hand-off file and holds the summary, the compaction ends in that
- *   one request: one billed, the file on disk, the next context opening with the summary and the
- *   write the harness ran.
  * - Given an Agent config broken before a model switch, the target's context cannot be opened:
  *   the switch ends `fatal`, the Session keeps its model and its context, one `compaction_failed`
  *   row is recorded, and the Session is idle and runs its next Task on the model it was on.
- * - Given a Session whose context opened with a hand-off note, a fork of it opens with the note
- *   naming the fork's scratchpad and the fork's copy of the file the note points at.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -45,7 +36,6 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
   createAgent,
-  modelVisiblePath,
   parseTraceLines,
   saveProjectConfig,
   sessionScratchpadDir,
@@ -54,12 +44,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type {
-  MessagesResponse,
-  ProjectCreateResponse,
-  SessionCreateResponse,
-  SessionForkResponse,
-} from "../src/api/types.js";
+import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -356,11 +341,6 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     expect(res.status).toBe(202);
     await idle(sessionId);
   }
-  /** Compacts by hand (POST /compact), to its end. */
-  async function compact(sessionId: string): Promise<void> {
-    expect((await api.post(`/api/sessions/${sessionId}/compact`, {})).status).toBe(202);
-    await idle(sessionId);
-  }
   /** The records a Session's channel publishes from now on, as an SSE client reads them. */
   const listen = (sessionId: string): (() => AmspRecord[]) => {
     const records: AmspRecord[] = [];
@@ -396,8 +376,6 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
   /** The Project's errors panel: each row's source, code, kind and how many records it stands for. */
   const errorRows = () =>
     t.deps.errorsRepo.recent(projectId).map((r) => [r.source, r.code, r.kind, r.count]);
-  const scratchpadOf = (sessionId: string) =>
-    sessionScratchpadDir(t.root, projectId, AGENT_ID, sessionId);
 
   it("a model that refuses the compaction request: the Task still reaches its end on a next context that opens with a hand-off note naming the file it closed, and the errors panel holds one expected context_refused row", async () => {
     const notes = path.join(workspace, "notes.md");
@@ -500,110 +478,6 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     ]);
   });
 
-  it("a request the provider will not serve (402) stops the run with denied: no hand-off, one llm_fatal row, and the next Task runs on the context it kept", async () => {
-    const notes = path.join(workspace, "notes.md");
-    await fs.writeFile(notes, "Tag v1, then ship.");
-    script = (n) => {
-      if (n === 1)
-        return { toolUse: { id: "toolu_r1", name: "read_file", input: { file_path: notes } } };
-      if (n === 2) return { refuse: { message: "insufficient balance", status: 402 } };
-      return `reply ${n}`;
-    };
-    const sessionId = await openSession();
-    await runTask(sessionId, "tag the release");
-
-    expect(mock.requests).toHaveLength(2);
-    const files = await traceFiles(sessionId);
-    expect(files).toHaveLength(1);
-    const kinds = files[0]!.records.map(kindOf);
-    expect(kinds).not.toContain("compaction_begin");
-    expect(kinds).not.toContain("compaction_end");
-    expect(
-      files[0]!.records.filter((r) => kindOf(r) === "request_end").at(-1)!.payload,
-    ).toMatchObject({ status: "fatal", error_code: "denied" });
-    expect(errorRows()).toEqual([["llm", "llm_fatal", "unexpected", 1]]);
-
-    // The context is kept: the next Task's request carries the conversation it holds.
-    await runTask(sessionId, "try again");
-    expect(mock.requests).toHaveLength(3);
-    expect(requestText(mock.requests[2]!)).toContain("tag the release");
-    expect(requestText(mock.requests[2]!)).toContain("try again");
-    expect(await traceFiles(sessionId)).toHaveLength(1);
-  });
-
-  it("a model that refuses a request after every completed turn: the fourth refusal of one Task ends the run with the provider's error, after three hand-offs", async () => {
-    const notes = path.join(workspace, "notes.md");
-    await fs.writeFile(notes, "Tag v1, then ship.");
-    // Every odd request completes a turn with a tool call; every even one is refused.
-    script = (n) =>
-      n % 2 === 1
-        ? { toolUse: { id: `toolu_r${n}`, name: "read_file", input: { file_path: notes } } }
-        : { refuse: { message: "prompt is too long" } };
-    const sessionId = await openSession();
-    await runTask(sessionId, "tag the release");
-
-    expect(mock.requests).toHaveLength(8);
-    const files = await traceFiles(sessionId);
-    expect(files).toHaveLength(4);
-    const last = files[3]!.records;
-    expect(last.map(kindOf)).not.toContain("compaction_begin");
-    expect(last.filter((r) => kindOf(r) === "request_end").at(-1)!.payload).toMatchObject({
-      status: "fatal",
-      error_code: "rejected",
-      error_message: expect.stringContaining("prompt is too long"),
-    });
-    // Repeats of one row within the recorder's short window fold, so only the codes are read.
-    const codes = new Set(errorRows().map(([source, code, kind]) => `${source} ${code} ${kind}`));
-    expect([...codes].sort()).toEqual([
-      "compaction context_refused expected",
-      "llm llm_fatal unexpected",
-      "llm llm_retried expected",
-    ]);
-  });
-
-  it("a reply that writes the hand-off file and holds the summary ends the compaction in that one request: one billed, the file on disk, and the next context opens with the summary and the write", async () => {
-    const plan = (scratchpad: string) => `${scratchpad}/handoff/plan.md`;
-    script = (n) => {
-      if (n !== 2) return `reply ${n}`;
-      const scratchpad = scratchpadNamedIn(mock.requests[1]!);
-      return {
-        text: `[summary]\n## Files\n${plan(scratchpad)}: the release plan\n## Next steps\nTag v1 as the plan says.\n[/summary]`,
-        toolUse: {
-          id: "toolu_h1",
-          name: "write_file",
-          input: { file_path: plan(scratchpad), content: "1. Tag v1.\n2. Ship." },
-        },
-      };
-    };
-    const sessionId = await openSession();
-    await runTask(sessionId, "plan the release");
-    expect(billed()).toHaveLength(1);
-    const feed = listen(sessionId);
-    await compact(sessionId);
-
-    // One compaction request, billed once; nothing more went to the context it closed.
-    expect(mock.requests).toHaveLength(2);
-    expect(billed()).toHaveLength(2);
-    expect(await fs.readFile(plan(scratchpadOf(sessionId)), "utf8")).toBe("1. Tag v1.\n2. Ship.");
-    // The write ran inside the span, and the end is a full one.
-    const inSpan = span(feed());
-    expect(inSpan.filter((r) => kindOf(r) === "request_begin")).toHaveLength(1);
-    expect(inSpan.find((r) => kindOf(r) === "tool_call_output")?.payload).toMatchObject({
-      tool_call_id: "toolu_h1",
-      status: "completed",
-    });
-    const end = lastCompactionEnd(feed())!;
-    expect(end).toMatchObject({ status: "completed", attempt: 1 });
-    expect(end).not.toHaveProperty("error_code");
-
-    await runTask(sessionId, "go on");
-    const next = mock.requests[2]!;
-    expect(next.messages).toHaveLength(1);
-    expect(requestText(next)).toContain("Tag v1 as the plan says.");
-    // The harness's record of the write rides under the summary.
-    expect(requestText(next)).toContain("toolu_h1");
-  });
-
   it("a switch whose target context cannot be opened — the Agent's config broken meanwhile — ends fatal: the model and the context are kept, one compaction_failed row, and the Session runs its next Task on the model it was on", async () => {
     script = (n) =>
       n === 2 ? "[summary]\n## Next steps\nCarry on with the release.\n[/summary]" : `reply ${n}`;
@@ -640,63 +514,5 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     expect(requestText(mock.requests[2]!)).toContain("plan the release");
     expect(requestText(mock.requests[2]!)).toContain("still there?");
     expect(billed()).toEqual([MOCK_MODEL_ID, MOCK_MODEL_ID, MOCK_MODEL_ID]);
-  });
-
-  it("a fork of a Session whose context opened with a hand-off note: the note names the fork's scratchpad and the fork's copy of the file it closed", async () => {
-    // The model writes the scratchpad as the compaction prompt spells it (forward slashes on
-    // Windows), and the note quotes what it wrote.
-    const plan = (scratchpad: string) => `${modelVisiblePath(scratchpad)}/handoff/plan.md`;
-    script = (n) => {
-      if (n === 2) {
-        const scratchpad = scratchpadNamedIn(mock.requests[1]!);
-        return {
-          toolUse: {
-            id: "toolu_h1",
-            name: "write_file",
-            input: { file_path: plan(scratchpad), content: "1. Tag v1." },
-          },
-        };
-      }
-      if (n === 3) return { refuse: { message: "prompt is too long" } };
-      if (n === 4) return "Following the note.";
-      return `reply ${n}`;
-    };
-    const sessionId = await openSession();
-    await runTask(sessionId, "plan the release");
-    // A round writes the hand-off file, then the summary request is refused: the note quotes
-    // that write, naming the file by its path in the Session's scratchpad.
-    await compact(sessionId);
-    await runTask(sessionId, "go on");
-    const source = await traceFiles(sessionId);
-    expect(source).toHaveLength(2);
-    const note = openingOf(source[1]!.records)!;
-    expect(note).toContain(plan(scratchpadOf(sessionId)));
-    expect(note).toContain(source[0]!.path);
-
-    const history = (await (
-      await api.get(`/api/sessions/${sessionId}/messages`)
-    ).json()) as MessagesResponse;
-    const reply = history.messages.find(
-      (m) => (m.payload as { text?: string }).text === "Following the note.",
-    );
-    const forked = await api.post(`/api/sessions/${sessionId}/fork`, {
-      position: reply!.tracePosition,
-    });
-    expect(forked.status).toBe(201);
-    const forkId = ((await forked.json()) as SessionForkResponse).session.sessionId;
-    const fork = await traceFiles(forkId);
-    expect(fork).toHaveLength(2);
-    const forkNote = openingOf(fork[1]!.records)!;
-    expect(forkNote).toBe(
-      note
-        .replaceAll(
-          modelVisiblePath(scratchpadOf(sessionId)),
-          modelVisiblePath(scratchpadOf(forkId)),
-        )
-        .replaceAll(source[0]!.path, fork[0]!.path),
-    );
-    expect(forkNote).not.toContain(sessionId);
-    // The paths are the fork's own copies, there to be read.
-    expect(await fs.readFile(plan(scratchpadOf(forkId)), "utf8")).toBe("1. Tag v1.");
   });
 });

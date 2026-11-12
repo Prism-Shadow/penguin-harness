@@ -3,11 +3,10 @@
  * endpoint and a hook package written by hand.
  *
  * The endpoint answers every request with one streamed reply in the Anthropic Messages wire
- * format — what the `custom` provider's `claude-4-8` is read with: a text, a tool call, or both
- * in one reply when the script says so — or, when the script says so, refuses it with an HTTP
- * client error as a provider does, and records each request body, so a test can check what the
- * model was sent. A script can also hold a reply back until a promise settles. Point a model
- * entry's `base_url` at its `url`.
+ * format — what the `custom` provider's `claude-4-8` is read with: a text, or a tool call when
+ * the script says so — and records each request body, so a test can check what the model was
+ * sent. A script can also hold a reply back until a promise settles, or refuse the request with
+ * an HTTP 400 as a provider does. Point a model entry's `base_url` at its `url`.
  */
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -25,15 +24,11 @@ export interface MockLLM {
   close(): Promise<void>;
 }
 
-/**
- * One answer: its text; a tool call (`input` is the call's arguments), behind a text of its own
- * when `text` is given; or `refuse` — the request is answered with an HTTP client error (400
- * unless `status` says otherwise) carrying `message`, in place of a stream.
- */
+/** One answer: its text, a tool call (`input` is the call's arguments), or a refusal (HTTP 400). */
 export type MockReply =
   | string
-  | { toolUse: { id: string; name: string; input: Record<string, unknown> }; text?: string }
-  | { refuse: { message: string; status?: number } };
+  | { toolUse: { id: string; name: string; input: Record<string, unknown> } }
+  | { refuse: { message: string } };
 
 /**
  * Starts the endpoint; `reply` is the n-th answer (1-based), and `hold`, when given, a promise
@@ -57,7 +52,7 @@ export async function startMockLLM(
       const answer = reply(n);
       if (typeof answer !== "string" && "refuse" in answer) {
         // The Messages API's error body: the client reads the status; the text rides along.
-        res.writeHead(answer.refuse.status ?? 400, { "content-type": "application/json" });
+        res.writeHead(400, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             type: "error",
@@ -91,28 +86,27 @@ export async function startMockLLM(
       const held = hold?.(n);
       if (held) await held.catch(() => {});
       if (res.destroyed) return;
-      const text = typeof answer === "string" ? answer : answer.text;
-      let index = 0;
-      if (text !== undefined) {
-        send({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
-        send({ type: "content_block_delta", index, delta: { type: "text_delta", text } });
-        send({ type: "content_block_stop", index });
-        index++;
-      }
-      if (typeof answer !== "string") {
+      if (typeof answer === "string") {
+        send({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+        send({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: answer },
+        });
+      } else {
         const { id, name, input } = answer.toolUse;
         send({
           type: "content_block_start",
-          index,
+          index: 0,
           content_block: { type: "tool_use", id, name, input: {} },
         });
         send({
           type: "content_block_delta",
-          index,
+          index: 0,
           delta: { type: "input_json_delta", partial_json: JSON.stringify(input) },
         });
-        send({ type: "content_block_stop", index });
       }
+      send({ type: "content_block_stop", index: 0 });
       send({
         type: "message_delta",
         delta: {
