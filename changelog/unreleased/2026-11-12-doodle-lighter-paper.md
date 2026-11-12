@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1541](https://github.com/Prism-Shadow/penguin-harness/pull/1541)
 
 [中文版](2026-11-12-doodle-lighter-paper.zh.md)
 
