@@ -116,13 +116,13 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 | **System Prompt** | `AGENTS.md` and the system prompt template |
 | **Runtime** | Turn limit, output tokens, thinking level, timeout and context compaction |
 | **Tools** | Built-in tool settings and MCP servers |
-| **Plugins** | The agent's plugins and the Skills, hook packages, MCP servers and workbenches each one brought; your own Skills, hook packages and workbenches; the switches for Skills, hooks and workbenches |
+| **Plugins** | Four sub-pages: the agent's plugins and the ones it could still take; its Skills; its hook packages; its workbenches. Each kind's sub-page holds its switch |
 | **Memory** | The agent's memories and the memory prompts |
 | **Vault** | Environment variables for the agent's commands |
 | **Schedules** | Scheduled tasks |
 | **API** | Whether programs may call the agent over the Agent API, the approval mode of their conversations, and the keys |
 
-Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `plugins`, `memory`, `vault`, `schedules` or `api`. The older addresses with `skills`, `hooks` or `workbenches` open **Plugins**.
+Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `plugins`, `memory`, `vault`, `schedules` or `api`. `skills`, `hooks` and `workbenches` open the **Plugins** tab on the sub-page of that name.
 
 ### Save changes
 
@@ -139,7 +139,7 @@ For the file format behind these settings, see [Agent config](/configuration#age
 Any Project member can change most settings. These actions are for the Project owner only:
 
 - deleting the agent, and overwriting or replacing it from a file;
-- the switches on the **Plugins** tab (**Enable skills**, **Enable hooks**, **Enable workbenches** and each workbench's own), the **Skills prompt**, and uninstalling a plugin;
+- the switches on the **Plugins** tab's sub-pages (**Enable skills**, **Enable hooks**, **Enable workbenches** and each workbench's own), the **Skills prompt**, and uninstalling a plugin;
 - editing vault variables, the **Enable vault** switch and the **Vault prompt**;
 - creating, editing, enabling, disabling and deleting scheduled tasks, and editing the **Enable schedules** switch and the **Schedules prompt** (members can still use **Create with AI**);
 - importing memories;
@@ -276,7 +276,7 @@ A value written as `${KEY}`, where `KEY` names a variable on the agent's [Vault 
 
 To change a server, select **Edit** on its row. To remove it, select **Remove** and confirm; its tools stop being available from the next Session. For more about MCP servers, see [MCP Servers](/tools#mcp-servers).
 
-Installing a plugin that carries MCP servers adds them to this list too; see [Install a plugin on an agent](/skills#install-a-plugin-on-an-agent). Such a row shows a puzzle icon after the name, and pointing at it tells which plugin installed the server. **Edit** keeps the entry tied to its plugin and notes that reinstalling the plugin replaces it. **Remove** asks first and says that **Manage installs** on the **Plugins** page can put the server back.
+Installing a plugin that carries MCP servers adds them to this list too; see [Install a plugin on an agent](/skills#install-a-plugin-on-an-agent). Such a row shows a puzzle icon after the name, and pointing at it tells which plugin installed the server. **Edit** keeps the entry tied to its plugin and notes that reinstalling the plugin replaces it. **Remove** asks first and says that reinstalling the plugin on the agent's **Plugins** tab puts the server back.
 
 A row may also show an icon for a server that cannot connect yet. A conversation skips that server, and its MCP connect row says why:
 
@@ -292,33 +292,38 @@ PenguinHarness connects to each server in turn and discovers its tools. Nothing 
 
 ## Plugins tab
 
-The **Plugins** tab shows what is installed on the agent, grouped by the plugin it came from. From top to bottom:
+The **Plugins** tab has four sub-pages, switched by the control under the tab strip: **Plugins**, **Skills**, **Hooks** and **Workbenches**. The current sub-page's own actions sit at the end of the same row. Each sub-page starts with a short description you can unfold. All four read the agent's lists once, so switching between them reads nothing again.
 
-- **Import** adds a Skill, a hook package or a workbench, from a zip or by asking the agent in a chat. **Browse plugin library** opens the **Plugins** page, where plugins are installed.
-- **Enable skills** decides whether the system prompt lists the installed Skills, using the **Skills prompt** below it. **Enable hooks** decides whether new conversations run hook packages. **Enable workbenches** turns all of the agent's workbenches off or back on at once.
-- **Installed plugins** has one row per plugin, with what it brought (for example "3 skills, hooks, 1 workbench") and its status: **Installed**, **Update available**, **Incomplete** when a part is missing, or **Not in library** when an admin removed the plugin from the library. **Update** installs the library's copy again, which also brings back a missing part. **Uninstall** removes all of the plugin's parts at once, after a confirmation that lists them. Select a row to see its parts.
-- **Not from a plugin** lists the Skills, hook packages and workbenches you made or imported yourself.
+### Plugins
 
-A Skill belongs to a plugin when its name matches a Skill the plugin ships, so a Skill you wrote under such a name is listed under that plugin and goes with it when you uninstall it. A plugin's MCP servers are listed by name with what they still need, such as vault keys; edit them on the **Tools** tab.
+The **Plugins** sub-page shows the agent's plugins as cards, like the **Plugins** page. **Installed** lists every plugin the agent has a part of; **Available** lists the library's plugins the agent has nothing of and could take: those with a Skill, a hook package, an MCP server or a workbench. Plugins of server modules alone stay on the **Plugins** page. The search box narrows both groups, and **Open the Plugins page** opens that page with this agent as the current one.
 
-If some part cannot be removed, the message names it and the rest are removed anyway. An agent on a machine that runs an older version cannot uninstall a whole plugin; update the machine on the **Machines** page first.
+- A card shows the plugin's version, its status on this agent and what it carries, for example "3 skills, hooks, 1 workbench". The status is **Installed**, **Update available**, **Incomplete** when a part is missing, **Not in library** when an admin removed the plugin from the library, or **Available**. A key or sign-in icon after the status means one of its MCP servers is still waiting for vault keys or a sign-in.
+- **Install** adds every part of the plugin to the agent. A plugin with a stdio MCP server asks first and shows the command it runs. **Update** installs the library's copy again, which also brings back a missing part, after a confirmation that lists what it rewrites. **Uninstall** removes all of the plugin's parts at once, after a confirmation that lists them.
+- Select a card to open its detail, which has an address of its own (`?tab=plugins&plugin=<name>`). After the README, **On this agent** lists the plugin's parts on the agent by kind, with **Missing** beside a part the library ships and the agent lacks. Each kind's heading leads to the sub-page where it is managed; MCP servers lead to the **Tools** tab.
+
+A Skill belongs to a plugin when its name matches a Skill the plugin ships, so a Skill you wrote under such a name counts as that plugin's and goes with it when you uninstall it. If some part cannot be removed, the message names it and the rest are removed anyway. An agent on a machine that runs an older version cannot uninstall a whole plugin; update the machine on the **Machines** page first.
 
 ### Skills and hook packages
+
+The **Skills** sub-page has **Enable skills**, which decides whether the system prompt lists the installed Skills, then every Skill on the agent, then the **Skills prompt**. The **Hooks** sub-page has **Enable hooks**, which decides whether new conversations run hook packages, then every hook package. **Import skill** and **Import hook** add one from a zip or by asking the agent in a chat.
+
+Skills and hook packages from plugins are listed together with your own. A row a plugin installed shows a puzzle icon after its name; pointing at it names the plugin, and selecting it opens the plugin's detail. Uninstalling such a row says which plugin installed it; **Update** on the **Plugins** sub-page puts it back.
 
 A Skill's row shows its name, short description and version, with **Export** and **Uninstall**. A hook package's row also shows the hook points it runs at. See [Manage an agent's Skills](/skills#manage-an-agents-skills) and [Hook packages](/skills#hook-packages).
 
 ### Workbenches
 
-A workbench's row, including one that failed to load, is led by its App Center icon when it has one. **Open** opens it beside a new chat, and its **More** menu (⋯) can **Reload** it, list its **Version history** to **Restore** an earlier version, **Export** its source as a zip, or **Remove** it. Its two switches say what they are: **Enable** and **App Center**; selecting the word beside a switch flips it too.
+The **Workbenches** sub-page has **Enable workbenches**, which turns all of the agent's workbenches off or back on at once, then every workbench, a plugin's marked with the puzzle icon as on the other sub-pages. A workbench's row, including one that failed to load, is led by its App Center icon when it has one. **Open** opens it beside a new chat, and its **More** menu (⋯) can **Reload** it, list its **Version history** to **Restore** an earlier version, **Export** its source as a zip, or **Remove** it. Its two switches say what they are: **Enable** and **App Center**; selecting the word beside a switch flips it too.
 
 - The **Enable** switch turns a workbench off without deleting anything. It leaves the chat page and the App Center, its pages stop opening, and its data and versions stay. **Version history**, **Restore**, **Export** and **Remove** still work. While **Enable workbenches** is off, every workbench is off and its own switch is greyed at the value it returns to. An agent on a machine that runs an older version shows no switches.
 - **Version history** lists up to 50 versions, newest first. **Restore** makes the workbench's source exactly that version and reloads it at once; its data (`state.json`) stays.
 - **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id. Uninstalling the plugin a workbench came from deletes it the same way; to keep its data, turn it off instead.
 - The **App Center** switch puts a shortcut to the workbench in the Project's [App Center](/web-app#the-app-center), or takes it off. It takes effect at once: it sets `penguin.appCenter.show` in the workbench's own `package.json`, leaving the rest of the file as it was, and the reload that follows is recorded as a version (a workbench that is off is not loaded). Agents on connected machines have no App Center switch, since the App Center lists this server's agents only.
 - **Export** downloads the source as a zip with one top-level folder named after the workbench id. It never carries `state.json`, hidden files or `node_modules`, and imports back unchanged.
-- **Import** › **Workbench** offers two ways. The recommended one: enter a web page, a GitHub repository or directory, a local path, an install command or a description in **Workbench source**, then select **Open a new chat**, or **Copy prompt** to use the prompt elsewhere. The agent reads every file, stops and tells you if anything looks unsafe, then installs the workbench on this agent and reloads it. The other way, under **Upload a workbench zip**, adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
+- **Import workbench** offers two ways. The recommended one: enter a web page, a GitHub repository or directory, a local path, an install command or a description in **Workbench source**, then select **Open a new chat**, or **Copy prompt** to use the prompt elsewhere. The agent reads every file, stops and tells you if anything looks unsafe, then installs the workbench on this agent and reloads it. The other way, under **Upload a workbench zip**, adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
 
-The switches, the **Skills prompt** and uninstalling a plugin are for the Project owner; members see the switches' state. Any member can import, update, export and remove parts. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
+The switches, the **Skills prompt** and uninstalling a plugin are for the Project owner; members see the switches' state. Any member can install and update a plugin, and import, export and remove parts. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
 
 ## Memory tab
 

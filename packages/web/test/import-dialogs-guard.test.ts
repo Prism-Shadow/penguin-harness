@@ -3,7 +3,7 @@
  * The Skill, hook, workbench and Benchmark import dialogs under the settings commit model: the
  * Agent settings Plugins tab's Import skill (features/agents/agent-skills.tsx), Import hook
  * (features/agents/agent-hooks.tsx) and Import workbench (features/agents/agent-workbenches.tsx),
- * each opened from the tab's Import menu, and the Evaluation Center's Import benchmark
+ * each opened from its sub-page's Import button, and the Evaluation Center's Import benchmark
  * (features/benchmark/benchmark-import-modal.tsx). In each, what the source field holds is the
  * dialog's draft; every scenario runs on all four.
  *
@@ -25,6 +25,7 @@ import { en } from "../src/lib/strings-en";
 import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { PluginsTab } from "../src/features/agents/plugins-tab";
+import type { PluginsSubPage } from "../src/features/agents/plugins-subpages";
 import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
 import {
   AGENT_ID,
@@ -43,7 +44,6 @@ import {
   click,
   dialogs,
   hasButton,
-  menuItem,
   pickFile,
   pressEscape,
   run,
@@ -56,16 +56,18 @@ const promptOpen = () => hasButton(en.common.discard);
 
 type Router = Awaited<ReturnType<typeof mountAgentApp>>;
 
-/** Mounts the Agent settings Plugins tab and opens one import dialog from its menu, once its lists have loaded. */
-async function openFromTab(item: string) {
+/**
+ * Mounts the Agent settings Plugins tab on one kind's sub-page and opens its import dialog from
+ * its Import button, once its lists have loaded.
+ */
+async function openFromTab(subPage: PluginsSubPage, importAction: string) {
   const server = agentServer();
-  const router = await mountAgentApp(h(PluginsTab, { agentId: AGENT_ID }), {
-    at: `/agents/${AGENT_ID}`,
-  });
-  const importAction = en.agentPlugins.importAction;
+  const router = await mountAgentApp(
+    h(PluginsTab, { agentId: AGENT_ID, subPage, onSubPage: () => undefined }),
+    { at: `/agents/${AGENT_ID}` },
+  );
   await waitFor(() => hasButton(importAction) && !button(importAction).disabled);
   await click(button(importAction));
-  await click(menuItem(item));
   await waitFor(() => dialogs().length === 1);
   return { server, router };
 }
@@ -98,7 +100,7 @@ interface ImportDialog {
 const DIALOGS: ImportDialog[] = [
   {
     name: "Import skill",
-    open: () => openFromTab(en.agentPlugins.importSkill),
+    open: () => openFromTab("skills", en.skills.importSkill),
     source: en.skills.importSourceLabel,
     openChat: en.skills.importOpenChat,
     uploading: en.skills.importUploading,
@@ -106,7 +108,7 @@ const DIALOGS: ImportDialog[] = [
   },
   {
     name: "Import hook",
-    open: () => openFromTab(en.agentPlugins.importHook),
+    open: () => openFromTab("hooks", en.hooks.importHook),
     source: en.hooks.importSourceLabel,
     openChat: en.hooks.importOpenChat,
     uploading: en.hooks.importUploading,
@@ -114,7 +116,7 @@ const DIALOGS: ImportDialog[] = [
   },
   {
     name: "Import workbench",
-    open: () => openFromTab(en.agentPlugins.importWorkbench),
+    open: () => openFromTab("workbenches", en.workbenches.importTitle),
     source: en.workbenches.importSourceLabel,
     openChat: en.workbenches.importOpenChat,
     uploading: en.workbenches.importUploading,

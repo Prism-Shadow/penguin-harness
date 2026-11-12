@@ -19,7 +19,7 @@
  * entries and the install receipts naming each workbench's plugin. Uninstalling a plugin takes
  * away what the server would — the Skills its library entry contributes, the hook package of its
  * name, the MCP entries and workbenches recording it — and reports any part the suite names in
- * `uninstallFailures` as not removed. A server `older` than the workbench switches lists no
+ * `uninstallFailures` as not removed; uninstalling one Skill or hook package takes that one. A server `older` than the workbench switches lists no
  * `enabled` and has neither those routes nor the plugin uninstall.
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
@@ -1051,6 +1051,17 @@ export function agentServer(
     }
     if (path === `${AGENT_PATH}/skills`) return json({ skills: partSkills });
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: partHooks });
+    // Uninstalling one Skill or one hook package takes its directory, whoever installed it.
+    if (path.startsWith(`${AGENT_PATH}/skills/`) && method === "DELETE") {
+      const name = decodeURIComponent(path.slice(`${AGENT_PATH}/skills/`.length));
+      partSkills = partSkills.filter((s) => s.name !== name);
+      return new Response(null, { status: 204 });
+    }
+    if (path.startsWith(`${AGENT_PATH}/hooks/`) && method === "DELETE") {
+      const name = decodeURIComponent(path.slice(`${AGENT_PATH}/hooks/`.length));
+      partHooks = partHooks.filter((h) => h.name !== name);
+      return new Response(null, { status: 204 });
+    }
     if (path === `${AGENT_PATH}/memory`) {
       return json({
         enabled: stored.config.memory.enabled,

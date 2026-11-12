@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 /**
- * A workbench's row on the Agent settings page's Plugins tab, a handler-only one included (one the
- * user made, so it is listed under "Not from a plugin"), with its open and management actions.
+ * A workbench's row on the Agent settings Plugins tab's Workbenches sub-page, a handler-only one
+ * included (one the user made, so it carries no plugin's mark), with its open and management
+ * actions.
  * - "Open" opens the workbench in a new conversation with its owning Agent and tab.
  * - Each row of the More menu does its action: Reload reloads (a failure stays recoverable),
  *   Version history lists the versions and a restore asks first, and Remove asks first — a
- *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list.
+ *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
+ *   which then says the Agent has no workbench.
  * - The row's switches carry their words. The App Center switch commits on click, from the switch
  *   or from its words; a refused write leaves it where the file says.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
@@ -61,7 +63,7 @@ async function open(tabs: WorkbenchInfo["tabs"] = [], over: Partial<WorkbenchInf
     ],
   });
   const router = await mountAgentApp(h(AgentSettingsPage), {
-    at: `/agents/${AGENT_ID}?tab=plugins`,
+    at: `/agents/${AGENT_ID}?tab=workbenches`,
   });
   await waitFor(() => document.body.textContent?.includes("Support") === true);
   return { server, router };
@@ -124,7 +126,7 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
       .map((request) => request.path),
   ).toEqual([`/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/support`]);
   await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
-  expect(document.body.textContent).not.toContain(en.agentPlugins.ownTitle);
+  expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
 });
 it("names both switches beside them, and flips the App Center one from its words; a refused write leaves it where the file says", async () => {
   const { server } = await open();

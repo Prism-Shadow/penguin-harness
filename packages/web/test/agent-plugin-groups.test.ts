@@ -1,6 +1,6 @@
 /**
- * Which plugin each of an Agent's parts belongs to, as the Agent settings Plugins tab lists them
- * (features/plugins/agent-plugin-groups.ts).
+ * An Agent's plugins, and which plugin each of its parts belongs to, as the Agent settings
+ * Plugins tab lists them (features/plugins/agent-plugin-groups.ts).
  *
  * - Given a library plugin, its Skills (by name), its hook package (by the plugin's name), its MCP
  *   entries (by their `plugin`) and its workbenches (by their receipts) are listed under it; a
@@ -11,11 +11,15 @@
  *   package named after nothing anyone knows is the user's too.
  * - A plugin the server lists the Agent as behind on reads "update"; one missing a part reads
  *   "incomplete"; one with every part reads "installed".
+ * - Given a plugin missing one Skill, it names that Skill as missing and nothing else.
+ * - Given a library plugin the Agent carries nothing of, it is available under the category its
+ *   group gave it; a package of server modules alone is not.
  */
 import { describe, expect, it } from "vitest";
 import type {
   AgentMcpServerItem,
   AgentPluginsInstallResponse,
+  PluginGroupItem,
   PluginItem,
   WorkbenchInfo,
 } from "@prismshadow/penguin-server/api";
@@ -41,6 +45,27 @@ const CHARTS = {
   workbenches: [{ name: "board", version: "1" }],
 } as unknown as PluginItem;
 
+const NOTES_KIT = {
+  name: "notes-kit",
+  skills: [skill("jot")],
+  hooks: [],
+  mcpServers: [],
+  workbenches: [],
+} as unknown as PluginItem;
+
+/** A package of server modules alone: nothing of it goes on an Agent. */
+const SANDBOX = {
+  name: "sandbox-box",
+  skills: [],
+  hooks: [],
+  mcpServers: [],
+  workbenches: [],
+} as unknown as PluginItem;
+
+/** The library as the server answers it: plugins under their category. */
+const lib = (...groups: Array<[string, PluginItem[]]>): PluginGroupItem[] =>
+  groups.map(([id, plugins]) => ({ id, title: id, plugins }) as PluginGroupItem);
+
 const installed = (
   over: Partial<AgentPluginsInstallResponse> = {},
 ): AgentPluginsInstallResponse => ({
@@ -59,7 +84,7 @@ const names = (parts: { skills: { name: string }[]; hooks: { name: string }[] })
 describe("an Agent's parts by plugin", () => {
   it("lists a library plugin's parts under it, and what nothing names as the user's own", () => {
     const { groups, own } = agentPluginGroups(
-      [CHARTS],
+      lib(["visual", [CHARTS]]),
       installed(),
       [workbench("board"), workbench("todo")],
       [],
@@ -95,7 +120,38 @@ describe("an Agent's parts by plugin", () => {
     { state: "whole", lists: installed(), behind: [], status: "installed" },
   ])("reads a plugin $state as $status", ({ lists, behind, status }) => {
     const updates = behind.map((name) => ({ name, version: "2" }));
-    const { groups } = agentPluginGroups([CHARTS], lists, [workbench("board")], updates);
+    const { groups } = agentPluginGroups(
+      lib(["visual", [CHARTS]]),
+      lists,
+      [workbench("board")],
+      updates,
+    );
     expect(groups[0]!.status).toBe(status);
+  });
+
+  it("names the one Skill a plugin is missing, and nothing else", () => {
+    const { groups } = agentPluginGroups(
+      lib(["visual", [CHARTS]]),
+      installed({ skills: [skill("chart")] }),
+      [workbench("board")],
+      [],
+    );
+    expect(groups.map((g) => [g.name, g.status, g.missing])).toEqual([
+      ["charts", "incomplete", { skills: ["plot"], hooks: false, mcpServers: [], workbenches: [] }],
+    ]);
+  });
+
+  it("offers a library plugin the Agent carries nothing of under its category, and never a module-only package", () => {
+    const { groups, available } = agentPluginGroups(
+      lib(["visual", [CHARTS]], ["writing", [NOTES_KIT, SANDBOX]]),
+      installed(),
+      [workbench("board")],
+      [],
+    );
+    expect(groups.map((g) => [g.name, g.category])).toEqual([["charts", "visual"]]);
+    expect(available.map((g) => [g.name, g.category, g.status])).toEqual([
+      ["notes-kit", "writing", "available"],
+    ]);
+    expect(available[0]!.parts).toEqual({ skills: [], hooks: [], mcpServers: [], workbenches: [] });
   });
 });

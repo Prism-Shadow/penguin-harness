@@ -6,10 +6,10 @@
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
  * tool / skill / hook / workbench / memory / vault-key / schedule counts deep-link to the settings
- * page's matching tab (?tab=tools|plugins|memory|vault|schedules; skills, hook packages and
- * workbenches are all on Plugins) and appear in the settings tabs' order. A workbench counts
- * whether or not it is switched on, as a Skill or a hook package counts whatever its switch says:
- * the count is what the Plugins tab lists.
+ * page's matching tab or Plugins sub-page (?tab=tools|skills|hooks|workbenches|memory|vault|
+ * schedules) and appear in the settings tabs' order. A workbench counts whether or not it is
+ * switched on, as a Skill or a hook package counts whatever its switch says: the count is what
+ * its sub-page lists.
  * A click anywhere on a card's body goes to the Agent's settings page (lib/card-open.ts), and every
  * control inside it acts on its own; the Agent's name is the link to that page, the keyboard's way in.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
@@ -388,11 +388,12 @@ export function AgentsPage() {
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
    * page lands directly on the matching tab — the Skill, hook package and workbench counts on
-   * the Plugins tab, where all three are listed.
+   * the Plugins tab's sub-page that lists them.
    */
   const openSettingsTab = (
     agentId: string,
-    tab: "overview" | "tools" | "vault" | "schedules" | "plugins" | "memory",
+    tab:
+      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
     machineId: string | null = null,
   ) => {
     // The current Agent is one of THIS server's: a machine's Agent never becomes it.
@@ -615,10 +616,10 @@ export function AgentsPage() {
             {(
               [
                 ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                ["plugins", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                ["plugins", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
                 [
-                  "plugins",
+                  "workbenches",
                   ICONS.anvil,
                   a.workbenchCount ?? 0,
                   S.workbenches.count(a.workbenchCount ?? 0),
@@ -639,8 +640,7 @@ export function AgentsPage() {
               ] as const
             ).map(([tab, glyph, count, label]) => (
               <button
-                // Three counts open the Plugins tab, so the tab is no key; each count's glyph is.
-                key={glyph}
+                key={tab}
                 type="button"
                 className={STAT_LINK_CLASS}
                 disabled={!reachable}
