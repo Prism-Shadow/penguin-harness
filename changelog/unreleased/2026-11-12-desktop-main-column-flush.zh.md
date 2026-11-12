@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** fix
 - **Scope:** `ui`, `ui-gallery`
+- **PR:** [#1537](https://github.com/Prism-Shadow/penguin-harness/pull/1537)
 
 [English](2026-11-12-desktop-main-column-flush.md)
 
