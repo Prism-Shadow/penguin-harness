@@ -26,6 +26,7 @@ export function LeaderboardsPage() {
   return (
     <HubList
       title={S.hub.leaderboards.title}
+      description={S.hub.leaderboards.description}
       source={{ href: BENCHMARK_REPO_URL, label: "Prism-Shadow/penguin-harness-benchmark" }}
       items={leaderboards}
       keyOf={(board) => board.id}

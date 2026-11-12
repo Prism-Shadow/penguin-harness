@@ -1,20 +1,22 @@
 /**
- * The page of one hub entry: a header (icon, title, one line under it, a link to its source),
- * the kind's tags, then the body's panels beside a column with the facts panel (below 1024 px, or
+ * The page of one hub entry: the way back to its list, a header (icon, title, one line under it,
+ * a link to its source), the kind's tags, then the body's panels beside a column with the facts panel (below 1024 px, or
  * on a `stacked` page, that column follows the body). Each block is an opaque panel with a
  * titled bar, so the blocks read apart at a glance; they rise in one after another on load.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
-import { GitHubIcon, SiteGlyph } from "@prismshadow/penguin-ui/site";
+import { Link, useLocation, useNavigate } from "react-router";
+import { GitHubIcon, SiteBackLink, SiteGlyph } from "@prismshadow/penguin-ui/site";
 import type { SiteGlyphName } from "@prismshadow/penguin-ui/site";
 import { TONE_INK } from "../../lib/hub/tones";
 import type { HubTone } from "../../lib/hub/tones";
 import { S } from "../../lib/strings";
+import { backTarget } from "../../lib/hub/back";
 import { loadDetail } from "../../lib/hub/data";
 import type { DetailOf } from "../../lib/hub/data";
 import { ExternalLink, ExternalLinkScope } from "../external-link";
+import { routeLink } from "../route-link";
 import { PostPending } from "../post-pending";
 
 /** The detail record of `id`: undefined while it loads, null when there is none. */
@@ -37,16 +39,66 @@ export function useHubDetail<K extends keyof DetailOf>(kind: K, id: string) {
   return state?.id === id ? state.detail : undefined;
 }
 
-export function HubPending() {
-  return <PostPending />;
+/** The kind of entry a detail page shows, and the list it belongs to. */
+export type HubKind = keyof DetailOf;
+const LIST: Record<HubKind, { path: string; title: () => string }> = {
+  plugin: { path: "/plugins", title: () => S.hub.plugins.title },
+  benchmark: { path: "/benchmarks", title: () => S.hub.benchmarks.title },
+  leaderboard: { path: "/leaderboards", title: () => S.hub.leaderboards.title },
+};
+
+/** The page's frame: the same width and padding while it loads as once it has. */
+const FRAME = "mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-6 sm:pt-8 sm:pb-12";
+
+/**
+ * The way back to the list, above the header: one fixed-height line, there from the first frame
+ * (the page's pending state draws it too), so the title never moves when it lands. Opened from
+ * the list, it steps back through history and the list returns as it was left; otherwise it opens
+ * the list (lib/hub/back.ts).
+ */
+export function HubBack({ kind }: { kind: HubKind }) {
+  const { state } = useLocation();
+  const navigate = useNavigate();
+  const list = LIST[kind];
+  const title = list.title();
+  const target = backTarget(list.path, state);
+  return (
+    <SiteBackLink
+      href={target.href}
+      label={S.hub.backTo(title)}
+      render={routeLink}
+      onClick={(event) => {
+        const plain =
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey;
+        if (!target.history || !plain) return;
+        event.preventDefault();
+        void navigate(-1);
+      }}
+    >
+      {title}
+    </SiteBackLink>
+  );
 }
 
-export function HubMissing({ listHref }: { listHref: string }) {
+export function HubPending({ kind }: { kind: HubKind }) {
+  return (
+    <div className={FRAME}>
+      <HubBack kind={kind} />
+      <PostPending />
+    </div>
+  );
+}
+
+export function HubMissing({ kind }: { kind: HubKind }) {
   return (
     <div className="mx-auto max-w-6xl px-4 py-24 text-center text-sm text-gray-600 sm:px-6 dark:text-gray-400">
       <p>{S.hub.notFound}</p>
       <Link
-        to={listHref}
+        to={LIST[kind].path}
         className="mt-3 inline-block text-brand-700 hover:underline dark:text-brand-300"
       >
         {S.hub.backToList}
@@ -65,6 +117,7 @@ export interface HubFact {
 }
 
 export function HubDetail({
+  kind,
   lead,
   title,
   subtitle,
@@ -75,6 +128,7 @@ export function HubDetail({
   layout = "side",
   children,
 }: {
+  kind: HubKind;
   lead?: ReactNode;
   title: string;
   subtitle?: ReactNode;
@@ -95,8 +149,9 @@ export function HubDetail({
   const stacked = layout === "stacked";
   return (
     <ExternalLinkScope>
-      <article className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
-        <header className="anim-rise flex flex-wrap items-start gap-x-4 gap-y-3">
+      <article className={FRAME}>
+        <HubBack kind={kind} />
+        <header className="anim-rise mt-5 flex flex-wrap items-start gap-x-4 gap-y-3">
           {lead}
           <div className="min-w-0 flex-1 basis-48">
             <h1 className="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">

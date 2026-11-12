@@ -546,7 +546,7 @@ export const zh = {
       site: {
         title: "公开站点",
         description:
-          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
+          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、数据页控件、文章目录、文档侧栏、搜索、外链确认与文章排版。",
       },
       files: {
         title: "文件",
@@ -1179,6 +1179,22 @@ export const zh = {
         teal: "观点",
         neutral: "更新日志",
       },
+      dataPage: "数据页控件",
+      dataPageHint:
+        "插件、评估集与榜单页共用：返回列表的链接、切换视图的分段按钮、工具栏的菜单按钮与数据表格。当前视图用不到的菜单按钮变灰但留在原位，切换视图时工具栏不动。",
+      dataBack: "插件",
+      dataBackLabel: "返回插件",
+      dataViews: "视图",
+      dataViewOptions: { table: "表格", pareto: "帕累托", waffle: "华夫饼" },
+      dataFilter: "筛选",
+      dataColumns: "列",
+      dataColumnsHint: "列只用于表格",
+      dataHead: { rank: "排名", name: "算法", score: "得分", cost: "成本" },
+      dataRows: [
+        ["SkillOpt 自进化工具包", "70.3", "$1.86"],
+        ["SkillAdam 自进化工具包", "69.0", "$1.96"],
+        ["基线", "56.3", "$2.38"],
+      ] as readonly (readonly [string, string, string])[],
       article: "文章",
       articleHint:
         "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",

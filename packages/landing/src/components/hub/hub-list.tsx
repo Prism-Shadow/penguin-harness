@@ -1,14 +1,16 @@
 /**
- * The list page the Plugins, Benchmarks and Leaderboards pages share: a title with the source the
- * list is read from and, beside it, the search box and the order; facets (a side column from
+ * The list page the Plugins, Benchmarks and Leaderboards pages share: a title, a line saying what
+ * the list is and the source it is read from and, beside them, the search box and the order; facets (a side column from
  * 1024 px, rows above the list below it) and the cards. The query, the facets and the order live
- * in the URL, so a filtered list can be linked and Back restores it.
+ * in the URL, so a filtered list can be linked and Back restores it; the scroll is noted on every
+ * click inside the page, so Back returns to it too (lib/hub/back.ts).
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "react-router";
-import { SearchIcon, XIcon } from "@prismshadow/penguin-ui/site";
+import { useLocation, useSearchParams } from "react-router";
+import { SearchIcon, SiteSegmented, XIcon } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
+import { rememberScroll } from "../../lib/hub/back";
 import { facetCounts, facetSplits, filterItems, readSelection } from "../../lib/hub/filter";
 import type { Facet, Selection } from "../../lib/hub/filter";
 import { ExternalLink, ExternalLinkScope } from "../external-link";
@@ -28,6 +30,7 @@ export interface HubSort<T> {
 
 export function HubList<T>({
   title,
+  description,
   source,
   items,
   keyOf,
@@ -37,6 +40,8 @@ export function HubList<T>({
   renderItem,
 }: {
   title: string;
+  /** One line under the title: what the list holds. */
+  description: string;
   source: { href: string; label: string };
   items: readonly T[];
   keyOf: (item: T) => string;
@@ -47,6 +52,13 @@ export function HubList<T>({
   renderItem: (item: T) => ReactNode;
 }) {
   const [params, setParams] = useSearchParams();
+  const { key } = useLocation();
+  useEffect(() => {
+    // Capture phase: the click that leaves the page is noted before its navigation runs.
+    const note = () => rememberScroll(key, window.scrollY);
+    document.addEventListener("click", note, true);
+    return () => document.removeEventListener("click", note, true);
+  }, [key]);
   const query = params.get("q") ?? "";
   const offered = useMemo(
     () => facets.filter((facet) => facetSplits(items, facet)),
@@ -128,7 +140,7 @@ export function HubList<T>({
   return (
     <ExternalLinkScope>
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+        <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">
               {title}
@@ -136,7 +148,8 @@ export function HubList<T>({
                 {items.length}
               </span>
             </h1>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            <p className="mt-1.5 text-sm text-gray-600 dark:text-gray-400">{description}</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {S.hub.source}{" "}
               <ExternalLink
                 href={source.href}
@@ -172,32 +185,17 @@ export function HubList<T>({
               )}
             </label>
             {sorts.length > 1 && sort && (
-              <div
+              <SiteSegmented
                 role="radiogroup"
-                aria-label={S.hub.sortLabel}
-                className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-800 dark:bg-gray-900"
-              >
-                {sorts.map((candidate, index) => (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={candidate === sort}
-                    onClick={() =>
-                      update((next) =>
-                        index === 0 ? next.delete("sort") : next.set("sort", candidate.id),
-                      )
-                    }
-                    className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-                      candidate === sort
-                        ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                        : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                    }`}
-                  >
-                    {candidate.label}
-                  </button>
-                ))}
-              </div>
+                label={S.hub.sortLabel}
+                options={sorts.map(({ id, label }) => ({ id, label }))}
+                value={sort.id}
+                onChange={(id) =>
+                  update((next) =>
+                    id === sorts[0]!.id ? next.delete("sort") : next.set("sort", id),
+                  )
+                }
+              />
             )}
           </div>
         </header>
@@ -219,7 +217,8 @@ export function HubList<T>({
                 )}
               </div>
             ) : (
-              <ul className="grid gap-3 sm:grid-cols-2">
+              // One shrinkable column on a phone: a card's long title is cut, never widening the page.
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {shown.map((item) => (
                   <li key={keyOf(item)} className="flex">
                     {renderItem(item)}

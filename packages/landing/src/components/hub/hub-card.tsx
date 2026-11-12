@@ -1,12 +1,14 @@
 /**
- * One entry of a hub list: the whole card links to the entry's page. Its title, then a row of
- * short facts (author, version, counts) separated by space alone; the description is left to
- * the entry's page.
+ * One entry of a hub list: the whole card links to the entry's page, carrying the list's address
+ * in the history state so the page's back control returns to this list as it is now
+ * (lib/hub/back.ts). Its title, then a row of short facts (author, version, counts) separated by
+ * space alone; the description is left to the entry's page.
  */
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { SiteGlyph } from "@prismshadow/penguin-ui/site";
 import type { SiteGlyphName } from "@prismshadow/penguin-ui/site";
+import { listState } from "../../lib/hub/back";
 
 export function HubCard({
   to,
@@ -20,9 +22,11 @@ export function HubCard({
   /** The tile before the title (`HubTile`). */
   lead?: ReactNode;
 }) {
+  const location = useLocation();
   return (
     <Link
       to={to}
+      state={listState(location)}
       className="group flex w-full min-w-0 items-center gap-3.5 rounded-xl border border-gray-200 bg-white px-4 py-3.5 transition-colors hover:border-brand-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-brand-700"
     >
       {lead}
