@@ -42,10 +42,8 @@ export class UsageRecorder implements UsageRecording {
   /** One request at a time per Session: whether its streamed request_begin has been metered. */
   private readonly requests = new Map<string, boolean>();
   /**
-   * Sessions inside a compaction span. A compaction's own requests stream there (its tool
-   * rounds included), yet only their usage is billed: a failed compaction attempt is the
-   * compaction's failure, which its `compaction_end` reports, and no failed Request row of the
-   * model's.
+   * Sessions inside a compaction span: its requests bill their usage alone, no failed Request
+   * row (a failed attempt is the compaction's, which its `compaction_end` reports).
    */
   private readonly compacting = new Set<string>();
 
@@ -127,8 +125,8 @@ export class UsageRecorder implements UsageRecording {
         output: r.output,
         total: r.total,
       });
-      // A compaction's usage meters no open request (its request boundaries are skipped
-      // above), so nothing is retained for it after the compaction has finished.
+      // A compaction's request boundaries are skipped above. Do not
+      // retain state for those unpaired records after the compaction has finished.
       if (source === "stream" && this.requests.has(requestSessionId)) {
         this.requests.set(requestSessionId, true);
       }

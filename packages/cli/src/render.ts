@@ -833,9 +833,8 @@ export class StreamRenderer {
 
     if (isEventMessage(msg)) {
       const payload = msg.payload;
-      // A compaction's own requests and its tool rounds' decisions stream between the paired
-      // events: none of them prints (no retry line, no decision line). A decision an approval
-      // prompt already printed is forgotten the same way the line below would forget it.
+      // A compaction's own requests and tool-round decisions print nothing (no retry, error or
+      // decision line); a decision an approval prompt already printed is forgotten as below.
       if (
         this.compactionActive &&
         (payload.type === "request_begin" ||
@@ -971,8 +970,8 @@ export class StreamRenderer {
         const p = payload as CompactionEndPayload;
         this.finishLine();
         this.compactionActive = false;
-        // A completed end carrying the error pair completed without a full summary; a refusal
-        // or a summary cut off at the output limit means too little room was left for it.
+        // Completed with the error pair: no full summary. A refusal or a summary cut off at the
+        // output limit means too little room was left for it.
         const degraded =
           p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined)
             ? { room: p.error_code === "rejected" || p.error_code === "output_truncated" }
@@ -1165,9 +1164,8 @@ export class StreamRenderer {
   }
 
   private handlePartialToolCall(p: PartialToolCallPayload): void {
-    // A compaction's tool round streams its calls between the paired events: the CLI keeps
-    // its one-line compaction progress and prints none of it (an approval prompt still
-    // renders the call it asks about, through beginUserPrompt).
+    // A compaction's tool round prints nothing (an approval prompt still renders the call it
+    // asks about, through beginUserPrompt).
     if (this.compactionActive) return;
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
@@ -1224,8 +1222,7 @@ export class StreamRenderer {
   }
 
   private handlePartialToolOutput(p: PartialToolCallOutputPayload): void {
-    // A compaction tool round's output stays off the screen, like its call (see above).
-    if (this.compactionActive) return;
+    if (this.compactionActive) return; // a compaction tool round's output: see above
     const label = this.outputLabel(p.tool_call_id);
     const name = this.toolNames.get(p.tool_call_id);
     const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);

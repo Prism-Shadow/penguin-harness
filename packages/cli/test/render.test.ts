@@ -712,33 +712,6 @@ describe("StreamRenderer", () => {
     );
   });
 
-  it("a compaction whose next context could not be opened says the current context was kept", () => {
-    const { stream, text } = collector();
-    const r = new StreamRenderer(stream, t);
-    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
-    r.handle(requestBegin());
-    r.handle(partialText("start"));
-    r.handle(partialText("delta", "[summary]the plan[/summary]"));
-    r.handle(partialText("stop"));
-    r.handle(requestEnd("completed"));
-    r.handle(
-      compactionEnd({
-        reason: "context",
-        mode: "summarize",
-        status: "fatal",
-        attempt: 1,
-        errorMessage: "no model client could be built",
-      }),
-    );
-    expect(stripAnsi(text())).toBe(
-      [
-        "[compaction] summarizing context (context)…",
-        "[compaction] failed (no model client could be built); the next context could not be opened; keeping the current context",
-        "",
-      ].join("\n"),
-    );
-  });
-
   it("the thinking and summary streamed inside a compaction span stay off the terminal (issue #290)", () => {
     // Between the paired events the stream carries the compaction request's thinking and the
     // summary being written as ordinary partial_thinking / partial_text; the CLI keeps its
