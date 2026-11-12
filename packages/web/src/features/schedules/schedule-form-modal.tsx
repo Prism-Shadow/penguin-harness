@@ -1,10 +1,10 @@
 /**
  * The create / edit form of a scheduled task, shared by the Agent settings Schedule tab, the
  * chat dock's scheduled-tasks panel and the Session row menu's "Set up manually". startAt /
- * endAt are datetime-local inputs (local timezone) converted to ISO 8601 on submit; the
- * "new Session each run" mode can also pick a Model — always a complete (provider, modelId)
- * pair, since provider is never inferred; omitting it entirely follows the Project default —
- * and a Workspace. `lockedSessionId` pins the target to one Session: the target picker becomes
+ * endAt are date-and-time pickers (local time, `YYYY-MM-DDTHH:mm`) converted to ISO 8601 on
+ * submit; the "new Session each run" mode can also pick a Model — always a complete (provider,
+ * modelId) pair, since provider is never inferred; omitting it entirely follows the Project
+ * default — and a Workspace. `lockedSessionId` pins the target to one Session: the target picker becomes
  * a read-only line and the new-Session fields stay hidden. Mutual exclusivity of sessionId
  * with workspace / model is validated server-side.
  *
@@ -30,6 +30,7 @@ import type {
 import {
   Button,
   Checkbox,
+  DateTimeField,
   FieldError,
   FieldLabel,
   FormPicker,
@@ -52,7 +53,7 @@ import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
 
-/** ISO → datetime-local input value (local timezone, minute precision); returns "" when missing/invalid. */
+/** ISO → the date-and-time picker's value (local timezone, minute precision); "" when missing/invalid. */
 function toLocalInput(iso: string | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -67,7 +68,7 @@ interface FormState {
   name: string;
   prompt: string;
   enabled: boolean;
-  /** datetime-local input value (converted to ISO on submit). */
+  /** The date-and-time picker's value, `YYYY-MM-DDTHH:mm` (converted to ISO on submit). */
   startAt: string;
   endAt: string;
   period: string;
@@ -423,23 +424,19 @@ function ScheduleFormDialog({
             placeholder={S.schedule.periodPlaceholder}
             autoComplete="off"
           />
-          <Input
+          <DateTimeField
             size="sm"
             label={S.schedule.startAt}
             required
-            type="datetime-local"
             error={requiredError("startAt")}
             value={form.startAt}
-            onChange={(e) => set({ startAt: e.target.value })}
-            className="font-mono"
+            onChange={(startAt) => set({ startAt })}
           />
-          <Input
+          <DateTimeField
             size="sm"
             label={S.schedule.endAt}
-            type="datetime-local"
             value={form.endAt}
-            onChange={(e) => set({ endAt: e.target.value })}
-            className="font-mono"
+            onChange={(endAt) => set({ endAt })}
           />
           {lockedSessionId !== undefined ? (
             // Pinned to one Session: the target is a fact of where the form was opened — shown, not chosen.

@@ -1,7 +1,7 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * last 24 hours, calendar 7/30/90 days, or a custom range from the range picker);
  * the range alone decides the time-series precision, so there is no second
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
@@ -31,7 +31,7 @@ import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/pengu
 import {
   Card,
   CardHeader,
-  Input,
+  DateRangeField,
   PageFrame,
   PageHeader,
   Select,
@@ -62,6 +62,10 @@ import {
   type RangePreset,
 } from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
+
+/** The calendar presets, which the custom range's picker also offers, and their labels. */
+const CALENDAR_PRESETS = ["7d", "30d", "90d"] as const;
+const PRESET_LABEL = { "7d": "range7d", "30d": "range30d", "90d": "range90d" } as const;
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -390,24 +394,24 @@ export function UsagePage() {
               </Select>
             </div>
             {preset === "custom" && (
-              /* A dash between the two inputs stands in for a "from/to" label */
-              <div className="flex items-center gap-1.5">
-                <Input
+              /* One range picker for the custom pair; its presets are the calendar ones above,
+                 and picking one switches the range back to it. */
+              <div className="w-56">
+                <DateRangeField
                   size="sm"
-                  type="date"
-                  aria-label={S.usage.from}
-                  value={from}
-                  onChange={(e) => applyRange("custom", e.target.value, to)}
-                />
-                <span className="shrink-0 text-gray-400" aria-hidden>
-                  –
-                </span>
-                <Input
-                  size="sm"
-                  type="date"
-                  aria-label={S.usage.to}
-                  value={to}
-                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                  aria-label={S.usage.customRange}
+                  required
+                  from={from}
+                  to={to}
+                  presets={CALENDAR_PRESETS.map((id) => ({
+                    id,
+                    label: S.usage[PRESET_LABEL[id]],
+                    ...presetRange(id, new Date()),
+                  }))}
+                  onChange={(range, picked) => {
+                    const calendar = CALENDAR_PRESETS.find((id) => id === picked);
+                    applyRange(calendar ?? "custom", range.from, range.to);
+                  }}
                 />
               </div>
             )}
