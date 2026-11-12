@@ -34,14 +34,11 @@ export type { ThinkingLevelName } from "@prismshadow/amsp/records";
  * round reporting completion) read this instead of re-deriving it from the stream —
  * failures emit no abort event, only their terminal request_end / compaction_end records.
  * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;
- * `compaction_failure` mid-Task, the context a compaction was closing could not be replaced
- * because no next context could be opened — also when it was closing on a provider's refusal
- * of a request, to hand off — the old context is kept and the pending input is carry-over (a
- * summary that cannot be had never produces it, nor does a refusal that did hand off; at a
- * Task boundary the run returns null and the next trigger compacts again); `max_turns` the
- * Task's turn cap — the engine closes the Task with an `abort` record coded `max_turns` and
- * holds the pending input as carry-over for the next run. The error pair mirrors the terminal
- * record's `error_code` / `error_message`.
+ * `compaction_failure` no next context could be opened mid-task (at a Task boundary the same
+ * failure is advisory and the run returns null); `max_turns` the Task's turn cap — the
+ * engine closes the Task with an `abort` record coded `max_turns` and holds the pending input
+ * as carry-over for the next run. The error pair mirrors the terminal record's `error_code` /
+ * `error_message`.
  */
 export interface RunCutoff {
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";

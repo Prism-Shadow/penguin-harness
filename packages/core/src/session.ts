@@ -152,11 +152,7 @@ export interface SessionConfig {
   readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
   /** Which tool calls a compaction's tool rounds may run (see ContextEngineDeps.compactionToolGate); absent, a compaction takes no round. */
   compactionToolGate?: CompactionToolGate;
-  /**
-   * The shell the Session's commands run in (the system prompt's `Shell:` value): it words the
-   * Trace-query hint of the compaction summary's trailer and of a model switch's Trace handoff.
-   * Absent: the hint names the POSIX and PowerShell forms side by side.
-   */
+  /** The system prompt's `Shell:` value, which words the Trace-query hints (see ContextEngineDeps.shell). */
   shell?: string;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
@@ -261,12 +257,12 @@ export interface ModelSwitchSupport {
   reassembleInitialContext(ref: ModelRef): Promise<Omit<SessionOpenedContext, "llm">>;
 }
 
-/** `Session.switchModel` options: the target's paired reference, the abort signal for the compaction request, and the approval callback for its tool rounds. */
+/** `Session.switchModel` options: the target's paired reference, and the abort signal for the compaction request. */
 export interface ModelSwitchOptions {
   provider: string;
   modelId: string;
   signal?: AbortSignal;
-  /** Approves the calls of the switch's compaction tool rounds, wrapped by the command policy as `run` wraps its own; absent denies them all. */
+  /** Approves the compaction's tool-round calls (see `compactionApprove`); absent denies them all. */
   approve?: ApproveFn;
 }
 
@@ -418,7 +414,6 @@ export class Session {
   private userPromptHooks: readonly UserPromptHook[] = [];
   private spawnSubagent: HookSubagentSpawner | undefined;
   private readonly commandPolicy?: CommandPolicySource;
-  /** See SessionConfig.shell. */
   private readonly shell: string | undefined;
   private metaWritten = false;
   /**
@@ -932,7 +927,6 @@ export class Session {
               await baseTrace.write(msg);
             },
             ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
-            // The compaction trailer names the file being closed by this path.
             ...(baseTrace.currentPath ? { currentPath: () => baseTrace.currentPath!() } : {}),
           }
         : baseTrace;
@@ -1028,10 +1022,9 @@ export class Session {
    *
    * When the summary cannot be had — the model the Session is on can no longer be reached
    * (no longer configured, or its client cannot be built: it is then sent nothing), or the
-   * compaction gets neither a summary nor a salvageable part of one — the switch hands the
-   * history over by Trace path instead: the next context opens on the target with the `/model`
-   * block naming this Session (see `switchHandoff`) where the summary would be. Only a stop, or
-   * a target whose context cannot be opened, keeps the model.
+   * compaction gets no summary, whole or salvaged — the switch hands the history over by
+   * Trace path instead: the next context opens on the target with the `/model` block naming
+   * this Session (see `switchHandoff`) where the summary would be.
    *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why
@@ -1127,10 +1120,9 @@ export class Session {
   }
 
   /**
-   * The hand-off note a compaction opens the next context with when no summary could be had,
-   * built from the Trace file being closed (the running file: the rotation comes after it). A
-   * file that cannot be read gives the note without its digest; a Session without a Trace sink
-   * has no file to name either.
+   * The hand-off note (see ContextEngineDeps.buildHandoff), built from the running Trace file —
+   * the one being closed, since the rotation comes after it; an unreadable file gives the note
+   * without its digest.
    */
   private async compactionHandoff(): Promise<AmspRecord> {
     const tracePath = this.trace?.currentPath?.();
@@ -1145,10 +1137,9 @@ export class Session {
   }
 
   /**
-   * The approval callback a compaction's tool rounds run with: the host's, wrapped by the
-   * command policy exactly as `run` wraps it (see `run`). The policy inspects command tools
-   * only, which no round can run, so it never fires there; the wrapping keeps one rule for
-   * every approval the Session forwards. No callback: the engine denies every call.
+   * The host's approval for a compaction's tool rounds, wrapped by the command policy as `run`
+   * wraps its own: the policy never fires there (no round runs a command tool), but every
+   * approval the Session forwards follows one rule.
    */
   private compactionApprove(approve: ApproveFn | undefined): ApproveFn | undefined {
     return approve ? withCommandPolicy(approve, this.commandPolicy) : undefined;
@@ -1159,9 +1150,8 @@ export class Session {
    * compaction flow but skips the threshold check (reason=manual). Only callable at Task
    * boundaries (between runs); streams out paired `compaction` events. The summarize digest
    * becomes the prefix of the next `run`'s input (merged with the next user Prompt). A no-op
-   * if compaction isn't configured. `approve` answers the calls of the compaction's tool rounds
-   * (hand-off files written to the scratchpad), wrapped by the command policy as `run` wraps
-   * its own; without it every such call is denied and the model goes on to its summary.
+   * if compaction isn't configured.
+   * `approve` answers its tool-round calls (see `compactionApprove`); absent, each is denied.
    * Docs: /docs/agent-loop § "Compaction".
    */
   async *compact(opts?: { signal?: AbortSignal; approve?: ApproveFn }): AsyncGenerator<AmspRecord> {

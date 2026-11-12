@@ -21,8 +21,8 @@
  *      internally** — it only classifies, and `context_engine` owns the retry policy:
  *      `retryable` rides the engine's reconnect ladder, `fatal` stops the run.
  *      The split is an allowlist of certainty: only failures a retry provably cannot fix are
- *      `fatal` — a provider 4xx rejection (408/429 excluded; `rejected` or `denied`, see
- *      `providerRejectionCode`), a credentials failure (`isAuthenticationError`), MMSP's
+ *      `fatal` — a provider 4xx rejection (408/429 excluded, see
+ *      `isFatalProviderRejection`), a credentials failure (`isAuthenticationError`), MMSP's
  *      fast-mode UnsupportedParameterError (`isFastModeUnsupportedError`), and input that
  *      fails to assemble into a request at all. Everything else — network/transport drops,
  *      timeouts, 429/5xx, MMSP's stream errors and truncated streams, and every
@@ -642,36 +642,32 @@ export function isRateLimitError(error: unknown): boolean {
 const REQUEST_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 413, 415, 422]);
 
 /**
- * The code of a definitive provider 4xx (408 and 429 excluded), probed down the cause chain:
- * `rejected` when the status refuses the request as sent, `denied` for any other; null when
- * no level carries such a status. The first level with a definitive 4xx decides. Only the
- * HTTP status counts — nothing is read out of the provider's wording. Deliberately an
- * allowlist of certainty (SDKs wrap the real response error, hence the chain): everything
- * this misses stays `retryable`, because retrying a genuinely fatal error costs one ladder
- * and ends with the same message, while refusing to retry a transient one destroys the turn.
- * Authentication is checked separately (`isAuthenticationError`) and first — a 401 is fatal
- * through that path with its more specific message handling.
+ * The class of the definitive provider 4xx `isFatalProviderRejection` detects, or null: the
+ * first level of the cause chain with one decides, by its status alone — never the wording.
  */
 export function providerRejectionCode(error: unknown): "rejected" | "denied" | null {
-  const seen = new Set<unknown>();
-  let cur: unknown = error;
-  while (cur != null && typeof cur === "object" && !seen.has(cur)) {
-    seen.add(cur);
-    const err = cur as { status?: unknown; statusCode?: unknown };
+  let code: "rejected" | "denied" | null = null;
+  anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown };
     const status = typeof err.status === "number" ? err.status : err.statusCode;
-    const transient = status === 408 || status === 429;
-    if (typeof status === "number" && status >= 400 && status <= 499 && !transient) {
-      return REQUEST_REFUSAL_STATUSES.has(status) ? "rejected" : "denied";
-    }
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return null;
+    if (typeof status !== "number" || status < 400 || status > 499) return false;
+    if (status === 408 || status === 429) return false;
+    code = REQUEST_REFUSAL_STATUSES.has(status) ? "rejected" : "denied";
+    return true;
+  });
+  return code;
 }
 
 /**
- * Determines whether an error is a definitive provider rejection — the `fatal` detector for
- * errored requests: any 4xx but 408 (request timeout) and 429 (rate limit), which are
- * transient by definition (see `providerRejectionCode`, which also names the class).
+ * Determines whether an error is a definitive provider rejection of the request itself —
+ * the `fatal` detector for errored requests. Only an explicit HTTP client-error status
+ * counts: 4xx minus 408 (request timeout) and 429 (rate limit), which are transient by
+ * definition. Deliberately an allowlist of certainty, probed down the `cause` chain
+ * (SDKs wrap the real response error): everything this misses stays `retryable`, because
+ * retrying a genuinely fatal error costs one ladder and ends with the same message, while
+ * refusing to retry a transient one destroys the turn. Authentication is checked
+ * separately (`isAuthenticationError`) and first — a 401 is fatal through that path with
+ * its more specific message handling.
  */
 export function isFatalProviderRejection(error: unknown): boolean {
   return providerRejectionCode(error) !== null;
@@ -881,12 +877,11 @@ export class GenerativeModel implements LLMInterface {
    *     `errorMessage` naming it — retried on the ladder like any other `retryable`;
    *   - **User interruption**: `finishInterrupted()` closes out, produces no usage →
    *     `aborted`;
-   *   - **Fatal failure** — a definitive provider 4xx rejection (`providerRejectionCode`:
-   *     `rejected` for 400/413/415/422, the request as sent; `denied` for any other, the
-   *     account or the model), a credentials failure (`isAuthenticationError`), a fast-mode
-   *     rejection (`isFastModeUnsupportedError`, thrown deterministically before any network
-   *     I/O when this config enables `fast_mode` on a model without a fast tier), or input
-   *     that never assembled into a request: `finishInterrupted()` closes out, produces no usage
+   *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
+   *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
+   *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
+   *     this config enables `fast_mode` on a model without a fast tier), or input that never
+   *     assembled into a request: `finishInterrupted()` closes out, produces no usage
    *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
    *     retrying — the identical request can never succeed, so the ladder would only delay
    *     the actionable message. The engine answers a `rejected` request itself where it can:
@@ -1061,12 +1056,10 @@ export class GenerativeModel implements LLMInterface {
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
         };
       } else if (rejection !== null) {
-        // A definitive provider 4xx (408/429 excluded): the identical request fails
-        // identically on every retry, so stop now with the provider's own message. The status
-        // alone names the class — `rejected` (400/413/415/422: this request as sent) or
-        // `denied` (any other: the account or the model) — and nothing here reads the
-        // message: what a `rejected` request carried is the engine's knowledge (an image, a
-        // context that has grown), and it decides from that what to send next.
+        // A definitive provider 4xx rejection (408/429 excluded): the identical request
+        // fails identically on every retry, so stop now with the provider's own message.
+        // What a `rejected` request carried (an image, a context that has grown) is the
+        // engine's knowledge, and it decides from that what to send next.
         outcome = { status: "fatal", errorCode: rejection, errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)

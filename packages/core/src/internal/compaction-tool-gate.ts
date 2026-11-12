@@ -1,19 +1,10 @@
 /**
- * What a compaction's tool rounds may run, as the Agent composes it for a Session's engine (see
- * ContextEngineDeps.compactionToolGate): the engine knows no tool by name, so the rule lives
- * here, beside the composition that hands it over.
- *
- * A round exists to write hand-off files for the next context, so it may read anything the
- * sandbox lets `read_file` read, and write only inside this Session's scratchpad — the
- * directory that lives as long as the Session, is copied by a fork, and is writable under
- * `workspace-write`. Commands and every other tool are refused: a compaction runs at the edge of
- * the context with no user watching the transcript, and nothing it does may change the Workspace.
- *
- * The check is on the path the model wrote, before the sandbox is consulted: `file_path` must be
- * absolute — a relative one resolves against the Workspace, which is exactly what is ruled out —
- * and must name a file under the scratchpad once `..` segments are resolved. The sandbox still
- * applies to whatever the gate lets through (a `read-only` Session cannot write the scratchpad,
- * and the write fails there with the sandbox's error).
+ * What a compaction's tool rounds may run (see ContextEngineDeps.compactionToolGate). A round
+ * writes hand-off files for the next context, so `read_file` reads what the sandbox allows and
+ * `write_file` / `edit_file` write only under this Session's scratchpad (it lives as long as the
+ * Session and a fork copies it); nothing may change the Workspace. The check is on the path the
+ * model wrote: absolute (a relative one resolves against the Workspace) and under the scratchpad
+ * once `..` is resolved. The sandbox still applies to whatever passes.
  */
 import path from "node:path";
 import type { AmspRecord, ToolCallPayload } from "@prismshadow/amsp/records";
@@ -56,10 +47,7 @@ function isInside(dir: string, target: string, platform: NodeJS.Platform): boole
   return relative !== ".." && !relative.startsWith(`..${p.sep}`);
 }
 
-/**
- * The gate for one Session: `read_file` is allowed, `write_file` / `edit_file` only on an
- * absolute `file_path` inside `scratchpadDir`, everything else refused.
- */
+/** The gate for one Session's scratchpad. */
 export function compactionToolGate(
   scratchpadDir: string,
   platform: NodeJS.Platform = process.platform,

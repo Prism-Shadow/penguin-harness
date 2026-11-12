@@ -108,25 +108,15 @@ export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
  * Docs: /docs/configuration § "Agent config".
  */
 export interface CompactionConfig {
-  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. The value in force is the smaller of this and the model's `context_window` less the compaction reserve (see `effectiveMaxContextLength`). */
+  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. */
   max_context_length?: number;
   /** Session cumulative turn threshold (counted in LLM Requests, across Tasks); defaults to -1, <=0 means no limit. */
   max_session_turns?: number;
   /** Compaction mode; defaults to summarize. */
   mode?: CompactionMode;
-  /**
-   * Tool rounds the harness allows a summarize compaction before its summary, writing hand-off
-   * files to this Session's scratchpad (`read_file`, and `write_file` / `edit_file` inside the
-   * scratchpad); the harness counts them and tells the model how many it has used. A ceiling,
-   * not a plan: the Prompt aims at about three. Defaults to
-   * {@link DEFAULT_COMPACTION_MAX_ROUNDS}; <= 0: every tool call is refused.
-   */
+  /** Tool rounds the harness allows a summarize compaction before its summary — a ceiling, not a plan; defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <=0 refuses every tool call. */
   max_rounds?: number;
-  /**
-   * Prompt template for summarize compaction; defaults to the built-in value (editable config,
-   * not hardcoded). {@link COMPACTION_SCRATCHPAD_PLACEHOLDER} is substituted when the settings
-   * are read.
-   */
+  /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
 }
 
@@ -633,21 +623,13 @@ export function insertSchedulesPlaceholder(template: string): string {
 }
 
 /**
- * Built-in default compaction Prompt (summarize mode): tells the model the transcript will no
- * longer be visible in the next context and asks for the summary in fixed sections — when there
- * is detail worth more than a paragraph, saved alongside it to hand-off files in this Session's
- * scratchpad, in the same reply when it can (`read_file`, and `write_file` / `edit_file` inside
- * the scratchpad, are the only tools that work while compacting), each hand-off file under a new
- * name so none has to be read before it is written. It aims at about three tool rounds in words
- * and names no limit of its own (the harness's round lines carry the numbers), and says the
- * harness lists, under the summary, the calls it ran and how each ended — so the summary names
- * hand-off files by absolute path rather than repeating them, and consent is not carried across
- * the boundary. The format is shown as a concrete example rather than described in prose — some
- * models treat the tags as a "title" and write the body after the closing tag (issue #170);
- * extraction salvages that shape, but generating it right beats repairing it.
- * `{{SCRATCHPAD_DIR}}` is substituted where the settings are read; the prompt is the appended
- * user turn of the compaction request, outside the cached prefix. Persisted per-agent in
- * system_config.yaml — existing agents keep their stored prompt until a kernel update.
+ * Built-in default compaction Prompt (summarize mode): a summary in fixed sections, with detail
+ * worth more than a paragraph saved to hand-off files in the Session's scratchpad. It names no
+ * round limit of its own (the harness's round lines say them). The format is shown as a concrete
+ * example rather than described in prose — some models treat the tags as a "title" and
+ * write the body after the closing tag (issue #170); extraction salvages that shape, but
+ * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
+ * existing agents keep their stored prompt.
  */
 export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
 
