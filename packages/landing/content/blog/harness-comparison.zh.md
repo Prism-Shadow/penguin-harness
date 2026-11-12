@@ -195,6 +195,6 @@ Sec D 的 CASE-008 考察在有约束的情况下解决问题的能力。题目�
 
 <figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-case-008-flow-zh.svg" width="1000" height="172" alt="图 11 CASE-008 三次测试的执行流程" /><figcaption>图 11 CASE-008 三次测试的执行流程</figcaption></figure>
 
-如图 11 所示，三次测试都用了贪心算法，在最后一项大表测试中卡在了同一个地方：为了防止反推，顺带遮住的普通数字太多，导致总成本超出了上限。此后模型把剩余三十多分钟全部花在原有贪心代码的参数微调上，始终没有更换求解算法，直到超时也未能将总成本降到上限以内。
+如图 11 所示，三次测试都用了贪心算法，在最后一项大表测试中卡在了同一个地方：为了防止反推，顺带遮住的普通数字太多，导致遮挡成本超出了上限。此后模型把剩余三十多分钟全部花在原有贪心代码的参数微调上，始终没有更换求解算法，直到超时也未能将遮挡成本降到上限以内。
 
 从这一案例可以看出，如果在 Prompt 中仅要求模型在自测未达标时继续修改，模型很容易围绕单一算法反复调整参数。因此在编写 Prompt 时应加入进度与迭代约束，提示模型在连续多次调参仍无明显改善时，及时放弃当前局部调参并改用其他求解算法，避免在单一路径上耗尽运行时间与 Token 预算。

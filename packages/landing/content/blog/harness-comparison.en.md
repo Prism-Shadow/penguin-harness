@@ -185,7 +185,7 @@ This case shows that when a prompt merely asks the model to write tests after ma
 
 ### 6.2 CASE-008 in Sec D
 
-CASE-008 in Sec D tests constrained problem solving. The agent has 40 minutes to write a program that masks sensitive numbers in a report. Since the report includes row and column totals, hiding only the sensitive numbers still lets others recover their values through addition and subtraction. The program must therefore mask some additional non-sensitive numbers to prevent inference, while masking as few as possible and keeping the total masking cost within a specified limit. Only Pi passes, in run 3; DSH, PenguinHarness and Codex score 0 in all three runs. DSH's records are shown below:
+CASE-008 in Sec D tests constrained problem solving. The agent has 40 minutes to write a program that masks sensitive numbers in a report. Since the report includes row and column totals, hiding only the sensitive numbers still lets others recover their values through addition and subtraction. The program must therefore mask some additional non-sensitive numbers to prevent inference, while masking as few as possible and keeping the total suppression cost within a specified limit. Only Pi passes, in run 3; DSH, PenguinHarness and Codex score 0 in all three runs. DSH's records are shown below:
 
 | Run | Execution time | Input tokens | Output tokens | API cost | Score |
 | --- | --- | --- | --- | --- | --- |
@@ -195,6 +195,6 @@ CASE-008 in Sec D tests constrained problem solving. The agent has 40 minutes to
 
 <figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-case-008-flow-en.svg" width="1000" height="172" alt="Figure 11: Execution flow across three runs on CASE-008" /><figcaption>Figure 11: Execution flow across three runs on CASE-008</figcaption></figure>
 
-Figure 11 shows that all three runs use a greedy algorithm and get stuck at the same point in the final large-table test: too many additional non-sensitive numbers are masked to prevent inference, pushing the total cost above the limit. The model then spends all of the remaining thirty-plus minutes tuning parameters in the same greedy implementation. It never switches algorithms and cannot bring the total cost within the limit before timing out.
+Figure 11 shows that all three runs use a greedy algorithm and get stuck at the same point in the final large-table test: too many additional non-sensitive numbers are masked to prevent inference, pushing the suppression cost above the limit. The model then spends all of the remaining thirty-plus minutes tuning parameters in the same greedy implementation. It never switches algorithms and cannot bring the suppression cost within the limit before timing out.
 
 This case shows that if a prompt only asks the model to keep revising when self-tests fail, it can repeatedly tune a single algorithm. Prompts should therefore include progress and iteration constraints, asking the model to stop local parameter tuning and switch algorithms when repeated adjustments produce no clear improvement. This avoids exhausting the time and token budgets on a single approach.
