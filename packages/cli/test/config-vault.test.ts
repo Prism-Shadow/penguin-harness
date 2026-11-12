@@ -33,7 +33,7 @@ afterEach(async () => {
 async function runVault(args: string[]): Promise<{ out: string; err: string; code: number }> {
   const program = new Command();
   program.exitOverride();
-  registerConfigCommand(program, getMessages("en"));
+  registerConfigCommand(program.command("config"), getMessages("en"));
   const out: string[] = [];
   const err: string[] = [];
   const outSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {

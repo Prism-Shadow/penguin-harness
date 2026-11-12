@@ -786,6 +786,26 @@ penguin config lang en
 
 Sets the CLI's interface language (`en` or `zh`) by writing `PENGUIN_LANG` into your shell's startup file. In an interactive terminal the command then offers to open a new shell so the setting takes effect; otherwise it prints how to apply it. On Windows the command is refused, because there is no POSIX shell startup file to write.
 
+## penguin exec
+
+Runs a plugin's command on the server. A plugin contributes commands the way it contributes anything else: a class whose `contributes["PluginCliCommandsProvider.commands"]` entry is the command's data half — a `key` (the command path, `a.b.c` answering `penguin a b c ARGS`) and a one-line summary in each language — and whose `@Bind(entry.id)` field is its code half. The commands live in the server's tree, so the CLI lists them from the server (`GET /api/cli/commands`) and asks the server to run one (`POST /api/cli/commands/run`); running a plugin's code is an admin operation, which the CLI's local API token carries, as for `penguin plugin install`.
+
+```bash
+penguin exec <id> [args...]
+penguin exec <package>:<id> [args...]
+```
+
+The first word that names none of the CLI's own commands is looked up among the plugins before the CLI reports an unknown command: the server's listing of plugin commands is matched against it, one package answering runs, and the run's output and exit code are the caller's own. A server that is not running is left alone — the lookup asks only a server that already runs, and one that answers nothing leaves the command line to the CLI's own parse.
+
+Two or more plugins answering the same words is ambiguous: the report lists one copyable `penguin exec <package>:<id> …` line per candidate (the original argv shell-quoted) and exits with code 2, nothing runs.
+
+`penguin exec <id>` names the command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — resolved exactly against the listing: no prefix, suffix or short-form matching. Every option after the id, `--help` included, belongs to the plugin command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. A server that is not running is started, as for any command that needs one.
+
+```bash
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
+```
+
 ## penguin server / penguin web
 
 Two entry points into the same service process. `server` runs it headless. `web` also waits until the service is ready, prints its URL and opens the browser.

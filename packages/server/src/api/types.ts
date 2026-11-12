@@ -5548,8 +5548,9 @@ export interface WorkbenchEnabledRequest {
  * One published version of a plugin — the index entry format every plugin registry
  * speaks (modeled on the typst/packages `index.json` schema: a flat array of
  * per-version entries; a plugin published at several versions appears once per
- * version). Installation is out of scope here: an entry's `name` is the package
- * specifier a Project's plugin list names.
+ * version). Listing and installing are two faces: an entry's `name` is the package
+ * specifier a Project's plugin list names, and an entry that pins a release channel
+ * can also be installed from that channel (plugin/install.ts).
  */
 export interface PluginIndexEntry {
   /** Package specifier — the string a Project's plugin list names. */
@@ -5585,6 +5586,27 @@ export interface PluginIndexEntry {
   categories?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
+  /**
+   * The hash this entry's release asset is pinned by, npm's `integrity` shape:
+   * `sha512-<base64>` of the tarball its channel serves. Present when the publisher
+   * ships the version through a channel; an entry without it lists but is not
+   * installable from a channel — there is nothing to verify the fetched bytes against.
+   */
+  integrity?: string;
+  /** Where this version's release asset can be fetched from. */
+  channels?: PluginIndexChannel[];
+}
+
+/** One place a version's release asset is served from. */
+export interface PluginIndexChannel {
+  /**
+   * The kind of source: `github` names a GitHub release asset tarball, the kind the
+   * install face fetches and verifies. Other kinds may join; the install face ignores
+   * the ones it does not fetch.
+   */
+  kind: string;
+  /** The https URL the asset is served at. */
+  url: string;
 }
 
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
@@ -7636,6 +7658,40 @@ export interface ContributionsResponse {
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
+export interface PluginCliCommandInfo {
+  /** The plugin package that contributes it — what `penguin exec` names. */
+  package: string;
+  /** `a.b.c`: the argv segments it answers (`penguin a b c ARGS`). */
+  key: string;
+  /** Its one-line summary, per language. */
+  summary: { en: string; zh: string };
+}
+
+/** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
+export interface PluginCliCommandsResponse {
+  commands: PluginCliCommandInfo[];
+}
+
+/** POST /api/cli/commands/run: runs argv against one plugin's commands on the server. */
+export interface PluginCliCommandRunRequest {
+  /** The plugin package, as the listing names it. */
+  package: string;
+  /** The arguments, as they would follow the program name. */
+  args: string[];
+  /** The language the caller resolved, for the summaries and the command's own text. */
+  language: "en" | "zh";
+  /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
+  prog: string;
+}
+
+/** What one run printed, and its exit code. */
+export interface PluginCliCommandRunResponse {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
 }
 
 /**

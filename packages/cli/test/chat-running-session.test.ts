@@ -86,7 +86,7 @@ function startChat(argv: string[], tty = false): Chat {
   });
   const program = new Command();
   program.exitOverride();
-  registerChatCommand(program, t);
+  registerChatCommand(program.command("chat"), t);
   const done = program.parseAsync(["node", "penguin", "chat", ...argv]).finally(() => {
     Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
   });

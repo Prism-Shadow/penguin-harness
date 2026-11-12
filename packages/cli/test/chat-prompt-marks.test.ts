@@ -78,7 +78,7 @@ async function runChat(lines: string[], ends: Ends): Promise<string> {
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, getMessages("en"));
+    registerChatCommand(program.command("chat"), getMessages("en"));
     const done = program.parseAsync(["node", "penguin", "chat"]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([readyFor(i + 1), done]);
