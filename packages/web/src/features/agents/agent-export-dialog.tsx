@@ -4,7 +4,15 @@
  * only while open, so every opening starts at the defaults; a refused download is a toast.
  */
 import { useState } from "react";
-import { Button, Checkbox, FieldLegend, Input, Modal, Segmented } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Checkbox,
+  DateRangeField,
+  FieldLegend,
+  Input,
+  Modal,
+  Segmented,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -133,18 +141,14 @@ export function AgentExportDialog(props: AgentExportDialogProps) {
             </div>
           )}
           {mode === "range" && (
-            <div className="flex items-center gap-1.5">
-              {(["from", "to"] as const).map((end) => (
-                <Input
-                  key={end}
-                  size="sm"
-                  type="date"
-                  aria-label={end === "from" ? S.agent.exportTracesFrom : S.agent.exportTracesTo}
-                  value={range[end]}
-                  invalid={traces === null && range.from !== "" && range.to !== ""}
-                  onChange={(e) => setRange((r) => ({ ...r, [end]: e.target.value }))}
-                />
-              ))}
+            <div className="w-64">
+              <DateRangeField
+                size="sm"
+                aria-label={S.agent.exportTracesRange}
+                from={range.from}
+                to={range.to}
+                onChange={setRange}
+              />
             </div>
           )}
         </fieldset>
