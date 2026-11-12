@@ -8,15 +8,15 @@
  * plugin's name, no description as the "no description" placeholder (in muted ink in the dialog),
  * and a homepage or repository a browser cannot safely open is no link at all.
  *
- * Status follows the house rule for status chrome: the glyph carries the tone, the word beside
- * it stays muted ink (never red text), and the hover sentence says what the status means for
- * this plugin — the failure reason, the machines it runs on, how many Agents are behind.
+ * Status follows the house rule for status chrome, drawn by the UI package's `StatusMark`: the
+ * glyph carries the tone, the word beside it stays muted ink (never red text), and the hover
+ * sentence says what the status means for this plugin — the failure reason, the machines it runs
+ * on, how many Agents are behind.
  */
-import { Badge, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Badge, ICONS, StatusMark, type ToneName } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { toneInk, type Tone } from "../../lib/tone";
 import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
 import type { LibraryUsage, PluginStatus } from "./plugin-status";
@@ -32,34 +32,28 @@ const STATUS_GLYPH: Record<PluginStatus, string> = {
   available: ICONS.download,
 };
 
-/** What each status means, as a tone: settled well, unfinished, failed, or receding. */
-const STATUS_TONE: Record<PluginStatus, Tone> = {
+/** What each status means, as a tone: settled well, unfinished, failed — or none, receding. */
+const STATUS_TONE: Record<PluginStatus, ToneName | undefined> = {
   installed: "success",
   update: "attention",
   restart: "attention",
   failed: "danger",
   incompatible: "attention",
-  "not-here": "muted",
-  available: "muted",
+  "not-here": undefined,
+  available: undefined,
 };
 
-/** The status glyph in its tone and the status word in muted ink; `hint` is the hover sentence. */
-export function StatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+/** A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover. */
+export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+  const tone = STATUS_TONE[status];
   return (
-    <span
-      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
+    <StatusMark
+      glyph={STATUS_GLYPH[status]}
+      {...(tone !== undefined ? { tone } : {})}
+      label={S.plugins.status[status]}
+      hint={hint}
       data-testid="plugin-status"
-      data-tooltip={hint}
-      data-tooltip-content="text"
-      data-tooltip-extra
-    >
-      <GlyphIcon
-        d={STATUS_GLYPH[status]}
-        size={ICON_SIZE.inlineGlyph}
-        className={toneInk[STATUS_TONE[status]]}
-      />
-      <span>{S.plugins.status[status]}</span>
-    </span>
+    />
   );
 }
 

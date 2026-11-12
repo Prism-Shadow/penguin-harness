@@ -76,7 +76,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
   "features/models/group-balance.tsx": { 24: [2, "W10"] },
   "features/models/preset-sync.tsx": { 24: [1, "W10"] },
-  "features/plugins/plugin-detail.tsx": { 24: [2, "W10"] },
+  "features/plugins/plugin-detail.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
   "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
   "lib/strings-en.ts": { 24: [34, "W10"] },

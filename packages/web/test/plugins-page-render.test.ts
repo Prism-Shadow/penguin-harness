@@ -82,7 +82,7 @@ import {
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
-import { rowTitle, webLink } from "../src/features/plugins/plugin-marks";
+import { PluginStatusMark, rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
 import { IncompatibleNotice, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
@@ -381,8 +381,7 @@ describe("the grouping select", () => {
 });
 
 const HEAD: PluginDetailHead = {
-  status: "installed",
-  statusHint: "",
+  status: createElement(PluginStatusMark, { status: "installed", hint: "" }),
   categoryTitle: "Agent Sandbox",
   usedBy: null,
 };

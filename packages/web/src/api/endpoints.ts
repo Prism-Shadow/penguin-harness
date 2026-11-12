@@ -1909,13 +1909,23 @@ const installedOn = <T extends { skills: SkillMetadataItem[]; hooks: HookItem[] 
   machineId: string | null,
 ): T => ({ ...r, skills: iconsOn(r.skills, machineId), hooks: iconsOn(r.hooks, machineId) });
 
-/** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
-export const getPluginFiles = (plugin: string) =>
-  apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
+/**
+ * Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the
+ * plugin detail view's file browser; with `machineId`, from THAT machine's library.
+ */
+export const getPluginFiles = (plugin: string, machineId: string | null = null) =>
+  apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`, {
+    server: machineId,
+  });
 
-/** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
-export const getLibraryPluginReadme = (plugin: string) =>
-  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
+/**
+ * A library plugin's README.md, from its package root, for the detail dialog; 404 when the
+ * package ships none. With `machineId`, from THAT machine's library.
+ */
+export const getLibraryPluginReadme = (plugin: string, machineId: string | null = null) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`, {
+    server: machineId,
+  });
 
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed

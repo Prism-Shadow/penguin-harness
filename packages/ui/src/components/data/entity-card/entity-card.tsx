@@ -10,16 +10,17 @@
  * that control's alone, since the controls sit outside the body's button. The card itself is no
  * control: a control wrapped around other controls hides them from assistive technology.
  *
- * The text gives way and the controls never do: title and description truncate to one line each,
- * a cut-off line showing whole on hover (the description through the app's tooltip layer, which
- * reads the line's own text; the title shows `titleHint`, the id behind a display name, when the
- * caller gives one). The card is a size container, so an `EntityCardAction` shows its word once
- * the card is wide enough and only its glyph before that, and every control on the card is one
- * height whether it shows its word or not.
+ * The text gives way and the lead and the controls never do: title and description truncate to one
+ * line each, a cut-off line showing whole on hover (the description through the app's tooltip
+ * layer, which reads the line's own text; the title shows `titleHint`, the id behind a display
+ * name, when the caller gives one). The card is a size container, so an `EntityCardAction` shows
+ * its word once the card is wide enough and only its glyph before that, and every control on the
+ * card is one height whether it shows its word or not.
  *
- * `EntityCardGrid` lays cards two to a row once there is room, one on a phone. Inside a grouped
- * surface (a collapsible section) a card takes `framed={false}`, as one painted card per region
- * asks.
+ * `EntityCardGrid` lays cards two to a row once its own column has room for two, one before that —
+ * on a phone, and in a narrow column on a wide screen alike: it measures the column it stands in
+ * (a container query), never the viewport. Inside a grouped surface (a collapsible section) a card
+ * takes `framed={false}`, as one painted card per region asks.
  *
  * Props only: every word is the caller's. Rest props land on the card's own element (a
  * `data-plugin` the page's tests read).
@@ -92,7 +93,7 @@ export function EntityCard({
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
         {/* The lead centred across the title and the description, one line each. */}
         <div className={`flex items-center ${ICON_GAP.card}`}>
-          {lead}
+          <span className="flex shrink-0">{lead}</span>
           <div className="min-w-0 flex-1">
             {/* The display name in the UI font, as a title; the id behind it on hover, as code. */}
             <span
@@ -134,7 +135,10 @@ export function EntityCard({
   );
 }
 
-/** Cards in a section: two to a row once there is room, one on a phone. */
+/**
+ * Cards in a section: two to a row once the column the grid stands in has room for two (36 rem,
+ * about two cards of 18 rem), one before that. The outer box is the container the grid measures.
+ */
 export function EntityCardGrid({
   children,
   className = "",
@@ -142,7 +146,11 @@ export function EntityCardGrid({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={`grid grid-cols-1 gap-2 p-2 sm:grid-cols-2 ${className}`}>{children}</div>;
+  return (
+    <div className="@container">
+      <div className={`grid grid-cols-1 gap-2 p-2 @xl:grid-cols-2 ${className}`}>{children}</div>
+    </div>
+  );
 }
 
 export interface EntityCardActionProps extends Omit<
