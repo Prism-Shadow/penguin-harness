@@ -4429,17 +4429,19 @@ Benchmark：
                   ? "凭据被拒绝"
                   : kind === "rejected"
                     ? "模型服务拒绝了请求"
-                    : kind === "image_rejected"
-                      ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
-                      : kind === "output_truncated"
-                        ? "模型输出达到输出上限，被截断"
-                        : kind === "unsupported"
-                          ? "当前模型不支持该请求"
-                          : kind === "invalid_input"
-                            ? "输入无法组成请求"
-                            : kind === "failed"
-                              ? "模型服务返回错误"
-                              : null,
+                    : kind === "denied"
+                      ? "服务商不为该账号或模型提供服务（余额、权限或模型不存在）"
+                      : kind === "image_rejected"
+                        ? "模型服务拒绝了本轮输入中的图片，已换成文字说明"
+                        : kind === "output_truncated"
+                          ? "模型输出达到输出上限，被截断"
+                          : kind === "unsupported"
+                            ? "当前模型不支持该请求"
+                            : kind === "invalid_input"
+                              ? "输入无法组成请求"
+                              : kind === "failed"
+                                ? "模型服务返回错误"
+                                : null,
       /** A retry whose cause has no words (an unknown code). */
       unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
@@ -4693,6 +4695,9 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
+    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was forced by the provider refusing a request, which means its window is set larger than the real one or the threshold is too close to it. */
+    contextRefusedHandoff:
+      "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -4792,13 +4797,16 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
-    /** The settled row's status-mark tooltip and accessible name when the compaction completed with a summary cut off before its end: the title stays 压缩完毕, only the mark says it. */
-    compactionSalvagedHint: "摘要没有写完，已保留写出的部分，并附上此前 Trace 的查询方式",
-    /** The same when no summary could be had and the next context opens with the harness's Trace hand-off note; carries the end's error message when there is one. */
-    compactionHandoffHint: (errorMessage?: string): string =>
+    /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
+    compactionDegradedHint: (errorMessage?: string): string =>
       errorMessage !== undefined
-        ? `未能生成摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
-        : "未能生成摘要，新上下文改以 Trace 交接说明开头",
+        ? `未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头：${errorMessage}`
+        : "未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头",
+    /** The same when too little room was left for the compaction (the provider refused a request, or the summary was cut off at the output limit every time): what to correct, then the provider's own words when it refused. */
+    compactionRoomHint: (providerMessage?: string): string =>
+      `留给压缩的空间不足，新上下文改以已写出的部分摘要或 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
+        providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
+      }`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";

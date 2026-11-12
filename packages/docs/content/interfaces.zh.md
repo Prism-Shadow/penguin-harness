@@ -84,7 +84,8 @@ interface RunOptions {
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
                             // compaction_failure: mid-Task, no next context could be opened
-                            // (the old context is kept, the pending input is carry-over)
+                            // (the old context is kept, the pending input is carry-over),
+                            // a refused request's hand-off included
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -92,7 +93,7 @@ interface RunCutoff {       // how a run was cut off early
 
 CLI 把终端 I/O 接到这条边界上，Server 把 HTTP 请求和 SSE 通道接上去。任何以编程方式接入的调用方都成为新的 Human 实现，无需注册任何东西。
 
-返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。压缩完成但没有完整摘要不算切断：它的 `compaction_end` 是带错误字段的 `completed`，运行在新上下文中继续。
+返回值说明这次运行是否真正跑完。失败不会发出 abort 事件，只会留下终态的 `request_end` 或 `compaction_end` 记录。所以，不能把被切断的运行当作已完成的代码，应当读取 `RunCutoff`，而不是从流里推断。压缩完成但没有完整摘要不算切断：它的 `compaction_end` 是带错误字段的 `completed`，运行在新上下文中继续。请求被拒后以交接应对的情况也不算：它的 `request_end` 是 `retryable`，这一轮在新上下文中重发（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。
 
 ## LLMInterface
 
@@ -130,7 +131,7 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | 正常完成（`token_usage` 已经发出） | 继续执行 |
 | `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、格式错误的响应，以及一切无法归类的错误。完整送达却停在输出上限的响应也属此类，错误码为 `output_truncated`：实现把这一轮移出有状态的历史，`token_usage` 照常产出（已计费） | 在本次运行内按退避阶梯重连 |
-| `fatal` | 重试救不回来的失败：供应商 4xx 拒绝（408 和 429 除外）、凭证被拒，或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
+| `fatal` | 重试救不回来的失败：供应商确定性的 4xx，拒绝按原样发出的请求时为 `rejected`（400、413、415、422），其余为 `denied`（402、403、404 等；408 和 429 照常重试）；凭证被拒（`auth`，包括 401）；或发起任何网络 I/O 之前就能确定的客户端拒绝（例如给没有快速档位的模型开启快速模式） | 停止运行并呈现 `errorMessage` |
 | `aborted` | 用户中断 | 停止，把控制权交还用户 |
 
 status 只回答一个问题：这个请求要不要重试？errorCode 则说明失败属于哪一类。无法归类的错误有意归为 `retryable`：fatal 的判定采用白名单，网关即使用自己的措辞描述瞬时故障，也照样保留重试。

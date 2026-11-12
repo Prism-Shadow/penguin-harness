@@ -10,14 +10,19 @@
  *    own (the Session sat idle), the second one's fails and is steered into that running Task;
  * 4. a run the weekly schedule fired into the Session (`[scheduled_task]`), whose first request
  *    reconnects once, and the compaction that wraps it up, whose summary is cut off at the
- *    output limit every time it is asked for — the longest is kept (a salvaged summary);
+ *    output limit every time it is asked for (a completion without a full summary, for want
+ *    of room);
  * 5. a reply the person interrupts, a `/compact` the provider never answers — the next context
  *    opens with the harness's Trace hand-off note instead — then a request the provider refuses
- *    outright;
+ *    outright, for the account's balance (`denied`);
  * 6. the model switch that follows: its summarize compaction (thinking and result) and the
  *    divider the next context's `session_meta` draws;
  * 7. a goal run on the new model: the round-1 protocol behind the person's objective, a steering
- *    message inside that round, the stop hook's injected round 2, and the goal banner;
+ *    message inside that round, the stop hook's injected round 2 — whose request the provider
+ *    refuses as too long for a window smaller than the configured one, so the context is handed
+ *    off with no compaction request and the turn sent again (the retry line, the compaction
+ *    row, and the composer's notice asking for the window or the threshold to be corrected) —
+ *    and the goal banner;
  * 8. every Task's stats line, and in the Trace every Task's `task_begin` / `task_end` pair (none
  *    around the model switch, which is no Task).
  *
@@ -40,6 +45,9 @@ import {
   markerBlock,
   MARKER_TAGS,
   summaryInTags,
+  transcribeRequestError,
+  transcribeToolCall,
+  transcribeToolCallOutput,
   transcribeUserInput,
   userSteeringText,
 } from "@prismshadow/amsp/markers";
@@ -124,6 +132,8 @@ const BROKEN = {
 const UPSTREAM_503 = "503 Service Unavailable: upstream connect error";
 /** What the LLM reports for a reply stopped at its output limit. */
 const OUTPUT_LIMIT = "the response stopped at the output limit (finish_reason: length)";
+/** The new model's gateway refusing a context its configured million-token window would hold. */
+const TOO_LONG = "400 Bad Request: prompt is too long: 16502 tokens > 16384 maximum";
 
 /** The Session's n-th Trace file, in the date folder of the day it opened. */
 function traceFile(sessionId: string, openedAt: number, n: number): string {
@@ -304,9 +314,27 @@ The weekly check's first request hit a 503 and went through on its retry.
         (text) => `  ${transcribeUserInput(text)}`,
       ),
       turnLines: [],
+      refusalLines: [],
       callLines: [],
     },
     { tracePath: traceFile(id, b(600), 2) },
+  );
+  const steer = L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.");
+  const recheck = checkLinks(L("重新检查链接", "Re-check the links"));
+  // The goal's hand-off note: the file the refusal closed opened with the switch's summary,
+  // held the objective and the steering message, and last completed round 2's re-check; the
+  // provider's refusal of the request after it is quoted, so the model does not rebuild it.
+  const refusalNote = buildContextHandoffText(
+    {
+      userLines: [summary, objective, steer].map((text) => `  ${transcribeUserInput(text)}`),
+      turnLines: [
+        transcribeToolCall("exec_command", "call_round2_links", JSON.stringify(recheck)),
+        transcribeToolCallOutput("call_round2_links", "completed", "211 links checked, 0 broken."),
+      ],
+      refusalLines: [transcribeRequestError("rejected", TOO_LONG)],
+      callLines: [],
+    },
+    { tracePath: traceFile(id, b(741.4), 4) },
   );
 
   const history: AmspRecord[] = [
@@ -600,7 +628,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
       error_message: UPSTREAM_503,
     }),
 
-    // ---- Task: the provider refuses the request ----------------------------------------------
+    // ---- Task: the provider will not serve the account -----------------------------------------
     meta(b(690), id, ref, IDS.workspace),
     userText(b(690), handoffNote),
     taskBegin(b(690)),
@@ -615,7 +643,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     event(b(692.8), {
       type: "request_end",
       status: "fatal",
-      error_code: "rejected",
+      error_code: "denied",
       error_message: "402 Insufficient Balance",
     }),
     taskEnd(b(692.8)),
@@ -674,17 +702,9 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     requestEnd(b(789.4)),
     toolOutput(b(789.6), "call_fix_events", "Edited release-0.2.13-draft.md (+1 -1)."),
     toolOutput(b(789.7), "call_fix_matchers", "Edited release-0.2.13-draft.md (+1 -1)."),
-    userText(
-      b(789.8),
-      userSteeringText(L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.")),
-    ),
+    userText(b(789.8), userSteeringText(steer)),
     requestBegin(b(790)),
-    toolCall(
-      b(793),
-      "call_round1_links",
-      "exec_command",
-      checkLinks(L("重新检查链接", "Re-check the links")),
-    ),
+    toolCall(b(793), "call_round1_links", "exec_command", recheck),
     requestEnd(b(793.1)),
     toolOutput(b(821), "call_round1_links", `${BROKEN.sdk}\n211 links checked, 1 broken.`),
     requestBegin(b(821.3)),
@@ -719,21 +739,44 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     requestEnd(b(836.1)),
     toolOutput(b(836.4), "call_fix_sdk", "Edited release-0.2.13-draft.md (+1 -1)."),
     requestBegin(b(836.7)),
-    toolCall(
-      b(839),
-      "call_round2_links",
-      "exec_command",
-      checkLinks(L("重新检查链接", "Re-check the links")),
-    ),
+    toolCall(b(839), "call_round2_links", "exec_command", recheck),
     requestEnd(b(839.1)),
     toolOutput(b(866), "call_round2_links", "211 links checked, 0 broken."),
+
+    // ---- The gateway refuses the next request: a hand-off with no request, then the resend ----
     requestBegin(b(866.3)),
+    event(b(867.4), {
+      type: "request_end",
+      status: "retryable",
+      error_code: "rejected",
+      error_message: TOO_LONG,
+      attempt: 1,
+      retry_in_ms: 0,
+    }),
+    event(b(867.5), {
+      type: "compaction_begin",
+      reason: "context",
+      mode: "summarize",
+      context: 16_100,
+      turns: 9,
+    }),
+    event(b(867.9), {
+      type: "compaction_end",
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      error_code: "rejected",
+      error_message: TOO_LONG,
+    }),
+    meta(b(868), id, SWITCHED_MODEL, IDS.workspace),
+    userText(b(868), refusalNote),
+    requestBegin(b(868.2)),
     toolCall(b(869), "call_goal_done", "edit_file", {
       path: GOAL_FILE,
       old_string: '"status": "active"',
       new_string: '"status": "complete"',
     }),
-    requestEnd(b(869.1)),
+    event(b(869.1), { type: "request_end", status: "completed", attempt: 2 }),
     toolOutput(b(869.4), "call_goal_done", "Edited GOAL.json (+1 -1)."),
     requestBegin(b(869.7)),
     assistantText(

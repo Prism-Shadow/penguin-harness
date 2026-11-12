@@ -16,9 +16,15 @@
  *   failed card), the summary draft starts over at each of its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
- * - A completed end carrying the error pair keeps the longest cut-off summary of the span as
- *   the result (salvaged) or drops the result (hand-off), live and rebuilt alike, and clears
- *   the context figure as any completion does; a fatal end keeps the context.
+ * - A completed end carrying the error pair keeps no result, whatever a request was cut off
+ *   writing, but keeps its thinking, its work and the error, live and rebuilt alike, and clears
+ *   the context figure as any completion does; a fatal end keeps the context and settles a
+ *   retry line still waiting.
+ * - A request the provider refused, answered by a hand-off, is a retry line that resolves at the
+ *   next context's first request and a degraded compaction row with no request inside it: no
+ *   error item, the Task stays open, and the row is the Session's refusal hand-off until a later
+ *   compaction ends otherwise — live and rebuilt alike. An old Trace's abandoned compaction
+ *   (`retryable`, `failed`) is no such row.
  * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
  *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
@@ -107,6 +113,7 @@ import {
   type UserSteeringItem,
   type UserTextItem,
 } from "../src/lib/amsp/stream-model";
+import { refusalHandoffOccurrence } from "../src/lib/amsp/compaction-summary";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
@@ -815,7 +822,6 @@ describe("approvals and events", () => {
     // result is the last request's text, timed from its first summary token: an end without
     // the error pair is a summary, whatever an earlier attempt left.
     expect(banner).toMatchObject({
-      outcome: "summary",
       thinkingText: "first pass second pass",
       thinkingStartedAtMs: Date.parse(t(2)),
       thinkingDurationMs: 7000,
@@ -984,7 +990,7 @@ describe("approvals and events", () => {
         },
       ]);
       expect(findToolCard(m, [], "r1")).toBe(banner.work![0]);
-      expect(banner).toMatchObject({ outcome: "summary", summaryText: "[summary]plain[/summary]" });
+      expect(banner.summaryText).toBe("[summary]plain[/summary]");
     }
   });
 
@@ -997,7 +1003,7 @@ describe("approvals and events", () => {
     return {
       running: banner.running,
       status: banner.status,
-      outcome: banner.outcome,
+      errorCode: banner.errorCode,
       errorMessage: banner.errorMessage,
       summaryText: banner.summaryText,
       thinkingText: banner.thinkingText,
@@ -1007,18 +1013,18 @@ describe("approvals and events", () => {
   const degradedEnd = (
     errorCode: "malformed" | "rejected",
     errorMessage: string,
-    attempt: number,
+    attempt?: number,
   ) =>
     compactionEnd({
       reason: "context",
       mode: "summarize",
       status: "completed",
-      attempt,
+      ...(attempt !== undefined ? { attempt } : {}),
       errorCode,
       errorMessage,
     });
 
-  it("a completed end with the error pair after a cut summary and two empty retries keeps the cut text and is salvaged, live and from history alike", () => {
+  it("a completed end with the error pair keeps no result, even after a cut-off summary, and keeps the thinking and the error, live and from history alike", () => {
     const cut = cutSummary("Cut.", 9);
     const end = () => degradedEnd("malformed", "the response contained no usable summary", 3);
     const live = createStreamModel();
@@ -1035,6 +1041,9 @@ describe("approvals and events", () => {
       requestBegin(),
       requestEnd("completed"),
       requestBegin(),
+      partialText("start"),
+      partialText("delta", "[summary]\n## Request\nFix the li"),
+      partialText("stop"),
       requestEnd("completed"),
       end(),
     ]) {
@@ -1053,93 +1062,35 @@ describe("approvals and events", () => {
       requestEnd("completed"),
       userText("Your previous reply held no summary."),
       requestBegin(),
+      assistantText("[summary]\n## Request\nFix the li"),
       requestEnd("completed"),
       end(),
     ]) {
       pushMessage(rebuilt, msg);
     }
+    // One presentation for every completion without a full summary: whether the next context
+    // opened with the cut-off text or with the hand-off note is the Trace's to tell, not the row's.
     expect(rowOf(live)).toEqual({
       running: false,
       status: "completed",
-      outcome: "salvaged",
+      errorCode: "malformed",
       errorMessage: "the response contained no usable summary",
-      summaryText: cut,
-      thinkingText: "what the next context needs",
-      work: [],
-    });
-    expect(rowOf(rebuilt)).toEqual(rowOf(live));
-  });
-
-  it("a degraded end keeps the longest cut-off summary of the span, not the last one", () => {
-    const longer = cutSummary("First.", 12);
-    const shorter = cutSummary("Second.", 9);
-    const m = createStreamModel();
-    for (const msg of [
-      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
-      requestBegin(),
-      assistantText(longer),
-      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
-      requestBegin(),
-      assistantText(shorter),
-      requestEnd("retryable", { errorCode: "output_truncated", attempt: 2 }),
-      requestBegin(),
-      assistantText("[summary]too short to keep"),
-      requestEnd("retryable", { errorCode: "output_truncated", attempt: 3 }),
-      degradedEnd("malformed", "the response hit the output limit", 3),
-    ]) {
-      pushMessage(m, msg);
-    }
-    expect(rowOf(m)).toMatchObject({ outcome: "salvaged", summaryText: longer });
-  });
-
-  it("a completed end with the error pair and nothing to salvage has no result and is a hand-off, with the error kept for the tooltip", () => {
-    const message = "400 prompt is too long: 140000 tokens > 131072 maximum";
-    const end = () => degradedEnd("rejected", message, 2);
-    const live = createStreamModel();
-    for (const msg of [
-      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
-      requestBegin(),
-      partialThinking("start"),
-      partialThinking("delta", "start with the request"),
-      partialThinking("stop"),
-      partialText("start"),
-      partialText("delta", "[summary]\n## Request\nFix the li"),
-      partialText("stop"),
-      requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }),
-      requestBegin(),
-      requestEnd("fatal", { errorCode: "rejected", errorMessage: message, attempt: 2 }),
-      end(),
-    ]) {
-      pushMessage(live, msg);
-    }
-    const rebuilt = createStreamModel();
-    for (const msg of [
-      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
-      userText("COMPACT NOW"),
-      requestBegin(),
-      thinkingMessage("start with the request"),
-      assistantText("[summary]\n## Request\nFix the li"),
-      requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }),
-      requestBegin(),
-      requestEnd("fatal", { errorCode: "rejected", errorMessage: message, attempt: 2 }),
-      end(),
-    ]) {
-      pushMessage(rebuilt, msg);
-    }
-    // The thinking stays; the draft was never what the next context opened with.
-    expect(rowOf(live)).toEqual({
-      running: false,
-      status: "completed",
-      outcome: "handoff",
-      errorMessage: message,
       summaryText: undefined,
-      thinkingText: "start with the request",
+      thinkingText: "what the next context needs",
       work: [],
     });
     expect(rowOf(rebuilt)).toEqual(rowOf(live));
     const banner = items(live)[0] as CompactionItem;
     expect(banner.summaryStartedAtMs).toBeUndefined();
     expect(banner.summaryDurationMs).toBeUndefined();
+  });
+
+  it("a degraded end keeps the work its tool rounds did", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, -1)) pushMessage(m, msg);
+    pushMessage(m, degradedEnd("rejected", "400 prompt is too long", 2));
+    expect(rowOf(m)).toMatchObject({ errorCode: "rejected", summaryText: undefined });
+    expect(rowOf(m).work.map((c) => c.output)).toEqual(["Wrote /s/handoff/plan.md"]);
   });
 
   it("a degraded end clears the context figure like any completion; a fatal end keeps the failed row and the context", () => {
@@ -1172,10 +1123,187 @@ describe("approvals and events", () => {
     expect(fatal.stats.contextStale).toBe(false);
     expect(rowOf(fatal)).toMatchObject({
       status: "fatal",
-      outcome: undefined,
+      errorCode: undefined,
       errorMessage: "no model client could be built",
       summaryText: undefined,
     });
+  });
+
+  const REFUSAL = "400 prompt is too long: 140000 tokens > 131072 maximum";
+  /** The refused request and its request-less hand-off span, as the stream and the Trace both carry them. */
+  const refusedRequest = (end: "completed" | "fatal"): AmspRecord[] => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: REFUSAL,
+      attempt: 2,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    end === "completed"
+      ? degradedEnd("rejected", REFUSAL)
+      : compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          status: "fatal",
+          errorMessage: "no model client could be built",
+        }),
+  ];
+  /** A Task whose second request the provider refuses: the hand-off opens the next context, where the turn is sent again. */
+  const refusedTask = (history: boolean): AmspRecord[] => [
+    meta("s1"),
+    taskBegin(),
+    userText("fix the links"),
+    requestBegin(),
+    toolCall({ name: "read_file", arguments: '{"path":"/w/notes.md"}', toolCallId: "t1" }),
+    tokenUsage(counts(1000), counts(1000)),
+    requestEnd("completed"),
+    toolCallOutput({ output: "a very long file", toolCallId: "t1", status: "completed" }),
+    ...refusedRequest("completed"),
+    meta("s1"),
+    // The hand-off note opens the next context in the Trace; the stream never carries it.
+    ...(history
+      ? [userText("[context_summary]\nthe harness's hand-off note\n[/context_summary]")]
+      : []),
+    requestBegin(),
+    ...(history
+      ? [assistantText("Read it in parts; the links are fixed.")]
+      : [
+          partialText("start"),
+          partialText("delta", "Read it in parts; the links are fixed."),
+          partialText("stop"),
+          assistantText("Read it in parts; the links are fixed."),
+        ]),
+    tokenUsage(counts(1200), counts(400)),
+    requestEnd("completed"),
+  ];
+  /** What a refusal's hand-off leaves on screen, for comparing live with rebuilt. */
+  const handOffView = (m: StreamModel) => ({
+    kinds: items(m).map((i) => i.kind),
+    retry: items(m)
+      .filter((i): i is ReconnectItem => i.kind === "reconnect")
+      .map((r) => ({
+        errorCode: r.errorCode,
+        attempt: r.attempt,
+        retrying: r.retrying,
+        gaveUp: r.gaveUp,
+      })),
+    row: rowOf(m),
+    refusal: refusalHandoffOccurrence(m.items) !== null,
+    taskOpen: m.taskOpen,
+    runEnded: m.runEnded,
+  });
+
+  it("a request the provider refused, answered by a hand-off, shows no error and keeps the Task open; the retry line resolves at the next context's first request — live and from history alike", () => {
+    const live = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    pushMessages(rebuilt, refusedTask(true));
+    expect(handOffView(live)).toEqual({
+      kinds: ["user_text", "tool_call", "reconnect", "compaction", "assistant_text"],
+      retry: [{ errorCode: "rejected", attempt: 2, retrying: true, gaveUp: undefined }],
+      row: {
+        running: false,
+        status: "completed",
+        errorCode: "rejected",
+        errorMessage: REFUSAL,
+        summaryText: undefined,
+        thinkingText: undefined,
+        work: [],
+      },
+      refusal: true,
+      taskOpen: true,
+      runEnded: false,
+    });
+    expect(handOffView(rebuilt)).toEqual(handOffView(live));
+  });
+
+  it("the Session's refusal hand-off is its latest compaction row until a later compaction ends otherwise", () => {
+    const m = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(m, msg);
+    const first = refusalHandoffOccurrence(m.items);
+    expect(first).not.toBeNull();
+    // A later refusal is an occurrence of its own, so a dismissed notice is raised again for it.
+    for (const msg of refusedRequest("completed")) {
+      pushMessage(m, at(msg, "2026-01-01T00:05:00.000Z"));
+    }
+    const second = refusalHandoffOccurrence(m.items);
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    // A later compaction that completes normally takes it down; so does one that fails.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    for (const msg of refusedRequest("completed")) pushMessage(m, msg);
+    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    // A compaction request the provider refused presents the same way as a refused turn.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 3 }),
+    );
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("fatal", { errorCode: "rejected", errorMessage: REFUSAL }));
+    pushMessage(m, degradedEnd("rejected", REFUSAL, 1));
+    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    // Any other degraded end is no refusal.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 4 }),
+    );
+    pushMessage(m, degradedEnd("malformed", "the response contained no usable summary", 3));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+  });
+
+  it("a refusal whose hand-off could not open the next context settles the retry line it announced", () => {
+    const m = createStreamModel();
+    for (const msg of refusedRequest("fatal")) pushMessage(m, msg);
+    const retry = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(retry.gaveUp).toBe(true);
+    expect(rowOf(m)).toMatchObject({ status: "fatal", summaryText: undefined });
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    // The next run's first request is no retry of it.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(false);
+  });
+
+  it("an old Trace's abandoned compaction is no refusal hand-off, whatever its code", () => {
+    for (const status of ["retryable", "failed"]) {
+      const m = createStreamModel();
+      pushMessage(
+        m,
+        compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      );
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText("[summary]half-writ"));
+      pushMessage(
+        m,
+        compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          // `failed` is an old Trace's spelling, outside today's StopReason.
+          status: status as "retryable",
+          errorCode: "rejected",
+          errorMessage: "400 Bad Request",
+        }),
+      );
+      expect(rowOf(m)).toMatchObject({
+        status,
+        errorMessage: "400 Bad Request",
+        summaryText: undefined,
+        thinkingText: undefined,
+      });
+      expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    }
   });
 
   it("a compaction that does not complete drops its work with its drafts, and a call it cut short settles", () => {

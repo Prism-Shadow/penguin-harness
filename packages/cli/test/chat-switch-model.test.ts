@@ -197,11 +197,13 @@ describe("chat /switch-model: 202 streams the switch", () => {
     expect(replacement!.modelId).toBe("anthropic/claude-opus-5");
   });
 
-  it("a summary that cannot be had hands over by Trace path: the completion line with its reason, the line naming the file, then the model line", async () => {
+  it("a summary the provider refused hands over by Trace path: the completion line with its reason and what to correct, the line naming the file, then the model line", async () => {
     server.switchModel = streamedSwitch("handoff", "the summary does not fit");
     const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/exit"]);
     const completed = out.indexOf(
-      t.compactionStop("summarize", "completed", undefined, "the summary does not fit", "handoff"),
+      t.compactionStop("summarize", "completed", undefined, "the summary does not fit", {
+        room: true,
+      }),
     );
     const handover = out.indexOf(t.switchModelHandedOver(TRACE_FILE));
     const done = out.indexOf(t.switchModelDone(CURRENT, TARGET));

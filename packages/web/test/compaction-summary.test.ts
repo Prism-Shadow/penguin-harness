@@ -3,15 +3,17 @@
  * features/chat/compaction-banner.tsx). The section timings are stream-model.test.ts's.
  *
  * - The result section reads the summary as prose: tags stripped, an unclosed block shown as
- *   far as it streamed, tagless output verbatim, a salvaged summary as the part inside its tag,
- *   and nothing when nothing streamed.
+ *   far as it streamed, tagless output verbatim, and nothing when nothing streamed.
  * - The result section stays hidden while the request only thinks, appears with the first
- *   summary text, and stays for a completed row but not for a failed one or a hand-off.
+ *   summary text, and stays for a completed row but not for a failed one or one that completed
+ *   without a full summary.
  * - A discard row is never titled as a compaction, running or settled, and a running row never
  *   reads as settled; an unknown mode is titled as a compaction — in both languages.
- * - A salvaged or handed-off completion is titled as compacted and says why only through its
- *   status mark's name and tooltip; a fatal end keeps the failed row, and an old Trace's
- *   abandoned compactions keep their own reason lines — in both languages.
+ * - A completion without a full summary is titled as compacted and says why only through its
+ *   status mark's name and tooltip, with no result section; when too little room was left (a
+ *   refusal, a summary cut off at the output limit) the mark says what to correct, and quotes
+ *   the provider only when the provider refused. A fatal end keeps the failed row, and an old
+ *   Trace's abandoned compactions keep their own reason lines — in both languages.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -23,6 +25,15 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { compactionResultVisible, compactionSummaryText } from "../src/lib/amsp/compaction-summary";
 import type { CompactionItem } from "../src/lib/amsp/stream-model";
+
+/** A string as React writes it into an attribute value in static markup. */
+const attribute = (text: string): string =>
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {
@@ -46,17 +57,6 @@ describe("compactionSummaryText", () => {
     expect(compactionSummaryText({ summaryText: "" })).toBe("");
     expect(compactionSummaryText({ summaryText: "   " })).toBe("");
   });
-
-  it("shows a salvaged summary as the part inside its tag, which is what the next context opened with", () => {
-    const raw = "I will summarize now.\n[summary]\n## Request\nfix the links";
-    expect(compactionSummaryText({ summaryText: raw, outcome: "salvaged" })).toBe(
-      "## Request\nfix the links",
-    );
-    // The same draft as a plain summary keeps the lenient reading, preamble and all.
-    expect(compactionSummaryText({ summaryText: raw, outcome: "summary" })).toContain(
-      "I will summarize now.",
-    );
-  });
 });
 
 describe("compactionResultVisible (the result section waits for the thinking to finish)", () => {
@@ -78,17 +78,17 @@ describe("compactionResultVisible (the result section waits for the thinking to 
     expect(compactionResultVisible({ running: false, status: "aborted" })).toBe(false);
   });
 
-  it("is shown for a salvaged summary, and never for a hand-off, which wrote none", () => {
+  it("is never shown on a completion without a full summary", () => {
     expect(
       compactionResultVisible({
         running: false,
         status: "completed",
-        outcome: "salvaged",
-        summaryText: "[summary]kept",
+        errorCode: "rejected",
+        errorMessage: "400 Bad Request",
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
-      compactionResultVisible({ running: false, status: "completed", outcome: "handoff" }),
+      compactionResultVisible({ running: false, status: "completed", errorCode: "network" }),
     ).toBe(false);
   });
 });
@@ -157,31 +157,41 @@ describe.each([
     );
 
   it("says a completion without a full summary on its status mark alone: titled as compacted, the reason as the mark's name and tooltip", () => {
-    const salvaged = settled({
-      status: "completed",
-      outcome: "salvaged",
-      summaryText: "[summary]x",
-    });
-    const handoff = settled({
-      status: "completed",
-      outcome: "handoff",
-      errorMessage: "400 Bad Request",
-    });
-    for (const [html, hint] of [
-      [salvaged, dict.chat.compactionSalvagedHint],
-      [handoff, dict.chat.compactionHandoffHint("400 Bad Request")],
-    ] as const) {
+    const unusable = "the response contained no usable summary";
+    const refusal = "400 prompt is too long: 140000 tokens > 131072 maximum";
+    const cases = [
+      // Any other cause: the one degraded sentence, with its reason.
+      [
+        settled({ status: "completed", errorCode: "malformed", errorMessage: unusable }),
+        dict.chat.compactionDegradedHint(unusable),
+      ],
+      // Too little room: what to correct, and the provider's words when it refused.
+      [
+        settled({ status: "completed", errorCode: "rejected", errorMessage: refusal }),
+        dict.chat.compactionRoomHint(refusal),
+      ],
+      // A summary cut off every time: the reason is the harness's, so no one is quoted.
+      [
+        settled({
+          status: "completed",
+          errorCode: "output_truncated",
+          errorMessage: "the response stopped at the output limit (finish_reason: length)",
+        }),
+        dict.chat.compactionRoomHint(),
+      ],
+    ] as const;
+    for (const [html, hint] of cases) {
       expect(html).toContain(dict.chat.compactionDone("summarize"));
-      expect(html).toContain(`aria-label="${hint}"`);
-      expect(html).toContain(`data-tooltip="${hint}"`);
+      expect(html).toContain(`aria-label="${attribute(hint)}"`);
+      expect(html).toContain(`data-tooltip="${attribute(hint)}"`);
       // Nothing is written into the row itself: no reason line under the title.
-      expect(html).not.toContain(dict.chat.compactionFailed("fatal", "400 Bad Request"));
+      expect(html).not.toContain(attribute(dict.chat.compactionFailed("fatal", refusal)));
     }
-    expect(handoff).toContain("400 Bad Request");
+    expect(cases[1][0]).toContain(attribute(refusal));
+    expect(cases[2][0]).not.toContain("finish_reason");
     // A full summary's mark stays the plain settled glyph, with nothing to name.
-    const plain = settled({ status: "completed", outcome: "summary", summaryText: "[summary]x" });
-    expect(plain).not.toContain(`aria-label="${dict.chat.compactionSalvagedHint}"`);
-    expect(plain).not.toContain(`aria-label="${dict.chat.compactionHandoffHint()}"`);
+    const plain = settled({ status: "completed", summaryText: "[summary]x" });
+    for (const [, hint] of cases) expect(plain).not.toContain(`aria-label="${attribute(hint)}"`);
   });
 
   it("keeps a failed row for a compaction whose next context could not be opened, and an old Trace's abandoned ones read as before", () => {

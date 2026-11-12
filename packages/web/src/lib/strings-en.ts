@@ -4209,17 +4209,19 @@ Scenarios:
                   ? "credentials rejected"
                   : kind === "rejected"
                     ? "the provider rejected the request"
-                    : kind === "image_rejected"
-                      ? "the provider rejected an image in this turn's input; it was replaced with a note"
-                      : kind === "output_truncated"
-                        ? "the model's output was cut off at the output limit"
-                        : kind === "unsupported"
-                          ? "the model does not support this request"
-                          : kind === "invalid_input"
-                            ? "the input could not be built into a request"
-                            : kind === "failed"
-                              ? "the provider returned an error"
-                              : null,
+                    : kind === "denied"
+                      ? "the provider will not serve this account or model (balance, permission, or no such model)"
+                      : kind === "image_rejected"
+                        ? "the provider rejected an image in this turn's input; it was replaced with a note"
+                        : kind === "output_truncated"
+                          ? "the model's output was cut off at the output limit"
+                          : kind === "unsupported"
+                            ? "the model does not support this request"
+                            : kind === "invalid_input"
+                              ? "the input could not be built into a request"
+                              : kind === "failed"
+                                ? "the provider returned an error"
+                                : null,
       unknownCause: "cause unknown",
       retryNow: "Retry now",
       stop: "Stop retrying",
@@ -4463,6 +4465,8 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
+    contextRefusedHandoff:
+      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4549,12 +4553,14 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
-    compactionSalvagedHint:
-      "The summary was cut off; what was written is kept, with a pointer to the earlier Trace.",
-    compactionHandoffHint: (errorMessage?: string): string =>
+    compactionDegradedHint: (errorMessage?: string): string =>
       errorMessage !== undefined
-        ? `No summary could be written; the next context opens with a Trace hand-off note instead: ${errorMessage}`
-        : "No summary could be written; the next context opens with a Trace hand-off note instead.",
+        ? `No full summary could be written; the next context opens with what was written of the summary, or with a Trace hand-off note: ${errorMessage}`
+        : "No full summary could be written; the next context opens with what was written of the summary, or with a Trace hand-off note.",
+    compactionRoomHint: (providerMessage?: string): string =>
+      `Too little room was left for compaction, so the next context opens with what was written of the summary, or with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
+        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
+      }`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";

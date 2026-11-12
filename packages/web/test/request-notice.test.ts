@@ -12,7 +12,8 @@
  * - Why is the cause in words and the HTTP status the provider's message names, never the
  *   provider's message itself; a cause with no words still reads as one.
  * - Given a fatal error, its line says why in short when the code or the message says, and
- *   nothing more when neither does.
+ *   nothing more when neither does; a provider that will not serve the account or model reads
+ *   apart from one that refused the request.
  */
 import { describe, expect, it, vi } from "vitest";
 import { llmErrorNotice, requestNotice } from "../src/features/chat/request-notice";
@@ -159,5 +160,20 @@ describe("a fatal error's line", () => {
     expect(
       inLang("en", () => llmErrorNotice(fatal({ errorCode: undefined, errorMessage: "boom" }))),
     ).toBe("[Error]: the model request failed");
+  });
+
+  it("tells a provider that will not serve the account or model from one that refused the request", () => {
+    const denied = fatal({ errorCode: "denied", errorMessage: "402 Insufficient Balance" });
+    expect(inLang("zh", () => llmErrorNotice(denied))).toBe(
+      "[错误]：模型请求错误（服务商不为该账号或模型提供服务（余额、权限或模型不存在），HTTP 402）",
+    );
+    expect(inLang("en", () => llmErrorNotice(denied))).toBe(
+      "[Error]: the model request failed (the provider will not serve this account or model (balance, permission, or no such model), HTTP 402)",
+    );
+    expect(
+      inLang("en", () =>
+        llmErrorNotice(fatal({ errorCode: "rejected", errorMessage: "400 Bad Request" })),
+      ),
+    ).toBe("[Error]: the model request failed (the provider rejected the request, HTTP 400)");
   });
 });
