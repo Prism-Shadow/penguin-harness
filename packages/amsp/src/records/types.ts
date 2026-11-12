@@ -360,8 +360,10 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "output_truncated" // the response stopped at its output cap; retried, never committed
   | "auth" // the provider rejected the credentials
-  | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected" // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied" // the provider will not serve this account or model: any other definitive 4xx
+  // (402 payment, 403 permission, 404 no such model, …; 401 is `auth`; 408/429 are retried)
+  | "image_rejected" // a `rejected` request whose input held images, retried with them replaced
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request
   // MCP connect failures: a server that could not connect, and a server that was not
@@ -478,8 +480,9 @@ export interface RetryDetail extends ErrorInfo {
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
-   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
-   * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except a
+   * request sent again at once, which announces 0: `image_rejected` (retried with the images
+   * replaced) and `rejected` (answered by a hand-off to a new context); the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
    * terminal record (no abort event follows: abort marks a user interruption or the turn cap).
