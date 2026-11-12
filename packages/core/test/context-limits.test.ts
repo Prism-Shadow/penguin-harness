@@ -1,7 +1,7 @@
 /**
  * Window-derived request limits (llm/context-limits.ts, issue #218): the per-request
- * output-cap arithmetic, the input-size estimator it feeds on, the window-derived
- * compaction threshold and the round limit. All pure functions — no timers, no network.
+ * output-cap arithmetic, the input-size estimator it feeds on, and the window-derived
+ * compaction threshold. All pure functions — no timers, no network.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -12,7 +12,6 @@ import {
   OUTPUT_SAFETY_MARGIN,
   approximateMessagesTokens,
   approximateTokens,
-  compactionRoundLimit,
   effectiveMaxContextLength,
   effectiveMaxOutputTokens,
   resolveContextWindow,
@@ -227,25 +226,5 @@ describe("compactionReserve on the smallest usable windows", () => {
     expect(effectiveMaxContextLength(256000, 4096)).toBe(2048);
     expect(effectiveMaxContextLength(256000, 8192)).toBe(4096);
     expect(effectiveMaxContextLength(256000, 16384)).toBe(8192);
-  });
-});
-
-describe("compactionRoundLimit (the context size past which a compaction offers no tool round)", () => {
-  it("keeps room for the summary under the window", () => {
-    expect(compactionRoundLimit(128000)).toBe(115712);
-    expect(compactionRoundLimit(200000)).toBe(187712);
-    expect(compactionRoundLimit(262144)).toBe(249856);
-  });
-
-  it("is below the threshold on a 32k window, so a compaction there never opens a round", () => {
-    const limit = compactionRoundLimit(32768)!;
-    expect(limit).toBe(20480);
-    expect(limit).toBeLessThan(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 32768));
-  });
-
-  it("sets no limit for an unconfigured window: no hard rule from an assumption", () => {
-    expect(compactionRoundLimit(undefined)).toBeUndefined();
-    expect(compactionRoundLimit("unknown")).toBeUndefined();
-    expect(compactionRoundLimit(2048)).toBeUndefined();
   });
 });

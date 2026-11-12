@@ -20,7 +20,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { AmspRecord } from "@prismshadow/amsp/records";
-import type { ModelRef, OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
+import type {
+  CompactionSettings,
+  ModelRef,
+  OpenContextOptions,
+  OpenedContext,
+  SystemConfig,
+} from "../src/index.js";
 import {
   agentsMdPath,
   hooksDir,
@@ -35,7 +41,6 @@ import {
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
-  DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_PROJECT_ID,
   imageUrlMessage,
   installSkill,
@@ -1074,63 +1079,18 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("the compaction settings stop offering tool rounds near the running model's window, and set no such limit without one", async () => {
-    const proxy = { model_id: "claude-sonnet-4-6", base_url: "https://proxy.invalid/v1" };
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
-      ...proxy,
-      provider: "sized",
-      api_key: "proxy-key",
-      context_window: 200_000,
-    });
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
-      ...proxy,
-      provider: "unsized",
-      api_key: "proxy-key",
-    });
+  it("the compaction texts reach the engine with the Session's scratchpad filled in: keys the file lacks read as the defaults, and an edit on disk is what the next checkpoint reads", async () => {
     const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-round-limit");
-    await fs.mkdir(ws, { recursive: true });
-    type Settings = { maxContextLength: number; roundLimit?: number };
-    /** The settings a Session on `provider`'s entry opens with, and what its checkpoint re-read answers. */
-    async function settingsOn(provider: string): Promise<{ opened?: Settings; read: Settings }> {
-      const session = await agent.createSession({
-        workspaceDir: ws,
-        provider,
-        modelId: proxy.model_id,
-      });
-      try {
-        const deps = (
-          session as unknown as {
-            engineDeps: { compaction?: Settings; readCompaction?: () => Promise<Settings> };
-          }
-        ).engineDeps;
-        return { opened: deps.compaction, read: await deps.readCompaction!() };
-      } finally {
-        session.dispose();
-      }
-    }
-
-    // A 200k window: compaction fires at 175000, and no round is offered past 187712.
-    const sized = await settingsOn("sized");
-    expect(sized.opened).toMatchObject({ maxContextLength: 175000, roundLimit: 187712 });
-    expect(sized.read).toMatchObject({ maxContextLength: 175000, roundLimit: 187712 });
-    // No window on the entry: the threshold derives from the assumed one, the rounds do not.
-    const unsized = await settingsOn("unsized");
-    expect(unsized.opened?.maxContextLength).toBe(112000);
-    expect(unsized.opened?.roundLimit).toBeUndefined();
-    expect(unsized.read.roundLimit).toBeUndefined();
-  });
-
-  it("the compaction Prompt reaches the engine with the Session's scratchpad in place and no placeholder left, and an absent round cap falls back to its default", async () => {
-    const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-compaction-prompt");
+    const ws = path.join(tmpRoot, "ws-compaction-texts");
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      type Settings = { prompt: string; maxRounds: number };
       const deps = (
         session as unknown as {
-          engineDeps: { compaction?: Settings; readCompaction?: () => Promise<Settings> };
+          engineDeps: {
+            compaction?: CompactionSettings;
+            readCompaction?: () => Promise<CompactionSettings>;
+          };
         }
       ).engineDeps;
       const scratchpad = sessionScratchpadDir(
@@ -1139,19 +1099,38 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
         DEFAULT_AGENT_ID,
         session.sessionId,
       ).replaceAll("\\", "/");
-      for (const settings of [deps.compaction!, await deps.readCompaction!()]) {
-        expect(settings.prompt).toContain(`${scratchpad}/handoff/`);
-        expect(settings.prompt).not.toMatch(/\{\{[A-Z_]+\}\}/);
+      const defaults = await deps.readCompaction!();
+      expect(deps.compaction).toEqual(defaults);
+      for (const text of [defaults.prompt, defaults.handoffNote!]) {
+        expect(text).toContain(`${scratchpad}/handoff/`);
+        expect(text).not.toContain("{{SCRATCHPAD_DIR}}");
       }
 
+      // A file from before the keys existed runs on what a new Agent's file holds.
       await patchSystemConfig((cfg) => {
-        delete cfg.compaction?.max_rounds;
+        for (const key of ["prompt", "max_rounds", "reminder", "handoff_note"] as const) {
+          delete cfg.compaction?.[key];
+        }
       });
-      expect((await deps.readCompaction!()).maxRounds).toBe(DEFAULT_COMPACTION_MAX_ROUNDS);
+      expect(await deps.readCompaction!()).toEqual(defaults);
+
       await patchSystemConfig((cfg) => {
-        cfg.compaction = { ...(cfg.compaction ?? {}), max_rounds: 2 };
+        cfg.compaction = {
+          ...(cfg.compaction ?? {}),
+          prompt: "P {{SCRATCHPAD_DIR}}",
+          max_rounds: 2,
+          reminder: "R {{ROUNDS_USED}}/{{ROUNDS_LEFT}} in {{SCRATCHPAD_DIR}}",
+          handoff_note: "",
+        };
       });
-      expect((await deps.readCompaction!()).maxRounds).toBe(2);
+      expect(await deps.readCompaction!()).toMatchObject({
+        prompt: `P ${scratchpad}`,
+        maxRounds: 2,
+        // The round counts are the engine's to fill, when it sends the line.
+        reminder: `R {{ROUNDS_USED}}/{{ROUNDS_LEFT}} in ${scratchpad}`,
+        // Blank stays blank: no harness prose, not the default.
+        handoffNote: "",
+      });
     } finally {
       session.dispose();
     }
@@ -1412,7 +1391,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("an Agent State that stops parsing before a rotation: the Session compacts, reopens the prompt and tools it had, and the opening tells the model", async () => {
+  it("an Agent State that stops parsing before a rotation: the Session compacts, reopens the prompt and tools it had, and carries on from the summary", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-unreadable");
     await fs.mkdir(ws, { recursive: true });
@@ -1453,14 +1432,10 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
 
       await drain(session.run([userText("Go on.")]));
 
-      // The new context's first request opens with the summary, and tells the model why it
-      // runs on the previous configuration.
+      // The new context's first request opens with the summary.
       expect(scriptedProvider.state.replies).toEqual([]);
       const opening = JSON.stringify(scriptedProvider.state.requests.at(-1));
       expect(opening).toContain("[context_summary]");
-      expect(opening).toContain(
-        "this Agent's configuration could not be read when this context opened (Invalid Agent State config",
-      );
     } finally {
       stderr.mockRestore();
       session.dispose();
@@ -1742,19 +1717,16 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       expect(session.modelId).toBe("deepseek-flash");
       expect(promptOf()).toBe(prompt);
 
-      // A rotation on the same file reopens what is running, and says so.
-      const kept = await open();
+      // A rotation on the same file reopens what is running.
+      await open();
       expect(lastBuilt()!.modelId).toBe("deepseek-flash");
       expect(lastBuilt()!.systemPrompt).toBe(prompt);
-      expect(kept.notice).toContain("Invalid Agent State config");
-      expect(kept.notice).toContain("system_config.yaml");
 
       // The file is read again at the next rotation: once it parses, the context is assembled
-      // from it and nothing is reported.
+      // from it.
       await fs.writeFile(configFile, config);
       await fs.writeFile(agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "FIXED");
-      const fixed = await open();
-      expect(fixed.notice).toBeUndefined();
+      await open();
       expect(lastBuilt()!.systemPrompt).toContain("FIXED");
     } finally {
       stderr.mockRestore();

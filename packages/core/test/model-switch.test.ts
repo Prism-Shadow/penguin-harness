@@ -148,7 +148,7 @@ const metaFor = (model: ModelRef): SessionMetaPayload => ({
 const SUMMARY_REPLY = "[summary]the distilled summary[/summary]";
 /**
  * The summary the first context's compaction opens the next context with: the model's text, then
- * the trailer naming the Session's first Trace file (the one that compaction closes), set per test
+ * the line naming the Session's first Trace file (the one that compaction closes), set per test
  * once the traces directory exists.
  */
 let SUMMARY_TEXT = "";
@@ -352,9 +352,10 @@ describe("in-session model switch", () => {
 
   beforeEach(async () => {
     traces = await mkdtemp(join(tmpdir(), "penguin-model-switch-"));
-    SUMMARY_TEXT = buildContextSummaryText("the distilled summary", {
-      tracePath: new Writer({ tracesDir: traces, sessionId: SESSION_ID }).currentPath(),
-    });
+    SUMMARY_TEXT = buildContextSummaryText(
+      "the distilled summary",
+      new Writer({ tracesDir: traces, sessionId: SESSION_ID }).currentPath(),
+    );
   });
 
   afterEach(async () => {
@@ -773,7 +774,7 @@ describe("in-session model switch", () => {
     expectEndsWithMetaOn(all, MODEL_C);
     expect(h.written).toEqual([]);
     await collect(h.session.run([userText("task two")], { approve: allowAll }));
-    // With no Trace there is no file to name: the summary carries no trailer.
+    // With no Trace there is no file to name: the summary alone.
     expect(llmC.calls[0]!.map(textOf)).toEqual([
       buildContextSummaryText("the distilled summary"),
       "task two",

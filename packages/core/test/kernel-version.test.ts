@@ -303,7 +303,7 @@ describe("applyKernelUpdate", () => {
 
     const result = await update();
 
-    // …so the whole tab advances: the new prompt, and `max_rounds` materialized with it.
+    // …so the whole tab advances: the new prompt, and the keys added since materialized with it.
     expect(result).toEqual({ advanced: ["runtime"], kept: [], kernelVersion: KERNEL_VERSION });
     const written = await readConfig();
     expect(written.compaction).toEqual(defaultSystemConfig().compaction);
@@ -323,8 +323,11 @@ describe("applyKernelUpdate", () => {
     expect(result).toEqual({ advanced: [], kept: ["runtime"], kernelVersion: KERNEL_VERSION });
     const written = await readConfig();
     expect(written.compaction?.prompt).toBe("Summarize, and keep the file list.");
-    // Kept whole: `max_rounds` stays absent and keeps falling back to its default at runtime.
+    // Kept whole: the keys added since stay absent and keep falling back to their defaults at
+    // runtime.
     expect(written.compaction?.max_rounds).toBeUndefined();
+    expect(written.compaction?.reminder).toBeUndefined();
+    expect(written.compaction?.handoff_note).toBeUndefined();
   });
 
   it("never touches name, description, version or mcpServers", async () => {

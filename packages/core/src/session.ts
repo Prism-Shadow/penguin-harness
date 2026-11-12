@@ -152,8 +152,6 @@ export interface SessionConfig {
   readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
   /** Which tool calls a compaction's tool rounds may run (see ContextEngineDeps.compactionToolGate); absent, a compaction takes no round. */
   compactionToolGate?: CompactionToolGate;
-  /** The system prompt's `Shell:` value, which words the Trace-query hints (see ContextEngineDeps.shell). */
-  shell?: string;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
@@ -414,7 +412,6 @@ export class Session {
   private userPromptHooks: readonly UserPromptHook[] = [];
   private spawnSubagent: HookSubagentSpawner | undefined;
   private readonly commandPolicy?: CommandPolicySource;
-  private readonly shell: string | undefined;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -460,7 +457,6 @@ export class Session {
     this.modelSwitch = config.modelSwitch;
     if (config.hooks) this.adoptHooks(config.hooks);
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
-    this.shell = config.shell;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
@@ -489,7 +485,6 @@ export class Session {
       ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.compactionToolGate ? { compactionToolGate: config.compactionToolGate } : {}),
       buildHandoff: (template) => this.compactionHandoff(template),
-      ...(config.shell !== undefined ? { shell: config.shell } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
       // it through the same converter `runTask` uses, failures included: a scratchpad that
@@ -1106,16 +1101,13 @@ export class Session {
   private switchHandoff(from: ModelRef): AmspRecord {
     const tracePath = this.trace?.currentPath?.();
     return userText(
-      buildModelSwitchMessage(
-        {
-          sessionId: this.sessionId,
-          ...(tracePath !== undefined ? { tracePath } : {}),
-          workspace: this.workspaceDir,
-          prevProvider: from.provider,
-          prevModelId: from.model_id,
-        },
-        this.shell !== undefined ? { shell: this.shell } : {},
-      ),
+      buildModelSwitchMessage({
+        sessionId: this.sessionId,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        workspace: this.workspaceDir,
+        prevProvider: from.provider,
+        prevModelId: from.model_id,
+      }),
     );
   }
 
@@ -1131,7 +1123,6 @@ export class Session {
     return userText(
       buildCompactionHandoff(records, {
         ...(tracePath !== undefined ? { tracePath } : {}),
-        ...(this.shell !== undefined ? { shell: this.shell } : {}),
         ...(template !== undefined ? { template } : {}),
       }),
     );

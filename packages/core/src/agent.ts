@@ -24,8 +24,10 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   COMPACTION_SCRATCHPAD_PLACEHOLDER,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
+  DEFAULT_COMPACTION_REMINDER,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -55,7 +57,6 @@ import {
   DEFAULT_MAX_CONTEXT_LENGTH,
   GenerativeModel,
   ToolCallIdAllocator,
-  compactionRoundLimit,
   effectiveMaxContextLength,
 } from "./llm/index.js";
 import { unreachableModel } from "./llm/unreachable-model.js";
@@ -87,7 +88,6 @@ import {
 } from "./internal/session-support.js";
 import { compactionToolGate } from "./internal/compaction-tool-gate.js";
 import { modelVisiblePath } from "./internal/model-visible-path.js";
-import { sessionShell } from "./environment/tools/command/shell.js";
 import {
   compactionEnd,
   isSessionMeta,
@@ -408,13 +408,12 @@ function resolveCompaction(
   contextWindow: number | undefined,
   scratchpadDir: string,
 ): CompactionSettings {
-  // The Prompt's placeholder is substituted here, where the settings are read: the Prompt is
-  // the compaction request's appended user turn, so what it says costs no cached prefix.
-  const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT).replaceAll(
-    COMPACTION_SCRATCHPAD_PLACEHOLDER,
-    modelVisiblePath(scratchpadDir),
-  );
-  const roundLimit = compactionRoundLimit(contextWindow);
+  // The texts' placeholder is substituted here, where the settings are read: each is user text
+  // outside any cached prefix, so what it says costs none. An absent key reads as the default;
+  // a blank one stays blank (no harness line).
+  const scratchpad = modelVisiblePath(scratchpadDir);
+  const text = (value: string | undefined, fallback: string): string =>
+    (value ?? fallback).replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, scratchpad);
   return {
     maxContextLength: effectiveMaxContextLength(
       config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
@@ -422,15 +421,11 @@ function resolveCompaction(
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
+    prompt: text(config?.prompt, DEFAULT_COMPACTION_PROMPT),
     maxRounds: config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS,
-    ...(roundLimit !== undefined ? { roundLimit } : {}),
-    prompt,
+    reminder: text(config?.reminder, DEFAULT_COMPACTION_REMINDER),
+    handoffNote: text(config?.handoff_note, DEFAULT_COMPACTION_HANDOFF_NOTE),
   };
-}
-
-/** What the opening of a context reopened on the configuration in force tells the model. */
-function configurationFallbackNotice(error: string): string {
-  return `this Agent's configuration could not be read when this context opened (${error}); the previous configuration is still in force. If you changed system_config.yaml, fix it.`;
 }
 
 /**
@@ -869,9 +864,15 @@ export class Agent {
         `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
       );
     }
+    // A file a compaction closed opens its next context here, so a hand-off note it ended with
+    // is built from the template on disk now.
+    const { handoffNote } = await this.compactionReader(
+      () => undefined,
+      sessionScratchpadDir(this.state.root, this.state.projectId, this.state.agentId, sessionId),
+    )();
     const resumed = resumeTrace(await readTraceTolerant(located.path), {
       tracePath: located.path,
-      shell: sessionShell().name,
+      ...(handoffNote !== undefined ? { handoffNote } : {}),
     });
     if (!resumed.meta) {
       throw new Error(`Trace is missing session_meta and cannot be resumed: ${located.path}`);
@@ -1126,7 +1127,6 @@ export class Agent {
       // checkpoint after it asks the disk again.
       readCompaction: this.compactionReader(rt.contextWindow, scratchpad),
       compactionToolGate: compactionToolGate(scratchpad),
-      shell: sessionShell().name,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: scratchpad,
       modelHasVision: context.modelEntry.vision !== false,
@@ -1572,24 +1572,22 @@ export class Agent {
     // re-equipped with the new toolset and vault, then the context is opened by the same
     // procedure as the first one. An Agent State that cannot be assembled (a config that no
     // longer parses) does not end a same-model rotation: the configuration in force reopens on
-    // a fresh LLM object, the opening tells the model (`notice`), and the next rotation tries
-    // the state again — the rule the live compaction re-read follows. A model switch rethrows,
-    // keeping its model; so does this layer when the open itself fails: `current` moves
-    // only once the context is open, and the Environment goes back to the running one.
+    // a fresh LLM object and the next rotation tries the state again — the rule the live
+    // compaction re-read follows. A model switch rethrows, keeping its model; so does this
+    // layer when the open itself fails: `current` moves only once the context is open, and the
+    // Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,
     }: SessionOpenContextOptions): Promise<SessionOpenedContext> => {
       const entry = modelRef ? await switchTargetEntry(modelRef) : current.modelEntry;
       let next: AssembledContext;
-      let notice: string | undefined;
       try {
         next = await this.assembleContext(spec, entry);
       } catch (err) {
         if (modelRef) throw err;
         const message = err instanceof Error ? err.message : String(err);
         next = current;
-        notice = configurationFallbackNotice(message);
         process.stderr.write(
           `[penguin] the next context could not be assembled from the Agent State: ${message}; reopening the configuration in force.\n`,
         );
@@ -1603,7 +1601,7 @@ export class Agent {
         throw err;
       }
       current = next;
-      return { llm, ...contextFacts(next), ...(notice !== undefined ? { notice } : {}) };
+      return { llm, ...contextFacts(next) };
     };
 
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle): the
