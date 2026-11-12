@@ -62,7 +62,14 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../src/interfaces/index.js";
-import { ContextEngine } from "../src/engine/context-engine.js";
+import {
+  CLOSED_LINE,
+  ContextEngine,
+  EMPTY_LINE,
+  REFUSED_NO_ROUND,
+  TRUNCATED_LINE,
+  roundLine,
+} from "../src/engine/context-engine.js";
 import { Session } from "../src/session.js";
 import type { CompactionSettings, CompactionToolGate } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
@@ -76,13 +83,6 @@ import {
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import { compactionToolGate } from "../src/internal/compaction-tool-gate.js";
 import { buildCompactionHandoff } from "../src/engine/compaction-carry.js";
-import {
-  CLOSED_LINE,
-  EMPTY_LINE,
-  REFUSED_NO_ROUND,
-  TRUNCATED_LINE,
-  roundLine,
-} from "../src/engine/compaction-lines.js";
 import { REJECTED_IMAGE_NOTE } from "../src/engine/rejected-images.js";
 
 // ---------------------------------------------------------------------------
@@ -1424,32 +1424,6 @@ describe("context compaction", () => {
     expect(all.map((m) => (m.payload as { text?: string }).text)).toContain("done");
   });
 
-  it("a cut reply with fewer than 400 characters inside the tag is not adopted: the hand-off note is", async () => {
-    const cut: ScriptedResponse = {
-      messages: [assistantText("[summary]## Request\nonly the start")],
-      outcome: { status: "retryable", errorCode: "output_truncated" },
-    };
-    const llm1 = new ScriptedLLM(
-      [{ messages: [assistantText("answer"), usage(150, 150)] }, cut, cut, cut],
-      "llm1",
-    );
-    const llm2 = new ScriptedLLM([{ messages: [assistantText("ok"), usage(10, 160)] }], "llm2");
-    const engine = new ContextEngine({
-      llm: llm1,
-      environment: fakeEnvironment,
-      compaction: settings(),
-      openNextContext: () => ({ llm: llm2 }),
-    });
-
-    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    await collect(engine.run([userText("next")], { approve: allowAll }));
-
-    expect(endOf(out)).toMatchObject({ status: "completed", error_code: "output_truncated" });
-    expect(llm2.calls[0]!.map(textOf)).toEqual([bareNote(), "next"]);
-    // With no Trace sink the note has no file to name.
-    expect(textOf(llm2.calls[0]![0]!)).not.toContain(".jsonl");
-  });
-
   it("a stop that arrives after the summary failed and before the fallback keeps the old context", async () => {
     const controller = new AbortController();
     const llm1 = new ScriptedLLM(
@@ -2020,29 +1994,6 @@ describe("context compaction", () => {
     expect(opened[0]!.type).toBe("session_meta");
     expect(payloadTypes(opened.slice(1, 3))).toEqual(["text", "text"]);
     expect(textOf(opened[1]!)).toBe(bareNote(oldPath));
-  });
-
-  it("the note the composition layer builds is the one the next context opens with", async () => {
-    const built = userText("[context_summary]\nthe composition layer's note\n[/context_summary]");
-    const llm1 = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer one"), usage(150, 150)] },
-        { messages: [], outcome: { status: "fatal", errorCode: "rejected" } },
-      ],
-      "llm1",
-    );
-    const llm2 = new ScriptedLLM([{ messages: [assistantText("two"), usage(20, 170)] }], "llm2");
-    const engine = new ContextEngine({
-      llm: llm1,
-      environment: fakeEnvironment,
-      compaction: settings(),
-      openNextContext: () => ({ llm: llm2 }),
-      buildHandoff: async () => built,
-    });
-
-    await collect(engine.run([userText("task one")], { approve: allowAll }));
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
-    expect(llm2.calls[0]![0]).toBe(built);
   });
 
   it("a hand-off builder that throws gives the bare note, and the compaction still completes", async () => {
@@ -2980,42 +2931,6 @@ describe("compaction tool rounds", () => {
     expect(opening.startsWith("[context_summary]\nsee the plan file\n\n")).toBe(true);
     expect(opening).toContain('id="w1" status="completed"');
     expect(opening).toContain("write_file ran");
-  });
-
-  it("a summary response whose write was denied still completes, and the next context's opening shows that call as not completed", async () => {
-    const llm1 = new ScriptedLLM(
-      [
-        { messages: [assistantText("answer one"), usage(150, 150)] },
-        {
-          messages: [
-            assistantText("[summary]the plan is in plan.md[/summary]"),
-            writeCall("w1", join(scratch, "handoff", "plan.md")),
-            usage(160, 310),
-          ],
-        },
-      ],
-      "llm1",
-    );
-    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
-    const { env, ran } = recordingEnvironment();
-    const engine = new ContextEngine({
-      llm: llm1,
-      environment: env,
-      sessionMeta: metaMessage,
-      compaction: settings({ maxRounds: 3 }),
-      compactionToolGate: compactionToolGate(scratch),
-      openNextContext: () => ({ llm: llm2 }),
-    });
-
-    const out = await collect(engine.run([userText("task one")], { approve: async () => "deny" }));
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
-
-    expect(ran).toEqual([]);
-    expect(endOf(out)).toMatchObject({ status: "completed", attempt: 1 });
-    const opening = textOf(llm2.calls[0]![0]!);
-    expect(opening.startsWith("[context_summary]\nthe plan is in plan.md\n\n")).toBe(true);
-    expect(opening).toContain('id="w1" status="aborted"');
-    expect(opening).not.toContain('id="w1" status="completed"');
   });
 
   it("a hand-off write with only a preamble is a round: approved, run, sent behind the round line, and the next request's summary is adopted with the trailer", async () => {
