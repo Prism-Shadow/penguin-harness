@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** refactor
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1545](https://github.com/Prism-Shadow/penguin-harness/pull/1545)
 
 [中文版](2026-11-12-ui-entity-card-and-sub-page-bar.zh.md)
 
