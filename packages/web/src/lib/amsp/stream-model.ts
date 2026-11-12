@@ -841,7 +841,10 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     // reads the identical content back from the span's complete thinking and assistant text
     // — both accumulate onto the running banner, so a reload shows the same text the live
     // viewer watched being written.
-    if (model.stats.compactionActive) {
+    // A tool round's records take the transcript's path below; createToolCard puts their cards
+    // on the banner.
+    const type = (msg.payload as { type?: string }).type ?? "";
+    if (model.stats.compactionActive && !/^(partial_)?tool_call(_output)?$/.test(type)) {
       touchTask(model, msg.timestamp);
       const tsMs = tsOf(msg.timestamp);
       if (isPartialPayload(msg.payload)) {
@@ -856,18 +859,8 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
         if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text, tsMs);
         else if (p.type === "partial_thinking") {
           appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop", tsMs, tsMs);
-        } else if (p.type === "partial_tool_call" || p.type === "partial_tool_call_output") {
-          handleCompactionPartialTool(model, msg.payload as PartialModelPayload, tsMs);
         }
         // Partials never advance lastTs (same rule as the normal path below).
-        return;
-      }
-      if (
-        (msg.payload as { type?: string }).type === "tool_call" ||
-        (msg.payload as { type?: string }).type === "tool_call_output"
-      ) {
-        handleCompactionTool(model, msg.payload as CompleteModelPayload, tsMs, elidedOf(msg));
-        advanceLastTs(model, msg.timestamp);
         return;
       }
       const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
@@ -1685,7 +1678,7 @@ function handleComplete(
       settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
-      model.turnToolOutputs = true;
+      if (!model.stats.compactionActive) model.turnToolOutputs = true;
       return;
     }
     // inline_data / inline_thinking: same convention as the CLI's history rendering — not shown for now.
@@ -1789,7 +1782,7 @@ function settleToolDuration(
   // The execution half alone feeds the session's tool wall time: the generation half above is
   // the model streaming arguments and is already inside taskLlmMs. Settling twice (a streamed
   // stop, then the complete message) is harmless — the intervals are unioned, not summed.
-  if (stats) addToolExecution(stats, execStart, endMs);
+  if (stats && !stats.compactionActive) addToolExecution(stats, execStart, endMs);
 }
 
 /**
@@ -1816,8 +1809,6 @@ function noteApprovalWait(model: StreamModel, card: ToolCallItem): void {
 function createToolCard(
   model: StreamModel,
   init: { toolCallId: string; name: string; argumentsText: string; callStreaming: boolean },
-  /** Where the card goes: the transcript by default, a compaction's work list for a tool round. */
-  place: (card: ToolCallItem) => void = (card) => model.items.push(card),
 ): ToolCallItem {
   const item: ToolCallItem = {
     kind: "tool_call",
@@ -1844,7 +1835,10 @@ function createToolCard(
     }
   }
   model.toolCards.set(init.toolCallId, item);
-  place(item);
+  // A compaction's tool round goes on its banner (CompactionItem.work), not the transcript.
+  const banner = model.stats.compactionActive ? findLastRunningCompaction(model) : null;
+  if (banner) (banner.work ??= []).push(item);
+  else model.items.push(item);
   return item;
 }
 
@@ -2072,7 +2066,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // compaction as a whole); a tool round's call the request cut short will never run,
       // as in a turn.
       if (model.stats.compactionActive) {
-        settleCutShortWork(model, p.status === "completed");
+        settleCutShortCalls(model, p.status === "completed");
         return;
       }
       // Pairs with request_begin to compute this Request's wall-clock
@@ -2221,128 +2215,6 @@ function appendCompactionSummaryText(
   if (startMs !== undefined && item.summaryStartedAtMs === undefined) {
     item.summaryStartedAtMs = startMs;
   }
-}
-
-/**
- * A compaction request ended: like the transcript's settleCutShortCalls, a work card whose call
- * never completed, or that got no decision from a request that did not complete, will never run.
- */
-function settleCutShortWork(model: StreamModel, completed: boolean): void {
-  const item = findLastRunningCompaction(model);
-  for (const card of item?.work ?? []) {
-    if (card.outputComplete) continue;
-    if (!card.callComplete || (!completed && card.decision === undefined)) {
-      settleUnfinishedCard(card);
-    }
-  }
-}
-
-/** The running compaction's work card for a call, created on its first record (no-op without a running banner). */
-function compactionWorkCard(
-  model: StreamModel,
-  init: { toolCallId: string; name: string; argumentsText: string; callStreaming: boolean },
-): ToolCallItem | null {
-  const item = findLastRunningCompaction(model);
-  if (!item) return null;
-  return createToolCard(model, init, (card) => (item.work ??= []).push(card));
-}
-
-/**
- * A tool round's streamed call or output inside a running compaction: the transcript card's
- * fragment rules (see handlePartial), on the banner's work card, and with no share in the
- * Task's tool time.
- */
-function handleCompactionPartialTool(
-  model: StreamModel,
-  p: PartialModelPayload,
-  tsMs: number | undefined,
-): void {
-  if (p.type === "partial_tool_call") {
-    const card = model.toolCards.get(p.tool_call_id);
-    if (card?.callComplete) return;
-    if (p.event_type === "start") {
-      if (card) {
-        card.argumentsText = p.arguments ?? "";
-        card.callStreaming = true;
-        return;
-      }
-      const created = compactionWorkCard(model, {
-        toolCallId: p.tool_call_id,
-        name: p.name,
-        argumentsText: p.arguments ?? "",
-        callStreaming: true,
-      });
-      if (created && tsMs !== undefined) created.argStartedAtMs = tsMs;
-      return;
-    }
-    if (!card) return;
-    if (p.name && !card.name) card.name = p.name;
-    if (p.arguments) card.argumentsText += p.arguments;
-    if (p.event_type === "stop") {
-      card.callStreaming = false;
-      if (tsMs !== undefined) card.callStartedAtMs = tsMs;
-    }
-    return;
-  }
-  if (p.type !== "partial_tool_call_output") return;
-  const card = model.toolCards.get(p.tool_call_id);
-  if (!card || card.outputComplete) return;
-  if (p.event_type === "start") card.outputStreaming = true;
-  else if (!card.outputStreaming) return;
-  if (p.output) card.output += p.output;
-  if (p.event_type === "stop") {
-    card.outputStreaming = false;
-    settleToolDuration(card, tsMs);
-  }
-}
-
-/** A tool round's complete call or output inside a running compaction (see handleCompactionPartialTool). */
-function handleCompactionTool(
-  model: StreamModel,
-  p: CompleteModelPayload,
-  tsMs: number | undefined,
-  elided: ElidedRecord | undefined,
-): void {
-  if (p.type === "tool_call") {
-    const existing = model.toolCards.get(p.tool_call_id);
-    const card =
-      existing && !existing.callComplete
-        ? existing
-        : compactionWorkCard(model, {
-            toolCallId: p.tool_call_id,
-            name: p.name,
-            argumentsText: p.arguments,
-            callStreaming: false,
-          });
-    if (!card) return;
-    // History has no fragments: the previous message's time stands in for the arguments' start.
-    if (card !== existing && model.lastTsMs > 0) card.argStartedAtMs = model.lastTsMs;
-    card.name = p.name;
-    card.argumentsText = p.arguments;
-    if (elided !== undefined) card.elidedCall = elided;
-    else delete card.elidedCall;
-    card.callStreaming = false;
-    card.callComplete = true;
-    if (tsMs !== undefined) card.callStartedAtMs = tsMs;
-    return;
-  }
-  if (p.type !== "tool_call_output") return;
-  const card =
-    model.toolCards.get(p.tool_call_id) ??
-    compactionWorkCard(model, {
-      toolCallId: p.tool_call_id,
-      name: "",
-      argumentsText: "",
-      callStreaming: false,
-    });
-  if (!card) return;
-  card.output = p.output;
-  if (elided !== undefined) card.elidedOutput = elided;
-  else delete card.elidedOutput;
-  card.outputStreaming = false;
-  card.outputComplete = true;
-  card.outputStatus = p.status ?? "completed";
-  settleToolDuration(card, tsMs);
 }
 
 /**
