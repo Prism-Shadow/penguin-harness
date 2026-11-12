@@ -461,6 +461,19 @@ html.dark .site-prose .shiki span {
 :root.dark .site-prose[data-variant="post"] strong {
   color: var(--site-gray-50);
 }
+/* Figure presentation is opt-in so screenshots retain their captured backgrounds. */
+.site-prose .prose-figure-centered figcaption {
+  text-align: center;
+}
+.site-prose .prose-figure-diagram > img {
+  border: 0;
+  border-radius: 0;
+  mix-blend-mode: multiply;
+}
+:root.dark .site-prose .prose-figure-diagram > img {
+  background: var(--site-gray-50);
+  mix-blend-mode: normal;
+}
 /* On paper a link cannot be followed and a back-link goes nowhere: print the addresses instead. */
 @media print {
   .site-prose [data-footnotes] a[href^="http"]::after {
