@@ -148,13 +148,9 @@ export async function renameSession(
   return res.session;
 }
 
-export async function getSessionInfo(
-  client: ServerClient,
-  sessionId: string,
-): Promise<SessionInfo> {
-  const res = await client.request<SessionResponse>("GET", `/api/sessions/${enc(sessionId)}`);
-  return res.session;
-}
+import { getSessionInfo } from "@prismshadow/penguin-server/cli";
+
+export { getSessionInfo };
 
 /**
  * The session `session log` / `input` / `rename` act on: an explicit reference (full id or
