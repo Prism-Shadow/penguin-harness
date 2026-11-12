@@ -19,7 +19,16 @@
  * - Given a model that refuses the compaction request (HTTP 400) mid-Task, the Task still reaches
  *   its end: the compaction completes with the error pair, the next Trace file opens with the
  *   harness's hand-off note naming the file it closed, and the errors panel holds one expected
- *   `compaction_degraded` row — no `compaction_failed`, no LLM row.
+ *   `context_refused` row — no `compaction_failed`, no LLM row.
+ * - Given a model that refuses an ordinary request (HTTP 400) mid-Task, the Task carries on: the
+ *   refused request is a retried attempt, the span after it holds no request, the next Trace file
+ *   opens with the hand-off note quoting the provider's error, the turn is sent again behind it,
+ *   and the errors panel holds one `context_refused` row and one `llm_retried` row, no
+ *   `llm_fatal`.
+ * - Given a request the provider will not serve (HTTP 402), the run stops with `denied`: no
+ *   hand-off, one `llm_fatal` row, and the next Task runs on the context it kept.
+ * - Given a model that refuses a request after every completed turn, the fourth refusal of one
+ *   Task ends the run with the provider's error, after three hand-offs.
  * - Given a reply that writes a hand-off file and holds the summary, the compaction ends in that
  *   one request: one billed, the file on disk, the next context opening with the summary and the
  *   write the harness ran.
@@ -390,7 +399,7 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
   const scratchpadOf = (sessionId: string) =>
     sessionScratchpadDir(t.root, projectId, AGENT_ID, sessionId);
 
-  it("a model that refuses the compaction request: the Task still reaches its end on a next context that opens with a hand-off note naming the file it closed, and the errors panel holds one expected degraded row", async () => {
+  it("a model that refuses the compaction request: the Task still reaches its end on a next context that opens with a hand-off note naming the file it closed, and the errors panel holds one expected context_refused row", async () => {
     const notes = path.join(workspace, "notes.md");
     await fs.writeFile(notes, "Tag v1, then ship.");
     // Every second completed turn closes the context: the Task's second tool call puts the
@@ -429,9 +438,127 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
         (r) => kindOf(r) === "text" && (r.payload as { text?: string }).text === "Tagged.",
       ),
     ).toBe(true);
-    // Nobody has to step in: one expected row says why the summary is missing, and the
-    // refused request adds no LLM row of its own.
-    expect(errorRows()).toEqual([["compaction", "compaction_degraded", "expected", 1]]);
+    // Nobody has to step in: one expected row says what to correct, and the refused request
+    // adds no LLM row of its own.
+    expect(errorRows()).toEqual([["compaction", "context_refused", "expected", 1]]);
+  });
+
+  it("a model that refuses an ordinary request mid-Task: the Task carries on in a new Trace file opened by the note quoting the provider's error, with one context_refused row and no llm_fatal", async () => {
+    const notes = path.join(workspace, "notes.md");
+    await fs.writeFile(notes, "Tag v1, then ship.");
+    const refusal = "prompt is too long: 201000 tokens > 200000";
+    script = (n) => {
+      if (n === 1)
+        return { toolUse: { id: "toolu_r1", name: "read_file", input: { file_path: notes } } };
+      if (n === 2) return { refuse: { message: refusal } };
+      return "Tagged.";
+    };
+    const sessionId = await openSession();
+    await runTask(sessionId, "tag the release");
+
+    // The turn that read the file, the refused request, and the same turn sent again on the new
+    // context — no compaction request in between.
+    expect(mock.requests).toHaveLength(3);
+    const files = await traceFiles(sessionId);
+    expect(files).toHaveLength(2);
+    const closed = files[0]!.records;
+    const kinds = closed.map(kindOf);
+    const begin = kinds.indexOf("compaction_begin");
+    // The refused request is a retried attempt, and the span after it holds no request.
+    expect(
+      closed
+        .slice(0, begin)
+        .filter((r) => kindOf(r) === "request_end")
+        .at(-1)!.payload,
+    ).toMatchObject({
+      status: "retryable",
+      error_code: "rejected",
+      retry_in_ms: 0,
+    });
+    expect(kinds.slice(begin + 1, kinds.indexOf("compaction_end"))).toEqual([]);
+    const end = lastCompactionEnd(closed)!;
+    expect(end).toMatchObject({ status: "completed", error_code: "rejected" });
+    expect(end).not.toHaveProperty("attempt");
+    // The note names the file it closed and quotes the provider's words; the resend carries it
+    // and nothing of the old context.
+    const note = openingOf(files[1]!.records)!;
+    expect(note).toContain(files[0]!.path);
+    expect(note).toContain(refusal);
+    const next = mock.requests[2]!;
+    expect(next.messages).toHaveLength(1);
+    expect(requestText(next)).toContain(JSON.stringify(note).slice(1, -1));
+    // The Task ended there, on the model's reply.
+    expect(files[1]!.records.map(kindOf)).toContain("task_end");
+    expect(
+      files[1]!.records.some(
+        (r) => kindOf(r) === "text" && (r.payload as { text?: string }).text === "Tagged.",
+      ),
+    ).toBe(true);
+    expect(errorRows().sort()).toEqual([
+      ["compaction", "context_refused", "expected", 1],
+      ["llm", "llm_retried", "expected", 1],
+    ]);
+  });
+
+  it("a request the provider will not serve (402) stops the run with denied: no hand-off, one llm_fatal row, and the next Task runs on the context it kept", async () => {
+    const notes = path.join(workspace, "notes.md");
+    await fs.writeFile(notes, "Tag v1, then ship.");
+    script = (n) => {
+      if (n === 1)
+        return { toolUse: { id: "toolu_r1", name: "read_file", input: { file_path: notes } } };
+      if (n === 2) return { refuse: { message: "insufficient balance", status: 402 } };
+      return `reply ${n}`;
+    };
+    const sessionId = await openSession();
+    await runTask(sessionId, "tag the release");
+
+    expect(mock.requests).toHaveLength(2);
+    const files = await traceFiles(sessionId);
+    expect(files).toHaveLength(1);
+    const kinds = files[0]!.records.map(kindOf);
+    expect(kinds).not.toContain("compaction_begin");
+    expect(kinds).not.toContain("compaction_end");
+    expect(
+      files[0]!.records.filter((r) => kindOf(r) === "request_end").at(-1)!.payload,
+    ).toMatchObject({ status: "fatal", error_code: "denied" });
+    expect(errorRows()).toEqual([["llm", "llm_fatal", "unexpected", 1]]);
+
+    // The context is kept: the next Task's request carries the conversation it holds.
+    await runTask(sessionId, "try again");
+    expect(mock.requests).toHaveLength(3);
+    expect(requestText(mock.requests[2]!)).toContain("tag the release");
+    expect(requestText(mock.requests[2]!)).toContain("try again");
+    expect(await traceFiles(sessionId)).toHaveLength(1);
+  });
+
+  it("a model that refuses a request after every completed turn: the fourth refusal of one Task ends the run with the provider's error, after three hand-offs", async () => {
+    const notes = path.join(workspace, "notes.md");
+    await fs.writeFile(notes, "Tag v1, then ship.");
+    // Every odd request completes a turn with a tool call; every even one is refused.
+    script = (n) =>
+      n % 2 === 1
+        ? { toolUse: { id: `toolu_r${n}`, name: "read_file", input: { file_path: notes } } }
+        : { refuse: { message: "prompt is too long" } };
+    const sessionId = await openSession();
+    await runTask(sessionId, "tag the release");
+
+    expect(mock.requests).toHaveLength(8);
+    const files = await traceFiles(sessionId);
+    expect(files).toHaveLength(4);
+    const last = files[3]!.records;
+    expect(last.map(kindOf)).not.toContain("compaction_begin");
+    expect(last.filter((r) => kindOf(r) === "request_end").at(-1)!.payload).toMatchObject({
+      status: "fatal",
+      error_code: "rejected",
+      error_message: expect.stringContaining("prompt is too long"),
+    });
+    // Repeats of one row within the recorder's short window fold, so only the codes are read.
+    const codes = new Set(errorRows().map(([source, code, kind]) => `${source} ${code} ${kind}`));
+    expect([...codes].sort()).toEqual([
+      "compaction context_refused expected",
+      "llm llm_fatal unexpected",
+      "llm llm_retried expected",
+    ]);
   });
 
   it("a reply that writes the hand-off file and holds the summary ends the compaction in that one request: one billed, the file on disk, and the next context opens with the summary and the write", async () => {

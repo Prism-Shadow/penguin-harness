@@ -21,6 +21,9 @@
  *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
+ * A request the provider refused that the engine answers by handing the context off is recorded
+ * `retryable` (`retry_in_ms: 0`), so the next context's first request resolves it as
+ * `llm_retried`; the hand-off itself is its `compaction_end`'s row.
  * A compaction's own requests, which stream between its paired events, are not read here:
  * its `compaction_end` speaks for them (source = `compaction`, below).
  *
@@ -369,10 +372,16 @@ export class StreamErrorWatcher {
    * `compaction_end` speaks for all of them, once.
    *
    * - `completed` carrying the unified error pair (`error_code` / `error_message`) is a degraded
-   *   completion: no full summary could be had — the request was refused, the transport ladder
-   *   or the corrections ran out — so the next context opened with a salvaged summary or the
-   *   harness's Trace hand-off note. Expected (`compaction_degraded`): the run carried on and
-   *   nobody has to step in, but the cost center shows why the summary is missing.
+   *   completion: no full summary could be had — the transport ladder or the corrections ran
+   *   out — so the next context opened with a salvaged summary or the harness's Trace hand-off
+   *   note. Expected (`compaction_degraded`): the run carried on and nobody has to step in, but
+   *   the cost center shows why the summary is missing.
+   * - `completed` with `error_code` `rejected`: the provider refused a request on the context —
+   *   an ordinary one (the span then holds no request and no `attempt`) or the compaction's own
+   *   — and the context was handed off. Expected too, under its own code (`context_refused`):
+   *   it usually means the model's configured window is larger than the one the provider
+   *   enforces, which the cost center's most common code should surface, and the dedup must
+   *   never fold it into a routine degraded completion.
    * - `fatal`: the next context could not be opened at all, so the original context is kept
    *   (and a mid-Task run ends there). Unexpected (`compaction_failed`): the trigger still
    *   holds, and the Session keeps re-entering compaction until a human changes something.
@@ -382,7 +391,7 @@ export class StreamErrorWatcher {
    *   errors.
    *
    * The message carries the attempts and the error detail (compaction_end's share of the
-   * RetryDetail block). The two codes stay apart so the short-window dedup on
+   * RetryDetail block). The codes stay apart so the short-window dedup on
    * `(source, code, Project)` never drops a run-ending failure as a repeat of a degraded one.
    */
   private observeCompactionEnd(msg: AmspRecord, key: string): void {
@@ -405,6 +414,16 @@ export class StreamErrorWatcher {
     if (status === "completed") {
       // Either half of the pair marks the completion degraded — the same test replay applies.
       if (p.error_code === undefined && p.error_message === undefined) return;
+      if (p.error_code === "rejected") {
+        this.errors.record({
+          source: "compaction",
+          err: `the provider refused a request on this context${detail(p.error_message)}; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.`,
+          ctx: this.ctxFor(key),
+          code: "context_refused",
+          kind: "expected",
+        });
+        return;
+      }
       this.errors.record({
         source: "compaction",
         err: `${mode} compaction completed without a full summary${attempts}${detail(p.error_message || p.error_code)}; the next context opens with a salvaged summary or a Trace hand-off.`,

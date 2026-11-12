@@ -31,7 +31,10 @@
  * - A compaction that completed without a full summary (its end carries the error pair) is one
  *   expected row carrying its attempts and why; one whose next context could not be opened, or
  *   an older core's abandoned one, is one unexpected row; the two never dedup each other. Its
- *   own failed requests, streamed inside its span, add no LLM row of their own.
+ *   own failed requests, streamed inside its span, add no LLM row of their own. A hand-off that
+ *   answers a refused request — an ordinary one or the compaction's own — is its own expected
+ *   row naming the window to correct; the refused ordinary request is a retried one, and a
+ *   request the provider will not serve (`denied`) stays a fatal LLM row.
  *
  * Through HTTP (onError):
  * - A business error is expected, an internal one unexpected with a 500, each attributed to
@@ -944,9 +947,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— Compaction ——
 
-  it("a compaction refused by the model completes degraded: one expected row naming why, no LLM row", () => {
+  it("a compaction refused by the model hands off: one expected context_refused row naming the window to correct, no LLM row", () => {
     // The request was refused, so the next context opened with the harness's hand-off note:
-    // the run carried on, nobody has to step in, and the row tells why the summary is missing.
+    // the run carried on, nobody has to step in, and the row says what to correct.
     const got = feed([
       compactionBegin({ reason: "context", mode: "summarize", context: 190_000, turns: 12 }),
       requestBegin(),
@@ -964,13 +967,58 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "compaction",
       kind: "expected",
-      code: "compaction_degraded",
+      code: "context_refused",
       message:
-        "summarize compaction completed without a full summary after 1 attempt: prompt is too long; the next context opens with a salvaged summary or a Trace hand-off.",
+        "the provider refused a request on this context: prompt is too long; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
     });
+  });
+
+  it("an ordinary request the provider refused, answered by a hand-off: one context_refused row and the request as a retried one, no fatal LLM row", () => {
+    // The refused request is recorded as a retried attempt, the span that follows holds no
+    // request, and the next context's first request is the resend.
+    const got = feed([
+      requestBegin(),
+      requestEnd("completed"),
+      requestBegin(),
+      requestEnd("retryable", {
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+        attempt: 1,
+        retryInMs: 0,
+      }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 9_000, turns: 3 }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    expect(got.map((r) => [r.source, r.code, r.kind])).toEqual([
+      ["compaction", "context_refused", "expected"],
+      ["llm", "llm_retried", "expected"],
+    ]);
+    expect(got[0]!.message).toBe(
+      "the provider refused a request on this context: prompt is too long; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.",
+    );
+    expect(got[1]!.message).toBe("prompt is too long");
+  });
+
+  it("a request the provider will not serve (denied) ends the run as a fatal LLM row, no compaction row", () => {
+    const got = feed([
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "denied", errorMessage: "insufficient balance" }),
+    ]);
+    expect(got.map((r) => [r.source, r.code, r.kind])).toEqual([
+      ["llm", "llm_fatal", "unexpected"],
+    ]);
+    expect(got[0]!.message).toBe("llm request error: insufficient balance");
   });
 
   it("a degraded completion whose end carries only the error code gives the code as the reason", () => {
@@ -1006,9 +1054,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         reason: "context",
         mode: "summarize",
         status: "completed",
-        attempt: 1,
-        errorCode: "rejected",
-        errorMessage: "prompt is too long",
+        attempt: 3,
+        errorCode: "output_truncated",
+        errorMessage: "the summary was cut off at the output limit",
       }),
       compactionEnd({
         reason: "context",

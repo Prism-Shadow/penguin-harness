@@ -492,8 +492,8 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         }
         // A committed request inside a compaction span enters history as usual (MMSP
         // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
-        // but does not count as a Session turn: in-process only runTurn increments the
-        // counter, never runCompactionRequest.
+        // but does not count as a Session turn: in-process runTurn counts a turn only for a
+        // request outside a compaction span (`span` unset).
         if (!inCompaction) sessionTurns += 1;
         snapshot = [];
         outputs = [];
