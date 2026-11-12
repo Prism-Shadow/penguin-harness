@@ -45,12 +45,10 @@ export interface ScriptedReply {
   promptTokens?: number;
   /**
    * How the request ends: cleanly, with a transport drop after the text (the engine
-   * reconnects), hanging after the text until the caller's signal aborts it, stopped at the
-   * output limit after the text (finish reason `length`: delivered, never committed), or
-   * refused by the provider before anything streams (an HTTP 400).
+   * reconnects), hanging after the text until the caller's signal aborts it, or refused by the
+   * provider before anything streams (an HTTP 400).
    */
-  outcome?:
-    "completed" | "retryable-after-text" | "abort-after-text" | "truncated-after-text" | "rejected";
+  outcome?: "completed" | "retryable-after-text" | "abort-after-text" | "rejected";
 }
 
 // ---- What a recording holds -----------------------------------------------
@@ -218,19 +216,6 @@ async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGe
     await untilAborted(signal);
     return;
   }
-  if (reply.outcome === "truncated-after-text") {
-    // Delivered whole but stopped at the output cap: the model takes it back out of history.
-    yield usage(
-      {
-        cached_tokens: null,
-        prompt_tokens: null,
-        thoughts_tokens: null,
-        response_tokens: SCRIPTED_RESPONSE_TOKENS,
-      },
-      "length",
-    );
-    return;
-  }
 
   for (const call of reply.toolCalls ?? []) {
     if (signal?.aborted) return;
@@ -270,7 +255,7 @@ const delta = (item: DeltaContentItem): UniEvent => ({
 /** A client-internal stop event: a usage piece and/or the finish reason, which the base class merges. */
 const usage = (
   usageMetadata: UsageMetadata,
-  finishReason: UniEvent["finish_reason"],
+  finishReason: "stop" | "tool_call" | null,
 ): UniEvent => ({
   role: "assistant",
   event_type: "stop",
