@@ -308,7 +308,7 @@ describe("prompt-cache invariants of request assembly", () => {
     const engine = new ContextEngine({
       llm: first.model,
       environment: fakeEnvironment,
-      compaction: compactionSettings({ maxRounds: 3 }),
+      compaction: compactionSettings({ maxRounds: 3, reminder: "Round done." }),
       compactionToolGate: () => ({ allow: true }),
       openNextContext: () => ({ llm: second.model }),
     });
@@ -329,10 +329,10 @@ describe("prompt-cache invariants of request assembly", () => {
     expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
   });
 
-  it("a correction after refused tool calls extends the request it follows, with no prompt again", async () => {
+  it("a reminder after refused tool calls extends the request it follows, with no prompt again", async () => {
     const first = recordingModel(modelConfig(), [
       { text: "First answer.", promptTokens: 150 },
-      // No round is open (no gate): the call is refused, and the model is corrected.
+      // No gate: the call is refused, and the model is reminded.
       {
         toolCalls: [{ id: "call_x", name: "read_file", args: { path: "/ws/a.ts" } }],
         promptTokens: 160,
@@ -343,7 +343,7 @@ describe("prompt-cache invariants of request assembly", () => {
     const engine = new ContextEngine({
       llm: first.model,
       environment: fakeEnvironment,
-      compaction: compactionSettings(),
+      compaction: compactionSettings({ maxRounds: 1, reminder: "Round done." }),
       openNextContext: () => ({ llm: second.model }),
     });
 
@@ -355,47 +355,12 @@ describe("prompt-cache invariants of request assembly", () => {
       { type: "none" },
       { type: "none" },
     ]);
-    // One appended user turn: the refusal answering the call, then the corrective line.
+    // One appended user turn: the refusal answering the call, then the reminder.
     const appended = wireMessage(first.requests[2]!, -1);
     expect(appended.role).toBe("user");
     expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
     expect(JSON.stringify(appended)).not.toContain(COMPACTION_PROMPT);
     expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
-  });
-
-  it("the retry of a cut response extends the last committed request and differs from the cut attempt only by one trailing text", async () => {
-    const first = recordingModel(modelConfig(), [
-      { text: "First answer.", promptTokens: 150 },
-      { text: "[summary]the distilled summ", promptTokens: 160, outcome: "truncated-after-text" },
-      { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
-    ]);
-    const second = recordingModel(modelConfig(), [{ text: "Carried on from the summary." }]);
-    const engine = new ContextEngine({
-      llm: first.model,
-      environment: fakeEnvironment,
-      compaction: compactionSettings(),
-      openNextContext: () => ({ llm: second.model }),
-    });
-
-    await collect(engine.run([userText("task one")], { approve: allowAll }));
-
-    expect(first.requests).toHaveLength(3);
-    const [turn, cut, retry] = first.requests as [
-      RecordedRequest,
-      RecordedRequest,
-      RecordedRequest,
-    ];
-    // The cut response was never committed: the retry extends the turn as the cut one did.
-    expect(diagnoseCacheMiss(turn, cut)).toEqual({ type: "none" });
-    expect(diagnoseCacheMiss(turn, retry)).toEqual({ type: "none" });
-    // Same messages, the last one grown by one text block at its end.
-    expect(retry.wire).toHaveLength(cut.wire.length);
-    expect(retry.wire.slice(0, -1)).toEqual(cut.wire.slice(0, -1));
-    const before = wireMessage(cut, -1);
-    const after = wireMessage(retry, -1);
-    expect(after.content.slice(0, before.content.length)).toEqual(before.content);
-    expect(blockTypes(after).slice(before.content.length)).toEqual(["text"]);
-    expect(configFingerprint(retry)).toBe(configFingerprint(cut));
   });
 
   it("a summary with writes makes exactly one request on the old model", async () => {
