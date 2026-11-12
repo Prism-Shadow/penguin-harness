@@ -19,6 +19,7 @@
 import { isCompleteModelMessage, isEventMessage } from "@prismshadow/amsp/records";
 import type {
   AmspRecord,
+  CompactionEndPayload,
   ErrorCode,
   RequestEndPayload,
   StopReason,
@@ -32,6 +33,7 @@ import {
   markerClose,
   markerOpen,
   salvageableSummary,
+  transcribeRequestError,
   transcribeText,
   transcribeToolCall,
   transcribeToolCallOutput,
@@ -68,6 +70,8 @@ const HANDOFF_LAST_USER_MESSAGES = 8;
 const HANDOFF_TURN_MAX_CALLS = 8;
 /** Steps by which every cap shrinks together once dropping user messages is not enough. */
 const HANDOFF_SHRINK_STEPS = 16;
+/** Characters of the provider's refusal the note quotes. */
+const HANDOFF_REFUSAL_CHARS = 500;
 
 /** How many characters of each quoted text a note keeps. */
 interface QuoteCaps {
@@ -270,6 +274,10 @@ const SUMMARY_TAG_LINES: ReadonlySet<string> = new Set([
  *   without nesting the block;
  * - the last completed turn before the span: its assistant texts and its tool calls, each with
  *   the output that answered it (text only; thinking is not quoted);
+ * - when the span's own `compaction_end` says the provider refused the request after that turn
+ *   (`rejected`: an ordinary request answered by this hand-off, or the compaction's own), its
+ *   error as the provider wrote it, the first {@link HANDOFF_REFUSAL_CHARS} characters; the
+ *   cause of any other end is left out;
  * - the compaction's own calls ({@link compactionCallLines}).
  *
  * Every quoted text is cut to its cap, and the note is kept within its token budget by dropping
@@ -283,7 +291,12 @@ export function buildCompactionHandoff(
 ): string {
   const { tracePath, shell } = opts;
   if (tracePath === undefined) {
-    return buildContextHandoffText({ userLines: [], turnLines: [], callLines: [] });
+    return buildContextHandoffText({
+      userLines: [],
+      turnLines: [],
+      refusalLines: [],
+      callLines: [],
+    });
   }
   const transcript = { tracePath, ...(shell !== undefined ? { shell } : {}) };
   const main = file.filter(isMainSession);
@@ -304,12 +317,14 @@ export function buildCompactionHandoff(
   const turn = lastCompletedTurn(context);
   const outputs = outputsById([...before, ...span]);
   const calls = spanCalls(span);
+  const refusal = refusalLines(span);
 
   const build = (dropped: number, caps: QuoteCaps): string =>
     buildContextHandoffText(
       {
         userLines: userLines(first, last.slice(dropped), leftOut + dropped, caps),
         turnLines: turn !== null ? turnLines(turn, outputs, caps) : [],
+        refusalLines: refusal,
         callLines: callLines(calls, caps.callArgs, caps.callOutput),
       },
       transcript,
@@ -329,6 +344,20 @@ export function buildCompactionHandoff(
     note = build(dropped, scaledCaps(step / HANDOFF_SHRINK_STEPS));
   }
   return note;
+}
+
+/**
+ * The refusal section of a note: the `[request_error]` line of the span's own `compaction_end`
+ * when it says `rejected`, the provider's text cut to its cap; empty for any other end, and
+ * while the span has none.
+ */
+function refusalLines(span: readonly AmspRecord[]): string[] {
+  const end = span.at(-1);
+  if (end === undefined || !isEvent(end, "compaction_end")) return [];
+  const p = end.payload as Partial<CompactionEndPayload>;
+  if (p.error_code !== "rejected") return [];
+  const message = headOf(p.error_message ?? "", HANDOFF_REFUSAL_CHARS);
+  return [transcribeRequestError(p.error_code, message)];
 }
 
 /** The records outside every compaction span (a span's begin and end are its own). */
