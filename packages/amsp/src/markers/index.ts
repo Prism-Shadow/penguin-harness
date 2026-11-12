@@ -43,7 +43,6 @@ export * from "./block.js";
 export * from "./tags.js";
 export * from "./attachment-lines.js";
 export * from "./engine-blocks.js";
-export * from "./trace-query.js";
 export * from "./origin-blocks.js";
 export * from "./steering.js";
 export * from "./strip.js";

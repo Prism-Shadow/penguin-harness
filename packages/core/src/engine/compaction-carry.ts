@@ -1,22 +1,20 @@
 /**
- * What a summarize compaction carries into the next context, read off the records of its span:
+ * What a summarize compaction carries into the next context, read off the closing Trace file:
  * pure functions the live engine and Trace replay share, so a restart rebuilds from the same file
- * the opening the live context got. The spelling of every block lives in the markers module;
- * what is quoted, and how much of it, is decided here.
+ * the opening the live context got.
  */
 import { isCompleteModelMessage, isEventMessage } from "@prismshadow/amsp/records";
 import type {
   AmspRecord,
   CompactionEndPayload,
   RequestEndPayload,
-  StopReason,
   TextPayload,
   ToolCallOutputPayload,
   ToolCallPayload,
 } from "@prismshadow/amsp/records";
 import {
   MARKER_TAGS,
-  buildContextHandoffText,
+  buildContextSummaryText,
   markerClose,
   markerOpen,
   transcribeRequestError,
@@ -25,35 +23,19 @@ import {
   transcribeToolCallOutput,
   transcribeUserInput,
 } from "@prismshadow/amsp/markers";
-import { approximateTokens } from "../llm/context-limits.js";
 
-/** One request of a compaction span, as replay reads it back. */
-export interface SpanRequest {
-  /** How the request ended; absent when no `request_end` closes it. */
-  status?: StopReason;
-  /** The request's complete assistant text records, concatenated. */
-  text: string;
-}
-
-/** One tool call of a committed compaction response, with the output that answered it. */
-export interface SpanCall {
-  call: AmspRecord<ToolCallPayload>;
-  output?: AmspRecord<ToolCallOutputPayload>;
-}
-
-/** Compaction calls listed for the next context: the latest ones. */
-const MAX_COMPACTION_CALLS = 12;
-
-/** The hand-off note's size, by the harness's own estimate. */
-const HANDOFF_BUDGET_TOKENS = 4000;
-/** User messages quoted after the first one. */
-const HANDOFF_LAST_USER_MESSAGES = 8;
-/** Tool calls of the last completed turn quoted in the note. */
-const HANDOFF_TURN_MAX_CALLS = 8;
-/** Steps by which every cap shrinks together once dropping user messages is not enough. */
-const HANDOFF_SHRINK_STEPS = 16;
-/** Characters of the provider's refusal the note quotes. */
-const HANDOFF_REFUSAL_CHARS = 500;
+/** User messages quoted after the context's first one, and the characters each is cut to. */
+const LAST_USER_MESSAGES = 3;
+const USER_MESSAGE_CHARS = 1500;
+/** The last completed turn's calls quoted, the latest ones. */
+const LAST_TURN_CALLS = 4;
+/** Characters every other quote is cut to: the error, the turn's text, each argument and output. */
+const QUOTE_CHARS = 500;
+/** What a placeholder with nothing to quote reads. */
+const NOT_RECORDED = "(not recorded)";
+/** What a blank template stands for: the quoted data alone. */
+const BLANK_TEMPLATE = "{{ERROR}}\n{{USER_MESSAGES}}\n{{LAST_TURN}}\n{{TRACE_PATH}}";
+const PLACEHOLDERS = /\{\{(ERROR|USER_MESSAGES|LAST_TURN|TRACE_PATH)\}\}/g;
 
 const typeOf = (msg: AmspRecord): string | undefined => (msg.payload as { type?: string }).type;
 
@@ -86,179 +68,61 @@ export function closingSpan(file: AmspRecord[]): AmspRecord[] {
   return file.slice(begin);
 }
 
-/**
- * A span read back: its requests in order (how each ended and the assistant text it wrote), and
- * the tool calls of its committed responses in call order, each with the output that answered it
- * (anywhere in the span; absent when none was written). A call of a response that was not
- * committed is no call of the compaction: it was never answered or run.
- */
-export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: SpanCall[] } {
-  const main = span.filter(isMainSession);
-  const requests: SpanRequest[] = [];
-  const calls: AmspRecord<ToolCallPayload>[] = [];
-  let current: SpanRequest | null = null;
-  let pending: AmspRecord<ToolCallPayload>[] = [];
-  for (const msg of main) {
-    if (isEvent(msg, "request_begin")) {
-      // A request with no end (only at a file's tail) still counts, its outcome unknown.
-      if (current !== null) requests.push(current);
-      current = { text: "" };
-      pending = [];
-      continue;
-    }
-    if (isEvent(msg, "request_end")) {
-      const p = msg.payload as RequestEndPayload;
-      if (p.status === "completed") calls.push(...pending);
-      pending = [];
-      if (current === null) continue;
-      current.status = p.status;
-      requests.push(current);
-      current = null;
-      continue;
-    }
-    if (!isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; role?: string; text?: string };
-    if (p.type === "tool_call") pending.push(msg as AmspRecord<ToolCallPayload>);
-    else if (current !== null && p.type === "text" && p.role === "assistant" && p.text) {
-      current.text += p.text;
-    }
-  }
-  if (current !== null) requests.push(current);
-  const outputs = outputsById(main);
-  return {
-    requests,
-    calls: calls.map((call) => {
-      const output = outputs.get(call.payload.tool_call_id);
-      return output !== undefined ? { call, output } : { call };
-    }),
-  };
-}
-
 /** The assistant text of the span's last completed request, "" when none completed. */
 export function lastCompletedReply(span: AmspRecord[]): string {
-  return readSpan(span).requests.findLast((r) => r.status === "completed")?.text ?? "";
+  const turn = lastCompletedTurn(span.filter(isMainSession));
+  return turn === null ? "" : replyText(turn);
 }
 
-/**
- * The compaction's tool calls as the next context reads them: each `[tool_call]` line followed by
- * its `[tool_call_output]` line, in call order, the latest {@link MAX_COMPACTION_CALLS} at most
- * (a line says how many earlier ones are left out), arguments and outputs cut where long.
- */
+// Transitional until the round-5 cleanup commit, for the engine: no opening lists calls any more.
+export interface SpanCall {
+  call: AmspRecord<ToolCallPayload>;
+  output?: AmspRecord<ToolCallOutputPayload>;
+}
 export function compactionCallLines(calls: readonly SpanCall[]): string[] {
-  return callLines(calls, (n) => n);
+  return calls.flatMap(({ call, output }) => callPairLines(call, output));
 }
-
-function callLines(calls: readonly SpanCall[], cap: (n: number) => number): string[] {
-  const listed = calls.slice(-MAX_COMPACTION_CALLS);
-  const lines =
-    calls.length > listed.length
-      ? [omissionLine(`${count(calls.length - listed.length, "earlier tool call")} left out`)]
-      : [];
-  for (const call of listed) lines.push(...callPairLines(call, cap(200), cap(300)));
-  return lines;
-}
-
-/** A call's line and, when it was answered, its output's line (text only: images never cross). */
-function callPairLines({ call, output }: SpanCall, argsCap: number, outputCap: number): string[] {
-  const c = call.payload as Partial<ToolCallPayload>;
-  const id = c.tool_call_id ?? "";
-  const lines = [transcribeToolCall(c.name ?? "", id, headOf(c.arguments ?? "", argsCap))];
-  if (output !== undefined) {
-    const o = output.payload as Partial<ToolCallOutputPayload>;
-    lines.push(
-      transcribeToolCallOutput(id, o.status ?? "completed", headOf(o.output ?? "", outputCap)),
-    );
-  }
-  return lines;
-}
-
-/** `[context_summary]` tag lines, both spellings: what a quoted user message loses. */
-const SUMMARY_TAG_LINES: ReadonlySet<string> = new Set([
-  markerOpen(MARKER_TAGS.contextSummary),
-  markerClose(MARKER_TAGS.contextSummary),
-  `<${MARKER_TAGS.contextSummary}>`,
-  `</${MARKER_TAGS.contextSummary}>`,
-]);
 
 /**
- * The note that opens the next context when no summary could be had, from the closing Trace file
- * alone, so live and replay build the same note and records after the span's end change nothing.
- * It quotes the context's user messages outside every compaction span (the first and the last
- * {@link HANDOFF_LAST_USER_MESSAGES}), the last completed turn, the provider's refusal when the
- * span's end says `rejected`, and the compaction's calls. Over budget, the oldest of the last
- * messages go first, then every cap shrinks by one factor. Without a Trace path: no quotes.
+ * The note that opens the next context when a compaction ends without a summary: `template`
+ * (`compaction.handoff_note`; blank: the four placeholders one per line) with `{{ERROR}}`, the
+ * closing `compaction_end`'s error pair; `{{USER_MESSAGES}}`, the context's first user message
+ * and its last three outside every compaction span; `{{LAST_TURN}}`, the last completed
+ * request's text and its last four calls with their outputs; `{{TRACE_PATH}}`. Each is read off
+ * the file up to the span's end, so live and replay build the same note; an empty one reads
+ * `(not recorded)`. `opts.shell` is ignored until the round-5 cleanup commit.
  */
 export function buildCompactionHandoff(
   file: AmspRecord[],
   opts: { tracePath?: string; shell?: string; template?: string },
 ): string {
-  const { tracePath, shell } = opts;
-  if (tracePath === undefined) {
-    return buildContextHandoffText({
-      userLines: [],
-      turnLines: [],
-      refusalLines: [],
-      callLines: [],
-    });
-  }
-  const transcript = { tracePath, ...(shell !== undefined ? { shell } : {}) };
   const main = file.filter(isMainSession);
   const begin = lastCompactionBegin(main);
   const before = begin === -1 ? main : main.slice(0, begin);
   const span = begin === -1 ? [] : closingSpan(main);
   const context = outsideCompactionSpans(before);
-
-  const users = context.flatMap((msg) => {
-    const text = userTextOf(msg);
-    if (text === null) return [];
-    const quoted = withoutSummaryTagLines(text);
-    return quoted.trim() === "" ? [] : [quoted];
-  });
-  const first = users[0];
-  const last = users.slice(1).slice(-HANDOFF_LAST_USER_MESSAGES);
-  const leftOut = Math.max(0, users.length - 1 - last.length);
   const turn = lastCompletedTurn(context);
-  const outputs = outputsById([...before, ...span]);
-  const { calls } = readSpan(span);
-  const refusal = refusalLines(span);
-
-  const build = (dropped: number, factor = 1): string => {
-    const cap = (n: number): number => Math.floor(n * factor);
-    return buildContextHandoffText(
-      {
-        userLines: userLines(first, last.slice(dropped), leftOut + dropped, cap),
-        turnLines: turn !== null ? turnLines(turn, outputs, cap) : [],
-        refusalLines: refusal,
-        callLines: callLines(calls, cap),
-      },
-      transcript,
-    );
+  const values: Record<string, string> = {
+    ERROR: errorLine(span),
+    USER_MESSAGES: userLines(context).join("\n"),
+    LAST_TURN: turn === null ? "" : turnLines(turn, outputsById([...before, ...span])).join("\n"),
+    TRACE_PATH: opts.tracePath ?? "",
   };
-
-  let dropped = 0;
-  let note = build(dropped);
-  while (approximateTokens(note) > HANDOFF_BUDGET_TOKENS && dropped < last.length) {
-    dropped += 1;
-    note = build(dropped);
-  }
-  for (
-    let step = HANDOFF_SHRINK_STEPS - 1;
-    step >= 0 && approximateTokens(note) > HANDOFF_BUDGET_TOKENS;
-    step--
-  ) {
-    note = build(dropped, step / HANDOFF_SHRINK_STEPS);
-  }
-  return note;
+  const template =
+    opts.template !== undefined && opts.template.trim() !== "" ? opts.template : BLANK_TEMPLATE;
+  // One pass: a quote that spells a placeholder stays as written.
+  return buildContextSummaryText(
+    template.replace(PLACEHOLDERS, (_, key: string) => values[key] || NOT_RECORDED),
+  );
 }
 
-/** The `[request_error]` line of the span's own `compaction_end` when it says `rejected`. */
-function refusalLines(span: readonly AmspRecord[]): string[] {
+/** The `[request_error]` line of the span's own `compaction_end`, "" when it has no error pair. */
+function errorLine(span: readonly AmspRecord[]): string {
   const end = span.at(-1);
-  if (end === undefined || !isEvent(end, "compaction_end")) return [];
+  if (end === undefined || !isEvent(end, "compaction_end")) return "";
   const p = end.payload as Partial<CompactionEndPayload>;
-  if (p.error_code !== "rejected") return [];
-  const message = headOf(p.error_message ?? "", HANDOFF_REFUSAL_CHARS);
-  return [transcribeRequestError(p.error_code, message)];
+  if (p.error_code === undefined && p.error_message === undefined) return "";
+  return transcribeRequestError(p.error_code, headOf(p.error_message ?? "", QUOTE_CHARS));
 }
 
 /** The records outside every compaction span (a span's begin and end are its own). */
@@ -273,31 +137,91 @@ function outsideCompactionSpans(records: readonly AmspRecord[]): AmspRecord[] {
   return out;
 }
 
-/** The text of a complete user text record, or null for any other record. */
-function userTextOf(msg: AmspRecord): string | null {
-  if (!isCompleteModelMessage(msg)) return null;
-  const p = msg.payload as Partial<TextPayload>;
-  return p.type === "text" && p.role === "user" && typeof p.text === "string" ? p.text : null;
-}
+/** `[context_summary]` tag lines, both spellings: what a quoted user message loses. */
+const SUMMARY_TAG_LINES: ReadonlySet<string> = new Set([
+  markerOpen(MARKER_TAGS.contextSummary),
+  markerClose(MARKER_TAGS.contextSummary),
+  `<${MARKER_TAGS.contextSummary}>`,
+  `</${MARKER_TAGS.contextSummary}>`,
+]);
 
-function withoutSummaryTagLines(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => !SUMMARY_TAG_LINES.has(line.trim()))
-    .join("\n");
+/** The first user message and the last three, "…[N messages left out]…" between. */
+function userLines(context: readonly AmspRecord[]): string[] {
+  const users = context.flatMap((msg) => {
+    if (!isCompleteModelMessage(msg)) return [];
+    const p = msg.payload as Partial<TextPayload>;
+    if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return [];
+    const text = p.text
+      .split("\n")
+      .filter((line) => !SUMMARY_TAG_LINES.has(line.trim()))
+      .join("\n");
+    return text.trim() === "" ? [] : [text];
+  });
+  if (users.length === 0) return [];
+  const last = users.slice(1).slice(-LAST_USER_MESSAGES);
+  const leftOut = users.length - 1 - last.length;
+  const quote = (text: string): string => transcribeUserInput(headOf(text, USER_MESSAGE_CHARS));
+  return [
+    quote(users[0]!),
+    ...(leftOut > 0 ? [`  …[${count(leftOut, "message")} left out]…`] : []),
+    ...last.map(quote),
+  ];
 }
 
 /** The records of the last completed request (between its begin and its end), or null when none completed. */
-function lastCompletedTurn(context: readonly AmspRecord[]): AmspRecord[] | null {
-  for (let end = context.length - 1; end >= 0; end--) {
-    const msg = context[end]!;
+function lastCompletedTurn(records: readonly AmspRecord[]): AmspRecord[] | null {
+  for (let end = records.length - 1; end >= 0; end--) {
+    const msg = records[end]!;
     if (!isEvent(msg, "request_end")) continue;
     if ((msg.payload as RequestEndPayload).status !== "completed") continue;
     let begin = end - 1;
-    while (begin >= 0 && !isEvent(context[begin]!, "request_begin")) begin--;
-    return context.slice(begin + 1, end);
+    while (begin >= 0 && !isEvent(records[begin]!, "request_begin")) begin--;
+    return records.slice(begin + 1, end);
   }
   return null;
+}
+
+/** The assistant text a request wrote, its complete text records concatenated. */
+function replyText(turn: readonly AmspRecord[]): string {
+  let text = "";
+  for (const msg of turn) {
+    if (!isCompleteModelMessage(msg)) continue;
+    const p = msg.payload as Partial<TextPayload>;
+    if (p.type === "text" && p.role === "assistant" && p.text) text += p.text;
+  }
+  return text;
+}
+
+/** The turn's `[text]` line, then its last four calls, each with its output's line if any. */
+function turnLines(
+  turn: readonly AmspRecord[],
+  outputs: ReadonlyMap<string, AmspRecord<ToolCallOutputPayload>>,
+): string[] {
+  const text = replyText(turn);
+  const calls = turn
+    .filter((msg) => isCompleteModelMessage(msg) && typeOf(msg) === "tool_call")
+    .slice(-LAST_TURN_CALLS) as AmspRecord<ToolCallPayload>[];
+  return [
+    ...(text.trim() !== "" ? [transcribeText(headOf(text, QUOTE_CHARS))] : []),
+    ...calls.flatMap((call) => callPairLines(call, outputs.get(call.payload.tool_call_id))),
+  ];
+}
+
+/** A call's line and, when it was answered, its output's line (text only: images never cross). */
+function callPairLines(
+  call: AmspRecord<ToolCallPayload>,
+  output: AmspRecord<ToolCallOutputPayload> | undefined,
+): string[] {
+  const c = call.payload as Partial<ToolCallPayload>;
+  const id = c.tool_call_id ?? "";
+  const lines = [transcribeToolCall(c.name ?? "", id, headOf(c.arguments ?? "", QUOTE_CHARS))];
+  if (output !== undefined) {
+    const o = output.payload as Partial<ToolCallOutputPayload>;
+    lines.push(
+      transcribeToolCallOutput(id, o.status ?? "completed", headOf(o.output ?? "", QUOTE_CHARS)),
+    );
+  }
+  return lines;
 }
 
 /** Every tool output among the records, by the id of the call it answers (the first one written). */
@@ -315,61 +239,6 @@ function outputsById(
   return outputs;
 }
 
-/** The first message keeps more of its tail: an earlier summary's own transcript pointer is there. */
-function userLines(
-  first: string | undefined,
-  last: readonly string[],
-  leftOut: number,
-  cap: (n: number) => number,
-): string[] {
-  if (first === undefined) return [];
-  const lines = [transcribeUserInput(headAndTailOf(first, cap(3000), cap(1000)))];
-  if (leftOut > 0) lines.push(omissionLine(`${count(leftOut, "message")} left out`));
-  for (const text of last) {
-    lines.push(transcribeUserInput(headAndTailOf(text, cap(1200), cap(300))));
-  }
-  return lines;
-}
-
-function turnLines(
-  turn: readonly AmspRecord[],
-  outputs: ReadonlyMap<string, AmspRecord<ToolCallOutputPayload>>,
-  cap: (n: number) => number,
-): string[] {
-  const lines: string[] = [];
-  let quotedCalls = 0;
-  let leftOutCalls = 0;
-  for (const msg of turn) {
-    if (!isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; role?: string; text?: string; tool_call_id?: string };
-    if (p.type === "text") {
-      const text = p.text ?? "";
-      if (p.role === "assistant" && text.trim() !== "") {
-        lines.push(transcribeText(headOf(text, cap(1500))));
-      }
-    } else if (p.type === "tool_call") {
-      if (quotedCalls >= HANDOFF_TURN_MAX_CALLS) {
-        leftOutCalls += 1;
-        continue;
-      }
-      quotedCalls += 1;
-      const call = msg as AmspRecord<ToolCallPayload>;
-      const output = outputs.get(p.tool_call_id ?? "");
-      const pair: SpanCall = output !== undefined ? { call, output } : { call };
-      lines.push(...callPairLines(pair, cap(400), cap(800)));
-    }
-  }
-  if (leftOutCalls > 0) {
-    lines.push(omissionLine(`${count(leftOutCalls, "more tool call")} left out`));
-  }
-  return lines;
-}
-
-/** A line of its own saying what a section leaves out. */
-function omissionLine(what: string): string {
-  return `  …[${what}]…`;
-}
-
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
@@ -377,31 +246,8 @@ function count(n: number, noun: string): string {
 /** `text` cut to its first `cap` characters, marked with how many were left out. */
 function headOf(text: string, cap: number): string {
   if (text.length <= cap) return text;
-  const head = text.slice(0, boundaryBefore(text, cap));
-  return joinCut(head, `…[${count(text.length - head.length, "character")} left out]`, "");
-}
-
-/** `text` cut to its first `headCap` and its last `tailCap` characters, the cut marked between them. */
-function headAndTailOf(text: string, headCap: number, tailCap: number): string {
-  if (text.length <= headCap + tailCap) return text;
-  const head = text.slice(0, boundaryBefore(text, headCap));
-  const tail = text.slice(boundaryAfter(text, text.length - tailCap));
-  const cut = text.length - head.length - tail.length;
-  return joinCut(head, `…[${count(cut, "character")} left out]…`, tail);
-}
-
-function joinCut(head: string, marker: string, tail: string): string {
-  return [head, marker, tail].filter((part) => part !== "").join(" ");
-}
-
-/** `index`, moved back one when it would split a surrogate pair. */
-function boundaryBefore(text: string, index: number): number {
-  const code = text.charCodeAt(index - 1);
-  return index > 0 && code >= 0xd800 && code <= 0xdbff ? index - 1 : index;
-}
-
-/** `index`, moved on one when it would start inside a surrogate pair. */
-function boundaryAfter(text: string, index: number): number {
-  const code = text.charCodeAt(index);
-  return index < text.length && code >= 0xdc00 && code <= 0xdfff ? index + 1 : index;
+  // Back one when the cut would split a surrogate pair.
+  const code = text.charCodeAt(cap - 1);
+  const head = text.slice(0, code >= 0xd800 && code <= 0xdbff ? cap - 1 : cap);
+  return `${head} …[${count(text.length - head.length, "character")} left out]`;
 }

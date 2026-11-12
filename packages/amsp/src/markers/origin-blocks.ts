@@ -10,7 +10,6 @@
  */
 import { dualFormPatterns, markerBlock, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
-import { traceQueryGuidance } from "./trace-query.js";
 import { isHarnessInput } from "../records/types.js";
 import type { AmspRecord } from "../records/types.js";
 
@@ -364,13 +363,10 @@ export interface ModelSwitchOrigin {
  * An in-session switch that could not summarize (core's Trace handoff) opens its next context
  * with this same block, word for word: there `session` names the Session itself, which is how a
  * reader tells the two apart (see `parseInPlaceModelSwitch`).
- *
- * The trace-query guidance (trace-query.ts, worded for `opts.shell`) names no path and starts no
- * line with a field key, so the parser below reads the fields alone as before.
  */
 export function buildModelSwitchMessage(
   origin: ModelSwitchOrigin,
-  opts: { shell?: string } = {},
+  _opts?: { shell?: string }, // ignored; goes in the round-5 cleanup commit
 ): string {
   const title = origin.sessionTitle ? ` (${origin.sessionTitle})` : "";
   const lines = [`session: ${origin.sessionId}${title}`];
@@ -381,9 +377,7 @@ export function buildModelSwitchMessage(
   return markerBlock(
     MARKER_TAGS.modelSwitchFrom,
     [
-      "The user switched models: you continue the conversation listed below, now on a different model. Its earlier history is NOT in your context — when you need it, read it from the trace file at the path below. Earlier trace files of that conversation, if any, have the same name with a lower number, in the same or an earlier date folder.",
-      traceQueryGuidance(opts.shell),
-      "The user's message, if any, follows.",
+      "The user switched models: you continue the conversation listed below, now on a different model. Its earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results). Earlier trace files of that conversation, if any, have the same name with a lower number, in the same or an earlier date folder. The user's message, if any, follows.",
       ...lines,
     ].join("\n"),
   );

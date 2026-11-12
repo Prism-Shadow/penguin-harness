@@ -6,128 +6,50 @@
  */
 import { markerBlock, markerClose, markerOpen, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TRANSCRIPT_TAGS } from "./tags.js";
-import { traceQueryGuidance } from "./trace-query.js";
-
-/** Where the compacted context's transcript is, for the `[context_summary]` trailer. */
-export interface CompactedTranscript {
-  /** Absolute path of the Trace file of the context the summary replaces. */
-  tracePath: string;
-  /** The shell the Session's commands run in (the system prompt's `Shell:` value), when known: the trailer's search is worded for it. */
-  shell?: string;
-}
-
-/** What the harness adds under a summary besides the transcript trailer; each line appears only when it applies. */
-export interface ContextSummaryExtras {
-  /** The compaction's tool calls with their outputs, transcribed (empty or absent: no section). */
-  callLines?: readonly string[];
-  /** A note from the harness about how this context was opened (empty or absent: no notice line). */
-  notice?: string;
-}
-
-/** The sentence both blocks use after a Trace path: where the conversation's earlier files are. */
-const EARLIER_FILES =
-  "Earlier files of this conversation share the name with a lower number, in the same or an earlier date folder.";
-
-/** Heads the transcribed tool calls of a compaction, under a summary and in a hand-off note alike. */
-const COMPACTION_CALLS_HEADER =
-  'Tool calls made during this compaction, as the harness recorded them; a hand-off file exists only if its call shows status="completed":';
-
-/** The transcript pointer and the query guidance that close a block naming a Trace file. */
-function transcriptLines(lead: string, transcript: CompactedTranscript): string[] {
-  return [
-    `${lead}: ${transcript.tracePath}. ${EARLIER_FILES}`,
-    traceQueryGuidance(transcript.shell),
-  ];
-}
 
 /**
- * Wraps a compaction summary as the new context's first input: `[context_summary]…[/context_summary]`.
- *
- * Under the summary, after a blank line, come the extras that apply and, given the compacted
- * context's Trace file, the trailer naming it. All of it is plain text inside the block, so a
- * reader that knows the block by its prefix reads an old summary the same way; with neither,
- * the block is exactly what it was before they existed. A string `trace` is the Trace file's
- * path alone.
+ * Wraps a compaction summary, or the hand-off note written in its place, as the new context's
+ * first input: `[context_summary]…[/context_summary]`. Given the compacted context's Trace file,
+ * a blank line and one line naming it follow the body; without one the block is main's.
  */
 export function buildContextSummaryText(
-  summary: string,
+  body: string,
   trace?: CompactedTranscript | string,
-  extras?: ContextSummaryExtras,
+  _extras?: ContextSummaryExtras, // ignored, as is `trace.shell`
 ): string {
-  const transcript = typeof trace === "string" ? { tracePath: trace } : trace;
-  const lines: string[] = [];
-  if (extras?.callLines !== undefined && extras.callLines.length > 0) {
-    lines.push(COMPACTION_CALLS_HEADER, ...extras.callLines);
-  }
-  if (extras?.notice !== undefined && extras.notice !== "") {
-    lines.push(`Harness notice: ${extras.notice}`);
-  }
-  if (transcript !== undefined) {
-    lines.push(
-      ...transcriptLines(
-        "Transcript of the compacted context, for when the summary is not enough",
-        transcript,
-      ),
-    );
-  }
-  if (lines.length === 0) return markerBlock(MARKER_TAGS.contextSummary, summary);
-  return markerBlock(MARKER_TAGS.contextSummary, `${summary}\n\n${lines.join("\n")}`);
+  const tracePath = typeof trace === "string" ? trace : trace?.tracePath;
+  if (tracePath === undefined) return markerBlock(MARKER_TAGS.contextSummary, body);
+  return markerBlock(
+    MARKER_TAGS.contextSummary,
+    `${body}\n\nTrace file of the compacted context (JSONL, one record per line): ${tracePath}`,
+  );
 }
 
-/** The sections of a hand-off note, each already transcribed into two-space indented lines. */
+// Transitional until the round-5 cleanup commit, for callers outside this package: the union and
+// `extras` of buildContextSummaryText, buildContextHandoffText (the gallery), SALVAGE_MIN_CHARS.
+export interface CompactedTranscript {
+  tracePath: string;
+  shell?: string;
+}
+export interface ContextSummaryExtras {
+  callLines?: readonly string[];
+  notice?: string;
+}
 export interface ContextHandoffSections {
-  /** The compacted context's user messages, oldest first (`[user_input]` lines, and the line saying how many were left out). */
   userLines: readonly string[];
-  /** The last completed turn before the compaction: its `[text]`, `[tool_call]` and `[tool_call_output]` lines. */
   turnLines: readonly string[];
-  /** The provider's refusal of the request after that turn: a `[request_error]` line, or none. */
   refusalLines: readonly string[];
-  /** The compaction's own tool calls with their outputs, as under a summary (see ContextSummaryExtras.callLines). */
   callLines: readonly string[];
 }
-
-const HANDOFF_LEAD_OPENING =
-  "No summary of the earlier conversation could be written, so the harness wrote this note in its place. The conversation up to this point is no longer in your context; ";
-const HANDOFF_LEAD_TRANSCRIPT =
-  "its transcript is the file named below, and what follows is copied from it, shortened where marked. Carry on with the task from where it stopped; when you need more than this note holds, query the transcript first.";
-const HANDOFF_LEAD_NO_TRANSCRIPT =
-  "no transcript of it is recorded. Carry on with the task from where it stopped.";
-const HANDOFF_LEAD_CLOSING =
-  " Consent does not carry over: anything that needed a go-ahead is asked again.";
-/** Heads the refusal section: without it a model would rebuild the very input that was refused. */
-const HANDOFF_REFUSAL_HEADING =
-  "The request after that turn was refused by the provider, which is why this context was closed; its error is below. If the refusal was about size, do not rebuild the same input: read large files and outputs in parts.";
-
-/**
- * The hand-off note a compaction opens the next context with when no summary could be had,
- * wrapped like a summary so every reader that knows the block by its prefix carries it as one:
- * the harness's explanation, each non-empty section under its heading, then, given the compacted
- * context's Trace file, its path and how to query it. What to quote is the caller's choice
- * (core's compaction-carry).
- */
+/** The sections' lines, with no prose of the harness's, as a blank `handoff_note` gives them. */
 export function buildContextHandoffText(
   sections: ContextHandoffSections,
   transcript?: CompactedTranscript,
 ): string {
-  const parts = [
-    HANDOFF_LEAD_OPENING +
-      (transcript !== undefined ? HANDOFF_LEAD_TRANSCRIPT : HANDOFF_LEAD_NO_TRANSCRIPT) +
-      HANDOFF_LEAD_CLOSING,
-  ];
-  const section = (heading: string, lines: readonly string[]): void => {
-    if (lines.length > 0) parts.push([heading, ...lines].join("\n"));
-  };
-  section("User messages of the compacted context, oldest first:", sections.userLines);
-  section("The last completed turn before the compaction:", sections.turnLines);
-  section(HANDOFF_REFUSAL_HEADING, sections.refusalLines);
-  section(COMPACTION_CALLS_HEADER, sections.callLines);
-  if (transcript !== undefined) {
-    parts.push(transcriptLines("Transcript of the compacted context", transcript).join("\n"));
-  }
-  return markerBlock(MARKER_TAGS.contextSummary, parts.join("\n\n"));
+  const { userLines, turnLines, refusalLines, callLines } = sections;
+  const lines = [...userLines, ...turnLines, ...refusalLines, ...callLines];
+  return buildContextSummaryText(lines.join("\n"), transcript);
 }
-
-/** Least characters an unclosed `[summary]` beside tool calls must hold for the reply to be a summary. */
 export const SALVAGE_MIN_CHARS = 400;
 
 /** The summary tag's two spellings, current form first (see block.ts for the dual-form policy). */

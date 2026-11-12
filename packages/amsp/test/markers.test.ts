@@ -11,7 +11,6 @@
 import { describe, expect, it } from "vitest";
 import {
   MARKER_TAGS,
-  buildContextHandoffText,
   buildContextSummaryText,
   buildHandoffMessage,
   buildModelSwitchMessage,
@@ -35,11 +34,9 @@ import {
   startsWithMarker,
   stripConversationMarkers,
   summaryInTags,
-  traceQueryGuidance,
   stripMarkerBlocks,
   transcribeText,
   transcribeToolCall,
-  transcribeToolCallOutput,
   transcribeUserInput,
   unwrapSyntheticBlock,
   userSteeringText,
@@ -120,67 +117,15 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     );
   });
 
-  // The trailer a compacted context's Trace file earns: its path once, then how to query it
-  // precisely — line numbers first with a match-only search worded for the Session's shell,
-  // then read_file offset/limit on those lines; never the whole file.
-  it.each([
-    [
-      "bash",
-      ["`rg -n -o '<pattern>' <file>` (or `grep -n -o`)", `'"role":"user","text"'`],
-      ["Select-String"],
-    ],
-    ["zsh", ["`rg -n -o '<pattern>' <file>`"], ["Select-String"]],
-    [
-      "pwsh",
-      [
-        "`(Select-String -Path <file> -SimpleMatch -Pattern '<pattern>').LineNumber`",
-        `'"name":"exec_command","arguments"'`,
-      ],
-      ["rg -n"],
-    ],
-    ["powershell", ["(Select-String -Path <file> -SimpleMatch"], ["rg -n"]],
-    [
-      "cmd",
-      [
-        "`powershell -NoProfile -Command \"(Select-String -Path '<file>' -Pattern '<pattern>').LineNumber\"`",
-        "'role.:.user.,.text'",
-      ],
-      ["rg -n", '"role":"user"'],
-    ],
-    [
-      undefined,
-      [
-        "`rg -n -o '<pattern>' <file>`",
-        "in a POSIX shell",
-        "-SimpleMatch -Pattern '<pattern>').LineNumber` in PowerShell",
-      ],
-      [],
-    ],
-  ] as const)(
-    "a summary's trailer names its Trace file and words the search for the %s shell",
-    (shell, present, absent) => {
-      const tracePath = "/data/p/agents/a/traces/2026-11-04/session-x_002.jsonl";
-      const text = buildContextSummaryText("the gist", {
-        tracePath,
-        ...(shell !== undefined ? { shell } : {}),
-      });
-      const lines = text.split("\n");
-      expect(lines.slice(0, 3)).toEqual(["[context_summary]", "the gist", ""]);
-      expect(lines.at(-1)).toBe("[/context_summary]");
-      // About three lines of trailer, the path once.
-      const trailer = lines.slice(3, -1);
-      expect(trailer).toHaveLength(3);
-      expect(text.split(tracePath)).toHaveLength(2);
-      expect(trailer[0]).toContain(tracePath);
-      expect(trailer[1]).toContain("never read or cat a whole file");
-      expect(trailer[2]).toContain("read_file offset/limit");
-      expect(trailer[2]).toContain("read_file caps each line");
-      for (const fragment of present) expect(trailer[1]).toContain(fragment);
-      for (const fragment of absent) expect(text).not.toContain(fragment);
-      // Still a summary block to every reader that recognizes one by its prefix.
-      expect(startsWithMarker(text, MARKER_TAGS.contextSummary)).toBe(true);
-    },
-  );
+  it("a summary given its compacted context's Trace file is followed, after a blank line, by one line naming it", () => {
+    const tracePath = "/data/p/agents/a/traces/2026-11-04/session-x_002.jsonl";
+    const text = buildContextSummaryText("the gist", tracePath);
+    expect(text).toBe(
+      `[context_summary]\nthe gist\n\nTrace file of the compacted context (JSONL, one record per line): ${tracePath}\n[/context_summary]`,
+    );
+    // Still a summary block to every reader that recognizes one by its prefix.
+    expect(startsWithMarker(text, MARKER_TAGS.contextSummary)).toBe(true);
+  });
 
   it("extractSummary accepts the current [summary] form, the legacy <summary> form, and tagless output", () => {
     // The legacy angle form must stay accepted indefinitely: compaction.prompt is persisted in
@@ -258,109 +203,6 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     );
     expect(extractSummary("[summary]\n[/summary>\nBody after.\n[/summary]")).toBe("Body after.");
     expect(extractSummary("A tagless body.\n[/summary>")).toBe("A tagless body.");
-  });
-
-  it("a summary is followed by the compaction's calls and the notice, then the trailer", () => {
-    const tracePath = "/data/p/agents/a/traces/2026-11-11/session-x_003.jsonl";
-    const callLines = [
-      transcribeToolCall("write_file", "h1", '{"file_path":"/s/handoff/plan.md"}'),
-      transcribeToolCallOutput("h1", "completed", 'Created "/s/handoff/plan.md" (5 lines).'),
-    ];
-    const text = buildContextSummaryText(
-      "## Request\nShip it",
-      { tracePath, shell: "bash" },
-      { callLines, notice: "the previous configuration is still in force." },
-    );
-    const lines = text.split("\n");
-    expect(lines.slice(0, 4)).toEqual(["[context_summary]", "## Request", "Ship it", ""]);
-    expect(lines[4]).toContain('a hand-off file exists only if its call shows status="completed"');
-    expect(lines.slice(5, 7)).toEqual(callLines);
-    expect(lines[7]).toBe("Harness notice: the previous configuration is still in force.");
-    expect(lines[8]).toContain(tracePath);
-    expect(lines.at(-1)).toBe("[/context_summary]");
-    expect(text.split(tracePath)).toHaveLength(2);
-  });
-
-  it("empty extras leave the block unchanged, with a Trace path or without", () => {
-    const bare = buildContextSummaryText("the gist");
-    expect(buildContextSummaryText("the gist", undefined, {})).toBe(bare);
-    expect(buildContextSummaryText("the gist", undefined, { callLines: [], notice: "" })).toBe(
-      bare,
-    );
-    const transcript = { tracePath: "/t/session-x_001.jsonl" };
-    expect(buildContextSummaryText("the gist", transcript, {})).toBe(
-      buildContextSummaryText("the gist", transcript),
-    );
-  });
-
-  it("the hand-off note explains itself, quotes its sections in order, leaves out empty ones and ends with the Trace pointer", () => {
-    const tracePath = "/data/p/agents/a/traces/2026-11-11/session-x_002.jsonl";
-    const userLines = [transcribeUserInput("first ask"), transcribeUserInput("then this")];
-    const turnLines = [
-      transcribeText("Running the tests."),
-      transcribeToolCall("exec_command", "c9", '{"cmd":"pnpm test"}'),
-      transcribeToolCallOutput("c9", "completed", "12 passed"),
-    ];
-    const note = buildContextHandoffText(
-      { userLines, turnLines, refusalLines: [], callLines: [] },
-      { tracePath, shell: "bash" },
-    );
-    // Recognized as a summary block by every reader that knows one by its prefix.
-    expect(startsWithMarker(note, MARKER_TAGS.contextSummary)).toBe(true);
-    const parts = note.split("\n\n");
-    expect(parts[0]).toMatch(/^\[context_summary\]\nNo summary of the earlier conversation/);
-    expect(parts[0]).toContain("its transcript is the file named below");
-    expect(parts[1]!.split("\n")).toEqual([
-      "User messages of the compacted context, oldest first:",
-      ...userLines,
-    ]);
-    expect(parts[2]!.split("\n")).toEqual([
-      "The last completed turn before the compaction:",
-      ...turnLines,
-    ]);
-    // No refusal and no compaction call section: nothing was refused, and the compaction made
-    // no call.
-    expect(note).not.toContain("refused by the provider");
-    expect(note).not.toContain("Tool calls made during this compaction");
-    expect(parts[3]).toContain(tracePath);
-    expect(parts[3]).toContain("rg -n -o");
-    expect(parts).toHaveLength(4);
-    expect(note.endsWith("\n[/context_summary]")).toBe(true);
-  });
-
-  it("the hand-off note says why the context was closed when the provider refused, between the last turn and the compaction's calls", () => {
-    const turnLines = [transcribeText("Reading the log.")];
-    const refusalLines = [transcribeRequestError("rejected", "prompt is too long")];
-    const callLines = [transcribeToolCall("write_file", "w1", "{}")];
-    const note = buildContextHandoffText(
-      { userLines: [], turnLines, refusalLines, callLines },
-      { tracePath: "/t/session-x_002.jsonl" },
-    );
-    const parts = note.split("\n\n");
-    expect(parts[1]!.split("\n")).toEqual([
-      "The last completed turn before the compaction:",
-      ...turnLines,
-    ]);
-    const [heading, ...quoted] = parts[2]!.split("\n");
-    expect(heading).toMatch(/^The request after that turn was refused by the provider/);
-    expect(quoted).toEqual(['  [request_error code="rejected"]prompt is too long[/request_error]']);
-    expect(parts[3]!.startsWith("Tool calls made during this compaction")).toBe(true);
-  });
-
-  it("the hand-off note without a Trace path says no transcript is recorded and names no file", () => {
-    const note = buildContextHandoffText({
-      userLines: [],
-      turnLines: [],
-      refusalLines: [],
-      callLines: [],
-    });
-    const lines = note.split("\n");
-    expect(lines).toHaveLength(3);
-    expect(lines[1]).toContain("no transcript of it is recorded");
-    expect(lines[1]).toContain("Carry on with the task from where it stopped.");
-    expect(lines[1]).not.toContain("file named below");
-    expect(lines[1]).toContain("Consent does not carry over");
-    expect(note).not.toContain("JSONL");
   });
 
   it("turn blocks round-trip through unwrapSyntheticBlock, both forms, single-level", () => {
@@ -549,15 +391,6 @@ describe("origin blocks ([use_skills] / [handoff_from] / [scheduled_task] / [mod
     const text = buildModelSwitchMessage(origin);
     expect(text.startsWith("[model_switch_from]\n")).toBe(true);
     expect(parseModelSwitchMessage(text)).toEqual(origin);
-    // How to read the trace file is the summary trailer's wording, shell-worded when known, and
-    // the fields still parse around it.
-    const posix = buildModelSwitchMessage(origin, { shell: "bash" });
-    expect(posix).toContain(traceQueryGuidance("bash"));
-    expect(text).toContain(traceQueryGuidance());
-    expect(buildContextSummaryText("s", { tracePath: "/t.jsonl", shell: "bash" })).toContain(
-      traceQueryGuidance("bash"),
-    );
-    expect(parseModelSwitchMessage(posix)).toEqual(origin);
     const minimal = buildModelSwitchMessage({ sessionId: "session-01" });
     expect(minimal).not.toContain("trace:");
     expect(parseModelSwitchMessage(minimal)).toEqual({ sessionId: "session-01" });

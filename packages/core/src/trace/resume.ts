@@ -42,8 +42,7 @@ import {
 import {
   buildCompactionHandoff,
   closingSpan,
-  compactionCallLines,
-  readSpan,
+  lastCompletedReply,
 } from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
@@ -307,12 +306,9 @@ function toolCallOutputId(msg: AmspRecord): string | null {
 }
 
 export interface ResumeTraceOptions {
-  /**
-   * Absolute path of the file `messages` were read from, named by the rebuilt opening's trailer
-   * as the live engine named it. Absent: no trailer, and a hand-off note quotes nothing.
-   */
+  /** Absolute path of the file `messages` were read from, which the rebuilt opening names. */
   tracePath?: string;
-  /** The shell the resumed Session runs commands in, wording the trailer's search (see ContextEngineDeps.shell). */
+  /** Ignored; goes in the round-5 cleanup commit. */
   shell?: string;
   /** The hand-off note's template in force at resume (see CompactionSettings.handoffNote). */
   handoffNote?: string;
@@ -349,25 +345,15 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
       };
       if (p.mode !== "summarize") return result;
       // The opening the live engine wrote, rebuilt by the functions it used (compaction-carry).
-      const { requests, calls } = readSpan(closingSpan(messages));
-      const { tracePath, shell } = opts;
-      const transcript =
-        tracePath !== undefined
-          ? { tracePath, ...(shell !== undefined ? { shell } : {}) }
-          : undefined;
-      const callLines = compactionCallLines(calls);
+      const { tracePath, handoffNote } = opts;
       if (p.error_code === undefined && p.error_message === undefined) {
         // A full summary: the text of the span's last completed Request, even an empty one (an
-        // earlier one is a tool round's or a correction's reply, never the summary). Always
-        // rebuilt in the current [context_summary] form — extractSummary itself still accepts
-        // the old <summary> tags an old Trace may contain.
-        const summaryText = extractSummary(
-          requests.findLast((r) => r.status === "completed")?.text ?? "",
-        );
+        // earlier one is a tool round's reply, never the summary). Always rebuilt in the current
+        // [context_summary] form — extractSummary itself still accepts the old <summary> tags an
+        // old Trace may contain.
+        const summaryText = extractSummary(lastCompletedReply(closingSpan(messages)));
         if (summaryText !== "") {
-          result.pendingSummary = userText(
-            buildContextSummaryText(summaryText, transcript, { callLines }),
-          );
+          result.pendingSummary = userText(buildContextSummaryText(summaryText, tracePath));
           return result;
         }
         // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
@@ -376,9 +362,12 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // turn-by-turn replay — the original context this file still holds is restored, and
         // the committed compaction turn stays in history like any committed turn.
       } else {
-        // The error pair: the hand-off note (see CompactionEndPayload). A refused ordinary
-        // request's own input is not resent: the note quotes it.
-        result.pendingSummary = userText(buildCompactionHandoff(messages, transcript ?? {}));
+        // The error pair: the hand-off note, from the template in force at resume (see
+        // CompactionEndPayload). A refused ordinary request's own input is not resent: the note
+        // quotes it.
+        result.pendingSummary = userText(
+          buildCompactionHandoff(messages, { tracePath, template: handoffNote }),
+        );
         return result;
       }
     }
