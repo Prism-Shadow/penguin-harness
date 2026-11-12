@@ -691,3 +691,8 @@ html.dark .post-tree-note {
 html.dark .post-tree-harm {
   color: #f87171;
 }
+
+/* Release the entry animation's stacking context so diagrams can blend with the page. */
+.anim-rise:has(.prose-figure-diagram) {
+  animation-fill-mode: backwards;
+}
