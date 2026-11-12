@@ -105,8 +105,18 @@ jobs:
       - name: Lint workflows (actionlint)
         run: |
           ver=1.7.12
-          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
-            | tar xz actionlint
+          actionlint_archive="${RUNNER_TEMP}/actionlint_${ver}_linux_amd64.tar.gz"
+          if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
+            -o "$actionlint_archive"; then
+            # The API serves the same v1.7.12 asset when the release URL is unavailable.
+            curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
+              -H 'Accept: application/octet-stream' \
+              https://api.github.com/repos/rhysd/actionlint/releases/assets/384924896 \
+              -o "$actionlint_archive"
+          fi
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $actionlint_archive" | sha256sum --check -
+          tar xzf "$actionlint_archive" actionlint
           # -shellcheck= turns off the bundled shellcheck pass: what is wanted here is the
           # workflow-expression and schema check, and shellcheck's info-level findings in
           # workflows this change does not touch are a separate conversation.

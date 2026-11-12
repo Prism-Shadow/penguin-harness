@@ -14,6 +14,8 @@
  *   gallery; without the web among them, ui and cli run whole in one job.
  * - Given a server edit, when planning CI, then the server suite runs in two Linux jobs, each half
  *   of its files with the coverage of its half.
+ * - Given a server edit, each server test job builds the CLI it invokes, while the CLI's own
+ *   tests stay in their normal jobs; a CLI-only edit never creates server test jobs.
  * - Given a core edit, when planning CI, then the shard testing the desktop on macOS and Windows
  *   builds the desktop and what it imports, never the web bundle only a packed app reads.
  * - Given any typecheck, when planning CI, then its build selects the checked packages'
@@ -457,6 +459,27 @@ describe("affected CI", { concurrency: false }, () => {
     const shard = plan.linux.include.find((entry) => entry.packages.includes(name("cli")));
     assert.equal(shard.shard, "web-cli");
     assert.ok(!shard.tests.includes("--shard"));
+    assert.equal(
+      plan.linux.include.filter((entry) => entry.packages.includes(name("cli"))).length,
+      1,
+    );
+    for (const matrix of [plan.linux, plan.macos, plan.windows]) {
+      assert.ok(!matrix.include.some((entry) => entry.shard.startsWith("server")));
+    }
+  });
+
+  it("server test jobs build the CLI without also running its test suite", () => {
+    const plan = changed("packages/server/src/index.js");
+    for (const matrix of [plan.linux, plan.macos, plan.windows]) {
+      const jobs = matrix.include.filter((entry) => entry.packages.includes(name("server")));
+      assert.ok(jobs.length > 0);
+      for (const job of jobs) {
+        assert.ok(built(job.build).has(name("cli")), `${job.shard} builds the CLI it invokes`);
+        assert.ok(!job.packages.includes(name("cli")));
+        assert.ok(!job.tests.includes(`'${name("cli")}'`));
+      }
+      assert.ok(matrix.include.some((entry) => entry.packages.includes(name("cli"))));
+    }
   });
 
   it("typecheck builds what the checked packages import, never a site bundle or the UI build", () => {
