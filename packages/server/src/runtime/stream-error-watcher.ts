@@ -21,11 +21,10 @@
  *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
- * A request the provider refused that the engine answers by handing the context off is recorded
- * `retryable` (`retry_in_ms: 0`), so the next context's first request resolves it as
- * `llm_retried`; the hand-off itself is its `compaction_end`'s row.
- * A compaction's own requests, which stream between its paired events, are not read here:
- * its `compaction_end` speaks for them (source = `compaction`, below).
+ * A refused request the engine hands off ends `retryable` (`retry_in_ms: 0`) and resolves as
+ * `llm_retried` at the next context's first request; the hand-off is its `compaction_end`'s row.
+ * A compaction's own requests (inside its span) are not read here: its `compaction_end` speaks
+ * for them (source = `compaction`, below).
  *
  * The message uses the real reason: `request_end` carries the error detail on
  * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
@@ -53,11 +52,10 @@
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_fatal:exec_command`) — so the stats dashboard's "most common error
- * code" and the error table can show at a glance which tool failed. Inside a compaction span
- * a `fatal` output for a call that never reached an `approval_decision` is the harness
- * refusing it (a tool the compaction may not use, or no tool round left), the compaction
- * protocol rather than a tool failing, and is not recorded; a call that was approved and then
- * failed still is.
+ * code" and the error table can show at a glance which tool failed.
+ * Inside a compaction span, a `fatal` output for a call that never reached an
+ * `approval_decision` is the harness refusing it and is not recorded; an approved call that
+ * then failed still is.
  *
  * **Attribution (ctx) is recorded against the session that actually produced the error,
  * not always the parent Session**: a subagent's LLM failures and tool failures also flow
@@ -176,17 +174,9 @@ export class StreamErrorWatcher {
   private readonly toolNames = new Map<string, string>();
   /** Subagent identity: origin → that subagent's `{agentId, sessionId}` (see the file header's attribution section). */
   private readonly originCtx = new Map<string, { agentId: string; sessionId: string }>();
-  /**
-   * Sessions (by origin key) inside a compaction span: its own requests stream there, tool
-   * rounds included, and a failed one is the compaction's — its `compaction_end` speaks for it
-   * once (see observeCompactionEnd), never an LLM failure besides.
-   */
+  /** Sessions (by origin key) inside a compaction span (see the file header). */
   private readonly compacting = new Set<string>();
-  /**
-   * Calls made inside a compaction span that have not reached an approval decision
-   * (`origin \0 tool_call_id`): a `fatal` output for one is the harness's refusal, not a tool
-   * failure (see the file header). Dequeued at the decision or the output.
-   */
+  /** Compaction-span calls (`origin \0 tool_call_id`) awaiting an approval decision. */
   private readonly unapproved = new Set<string>();
 
   constructor(
@@ -367,32 +357,17 @@ export class StreamErrorWatcher {
   }
 
   /**
-   * A compaction's outcome as its own error record (source = `compaction`). Its requests stream
-   * between the paired events but are never read as LLM failures (see `compacting`): the
-   * `compaction_end` speaks for all of them, once.
-   *
-   * - `completed` carrying the unified error pair (`error_code` / `error_message`) is a degraded
-   *   completion: no full summary could be had — the transport ladder or the corrections ran
-   *   out — so the next context opened with a salvaged summary or the harness's Trace hand-off
-   *   note. Expected (`compaction_degraded`): the run carried on and nobody has to step in, but
-   *   the cost center shows why the summary is missing.
-   * - `completed` with `error_code` `rejected`: the provider refused a request on the context —
-   *   an ordinary one (the span then holds no request and no `attempt`) or the compaction's own
-   *   — and the context was handed off. Expected too, under its own code (`context_refused`):
-   *   it usually means the model's configured window is larger than the one the provider
-   *   enforces, which the cost center's most common code should surface, and the dedup must
-   *   never fold it into a routine degraded completion.
-   * - `fatal`: the next context could not be opened at all, so the original context is kept
-   *   (and a mid-Task run ends there). Unexpected (`compaction_failed`): the trigger still
-   *   holds, and the Session keeps re-entering compaction until a human changes something.
-   * - `retryable`, and its retired spelling `failed`, end an older core's abandoned compaction
-   *   (the engine no longer abandons one): recorded as before.
-   * - `completed` without the pair (a full summary) and `aborted` (a user interrupt) are not
-   *   errors.
-   *
-   * The message carries the attempts and the error detail (compaction_end's share of the
-   * RetryDetail block). The codes stay apart so the short-window dedup on
-   * `(source, code, Project)` never drops a run-ending failure as a repeat of a degraded one.
+   * A compaction's outcome as its own error record (source = `compaction`), the one record for
+   * all of its requests (see the file header). The codes stay apart so the short-window dedup on
+   * `(source, code, Project)` never folds one into another:
+   * - `completed` with the error pair: `compaction_degraded`, expected — no full summary, but the
+   *   run carried on; with `error_code` `rejected`, `context_refused`, expected — usually the
+   *   configured window is larger than the one the provider enforces.
+   * - `fatal` (the next context could not be opened), and an older core's abandoned `retryable`
+   *   / `failed` (issue #170): `compaction_failed`, unexpected — the trigger still holds, so the
+   *   Session re-enters compaction until a human changes something.
+   * - A full summary and `aborted` are not errors.
+   * The message carries the attempts and the error detail (compaction_end's share of RetryDetail).
    */
   private observeCompactionEnd(msg: AmspRecord, key: string): void {
     const p = msg.payload as {
@@ -485,7 +460,6 @@ export class StreamErrorWatcher {
 
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
-    // A compaction call answered with no approval decision: the harness refused it.
     const refused = this.unapproved.delete(key);
     if (p.status !== "fatal" || refused) return; // completed / aborted (a denial, an interruption) are not errors
     const output = p.output ?? "";

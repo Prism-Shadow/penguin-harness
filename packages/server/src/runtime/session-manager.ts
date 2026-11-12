@@ -197,7 +197,7 @@ export type RunOpts = {
   signal: AbortSignal;
 };
 
-/** What a model switch is started with: the target pair, plus what a run is started with — the approval callback answers the switch's compaction tool rounds. */
+/** The target pair plus a run's options (`approve` answers the compaction's tool rounds). */
 export interface SwitchModelOpts extends RunOpts {
   provider: string;
   modelId: string;
@@ -206,7 +206,6 @@ export interface SwitchModelOpts extends RunOpts {
 export interface RuntimeSession {
   readonly sessionId: string;
   run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
-  /** Compacts the context (core `Session.compact`); `approve` answers its tool rounds' calls, the same callback a Task runs with. */
   compact(opts: RunOpts): AsyncGenerator<AmspRecord>;
   /**
    * The running context's model (core `Session.provider` / `Session.modelId`, getters over
@@ -2563,8 +2562,8 @@ export class SessionManager {
       },
       entry.session.contextOpenPending?.() === true,
     );
-    // Inside a main-session compaction span: its own requests stream there too (tool rounds
-    // included), and none of them is the run's first request.
+    // Inside a main-session compaction span: its requests are not the run's first request (the
+    // engine writes no run input ahead of them).
     let compacting = false;
     try {
       for await (const msg of gen) {
@@ -2656,8 +2655,7 @@ export class SessionManager {
           // now — end them here rather than at idle. Holding for the whole run would
           // outlive the messages endpoint's tail-window dedup: once the Task appends
           // more records than the window, the input would be judged "not yet in the
-          // Trace" and served a second time at the end of history. A compaction's requests
-          // are not that request: the engine writes no run input ahead of them.
+          // Trace" and served a second time at the end of history.
           if (bt === "request_begin" && !compacting) {
             entry.pendingInputs = [];
             entry.pendingBootstrap = [];

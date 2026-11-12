@@ -198,16 +198,11 @@ function rewriteForkText(
 }
 
 /**
- * A `[context_summary]` text with the source Session's paths made the fork's: every mention of
- * the source scratchpad directory and every Trace file named after the source Session
- * (`<source>_NNN.jsonl`, the trailer's line among them; the fork's copies keep the date folder
- * and the index).
- *
- * The directory is matched in three spellings: the native one, the model-visible one the
- * compaction Prompt hands the model, and the native one as a JSON string spells it — a quoted
- * `[tool_call]` line carries the call's arguments as JSON, where a Windows path has doubled
- * backslashes. On POSIX the three coincide. Exported so the spellings are asserted directly
- * whatever platform the suite runs on.
+ * A `[context_summary]` text with the source Session's paths made the fork's: every Trace file
+ * named after the source Session (`<source>_NNN.jsonl`; the fork's copies keep the date folder
+ * and the index), and the source scratchpad directory in each spelling a summary carries — the
+ * native one, the model-visible one the compaction Prompt hands the model, and the native one
+ * as a quoted `[tool_call]` line's JSON arguments spell it (doubled backslashes on Windows).
  */
 export function rewriteSummaryPaths(
   text: string,

@@ -1066,14 +1066,12 @@ export interface Messages extends CliCommandMessages {
   /** compaction start event: indicates compaction in progress (mode is summarize/discard, reason is context/turns/manual). */
   compactionStart(mode: string, reason: string): string;
   /**
-   * compaction stop event: the compaction result (status is completed/aborted/fatal, or an old
-   * Trace's retryable/failed; completed varies its text by mode). tokens is Token usage (same
-   * convention as the stats line: total = Session cumulative, delta = consumed by this
-   * compaction, carrying its own sign); when present it is appended at the end of the line,
-   * e.g. ` · tokens 14k (+6k)`. `degraded` marks a completion without a full summary — the
-   * next context opens with what was written of it or with the Trace hand-off note, errorMessage
-   * saying why — as a suffix to the line; `room` adds what to correct when too little room was
-   * left for the compaction (a refused request, or a summary cut off at the output limit).
+   * compaction stop event: the compaction result (status is completed/failed/aborted;
+   * completed varies its text by mode). tokens is Token usage (same convention as the stats
+   * line: total = Session cumulative, delta = consumed by this compaction, carrying its own
+   * sign); when present it is appended at the end of the line, e.g. ` · tokens 14k (+6k)`.
+   * `degraded` marks a completion without a full summary (errorMessage says why) as a suffix;
+   * `room` adds what to correct when too little room was left for the compaction.
    */
   compactionStop(
     mode: string,
@@ -2296,8 +2294,7 @@ const en: Messages = {
       : status === "aborted"
         ? "[compaction] aborted; keeping the current context"
         : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}${status === "fatal" ? "; the next context could not be opened" : ""}; keeping the current context${
-            // An old Trace's abandoned compaction: retryable = given up this time, retried
-            // at the next trigger; legacy "failed" says no more.
+            // retryable / legacy "failed": an old Trace's abandoned compaction.
             status === "retryable" ? "; retries at the next trigger" : ""
           }`) +
     (degraded
@@ -3424,8 +3421,7 @@ const zh: Messages = {
       : status === "aborted"
         ? "[压缩] 已中断，保留当前上下文"
         : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}${status === "fatal" ? "，未能开启新的上下文" : ""}，保留当前上下文${
-            // An old Trace's abandoned compaction: retryable = given up this time, retried
-            // at the next trigger; legacy "failed" says no more.
+            // retryable / legacy "failed": an old Trace's abandoned compaction.
             status === "retryable" ? "，下次触发时重试" : ""
           }`) +
     (degraded
