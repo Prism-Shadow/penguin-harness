@@ -14,6 +14,7 @@ Switched the nine factory command-policy rules that refused a command (`rm-recur
 
 - New Projects are seeded with the all-`ask` set, **Restore defaults** loads it, and a Project whose `.project_config.toml` has no `[command_policy]` rules list reads as it.
 - Existing Projects that store their rule list keep it untouched, `deny` rules included, until someone clicks **Restore defaults** and saves.
+- A rule added on the Security policy page starts on **Ask** as well; editing a stored rule keeps what it does, so a stored refusal stays **Deny**.
 - `deny-all` still denies an `ask` hit, and an organization's unattended Sessions deny it at once.
 - Updated the configuration, Web App and server API docs, and the Harbor guidance in the `agent-evaluation` skill.
 

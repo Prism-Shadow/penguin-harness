@@ -94,7 +94,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | `default_model` | pair | — | Paired `{ provider, model_id }` reference to the default model; must point to an entry in `models` |
 | `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
-| `[command_policy]` | table | Factory set | Deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
+| `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
 | `[providers.<id>]` | table | — | A group's connection, which its models follow; see [Group connections](#group-connections) |
 | `[[models]]` | array of tables | — | The available model entries |
@@ -276,7 +276,7 @@ The rules are **plain data with no special tiers**. The factory set is seeded in
 
 Because seeded rules are never rewritten, a change to the factory set in a later release does not reach a Project that already stores its list. A Project whose stored list came from an earlier factory set keeps it as stored, `deny` rules included, until **Restore defaults** replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the current factory set.
 
-The factory set is deliberately small, and every rule in it asks: a hit waits for a person's go-ahead, whatever the approval mode, instead of being refused. To refuse a command outright, switch its rule to **Deny** on the settings page. A host whose approval callback ignores the policy reason, such as an SDK callback that answers by mode alone, decides these hits like any other call; the server puts them to a person. The first rules cover commands whose verbatim execution is destructive with no undo:
+The factory set is deliberately small, and every rule in it asks: a hit waits for a person's go-ahead, whatever the approval mode, instead of being refused. A rule added on the settings page starts on **Ask** too. To refuse a command outright, switch its rule to **Deny**. A host whose approval callback ignores the policy reason, such as an SDK callback that answers by mode alone, decides these hits like any other call; the server puts them to a person. The first rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`

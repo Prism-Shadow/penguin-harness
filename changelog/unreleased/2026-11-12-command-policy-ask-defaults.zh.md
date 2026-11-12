@@ -14,6 +14,7 @@
 
 - 新建 Project 预置的、**恢复默认** 载入的，都是全部为 `ask` 的规则集；`.project_config.toml` 里没有 `[command_policy]` 规则列表的 Project 也按它运作。
 - 已存储规则列表的存量 Project 保持原样，其中的 `deny` 规则不变，直到有人点 **恢复默认** 并保存。
+- 在安全策略页新增的规则同样缺省为 **需确认**；编辑已存的规则时保留它原来的动作，已存的拒绝仍是 **拒绝**。
 - `deny-all` 下命中 `ask` 规则仍然拒绝，组织的无人值守 Session 当场拒绝。
 - 更新了配置、Web App 与服务端 API 文档，以及 `agent-evaluation` Skill 中的 Harbor 指引。
 
