@@ -3,9 +3,9 @@
  * the pure functions the live engine and Trace replay share, so the opening a context gets live
  * and the one a restart rebuilds from the same file are the same text.
  *
- * - `closingSpan` cuts a file's last compaction out of it; `spanRequests` / `spanCalls` read its
- *   requests and its tool calls back the way the engine ran them (the engine fills the same
- *   shapes from what it ran).
+ * - `closingSpan` cuts a file's last compaction out of it; `readSpan` reads its requests and its
+ *   tool calls back the way the engine ran them (the engine fills the same shapes from what it
+ *   ran).
  * - `pickSalvage` chooses the summary a reply cut off before its end still holds: the middle
  *   rung of the ladder, between a full summary and the hand-off note.
  * - `compactionCallLines` transcribes the compaction's calls for the next context, under a
@@ -57,10 +57,8 @@ export interface SpanCall {
   output?: AmspRecord<ToolCallOutputPayload>;
 }
 
-/** Compaction calls listed for the next context: the latest ones, each cut to these lengths. */
+/** Compaction calls listed for the next context: the latest ones. */
 const MAX_COMPACTION_CALLS = 12;
-const COMPACTION_ARGS_CHARS = 200;
-const COMPACTION_OUTPUT_CHARS = 300;
 
 /** The hand-off note's size, by the harness's own estimate. */
 const HANDOFF_BUDGET_TOKENS = 4000;
@@ -72,43 +70,6 @@ const HANDOFF_TURN_MAX_CALLS = 8;
 const HANDOFF_SHRINK_STEPS = 16;
 /** Characters of the provider's refusal the note quotes. */
 const HANDOFF_REFUSAL_CHARS = 500;
-
-/** How many characters of each quoted text a note keeps. */
-interface QuoteCaps {
-  /** The first user message: its head and its tail (an earlier summary's own transcript pointer is at its end). */
-  firstHead: number;
-  firstTail: number;
-  /** Every other quoted user message: head and tail. */
-  userHead: number;
-  userTail: number;
-  /** The last completed turn: each assistant text, each call's arguments, each output's text. */
-  turnText: number;
-  turnArgs: number;
-  turnOutput: number;
-  /** The compaction's own calls: arguments and output text. */
-  callArgs: number;
-  callOutput: number;
-}
-
-const FULL_CAPS: QuoteCaps = {
-  firstHead: 3000,
-  firstTail: 1000,
-  userHead: 1200,
-  userTail: 300,
-  turnText: 1500,
-  turnArgs: 400,
-  turnOutput: 800,
-  callArgs: COMPACTION_ARGS_CHARS,
-  callOutput: COMPACTION_OUTPUT_CHARS,
-};
-
-function scaledCaps(factor: number): QuoteCaps {
-  const caps = { ...FULL_CAPS };
-  for (const key of Object.keys(caps) as (keyof QuoteCaps)[]) {
-    caps[key] = Math.floor(FULL_CAPS[key] * factor);
-  }
-  return caps;
-}
 
 const typeOf = (msg: AmspRecord): string | undefined => (msg.payload as { type?: string }).type;
 
@@ -143,21 +104,31 @@ export function closingSpan(file: AmspRecord[]): AmspRecord[] {
   return file.slice(begin);
 }
 
-/** The requests of a span, in order: how each ended and the assistant text it wrote. */
-export function spanRequests(span: AmspRecord[]): SpanRequest[] {
+/**
+ * A span read back: its requests in order (how each ended and the assistant text it wrote), and
+ * the tool calls of its committed responses in call order, each with the output that answered it
+ * (anywhere in the span; absent when none was written). A call of a response that was not
+ * committed is no call of the compaction: it was never answered or run.
+ */
+export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: SpanCall[] } {
+  const main = span.filter(isMainSession);
   const requests: SpanRequest[] = [];
+  const calls: AmspRecord<ToolCallPayload>[] = [];
   let current: SpanRequest | null = null;
-  for (const msg of span) {
-    if (!isMainSession(msg)) continue;
+  let pending: AmspRecord<ToolCallPayload>[] = [];
+  for (const msg of main) {
     if (isEvent(msg, "request_begin")) {
       // A request with no end (only at a file's tail) still counts, its outcome unknown.
       if (current !== null) requests.push(current);
       current = { text: "" };
+      pending = [];
       continue;
     }
     if (isEvent(msg, "request_end")) {
-      if (current === null) continue;
       const p = msg.payload as RequestEndPayload;
+      if (p.status === "completed") calls.push(...pending);
+      pending = [];
+      if (current === null) continue;
       current.status = p.status;
       if (p.error_code !== undefined) current.errorCode = p.error_code;
       if (p.error_message !== undefined) current.errorMessage = p.error_message;
@@ -165,45 +136,22 @@ export function spanRequests(span: AmspRecord[]): SpanRequest[] {
       current = null;
       continue;
     }
-    if (current === null || !isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as Partial<TextPayload>;
-    if (p.type === "text" && p.role === "assistant" && p.text) current.text += p.text;
+    if (!isCompleteModelMessage(msg)) continue;
+    const p = msg.payload as { type?: string; role?: string; text?: string };
+    if (p.type === "tool_call") pending.push(msg as AmspRecord<ToolCallPayload>);
+    else if (current !== null && p.type === "text" && p.role === "assistant" && p.text) {
+      current.text += p.text;
+    }
   }
   if (current !== null) requests.push(current);
-  return requests;
-}
-
-/**
- * The tool calls of a span's committed responses, in call order, each with the output that
- * answered it (anywhere in the span; absent when none was written). A call of a response that
- * was not committed is no call of the compaction: it was never answered or run.
- */
-export function spanCalls(span: AmspRecord[]): SpanCall[] {
-  const calls: AmspRecord<ToolCallPayload>[] = [];
-  const outputs = new Map<string, AmspRecord<ToolCallOutputPayload>>();
-  let pending: AmspRecord<ToolCallPayload>[] = [];
-  for (const msg of span) {
-    if (!isMainSession(msg)) continue;
-    if (isEvent(msg, "request_begin")) {
-      pending = [];
-      continue;
-    }
-    if (isEvent(msg, "request_end")) {
-      if ((msg.payload as RequestEndPayload).status === "completed") calls.push(...pending);
-      pending = [];
-      continue;
-    }
-    if (!isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; tool_call_id?: string };
-    if (p.type === "tool_call") pending.push(msg as AmspRecord<ToolCallPayload>);
-    else if (p.type === "tool_call_output" && p.tool_call_id && !outputs.has(p.tool_call_id)) {
-      outputs.set(p.tool_call_id, msg as AmspRecord<ToolCallOutputPayload>);
-    }
-  }
-  return calls.map((call) => {
-    const output = outputs.get(call.payload.tool_call_id);
-    return output !== undefined ? { call, output } : { call };
-  });
+  const outputs = outputsById(main);
+  return {
+    requests,
+    calls: calls.map((call) => {
+      const output = outputs.get(call.payload.tool_call_id);
+      return output !== undefined ? { call, output } : { call };
+    }),
+  };
 }
 
 /**
@@ -228,16 +176,16 @@ export function pickSalvage(requests: readonly SpanRequest[]): string | null {
  * (a line says how many earlier ones are left out), arguments and outputs cut where long.
  */
 export function compactionCallLines(calls: readonly SpanCall[]): string[] {
-  return callLines(calls, COMPACTION_ARGS_CHARS, COMPACTION_OUTPUT_CHARS);
+  return callLines(calls, (n) => n);
 }
 
-function callLines(calls: readonly SpanCall[], argsCap: number, outputCap: number): string[] {
+function callLines(calls: readonly SpanCall[], cap: (n: number) => number): string[] {
   const listed = calls.slice(-MAX_COMPACTION_CALLS);
   const lines =
     calls.length > listed.length
       ? [omissionLine(`${count(calls.length - listed.length, "earlier tool call")} left out`)]
       : [];
-  for (const call of listed) lines.push(...callPairLines(call, argsCap, outputCap));
+  for (const call of listed) lines.push(...callPairLines(call, cap(200), cap(300)));
   return lines;
 }
 
@@ -316,32 +264,34 @@ export function buildCompactionHandoff(
   const leftOut = Math.max(0, users.length - 1 - last.length);
   const turn = lastCompletedTurn(context);
   const outputs = outputsById([...before, ...span]);
-  const calls = spanCalls(span);
+  const { calls } = readSpan(span);
   const refusal = refusalLines(span);
 
-  const build = (dropped: number, caps: QuoteCaps): string =>
-    buildContextHandoffText(
+  const build = (dropped: number, factor = 1): string => {
+    const cap = (n: number): number => Math.floor(n * factor);
+    return buildContextHandoffText(
       {
-        userLines: userLines(first, last.slice(dropped), leftOut + dropped, caps),
-        turnLines: turn !== null ? turnLines(turn, outputs, caps) : [],
+        userLines: userLines(first, last.slice(dropped), leftOut + dropped, cap),
+        turnLines: turn !== null ? turnLines(turn, outputs, cap) : [],
         refusalLines: refusal,
-        callLines: callLines(calls, caps.callArgs, caps.callOutput),
+        callLines: callLines(calls, cap),
       },
       transcript,
     );
+  };
 
   let dropped = 0;
-  let note = build(dropped, FULL_CAPS);
+  let note = build(dropped);
   while (approximateTokens(note) > HANDOFF_BUDGET_TOKENS && dropped < last.length) {
     dropped += 1;
-    note = build(dropped, FULL_CAPS);
+    note = build(dropped);
   }
   for (
     let step = HANDOFF_SHRINK_STEPS - 1;
     step >= 0 && approximateTokens(note) > HANDOFF_BUDGET_TOKENS;
     step--
   ) {
-    note = build(dropped, scaledCaps(step / HANDOFF_SHRINK_STEPS));
+    note = build(dropped, step / HANDOFF_SHRINK_STEPS);
   }
   return note;
 }
@@ -414,17 +364,18 @@ function outputsById(
   return outputs;
 }
 
+/** The first message keeps more of its tail: an earlier summary's own transcript pointer is there. */
 function userLines(
   first: string | undefined,
   last: readonly string[],
   leftOut: number,
-  caps: QuoteCaps,
+  cap: (n: number) => number,
 ): string[] {
   if (first === undefined) return [];
-  const lines = [transcribeUserInput(headAndTailOf(first, caps.firstHead, caps.firstTail))];
+  const lines = [transcribeUserInput(headAndTailOf(first, cap(3000), cap(1000)))];
   if (leftOut > 0) lines.push(omissionLine(`${count(leftOut, "message")} left out`));
   for (const text of last) {
-    lines.push(transcribeUserInput(headAndTailOf(text, caps.userHead, caps.userTail)));
+    lines.push(transcribeUserInput(headAndTailOf(text, cap(1200), cap(300))));
   }
   return lines;
 }
@@ -432,7 +383,7 @@ function userLines(
 function turnLines(
   turn: readonly AmspRecord[],
   outputs: ReadonlyMap<string, AmspRecord<ToolCallOutputPayload>>,
-  caps: QuoteCaps,
+  cap: (n: number) => number,
 ): string[] {
   const lines: string[] = [];
   let quotedCalls = 0;
@@ -443,7 +394,7 @@ function turnLines(
     if (p.type === "text") {
       const text = p.text ?? "";
       if (p.role === "assistant" && text.trim() !== "") {
-        lines.push(transcribeText(headOf(text, caps.turnText)));
+        lines.push(transcribeText(headOf(text, cap(1500))));
       }
     } else if (p.type === "tool_call") {
       if (quotedCalls >= HANDOFF_TURN_MAX_CALLS) {
@@ -454,7 +405,7 @@ function turnLines(
       const call = msg as AmspRecord<ToolCallPayload>;
       const output = outputs.get(p.tool_call_id ?? "");
       const pair: SpanCall = output !== undefined ? { call, output } : { call };
-      lines.push(...callPairLines(pair, caps.turnArgs, caps.turnOutput));
+      lines.push(...callPairLines(pair, cap(400), cap(800)));
     }
   }
   if (leftOutCalls > 0) {

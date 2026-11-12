@@ -44,8 +44,7 @@ import {
   closingSpan,
   compactionCallLines,
   pickSalvage,
-  spanCalls,
-  spanRequests,
+  readSpan,
 } from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
 import type {
@@ -359,13 +358,13 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
       // closing span by the functions the engine itself used (engine/compaction-carry.ts):
       // the summary, with the trailer naming this file when the caller says which file it
       // is, and under it the compaction's tool calls with their outputs when it made any.
-      const span = closingSpan(messages);
+      const { requests, calls } = readSpan(closingSpan(messages));
       const { tracePath, shell } = opts;
       const transcript =
         tracePath !== undefined
           ? { tracePath, ...(shell !== undefined ? { shell } : {}) }
           : undefined;
-      const callLines = compactionCallLines(spanCalls(span));
+      const callLines = compactionCallLines(calls);
       if (p.error_code === undefined && p.error_message === undefined) {
         // A full summary: the assistant text of the span's last completed Request (the
         // requests before it there, if any, are its tool rounds and corrections). Always
@@ -374,7 +373,7 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // still counts as the last one: falling back to an earlier request would inject a
         // round's or an older turn's reply as the summary; the empty extract voids the closure.
         const summaryText = extractSummary(
-          spanRequests(span).findLast((r) => r.status === "completed")?.text ?? "",
+          requests.findLast((r) => r.status === "completed")?.text ?? "",
         );
         if (summaryText !== "") {
           result.pendingSummary = userText(
@@ -393,7 +392,7 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // or — with none — with the hand-off note built from this file. A span that holds no
         // request (an ordinary request the provider refused, answered by a hand-off) has none,
         // so the note; the refused turn's own text input is not resent — the note quotes it.
-        const salvaged = pickSalvage(spanRequests(span));
+        const salvaged = pickSalvage(requests);
         result.pendingSummary = userText(
           salvaged !== null
             ? buildContextSummaryText(salvaged, transcript, { cutOff: true, callLines })

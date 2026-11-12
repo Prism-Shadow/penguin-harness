@@ -39,8 +39,7 @@ import {
   closingSpan,
   compactionCallLines,
   pickSalvage,
-  spanCalls,
-  spanRequests,
+  readSpan,
 } from "../src/engine/compaction-carry.js";
 import { approximateTokens } from "../src/llm/context-limits.js";
 
@@ -362,7 +361,7 @@ describe("salvaging a summary", () => {
       assistantText(cut("e", SALVAGE_MIN_CHARS - 20)),
       requestEnd("retryable", { errorCode: "output_truncated", errorMessage: "output limit" }),
     ];
-    const requests = spanRequests(span);
+    const { requests } = readSpan(span);
     expect(requests.map((r) => r.status)).toEqual([
       "completed",
       "retryable",
@@ -376,7 +375,7 @@ describe("salvaging a summary", () => {
     expect(pickSalvage(requests.slice(0, 2))).toBe(`## Request\n${"b".repeat(500)}`);
     expect(pickSalvage([requests[0]!, requests[3]!])).toBeNull();
     // A request the file ends inside, its outcome unknown, is a candidate like a failed one.
-    expect(pickSalvage(spanRequests([requestBegin(), assistantText(cut("f", 450))]))).toBe(
+    expect(pickSalvage(readSpan([requestBegin(), assistantText(cut("f", 450))]).requests)).toBe(
       `## Request\n${"f".repeat(450)}`,
     );
   });
@@ -401,7 +400,7 @@ describe("the compaction's calls", () => {
       requestEnd("retryable", { errorCode: "network", errorMessage: "socket hang up" }),
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ];
-    const calls = spanCalls(closingSpan(file));
+    const { calls } = readSpan(closingSpan(file));
     expect(calls.map((c) => [c.call.payload.tool_call_id, c.output?.payload.status])).toEqual([
       ["w1", "completed"],
       ["w2", "aborted"],
@@ -433,7 +432,7 @@ describe("the compaction's calls", () => {
       toolCall({ name: "write_file", arguments: "x".repeat(260), toolCallId: "w" }),
       requestEnd("completed"),
     ];
-    const lines = compactionCallLines(spanCalls(span));
+    const lines = compactionCallLines(readSpan(span).calls);
 
     expect(lines[0]).toBe("  …[3 earlier tool calls left out]…");
     // Twelve calls listed, each with its output line except the unanswered last one.
