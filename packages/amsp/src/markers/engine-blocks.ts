@@ -18,8 +18,6 @@ export interface CompactedTranscript {
 
 /** What the harness adds under a summary besides the transcript trailer; each line appears only when it applies. */
 export interface ContextSummaryExtras {
-  /** The summary was salvaged from a reply that did not finish: a line says it was cut off. */
-  cutOff?: boolean;
   /** The compaction's tool calls with their outputs, transcribed (empty or absent: no section). */
   callLines?: readonly string[];
   /** A note from the harness about how this context was opened (empty or absent: no notice line). */
@@ -33,11 +31,6 @@ const EARLIER_FILES =
 /** Heads the transcribed tool calls of a compaction, under a summary and in a hand-off note alike. */
 const COMPACTION_CALLS_HEADER =
   'Tool calls made during this compaction, as the harness recorded them; a hand-off file exists only if its call shows status="completed":';
-
-const CUT_OFF_LINE =
-  "The summary above was cut off before its end: the reply that wrote it did not finish, so its last sections may be missing.";
-const CUT_OFF_READ_TRANSCRIPT =
-  " Read the last records of the transcript below before you continue.";
 
 /** The transcript pointer and the query guidance that close a block naming a Trace file. */
 function transcriptLines(lead: string, transcript: CompactedTranscript): string[] {
@@ -61,10 +54,6 @@ export function buildContextSummaryText(
   extras?: ContextSummaryExtras,
 ): string {
   const lines: string[] = [];
-  if (extras?.cutOff === true) {
-    // Without a transcript there is nothing below to read the missing tail from.
-    lines.push(transcript !== undefined ? CUT_OFF_LINE + CUT_OFF_READ_TRANSCRIPT : CUT_OFF_LINE);
-  }
   if (extras?.callLines !== undefined && extras.callLines.length > 0) {
     lines.push(COMPACTION_CALLS_HEADER, ...extras.callLines);
   }
@@ -136,7 +125,7 @@ export function buildContextHandoffText(
   return markerBlock(MARKER_TAGS.contextSummary, parts.join("\n\n"));
 }
 
-/** Least characters a summary cut off before its close tag must hold inside the tag to be adopted. */
+/** Least characters an unclosed `[summary]` beside tool calls must hold for the reply to be a summary. */
 export const SALVAGE_MIN_CHARS = 400;
 
 /** The summary tag's two spellings, current form first (see block.ts for the dual-form policy). */
@@ -209,15 +198,6 @@ export function summaryInTags(raw: string): { text: string; closed: boolean } | 
     return { text: stripSummaryTags(inside).trim(), closed: end !== -1 };
   }
   return null;
-}
-
-/**
- * The summary a reply that did not finish still holds: {@link summaryInTags}'s text, closed or
- * not, once it reaches {@link SALVAGE_MIN_CHARS}; otherwise the empty string.
- */
-export function salvageableSummary(raw: string): string {
-  const inTags = summaryInTags(raw);
-  return inTags !== null && inTags.text.length >= SALVAGE_MIN_CHARS ? inTags.text : "";
 }
 
 /** Each form's summary block, its body captured; a mixed-bracket close ends it too. */

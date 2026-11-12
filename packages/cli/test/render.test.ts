@@ -651,9 +651,9 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe(
       [
         "[compaction] summarizing context (context)…",
-        "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — the response contained no usable summary)",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — the response contained no usable summary)",
         "[compaction] summarizing context (manual)…",
-        "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — 400 Bad Request; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 Bad Request; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
         "",
       ].join("\n"),
     );
@@ -692,7 +692,7 @@ describe("StreamRenderer", () => {
     expect(out).not.toContain("[error]");
     expect(out.split("\n").slice(0, 3)).toEqual([
       "[compaction] summarizing context (context)…",
-      "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — 400 prompt is too long; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+      "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 prompt is too long; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
       "[retry] the model provider rejected the request; sending retry #1…",
     ]);
     expect(out).toContain("back to the task");

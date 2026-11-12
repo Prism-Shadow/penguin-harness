@@ -1042,7 +1042,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       code: "compaction_degraded",
       kind: "expected",
       message:
-        "summarize compaction completed without a full summary after 2 attempts: timeout; the next context opens with a salvaged summary or a Trace hand-off.",
+        "summarize compaction completed without a full summary after 2 attempts: timeout; the next context opens with a Trace hand-off note.",
     });
   });
 

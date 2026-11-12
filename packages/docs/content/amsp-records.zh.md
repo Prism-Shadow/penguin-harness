@@ -365,12 +365,12 @@ interface CompactionEndPayload {
   reason: CompactionReason;
   mode: CompactionMode;
   status: StopReason;         // completed: the next context is open (with the error pair it
-                              // opened with a salvaged summary or a Trace hand-off note, not
-                              // a full summary) / aborted (user interrupted) / fatal (the
-                              // next context could not be opened); both keep the original
-                              // context / retryable: written only by resume, closing a span
-                              // the process died in. Old Traces' retryable, fatal and failed
-                              // all read "abandoned, original context kept"
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
   attempt?: number;           // the final attempt's ordinal, failed attempts included;
                               // absent when the span made no request (a refused
                               // request's hand-off)
@@ -411,7 +411,7 @@ interface HookPayload {
 
 因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
 
-`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。`completed` 的结束事件可以带错误字段：表示压缩完成但没有完整的摘要，错误字段说明原因。重放只读这一个事实来重建那段开头（抢救的摘要或交接说明），因此不带错误字段的 `completed` 与此前的重放完全一致（见[上下文压缩](/agent-loop#取不到摘要时)）。区间内也可以没有任何请求：供应商在已有完成轮次的上下文上拒绝普通请求时，该请求的 `request_end` 为 `retryable`，带 `error_code: "rejected"` 与 `retry_in_ms: 0`；随后的 `compaction_begin` / `compaction_end` 事件对以 `completed` 结束，带这对错误字段、不带 `attempt`，两者之间没有任何记录；重放据此重建交接说明（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。只有非 `completed` 的 `compaction_end` 才可能结束一次运行。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
+`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。`completed` 的结束事件可以带错误字段：表示压缩完成但没有完整的摘要，错误字段说明原因。重放只读这一个事实来重建那段开头（交接说明），因此不带错误字段的 `completed` 与此前的重放完全一致（见[上下文压缩](/agent-loop#取不到摘要时)）。区间内也可以没有任何请求：供应商在已有完成轮次的上下文上拒绝普通请求时，该请求的 `request_end` 为 `retryable`，带 `error_code: "rejected"` 与 `retry_in_ms: 0`；随后的 `compaction_begin` / `compaction_end` 事件对以 `completed` 结束，带这对错误字段、不带 `attempt`，两者之间没有任何记录；重放据此重建交接说明（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。只有非 `completed` 的 `compaction_end` 才可能结束一次运行。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 
 ## 结束原因
 

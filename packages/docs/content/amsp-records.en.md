@@ -365,12 +365,12 @@ interface CompactionEndPayload {
   reason: CompactionReason;
   mode: CompactionMode;
   status: StopReason;         // completed: the next context is open (with the error pair it
-                              // opened with a salvaged summary or a Trace hand-off note, not
-                              // a full summary) / aborted (user interrupted) / fatal (the
-                              // next context could not be opened); both keep the original
-                              // context / retryable: written only by resume, closing a span
-                              // the process died in. Old Traces' retryable, fatal and failed
-                              // all read "abandoned, original context kept"
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
   attempt?: number;           // the final attempt's ordinal, failed attempts included;
                               // absent when the span made no request (a refused
                               // request's hand-off)
@@ -411,7 +411,7 @@ interface HookPayload {
 
 A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
 
-`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. A `completed` end may carry the error pair: the compaction completed without a full summary, and the pair says why. It is the one fact replay reads to rebuild that opening — the salvaged summary or the hand-off note — so a `completed` end without the pair replays exactly as before (see [Compaction](/agent-loop#when-no-summary-can-be-had)). A span may hold no request at all: when the provider refuses an ordinary request on a context that has completed a turn, its `request_end` is `retryable` with `error_code: "rejected"` and `retry_in_ms: 0`, and the `compaction_begin` / `compaction_end` pair that follows, `completed` with that error pair and no `attempt`, holds nothing between them; replay rebuilds the hand-off note from it (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)). Only a `compaction_end` that is not `completed` can end a run. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
+`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. A `completed` end may carry the error pair: the compaction completed without a full summary, and the pair says why. It is the one fact replay reads to rebuild that opening, the hand-off note, so a `completed` end without the pair replays exactly as before (see [Compaction](/agent-loop#when-no-summary-can-be-had)). A span may hold no request at all: when the provider refuses an ordinary request on a context that has completed a turn, its `request_end` is `retryable` with `error_code: "rejected"` and `retry_in_ms: 0`, and the `compaction_begin` / `compaction_end` pair that follows, `completed` with that error pair and no `attempt`, holds nothing between them; replay rebuilds the hand-off note from it (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)). Only a `compaction_end` that is not `completed` can end a run. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 
 ## End reasons
 

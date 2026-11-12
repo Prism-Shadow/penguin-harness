@@ -4561,10 +4561,10 @@ Scenarios:
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
     compactionDegradedHint: (errorMessage?: string): string =>
       errorMessage !== undefined
-        ? `No full summary could be written; the next context opens with what was written of the summary, or with a Trace hand-off note: ${errorMessage}`
-        : "No full summary could be written; the next context opens with what was written of the summary, or with a Trace hand-off note.",
+        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
+        : "No full summary could be written; the next context opens with a Trace hand-off note.",
     compactionRoomHint: (providerMessage?: string): string =>
-      `Too little room was left for compaction, so the next context opens with what was written of the summary, or with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
+      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
         providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
       }`,
     compactionFailed: (status: string, errorMessage?: string): string => {

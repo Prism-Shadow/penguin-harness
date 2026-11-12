@@ -6,7 +6,6 @@
  * - the hand-off note written in place of a summary none could be had of: the user's messages
  *   (the first and the last eight, within a token budget), the last completed turn, the
  *   compaction's own calls, and the Trace pointer;
- * - the salvaged summary: the longest one a reply cut off before its end still holds;
  * - the compaction's calls as the next context reads them, from committed responses only.
  */
 import { describe, expect, it } from "vitest";
@@ -28,7 +27,6 @@ import {
 } from "@prismshadow/amsp/records";
 import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
 import {
-  SALVAGE_MIN_CHARS,
   buildContextSummaryText,
   transcribeText,
   transcribeToolCall,
@@ -38,7 +36,6 @@ import {
   buildCompactionHandoff,
   closingSpan,
   compactionCallLines,
-  pickSalvage,
   readSpan,
 } from "../src/engine/compaction-carry.js";
 import { approximateTokens } from "../src/llm/context-limits.js";
@@ -335,49 +332,6 @@ describe("the hand-off note", () => {
     expect(bare).toContain(TRACE);
     expect(bare).not.toContain("User messages of the compacted context");
     expect(bare).not.toContain("The last completed turn");
-  });
-});
-
-describe("salvaging a summary", () => {
-  it("prefers the longest candidate, the latest on a tie, and ignores completed requests", () => {
-    const cut = (fill: string, n: number): string => `[summary]\n## Request\n${fill.repeat(n)}`;
-    const span = [
-      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 3 }),
-      userText("COMPACT NOW"),
-      // A completed reply is never a candidate, however long its tagged text.
-      requestBegin(),
-      assistantText(cut("d", 900)),
-      toolCall({ name: "read_file", arguments: "{}", toolCallId: "r1" }),
-      requestEnd("completed"),
-      toolCallOutput({ output: "read", toolCallId: "r1", status: "completed" }),
-      requestBegin(),
-      assistantText(cut("b", 500)),
-      requestEnd("retryable", { errorCode: "output_truncated", errorMessage: "output limit" }),
-      requestBegin(),
-      assistantText(cut("c", 300)),
-      assistantText("c".repeat(200)),
-      requestEnd("retryable", { errorCode: "network", errorMessage: "socket hang up" }),
-      requestBegin(),
-      assistantText(cut("e", SALVAGE_MIN_CHARS - 20)),
-      requestEnd("retryable", { errorCode: "output_truncated", errorMessage: "output limit" }),
-    ];
-    const { requests } = readSpan(span);
-    expect(requests.map((r) => r.status)).toEqual([
-      "completed",
-      "retryable",
-      "retryable",
-      "retryable",
-    ]);
-    expect(requests[1]).toMatchObject({ errorCode: "output_truncated" });
-
-    // "b"×500 and "c"×(300+200) tie in length: the later one wins; "e" is under the floor.
-    expect(pickSalvage(requests)).toBe(`## Request\n${"c".repeat(500)}`);
-    expect(pickSalvage(requests.slice(0, 2))).toBe(`## Request\n${"b".repeat(500)}`);
-    expect(pickSalvage([requests[0]!, requests[3]!])).toBeNull();
-    // A request the file ends inside, its outcome unknown, is a candidate like a failed one.
-    expect(pickSalvage(readSpan([requestBegin(), assistantText(cut("f", 450))]).requests)).toBe(
-      `## Request\n${"f".repeat(450)}`,
-    );
   });
 });
 

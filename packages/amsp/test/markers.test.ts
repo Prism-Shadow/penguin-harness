@@ -11,7 +11,6 @@
 import { describe, expect, it } from "vitest";
 import {
   MARKER_TAGS,
-  SALVAGE_MIN_CHARS,
   buildContextHandoffText,
   buildContextSummaryText,
   buildHandoffMessage,
@@ -33,7 +32,6 @@ import {
   parseScheduledMessage,
   parseSkillsMessage,
   parseUserSteeringText,
-  salvageableSummary,
   startsWithMarker,
   stripConversationMarkers,
   summaryInTags,
@@ -262,16 +260,7 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(extractSummary("A tagless body.\n[/summary>")).toBe("A tagless body.");
   });
 
-  it("salvageableSummary keeps a summary cut off once it reaches the floor, and nothing shorter", () => {
-    const body = "x".repeat(SALVAGE_MIN_CHARS);
-    expect(salvageableSummary(`[summary]\n${body}`)).toBe(body);
-    expect(salvageableSummary(`[summary]\n${body.slice(1)}`)).toBe("");
-    // A closed summary long enough counts too; text with no summary tag never does.
-    expect(salvageableSummary(`[summary]${body}[/summary]`)).toBe(body);
-    expect(salvageableSummary(body + body)).toBe("");
-  });
-
-  it("a salvaged summary is marked as cut off, with the compaction's calls and the notice before the trailer", () => {
+  it("a summary is followed by the compaction's calls and the notice, then the trailer", () => {
     const tracePath = "/data/p/agents/a/traces/2026-11-11/session-x_003.jsonl";
     const callLines = [
       transcribeToolCall("write_file", "h1", '{"file_path":"/s/handoff/plan.md"}'),
@@ -280,21 +269,19 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     const text = buildContextSummaryText(
       "## Request\nShip it",
       { tracePath, shell: "bash" },
-      { cutOff: true, callLines, notice: "the previous configuration is still in force." },
+      { callLines, notice: "the previous configuration is still in force." },
     );
     const lines = text.split("\n");
     expect(lines.slice(0, 4)).toEqual(["[context_summary]", "## Request", "Ship it", ""]);
-    expect(lines[4]).toContain("cut off before its end");
-    expect(lines[4]).toContain("transcript below");
-    expect(lines[5]).toContain('a hand-off file exists only if its call shows status="completed"');
-    expect(lines.slice(6, 8)).toEqual(callLines);
-    expect(lines[8]).toBe("Harness notice: the previous configuration is still in force.");
-    expect(lines[9]).toContain(tracePath);
+    expect(lines[4]).toContain('a hand-off file exists only if its call shows status="completed"');
+    expect(lines.slice(5, 7)).toEqual(callLines);
+    expect(lines[7]).toBe("Harness notice: the previous configuration is still in force.");
+    expect(lines[8]).toContain(tracePath);
     expect(lines.at(-1)).toBe("[/context_summary]");
     expect(text.split(tracePath)).toHaveLength(2);
   });
 
-  it("extras without a Trace path follow the summary alone; with no extras the block is unchanged", () => {
+  it("empty extras leave the block unchanged, with a Trace path or without", () => {
     const bare = buildContextSummaryText("the gist");
     expect(buildContextSummaryText("the gist", undefined, {})).toBe(bare);
     expect(buildContextSummaryText("the gist", undefined, { callLines: [], notice: "" })).toBe(
@@ -304,13 +291,6 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(buildContextSummaryText("the gist", transcript, {})).toBe(
       buildContextSummaryText("the gist", transcript),
     );
-
-    const cut = buildContextSummaryText("the gist", undefined, { cutOff: true }).split("\n");
-    expect(cut.slice(0, 3)).toEqual(["[context_summary]", "the gist", ""]);
-    expect(cut[3]).toContain("cut off before its end");
-    // No transcript exists to read the missing tail from, so none is pointed at.
-    expect(cut[3]).not.toContain("transcript");
-    expect(cut[4]).toBe("[/context_summary]");
   });
 
   it("the hand-off note explains itself, quotes its sections in order, leaves out empty ones and ends with the Trace pointer", () => {

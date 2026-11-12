@@ -1022,9 +1022,9 @@ export class Session {
    *
    * When the summary cannot be had — the model the Session is on can no longer be reached
    * (no longer configured, or its client cannot be built: it is then sent nothing), or the
-   * compaction gets no summary, whole or salvaged — the switch hands the history over by
-   * Trace path instead: the next context opens on the target with the `/model` block naming
-   * this Session (see `switchHandoff`) where the summary would be.
+   * compaction gets no summary — the switch hands the history over by Trace path instead: the
+   * next context opens on the target with the `/model` block naming this Session (see
+   * `switchHandoff`) where the summary would be.
    *
    * Before any event: the model the Session is already on is a no-op, and a target that
    * cannot be switched to is refused with a {@link ModelSwitchRefusedError} naming why

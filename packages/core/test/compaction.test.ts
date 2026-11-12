@@ -12,8 +12,8 @@
  *   response is a summary, a round or empty; the harness counts the rounds and answers a
  *   response that advanced nothing with a corrective line (at most two), and transport failures
  *   take the reconnect ladder. When no summary can be had the next context opens with a
- *   salvaged summary or a hand-off note, and the compaction still completes: only a stop or a
- *   next context that cannot be opened keeps the old one.
+ *   hand-off note, and the compaction still completes: only a stop or a next context that
+ *   cannot be opened keeps the old one.
  * - discard: deferred until task end if mid-task; sends no compaction request, just swaps in a new LLM instance directly.
  * - Process visibility: the compaction's requests, their text and every tool call stream between
  *   the paired compaction events; the Prompt and the harness lines stay in the old trace, and on
@@ -203,7 +203,7 @@ const endOf = (msgs: AmspRecord[]): CompactionEndPayload =>
 const bareNote = (tracePath?: string): string =>
   buildCompactionHandoff([], tracePath !== undefined ? { tracePath } : {});
 
-/** A summary long enough to be salvaged when its reply does not finish. */
+/** A summary of well over 400 characters, for a reply that does not finish. */
 const longSummary = (label: string, length: number): string =>
   `## Request\n${label} ${"x".repeat(length)}`;
 
@@ -974,7 +974,7 @@ describe("context compaction", () => {
     expect((newTrace[2]!.payload as { text?: string }).text).toBe("task 2");
   });
 
-  it("a stream that drops mid-summary every time until the transport budget is spent adopts the longest partial summary", async () => {
+  it("a stream that drops mid-summary every time until the transport budget is spent opens the next context with the hand-off note, the partial summaries unused", async () => {
     const shorter = longSummary("shorter", 450);
     const longer = longSummary("longer", 900);
     const dropped = (text: string): ScriptedResponse => ({
@@ -1012,10 +1012,7 @@ describe("context compaction", () => {
       error_message: "socket hang up",
     });
     await collect(engine.run([userText("next")], { approve: allowAll }));
-    expect(llm2.calls[0]!.map(textOf)).toEqual([
-      buildContextSummaryText(longer, undefined, { cutOff: true }),
-      "next",
-    ]);
+    expect(llm2.calls[0]!.map(textOf)).toEqual([bareNote(), "next"]);
   });
 
   it("compaction transport retries default to the shared maxReconnects budget", async () => {
@@ -1365,7 +1362,7 @@ describe("context compaction", () => {
     expect(all.map((m) => (m.payload as { text?: string }).text)).toContain("next step done");
   });
 
-  it("a reply cut at the output limit is asked again with the shorter-summary line; cut three times, the longest cut text opens the next context marked as cut off, and the Task carries on", async () => {
+  it("a reply cut at the output limit is asked again with the shorter-summary line; cut three times, the next context opens with the hand-off note, the cut text unused, and the Task carries on", async () => {
     const cut = (text: string): ScriptedResponse => ({
       messages: [assistantText(`[summary]${text}`), usage(170, 400)],
       outcome: {
@@ -1418,9 +1415,7 @@ describe("context compaction", () => {
       attempt: 3,
       error_code: "output_truncated",
     });
-    expect(llm2.calls[0]!.map(textOf)).toEqual([
-      buildContextSummaryText(longest, { tracePath: oldPath }, { cutOff: true }),
-    ]);
+    expect(llm2.calls[0]!.map(textOf)).toEqual([bareNote(oldPath)]);
     expect(all.map((m) => (m.payload as { text?: string }).text)).toContain("done");
   });
 

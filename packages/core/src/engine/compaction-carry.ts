@@ -8,7 +8,6 @@ import { isCompleteModelMessage, isEventMessage } from "@prismshadow/amsp/record
 import type {
   AmspRecord,
   CompactionEndPayload,
-  ErrorCode,
   RequestEndPayload,
   StopReason,
   TextPayload,
@@ -20,7 +19,6 @@ import {
   buildContextHandoffText,
   markerClose,
   markerOpen,
-  salvageableSummary,
   transcribeRequestError,
   transcribeText,
   transcribeToolCall,
@@ -29,12 +27,10 @@ import {
 } from "@prismshadow/amsp/markers";
 import { approximateTokens } from "../llm/context-limits.js";
 
-/** One request of a compaction span, as the engine saw it or as replay reads it back. */
+/** One request of a compaction span, as replay reads it back. */
 export interface SpanRequest {
   /** How the request ended; absent when no `request_end` closes it. */
   status?: StopReason;
-  errorCode?: ErrorCode;
-  errorMessage?: string;
   /** The request's complete assistant text records, concatenated. */
   text: string;
 }
@@ -116,8 +112,6 @@ export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: 
       pending = [];
       if (current === null) continue;
       current.status = p.status;
-      if (p.error_code !== undefined) current.errorCode = p.error_code;
-      if (p.error_message !== undefined) current.errorMessage = p.error_message;
       requests.push(current);
       current = null;
       continue;
@@ -138,21 +132,6 @@ export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: 
       return output !== undefined ? { call, output } : { call };
     }),
   };
-}
-
-/**
- * The summary to adopt when none was completed: the longest `salvageableSummary` of a request
- * that did not complete, the latest on a tie; null when none holds one. A completed request is
- * never a candidate — a completed reply holding a tagged summary was the summary.
- */
-export function pickSalvage(requests: readonly SpanRequest[]): string | null {
-  let best: string | null = null;
-  for (const request of requests) {
-    if (request.status === "completed") continue;
-    const candidate = salvageableSummary(request.text);
-    if (candidate !== "" && (best === null || candidate.length >= best.length)) best = candidate;
-  }
-  return best;
 }
 
 /**

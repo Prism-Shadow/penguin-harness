@@ -13,8 +13,8 @@
  *   request (a round's text is not), and the trailer names the replayed file, worded for the
  *   shell; a round the process died in leaves its outputs as carry-over, pairing its calls.
  * - A compaction completed with the unified error pair (no full summary could be had): the next
- *   context opens with the longest summary a cut reply still held, marked as cut off, or with
- *   the hand-off note built from the file — the same note the live engine opened it with.
+ *   context opens with the hand-off note built from the file — the same note the live engine
+ *   opened it with — and no text a reply in the span wrote.
  * - A span with no request (an ordinary request the provider refused, answered by a hand-off)
  *   resumes with that note, the refusal quoted in it; a process that died inside such a span
  *   resumes on the old context with the refused turn's input pending.
@@ -487,7 +487,7 @@ describe("resumeTrace", () => {
   });
 });
 
-describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", () => {
+describe("resumeTrace over a compaction's span (summary, hand-off)", () => {
   const file = "/data/agents/a/traces/2026-11-11/session-x_001.jsonl";
   const begin = (): AmspRecord =>
     compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 });
@@ -540,7 +540,7 @@ describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", ()
     expect(text).toContain(file);
   });
 
-  it("a file closed with the error pair and a cut summary in its span resumes with that summary, marked as cut off", () => {
+  it("a file closed with the error pair and a cut summary in its span resumes with the hand-off note, the cut text unused", () => {
     const progress = "Step done. ".repeat(60).trim();
     const body = ["## Request", "Ship the release.", "## Progress", progress].join("\n");
     const result = resumeTrace(
@@ -565,8 +565,8 @@ describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", ()
     expect(result.contextClosed).toBe(true);
     expect(result.history).toEqual([]);
     const text = textOf(result.pendingSummary);
-    expect(text.startsWith(`[context_summary]\n${body}\n\n`)).toBe(true);
-    expect(text).toContain("cut off before its end");
+    expect(text.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
+    expect(text).not.toContain("Step done.");
     expect(text).toContain(file);
   });
 
@@ -592,34 +592,6 @@ describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", ()
     expect(textsOf(result.history)).toEqual(["migrate the database", "read_file"]);
     // The next run sends the refused turn again, as it was.
     expect(textsOf(result.carryOver)).toEqual(["CREATE TABLE t", "use the new column names"]);
-  });
-
-  it("never takes a round's text for the summary of a degraded closure", () => {
-    // A committed reply is no salvage candidate: had it held the summary, it would have been one.
-    const preamble = `[summary]\n${"Saving the plan first. ".repeat(30)}`;
-    const created = 'Created "/s/handoff/plan.md" (5 lines, 71 bytes).';
-    const result = resumeTrace(
-      [
-        ...opened(),
-        begin(),
-        userText("please summarize"),
-        requestBegin(),
-        assistantText(preamble),
-        toolCall({ name: "write_file", arguments: "{}", toolCallId: "h1" }),
-        requestEnd("completed"),
-        toolCallOutput({ output: created, toolCallId: "h1", status: "completed" }),
-        userText("Tool round 1 of 3 used; 2 left."),
-        requestBegin(),
-        requestEnd("fatal", refused),
-        degradedEnd(2, "rejected", "prompt is too long"),
-      ],
-      { tracePath: file },
-    );
-    const text = textOf(result.pendingSummary);
-    expect(text.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
-    expect(text).not.toContain("Saving the plan first.");
-    // The write the round made is listed, so the next context knows the file exists.
-    expect(text).toContain(transcribeToolCallOutput("h1", "completed", created));
   });
 
   it("a span the process died in after a committed summary-with-calls response replays the old context with those calls paired", () => {

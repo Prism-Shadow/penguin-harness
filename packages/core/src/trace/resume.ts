@@ -43,7 +43,6 @@ import {
   buildCompactionHandoff,
   closingSpan,
   compactionCallLines,
-  pickSalvage,
   readSpan,
 } from "../engine/compaction-carry.js";
 import { replaceInputImages } from "../engine/rejected-images.js";
@@ -375,14 +374,9 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // turn-by-turn replay — the original context this file still holds is restored, and
         // the committed compaction turn stays in history like any committed turn.
       } else {
-        // The error pair: a salvaged summary, else the hand-off note (see CompactionEndPayload).
-        // A refused ordinary request's own input is not resent: the note quotes it.
-        const salvaged = pickSalvage(requests);
-        result.pendingSummary = userText(
-          salvaged !== null
-            ? buildContextSummaryText(salvaged, transcript, { cutOff: true, callLines })
-            : buildCompactionHandoff(messages, transcript ?? {}),
-        );
+        // The error pair: the hand-off note (see CompactionEndPayload). A refused ordinary
+        // request's own input is not resent: the note quotes it.
+        result.pendingSummary = userText(buildCompactionHandoff(messages, transcript ?? {}));
         return result;
       }
     }

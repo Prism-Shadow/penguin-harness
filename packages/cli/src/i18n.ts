@@ -2298,7 +2298,7 @@ const en: Messages = {
             status === "retryable" ? "; retries at the next trigger" : ""
           }`) +
     (degraded
-      ? ` (no full summary: what was written of it, or a Trace hand-off${errorMessage !== undefined ? ` — ${errorMessage}` : ""}${
+      ? ` (no full summary: a Trace hand-off note${errorMessage !== undefined ? ` — ${errorMessage}` : ""}${
           degraded.room
             ? "; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length"
             : ""
@@ -3425,7 +3425,7 @@ const zh: Messages = {
             status === "retryable" ? "，下次触发时重试" : ""
           }`) +
     (degraded
-      ? `（没有完整摘要，改用写出的部分或 Trace 交接说明${errorMessage !== undefined ? `：${errorMessage}` : ""}${
+      ? `（没有完整摘要，改用 Trace 交接说明${errorMessage !== undefined ? `：${errorMessage}` : ""}${
           degraded.room
             ? "；留给压缩的空间不足，请更正该模型的 context_window 或调低 compaction.max_context_length"
             : ""

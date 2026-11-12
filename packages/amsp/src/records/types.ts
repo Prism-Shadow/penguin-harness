@@ -535,11 +535,10 @@ export interface CompactionEndPayload extends RetryDetail {
   mode: CompactionMode;
   /**
    * Compaction result. `completed`: the next context is open — with the error pair, it opened
-   * with a salvaged summary (one cut off before its end) or the harness's Trace hand-off note
-   * instead of a full summary. `aborted`: the user stopped it; `fatal`: the next context could
-   * not be opened; both keep the original context. `retryable` is written only by Session
-   * resume, closing a span the process died in. Older Traces' `retryable`, `fatal` and legacy
-   * `failed` all read "abandoned, original context kept".
+   * with the harness's Trace hand-off note instead of a full summary. `aborted`: the user
+   * stopped it; `fatal`: the next context could not be opened; both keep the original context.
+   * `retryable` is written only by Session resume, closing a span the process died in. Older
+   * Traces' `retryable`, `fatal` and legacy `failed` all read "abandoned, original context kept".
    */
   status: StopReason;
 }

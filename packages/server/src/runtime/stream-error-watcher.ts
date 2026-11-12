@@ -401,7 +401,7 @@ export class StreamErrorWatcher {
       }
       this.errors.record({
         source: "compaction",
-        err: `${mode} compaction completed without a full summary${attempts}${detail(p.error_message || p.error_code)}; the next context opens with a salvaged summary or a Trace hand-off.`,
+        err: `${mode} compaction completed without a full summary${attempts}${detail(p.error_message || p.error_code)}; the next context opens with a Trace hand-off note.`,
         ctx: this.ctxFor(key),
         code: "compaction_degraded",
         kind: "expected",

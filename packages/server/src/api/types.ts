@@ -3039,7 +3039,7 @@ export interface GoalResponse {
  *   after the switch.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
- *   without even a salvaged summary — the switch still completes, by Trace handoff: right
+ *   without a summary — the switch still completes, by Trace handoff: right
  *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
  *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the

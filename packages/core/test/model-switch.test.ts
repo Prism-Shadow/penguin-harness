@@ -14,9 +14,8 @@
  * When the summary cannot be had, the switch hands the history over by its Trace path instead
  * (the `/model` handoff's `[model_switch_from]` block, naming this Session and the file it
  * leaves): the model the Session is on is no longer reachable — it is then sent nothing — or
- * the compaction got neither a summary nor a salvageable part of one, the block being the last
- * rung of its ladder. Only a stop, or a target whose context cannot be opened, keeps the old
- * model.
+ * the compaction got no summary, the block being the last rung of its ladder. Only a stop, or
+ * a target whose context cannot be opened, keeps the old model.
  *
  * Covered here with fake collaborators: the two engine shapes (completed turns: a summarize
  * compaction; none — a context a compaction just closed, or an open one that has not answered
@@ -1057,7 +1056,7 @@ describe("in-session model switch", () => {
       outcome: { status: "fatal", errorCode: "rejected", errorMessage: "prompt is too long" },
     },
   ] satisfies { why: string; outcome: LLMOutcome }[])(
-    "a summary that fails on the old model ($why) with nothing salvageable hands the history over by Trace path: the old file's pair ends completed with the reason, and the target's file opens with the handoff the stream carries after the meta",
+    "a summary that fails on the old model ($why) hands the history over by Trace path: the old file's pair ends completed with the reason, and the target's file opens with the handoff the stream carries after the meta",
     async ({ outcome }) => {
       const llmA = new ScriptedLLM(
         [{ messages: [assistantText("answer one"), usage(50, 50)] }, { messages: [], outcome }],
@@ -1235,13 +1234,13 @@ describe("in-session model switch", () => {
     expect(h.session.modelId).toBe(MODEL_A.model_id);
   });
 
-  it("a switch whose summary was cut opens the target with the salvaged summary, not the block", async () => {
-    const salvaged = `## Request\n${"the request, at length. ".repeat(30)}`;
+  it("a switch whose summary was cut opens the target with the block, the cut text unused", async () => {
+    const cut = `## Request\n${"the request, at length. ".repeat(30)}`;
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
         {
-          messages: [assistantText(`[summary]${salvaged}`)],
+          messages: [assistantText(`[summary]${cut}`)],
           outcome: { status: "retryable", errorCode: "network", errorMessage: "socket hang up" },
         },
       ],
@@ -1263,12 +1262,8 @@ describe("in-session model switch", () => {
 
     expect(result).toBe("completed");
     expect(compactionEvents(all)[1]).toMatchObject({ status: "completed", error_code: "network" });
-    // The stream ends on the meta: the block is not what the context opens with.
-    expect(all.at(-1)!.type).toBe("session_meta");
-    expect(llmB.calls[0]!.map(textOf)).toEqual([
-      buildContextSummaryText(salvaged.trim(), undefined, { cutOff: true }),
-      "task two",
-    ]);
+    expect(all.at(-1)).toBe(handoff);
+    expect(llmB.calls[0]!.map(textOf)).toEqual([textOf(handoff), "task two"]);
   });
 
   it("a switch whose opener throws ends fatal and stays on the old model, and so does the next compaction", async () => {

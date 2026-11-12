@@ -4804,11 +4804,11 @@ Benchmark：
     /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
     compactionDegradedHint: (errorMessage?: string): string =>
       errorMessage !== undefined
-        ? `未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头：${errorMessage}`
-        : "未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头",
+        ? `未能生成完整摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
+        : "未能生成完整摘要，新上下文改以 Trace 交接说明开头",
     /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
     compactionRoomHint: (providerMessage?: string): string =>
-      `留给压缩的空间不足，新上下文改以已写出的部分摘要或 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
+      `留给压缩的空间不足，新上下文改以 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
         providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
       }`,
     compactionFailed: (status: string, errorMessage?: string): string => {

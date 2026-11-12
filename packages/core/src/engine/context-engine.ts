@@ -46,8 +46,8 @@ import {
   userText,
 } from "@prismshadow/amsp/records";
 import { hasInputImages, replaceInputImages } from "./rejected-images.js";
-import { buildCompactionHandoff, compactionCallLines, pickSalvage } from "./compaction-carry.js";
-import type { SpanCall, SpanRequest } from "./compaction-carry.js";
+import { buildCompactionHandoff, compactionCallLines } from "./compaction-carry.js";
+import type { SpanCall } from "./compaction-carry.js";
 import {
   SALVAGE_MIN_CHARS,
   buildContextSummaryText,
@@ -1851,12 +1851,11 @@ export class ContextEngine {
    * replaced, outside every budget. Transport failures retry on the backoff ladder
    * (`compactionMaxReconnects`); `fatal` is not retried.
    *
-   * It ends `completed` — the next context opens with the summary, else the longest summary cut
-   * off before its end (pickSalvage), else `handoff` or the hand-off note, and the
-   * `compaction_end` carries the error pair saying why — `aborted` (a stop before the fallback)
-   * or `fatal` (no next context could be opened). Between the paired events the stream carries
-   * each request as runTurn streams a span (issue #290) and every call with its decision and
-   * output; the Prompt and the harness lines stay Trace-only.
+   * It ends `completed` — the next context opens with the summary, else `handoff` or the
+   * hand-off note, and the `compaction_end` carries the error pair saying why — `aborted` (a
+   * stop before the fallback) or `fatal` (no next context could be opened). Between the paired
+   * events the stream carries each request as runTurn streams a span (issue #290) and every
+   * call with its decision and output; the Prompt and the harness lines stay Trace-only.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async *summarizeContext(
@@ -1873,7 +1872,7 @@ export class ContextEngine {
     const gate = this.deps.compactionToolGate;
     // With no gate no round is open: every tool call is refused.
     const maxRounds = gate !== undefined ? (settings.maxRounds ?? 0) : 0;
-    const requests: SpanRequest[] = [];
+    let requests = 0;
     const calls: SpanCall[] = [];
     let pending = folded;
     let rounds = 0;
@@ -1905,7 +1904,7 @@ export class ContextEngine {
       const turn = yield* this.runTurn(input, {
         approve,
         signal,
-        attempts: requests.length - rounds,
+        attempts: requests - rounds,
         // The wait before the next send (0: at once): mirrors the branches below.
         retryInMs: (o) =>
           o.status === "fatal"
@@ -1924,7 +1923,7 @@ export class ContextEngine {
         .filter(isTextMessage)
         .map((m) => (m.payload as TextPayload).text)
         .join("");
-      requests.push({ ...r, text });
+      requests += 1;
       if (r.status === "completed") {
         pending = [];
         const kind = classifyCompactionResponse(text, turn.toolCalls.length > 0);
@@ -1994,7 +1993,7 @@ export class ContextEngine {
     }
     // A stop that lands before the fallback is a stop.
     if (end !== "aborted" && !("summary" in end) && signal?.aborted) end = "aborted";
-    const attempts = requests.length - rounds - uncounted;
+    const attempts = requests - rounds - uncounted;
 
     if (end === "aborted") {
       yield* this.emitCompactionEnd(
@@ -2005,7 +2004,7 @@ export class ContextEngine {
       );
       return { status: "aborted", pending };
     }
-    const summary = "summary" in end ? end.summary : pickSalvage(requests);
+    const summary = "summary" in end ? end.summary : null;
     const rotated = yield* this.rotate(
       { reason, mode: "summarize", attempt: attempts, ...("summary" in end ? {} : { error: end }) },
       async ({ notice }) => {
@@ -2020,7 +2019,6 @@ export class ContextEngine {
             tracePath !== undefined ? { tracePath, ...shell } : undefined,
             {
               callLines: compactionCallLines(calls),
-              cutOff: !("summary" in end),
               ...(notice !== undefined ? { notice } : {}),
             },
           ),
@@ -2487,7 +2485,8 @@ export const TRUNCATED_LINE =
 /**
  * What a committed compaction response is. Text only: a summary unless it extracts empty — the
  * lenient rule, which accepts a tagless reply. With tool calls: a summary only when it holds a
- * tagged one (closed, or long enough to salvage), otherwise a round, its text a preamble.
+ * tagged one (closed, or of at least SALVAGE_MIN_CHARS characters), otherwise a round, its text
+ * a preamble.
  */
 function classifyCompactionResponse(
   text: string,

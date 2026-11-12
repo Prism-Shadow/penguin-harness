@@ -932,7 +932,7 @@ describe("approvals and events", () => {
     expect(banner.work![0]!.outputComplete).toBe(false);
   });
 
-  /** A summary cut off at the output limit: well past the salvage floor inside its open tag. */
+  /** A summary cut off at the output limit: hundreds of characters inside its open tag. */
   const cutSummary = (lead: string, repeat: number) =>
     `[summary]\n## Request\n${`${lead} Fix the three broken links in the release-notes draft. `.repeat(repeat)}`;
   /** What the banner settles to, for comparing a live model with one rebuilt from history. */
@@ -1006,8 +1006,8 @@ describe("approvals and events", () => {
     ]) {
       pushMessage(rebuilt, msg);
     }
-    // One presentation for every completion without a full summary: whether the next context
-    // opened with the cut-off text or with the hand-off note is the Trace's to tell, not the row's.
+    // One presentation for every completion without a full summary: the cut-off text the row
+    // streamed is no result.
     expect(rowOf(live)).toEqual({
       running: false,
       status: "completed",
