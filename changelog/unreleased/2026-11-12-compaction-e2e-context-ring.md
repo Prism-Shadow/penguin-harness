@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** process
 - **Scope:** `web`
+- **PR:** [#1538](https://github.com/Prism-Shadow/penguin-harness/pull/1538)
 
 [中文版](2026-11-12-compaction-e2e-context-ring.zh.md)
 
