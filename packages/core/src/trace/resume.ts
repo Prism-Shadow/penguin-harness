@@ -370,8 +370,12 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // A full summary: the assistant text of the span's last completed Request (the
         // requests before it there, if any, are its tool rounds and corrections). Always
         // rebuilt in the current [context_summary] form — extractSummary itself still accepts
-        // the old <summary> tags an old Trace may contain.
-        const summaryText = extractSummary(lastCompletedRequestText(span));
+        // the old <summary> tags an old Trace may contain. A completed request with no text
+        // still counts as the last one: falling back to an earlier request would inject a
+        // round's or an older turn's reply as the summary; the empty extract voids the closure.
+        const summaryText = extractSummary(
+          spanRequests(span).findLast((r) => r.status === "completed")?.text ?? "",
+        );
         if (summaryText !== "") {
           result.pendingSummary = userText(
             buildContextSummaryText(summaryText, transcript, { callLines }),
@@ -386,7 +390,9 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
       } else {
         // Completed with the unified error pair: no full summary could be had, and the next
         // context opened with the longest summary a reply cut off before its end still held,
-        // or — with none — with the hand-off note built from this file.
+        // or — with none — with the hand-off note built from this file. A span that holds no
+        // request (an ordinary request the provider refused, answered by a hand-off) has none,
+        // so the note; the refused turn's own text input is not resent — the note quotes it.
         const salvaged = pickSalvage(spanRequests(span));
         result.pendingSummary = userText(
           salvaged !== null
@@ -612,34 +618,4 @@ function lastRequestTotalOf(messages: AmspRecord[]): number {
     if (p.type === "token_usage" && p.request) return p.request.total;
   }
   return 0;
-}
-
-/** Concatenated assistant text of the last completed Request (on compaction closure, read over the closing span: the compaction request's output). */
-function lastCompletedRequestText(messages: AmspRecord[]): string {
-  let text = "";
-  let current = "";
-  let inRequest = false;
-  for (const msg of messages) {
-    if (isRequestBegin(msg)) {
-      inRequest = true;
-      current = "";
-      continue;
-    }
-    if (isRequestEnd(msg)) {
-      {
-        // A completed request with empty text still overwrites (we take the text of “the last
-        // completed request”, even if empty) — otherwise a textless compaction output would fall
-        // back to an earlier turn's normal reply and get mistakenly injected as the summary. The
-        // caller treats the resulting empty extract as a void closure (a pre-#83 trace shape)
-        // and replays the original context instead.
-        if (msg.payload.status === "completed") text = current;
-        inRequest = false;
-      }
-      continue;
-    }
-    if (!inRequest || !isCompleteModelMessage(msg)) continue;
-    const p = msg.payload as { type?: string; role?: string; text?: string };
-    if (p.type === "text" && p.role === "assistant" && p.text) current += p.text;
-  }
-  return text;
 }

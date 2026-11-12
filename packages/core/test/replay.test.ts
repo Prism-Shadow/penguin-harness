@@ -15,6 +15,9 @@
  * - A compaction completed with the unified error pair (no full summary could be had): the next
  *   context opens with the longest summary a cut reply still held, marked as cut off, or with
  *   the hand-off note built from the file — the same note the live engine opened it with.
+ * - A span with no request (an ordinary request the provider refused, answered by a hand-off)
+ *   resumes with that note, the refusal quoted in it; a process that died inside such a span
+ *   resumes on the old context with the refused turn's input pending.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -599,6 +602,65 @@ describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", ()
     expect(text).toContain(file);
   });
 
+  it("a file closed by a span with no request resumes with the hand-off note, the provider's refusal quoted in it", () => {
+    // An ordinary request the provider refused on a context that had completed a turn: recorded
+    // as a retried attempt, then a span with no request that completed with the provider's error.
+    const result = resumeTrace(
+      [
+        meta(),
+        taskBegin(),
+        userText("migrate the database"),
+        requestBegin(),
+        assistantText("Reading the schema."),
+        toolCall({ name: "read_file", arguments: '{"file_path":"/ws/s.sql"}', toolCallId: "rs" }),
+        requestEnd("completed"),
+        tokenUsage(usage(10), usage(10)),
+        toolCallOutput({ output: "CREATE TABLE t", toolCallId: "rs", status: "completed" }),
+        userText("use the new column names"),
+        requestBegin(),
+        requestEnd("retryable", { ...refused, attempt: 1, retryInMs: 0 }),
+        begin(),
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed", ...refused }),
+      ],
+      { tracePath: file, shell: "bash" },
+    );
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    expect(result.carryOver).toEqual([]);
+    expect(result.sessionTurns).toBe(0);
+    const text = textOf(result.pendingSummary);
+    expect(text.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
+    expect(text).toContain(transcribeToolCallOutput("rs", "completed", "CREATE TABLE t"));
+    expect(text).toContain('  [request_error code="rejected"]prompt is too long[/request_error]');
+    // The refused turn's text input is not resent: the note quotes it with the user's messages.
+    expect(text).toContain("  [user_input]use the new column names[/user_input]");
+    expect(text).toContain(file);
+  });
+
+  it("a process that died inside a hand-off resumes on the old context with the refused turn's input pending", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("migrate the database"),
+      requestBegin(),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/ws/s.sql"}', toolCallId: "rs" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: "CREATE TABLE t", toolCallId: "rs", status: "completed" }),
+      userText("use the new column names"),
+      requestBegin(),
+      requestEnd("retryable", { ...refused, attempt: 1, retryInMs: 0 }),
+      begin(),
+      // The process died before the span's end was written.
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    expect(result.danglingCompaction).toEqual({ reason: "context", mode: "summarize" });
+    expect(result.sessionTurns).toBe(1);
+    expect(textsOf(result.history)).toEqual(["migrate the database", "read_file"]);
+    // The next run sends the refused turn again, as it was.
+    expect(textsOf(result.carryOver)).toEqual(["CREATE TABLE t", "use the new column names"]);
+  });
+
   it("never takes a round's text for the summary of a degraded closure", () => {
     // A committed reply is no salvage candidate: had it held the summary, it would have been one.
     const preamble = `[summary]\n${"Saving the plan first. ".repeat(30)}`;
@@ -1006,6 +1068,96 @@ describe("engine trace round-trip", () => {
     expect(live).toContain(oldPath);
 
     const resumed = resumeTrace(await readTrace(oldPath), { tracePath: oldPath });
+    expect(resumed.contextClosed).toBe(true);
+    expect((resumed.pendingSummary?.payload as { text?: string } | undefined)?.text).toBe(live);
+  });
+
+  it("a request its provider refused resumes, from a span with no request, with the note the live engine opened the next context with", async () => {
+    // One test drives both sides: the live engine answers an ordinary request the provider
+    // refused, on a context that has completed a turn, by handing off — no compaction request —
+    // and a restart over the closed file rebuilds the same note, the refusal quoted in it.
+    const refusal = "prompt is too long: 250000 tokens > 200000 maximum";
+    let oldModelCalls = 0;
+    const llm1: LLMInterface = {
+      async *streamGenerate() {
+        oldModelCalls += 1;
+        if (oldModelCalls === 1) {
+          yield toolCall({
+            name: "read_file",
+            arguments: '{"file_path":"/ws/big.log"}',
+            toolCallId: "rb",
+          });
+          yield tokenUsage(usage(150), usage(150));
+          return { status: "completed" };
+        }
+        return { status: "fatal", errorCode: "rejected", errorMessage: refusal };
+      },
+    };
+    const llm2: LLMInterface = {
+      async *streamGenerate() {
+        yield assistantText("carrying on");
+        yield tokenUsage(usage(20), usage(170));
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool({ toolCall: tc }) {
+        yield toolCallOutput({
+          output: "a very long log",
+          toolCallId: tc.payload.tool_call_id,
+          status: "completed",
+        });
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess-refused" });
+    const oldPath = trace.currentPath();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment,
+      trace,
+      sessionMeta: meta(),
+      // The threshold is far away: only the refusal closes the context.
+      compaction: {
+        maxContextLength: 100000,
+        maxSessionTurns: -1,
+        mode: "summarize",
+        prompt: "COMPACT NOW",
+      },
+      openNextContext: () => ({ llm: llm2 }),
+      buildHandoff: async () => {
+        const path = trace.currentPath();
+        return userText(buildCompactionHandoff(await readTrace(path), { tracePath: path }));
+      },
+    });
+    const approve: ApproveFn = async () => "allow";
+    for await (const _ of engine.run([userText("read the log")], { approve })) {
+      // consume
+    }
+
+    expect(oldModelCalls).toBe(2);
+    expect(trace.currentPath()).not.toBe(oldPath);
+    const closed = await readTrace(oldPath);
+    const typeAt = (m: AmspRecord): string => (m.payload as { type?: string }).type ?? "";
+    const spanStart = closed.findIndex((m) => typeAt(m) === "compaction_begin");
+    expect(spanStart).toBeGreaterThan(-1);
+    expect(closed.slice(spanStart).map(typeAt)).not.toContain("request_begin");
+
+    const opening = (await readTrace(trace.currentPath())).find((m) => {
+      const p = m.payload as { type?: string; role?: string };
+      return p.type === "text" && p.role === "user";
+    });
+    const live = (opening?.payload as { text?: string } | undefined)?.text ?? "";
+    expect(live.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
+    expect(live).toContain(transcribeToolCallOutput("rb", "completed", "a very long log"));
+    expect(live).toContain(`  [request_error code="rejected"]${refusal}[/request_error]`);
+
+    const resumed = resumeTrace(closed, { tracePath: oldPath });
     expect(resumed.contextClosed).toBe(true);
     expect((resumed.pendingSummary?.payload as { text?: string } | undefined)?.text).toBe(live);
   });

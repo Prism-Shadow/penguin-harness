@@ -105,6 +105,12 @@ export interface ContextHandoffSections {
   userLines: readonly string[];
   /** The last completed turn before the compaction: its `[text]`, `[tool_call]` and `[tool_call_output]` lines. */
   turnLines: readonly string[];
+  /**
+   * Why the context was closed, when the provider refused the request after that turn: its
+   * `[request_error]` line (see transcribeRequestError), the provider's words as they came.
+   * Empty: no section.
+   */
+  refusalLines: readonly string[];
   /** The compaction's own tool calls with their outputs, as under a summary (see ContextSummaryExtras.callLines). */
   callLines: readonly string[];
 }
@@ -117,6 +123,9 @@ const HANDOFF_LEAD_NO_TRANSCRIPT =
   "no transcript of it is recorded. Carry on with the task from where it stopped.";
 const HANDOFF_LEAD_CLOSING =
   " Consent does not carry over: anything that needed a go-ahead is asked again.";
+/** Heads the refusal section: without it a model would rebuild the very input that was refused. */
+const HANDOFF_REFUSAL_HEADING =
+  "The request after that turn was refused by the provider, which is why this context was closed; its error is below. If the refusal was about size, do not rebuild the same input: read large files and outputs in parts.";
 
 /**
  * The hand-off note a compaction opens the next context with when no summary could be had,
@@ -124,10 +133,11 @@ const HANDOFF_LEAD_CLOSING =
  * the block by its prefix carries it exactly as one.
  *
  * It opens with the harness's explanation, then the sections it is given — the user messages,
- * the last completed turn, the compaction's tool calls — each under its heading and separated
- * by a blank line, a section with no lines left out; then, given the compacted context's Trace
- * file, its path and how to query it. Pure string work: what to quote, and how much of it, is
- * chosen by the caller from the Trace records (core's compaction-carry).
+ * the last completed turn, the provider's refusal of the request after it, the compaction's
+ * tool calls — each under its heading and separated by a blank line, a section with no lines
+ * left out; then, given the compacted context's Trace file, its path and how to query it. Pure
+ * string work: what to quote, and how much of it, is chosen by the caller from the Trace
+ * records (core's compaction-carry).
  */
 export function buildContextHandoffText(
   sections: ContextHandoffSections,
@@ -143,6 +153,7 @@ export function buildContextHandoffText(
   };
   section("User messages of the compacted context, oldest first:", sections.userLines);
   section("The last completed turn before the compaction:", sections.turnLines);
+  section(HANDOFF_REFUSAL_HEADING, sections.refusalLines);
   section(COMPACTION_CALLS_HEADER, sections.callLines);
   if (transcript !== undefined) {
     parts.push(transcriptLines("Transcript of the compacted context", transcript).join("\n"));
