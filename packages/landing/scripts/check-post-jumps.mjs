@@ -31,6 +31,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as engines from "@playwright/test";
+import { blogAssetUrl } from "../src/lib/community-assets.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "../dist");
@@ -88,7 +89,8 @@ await new Promise((resolve) => server.listen(PORT, "127.0.0.1", resolve));
 const SIZES = JSON.parse(
   readFileSync(path.resolve(HERE, "../src/lib/blog-image-sizes.json"), "utf8"),
 );
-const COMMUNITY = "/penguin-harness-community/raw/refs/heads/main/assets/blog-assets/";
+/** The path the renderer loads a post's pictures from (blogAssetUrl), which the stand-ins answer. */
+const COMMUNITY = new URL(blogAssetUrl("")).pathname;
 
 /** A stand-in for the picture at `url`, at the size recorded for the post's source. */
 function picture(url) {

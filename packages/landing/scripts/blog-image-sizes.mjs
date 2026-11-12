@@ -10,8 +10,9 @@
  *   node scripts/blog-image-sizes.mjs --check   # list the ones not recorded; exit 1 if any
  *
  * The pictures are not in this repository: `/blog-assets/<name>` is served from the community
- * repo (blogAssetUrl in src/lib/links.ts), and some posts link GitHub attachments directly. Each
- * picture not recorded yet is downloaded once and its size read from the file's own header.
+ * repo (blogAssetUrl in src/lib/community-assets.ts), and some posts link GitHub attachments
+ * directly. Each picture not recorded yet is downloaded once and its size read from the file's
+ * own header.
  * Raw `<img>` tags carry their own `width` and `height` and are not listed. Behind a proxy, run
  * it with `NODE_USE_ENV_PROXY=1`, so Node's fetch goes through `https_proxy`.
  */
@@ -19,17 +20,16 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { imageSize, markdownImageSources } from "../src/lib/blog-images.ts";
+import { blogAssetUrl } from "../src/lib/community-assets.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const POSTS = path.resolve(HERE, "../content/blog");
 const MANIFEST = path.resolve(HERE, "../src/lib/blog-image-sizes.json");
-const COMMUNITY_RAW =
-  "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets/blog-assets/";
 
 /** Where a post's image source is downloaded from, or null for one that is not on the web. */
 const downloadUrl = (src) =>
   src.startsWith("/blog-assets/")
-    ? COMMUNITY_RAW + src.slice("/blog-assets/".length)
+    ? blogAssetUrl(src.slice("/blog-assets/".length))
     : /^https?:\/\//.test(src)
       ? src
       : null;

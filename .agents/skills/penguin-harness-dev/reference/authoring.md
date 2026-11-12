@@ -21,7 +21,7 @@ number of posts written; keeping it out of this history keeps everyone's clone s
 
 **Posts still write a repo-local path.** Reference an image as `/blog-assets/<name>` — both
 `![alt](…)` and the raw `<img src="…">` some posts use — and let the renderer resolve it:
-`blogAssetUrl` in `packages/landing/src/lib/links.ts`, applied by the `img` adapter in
+`blogAssetUrl` in `packages/landing/src/lib/community-assets.ts`, applied by the `img` adapter in
 `src/pages/blog-post.tsx`. Never paste the raw `raw.githubusercontent` URL into a post. One source
 of truth for the host, Markdown that stays readable and diffable, and moving the host again is a
 one-line change instead of a sweep over every post.

@@ -9,7 +9,7 @@ import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
-import { demoVideoUrl } from "../lib/links";
+import { demoVideoUrl } from "../lib/community-assets";
 import posterZh from "../assets/shots/legal-app-zh.webp";
 import posterEn from "../assets/shots/legal-app-en.webp";
 

@@ -20,7 +20,7 @@ import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { useWidth } from "../lib/use-width";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
-import { demoVideoUrl } from "../lib/links";
+import { demoVideoUrl } from "../lib/community-assets";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
