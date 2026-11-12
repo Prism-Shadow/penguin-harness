@@ -46,21 +46,14 @@ import {
   userText,
 } from "@prismshadow/amsp/records";
 import { hasInputImages, replaceInputImages } from "./rejected-images.js";
-import {
-  CLOSED_LINE,
-  EMPTY_LINE,
-  REFUSED_NO_ROUND,
-  TRUNCATED_LINE,
-  roundLine,
-} from "./compaction-lines.js";
+import { REFUSED_NO_ROUND } from "./compaction-lines.js";
 import { buildCompactionHandoff, compactionCallLines, pickSalvage } from "./compaction-carry.js";
-import type { SpanCall, SpanRequest } from "./compaction-carry.js";
+import type { SpanCall } from "./compaction-carry.js";
+import { runCompactionLoop } from "./compaction-loop.js";
+import type { CompactionLoopHost, CompactionResponse } from "./compaction-loop.js";
 import {
-  SALVAGE_MIN_CHARS,
   buildContextSummaryText,
   buildTurnAbortedBlock,
-  extractSummary,
-  summaryInTags,
   buildTurnRetriedBlock,
   stripRequestErrorLines,
   transcribeRequestError,
@@ -127,8 +120,8 @@ export interface CompactionSettings {
    * Tool rounds a summarize compaction may take before its summary (see
    * ContextEngineDeps.compactionToolGate): the harness counts them, and while one is open a
    * response's tool calls are answered and their outputs sent as the next request, behind a
-   * line naming the rounds used and left. Absent or <= 0 (or no gate): none — every tool call
-   * is refused.
+   * line naming the rounds used — and, from the rounds a compaction aims at on, how many more
+   * run (see roundLine). Absent or <= 0 (or no gate): none — every tool call is refused.
    */
   maxRounds?: number;
   /**
@@ -198,18 +191,16 @@ type CompactionResult =
     }
   | {
       status: "aborted" | "fatal";
+      /**
+       * What the kept context is still owed, which every caller holds as its carry-over (issue
+       * #85): the folded input when no compaction response was committed (only a `completed`
+       * request commits), else the outputs answering the latest committed response's calls —
+       * the folded input then lives in the old LLM object's history and must never be resent,
+       * since strict providers reject the duplicates as stale tool_results.
+       */
+      pending: AmspRecord[];
       /** Why the next context could not be opened (`fatal`). */
       errorMessage?: string;
-      /**
-       * Whether a compaction response was **committed** by MMSP (only a `completed` request
-       * commits). The carry rule at every caller is a two-case binary on this flag (issue #85):
-       * committed → the input the caller folded in (mid-Task tool outputs, or the carry-over a
-       * manual `compact()` folds in) lives in the old LLM object's history and must never be
-       * resent — strict providers reject the duplicates as stale tool_results; not committed →
-       * the folded input is untouched and is resent exactly as before. Outputs still owed to the
-       * latest committed response are already stashed as carry-over (see stashRepairs).
-       */
-      committed: boolean;
     };
 
 /** A context `openNextContext` opened and the records it published, not adopted yet. */
@@ -217,9 +208,6 @@ interface OpenedNext {
   opened: OpenedContext;
   records: AmspRecord[];
 }
-
-/** Responses that advanced nothing and are answered with a corrective line, per compaction. */
-const MAX_COMPACTION_CORRECTIONS = 2;
 
 /**
  * Options for `run`.
@@ -475,39 +463,46 @@ interface TurnResult {
   receivedContent: boolean;
   /** Terminal state of this turn's LLM request (completed / failed / aborted / timeout / malformed). */
   outcome: LLMOutcome;
+  /** The provider refused the request and the refusal is answered by a hand-off (TurnOptions.handOff). */
+  handOff: boolean;
 }
 
-/**
- * A turn's retry bookkeeping, threaded into `runTurn` so its `request_end` can announce the
- * next attempt's planned backoff. `attempts` counts every attempt the turn has made so far
- * (the ordinal hosts render, and what the absolute ceiling measures); `consecutive` counts
- * only the tail of them that came back having received nothing — the backoff rung, and what
- * `maxReconnects` measures. The two diverge as soon as an attempt receives content: see the
- * reconnect loop in runToCompletion.
- */
-interface TurnRetryState {
+/** Refusal hand-offs one run may take (see handOffContext); a further refusal ends the run like any fatal request. */
+const MAX_REFUSAL_HANDOFFS = 3;
+
+/** One request through the model (see runTurn): a turn's, or — `span` — a compaction's. */
+interface TurnOptions {
+  approve: ApproveFn;
+  preToolUse?: PreToolUseFn | undefined;
+  signal?: AbortSignal | undefined;
+  /**
+   * Attempts made before this one — a turn's, or a compaction's requests that were not rounds:
+   * the ordinal its `request_end` carries.
+   */
   attempts: number;
-  consecutive: number;
+  /**
+   * The wait a failed request's `request_end` announces (`retry_in_ms`), mirroring what the
+   * caller's loop will do, or the countdown is a lie; undefined when no retry follows.
+   */
+  retryInMs: (outcome: LLMOutcome, receivedContent: boolean) => number | undefined;
+  /**
+   * Whether any resend is still allowed; an image rejection and a hand-off announce 0 under it.
+   * Default true.
+   */
+  resend?: boolean;
+  /**
+   * Whether a refusal of this request (`fatal` / `rejected`, no image in the input) is answered
+   * by a hand-off to a new context: it is then recorded as a retried attempt (see
+   * ContextEngine.handOffContext).
+   */
+  handOff?: boolean;
+  /**
+   * A compaction request: its tool calls are collected, not dispatched (the compaction answers
+   * them once the response committed); it counts no Session turn; and its complete text and
+   * thinking stay off the stream once partials carried them (see streamsInSpan).
+   */
+  span?: boolean;
 }
-
-/**
- * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the LLM
- * interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a
- * response cut off at its output cap (`output_truncated`) and everything unclassifiable come
- * back `retryable`, while definitive provider rejections and credential failures come back
- * `fatal` and the turn loop aborts on them before consulting this set.
- *
- * Both loops retry the same set on the same backoff ladder, and by default with the same
- * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
- * set explicitly (issue #170 — a compaction request is an ordinary LLM request and gets the
- * turn loop's patience). Compaction takes one cause out of it: a response cut at its output
- * cap (`output_truncated`) is a correction there, asked again at once (see summarizeContext).
- *
- * One rule is the turn loop's alone: received content resets its ladder. A compaction's
- * ladder spans the whole compaction and never resets: it is bounded so that a provider which
- * cannot produce the summary hands over to the salvage and the hand-off note in bounded time.
- */
-const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
 
 /**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
@@ -883,6 +878,8 @@ export class ContextEngine {
     }
 
     let turnCount = 0;
+    // Refusals of this run answered by a hand-off (at most MAX_REFUSAL_HANDOFFS).
+    let handoffs = 0;
     // Each turn's LLM input: the first turn is the Prompt, later turns are the previous turn's
     // tool outputs. Background notices that arrived while the session sat idle (and were not
     // taken by the host as their own task input) ride the first request, behind the Prompt.
@@ -923,9 +920,11 @@ export class ContextEngine {
       // history by GenerativeModel before it returns `retryable`, so it holds the same way.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
-      // Two counters, because the ladder and the ceiling answer different questions (see
-      // TurnRetryState): `attempts` is every attempt this turn has made, `consecutive` only
-      // the tail that received nothing. Both live and die with the turn.
+      // Two counters, because the ladder and the ceiling answer different questions:
+      // `attempts` is every attempt this turn has made (the ordinal hosts render, and what the
+      // absolute ceiling measures), `consecutive` only the tail that received nothing (the
+      // backoff rung, and what `maxReconnects` measures). They diverge as soon as an attempt
+      // receives content. Both live and die with the turn.
       let attempts = 0;
       let consecutive = 0;
       let turn: TurnResult;
@@ -933,16 +932,31 @@ export class ContextEngine {
       for (;;) {
         // Both LLM and Environment handle errors internally and guarantee a complete, closed
         // output with no thrown exceptions; the engine doesn't handle exceptions —
-        // it decides retry/resend purely from `outcome`. The retry count so far is threaded
-        // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
-        // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(
-          attemptInput,
+        // it decides retry/resend purely from `outcome`. The counters are threaded in so the
+        // turn's request_end can announce the planned backoff (retry_in_ms) — they live in
+        // this loop while the event is built inside the turn — mirroring the branches below:
+        // an attempt that received content restarts the ladder at its first rung, and either
+        // budget running out means no retry is planned at all. A refusal hands off only on a
+        // context the provider has accepted a request on (so never twice in a row), with the
+        // capability to open the next one, within this run's allowance and the ceiling.
+        const resend = attempts + 1 < this.maxTurnAttempts;
+        turn = yield* this.runTurn(attemptInput, {
           approve,
-          signal,
-          { attempts, consecutive },
           preToolUse,
-        );
+          signal,
+          attempts,
+          resend,
+          handOff:
+            this.sessionTurns > 0 &&
+            this.compaction !== undefined &&
+            this.deps.openNextContext !== undefined &&
+            handoffs < MAX_REFUSAL_HANDOFFS &&
+            resend,
+          retryInMs: (outcome, received) =>
+            outcome.status === "retryable"
+              ? this.retryDelayMs((received ? 0 : consecutive) + 1, this.maxReconnects)
+              : undefined,
+        });
         attempts += 1;
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
@@ -954,7 +968,8 @@ export class ContextEngine {
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
         // deterministic client-side rejection — the identical request can never succeed, so
-        // the ladder would only delay the actionable message the outcome already carries.
+        // the ladder would only delay the actionable message the outcome already carries
+        // (a refusal answered by a hand-off is no longer `fatal`: see below).
         // No abort event: abort marks a user interruption, and the already-written
         // request_end (status `fatal`, `error_message`, no `retry_in_ms`) is the terminal
         // record frontends and observability read.
@@ -970,6 +985,27 @@ export class ContextEngine {
         }
         // Completed normally.
         if (turn.outcome.status === "completed") break;
+
+        // The provider refused the request as sent on a context it accepted requests on: what
+        // grew since — the history or this input — is refused, and would be on every later
+        // run. The context is closed with no request and the next opens with the hand-off
+        // note; the turn is sent again behind it, its text alone (tool outputs pair with calls
+        // of the closed context, and the note quotes the last turn's). The same turn: the turn
+        // cap is unaffected, the ceiling keeps counting, the retry ledger and the ladder
+        // restart. A next context that cannot be opened ends the run as a failed compaction.
+        if (turn.handOff) {
+          const handed = yield* this.handOffContext(turn.outcome);
+          if ("errorMessage" in handed) {
+            this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+            return { kind: "compaction_failure", errorMessage: handed.errorMessage };
+          }
+          handoffs += 1;
+          nextInput = [handed.opening, ...nextInput.filter(isTextMessage)];
+          attemptInput = nextInput;
+          failedTurns.length = 0;
+          consecutive = 0;
+          continue;
+        }
 
         // An image rejection is the one fatal outcome that retries: runTurn turned a provider
         // 4xx `retryable` because this input holds images (checked again here, so an LLM that
@@ -1104,21 +1140,14 @@ export class ContextEngine {
             continue;
           }
           // Aborted, or no next context could be opened: the original context and Trace index
-          // stay, and the next trigger compacts again. Mid-Task the run ends: this turn's
-          // pending state is held as carry-over under the same two-case binary as everywhere
-          // (issue #85) — a committed response consumed the turn's outputs into history, so
-          // only what summarizeContext stashed in pendingCarryOver still needs resending;
-          // otherwise the outputs are untouched and are appended behind the stash as case-A
-          // carry-over. The next run resends that carry-over merged with the user's message,
+          // stay, and the next trigger compacts again. What the kept context is still owed is
+          // held as carry-over (see CompactionResult): this turn's outputs when nothing
+          // committed, else the outputs answering the last committed response. Mid-Task the run
+          // ends, and the next run resends that carry-over merged with the user's message,
           // exactly like any interrupted turn. The run's end also discards the steering queue
           // (run's finally — control goes back to the user).
+          this.pendingCarryOver = result.pending;
           if (midTask) {
-            if (!result.committed) {
-              this.pendingCarryOver = [
-                ...this.pendingCarryOver,
-                ...this.buildCarryOver(attemptInput, turn),
-              ];
-            }
             // Only the user interruption is an abort; the other end's terminal record is the
             // compaction_end (status fatal + error_message) already written.
             if (result.status === "aborted") {
@@ -1240,13 +1269,9 @@ export class ContextEngine {
       return status;
     }
     // Completed: the opening is pending, and the text the hand-off did not absorb rides behind
-    // it. Otherwise the context stays, and the carry seam is a clean binary on whether the
-    // compaction committed anything to MMSP (PR #87 review):
-    //   - nothing committed: the fold never reached the model context — restore the prior
-    //     carry-over **verbatim** (nothing is owed, so there is no stash to interleave with);
-    //   - something committed: the carry-over is **consumed** — it lives in the committed
-    //     history now and must never be resent; only the outputs owed to the last committed
-    //     response (already stashed in pendingCarryOver) remain pending.
+    // it. Otherwise the context stays with what it is still owed (PR #87 review): the prior
+    // carry-over verbatim when nothing committed, else only the outputs owed to the last
+    // committed response — the carry-over lives in the committed history then.
     const folded = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const result = yield* this.summarizeContext(
@@ -1259,9 +1284,7 @@ export class ContextEngine {
     if (result.status === "completed") {
       this.pendingSummary = result.opening;
       this.pendingCarryOver = result.residual;
-    } else if (!result.committed) {
-      this.pendingCarryOver = folded;
-    }
+    } else this.pendingCarryOver = result.pending;
     return result.status;
   }
 
@@ -1330,9 +1353,8 @@ export class ContextEngine {
     text: AmspRecord[],
     handoff?: AmspRecord,
   ): AsyncGenerator<AmspRecord, StopReason> {
-    yield* this.adoptContext(await this.openContext());
+    yield* this.rotate(null, handoff && (() => handoff));
     this.pendingCarryOver = handoff ? [handoff, ...text] : text;
-    if (handoff) this.openingSummary = handoff;
     yield* this.openSwitchedContext();
     if (handoff) yield handoff;
     return "completed";
@@ -1353,27 +1375,29 @@ export class ContextEngine {
   }
 
   /**
-   * The wait the engine WILL apply before retrying this failure in-run, or undefined when
-   * it won't (a non-retryable status, or `reconnectsSoFar` has reached `cap` — an abort
-   * follows instead). Announced on the failure's `request_end` as `retry_in_ms` so the
-   * frontend can render a live countdown; shares `reconnectDelayMs` with `backoff`, so the
-   * announced wait and the actual sleep cannot drift. The caps differ by loop: the turn
-   * loop passes `maxReconnects`, the compaction loop `compactionMaxReconnects`; `retries` must
-   * match what the calling loop actually does, or the announced countdown is a lie.
+   * The wait the engine WILL apply before reconnect retry `n` (1-based) of a `retryable`
+   * failure, or undefined past a budget of `cap` retries — an abort or a fallback follows
+   * instead. Announced on the failure's `request_end` as `retry_in_ms` so the frontend can
+   * render a live countdown; shares `reconnectDelayMs` with `backoff`, so the announced wait and
+   * the actual sleep cannot drift. The caps differ by loop: the turn loop's is `maxReconnects`,
+   * the compaction loop's `compactionMaxReconnects`.
+   *
+   * Only `retryable` reconnects in-run. The classification lives in the LLM interface (see
+   * LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a response cut
+   * off at its output cap (`output_truncated`) and everything unclassifiable come back
+   * `retryable`, while definitive provider rejections and credential failures come back
+   * `fatal`. Both loops retry it on the same backoff ladder, and by default with the same budget
+   * (issue #170 — a compaction request is an ordinary LLM request and gets the turn loop's
+   * patience). Compaction takes one cause out of it: a response cut at its output cap is a
+   * correction there, asked again at once (see runCompactionLoop). One rule is the turn loop's
+   * alone: received content resets its ladder. A compaction's ladder spans the whole compaction
+   * and never resets: it is bounded so that a provider which cannot produce the summary hands
+   * over to the salvage and the hand-off note in bounded time.
    */
-  private plannedRetryDelayMs(
-    outcome: LLMOutcome,
-    reconnectsSoFar: number,
-    cap: number,
-    retries: readonly StopReason[],
-  ): number | undefined {
-    if (!retries.includes(outcome.status)) return undefined;
-    if (reconnectsSoFar >= cap) return undefined;
-    return reconnectDelayMs(
-      this.reconnectBackoffMs,
-      this.reconnectBackoffMaxMs,
-      reconnectsSoFar + 1,
-    );
+  private retryDelayMs(n: number, cap: number): number | undefined {
+    return n > cap
+      ? undefined
+      : reconnectDelayMs(this.reconnectBackoffMs, this.reconnectBackoffMaxMs, n);
   }
 
   /** Resolves the in-progress backoff wait early ("retry now"); null when no wait is in progress. */
@@ -1435,16 +1459,21 @@ export class ContextEngine {
    * feeds back an aborted output. partial/complete tool_call_output is yielded in completion
    * order. Returns all of this turn's tool outputs (for the next turn) and whether it was
    * interrupted midway.
+   *
+   * A compaction's requests go through here too (`span`): the same LLM object, the same frozen
+   * config and the same toolset as every turn (a changed tool list would change the request
+   * prefix and invalidate the provider's prompt cache at the moment the context is largest,
+   * issue #84), at the same effective thinking level. Every record is written to the old
+   * Trace; the calls are collected for the compaction to answer.
    * Docs: /docs/agent-loop § "Lifecycle of a turn".
    */
   private async *runTurn(
     input: AmspRecord[],
-    approve: ApproveFn,
-    signal?: AbortSignal,
-    /** This turn's retry bookkeeping from the caller's reconnect loop: lets request_end announce the NEXT attempt's planned backoff (and announce none once a budget is spent). */
-    retry: TurnRetryState = { attempts: 0, consecutive: 0 },
-    preToolUse?: PreToolUseFn,
+    opts: TurnOptions,
   ): AsyncGenerator<AmspRecord, TurnResult> {
+    const { approve, preToolUse, signal, span = false } = opts;
+    // Which partial kinds of a compaction request carried content (see streamsInSpan).
+    const partials = { text: false, thinking: false };
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
     // the tool_calls' **original order** is recorded separately, and reordered back to original
@@ -1457,6 +1486,8 @@ export class ContextEngine {
     const assistantSegments: AmspRecord[] = [];
     // This turn's LLM terminal state: taken from streamGenerate's generator return value.
     let outcome: LLMOutcome = { status: "completed" };
+    // Whether the outcome is a refusal answered by a hand-off (see TurnResult.handOff).
+    let turnHandOff = false;
     // Set by the first message the stream yields (see TurnResult.receivedContent).
     let receivedContent = false;
     // Whether this attempt reported its usage (a completed request does, and so does one cut off
@@ -1486,7 +1517,7 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
-            if (sawUsage && outcome.status === "completed") {
+            if (!span && sawUsage && outcome.status === "completed") {
               this.sessionTurns += 1;
               // A turn completed: the summary the context opened with is history now.
               this.openingSummary = null;
@@ -1497,18 +1528,19 @@ export class ContextEngine {
             // reconnect loop answers it: it replaces the images with a note and sends the turn
             // again at once, the provider's text in the retry block's `[request_error]` line
             // for the model to judge. The rejection is recorded as what it
-            // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
-            // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
-            // refuses is in the committed history or the request's parameters, beyond the
-            // reach of a retry.
-            const imageRetry =
-              outcome.status === "fatal" &&
-              outcome.errorCode === "rejected" &&
-              hasInputImages(input);
-            if (imageRetry) {
+            // turns out to be — a retried attempt, `retryable`, coded `image_rejected`. A
+            // compaction request takes the same rule. The same refusal of an input with no
+            // image refuses something in the committed history or the request's parameters,
+            // beyond the reach of a retry: it stays `fatal` as `rejected`, unless the turn loop
+            // answers it with a hand-off to a new context (`handOff`), when it too is recorded
+            // as a retried attempt, keeping its code.
+            const refused = outcome.status === "fatal" && outcome.errorCode === "rejected";
+            const imageRetry = refused && hasInputImages(input);
+            const handOff = refused && !imageRetry && opts.handOff === true;
+            if (imageRetry || handOff) {
               outcome = {
                 status: "retryable",
-                errorCode: "image_rejected",
+                errorCode: imageRetry ? "image_rejected" : "rejected",
                 ...(outcome.errorMessage !== undefined
                   ? { errorMessage: outcome.errorMessage }
                   : {}),
@@ -1518,22 +1550,15 @@ export class ContextEngine {
             // request never produces an abort, so this is the only place observability
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
-            // (the frontend's live countdown); absent on final failures and completions.
-            // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
-            // attempt that received content restarts the ladder at its first rung, either
-            // budget running out means no retry is planned at all, and an image retry waits
-            // for nothing.
+            // (the frontend's live countdown); absent on final failures and completions. An
+            // image retry and a hand-off wait for nothing.
             const retryInMs =
-              retry.attempts + 1 >= this.maxTurnAttempts
+              opts.resend === false
                 ? undefined
-                : imageRetry
+                : imageRetry || handOff
                   ? 0
-                  : this.plannedRetryDelayMs(
-                      outcome,
-                      receivedContent ? 0 : retry.consecutive,
-                      this.maxReconnects,
-                      RETRY_STATUSES,
-                    );
+                  : opts.retryInMs(outcome, receivedContent);
+            turnHandOff = handOff;
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
@@ -1542,8 +1567,8 @@ export class ContextEngine {
               // the backoff ladder — hosts render "attempt N", and a counter that went
               // backwards mid-turn would read as a lost attempt. A clean first-try completion
               // stays unstamped so the common case adds no noise.
-              ...(outcome.status !== "completed" || retry.attempts > 0
-                ? { attempt: retry.attempts + 1 }
+              ...(outcome.status !== "completed" || opts.attempts > 0
+                ? { attempt: opts.attempts + 1 }
                 : {}),
               ...(retryInMs !== undefined ? { retryInMs } : {}),
             });
@@ -1559,8 +1584,10 @@ export class ContextEngine {
           // Trace carry the Session series rather than the LLM's per-request stand-in. The
           // Session turn count (per committed LLM Request, across Tasks; used for compaction
           // threshold checks) waits for the outcome: an attempt cut off at its cap is no turn.
-          if (this.observeTokenUsage(msg)) sawUsage = true;
-          queue.push(msg);
+          // Every attempt's usage rides the stream (failed attempts burn real tokens, #170).
+          const usage = this.observeTokenUsage(msg);
+          if (usage) sawUsage = true;
+          if (!span || usage || streamsInSpan(msg, partials)) queue.push(msg);
           await this.write(msg);
           // Collect complete thinking/text segments (including partial segments finalized on
           // interruption), for carry-over flatten.
@@ -1584,8 +1611,9 @@ export class ContextEngine {
             callOrder.push(toolCallId);
             toolCalls.push(tc);
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
-            // returns its outcome (the LLM will close out quickly and return aborted).
-            if (signal?.aborted) continue;
+            // returns its outcome (the LLM will close out quickly and return aborted). A
+            // compaction request dispatches nothing.
+            if (span || signal?.aborted) continue;
             // Pre-tool-use hooks (RunOptions.preToolUse, wired by the Session from the
             // Agent's installed hook packages): consulted before the approval boundary,
             // every answer recorded as a `hook` event in stream order. A throw collapses
@@ -1606,57 +1634,9 @@ export class ContextEngine {
               }
               if (signal?.aborted) continue;
             }
-            // The approval callback is injected externally (RunOptions.approve): any throw
-            // collapses to deny (conservative), so the exception never escapes the engine —
-            // otherwise it would propagate through session.run without building carry-over,
-            // leaving the already-committed tool_use unanswered. A hook decision skips the
-            // callback: deny refuses without asking, allow approves without asking (the
-            // Session already gave the command policy the last word on an allow).
-            let decision: ApprovalDecision;
-            if (hooked?.decision === "deny" || hooked?.decision === "allow") {
-              decision = hooked.decision;
-            } else {
-              try {
-                decision = await approve(tc);
-              } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-                decision = "deny";
-              }
-            }
-            if (signal?.aborted) continue;
-            // approve is a callback; context_engine emits its decision as an approval_decision
-            // AmspRecord: pushed to the stream for frontend rendering, and written to Trace.
-            const decisionMsg = approvalDecision(decision, toolCallId);
-            queue.push(decisionMsg);
-            await this.write(decisionMsg);
-            if (decision !== "allow") {
-              // Denied: feed back an aborted output immediately, so the already-committed
-              // tool_use never dangles. One fixed line either way — the wording names the
-              // decider ("forbidden" is the command policy's answer, via the Session
-              // wrapper; a hook deny names the hook and carries its reason), and the
-              // approval_decision event above carries the decision itself.
-              const denied = toolCallOutput({
-                output:
-                  hooked?.decision === "deny"
-                    ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
-                    : decision === "forbidden"
-                      ? "Tool call denied by policy."
-                      : "Tool call denied by user.",
-                toolCallId,
-                status: "aborted",
-              });
-              queue.push(denied);
-              await this.write(denied);
-              toolOutputs.push(denied);
-              continue;
-            }
-            // Approved: run concurrently, without blocking further consumption of the LLM
-            // stream or approval of the next tool.
-            queue.addProducer();
-            void this.executeOne(tc, queue, toolOutputs, signal, approve).finally(() => {
-              queue.removeProducer();
-            });
+            // Approved calls run concurrently, without blocking further consumption of the
+            // LLM stream or approval of the next tool.
+            await this.decideAndRun(tc, queue, toolOutputs, approve, signal, hooked);
           }
         }
       } finally {
@@ -1675,21 +1655,75 @@ export class ContextEngine {
     await drive;
 
     // Feed into the next turn: reordered to the original tool_call order (each tool_call has
-    // exactly one output, see the executeOne invariant).
-    const byId = new Map<string, AmspRecord>();
-    for (const out of toolOutputs) {
-      const id = (out.payload as { tool_call_id?: string }).tool_call_id;
-      if (id !== undefined) byId.set(id, out);
+    // exactly one output, see the executeOne invariant), one per tool_call_id to keep pairing.
+    const orderedOutputs = outputsByCall(callOrder, toolOutputs).filter(
+      (out): out is AmspRecord => out !== undefined,
+    );
+    return {
+      toolOutputs: orderedOutputs,
+      toolCalls,
+      assistantSegments,
+      receivedContent,
+      outcome,
+      handOff: turnHandOff,
+    };
+  }
+
+  /**
+   * One call through the approval boundary, for a turn and a compaction round alike: the
+   * decision — the pre-tool-use hook's when it gave one (deny refuses without asking, allow
+   * approves without asking: the Session already gave the command policy the last word on an
+   * allow), else the approval callback's, any throw of which collapses to deny so it never
+   * escapes the engine and leaves a committed tool_use unanswered — recorded as an
+   * `approval_decision` on the stream and in the Trace. A denied call gets an aborted output at
+   * once, one fixed line naming the decider ("forbidden" is the command policy's answer; a hook
+   * deny names the hook and its reason); an allowed one runs through `executeOne`
+   * concurrently. Nothing is recorded once `signal` fired during the decision.
+   */
+  private async decideAndRun(
+    tc: AmspRecord<ToolCallPayload>,
+    queue: MergeQueue,
+    outputs: AmspRecord[],
+    approve: ApproveFn,
+    signal: AbortSignal | undefined,
+    hooked: PreToolUseOutcome | null = null,
+  ): Promise<void> {
+    const toolCallId = tc.payload.tool_call_id;
+    let decision: ApprovalDecision;
+    if (hooked?.decision === "deny" || hooked?.decision === "allow") {
+      decision = hooked.decision;
+    } else {
+      try {
+        decision = await approve(tc);
+      } catch (err) {
+        process.stderr.write(`[penguin] approve callback threw: ${messageOf(err)}; denying.\n`);
+        decision = "deny";
+      }
     }
-    const orderedOutputs: AmspRecord[] = [];
-    const seen = new Set<string>();
-    for (const id of callOrder) {
-      if (seen.has(id)) continue; // Dedupe: feed back exactly one output per tool_call_id, to preserve pairing
-      seen.add(id);
-      const out = byId.get(id);
-      if (out) orderedOutputs.push(out);
+    if (signal?.aborted) return;
+    const decisionMsg = approvalDecision(decision, toolCallId);
+    queue.push(decisionMsg);
+    await this.write(decisionMsg);
+    if (decision === "allow") {
+      queue.addProducer();
+      void this.executeOne(tc, queue, outputs, signal, approve).finally(() => {
+        queue.removeProducer();
+      });
+      return;
     }
-    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, receivedContent, outcome };
+    const denied = toolCallOutput({
+      output:
+        hooked?.decision === "deny"
+          ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
+          : decision === "forbidden"
+            ? "Tool call denied by policy."
+            : "Tool call denied by user.",
+      toolCallId,
+      status: "aborted",
+    });
+    queue.push(denied);
+    await this.write(denied);
+    outputs.push(denied);
   }
 
   /**
@@ -1842,16 +1876,36 @@ export class ContextEngine {
     reason: CompactionReason,
   ): AsyncGenerator<AmspRecord, "completed" | "fatal"> {
     yield* this.emitCompactionBegin(reason, "discard");
-    let next: OpenedNext;
-    try {
-      next = await this.openContext();
-    } catch (err) {
-      yield* this.emitCompactionEnd(reason, "discard", "fatal", { errorMessage: messageOf(err) });
-      return "fatal";
-    }
-    yield* this.emitCompactionEnd(reason, "discard", "completed");
-    yield* this.adoptContext(next);
-    return "completed";
+    return (yield* this.rotate({ reason, mode: "discard" })).status;
+  }
+
+  /**
+   * A refused request's answer (see the turn loop): the running context is closed with no
+   * request — a compaction span that holds none and ends `completed` with the provider's error
+   * — and the next opens with the hand-off note, built from the closing file (its refusal
+   * section reads that end), whatever the mode and thresholds say. The note is written as the
+   * new file's first input, as a mid-Task summary is. An opener that throws ends the span
+   * `fatal` and keeps the context.
+   */
+  private async *handOffContext(
+    outcome: LLMOutcome,
+  ): AsyncGenerator<AmspRecord, { opening: AmspRecord } | { errorMessage: string }> {
+    yield* this.emitCompactionBegin("context", "summarize");
+    const rotated = yield* this.rotate(
+      {
+        reason: "context",
+        mode: "summarize",
+        error: {
+          errorCode: "rejected",
+          ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
+        },
+      },
+      () => this.inPlaceHandoff(this.deps.trace?.currentPath?.()),
+    );
+    if (rotated.status === "fatal") return { errorMessage: rotated.errorMessage };
+    yield* this.openPendingContext();
+    await this.write(rotated.opening!);
+    return { opening: rotated.opening! };
   }
 
   /**
@@ -1861,18 +1915,8 @@ export class ContextEngine {
    * toolset **unchanged** — the request prefix must stay byte-identical to ordinary turns so the
    * provider's prompt cache remains valid; compaction runs exactly when the context is largest
    * (issue #84 — this is why tools are *not* omitted and no `tool_choice` override is used).
-   * Every request only appends to the history the one before it left.
-   *
-   * Each committed response is one of three (see classifyCompactionResponse): a **summary**, a
-   * **round** (tool calls and no tagged summary) or **empty**. A summary's own tool calls are
-   * answered and nothing more is sent. A round's calls are answered — run through the gate,
-   * `approve` and the Environment while a round is open (`settings.maxRounds`, and the window
-   * below `settings.roundLimit`), refused with a `[tool error]` otherwise — and their outputs go
-   * out behind a line naming the rounds used and left. A refused round and an empty response
-   * are corrections, answered with a corrective line; so is a response cut at the output limit,
-   * asked again with the same input and one line more. Transport failures retry on the backoff
-   * ladder (`compactionMaxReconnects`); a `fatal` one is not retried, except once with the
-   * input's images replaced when the provider refused an input that holds them.
+   * The requests, their budgets and how a response is read are the loop's (runCompactionLoop);
+   * a round's calls run through the gate, `approve` and the Environment (runCompactionToolRound).
    *
    * The compaction ends in exactly one of three ways:
    *   - `completed`: the next context is open, and opens with the summary; when none could be
@@ -1881,13 +1925,14 @@ export class ContextEngine {
    *     the Trace. Such a `compaction_end` carries the error pair saying why.
    *   - `aborted`: the user stopped it, at any point before the fallback.
    *   - `fatal`: no next context could be opened; the old context is kept.
-   * In the last two, outputs owed to the latest committed response are stashed as carry-over.
+   * In the last two, the result carries what the kept context is still owed (`pending`).
    * The next context is opened before the `compaction_end` is written, so the Trace never says
-   * `completed` for a context that does not exist.
+   * `completed` for a context that does not exist, and the opening is built after it (see
+   * `rotate`), so a note built from the closing file reads the end too.
    *
    * What reaches the Human output stream between the paired compaction events: each request's
    * `request_begin` / `request_end` and `token_usage`, its thinking and text being generated
-   * (issue #290 — see runCompactionRequest), and every tool call with its approval decision and
+   * (issue #290 — see streamsInSpan), and every tool call with its approval decision and
    * output, run or refused, each as the Trace has it. The Prompt and the harness lines stay
    * Trace-only.
    *
@@ -1908,216 +1953,76 @@ export class ContextEngine {
     // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
     const gate = this.deps.compactionToolGate;
-    const maxRounds = settings.maxRounds ?? 0;
     yield* this.emitCompactionBegin(reason, "summarize");
-
-    // The first request's input: this turn's tool results (mid-Task) or leftover interruption
-    // carry-over, then the Prompt, as one user turn — an unanswered tool_use would get the
-    // compaction request itself rejected (issue #33). Tool results were written when executed;
-    // carry-over's synthetic content (flatten text, placeholders) is never written; the Prompt
-    // and every harness line are written now, to the old Trace only.
-    const line = async (text: string): Promise<AmspRecord> => {
-      const msg = userText(text);
-      await this.write(msg);
-      return msg;
+    // Tool results were written when executed; carry-over's synthetic content (flatten text,
+    // placeholders) is never written; the Prompt and every harness line are written now, to the
+    // old Trace only.
+    const host: CompactionLoopHost = {
+      line: async (text) => {
+        const msg = userText(text);
+        await this.write(msg);
+        return msg;
+      },
+      request: (input, attempts, retryInMs) =>
+        this.compactionRequest(input, attempts, retryInMs, approve, signal),
+      answer: (calls, open) =>
+        this.runCompactionToolRound(calls, open ? gate : undefined, approve, signal),
+      backoff: (n) => this.backoff(n, signal),
+      retryDelayMs: (n) => this.retryDelayMs(n, this.compactionMaxReconnects),
+      contextTotal: () => this.lastRequestTotal,
+      signal,
     };
-    let input = [...folded, await line(settings.prompt)];
+    const loop = yield* runCompactionLoop(
+      host,
+      {
+        prompt: settings.prompt,
+        // With no gate no round is open: every tool call is refused.
+        maxRounds: gate !== undefined ? (settings.maxRounds ?? 0) : 0,
+        roundLimit: settings.roundLimit,
+        maxReconnects: this.compactionMaxReconnects,
+      },
+      folded,
+    );
+    const { end, attempts, pending, calls } = loop;
 
-    // Whether a response was committed by MMSP (only a `completed` request commits): the folded
-    // input then lives in the old object's history and must never be resent (issue #85).
-    let committed = false;
-    // Outputs answering the latest committed response's calls, not yet carried by a committed
-    // request: they lead the next request, or are stashed if the context is kept.
-    let owed: AmspRecord[] = [];
-    // What the requests produced (for the salvage) and every call with its output (for the
-    // opening's record of them).
-    const requests: SpanRequest[] = [];
-    const calls: SpanCall[] = [];
-    // The budgets: rounds (settings), corrections (MAX_COMPACTION_CORRECTIONS), transport
-    // retries (compactionMaxReconnects), and the one image retry. `attempts` counts the
-    // requests that were not rounds — the ordinal the compaction_end carries.
-    let rounds = 0;
-    let corrections = 0;
-    let transport = 0;
-    let attempts = 0;
-    let imagesStripped = false;
-    let truncatedLine: AmspRecord | null = null;
-    const roundOpen = (): boolean =>
-      gate !== undefined &&
-      rounds < maxRounds &&
-      (settings.roundLimit === undefined || this.lastRequestTotal < settings.roundLimit);
-    // The wait announced on a request's request_end before the loop sends again (0: at once),
-    // undefined when it will not: mirrors the branches below, or the countdown is a lie.
-    const plannedRetry = (o: LLMOutcome): number | undefined => {
-      if (o.status === "fatal") {
-        return o.errorCode === "rejected" && !imagesStripped && hasInputImages(input)
-          ? 0
-          : undefined;
-      }
-      if (o.errorCode === "output_truncated") {
-        return corrections < MAX_COMPACTION_CORRECTIONS ? 0 : undefined;
-      }
-      return this.plannedRetryDelayMs(o, transport, this.compactionMaxReconnects, RETRY_STATUSES);
-    };
-
-    // How the loop ended: a summary, a fallback with the reason for it, or a stop.
-    let end: { summary: string } | { errorCode: ErrorCode; errorMessage?: string } | "aborted";
-    for (;;) {
-      if (signal?.aborted) {
-        end = "aborted";
-        break;
-      }
-      const open = roundOpen();
-      const r = yield* this.runCompactionRequest(input, signal, attempts, plannedRetry);
-      requests.push(r);
-      if (r.status === "completed") {
-        committed = true;
-        owed = [];
-        const kind = classifyCompactionResponse(r.text, r.toolCalls.length > 0);
-        if (kind === "empty") {
-          attempts += 1;
-          corrections += 1;
-          if (corrections > MAX_COMPACTION_CORRECTIONS) {
-            end = {
-              errorCode: "malformed",
-              errorMessage: "the response contained no usable summary",
-            };
-            break;
-          }
-          input = [await line(EMPTY_LINE)];
-          continue;
-        }
-        if (r.toolCalls.length > 0) {
-          const answered = yield* this.runCompactionToolRound(
-            r.toolCalls,
-            open ? gate : undefined,
-            approve,
-            signal,
-          );
-          calls.push(...answered);
-          owed = answered.map((c) => c.output!);
-          if (signal?.aborted) {
-            end = "aborted";
-            break;
-          }
-        }
-        if (kind === "summary") {
-          attempts += 1;
-          end = { summary: extractSummary(r.text) };
-          break;
-        }
-        if (open) {
-          rounds += 1;
-          input = [...owed, await line(roundLine(rounds, maxRounds, roundOpen()))];
-          continue;
-        }
-        attempts += 1;
-        corrections += 1;
-        if (corrections > MAX_COMPACTION_CORRECTIONS) {
-          end = {
-            errorCode: "malformed",
-            errorMessage: "the response called tools instead of writing a summary",
-          };
-          break;
-        }
-        input = [...owed, await line(CLOSED_LINE)];
-        continue;
-      }
-      attempts += 1;
-      if (r.status === "aborted") {
-        end = "aborted";
-        break;
-      }
-      // Not committed: the input is still owed in full, so every resend below starts from it.
-      const failure = {
-        errorCode: r.errorCode ?? "malformed",
-        ...(r.errorMessage !== undefined ? { errorMessage: r.errorMessage } : {}),
-      };
-      if (r.status === "fatal") {
-        // The turn loop's image rule, once and outside every budget: a refused input that
-        // holds images is sent again with each image replaced by the fixed note.
-        if (r.errorCode === "rejected" && !imagesStripped && hasInputImages(input)) {
-          imagesStripped = true;
-          input = replaceInputImages(input);
-          continue;
-        }
-        end = failure;
-        break;
-      }
-      if (r.errorCode === "output_truncated") {
-        // A correction, not a transient fault: asked again at once, with one line more.
-        corrections += 1;
-        if (corrections > MAX_COMPACTION_CORRECTIONS) {
-          end = failure;
-          break;
-        }
-        truncatedLine ??= await line(TRUNCATED_LINE);
-        if (input.at(-1) !== truncatedLine) input = [...input, truncatedLine];
-        continue;
-      }
-      if (transport >= this.compactionMaxReconnects) {
-        end = failure;
-        break;
-      }
-      transport += 1;
-      if (!(await this.backoff(transport, signal))) {
-        end = "aborted";
-        break;
-      }
-    }
-
-    // A stop that lands before the fallback keeps the context like any other stop.
-    if (end === "aborted" || (!("summary" in end) && signal?.aborted)) {
-      this.stashRepairs(owed);
+    if (end === "aborted") {
       yield* this.emitCompactionEnd(
         reason,
         "summarize",
         "aborted",
         attempts > 0 ? { attempt: attempts } : undefined,
       );
-      return { status: "aborted", committed };
+      return { status: "aborted", pending };
     }
-    const summary = "summary" in end ? end.summary : pickSalvage(requests);
-    let next: OpenedNext;
-    try {
-      next = await this.openContext();
-    } catch (err) {
-      const errorMessage = messageOf(err);
-      this.stashRepairs(owed);
-      yield* this.emitCompactionEnd(reason, "summarize", "fatal", {
-        attempt: attempts,
-        errorMessage,
-      });
-      return { status: "fatal", committed, errorMessage };
+    const summary = "summary" in end ? end.summary : pickSalvage(loop.requests);
+    const rotated = yield* this.rotate(
+      { reason, mode: "summarize", attempt: attempts, ...("summary" in end ? {} : { error: end }) },
+      async ({ notice }) => {
+        // The trailer names the file being closed: the rotation is not armed yet, so the
+        // Trace's current path is this context's own file.
+        const tracePath = this.deps.trace?.currentPath?.();
+        if (summary === null) return handoff ?? (await this.inPlaceHandoff(tracePath));
+        const shell = this.deps.shell !== undefined ? { shell: this.deps.shell } : {};
+        return userText(
+          buildContextSummaryText(
+            summary,
+            tracePath !== undefined ? { tracePath, ...shell } : undefined,
+            {
+              callLines: compactionCallLines(calls),
+              cutOff: !("summary" in end),
+              ...(notice !== undefined ? { notice } : {}),
+            },
+          ),
+        );
+      },
+    );
+    if (rotated.status === "fatal") {
+      return { status: "fatal", pending, errorMessage: rotated.errorMessage };
     }
-    // The trailer names the file being closed: the rotation is not armed yet, so the Trace's
-    // current path is this context's own file.
-    const tracePath = this.deps.trace?.currentPath?.();
-    const shell = this.deps.shell !== undefined ? { shell: this.deps.shell } : {};
-    const opening =
-      summary !== null
-        ? userText(
-            buildContextSummaryText(
-              summary,
-              tracePath !== undefined ? { tracePath, ...shell } : undefined,
-              {
-                callLines: compactionCallLines(calls),
-                cutOff: !("summary" in end),
-                ...(next.opened.notice !== undefined ? { notice: next.opened.notice } : {}),
-              },
-            ),
-          )
-        : (handoff ?? (await this.inPlaceHandoff(tracePath)));
-    yield* this.emitCompactionEnd(reason, "summarize", "completed", {
-      attempt: attempts,
-      ...("summary" in end ? {} : end),
-    });
-    yield* this.adoptContext(next);
-    this.openingSummary = opening;
     // A hand-off absorbed nothing: the text input the compaction held rides on behind the note.
     return {
       status: "completed",
-      opening,
+      opening: rotated.opening!,
       residual: summary !== null ? [] : folded.filter(isTextMessage),
     };
   }
@@ -2169,62 +2074,28 @@ export class ContextEngine {
     signal?: AbortSignal,
   ): AsyncGenerator<AmspRecord, SpanCall[]> {
     // One output per tool_call_id (a provider reusing an id is answered once, as in runTurn).
-    const calls: AmspRecord<ToolCallPayload>[] = [];
-    const seen = new Set<string>();
-    for (const tc of toolCalls) {
-      if (seen.has(tc.payload.tool_call_id)) continue;
-      seen.add(tc.payload.tool_call_id);
-      calls.push(tc);
-    }
+    const ids = toolCalls.map((tc) => tc.payload.tool_call_id);
+    const calls = toolCalls.filter((tc, i) => ids.indexOf(tc.payload.tool_call_id) === i);
     const queue = new MergeQueue();
     const outputs: AmspRecord[] = [];
-    const answer = async (out: AmspRecord): Promise<void> => {
-      queue.push(out);
-      await this.write(out);
-      outputs.push(out);
-    };
     queue.addProducer();
     const drive = (async () => {
       try {
         for (const tc of calls) {
           if (signal?.aborted) break;
-          const toolCallId = tc.payload.tool_call_id;
           const refusal = compactionRefusal(tc, gate);
-          if (refusal !== null) {
-            await answer(
-              toolCallOutput({ output: `[tool error] ${refusal}`, toolCallId, status: "fatal" }),
-            );
+          if (refusal === null) {
+            await this.decideAndRun(tc, queue, outputs, approve, signal);
             continue;
           }
-          let decision: ApprovalDecision;
-          try {
-            decision = await approve(tc);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-            decision = "deny";
-          }
-          if (signal?.aborted) break;
-          const decisionMsg = approvalDecision(decision, toolCallId);
-          queue.push(decisionMsg);
-          await this.write(decisionMsg);
-          if (decision !== "allow") {
-            await answer(
-              toolCallOutput({
-                output:
-                  decision === "forbidden"
-                    ? "Tool call denied by policy."
-                    : "Tool call denied by user.",
-                toolCallId,
-                status: "aborted",
-              }),
-            );
-            continue;
-          }
-          queue.addProducer();
-          void this.executeOne(tc, queue, outputs, signal, approve).finally(() => {
-            queue.removeProducer();
+          const out = toolCallOutput({
+            output: `[tool error] ${refusal}`,
+            toolCallId: tc.payload.tool_call_id,
+            status: "fatal",
           });
+          queue.push(out);
+          await this.write(out);
+          outputs.push(out);
         }
       } finally {
         queue.removeProducer();
@@ -2236,14 +2107,10 @@ export class ContextEngine {
       yield msg;
     }
     await drive;
-    const byId = new Map<string, AmspRecord>();
-    for (const out of outputs) {
-      const id = (out.payload as { tool_call_id?: string }).tool_call_id;
-      if (id !== undefined) byId.set(id, out);
-    }
+    const found = outputsByCall(ids, outputs);
     const answered: SpanCall[] = [];
-    for (const tc of calls) {
-      let out = byId.get(tc.payload.tool_call_id);
+    for (const [i, tc] of calls.entries()) {
+      let out = found[i];
       if (!out) {
         out = toolCallOutput({
           output: "[interrupted: tool aborted by user]",
@@ -2259,160 +2126,75 @@ export class ContextEngine {
   }
 
   /**
-   * Holds the outputs owed to a compaction's latest committed response as carry-over when the
-   * compaction keeps the context (aborted, or no next context could be opened): the next run's
-   * first request (or the next manual compaction, which folds carry-over in) sends them ahead
-   * of everything else, completing the tool_use/tool_result pairing on the live LLM object
-   * that the provider would otherwise reject every subsequent request over. They were written
-   * to Trace when produced, and carry-over is never re-written at send time.
+   * One compaction request: an ordinary request through `runTurn` (`span`), read back as the
+   * response the compaction classifies — its complete text, concatenated, and its real tool
+   * calls, which summarizeContext answers once the response committed.
    */
-  private stashRepairs(repairs: AmspRecord[]): void {
-    if (repairs.length === 0) return;
-    this.pendingCarryOver = [...repairs, ...this.pendingCarryOver];
+  private async *compactionRequest(
+    input: AmspRecord[],
+    /** Requests of this compaction that were not rounds, before this one (see TurnOptions.attempts). */
+    attempts: number,
+    /** The wait the compaction loop takes before sending again after this outcome. */
+    retryInMs: (outcome: LLMOutcome) => number | undefined,
+    approve: ApproveFn,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AmspRecord, CompactionResponse> {
+    const turn = yield* this.runTurn(input, {
+      approve,
+      signal,
+      attempts,
+      retryInMs: (outcome) => retryInMs(outcome),
+      span: true,
+    });
+    const text = turn.assistantSegments
+      .filter((m) => (m.payload as { type?: string }).type === "text")
+      .map((m) => (m.payload as TextPayload).text)
+      .join("");
+    return { ...turn.outcome, text, toolCalls: turn.toolCalls };
   }
 
   /**
-   * Issues one compaction request — an ordinary LLM Request through the same object and the
-   * same frozen config as every other turn (the toolset is deliberately identical: a changed
-   * tool list would change the request prefix and invalidate the provider's prompt cache at
-   * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
-   * output, writing every complete message and event to the old Trace. What also rides the
-   * Human output stream, each right after its write and in the Trace's order: the request's
-   * `request_begin` / `request_end` and its `token_usage`; the thinking and the text being
-   * generated, as their own ordinary `partial_thinking`/`thinking` and `partial_text`/`text`
-   * messages (issue #290) so the frontend can show the compaction request working while it
-   * runs; and its `partial_tool_call` / `tool_call` records, as a turn streams them, whether
-   * the calls will run or be refused. Readers treat model messages between the paired
-   * compaction events as compaction-internal, and history rebuild reads the identical content
-   * back from the span's records. Complete text segments are collected as the response's text,
-   * and `toolCalls` collects its real tool requests, which summarizeContext answers. Token usage
-   * is counted into the Session cumulative totals (stamped onto every token_usage via
-   * observeTokenUsage).
+   * Closes the running context and opens the next. The opener runs first; then the span's
+   * `compaction_end` is written (when there is a span), then `opening` is built — it may read
+   * the closing file, end included: the rotation is armed only by the adopt — then the context
+   * is adopted and opens with it. An opener that throws ends the span `fatal` with its message
+   * and keeps the context; with no span (a switch with nothing to record) it propagates, with
+   * nothing written.
    */
-  private async *runCompactionRequest(
-    input: AmspRecord[],
-    signal: AbortSignal | undefined,
-    /** Requests of this compaction that were not rounds, before this one: the ordinal its request_end carries, as the compaction_end does. */
-    attemptsSoFar: number,
-    /** The wait the compaction loop will take before sending again after this outcome (see summarizeContext); announced as retry_in_ms. */
-    plannedRetry: (outcome: LLMOutcome) => number | undefined,
+  private async *rotate(
+    span: {
+      reason: CompactionReason;
+      mode: CompactionMode;
+      attempt?: number;
+      /** Why a completion had no full summary: the error pair its `compaction_end` carries. */
+      error?: { errorCode: ErrorCode; errorMessage?: string };
+    } | null,
+    opening?: (opened: OpenedContext) => AmspRecord | Promise<AmspRecord>,
   ): AsyncGenerator<
     AmspRecord,
-    {
-      status: StopReason;
-      text: string;
-      toolCalls: AmspRecord<ToolCallPayload>[];
-      /** Classified cause and error detail (LLMOutcome) on non-completed statuses — become compaction_end.error_code / error_message when this failure ends the compaction. */
-      errorCode?: ErrorCode;
-      errorMessage?: string;
-    }
+    { status: "completed"; opening?: AmspRecord } | { status: "fatal"; errorMessage: string }
   > {
-    // The compaction request is itself an ordinary Request, emitting paired request events,
-    // written to the old Trace and streamed (a frontend restarts the summary draft at each
-    // request_begin).
-    // The effective thinking level, resolved live and carried exactly as a turn carries it
-    // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
-    // one Session never has two levels in flight at once. Were this request left on the level
-    // the context opened at while the turns around it run on the pin, a provider that reads the
-    // level as a thinking mode would see the mode change mid-conversation — and DeepSeek
-    // rejects a request whose current tool-call chain replays a turn that carries no chain of
-    // thought. The strict-tier prefix this request does hold identical to a turn's is its
-    // system prompt and toolset; the level is a request parameter, not part of either.
-    const level = this.effectiveThinkingLevel();
-    const startEvt = requestBegin(level);
-    await this.write(startEvt);
-    yield startEvt;
-    const gen = this.llm.streamGenerate({
-      newMessages: input,
-      ...(signal ? { signal } : {}),
-      ...(level !== undefined ? { thinkingLevel: level } : {}),
-    });
-    let text = "";
-    const toolCalls: AmspRecord<ToolCallPayload>[] = [];
-    // Whether this attempt streamed any partial_text / partial_thinking content: real LLM
-    // objects stream the summary (and the thinking ahead of it) as partial fragments
-    // (forwarded verbatim), and the complete message that follows must then stay off the
-    // stream or consumers would see the content twice; an implementation that yields only
-    // complete messages streams those instead. Tracked per kind, so a model that streams its
-    // thinking but delivers its text whole still gets that text forwarded once.
-    let sawPartialText = false;
-    let sawPartialThinking = false;
-    for (;;) {
-      const res = await gen.next();
-      if (res.done) {
-        // Same failure-detail + planned-retry pass-through as the turn loop's request_end. A
-        // completed response plans no retry: what follows it is a round or a correction, sent
-        // at once.
-        const retryInMs = res.value.status === "completed" ? undefined : plannedRetry(res.value);
-        const stopEvt = requestEnd(res.value.status, {
-          ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
-          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
-          // Same stamping rule as the turn loop: a clean first attempt stays unstamped.
-          ...(res.value.status !== "completed" || attemptsSoFar > 0
-            ? { attempt: attemptsSoFar + 1 }
-            : {}),
-          ...(retryInMs !== undefined ? { retryInMs } : {}),
-        });
-        await this.write(stopEvt);
-        yield stopEvt;
-        return {
-          status: res.value.status,
-          text,
-          toolCalls,
-          ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
-          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
-        };
-      }
-      const msg = res.value;
-      // Stamped with the Session series before the write, exactly like a turn's (runTurn);
-      // every attempt's usage rides the stream (failed attempts burn real tokens, issue #170).
-      const isUsage = this.observeTokenUsage(msg);
-      await this.write(msg);
-      if (isUsage) {
-        yield msg;
-        continue;
-      }
-      // Streamed compaction progress (issue #290): the request's thinking and the summary's
-      // own text ride the output stream between the paired compaction events —
-      // partial_thinking / partial_text fragments verbatim (all three phases, so the server's
-      // live tail opens and closes its fragment and a join mid-compaction is seeded with the
-      // accumulated prefix), or the complete thinking / text when no partial of that kind
-      // carried content (implementations that yield only complete messages) — never both,
-      // so consumers see each character once. Rejected attempts stream too: the frontend
-      // shows whatever the compaction request is really producing, and history rebuild reads
-      // the same content back from the span's complete assistant messages.
-      {
-        const p = msg.payload as { type?: string; text?: string; thinking?: string };
-        if (p.type === "partial_text") {
-          if (typeof p.text === "string" && p.text !== "") sawPartialText = true;
-          yield msg;
-        } else if (p.type === "partial_thinking") {
-          if (typeof p.thinking === "string" && p.thinking !== "") sawPartialThinking = true;
-          yield msg;
-        } else if (p.type === "partial_tool_call") {
-          yield msg;
-        }
-      }
-      if (isCompleteModelMessage(msg)) {
-        if (msg.payload.type === "text") {
-          const body = (msg.payload as TextPayload).text;
-          text += body;
-          if (!sawPartialText && body !== "") yield msg;
-        } else if (msg.payload.type === "thinking") {
-          // Forwarded for the banner only — the thinking is never summary material (the
-          // extraction reads `text` alone) — and a fidelity-only blank body has nothing to
-          // show.
-          const body = (msg.payload as ThinkingPayload).thinking;
-          if (!sawPartialThinking && body !== "") yield msg;
-        } else if (msg.payload.type === "tool_call") {
-          // Calls stream whole, after their fragments, as a turn's do.
-          yield msg;
-          // Same rule as the turn loop: a tool call closed early (its request ended before the
-          // call did) is no real request and gets no paired output; every other one needs one.
-          if (!isInterruptedToolCall(msg)) toolCalls.push(msg as AmspRecord<ToolCallPayload>);
-        }
-      }
+    const attempt = span?.attempt !== undefined ? { attempt: span.attempt } : {};
+    let next: OpenedNext;
+    try {
+      next = await this.openContext();
+    } catch (err) {
+      if (span === null) throw err;
+      const errorMessage = messageOf(err);
+      yield* this.emitCompactionEnd(span.reason, span.mode, "fatal", { ...attempt, errorMessage });
+      return { status: "fatal", errorMessage };
     }
+    if (span !== null) {
+      yield* this.emitCompactionEnd(span.reason, span.mode, "completed", {
+        ...attempt,
+        ...span.error,
+      });
+    }
+    const built = opening ? await opening(next.opened) : undefined;
+    yield* this.adoptContext(next);
+    if (!built) return { status: "completed" };
+    this.openingSummary = built;
+    return { status: "completed", opening: built };
   }
 
   /**
@@ -2675,24 +2457,6 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * What a committed compaction response is. Text only: a summary unless it extracts empty — the
- * lenient rule, which accepts a tagless reply. With tool calls: a summary only when it holds a
- * tagged one (closed, or long enough to salvage), otherwise a round, its text a preamble.
- */
-function classifyCompactionResponse(
-  text: string,
-  calledTools: boolean,
-): "summary" | "round" | "empty" {
-  if (!calledTools) return extractSummary(text) !== "" ? "summary" : "empty";
-  const tagged = summaryInTags(text);
-  return tagged !== null &&
-    tagged.text !== "" &&
-    (tagged.closed || tagged.text.length >= SALVAGE_MIN_CHARS)
-    ? "summary"
-    : "round";
-}
-
 /** Why a compaction call may not run (its `[tool error]` text), or null when it may: no round open (no gate), or the gate's refusal — a gate that throws refuses with its message. */
 function compactionRefusal(
   toolCall: AmspRecord<ToolCallPayload>,
@@ -2705,6 +2469,51 @@ function compactionRefusal(
   } catch (err) {
     return messageOf(err);
   }
+}
+
+/**
+ * Whether a compaction request's record rides the output stream (every record is written; its
+ * token_usage always rides). Streamed compaction progress (issue #290): the partial thinking,
+ * text and tool-call fragments verbatim (all three phases, so the server's live tail opens and
+ * closes its fragment and a join mid-compaction is seeded with the accumulated prefix), and the
+ * complete tool calls, as a turn streams them; the complete thinking or text only when no
+ * partial of that kind carried content (an LLM that yields complete messages only), and never
+ * a blank one — so consumers see each character once. Tracked per kind in `partials`, so a
+ * model that streams its thinking but delivers its text whole still gets that text forwarded
+ * once. Rejected attempts stream too, and history rebuild reads the same content back from
+ * the span's complete assistant messages.
+ */
+function streamsInSpan(msg: AmspRecord, partials: { text: boolean; thinking: boolean }): boolean {
+  const p = msg.payload as { type?: string; text?: string; thinking?: string };
+  if (p.type === "partial_text") {
+    if (typeof p.text === "string" && p.text !== "") partials.text = true;
+    return true;
+  }
+  if (p.type === "partial_thinking") {
+    if (typeof p.thinking === "string" && p.thinking !== "") partials.thinking = true;
+    return true;
+  }
+  if (p.type === "partial_tool_call") return true;
+  if (!isCompleteModelMessage(msg)) return false;
+  if (p.type === "text") return !partials.text && p.text !== "";
+  if (p.type === "thinking") return !partials.thinking && p.thinking !== "";
+  return p.type === "tool_call";
+}
+
+/**
+ * The output answering each call, in call order and once per tool_call_id (a provider reusing
+ * an id is answered once); undefined for a call that has none.
+ */
+function outputsByCall(
+  ids: readonly string[],
+  outputs: readonly AmspRecord[],
+): (AmspRecord | undefined)[] {
+  const byId = new Map<string, AmspRecord>();
+  for (const out of outputs) {
+    const id = (out.payload as { tool_call_id?: string }).tool_call_id;
+    if (id !== undefined) byId.set(id, out);
+  }
+  return [...new Set(ids)].map((id) => byId.get(id));
 }
 
 /**
