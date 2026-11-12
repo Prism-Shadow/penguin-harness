@@ -16,15 +16,16 @@
  * uploaded zip. The zip is packed first (`npm pack --ignore-scripts`, so nothing in it runs at
  * pack time) and the tarball installed, which resolves its dependencies the normal way; the
  * tarball is kept in `<prefix>/archives/`, because npm records the install as a `file:`
- * dependency and reconciles the prefix against it on every later install. Installing runs the
- * package's install scripts exactly as installing it from the registry does — the same trust.
+ * dependency and reconciles the prefix against it on every later install. No install runs a
+ * lifecycle script (`--ignore-scripts`): a plugin package has no reason to.
  * A fourth arrives through the plugin index: a version published on a github release channel
- * is fetched, verified against the sha512 the entry pins, and its verified bytes install as
- * the same `file:` record (installPluginChannel) — npm stays the first source; the channel is
- * where an npm-missing name can still come from.
+ * is installed by handing the channel's URL to `npm install` itself, and what npm settled is
+ * then verified against the sha512 the entry pins, through the integrity npm recorded in the
+ * prefix's package-lock (installPluginChannel) — npm stays the first source and carries the
+ * bytes; the channel is where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -104,16 +105,30 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     // On Windows npm is a batch file, and Node refuses to spawn one directly (`spawn EINVAL`)
     // — every install, from a name, a link or a `file:` tarball, would fail there. cmd.exe is
     // a real executable, so the line runs through it: `/d` skips the AutoRun scripts, and
-    // `/s /c` runs the rest as given, with each argument quoted by Node on the way in.
+    // `/s /c` runs the rest as given. Node quotes each argument for its own spawn, but cmd.exe
+    // does not honor those quotes as escape — a `|` in a version string or an `&` in a URL
+    // would be read as a pipe or a command join. Each argument is therefore wrapped in `cmd`
+    // quotes (double quotes with inner pairs doubled, the only form cmd.exe honors) and the
+    // whole line is passed as one argument, so no metacharacter of a package name, a version
+    // or a link ever reaches the shell.
     const [file, argv] =
       process.platform === "win32"
-        ? (["cmd.exe", ["/d", "/s", "/c", npmCommand(), ...args]] as const)
+        ? ([
+            "cmd.exe",
+            [
+              "/d",
+              "/s",
+              "/c",
+              `"${[npmCommand(), ...args].map(cmdQuote).join(" ")}"`,
+            ],
+          ] as const)
         : ([npmCommand(), [...args]] as const);
     const { stdout } = await execFileAsync(file, argv, {
       cwd,
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       env: process.env,
+      windowsVerbatimArguments: true,
     });
     return stdout;
   } catch (err) {
@@ -122,6 +137,11 @@ async function npm(prefix: string, args: readonly string[], cwd = prefix): Promi
     failure.reason = npmFailureKind(stderr);
     throw failure;
   }
+}
+
+/** One argument as cmd.exe reads it: double quotes, with inner double quotes doubled. */
+export function cmdQuote(arg: string): string {
+  return `"${arg.replaceAll('"', '""')}"`;
 }
 
 /**
@@ -136,8 +156,11 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
   return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
 }
 
+// Scripts are off for every install, from any source: a plugin package has no reason to run a
+// lifecycle script, and an install script that ran is the one refusal the route cannot take
+// back after the fact.
 const install = (prefix: string, spec: string) =>
-  npm(prefix, ["install", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
+  npm(prefix, ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--omit=dev", "--", spec]);
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -305,7 +328,7 @@ export async function removePluginPackage(root: string, specifier: string): Prom
   } catch {
     return;
   }
-  await npm(prefix, ["uninstall", "--no-audit", "--no-fund", "--", name]);
+  await npm(prefix, ["uninstall", "--ignore-scripts", "--no-audit", "--no-fund", "--", name]);
   await pruneArchives(prefix);
 }
 
@@ -355,181 +378,99 @@ function npmCommand(): string {
 }
 
 /**
- * Checks the bytes a channel served against the hash the index entry pins: npm's
- * `integrity` shape, `sha512-<base64>`. A mismatch, or an integrity that is not even
- * readable, refuses the install — the verified bytes are the only ones that install. Returns
- * the base64 digest, which names the archive file the verified bytes are written under.
- */
-export function verifyIntegrity(bytes: Uint8Array, integrity: string): string {
-  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
-  if (pinned === null) {
-    throw new PluginInstallError(
-      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(integrity)}`,
-    );
-  }
-  const actual = createHash("sha512").update(bytes).digest("base64");
-  const expected = pinned[1]!;
-  if (
-    actual.length !== expected.length ||
-    !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
-  ) {
-    throw new PluginInstallError(
-      "the release asset does not match the sha512 the index entry pins; it is not installed",
-    );
-  }
-  return actual;
-}
-
-/** The size step a no-length answer reports by: every mebibyte read, rather than every chunk. */
-const PROGRESS_MIB = 1024 * 1024;
-
-/**
- * The response's body, whole. With `onProgress` the body is read chunk by chunk and the
- * reader is told as it goes — the bytes received and the total when the answer names one —
- * but only in steps: one call per percent of a known size, one per mebibyte without it. A
- * call per chunk would be thousands for one asset, none the caller could show. Without an
- * `onProgress` nothing streams, and the body arrives as it always did.
- */
-async function readAsset(
-  res: Awaited<ReturnType<typeof fetch>>,
-  onProgress: ((received: number, total: number | null) => void) | undefined,
-): Promise<Uint8Array> {
-  const totalHeader = Number(res.headers.get("content-length"));
-  const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
-  if (res.body === null || onProgress === undefined) {
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    onProgress?.(bytes.byteLength, total ?? bytes.byteLength);
-    return bytes;
-  }
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  let lastStep = -1;
-  const reader = res.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.byteLength;
-    // The step counter doubles as the mebibyte counter when no total is known; either way a
-    // step is a call, and a chunk is not.
-    const step =
-      total === null
-        ? Math.floor(received / PROGRESS_MIB)
-        : Math.min(100, Math.floor((received / total) * 100));
-    if (step > lastStep) {
-      lastStep = step;
-      onProgress(received, total);
-    }
-  }
-  onProgress(received, total ?? received);
-  const bytes = new Uint8Array(received);
-  let at = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, at);
-    at += chunk.byteLength;
-  }
-  return bytes;
-}
-
-/**
- * Installs a version through an index entry's github channel: the release asset is
- * fetched, verified against the entry's sha512, and only the verified bytes are written —
- * into the prefix's archives, where `npm install` takes them as a `file:` dependency, the
- * same record an uploaded zip installs under. The hash pins the bytes, not what they are:
- * before anything is published under its final name, the tarball's own package.json is read
- * (`tar -xzOf`) and has to agree with the entry's name and version — an archive that says it
- * is another package, or another version, is refused, so the manifest never names a package
- * that was not what the index published, and the caller's post-install vetting cannot end up
- * vetting, or uninstalling, the wrong one. The verified bytes are written to a temporary file
- * first and renamed into place, so a concurrent install never sees a half-written archive.
- * `fetchImpl` and `install` are injectable so a test stands in for the network and npm;
- * `onProgress`, when given, is called as the asset is read — the bytes received so far and
- * the total when the answer carries a content-length — in steps a progress bar can show.
+ * Installs a version through an index entry's github channel, with npm carrying the bytes:
+ * the channel's URL is handed to `npm install` as a plain link spec (npm downloads it, in
+ * its own streaming pipeline, with its own retries and timeouts — nothing of the release
+ * asset is held in this process's memory), and what npm settled is then checked against the
+ * index, both ways:
+ *
+ *   - the package-lock.json npm wrote into the prefix records the dependency with the
+ *     `integrity` npm itself computed for what it downloaded; that digest has to equal the
+ *     `sha512-<base64>` the index entry pins — a release asset that was replaced, or that
+ *     came from anywhere but the pinned source, fails the comparison and is uninstalled;
+ *   - the installed package's own manifest has to agree with the entry's name and version,
+ *     so the prefix never holds a package the index did not publish under that name.
+ *
+ * A mismatch uninstalls the package (`npm uninstall`) and refuses the install; a missing or
+ * unreadable integrity pin refuses before npm runs at all. `install` is injectable so a test
+ * stands in for npm. The route's stream still names a download phase and its progress events
+ * for a channel install (plugins-installed.ts) — npm reports no per-byte progress, so the
+ * events say the download is under way and hand the total when the asset's size is known,
+ * which is the page's contract, not npm's.
  */
 export async function installPluginChannel(
   root: string,
   channel: IndexChannel,
-  {
-    fetchImpl = fetch,
-    install: run = (prefix, spec) => install(prefix, spec).then(() => undefined),
-    onProgress = undefined,
-  }: {
-    fetchImpl?: typeof fetch;
+  { install: run = (prefix, spec) => install(prefix, spec).then(() => undefined) }: {
     install?: (prefix: string, spec: string) => Promise<void>;
-    onProgress?: (received: number, total: number | null) => void;
   } = {},
 ): Promise<InstalledPackage> {
+  // The pin is read before anything runs: an entry whose integrity npm's own shape cannot
+  // even describe has nothing to be verified against, and nothing is installed.
+  const pinned = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(channel.integrity);
+  if (pinned === null) {
+    throw new PluginInstallError(
+      `the index entry's integrity is not sha512-<base64>: ${JSON.stringify(channel.integrity)}`,
+    );
+  }
   const prefix = await ensurePrefix(root);
-  let res: Awaited<ReturnType<typeof fetch>>;
+  await run(prefix, channel.url);
+  const lock = await readLockfileIntegrity(prefix, channel.name);
+  if (lock === null) {
+    await uninstall(prefix, channel.name);
+    throw new PluginInstallError(
+      `the prefix's package-lock.json records no integrity for ${channel.name}; the install cannot be verified against the sha512 the index pins, and it is uninstalled`,
+    );
+  }
+  // The lock's integrity is npm's own shape, `sha512-<base64>`; the pin's digest is the
+  // base64 after its prefix. Compare digests, not strings.
+  const actual = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(lock)?.[1];
+  const expected = pinned[1]!;
+  if (
+    actual === undefined ||
+    actual.length !== expected.length ||
+    !timingSafeEqual(Buffer.from(actual, "base64"), Buffer.from(expected, "base64"))
+  ) {
+    await uninstall(prefix, channel.name);
+    throw new PluginInstallError(
+      `what npm downloaded for ${channel.name} does not match the sha512 the index entry pins (${lock} vs sha512-${expected}); it was uninstalled and is not installed`,
+    );
+  }
+  const version = await readInstalledVersion(prefix, channel.name);
+  if (version !== channel.version) {
+    await uninstall(prefix, channel.name);
+    throw new PluginInstallError(
+      `npm settled on ${JSON.stringify(version ?? null)} for ${channel.name}, not the ${channel.version} the index entry publishes; it was uninstalled and is not installed`,
+    );
+  }
+  return { name: channel.name, version };
+}
+
+/**
+ * The `integrity` npm recorded for one dependency in the prefix's package-lock.json — the
+ * digest npm computed over what IT downloaded, the only hash that says what actually landed
+ * on the disk. Null when the lock carries none: an install npm could not pin (a link it
+ * served without an integrity) cannot be verified against the index and is refused.
+ */
+async function readLockfileIntegrity(prefix: string, name: string): Promise<string | null> {
+  let lock: {
+    packages?: Record<string, { integrity?: unknown }>;
+  };
   try {
-    res = await fetchImpl(channel.url, { redirect: "follow" });
-  } catch (err) {
-    throw new PluginInstallError(
-      `could not fetch the release asset ${channel.url}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    lock = JSON.parse(await fs.readFile(path.join(prefix, "package-lock.json"), "utf8"));
+  } catch {
+    return null;
   }
-  if (!res.ok) {
-    throw new PluginInstallError(`the release asset answered ${res.status}: ${channel.url}`);
-  }
-  const bytes = new Uint8Array(await readAsset(res, onProgress));
-  const digest = verifyIntegrity(bytes, channel.integrity);
-  const archives = path.join(prefix, ARCHIVES_DIR);
-  await fs.mkdir(archives, { recursive: true });
-  const staging = path.join(archives, `.tmp-${randomUUID()}.tgz`);
-  await fs.writeFile(staging, bytes);
-  // The tarball's own manifest, read straight out of the archive; anything unreadable, or
-  // disagreeing with the index entry, refuses the install and leaves nothing behind.
-  let manifest: { name?: unknown; version?: unknown };
-  try {
-    manifest = JSON.parse(
-      // Relative to the staging dir: a Windows path carries a drive letter, which GNU tar
-      // reads as a remote host name.
-      (
-        await execFileAsync("tar", ["-xzOf", path.basename(staging), "package/package.json"], {
-          cwd: path.dirname(staging),
-        })
-      ).stdout,
-    ) as { name?: unknown; version?: unknown };
-  } catch (err) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the release asset does not carry a readable package/package.json: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  if (manifest.name !== channel.name || manifest.version !== channel.version) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the release asset's package.json says ${JSON.stringify(manifest.name)}@${JSON.stringify(manifest.version)}, not the ${channel.name}@${channel.version} the index entry publishes; it is not installed`,
-    );
-  }
-  // A file name under the prefix's archives: a package name's safe characters with the scope
-  // slash joined, a version's, and the first sixteen characters of the verified digest — so
-  // two entries that sanitize to the same name cannot overwrite one another, and a re-served
-  // tarball for the same version lands under its own name rather than replacing bytes npm may
-  // still be reading.
-  const base = `${channel.name
-    .split("/")
-    .filter((part) => /^[@A-Za-z0-9._~-]+$/.test(part))
-    .join("-")}-${channel.version.replace(/[^A-Za-z0-9._-]/g, "")}`;
-  if (base === "-" || base.length < 3) {
-    await fs.rm(staging, { force: true });
-    throw new PluginInstallError(
-      `the index entry's name and version do not make a file name: ${channel.name}@${channel.version}`,
-    );
-  }
-  // The digest tags the archive file. Base64 carries `/` and `+`, neither of which belongs in
-  // a file name (a `/` would make the rename a write into a directory that does not exist), so
-  // the tag is the digest's first sixteen file-safe characters — still collision-proof, since
-  // a sha512's base64 is 44 characters of which almost all are safe.
-  const tag = (digest.match(/[A-Za-z0-9._~-]/g) ?? []).slice(0, 16).join("");
-  const file = `${base}-${tag}.tgz`;
-  await fs.rename(staging, path.join(archives, file));
-  try {
-    await run(prefix, `./${ARCHIVES_DIR}/${file}`);
-  } finally {
-    await pruneArchives(prefix);
-  }
-  return { name: channel.name, version: await readInstalledVersion(prefix, channel.name) };
+  // The lock's rows are keyed by the path under node_modules, `node_modules/<name>`, with a
+  // scope spelled as a directory (`node_modules/@scope/pkg`).
+  const row = lock.packages?.[`node_modules/${name}`];
+  return typeof row?.integrity === "string" ? row.integrity : null;
+}
+
+/** Uninstalls one name from the prefix, leaving nothing a later install could reconcile in. */
+async function uninstall(prefix: string, name: string): Promise<void> {
+  await npm(prefix, ["uninstall", "--ignore-scripts", "--no-audit", "--no-fund", "--", name]);
+  await pruneArchives(prefix);
 }
 
 /**

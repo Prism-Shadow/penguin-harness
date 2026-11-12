@@ -502,8 +502,9 @@ describe("installed plugins", () => {
   it("a stream install answers its events in order — the download, npm, the result", async () => {
     // The beforeEach app has no channel to fall through to; this one does: a published index
     // and its release asset, both served here. npm stands in and refuses the name the way the
-    // registry does, so the install takes the channel — whose asset this server fetches,
-    // reports, verifies, and npm-installs from the file: record it keeps.
+    // registry does, so the install takes the channel — the channel's URL is handed to the
+    // real npm, which downloads the asset from this server, records the integrity it
+    // computed in the prefix's lock, and the install verifies that against the pin.
     await t.cleanup();
     const tarball = await packTarball("@acme/channels", "1.0.0");
     // The asset's URL needs the port, which exists only once the server listens; the index
@@ -556,20 +557,19 @@ describe("installed plugins", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/event-stream");
       const events = parseSSE(await res.text());
-      // The first event says the download began; the last one carries the finished answer,
-      // with npm's hand-off between — whatever the asset's chunking reported between.
+      // A channel install reports its download once — the asset is under way, npm carries
+      // the bytes, and nothing per-byte is invented — then npm's hand-off, then the finished
+      // answer. The real npm runs here, so the events only bound the phases; if npm itself
+      // is missing on the host, the install fails and the stream carries that as an error.
+      const names = events.map((e) => e.event);
+      expect(names[0]).toBe("download");
+      expect(names.at(-1)).toBe("result");
       expect(events[0]).toEqual({
         event: "download",
         data: JSON.stringify({ received: 0, total: null }),
       });
-      expect(events.at(-1)!.event).toBe("result");
-      expect(events.at(-2)!.event).toBe("npm");
-      const reported = events
-        .slice(1, -2)
-        .map((e) => JSON.parse(e.data) as { received: number; total: number | null });
-      expect(reported.length).toBeGreaterThan(0);
-      for (const progress of reported) expect(progress.total).toBe(tarball.byteLength);
-      expect(reported.at(-1)!.received).toBe(tarball.byteLength);
+      // The npm hand-off rides between the download and the result.
+      expect(names).toContain("npm");
       const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
       // A Skills-only package joins the library, not the Project's table.
       expect(result.installed).toMatchObject({
@@ -598,8 +598,10 @@ describe("installed plugins", () => {
     const res = await postStream(cookie, "@acme/denied");
     expect(res.status).toBe(200); // the stream itself answers well
     const events = parseSSE(await res.text());
-    expect(events.map((e) => e.event)).toEqual(["download", "error"]);
-    expect(JSON.parse(events[1]!.data)).toMatchObject({
+    // A plain npm install reports no download phase — there was no download of ours to
+    // report — so the failure rides without one.
+    expect(events.map((e) => e.event)).toEqual(["error"]);
+    expect(JSON.parse(events[0]!.data)).toMatchObject({
       status: 400,
       code: "plugin_install_failed",
       message: expect.stringContaining("npm: npm error code EACCES"),

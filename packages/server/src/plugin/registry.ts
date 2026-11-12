@@ -255,33 +255,83 @@ export function selectIndexChannel(
   version: string | undefined,
 ): { channel: IndexChannel | null; fault: string | null } {
   if (entries.length === 0) return { channel: null, fault: null };
-  const newest = (pool: readonly IndexDocumentEntry[]) =>
-    pool.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a));
+  const parsed = entries.map((e) => ({ entry: e, semver: parseSemver(e.version) }));
+  // A semver row outranks a row whose version does not parse; two that parse go by
+  // precedence, prereleases included (compareSemver).
+  const newestOf = (pool: typeof parsed): IndexDocumentEntry | undefined =>
+    pool.reduce<typeof parsed[number] | undefined>(
+      (best, row) =>
+        best === undefined
+          ? row
+          : (row.semver !== null &&
+              (best.semver === null || compareSemver(row.entry.version, best.entry.version) > 0)
+              ? row
+              : best),
+      undefined,
+    )?.entry;
   const tag =
     version === undefined || version.trim() === "" ? null : normalizeVersion(version.trim());
   if (tag === null || tag === "latest") {
-    return indexChannelOf(newest(entries));
+    // `latest` is the newest RELEASE: a prerelease is never chosen for it, just as npm's
+    // dist-tag does not move for one.
+    return indexChannelOf(
+      newestOf(parsed.filter((row) => row.semver?.pre === null)) ?? newestOf(parsed)!,
+    );
   }
   const noMatch = (): { channel: null; fault: string } => ({
     channel: null,
     fault: `${entries[0]!.name} is published on a github release channel, but no version of it matches ${version}; the index carries ${entries.map((e) => e.version).join(", ")}.`,
   });
-  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/.exec(tag);
+  const range = /^([\^~])?(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(
+    tag,
+  );
   if (range !== null && range[1] !== undefined) {
-    const [op, major, minor] = [range[1], range[2], range[3]];
-    // The comparison runs against the numeric part alone: compareVersions reads a caret as
-    // no version at all, and the caret's work — the major constraint — is the filter above.
-    const floor = tag.slice(op.length);
-    const matching = entries.filter((e) => {
-      const [entryMajor, entryMinor] = normalizeVersion(e.version).split(".");
-      return (
-        entryMajor === major &&
-        (op === "~" ? entryMinor === minor : true) &&
-        compareVersions(e.version, floor) >= 0
-      );
+    const [, op, major, minor, patch, pre] = range as unknown as [
+      string,
+      string,
+      string,
+      string,
+      string | undefined,
+      string | undefined,
+    ];
+    // npm's caret: the same major at or above the floor — but a leading-zero major pins the
+    // minor too (`^0.1.2` is `>=0.1.2 <0.2.0`), and `^0.0.z` pins the patch exactly.
+    const upper: [number, number, number] =
+      Number(major) > 0
+        ? [Number(major) + 1, 0, 0]
+        : Number(minor) > 0
+          ? [0, Number(minor) + 1, 0]
+          : [0, 0, Number(patch ?? 0) + 1];
+    const tildeUpper: [number, number, number] = [Number(major), Number(minor) + 1, 0];
+    const top = op === "^" ? upper : tildeUpper;
+    // A prerelease matches only when the range itself carries one on the same core (npm's
+    // rule): the floor's prerelease identifiers are the only ones a range admits.
+    const floorCore: [number, number, number] = [
+      Number(major),
+      Number(minor),
+      Number(patch ?? 0),
+    ];
+    const floorPre = pre?.split(".") ?? null;
+    const matching = parsed.filter(({ semver }) => {
+      if (semver === null) return false;
+      const version = `${semver.core.join(".")}${semver.pre === null ? "" : `-${semver.pre.join(".")}`}`;
+      // In range iff at or above the floor and strictly below the range's top, by whole
+      // SemVer precedence (compareSemver) — not per component, which lets `2.0.0` through
+      // `^1.2.3`'s `[2,0,0]` top.
+      if (compareSemver(version, top.map(String).join(".")) >= 0) return false;
+      if (semver.pre !== null && floorPre === null) return false;
+      if (
+        semver.pre !== null &&
+        floorPre !== null &&
+        (semver.core[0] !== floorCore[0] ||
+          semver.core[1] !== floorCore[1] ||
+          semver.core[2] !== floorCore[2])
+      )
+        return false;
+      return compareSemver(version, `${floorCore.join(".")}${pre === undefined ? "" : `-${pre}`}`) >= 0;
     });
     if (matching.length === 0) return noMatch();
-    return indexChannelOf(newest(matching));
+    return indexChannelOf(newestOf(matching)!);
   }
   const exact = entries.find((e) => normalizeVersion(e.version) === tag);
   if (exact !== undefined) return indexChannelOf(exact);
@@ -310,23 +360,33 @@ export function indexChannelLookup(
   // is what picks among them (selectIndexChannel), and collapsing to one row per name would
   // make the index's last-listed version the only one a channel could serve.
   let cache: { at: number; byName: Map<string, IndexDocumentEntry[]> } | null = null;
-  return async (name, version) => {
-    if (indexUrl === null) return { channel: null, fault: null };
-    const at = now();
-    if (cache === null || at - cache.at > ttlMs) {
-      let entries: IndexDocumentEntry[];
-      try {
-        entries = await httpPluginRegistry(indexUrl, { fetchImpl }).index();
-      } catch {
-        return { channel: null, fault: null };
-      }
-      const byName = new Map<string, IndexDocumentEntry[]>();
+  let inFlight: Promise<Map<string, IndexDocumentEntry[]>> | null = null;
+  const refresh = async (): Promise<Map<string, IndexDocumentEntry[]>> => {
+    const byName = new Map<string, IndexDocumentEntry[]>();
+    try {
+      const entries = await httpPluginRegistry(indexUrl!, { fetchImpl }).index();
       for (const entry of entries) {
         const rows = byName.get(entry.name);
         if (rows === undefined) byName.set(entry.name, [entry]);
         else rows.push(entry);
       }
-      cache = { at, byName };
+    } catch {
+      // A source that is down answers "no channel": the cache reads as empty, and the next
+      // read past the TTL asks again.
+    }
+    cache = { at: now(), byName };
+    inFlight = null;
+    return byName;
+  };
+  return async (name, version) => {
+    if (indexUrl === null) return { channel: null, fault: null };
+    if (cache === null || now() - cache.at > ttlMs) {
+      // One refresh at a time: every cold or stale caller awaits the same promise, so the
+      // last answer to land cannot be an older fetch's.
+      inFlight ??= refresh();
+      const byName = await inFlight;
+      const rows = byName.get(name);
+      return rows === undefined ? { channel: null, fault: null } : selectIndexChannel(rows, version);
     }
     const rows = cache.byName.get(name);
     return rows === undefined ? { channel: null, fault: null } : selectIndexChannel(rows, version);

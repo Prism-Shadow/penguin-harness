@@ -1999,9 +1999,11 @@ export const themePackFileUrl = (id: string, file: string, v: string): string =>
     .map(encodeURIComponent)
     .join("/")}?v=${encodeURIComponent(v)}`;
 
-/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
-export const getPluginReadme = (name: string) =>
-  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. `lang` picks the language when the package ships more than one (`zh` falls back to English). */
+export const getPluginReadme = (name: string, lang?: "en" | "zh") =>
+  apiFetch<PluginReadmeResponse>(
+    `/api/plugins/registry/readme?name=${encodeURIComponent(name)}${lang === "zh" ? "&lang=zh" : ""}`,
+  );
 
 export const getAgentSkills = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentSkillsResponse>(
@@ -3021,9 +3023,11 @@ export type InstallProgressListener = (received: number, total: number | null) =
 
 /**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
- * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
- * `error` event carries the status the JSON answer would have had, and is raised as an
+ * `text/event-stream`. A `download` event names the channel's asset download — a real
+ * download, and the only one the page shows progress for; npm carries the bytes, so a plain
+ * npm install sends none and the page keeps its "Installing" state. `npm` marks the hand-off
+ * to npm's install and carries nothing to read, `result` carries the finished list, and an
+ * `error` event carries the status the JSON answer would have had and is raised as an
  * {@link ApiError} — a stream that ends with no `result` is a lost connection.
  */
 export const installPluginStream = async (
@@ -3072,8 +3076,12 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
         return;
       }
       buffer += decoder.decode(value, { stream: true });
-      let cut = buffer.indexOf("\n\n");
-      while (cut !== -1) {
+      // `cut` is recomputed on every iteration: an event with no name (a comment or a
+      // keep-alive) is consumed and the scan starts from what is left of the buffer, so a
+      // stream of unnamed events can never spin on a cut that no longer moves.
+      for (;;) {
+        const cut = buffer.indexOf("\n\n");
+        if (cut === -1) break;
         const lines = buffer.slice(0, cut).split("\n");
         buffer = buffer.slice(cut + 2);
         const event = lines
