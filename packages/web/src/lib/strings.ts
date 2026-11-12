@@ -1676,6 +1676,36 @@ export const zh = {
     documentPlaceholder: "在文档中查找…",
   },
 
+  /**
+   * The date and time pickers' own words (the shared UI package's DateField, TimeField,
+   * DateTimeField and DateRangeField), handed to it by lib/ui-strings.ts. `locale` is what the
+   * pickers write dates and times in and whose week and clock they follow.
+   */
+  datePicker: {
+    locale: "zh-CN",
+    pickDate: "选择日期",
+    pickTime: "选择时间",
+    pickDateTime: "选择日期和时间",
+    pickRange: "选择日期范围",
+    /** A field's accessible name: its title with what it shows. */
+    fieldName: (label: string, shown: string): string => `${label}：${shown}`,
+    today: "今天",
+    clear: "清除",
+    previousMonth: "上个月",
+    nextMonth: "下个月",
+    /** The month title's name: pressing it swaps the grid for month and year wheels. */
+    chooseMonth: "选择年月",
+    month: "月份",
+    year: "年份",
+    hour: "小时",
+    minute: "分钟",
+    dayPeriod: "上午/下午",
+    /** The row under a date-and-time calendar, whose pill opens the time wheels. */
+    time: "时间",
+    /** Read out once a range's first end is picked. */
+    pickEnd: "请选择结束日期",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",

@@ -19,6 +19,9 @@
  * between the reply and the block to pass copy down as props, so their few words come from here
  * like the rest. `reader` holds the Markdown reader's controls (its outline and its find), which
  * the file browser and the preview pane draw for their callers, who pass no copy for them.
+ * `dates` holds the date and time pickers' own words (the placeholders, Today, the month steps,
+ * the wheels' names) and the locale they write dates in, which an A2UI form's fields need as much
+ * as a settings dialog's.
  */
 import { createContext, createElement, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -159,6 +162,42 @@ export interface ReportStrings {
   reload: string;
 }
 
+/** The date and time pickers' words (components/forms/date-time). */
+export interface DateStrings {
+  /**
+   * The BCP 47 locale the pickers write dates and times in, and whose week and clock they follow:
+   * `zh-CN`, or the reader's own English (`en-US`, `en-GB`).
+   */
+  locale: string;
+  /** A field's placeholder while nothing is picked: the next step. */
+  pickDate: string;
+  pickTime: string;
+  pickDateTime: string;
+  pickRange: string;
+  /** A field's accessible name: its title with what it shows ("Start at: Nov 12, 2026"). */
+  fieldName: (label: string, shown: string) => string;
+  /** The calendar's shortcut to today. */
+  today: string;
+  /** The press that empties an optional field. */
+  clear: string;
+  /** The calendar head's steps to the month before and after. */
+  previousMonth: string;
+  nextMonth: string;
+  /** The month title's name: pressing it swaps the grid for month and year wheels. */
+  chooseMonth: string;
+  /** The wheels' names. */
+  month: string;
+  year: string;
+  hour: string;
+  minute: string;
+  /** The 12-hour clock's wheel of day periods. */
+  dayPeriod: string;
+  /** The row under a date-and-time calendar, whose pill opens the time wheels. */
+  time: string;
+  /** A range calendar's line once its first end is picked. */
+  pickEnd: string;
+}
+
 export interface UiStrings {
   /** The close cross's accessible name (`CloseButton`). */
   close: string;
@@ -202,6 +241,8 @@ export interface UiStrings {
   reader: ReaderStrings;
   /** The problem report's words. */
   report: ReportStrings;
+  /** The date and time pickers' words. */
+  dates: DateStrings;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -323,6 +364,26 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
     fileIssue: "File an issue on GitHub",
     crashed: "[Error]: this part of the page could not be shown",
     reload: "Reload",
+  },
+  dates: {
+    locale: "en-US",
+    pickDate: "Pick a date",
+    pickTime: "Pick a time",
+    pickDateTime: "Pick a date and time",
+    pickRange: "Pick a date range",
+    fieldName: (label, shown) => `${label}: ${shown}`,
+    today: "Today",
+    clear: "Clear",
+    previousMonth: "Previous month",
+    nextMonth: "Next month",
+    chooseMonth: "Choose month and year",
+    month: "Month",
+    year: "Year",
+    hour: "Hour",
+    minute: "Minute",
+    dayPeriod: "AM/PM",
+    time: "Time",
+    pickEnd: "Pick the end date",
   },
 };
 

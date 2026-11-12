@@ -3,7 +3,8 @@
  * app's dictionaries; `LocaleProvider` hands it these instead, per interface language, so a close
  * cross or a "Copied" announcement speaks the language the rest of the page does. The `a2ui`
  * group is the one stretch of visible copy among them: the words around the blocks a reply
- * draws, which render inside Markdown where no caller can pass them down.
+ * draws, which render inside Markdown where no caller can pass them down; `dates` is another, the
+ * date and time pickers' own words and the locale they write dates in.
  *
  * Each value is read from the dictionary itself rather than from the live `S`, so the two objects
  * are built once and keep their identity across renders.
@@ -45,6 +46,7 @@ export function uiStringsOf(dict: Strings): UiStrings {
       noResults: dict.find.noResults,
     },
     report: dict.report,
+    dates: dict.datePicker,
   };
 }
 
