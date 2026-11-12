@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `ui`, `ui-gallery`, `web`
+- **PR:** [#1547](https://github.com/Prism-Shadow/penguin-harness/pull/1547)
 
 [中文版](2026-11-12-ui-date-time-pickers.zh.md)
 
