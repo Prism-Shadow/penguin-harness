@@ -1157,7 +1157,7 @@ export const zh = {
     site: {
       footer: "页脚",
       footerHint: "落地页的品牌与链接栏，文档站的一行版权与链接。",
-      tagline: "统一、稳定的 Agent 自进化框架",
+      tagline: "开箱即用的 Agent 自进化框架",
       columns: [
         { title: "产品", links: ["案例", "快速开始", "博客", "下载"] },
         { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },

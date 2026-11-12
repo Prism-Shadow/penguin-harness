@@ -58,7 +58,7 @@ export const en: Strings = {
       reach: "within reach",
       reachEnd: ".",
     },
-    subtitle: "Free and Stable RSI Framework",
+    subtitle: "Out-of-the-Box RSI Framework",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
@@ -387,7 +387,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   footer: {
-    tagline: "Free and Stable RSI Framework.",
+    tagline: "Out-of-the-Box RSI Framework.",
     product: "Product",
     resources: "Resources",
     quickstart: "Quick start",
