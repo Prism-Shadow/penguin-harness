@@ -9,12 +9,10 @@
  * 3. two `run_in_background` commands: the first one's completion notice starts a Task of its
  *    own (the Session sat idle), the second one's fails and is steered into that running Task;
  * 4. a run the weekly schedule fired into the Session (`[scheduled_task]`), whose first request
- *    reconnects once, and the compaction that wraps it up, whose summary is cut off at the
- *    output limit every time it is asked for (a completion without a full summary, for want
- *    of room);
- * 5. a reply the person interrupts, a `/compact` the provider never answers — the next context
- *    opens with the harness's Trace hand-off note instead — then a request the provider refuses
- *    outright, for the account's balance (`denied`);
+ *    reconnects once;
+ * 5. a reply the person interrupts, a `/compact` the provider refuses for the account's balance
+ *    (`denied`) — the next context opens with the harness's Trace hand-off note instead — then
+ *    a request the provider refuses for the same reason;
  * 6. the model switch that follows: its summarize compaction (thinking and result) and the
  *    divider the next context's `session_meta` draws;
  * 7. a goal run on the new model: the round-1 protocol behind the person's objective, a steering
@@ -44,7 +42,6 @@ import {
   buildSkillsMessage,
   markerBlock,
   MARKER_TAGS,
-  summaryInTags,
   transcribeRequestError,
   transcribeToolCall,
   transcribeToolCallOutput,
@@ -128,43 +125,12 @@ const BROKEN = {
   sdk: "✗ 404     corpus/claude-code-docs/sdk.md",
 };
 
-/** The provider's answer the day it was flaky: one weekly request, and a whole compaction ladder. */
-const UPSTREAM_503 = "503 Service Unavailable: upstream connect error";
-/** What the LLM reports for a reply stopped at its output limit. */
-const OUTPUT_LIMIT = "the response stopped at the output limit (finish_reason: length)";
 /** The new model's gateway refusing a context its configured million-token window would hold. */
 const TOO_LONG = "400 Bad Request: prompt is too long: 16502 tokens > 16384 maximum";
 
 /** The Session's n-th Trace file, in the date folder of the day it opened. */
 function traceFile(sessionId: string, openedAt: number, n: number): string {
   return `${AGENT_DIR}/traces/${iso(openedAt).slice(0, 10)}/${sessionId}_${String(n).padStart(3, "0")}.jsonl`;
-}
-
-/**
- * A compaction request the provider never answers, through the whole reconnect ladder: six
- * attempts, each failing a second after it went out, the waits between them 2, 4, 8, 16 and
- * 30 s; the last one plans no wait.
- */
-function unansweredLadder(at: (sec: number) => number, from: number): AmspRecord[] {
-  const waits = [2, 4, 8, 16, 30];
-  const records: AmspRecord[] = [];
-  let sec = from;
-  for (let attempt = 1; attempt <= waits.length + 1; attempt++) {
-    const wait = waits[attempt - 1];
-    records.push(
-      requestBegin(at(sec)),
-      event(at(sec + 1.2), {
-        type: "request_end",
-        status: "retryable",
-        error_code: "network",
-        error_message: UPSTREAM_503,
-        attempt,
-        ...(wait !== undefined ? { retry_in_ms: wait * 1000 } : {}),
-      }),
-    );
-    sec += 1.2 + (wait ?? 0);
-  }
-  return records;
 }
 
 /** The harness's completion notice of a background command, worded as the Session words it. */
@@ -266,58 +232,15 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
     "顺便把 hooks.md 的导语也改写一下。",
     "Rewrite the intro of hooks.md while you're at it.",
   );
-  // The wrap-up compaction's three replies, each stopped at the output limit before its end;
-  // the first one got furthest, so it is the summary kept.
-  const cutReply = L(
-    `[summary]
-## Request
-用户从发布说明助手交接过来，要修好 0.2.13 发布说明草稿（${DRAFT}）里的链接，并让每周检查一次语料库里的所有链接。
-## Decisions and constraints
-判断链接之前先从上游同步语料库。不要改写 hooks.md 的导语。
-## Progress
-语料库已同步：上游改了 hooks.md 和 mcp.md，sdk.md 改名为 agent-sdk.md。每周检查发现的仍是之前那 3 条坏链，都在草稿里：hooks#hook-events（现为 #hook-points）、hooks#matchers-legacy（并入 #matchers）、sdk.md（现为 agent-sdk.md）。
-## Errors and fixes
-每周检查的第一个请求遇到 503，重试后成功。
-## Files
-- ${DRAFT}：草稿，三条链接待修。
-## Next steps
-1. 把 hooks 的两个锚点改到新的小`,
-    `[summary]
-## Request
-The user, handed over from Release Notes, wants the links in the 0.2.13 release-notes draft (${DRAFT}) fixed, and every link in the corpus checked weekly.
-## Decisions and constraints
-Sync the corpus from upstream before judging a link. Do not rewrite the hooks.md intro.
-## Progress
-The corpus is synced: hooks.md and mcp.md changed upstream, and sdk.md was renamed agent-sdk.md. The weekly check found the same three broken links as before, all in the draft: hooks#hook-events (now #hook-points), hooks#matchers-legacy (merged into #matchers), sdk.md (now agent-sdk.md).
-## Errors and fixes
-The weekly check's first request hit a 503 and went through on its retry.
-## Files
-- ${DRAFT}: the draft, three links to fix.
-## Next steps
-1. Point the two hooks anchors at their new head`,
-  );
-  const cutReplies = [
-    { text: cutReply, begin: 47.5, end: 74 },
-    { text: cutReply.slice(0, cutReply.indexOf("## Errors and fixes")), begin: 74.2, end: 92 },
-    { text: cutReply.slice(0, cutReply.indexOf("## Progress")), begin: 92.2, end: 104 },
-  ];
-  const salvagedOpening = buildContextSummaryText(
-    summaryInTags(cutReply)!.text,
-    { tracePath: traceFile(id, startedAt, 1) },
-    { cutOff: true },
-  );
-  // The manual compaction's note: the file it closed holds the kept summary and the request the
-  // person interrupted, and no completed turn.
+  // The manual compaction's note, abridged to the request the person interrupted.
   const handoffNote = buildContextHandoffText(
     {
-      userLines: [salvagedOpening.split("\n").slice(1, -1).join("\n"), rewriteIntro].map(
-        (text) => `  ${transcribeUserInput(text)}`,
-      ),
+      userLines: [transcribeUserInput(rewriteIntro)],
       turnLines: [],
       refusalLines: [],
       callLines: [],
     },
-    { tracePath: traceFile(id, b(600), 2) },
+    { tracePath: traceFile(id, startedAt, 1) },
   );
   const steer = L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.");
   const recheck = checkLinks(L("重新检查链接", "Re-check the links"));
@@ -326,7 +249,7 @@ The weekly check's first request hit a 503 and went through on its retry.
   // provider's refusal of the request after it is quoted, so the model does not rebuild it.
   const refusalNote = buildContextHandoffText(
     {
-      userLines: [summary, objective, steer].map((text) => `  ${transcribeUserInput(text)}`),
+      userLines: [summary, objective, steer].map(transcribeUserInput),
       turnLines: [
         transcribeToolCall("exec_command", "call_round2_links", JSON.stringify(recheck)),
         transcribeToolCallOutput("call_round2_links", "completed", "211 links checked, 0 broken."),
@@ -334,7 +257,7 @@ The weekly check's first request hit a 503 and went through on its retry.
       refusalLines: [transcribeRequestError("rejected", TOO_LONG)],
       callLines: [],
     },
-    { tracePath: traceFile(id, b(741.4), 4) },
+    { tracePath: traceFile(id, b(741.4), 3) },
   );
 
   const history: AmspRecord[] = [
@@ -525,7 +448,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
       type: "request_end",
       status: "retryable",
       error_code: "network",
-      error_message: UPSTREAM_503,
+      error_message: "503 Service Unavailable: upstream connect error",
       attempt: 1,
       retry_in_ms: 4_000,
     }),
@@ -552,49 +475,9 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     ),
     tokenUsage(b(47.1), 45_200, 9_800),
     requestEnd(b(47.1)),
-
-    // ---- The Task's wrap-up compaction: its summary is cut off three times; the longest stays -
-    event(b(47.3), {
-      type: "compaction_begin",
-      reason: "turns",
-      mode: "summarize",
-      context: 45_200,
-      turns: 60,
-    }),
-    requestBegin(b(47.5)),
-    thinking(
-      b(53),
-      L(
-        "下一个上下文要知道：草稿路径、三条坏链各自换成了什么、每周检查的结果，以及不要动 hooks.md 的导语。",
-        "The next context needs the draft's path, what replaced each of the three broken links, the weekly check's result, and that the hooks.md intro stays as it is.",
-      ),
-    ),
-    ...cutReplies.flatMap((reply, i) => [
-      ...(i > 0 ? [requestBegin(b(reply.begin))] : []),
-      assistantText(b(reply.end), reply.text),
-      event(b(reply.end + 0.1), {
-        type: "request_end",
-        status: "retryable",
-        error_code: "output_truncated",
-        error_message: OUTPUT_LIMIT,
-        attempt: i + 1,
-      }),
-    ]),
-    event(b(104.3), {
-      type: "compaction_end",
-      reason: "turns",
-      mode: "summarize",
-      status: "completed",
-      attempt: 3,
-      error_code: "output_truncated",
-      error_message: OUTPUT_LIMIT,
-    }),
-    taskEnd(b(104.3)),
+    taskEnd(b(47.1)),
 
     // ---- Task: the person interrupts the reply ------------------------------------------------
-    // The next context opens with this run's first write: its head, then the kept summary.
-    meta(b(600), id, ref, IDS.workspace),
-    userText(b(600), salvagedOpening),
     taskBegin(b(600)),
     userText(b(600), rewriteIntro),
     requestBegin(b(600.3)),
@@ -609,7 +492,7 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
     abortEvent(b(607.1)),
     taskEnd(b(607.1)),
 
-    // ---- A manual compaction the provider never answers: the next context opens on the note --
+    // ---- A manual compaction the provider refuses: the next context opens on the note ---------
     event(b(612), {
       type: "compaction_begin",
       reason: "manual",
@@ -617,36 +500,42 @@ Every other link in \`corpus/claude-code-docs/hooks.md\` still resolves.`,
       context: 51_300,
       turns: 62,
     }),
-    ...unansweredLadder(b, 612.2),
-    event(b(679.5), {
-      type: "compaction_end",
-      reason: "manual",
-      mode: "summarize",
-      status: "completed",
-      attempt: 6,
-      error_code: "network",
-      error_message: UPSTREAM_503,
-    }),
-
-    // ---- Task: the provider will not serve the account -----------------------------------------
-    meta(b(690), id, ref, IDS.workspace),
-    userText(b(690), handoffNote),
-    taskBegin(b(690)),
-    userText(
-      b(690),
-      L(
-        "导语别动了，只修草稿里那三条链接。",
-        "Leave the intro alone — just fix the three links in the draft.",
-      ),
-    ),
-    requestBegin(b(690.3)),
-    event(b(692.8), {
+    requestBegin(b(612.2)),
+    event(b(613.4), {
       type: "request_end",
       status: "fatal",
       error_code: "denied",
       error_message: "402 Insufficient Balance",
     }),
-    taskEnd(b(692.8)),
+    event(b(613.5), {
+      type: "compaction_end",
+      reason: "manual",
+      mode: "summarize",
+      status: "completed",
+      attempt: 1,
+      error_code: "denied",
+      error_message: "402 Insufficient Balance",
+    }),
+
+    // ---- Task: the provider refuses the request ----------------------------------------------
+    meta(b(660), id, ref, IDS.workspace),
+    userText(b(660), handoffNote),
+    taskBegin(b(660)),
+    userText(
+      b(660),
+      L(
+        "导语别动了，只修草稿里那三条链接。",
+        "Leave the intro alone — just fix the three links in the draft.",
+      ),
+    ),
+    requestBegin(b(660.3)),
+    event(b(662.8), {
+      type: "request_end",
+      status: "fatal",
+      error_code: "denied",
+      error_message: "402 Insufficient Balance",
+    }),
+    taskEnd(b(662.8)),
 
     // ---- The model switch: a summarize compaction, then the next context on the new model -----
     event(b(720), {

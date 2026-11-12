@@ -276,7 +276,7 @@ describe("the harness Session", () => {
     expect(full[0]!.thinkingText).toBeTruthy();
     expect(full[0]!.summaryText).toBeTruthy();
     const degraded = compactions.filter((c) => c.errorCode !== undefined);
-    expect(degraded.map((c) => c.errorCode)).toEqual(["output_truncated", "network", "rejected"]);
+    expect(degraded.map((c) => c.errorCode)).toEqual(["denied", "rejected"]);
     expect(degraded.every((c) => c.summaryText === undefined)).toBe(true);
     // The refused request's retry line resolved in the next context, and the hand-off it led
     // to is the Session's latest compaction: the composer raises its notice for it.
