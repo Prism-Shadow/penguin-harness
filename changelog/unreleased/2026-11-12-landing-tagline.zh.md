@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `landing`, `ui-gallery`
+- **PR:** [#1543](https://github.com/Prism-Shadow/penguin-harness/pull/1543)
 
 [English](2026-11-12-landing-tagline.md)
 
