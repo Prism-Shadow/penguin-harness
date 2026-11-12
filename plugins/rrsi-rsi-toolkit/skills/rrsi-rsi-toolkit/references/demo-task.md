@@ -1,10 +1,9 @@
 # The demo task
 
 A minimal evolve set for the smoke profile: one Target, one Benchmark, two cases, one round of one
-candidate. It runs end to end in a few minutes and exercises every mechanism — the annealed budget,
-the Critic screen, one measurement, Algorithm 2 — so a user can see the loop work before pointing it
-at a real Benchmark. It is a demonstration, not an evaluation: two cases give a noise band of zero
-and a score that moves only in visible steps.
+candidate. It exercises the edit budget, Critic screen, measurement and Algorithm 2 so a user can
+see the loop work before choosing a real Benchmark. Use the State-only mode for this demo. The
+noise band is measured; having two cases does not make it zero.
 
 ## What it builds
 
@@ -57,19 +56,19 @@ version string is not.
 1. Build the Target and the Benchmark from the two case directories, publish it, and record both
    ids.
 2. Run the Skill with the smoke profile and `T = 1`, `m = 1`, `k = 1`: calibrate `delta` from three
-   `H_0` matrices (with two cases they will be identical, so `delta = 0` — say so as an
-   adaptation), then one round.
+   H_0 matrices, each with k = 1. Use the repeated-baseline estimate and bootstrap fallback in
+   `references/training.md`, then run one round. Do not assume the matrices will be identical.
 3. The expected shape of the outcome, which is what the user should check:
    - one Proposer candidate with at most `b_max = 2` edits, each with a component and a hypothesis;
    - a Critic verdict, and a repair round when the first draft leaks;
-   - `b_0 = 2`, `sigma_0 = 0`, `U_0 = K \ {} ` = every structural component untried;
+   - `b_0 = 2`, `sigma_0 = 0`, `U_0 = K` = every component untried;
    - `decisions.json` holding one decision with its `delta_S`, `delta_C` and reason string;
-   - one appended scoreboard evaluation, and the final report.
+   - scoreboard evaluations for calibration and the candidate, with token usage kept in OUT,
+     followed by the final report.
 
 ## What the demo does not show
 
-The Pruner needs `n_prune` rounds of history and a component whose recent best gain is
-non-positive; the stall path needs `w` rounds without progress plus a variant count above 1; the
-out-of-distribution claim needs a second Benchmark. A run of two or three rounds on a real
-Benchmark is the smallest thing that shows all three, and the report must say which of them the run
-actually reached.
+The Pruner needs measured history and a component whose recent best gain is non-positive; the
+stall path needs w rounds without sufficient progress, and can reserve the only candidate when
+m = 1. Held-out transfer needs separate tasks, and source evolution needs a source/build binding.
+Report which mechanisms the run actually exercised; a short run need not trigger them all.

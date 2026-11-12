@@ -171,15 +171,15 @@ describe("the shipped library", () => {
     expect(owner.size).toBeGreaterThan(0);
   });
 
-  it("ACE, APE, AWM, OPRO and RRSI ship the same evaluation reference", () => {
+  it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
     // These methods share one evaluation protocol. Continuous-training methods have
-    // their own worker instructions; keep this check on the copies that must stay identical.
+    // their own worker instructions, as does RRSI for token-cost selection and source builds.
+    // Keep this check on the copies that must stay identical.
     const toolkits = [
       "ace-rsi-toolkit",
       "ape-rsi-toolkit",
       "awm-rsi-toolkit",
       "opro-rsi-toolkit",
-      "rrsi-rsi-toolkit",
     ].map((name) => libraryPlugin(name)!);
     expect(toolkits.length).toBeGreaterThan(1);
     const references = toolkits.map((plugin) => {

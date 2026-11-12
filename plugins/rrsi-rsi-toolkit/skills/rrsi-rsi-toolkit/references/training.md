@@ -4,13 +4,15 @@ Algorithm 1 (proposal side) then Algorithm 2 (selection side), with the exact ar
 `rrsi/schedule.py`, `rrsi/history.py`, `rrsi/components.py`, `rrsi/propose.py`,
 `rrsi/critic.py` and `rrsi/selection.py`. This file is the controller's working reference: it
 fixes every formula, every prompt and every JSON shape so a round is reproducible.
-`SKILL_DIR`, `OUT`, `TARGET` and `STATE` are the paths of the Skill's "Paths and records".
+`SKILL_DIR`, `OUT`, `TARGET`, `STATE` and `SOURCE` are the paths of the Skill's "Paths and records".
 
 ## The component set K
 
 The source tags every edit with the harness component it modifies, and validates the tag against
-the diff. This run declares the subset of these it can actually edit on a PenguinHarness Target,
-and records that subset in `OUT/experiment.yaml`:
+the diff. Declare the components available on this Target in `OUT/experiment.yaml` and map their
+actual State/source paths during initialization. The table describes the State-only mapping;
+source mode also includes the corresponding implementation code, such as the agent loop, context
+manager and tool registry:
 
 | Component `l` | In `K_str` | Where it lives on a Target |
 | --- | --- | --- |
@@ -27,8 +29,10 @@ and records that subset in `OUT/experiment.yaml`:
 `K_str = [client_tool, skill, memory, subagent]`. Only these four earn the novelty term
 `nu(l')`, because only they add machinery rather than change text or constants.
 
-**Tag recovery.** A declared component is kept only when the diff carries evidence for it;
-otherwise it is re-tagged from the diff, exactly as `components.normalize` does:
+**Tag recovery.** Keep a declared component only when the diff implements it. For State files,
+use the declared path mapping and the mechanism that reads or executes the changed file; a
+Markdown procedure is not automatically an engine control-flow change. For source files, use
+the `components.normalize` procedure with signals for the target's language and implementation:
 
 1. `text_only(diff)`: every changed line is a string literal or a comment. Then the component is
    `prompt`, whatever the prose says.
@@ -45,6 +49,35 @@ subagent                       \bsubcall\( | sub_agent | subagent
 
 A re-tag is logged, never argued: it is what the history records and what the novelty term
 counts. It is bounced back to the Proposer only when it breaks a reserved exploration slot.
+
+## Noise calibration
+
+Use the pinned authors' `rrsi/calibrate.py` on repeated unchanged H_0 measurements. Each
+measurement uses the candidate evaluation's tasks, scoring weights, runtime and k, and retains
+full-precision scores. For R repeated evaluation scores:
+
+```text
+sd_null = sqrt(2) * sample_sd(S_1, ..., S_R)       # sample_sd divides by R - 1
+delta   = z * sd_null                            # z = 2.0 by default
+```
+
+The pairwise differences are diagnostic only, not the samples used by this formula. If there
+are fewer than two evaluations or `sd_null == 0`, follow the upstream bootstrap fallback:
+
+1. Pool trial rewards and weights within each task across the baseline evaluations;
+   `k_pool = sum(k_per_evaluation)`.
+2. With `random.Random(7)`, generate 2,000 bootstrap scores. In each replicate, resample each
+   task's pooled trials with replacement, preserving its trial count and reward/weight pairs,
+   then compute the weighted score across tasks and trials.
+3. `se = population_sd(bootstrap_scores)` and
+   `sd_boot = sqrt(2) * se * sqrt(k_pool / k)`.
+4. Use the positive repeated estimate when available, otherwise `sd_boot`. As upstream does,
+   round `z * selected_sd` to six decimals for delta, retaining the source measurements.
+
+Record the chosen method, k, jobs and estimate in `OUT/calibration.json`. Reuse the first
+baseline matrix as S_0; pooling for calibration does not replace S_0 with the mean of the jobs.
+Identical aggregate scores can still have nonzero within-task variation, so do not bypass the
+bootstrap simply because every S_i is equal.
 
 ## The annealed budget b_t
 
@@ -108,8 +141,8 @@ target. This is the Lasso-style structural pruning of the paper: removal is prop
 and selected like any other edit, never executed by the controller.
 
 `nu(l')` for a candidate: the number of **distinct** structural components (`K_str`) among its
-edits on which the incumbent has never had an accepted edit. It only ever breaks a tie inside
-the noise band.
+edits on which the incumbent has never had an accepted edit. It contributes to the shaped
+acceptance rule inside the noise band.
 
 ## Stall and exploration E_t
 
@@ -135,20 +168,23 @@ the single variant holds the slot whenever the run is stalled.
 
 ## Sampling m candidates
 
-Each variant `A`, `B`, `C`… works in its own copy of the harness slots under
-`OUT/r<t>/<variant>/harness/`, made by copying the incumbent's slot files. Every variant sees the
-same incumbent, the same history snapshot and the same Analyst report; no variant sees another's
-text, score or edits. Each is measured on the full evolve set.
+Each variant A, B, C… works under `OUT/r<t>/<variant>/harness/`, with its own copy of the
+incumbent's editable State files and, in source mode, its own source checkout. Every variant sees
+the same incumbent, history snapshot and Analyst report; no variant sees another's text, score
+or edits. Each is measured on the full evolve set with k trials per task.
 
-Draft the copy with the incumbent's slot files only, never the whole Agent State: the vault,
-Traces, workspaces and memory stay out of the diff.
+Only declared target harness paths enter the diff. Keep credentials, runtime task data, the
+controller's State and Benchmark/verifier files out of the candidate copy. Render the incumbent's
+training Traces separately as read-only evidence for the Proposer.
 
 ## The Proposer
 
 `rrsi/propose.py`. One subagent per variant (`run_subagent`, no `agent_id`, parallel across
-variants), a strict-JSON action protocol, at most 40 turns. Send it `references/proposer.md` as
-its instructions and the payload below as its task. It edits the files of its own harness copy,
-so give it that absolute path.
+variants), at most 40 turns per drafting attempt. Send it `references/proposer.md` and the payload
+below, with the absolute candidate directory and rendered training-Trace paths. The subagent
+uses Penguin's native file and shell tools to make edits, then returns one JSON `done` record.
+The upstream Python controller's JSON action dispatcher is replaced by those native tools;
+emitting an `edit_file` JSON object alone does not change a file.
 
 ```text
 === THIS VARIANT'S BRIEF ===
@@ -176,8 +212,11 @@ remove the accepted machinery listed, it has stopped earning its place) ===
 tool/plumbing fixes; success_habits are behaviors your change MUST NOT break) ===
 <OUT/r<t>/analysis_report.json>
 
-=== PER-TASK DIGESTS (evidence anchors; use read_trace for raw evidence) ===
+=== PER-TASK DIGESTS (evidence anchors; read the supplied Trace files for raw evidence) ===
 <OUT/r<t>/digests.json>
+
+=== WORKING COPY AND READ-ONLY TRACE FILES ===
+<absolute candidate directory, editable paths, and rendered training-Trace index>
 
 === CURRENT HARNESS SOURCE H_t ===
 <every file of this variant's harness copy, with its path>
@@ -188,8 +227,8 @@ run: early rounds explore, late rounds make single attributable changes). Ship f
 evidence supports fewer.
 
 === TASK ===
-Address the highest-impact failure modes / capability gaps within your edit budget. Implement
-via the JSON actions, then call done with the edits array. First action:
+Address the highest-impact failure modes / capability gaps within your edit budget. Make the
+edits with your available tools, then return the done JSON with the edits array.
 ```
 
 On a repair round, append instead:
@@ -200,8 +239,8 @@ On a repair round, append instead:
 
 REPAIR ROUND: your previous edits are already in the working tree (reflected in CURRENT HARNESS
 SOURCE above). Fix ONLY what the objections require (remove leaked content, split or re-declare
-edits, wire up dead code, or delete the offending part) with minimal additional edits, then call
-done again with the corrected edits array. First action:
+edits, wire up dead code, or delete the offending part) with minimal additional edits, then
+return done again with the corrected edits array.
 ```
 
 The protocol the Proposer follows is `references/proposer.md`. Its `done` submission is validated
@@ -250,11 +289,12 @@ the smoke check's job, and it only sees the diff.
 
 ## Liveness smoke
 
-Before a candidate is measured, it must run at all. That is not a selection rule, only a gate:
-run one case of the evolve set as a single cell through `references/evaluation.md` on the
-candidate's State, and require a scored result (`status: ok`). A `version_changed`,
-`benchmark_invalid` or launch failure is `smoke_fail`, recorded without a measurement. A wrong
-or malformed answer is not a smoke failure: that is the score.
+Before a candidate is measured, it must run at all. Build a source candidate with the recorded
+recipe and bind the resulting entry/bundle and State snapshot to its version record. Then run
+one evolve case through `references/evaluation.md` with that record and require `status: ok`.
+A build, binding or launch failure is `smoke_fail`, recorded without a measurement. A wrong or
+malformed answer is scored behavior. The liveness trial is separate from the k-trial matrix;
+record its usage separately. Follow the Benchmark's execution unit if it groups tasks.
 
 ## Algorithm 2: selection
 
@@ -262,7 +302,7 @@ or malformed answer is not a smoke failure: that is the score.
 
 ```text
 Delta S = S' - S_t
-Delta C = (C' - C_t) / C_t                      (relative; unknown C means the rule cannot fire)
+Delta C = (C' - C_t) / C_t if both C' and C_t are known and positive, otherwise 0
 
 floor       : S' >= S_star - delta                                  else reject
 cost rule   : if Delta S > delta:
@@ -276,7 +316,7 @@ H_{t+1} = argmax_{H' admissible} S',   or H_t when none is admissible
 S_star  = max(S_star, S_{t+1})
 ```
 
-`S_star` is the best score seen **so far**, so the floor never falls: a candidate below
+`S_star` is the best score on the accepted trajectory, so the floor never falls: a candidate below
 `S_star - delta` is rejected even when it beats the current incumbent, which is what stops the
 run from drifting down inside the noise band. Ties keep the earliest candidate.
 
@@ -285,8 +325,9 @@ The domain guards for this toolkit:
 - The candidate must not change the Target's runtime pair; a diff that edits the model, the
   provider or the thinking level is rejected outright, because a score gain from a different
   model is not a harness improvement.
-- The candidate must not touch anything outside the declared harness slots. A diff reaching
-  the vault, the memory store, the schedules, a Rubric or another Agent rejects.
+- The candidate may edit its declared State and target source paths. A diff reaching the
+  controller, credentials, runtime task data, a Rubric or the verifier rejects. The build used
+  for measurement must match the candidate's recorded source and State.
 - An added mechanism that persists or injects task-specific runtime data is a Critic rejection,
   not a guard: keep it there, so the objection reaches the Proposer's repair.
 
@@ -311,8 +352,15 @@ its scoreboard, so over-claiming costs it credibility.
 
 ## Failure handling
 
-A matrix with a missing cell has no score: never average a partial matrix. Retry a candidate's
-evaluation once when the infrastructure lost more than 15% of its expected cells; after a retry
-that still fails, the candidate is `eval_invalid` and unmeasured. `version_changed`,
-`benchmark_invalid` and a runtime mismatch stop the run: the last accepted State stays and the
-report names the stop.
+Follow `rrsi/evaluate.py`: a missing trial contributes reward 0 and unknown policy tokens, with
+its expected weight still in the full denominator. Never average only the surviving trials.
+Record the failure and missing count in OUT. Use the selected configuration's
+`invalid_missing_frac` (default `0.15`). A matrix at or below that missing fraction remains
+eligible for Algorithm 2. Above it, attempt one infrastructure repair and resume missing trials,
+retaining completed results; never duplicate a still-running or completed Target. If the retry
+still exceeds the threshold, mark the candidate `eval_invalid`; an invalid baseline stops initialization.
+Do not represent an incomplete matrix as a complete Evaluation Center record.
+
+`version_changed`, `benchmark_invalid` and a runtime mismatch stop the run: the last accepted
+State/build stays and the report names the stop. Formatting repairs reuse the existing result;
+they never rerun the Target.
