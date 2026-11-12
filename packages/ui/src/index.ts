@@ -343,3 +343,14 @@ export * from "./components/layout/measure/use-measured-width";
 // which the Workspace Files panel and the organization handbook both lay out with.
 export * from "./components/files/files-frame/files-layout";
 export * from "./components/files/files-frame/files-frame";
+
+// Things in a catalogue and on an Agent — the Plugins page and an Agent's plugin sub-pages: the
+// card a thing wears in a grid with its controls and the grid it sits in, the facts line, the
+// status as a glyph and a word, the flat glyph that acts, a detail section's one-line rows, and
+// the sub-page switch under a tab.
+export * from "./components/data/entity-card/entity-card";
+export * from "./components/data/meta-line/meta-line";
+export * from "./components/feedback/status-mark/status-mark";
+export * from "./components/actions/glyph-action/glyph-action";
+export * from "./components/data/fact-row/fact-row";
+export * from "./components/navigation/sub-page-bar/sub-page-bar";

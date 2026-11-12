@@ -1,8 +1,11 @@
 /**
- * 数据: the table framed on its own and bare inside a card at the small density, list rows plain
- * and opening what they name, rows whose text runs far past a narrow card, label/value pairs at
- * both rungs, and a running job's log — all from the package.
+ * 数据: the table framed on its own and bare inside a card at the small density, entity cards in a
+ * section's grid (and the same grid in a narrow column), the facts line, a detail's fact rows,
+ * list rows plain and opening what they name, rows with marks after their title, a list loading
+ * and empty, rows whose text runs far past a narrow card (one of them trailed), label/value pairs
+ * at both rungs, and a running job's log — all from the package.
  */
+import type { ReactNode } from "react";
 import {
   AgentAvatar,
   Badge,
@@ -10,6 +13,12 @@ import {
   Card,
   CardHeader,
   CollapsibleSection,
+  EntityCard,
+  EntityCardAction,
+  EntityCardGrid,
+  FactList,
+  FactRow,
+  GlyphAction,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -18,6 +27,10 @@ import {
   KeyValueRow,
   ListRow,
   LogView,
+  MetaLine,
+  Pill,
+  SettingsList,
+  StatusMark,
   Table,
   TableBody,
   TableCell,
@@ -44,7 +57,46 @@ const MEMORIES = [
     date: "2026-10-13",
   },
   { id: "verify-patents-and-literature-before-citing", date: "2026-10-15" },
+  // A plugin wrote this one: its title carries the plugin's mark (`titleTrail`).
+  {
+    id: "continual-learning-keep-the-proxy-export-in-every-command",
+    date: "2026-10-16",
+    plugin: true,
+  },
 ];
+/** The cards' plugins: ids and versions are data, the same in both languages. */
+const CARD_PLUGINS = [
+  { name: "data-analysis", version: "2026.10.04.1" },
+  { name: "meeting-notes", version: "2026.09.28.2" },
+  { name: "slides", version: "2026.10.01.1" },
+  { name: "repository-review-with-team-conventions", version: "2026.08.30.3" },
+];
+/** A detail's fact rows: the parts of one plugin on an Agent. */
+const NOTES_SERVER = {
+  name: "notes",
+  transport: "http",
+  target: "https://mcp.example.com/v1/notes/workspaces/team-handbook/sse",
+};
+/** The hook packages a list shows: two from plugins (one with two hook points), one of the user's. */
+const HOOK_PACKAGES = [
+  {
+    name: "continual-learning",
+    points: ["stop"],
+    version: "2026.10.04.1",
+    plugin: "Continual learning",
+  },
+  { name: "goal", points: ["user_prompt", "stop"], version: "2026.09.20.1", plugin: "Goal" },
+  { name: "my-lint-reminder", points: ["stop"], version: "", plugin: null },
+] as const;
+
+/** A mark of a row's end: a glyph in a tone's ink, its sentence as its name and its hover. */
+function Mark({ glyph, sentence }: { glyph: string; sentence: string }) {
+  return (
+    <span role="img" aria-label={sentence} data-tooltip={sentence} className="inline-flex shrink-0">
+      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} className="text-tone-attention-fg" />
+    </span>
+  );
+}
 const ROOT = "~/.penguin/data";
 const MACHINE_ID = "m_7f3a9c21";
 const LOG = [
@@ -57,6 +109,101 @@ const LOG = [
 export function DataBoard() {
   const { S } = useGallery();
   const t = S.library.data;
+
+  /**
+   * The section's four cards: installed, an update behind (the dot on its button), available with
+   * its one worded action, and a title and description longer than any card. `narrow` draws them
+   * framed, on their own, as a column of cards outside a section would.
+   */
+  const cards = (narrow: boolean): ReactNode[] =>
+    CARD_PLUGINS.map((plugin, i) => {
+      const sample = t.cardSamples[i]!;
+      const name = (verb: string) => t.cardActionName(verb, sample.title);
+      const manage = (
+        <EntityCardAction
+          key="manage"
+          glyph={ICONS.download}
+          label={t.cardManage}
+          name={name(t.cardManage)}
+          onClick={() => {}}
+        />
+      );
+      const actions: ReactNode[] =
+        i === 0
+          ? [manage]
+          : i === 1
+            ? [
+                <EntityCardAction
+                  key="update"
+                  variant="secondary"
+                  glyph={ICONS.rotateCw}
+                  label={t.cardUpdate}
+                  name={name(t.cardUpdate)}
+                  dot
+                  onClick={() => {}}
+                />,
+                manage,
+              ]
+            : i === 2
+              ? [
+                  <EntityCardAction
+                    key="install"
+                    glyph={ICONS.download}
+                    label={t.cardInstall}
+                    name={name(t.cardInstall)}
+                    words="always"
+                    onClick={() => {}}
+                  />,
+                ]
+              : [
+                  <EntityCardAction
+                    key="uninstall"
+                    variant="danger"
+                    glyph={ICONS.trash}
+                    label={t.cardUninstall}
+                    name={name(t.cardUninstall)}
+                    onClick={() => {}}
+                  />,
+                ];
+      const status =
+        i === 1
+          ? { glyph: ICONS.rotateCw, tone: "attention" as const }
+          : i === 2
+            ? { glyph: ICONS.download }
+            : { glyph: ICONS.checkCircle, tone: "success" as const };
+      return (
+        <EntityCard
+          key={plugin.name}
+          {...(narrow ? {} : { framed: false })}
+          lead={<AgentAvatar id={plugin.name} size={36} />}
+          title={sample.title}
+          titleHint={plugin.name}
+          description={sample.description}
+          meta={[
+            <span key="version" className="shrink-0 font-mono">
+              v{plugin.version}
+            </span>,
+            <StatusMark key="status" {...status} label={sample.status} hint={sample.statusHint} />,
+            sample.usedBy === "" ? null : (
+              <span key="used" className="min-w-0 truncate">
+                {sample.usedBy}
+              </span>
+            ),
+          ]}
+          tags={[
+            <Badge key="category" variant="soft">
+              {t.cardTag}
+            </Badge>,
+            <Badge key="builtin" variant="soft">
+              {t.cardBuiltin}
+            </Badge>,
+          ]}
+          actions={actions}
+          onOpen={() => {}}
+        />
+      );
+    });
+
   return (
     <div className="gf-board">
       <BoardGroup title={t.table} aside={t.tableHint}>
@@ -112,6 +259,77 @@ export function DataBoard() {
           </Card>
         </div>
       </BoardGroup>
+      <BoardGroup title={t.cards} aside={t.cardsHint}>
+        <div className="lib-stack lib-stack-wide">
+          <CollapsibleSection title={t.cardSection} meta={t.cardCount(CARD_PLUGINS.length)}>
+            <EntityCardGrid>{cards(false)}</EntityCardGrid>
+          </CollapsibleSection>
+          <span className="lib-caption">{t.cardNarrow}</span>
+          <div style={{ maxWidth: 360 }}>
+            <EntityCardGrid>{cards(true)}</EntityCardGrid>
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.metaLine} aside={t.metaLineHint}>
+        <div className="lib-stack">
+          <MetaLine>
+            <span className="shrink-0 font-mono">v2026.10.04.1</span>
+            <StatusMark glyph={ICONS.checkCircle} tone="success" label={t.cardSamples[0]!.status} />
+            <span className="min-w-0 truncate">{t.cardSamples[0]!.usedBy}</span>
+          </MetaLine>
+          <div style={{ maxWidth: 280 }}>
+            <MetaLine>
+              <span className="shrink-0 font-mono">v2026.10.04.1</span>
+              <StatusMark
+                glyph={ICONS.checkCircle}
+                tone="success"
+                label={t.cardSamples[0]!.status}
+              />
+              <span className="min-w-0 truncate">{t.metaLineUsedBy}</span>
+            </MetaLine>
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.factRows} aside={t.factRowsHint}>
+        <div className="lib-stack">
+          <FactList label={t.factListLabel}>
+            <FactRow glyph={ICONS.fishHook} name="continual-learning" mono>
+              <span className="font-mono">2026.10.04.1</span>
+            </FactRow>
+            <FactRow
+              glyph={ICONS.plug}
+              name={NOTES_SERVER.name}
+              mono
+              trailing={
+                <>
+                  <Mark glyph={ICONS.key} sentence={t.factKeys} />
+                  <Mark glyph={ICONS.signIn} sentence={t.factSignIn} />
+                </>
+              }
+            >
+              <span className="font-mono">{NOTES_SERVER.transport}</span>
+              <span
+                className="font-mono"
+                data-tooltip={NOTES_SERVER.target}
+                data-tooltip-content="code"
+              >
+                {NOTES_SERVER.target}
+              </span>
+            </FactRow>
+            <FactRow
+              glyph={ICONS.anvil}
+              name="board"
+              mono
+              muted
+              trailing={
+                <Pill tone="attention" tooltip={t.factMissingHint}>
+                  {t.factMissing}
+                </Pill>
+              }
+            />
+          </FactList>
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.rows} aside={t.rowsHint}>
         <div className="lib-stack lib-stack-wide">
           <Card padding="none">
@@ -143,6 +361,64 @@ export function DataBoard() {
           </Card>
         </div>
       </BoardGroup>
+      <BoardGroup title={t.trailRows} aside={t.trailRowsHint}>
+        <div className="lib-stack lib-stack-wide">
+          <SettingsList label={t.trailListLabel}>
+            {HOOK_PACKAGES.map((pkg, i) => (
+              <ListRow
+                key={pkg.name}
+                as="li"
+                leading={<AgentAvatar id={pkg.name} size={32} />}
+                title={<span className="font-mono">{pkg.name}</span>}
+                titleTrail={
+                  <>
+                    {pkg.plugin !== null && (
+                      <GlyphAction
+                        glyph={ICONS.puzzle}
+                        label={t.trailFromPlugin(pkg.plugin)}
+                        onClick={() => {}}
+                      />
+                    )}
+                    {pkg.points.map((point) => (
+                      <Badge key={point} variant="outline">
+                        {point}
+                      </Badge>
+                    ))}
+                  </>
+                }
+                description={t.trailDescriptions[i]}
+                meta={pkg.version || undefined}
+                trailing={
+                  <>
+                    <IconButton label={t.trailExport(pkg.name)} size="sm" variant="ghost">
+                      <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
+                    </IconButton>
+                    <IconButton label={t.trailUninstall(pkg.name)} size="sm" variant="danger">
+                      <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                    </IconButton>
+                  </>
+                }
+              />
+            ))}
+          </SettingsList>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.listStates}>
+        <div className="lib-row items-start">
+          <div className="lib-stack w-72">
+            <span className="lib-caption">{t.listLoading}</span>
+            <SettingsList label={t.trailListLabel} loading skeletonRows={3}>
+              {[]}
+            </SettingsList>
+          </div>
+          <div className="lib-stack w-72">
+            <span className="lib-caption">{t.listEmpty}</span>
+            <SettingsList label={t.trailListLabel} empty={t.listEmptyText}>
+              {[]}
+            </SettingsList>
+          </div>
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.longRows} aside={t.longRowsHint}>
         <div className="lib-stack">
           <CollapsibleSection title={t.memoryTitle} meta={t.memoryCount(MEMORIES.length)}>
@@ -152,6 +428,17 @@ export function DataBoard() {
                   key={memory.id}
                   as="li"
                   title={<span className="font-mono">{memory.id}</span>}
+                  {...(memory.plugin === true
+                    ? {
+                        titleTrail: (
+                          <GlyphAction
+                            glyph={ICONS.puzzle}
+                            label={t.memoryFromPlugin}
+                            onClick={() => {}}
+                          />
+                        ),
+                      }
+                    : {})}
                   description={t.memoryDescriptions[i]}
                   meta={<span className="tabular-nums">{memory.date}</span>}
                   trailing={

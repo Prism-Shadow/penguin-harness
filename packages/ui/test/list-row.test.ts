@@ -9,11 +9,17 @@
  *   ending in an ellipsis, and the line's hover hint carries all of it — never half a character.
  * - Given a description a row can show, it is rendered whole with no hint of its own (the
  *   tooltip layer shows a cut-off line's own text).
+ * - Given marks after the title, they come right after it, on its line, before the description.
+ * - Given marks after the title of a row that opens something, they sit outside the row's button:
+ *   the title is that button, and the marks' own controls are not inside it.
+ * - Given a list read for the first time, placeholder rows stand in and no list is drawn.
+ * - Given a list with no row and a sentence for that, it says the sentence instead of an empty
+ *   frame; with rows it shows them; without the sentence an empty list keeps its frame.
  *
  * How rows fit their card at every width is measured in a browser: ui-gallery's
  * e2e/list-row-width.spec.mjs.
  */
-import { createElement } from "react";
+import { Fragment, createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { ListRow, SettingsList } from "../src/components/data/list-row/list-row";
 import { tooltipRequest } from "../src/components/overlays/tooltip/tooltip";
@@ -95,5 +101,81 @@ describe("ListRow", () => {
     expect(html).toMatch(
       /<button type="button" class="[^"]*"><span[^>]*><img[^>]*\/><\/span>(?:(?!<\/button>).)*case-01(?:(?!<\/button>).)*<\/button><div[^>]*><div[^>]*><button type="button" aria-label="Export">/,
     );
+  });
+});
+
+describe("ListRow's title trail", () => {
+  const mark = createElement("button", { type: "button", "aria-label": "From Charts" }, "P");
+  const trail = createElement(Fragment, null, mark, createElement("span", null, "stop"));
+
+  it("comes right after the title, on its line, before the description", () => {
+    const html = renderStatic(
+      createElement(ListRow, {
+        title: "charts-hooks",
+        titleTrail: trail,
+        description: "Runs after every Task.",
+      }),
+    );
+    const order = [
+      "charts-hooks",
+      'aria-label="From Charts"',
+      "stop",
+      "Runs after every Task.",
+    ].map((part) => html.indexOf(part));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // The row opens nothing: the trail's control is the only button.
+    expect(html.match(/<button/g)).toHaveLength(1);
+  });
+
+  it("sits outside the row's button when the row opens something", () => {
+    const html = renderStatic(
+      createElement(ListRow, {
+        title: "charts",
+        titleTrail: mark,
+        description: "Draws charts.",
+        onClick: () => {},
+      }),
+    );
+    // Two buttons, neither inside the other: the title's, then the trail's.
+    const buttons = [...html.matchAll(/<button[^>]*>((?:(?!<\/button>).)*)<\/button>/g)];
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]![1]).toContain("charts");
+    expect(buttons[0]![1]).not.toContain("<button");
+    expect(buttons[1]![0]).toContain('aria-label="From Charts"');
+    // The title's button is described by the row's description.
+    const described = /aria-describedby="([^"]+)"/.exec(buttons[0]![0])![1]!;
+    expect(html).toContain(`id="${described}">Draws charts.</span>`);
+  });
+});
+
+describe("SettingsList's states", () => {
+  const row = createElement(ListRow, { as: "li", key: "pdf", title: "pdf" });
+  const list = (props: Partial<Parameters<typeof SettingsList>[0]>, children: unknown[]) =>
+    renderStatic(
+      createElement(SettingsList, { label: "Skills", ...props, children: children as never }),
+    );
+
+  it("draws placeholder rows and no list while it is read for the first time", () => {
+    const html = list({ loading: true, skeletonRows: 2, empty: "No skills yet." }, [row]);
+    expect(html.match(/data-skeleton/g)).toHaveLength(2);
+    expect(html).not.toContain("<ul");
+    expect(html).not.toContain("pdf");
+    expect(html).not.toContain("No skills yet.");
+  });
+
+  it("says its sentence when it holds no row, and shows its rows when it does", () => {
+    for (const none of [[], [null, false]]) {
+      const html = list({ empty: "No skills yet." }, none);
+      expect(html).toContain("No skills yet.");
+      expect(html).not.toContain("<ul");
+    }
+    const html = list({ empty: "No skills yet." }, [row]);
+    expect(html).toMatch(/<ul aria-label="Skills"><li/);
+    expect(html).not.toContain("No skills yet.");
+  });
+
+  it("keeps its empty frame when it has no sentence for that", () => {
+    expect(list({}, [])).toContain('<ul aria-label="Skills"></ul>');
   });
 });

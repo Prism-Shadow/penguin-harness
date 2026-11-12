@@ -1,9 +1,19 @@
 /**
  * 按钮: the Button in its five variants and five sizes, the icon button, disabled and loading, the
- * link in a sentence and on its own, and the keyboard hint.
+ * link in a sentence and on its own, the flat glyph action inline after a name (a link and a
+ * button), and the keyboard hint.
  */
 import type { MouseEvent } from "react";
-import { Button, GlyphIcon, ICONS, IconButton, Kbd, Link, PlusIcon } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  GlyphAction,
+  GlyphIcon,
+  ICONS,
+  IconButton,
+  Kbd,
+  Link,
+  PlusIcon,
+} from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -93,6 +103,19 @@ export function ButtonsBoard() {
             <Link href={RELEASES_URL} external variant="standalone" className="text-xs">
               {t.external}
             </Link>
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.glyphActions} aside={t.glyphActionsHint}>
+        <div className="lib-stack">
+          <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+            <span>{t.glyphAuthor}</span>
+            <GlyphAction glyph={ICONS.globe} label={t.glyphHomepage} href={RELEASES_URL} />
+            <GlyphAction glyph={ICONS.gitBranch} label={t.glyphRepository} href={RELEASES_URL} />
+          </div>
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="font-mono">{t.glyphSkill}</span>
+            <GlyphAction glyph={ICONS.puzzle} label={t.glyphFromPlugin} onClick={() => {}} />
           </div>
         </div>
       </BoardGroup>
