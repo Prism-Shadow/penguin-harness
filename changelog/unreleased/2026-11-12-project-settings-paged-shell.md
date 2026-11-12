@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** fix
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#1539](https://github.com/Prism-Shadow/penguin-harness/pull/1539)
 
 [中文版](2026-11-12-project-settings-paged-shell.zh.md)
 
