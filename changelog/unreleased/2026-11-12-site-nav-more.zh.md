@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `landing`, `docs`, `ui-gallery`, `ui`
+- **PR:** [#1544](https://github.com/Prism-Shadow/penguin-harness/pull/1544)
 
 [English](2026-11-12-site-nav-more.md)
 
