@@ -11,12 +11,14 @@
  * icon geometry, the focus ring's offset — resolves to Frost's, and Frost's dark value where dark
  * changes it.
  *
- * - Surfaces: paper `#f6f1e7`, the slip laid on it `#fcf9f2`, the pad a step darker `#f3ede3`;
- *   dark `#1c1a17` / `#23201d` / `#292622`. The gray bridge is a warm ramp through the same paper
- *   and ink, so the app's palette classes (the terminal's chrome among them) land on paper too.
- * - Text: ink `#2b2521` (11.6:1 on the paper surfaces), muted 5.6:1, subtle 3.9:1; dark body
- *   chalk 12.4:1 (11.1:1 on its own accent's tint), the near-white for headings, muted 7.2:1,
- *   subtle 5.2:1.
+ * - Surfaces: a light paper `#fbf9f4`, the slip laid on it `#fefdf9`, the pad a step darker
+ *   `#f6f3ec`; dark `#1c1a17` / `#23201d` / `#292622`. The gray bridge is a warm ramp through the
+ *   same paper and ink, so the app's palette classes (the terminal's chrome among them) land on
+ *   paper too.
+ * - Text: ink `#2b2521` (12.3:1 on the darkest paper surface, the neutral fill), muted 5.9:1,
+ *   subtle 4.1:1, and above the AA line on the paper, the slip and the pad (subtle 4.6:1 on the
+ *   pad); dark body chalk 12.4:1 (11.1:1 on its own accent's tint), the near-white for headings,
+ *   muted 7.2:1, subtle 5.2:1.
  * - One ink. The theme's own accent is the ink under a paper label in light and the chalk under
  *   the ink in dark, as every theme's own accent is black and white (user decision, 2026-10-02);
  *   the family derives from `--ui-accent`, so a preset — five pens, `accents.css` — sets one
@@ -39,8 +41,8 @@
 :root[data-theme="doodle"] {
   /* ---- Gray bridge: a warm ramp from paper to ink. white = the slip. ---- */
   --color-white: var(--ui-surface);
-  --color-gray-50: #faf6ee;
-  --color-gray-100: #f4efe5;
+  --color-gray-50: #fcfaf6;
+  --color-gray-100: #f6f3ec;
   --color-gray-200: #e5ddcd;
   --color-gray-300: #d3c8b5;
   --color-gray-400: #a69a87;
@@ -52,12 +54,12 @@
   --color-gray-950: #1c1815;
 
   /* ---- Colour — surfaces: the paper, the slip laid on it, the pad a step darker ---- */
-  --ui-canvas: #f6f1e7;
-  --ui-surface: #fcf9f2;
-  --ui-surface-muted: #f3ede3;
-  --ui-fill-neutral: #e9e1d1;
-  --ui-inset: #f3eee3;
-  --ui-overlay: #fdfbf6;
+  --ui-canvas: #fbf9f4;
+  --ui-surface: #fefdf9;
+  --ui-surface-muted: #f6f3ec;
+  --ui-fill-neutral: #ede7db;
+  --ui-inset: #f7f4ee;
+  --ui-overlay: #fffefb;
   --ui-overlay-backdrop: rgb(43 37 33 / 0.38);
 
   /* ---- Colour — text ---- */
@@ -137,7 +139,7 @@
   --ui-chart-axis: #776d60;
 
   /* ---- Colour — code: a pad of its own, pen-wash diffs ---- */
-  --ui-code-bg: #f1ebdf;
+  --ui-code-bg: #f5f1e8;
   --ui-code-line: #ddd4c3;
   --ui-code-gutter: #8f8576;
   --ui-code-selection: rgb(44 79 158 / 0.16);

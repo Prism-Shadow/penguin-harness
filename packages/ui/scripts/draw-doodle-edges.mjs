@@ -54,7 +54,7 @@ const INK = {
 };
 
 /** The fill a floating slip is painted in: `--ui-overlay`. */
-const OVERLAY = { light: "#fdfbf6", dark: "#25221f" };
+const OVERLAY = { light: "#fffefb", dark: "#25221f" };
 
 /** The shadow under a slip: a contact shadow a pixel down and a far one a few pixels down. */
 const SHADOW = {
