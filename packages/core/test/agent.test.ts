@@ -25,6 +25,7 @@ import {
   agentsMdPath,
   hooksDir,
   projectConfigPath,
+  sessionScratchpadDir,
   skillsDir,
   systemConfigPath,
   tracesDir,
@@ -34,6 +35,7 @@ import {
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_PROJECT_ID,
   imageUrlMessage,
   installSkill,
@@ -1117,6 +1119,42 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     expect(unsized.opened?.maxContextLength).toBe(112000);
     expect(unsized.opened?.roundLimit).toBeUndefined();
     expect(unsized.read.roundLimit).toBeUndefined();
+  });
+
+  it("the compaction Prompt reaches the engine with the Session's scratchpad in place and no placeholder left, and an absent round cap falls back to its default", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-compaction-prompt");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      type Settings = { prompt: string; maxRounds: number };
+      const deps = (
+        session as unknown as {
+          engineDeps: { compaction?: Settings; readCompaction?: () => Promise<Settings> };
+        }
+      ).engineDeps;
+      const scratchpad = sessionScratchpadDir(
+        tmpRoot,
+        DEFAULT_PROJECT_ID,
+        DEFAULT_AGENT_ID,
+        session.sessionId,
+      ).replaceAll("\\", "/");
+      for (const settings of [deps.compaction!, await deps.readCompaction!()]) {
+        expect(settings.prompt).toContain(`${scratchpad}/handoff/`);
+        expect(settings.prompt).not.toMatch(/\{\{[A-Z_]+\}\}/);
+      }
+
+      await patchSystemConfig((cfg) => {
+        delete cfg.compaction?.max_rounds;
+      });
+      expect((await deps.readCompaction!()).maxRounds).toBe(DEFAULT_COMPACTION_MAX_ROUNDS);
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_rounds: 2 };
+      });
+      expect((await deps.readCompaction!()).maxRounds).toBe(2);
+    } finally {
+      session.dispose();
+    }
   });
 
   it("the context opened after compaction is rebuilt whole — prompt, toolset, vault, run settings — and its records describe it", async () => {

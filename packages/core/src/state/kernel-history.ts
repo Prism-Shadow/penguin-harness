@@ -244,14 +244,15 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   body and never in `MEMORY.md`, run through its interpreter by absolute path, and read before
  *   running one this Session did not write. The memory tab moved.
  * - `2026-11-11` (current) — compaction hands files to the next context: the new
- *   `compaction.max_rounds` (3) is the number of tool rounds the harness allows a summarize
- *   compaction, counted by the harness, and the default compaction prompt asks for a summary in
- *   fixed sections, with hand-off files under the Session's scratchpad (`{{SCRATCHPAD_DIR}}`,
- *   `{{MAX_ROUNDS}}`) written in the same reply when it can. The runtime tab moved.
+ *   `compaction.max_rounds` (8) caps the tool rounds the harness allows a summarize compaction,
+ *   counted by the harness, and the default compaction prompt asks for a summary in fixed
+ *   sections, with hand-off files under the Session's scratchpad (`{{SCRATCHPAD_DIR}}`), each
+ *   under a new name, written in the same reply when it can, aiming at about three tool rounds
+ *   and naming no limit. The runtime tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "3ab519fe2fb0394ffe061eb239d70dfbd21fa27e413f25cebaf73e9b307d0077",
-  runtime: "370a7396061c1d9ef965d328a29ab691d7f6381d55371a1e9d7513a062286028",
+  runtime: "25fc6f157b7de4999b70efe3419eff984a7c4c1a650ecd8c140d51d7fea8788f",
   tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "a9614cd7bd07f576edbcfc311c32c2fa40a57807a26e069a90c3e526dac272b6",
