@@ -120,8 +120,8 @@ export interface CompactionSettings {
    * Tool rounds a summarize compaction may take before its summary (see
    * ContextEngineDeps.compactionToolGate): the harness counts them, and while one is open a
    * response's tool calls are answered and their outputs sent as the next request, behind a
-   * line naming the rounds used and left. Absent or <= 0 (or no gate): none — every tool call
-   * is refused.
+   * line naming the rounds used — and, from the rounds a compaction aims at on, how many more
+   * run (see roundLine). Absent or <= 0 (or no gate): none — every tool call is refused.
    */
   maxRounds?: number;
   /**

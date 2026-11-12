@@ -3270,6 +3270,95 @@ describe("compaction tool rounds", () => {
     ]);
   });
 
+  it("a round line names the rounds used and no total under the target; from the third it asks for the summary now and says how many more rounds run, and after the last that the harness runs no more", async () => {
+    const read = (id: string): ScriptedResponse => ({
+      messages: [
+        toolCall({
+          name: "read_file",
+          arguments: JSON.stringify({ file_path: "/ws/a.ts" }),
+          toolCallId: id,
+        }),
+        usage(160, 0),
+      ],
+    });
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => read(`r${n}`)),
+        { messages: [assistantText("[summary]done[/summary]"), usage(170, 0)] },
+      ],
+      "llm1",
+    );
+    const { env, ran } = recordingEnvironment();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      compaction: settings({ maxRounds: 8 }),
+      compactionToolGate: compactionToolGate(scratch),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(ran).toEqual(Array<string>(8).fill("read_file"));
+    // The request after each round ends with that round's line.
+    const lines = llm1.calls.slice(2, 10).map((c) => textOf(c.at(-1)!));
+    // Under the target: the round used, and neither a total nor a count left.
+    expect(lines[0]).toContain("Tool round 1 done.");
+    expect(lines[1]).toContain("Tool round 2 done.");
+    for (const line of lines.slice(0, 2)) expect(line).not.toMatch(/\b8\b|more round|left/);
+    // From the target on: the summary is due now, and the line says how many more rounds run.
+    expect(lines[2]).toContain("Tool round 3 done;");
+    expect(lines[2]).toContain("Reply with the summary now");
+    expect(lines[2]).toContain("for 5 more rounds");
+    expect(lines[6]).toContain("for 1 more round,");
+    // After the last: none left.
+    expect(lines[7]).toContain("Tool round 8 done; the harness runs no more.");
+    expect(endOf(out)).toMatchObject({ status: "completed", attempt: 1 });
+    expect(endOf(out)).not.toHaveProperty("error_code");
+  });
+
+  it("a model that keeps calling tools gets its eight rounds, then the refusals and two corrections, and the compaction completes with the hand-off note", async () => {
+    const read = (id: string): ScriptedResponse => ({
+      messages: [
+        toolCall({
+          name: "read_file",
+          arguments: JSON.stringify({ file_path: "/ws/a.ts" }),
+          toolCallId: id,
+        }),
+        usage(160, 0),
+      ],
+    });
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        ...Array.from({ length: 11 }, (_, i) => read(`r${i + 1}`)),
+        // Never requested.
+        { messages: [assistantText("[summary]late[/summary]")] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("two"), usage(20, 0)] }], "llm2");
+    const { env, ran } = recordingEnvironment();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      compaction: settings({ maxRounds: 8 }),
+      compactionToolGate: compactionToolGate(scratch),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    // The turn, the Prompt's request, then eight rounds' and two corrections' requests.
+    expect(llm1.calls).toHaveLength(12);
+    expect(ran).toEqual(Array<string>(8).fill("read_file"));
+    expect(llm1.calls.slice(10).map((c) => textOf(c.at(-1)!))).toEqual([CLOSED_LINE, CLOSED_LINE]);
+    expect(endOf(out)).toMatchObject({ status: "completed", attempt: 3, error_code: "malformed" });
+    expect(llm2.calls[0]!.map(textOf)).toEqual([bareNote(), "task two"]);
+  });
+
   it("once the context is past the round limit, a tool-calling response is refused even with rounds left", async () => {
     const file = join(scratch, "handoff", "notes.md");
     const llm1 = new ScriptedLLM(
@@ -3288,7 +3377,7 @@ describe("compaction tool rounds", () => {
       llm: llm1,
       environment: env,
       sessionMeta: metaMessage,
-      compaction: settings({ maxRounds: 3, roundLimit: 130 }),
+      compaction: settings({ maxRounds: 8, roundLimit: 130 }),
       compactionToolGate: gate,
       openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
@@ -3298,7 +3387,8 @@ describe("compaction tool rounds", () => {
     expect(ran).toEqual(["write_file"]);
     expect(asked).toEqual(["r1"]);
     // The window, not the count, closed the next round: the line says so.
-    expect(textOf(llm1.calls[2]![1]!)).toBe(roundLine(1, 3, false));
+    expect(textOf(llm1.calls[2]![1]!)).toBe(roundLine(1, 8, false));
+    expect(textOf(llm1.calls[2]![1]!)).toContain("no room for another");
     expect(llm1.calls[3]![0]!.payload).toMatchObject({
       tool_call_id: "r2",
       output: `[tool error] ${REFUSED_NO_ROUND}`,

@@ -11,17 +11,28 @@ const REPLY_NOW =
   "Reply now with the summary, text only, in the format the compaction request gave.";
 
 /**
- * The line behind a round's tool outputs: how many rounds are used and whether another is open.
- * `open` false with rounds left means the window, not the count, closed the next one.
+ * The rounds a compaction aims at. Under it a round line shows no total — the cap would read as
+ * the plan, and a smaller number would be false; from it on, the line asks for the summary.
+ */
+export const COMPACTION_TARGET_ROUNDS = 3;
+
+/**
+ * The line behind a round's tool outputs: how many rounds are used and, once the target is
+ * reached, that the summary is due and how many more rounds the harness runs. `open` false
+ * with rounds left means the window, not the count, closed the next one.
  */
 export function roundLine(used: number, max: number, open: boolean): string {
+  if (open && used < Math.min(COMPACTION_TARGET_ROUNDS, max)) {
+    return `Tool round ${used} done. Reply with the summary as soon as the hand-off files are written.`;
+  }
   if (open) {
-    return `Tool round ${used} of ${max} used; ${max - used} left. Reply with the summary as soon as the hand-off files are written.`;
+    const left = max - used;
+    return `Tool round ${used} done; a compaction should not need more. Reply with the summary now, and write any hand-off file still missing in that same reply. The harness runs tool calls for ${left} more ${left === 1 ? "round" : "rounds"}, then refuses them.`;
   }
   const closed =
     used >= max
-      ? `Tool round ${used} of ${max} used; none left. Any further tool call will be refused.`
-      : `Tool round ${used} of ${max} used. The context window has no room for another, so any further tool call will be refused.`;
+      ? `Tool round ${used} done; the harness runs no more. Any further tool call will be refused.`
+      : `Tool round ${used} done. The context window has no room for another, so any further tool call will be refused.`;
   return `${closed} ${REPLY_NOW}`;
 }
 
