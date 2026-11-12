@@ -46,16 +46,16 @@ import {
   userText,
 } from "@prismshadow/amsp/records";
 import { hasInputImages, replaceInputImages } from "./rejected-images.js";
-import { REFUSED_NO_ROUND } from "./compaction-lines.js";
 import { buildCompactionHandoff, compactionCallLines, pickSalvage } from "./compaction-carry.js";
-import type { SpanCall } from "./compaction-carry.js";
-import { runCompactionLoop } from "./compaction-loop.js";
-import type { CompactionLoopHost, CompactionResponse } from "./compaction-loop.js";
+import type { SpanCall, SpanRequest } from "./compaction-carry.js";
 import {
+  SALVAGE_MIN_CHARS,
   buildContextSummaryText,
   buildTurnAbortedBlock,
   buildTurnRetriedBlock,
+  extractSummary,
   stripRequestErrorLines,
+  summaryInTags,
   transcribeRequestError,
   transcribeText,
   transcribeThinking,
@@ -1389,7 +1389,7 @@ export class ContextEngine {
    * `fatal`. Both loops retry it on the same backoff ladder, and by default with the same budget
    * (issue #170 — a compaction request is an ordinary LLM request and gets the turn loop's
    * patience). Compaction takes one cause out of it: a response cut at its output cap is a
-   * correction there, asked again at once (see runCompactionLoop). One rule is the turn loop's
+   * correction there, asked again at once (see summarizeContext). One rule is the turn loop's
    * alone: received content resets its ladder. A compaction's ladder spans the whole compaction
    * and never resets: it is bounded so that a provider which cannot produce the summary hands
    * over to the salvage and the hand-off note in bounded time.
@@ -1909,36 +1909,28 @@ export class ContextEngine {
   }
 
   /**
-   * `summarize` compaction: appends the compaction Prompt to the **old** LLM object (first
-   * folding in this turn's tool results when mid-Task, to keep tool_use/tool_result pairing)
-   * and opens the next context with what it got. The compaction requests carry the session's
-   * toolset **unchanged** — the request prefix must stay byte-identical to ordinary turns so the
-   * provider's prompt cache remains valid; compaction runs exactly when the context is largest
-   * (issue #84 — this is why tools are *not* omitted and no `tool_choice` override is used).
-   * The requests, their budgets and how a response is read are the loop's (runCompactionLoop);
-   * a round's calls run through the gate, `approve` and the Environment (runCompactionToolRound).
+   * `summarize` compaction: appends the compaction Prompt to the **old** LLM object — behind
+   * `folded` (this turn's tool results mid-Task, or the carry-over), as one user turn: an
+   * unanswered tool_use would get the compaction request itself rejected (issue #33) — and
+   * opens the next context with what it got. The requests go through `runTurn` like a turn's,
+   * so they carry the session's toolset **unchanged** (issue #84), and each only appends to the
+   * history the one before it left.
    *
-   * The compaction ends in exactly one of three ways:
-   *   - `completed`: the next context is open, and opens with the summary; when none could be
-   *     had (a budget spent, or `fatal`), with the longest summary cut off before its end
-   *     (pickSalvage), else with `handoff` or the hand-off note `deps.buildHandoff` builds from
-   *     the Trace. Such a `compaction_end` carries the error pair saying why.
-   *   - `aborted`: the user stopped it, at any point before the fallback.
-   *   - `fatal`: no next context could be opened; the old context is kept.
-   * In the last two, the result carries what the kept context is still owed (`pending`).
-   * The next context is opened before the `compaction_end` is written, so the Trace never says
-   * `completed` for a context that does not exist, and the opening is built after it (see
-   * `rotate`), so a note built from the closing file reads the end too.
+   * A committed response is one of three (classifyCompactionResponse): a **summary** — its own
+   * calls are answered and nothing more is sent; a **round** — its calls run while a round is
+   * open (`maxRounds`, and the window below `roundLimit`) and their outputs go out behind a
+   * round line; or **empty**. Calls with no round open, and an empty response, are corrections,
+   * answered with a corrective line; so is a response cut at the output limit, asked again with
+   * the same input and one line more. A refusal over images is sent again with the images
+   * replaced, outside every budget. Transport failures retry on the backoff ladder
+   * (`compactionMaxReconnects`); `fatal` is not retried.
    *
-   * What reaches the Human output stream between the paired compaction events: each request's
-   * `request_begin` / `request_end` and `token_usage`, its thinking and text being generated
-   * (issue #290 — see streamsInSpan), and every tool call with its approval decision and
-   * output, run or refused, each as the Trace has it. The Prompt and the harness lines stay
-   * Trace-only.
-   *
-   * The opening's trailer names the compacted context's Trace file (`deps.trace.currentPath`,
-   * read before the rotation), how to query it (worded for `deps.shell`), and the tool calls the
-   * compaction made: text in the next context's opening, never in a running context's prefix.
+   * It ends `completed` — the next context opens with the summary, else the longest summary cut
+   * off before its end (pickSalvage), else `handoff` or the hand-off note, and the
+   * `compaction_end` carries the error pair saying why — `aborted` (a stop before the fallback)
+   * or `fatal` (no next context could be opened). Between the paired events the stream carries
+   * each request as runTurn streams a span (issue #290) and every call with its decision and
+   * output; the Prompt and the harness lines stay Trace-only.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async *summarizeContext(
@@ -1953,37 +1945,130 @@ export class ContextEngine {
     // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
     const gate = this.deps.compactionToolGate;
-    yield* this.emitCompactionBegin(reason, "summarize");
+    // With no gate no round is open: every tool call is refused.
+    const maxRounds = gate !== undefined ? (settings.maxRounds ?? 0) : 0;
+    const requests: SpanRequest[] = [];
+    const calls: SpanCall[] = [];
+    let pending = folded;
+    let rounds = 0;
+    let corrections = 0;
+    let transport = 0;
+    // A stop while a committed response's calls are answered does not count it as an attempt.
+    let uncounted = 0;
+    let truncatedLine: AmspRecord | null = null;
+    let end: { summary: string } | { errorCode: ErrorCode; errorMessage?: string } | "aborted";
+    const roundOpen = (): boolean =>
+      rounds < maxRounds &&
+      (settings.roundLimit === undefined || this.lastRequestTotal < settings.roundLimit);
     // Tool results were written when executed; carry-over's synthetic content (flatten text,
     // placeholders) is never written; the Prompt and every harness line are written now, to the
     // old Trace only.
-    const host: CompactionLoopHost = {
-      line: async (text) => {
-        const msg = userText(text);
-        await this.write(msg);
-        return msg;
-      },
-      request: (input, attempts, retryInMs) =>
-        this.compactionRequest(input, attempts, retryInMs, approve, signal),
-      answer: (calls, open) =>
-        this.runCompactionToolRound(calls, open ? gate : undefined, approve, signal),
-      backoff: (n) => this.backoff(n, signal),
-      retryDelayMs: (n) => this.retryDelayMs(n, this.compactionMaxReconnects),
-      contextTotal: () => this.lastRequestTotal,
-      signal,
+    const line = async (text: string): Promise<AmspRecord> => {
+      const msg = userText(text);
+      await this.write(msg);
+      return msg;
     };
-    const loop = yield* runCompactionLoop(
-      host,
-      {
-        prompt: settings.prompt,
-        // With no gate no round is open: every tool call is refused.
-        maxRounds: gate !== undefined ? (settings.maxRounds ?? 0) : 0,
-        roundLimit: settings.roundLimit,
-        maxReconnects: this.compactionMaxReconnects,
-      },
-      folded,
-    );
-    const { end, attempts, pending, calls } = loop;
+    yield* this.emitCompactionBegin(reason, "summarize");
+    let input = [...folded, await line(settings.prompt)];
+    for (;;) {
+      if (signal?.aborted) {
+        end = "aborted";
+        break;
+      }
+      const open = roundOpen();
+      const turn = yield* this.runTurn(input, {
+        approve,
+        signal,
+        attempts: requests.length - rounds,
+        // The wait before the next send (0: at once): mirrors the branches below.
+        retryInMs: (o) =>
+          o.status === "fatal"
+            ? undefined
+            : o.errorCode === "output_truncated"
+              ? corrections < MAX_COMPACTION_CORRECTIONS
+                ? 0
+                : undefined
+              : o.status === "retryable"
+                ? this.retryDelayMs(transport + 1, this.compactionMaxReconnects)
+                : undefined,
+        span: true,
+      });
+      const r = turn.outcome;
+      const text = turn.assistantSegments
+        .filter(isTextMessage)
+        .map((m) => (m.payload as TextPayload).text)
+        .join("");
+      requests.push({ ...r, text });
+      if (r.status === "completed") {
+        pending = [];
+        const kind = classifyCompactionResponse(text, turn.toolCalls.length > 0);
+        if (turn.toolCalls.length > 0) {
+          const answered = yield* this.runCompactionToolRound(
+            turn.toolCalls,
+            open ? gate : undefined,
+            approve,
+            signal,
+          );
+          calls.push(...answered);
+          pending = answered.map((c) => c.output!);
+          if (signal?.aborted) {
+            uncounted = 1;
+            end = "aborted";
+            break;
+          }
+        }
+        if (kind === "summary") {
+          end = { summary: extractSummary(text) };
+          break;
+        }
+        if (kind === "round" && open) {
+          rounds += 1;
+          input = [...pending, await line(roundLine(rounds, maxRounds, roundOpen()))];
+          continue;
+        }
+        if (++corrections > MAX_COMPACTION_CORRECTIONS) {
+          end = {
+            errorCode: "malformed",
+            errorMessage:
+              kind === "empty"
+                ? "the response contained no usable summary"
+                : "the response called tools instead of writing a summary",
+          };
+          break;
+        }
+        input = [...pending, await line(kind === "empty" ? EMPTY_LINE : CLOSED_LINE)];
+        continue;
+      }
+      if (r.status === "aborted") {
+        end = "aborted";
+        break;
+      }
+      // Not committed: the input is still owed in full, so every resend below starts from it.
+      end = {
+        errorCode: r.errorCode ?? "malformed",
+        ...(r.errorMessage !== undefined ? { errorMessage: r.errorMessage } : {}),
+      };
+      if (r.status === "fatal") break;
+      if (r.errorCode === "image_rejected" && hasInputImages(input)) {
+        input = replaceInputImages(input);
+        continue;
+      }
+      if (r.errorCode === "output_truncated") {
+        if (++corrections > MAX_COMPACTION_CORRECTIONS) break;
+        truncatedLine ??= await line(TRUNCATED_LINE);
+        if (input.at(-1) !== truncatedLine) input = [...input, truncatedLine];
+        continue;
+      }
+      if (transport >= this.compactionMaxReconnects) break;
+      transport += 1;
+      if (!(await this.backoff(transport, signal))) {
+        end = "aborted";
+        break;
+      }
+    }
+    // A stop that lands before the fallback is a stop.
+    if (end !== "aborted" && !("summary" in end) && signal?.aborted) end = "aborted";
+    const attempts = requests.length - rounds - uncounted;
 
     if (end === "aborted") {
       yield* this.emitCompactionEnd(
@@ -1994,7 +2079,7 @@ export class ContextEngine {
       );
       return { status: "aborted", pending };
     }
-    const summary = "summary" in end ? end.summary : pickSalvage(loop.requests);
+    const summary = "summary" in end ? end.summary : pickSalvage(requests);
     const rotated = yield* this.rotate(
       { reason, mode: "summarize", attempt: attempts, ...("summary" in end ? {} : { error: end }) },
       async ({ notice }) => {
@@ -2123,34 +2208,6 @@ export class ContextEngine {
       answered.push({ call: tc, output: out as AmspRecord<ToolCallOutputPayload> });
     }
     return answered;
-  }
-
-  /**
-   * One compaction request: an ordinary request through `runTurn` (`span`), read back as the
-   * response the compaction classifies — its complete text, concatenated, and its real tool
-   * calls, which summarizeContext answers once the response committed.
-   */
-  private async *compactionRequest(
-    input: AmspRecord[],
-    /** Requests of this compaction that were not rounds, before this one (see TurnOptions.attempts). */
-    attempts: number,
-    /** The wait the compaction loop takes before sending again after this outcome. */
-    retryInMs: (outcome: LLMOutcome) => number | undefined,
-    approve: ApproveFn,
-    signal: AbortSignal | undefined,
-  ): AsyncGenerator<AmspRecord, CompactionResponse> {
-    const turn = yield* this.runTurn(input, {
-      approve,
-      signal,
-      attempts,
-      retryInMs: (outcome) => retryInMs(outcome),
-      span: true,
-    });
-    const text = turn.assistantSegments
-      .filter((m) => (m.payload as { type?: string }).type === "text")
-      .map((m) => (m.payload as TextPayload).text)
-      .join("");
-    return { ...turn.outcome, text, toolCalls: turn.toolCalls };
   }
 
   /**
@@ -2469,6 +2526,73 @@ function compactionRefusal(
   } catch (err) {
     return messageOf(err);
   }
+}
+
+/** Responses that advanced nothing and are answered with a corrective line, per compaction. */
+const MAX_COMPACTION_CORRECTIONS = 2;
+
+// The harness's own lines inside a summarize compaction: protocol text, hardcoded like the
+// `[tool error]` strings and Trace-only. Each points at "the format the compaction request
+// gave" instead of restating it, so it holds for a stored or customised Prompt too.
+
+const REPLY_NOW =
+  "Reply now with the summary, text only, in the format the compaction request gave.";
+
+/**
+ * The rounds a compaction aims at. Under it a round line shows no total — the cap would read as
+ * the plan, and a smaller number would be false; from it on, the line asks for the summary.
+ */
+const COMPACTION_TARGET_ROUNDS = 3;
+
+/**
+ * The line behind a round's tool outputs: how many rounds are used and, once the target is
+ * reached, that the summary is due and how many more rounds the harness runs. `open` false
+ * with rounds left means the window, not the count, closed the next one.
+ */
+export function roundLine(used: number, max: number, open: boolean): string {
+  if (open && used < Math.min(COMPACTION_TARGET_ROUNDS, max)) {
+    return `Tool round ${used} done. Reply with the summary as soon as the hand-off files are written.`;
+  }
+  if (open) {
+    const left = max - used;
+    return `Tool round ${used} done; a compaction should not need more. Reply with the summary now, and write any hand-off file still missing in that same reply. The harness runs tool calls for ${left} more ${left === 1 ? "round" : "rounds"}, then refuses them.`;
+  }
+  const closed =
+    used >= max
+      ? `Tool round ${used} done; the harness runs no more. Any further tool call will be refused.`
+      : `Tool round ${used} done. The context window has no room for another, so any further tool call will be refused.`;
+  return `${closed} ${REPLY_NOW}`;
+}
+
+/** Why a call is refused once no round is open (inside its `[tool error]` output). */
+export const REFUSED_NO_ROUND = "no tool round is left in this compaction; reply with the summary";
+
+/** After a response whose calls were all refused because no round was open. */
+export const CLOSED_LINE = `Those tool calls were refused: no tool round is left. ${REPLY_NOW}`;
+
+/** After a committed response that held no summary. */
+export const EMPTY_LINE = `Your previous reply held no summary. ${REPLY_NOW}`;
+
+/** After a response cut at the output limit (never committed: it rides the same input once). */
+export const TRUNCATED_LINE =
+  "Your previous reply hit the output limit and was discarded. Reply again with a shorter summary, text only, in the format the compaction request gave, and keep the next steps complete.";
+
+/**
+ * What a committed compaction response is. Text only: a summary unless it extracts empty — the
+ * lenient rule, which accepts a tagless reply. With tool calls: a summary only when it holds a
+ * tagged one (closed, or long enough to salvage), otherwise a round, its text a preamble.
+ */
+function classifyCompactionResponse(
+  text: string,
+  calledTools: boolean,
+): "summary" | "round" | "empty" {
+  if (!calledTools) return extractSummary(text) !== "" ? "summary" : "empty";
+  const tagged = summaryInTags(text);
+  return tagged !== null &&
+    tagged.text !== "" &&
+    (tagged.closed || tagged.text.length >= SALVAGE_MIN_CHARS)
+    ? "summary"
+    : "round";
 }
 
 /**

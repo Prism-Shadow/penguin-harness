@@ -62,7 +62,14 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../src/interfaces/index.js";
-import { ContextEngine } from "../src/engine/context-engine.js";
+import {
+  CLOSED_LINE,
+  ContextEngine,
+  EMPTY_LINE,
+  REFUSED_NO_ROUND,
+  TRUNCATED_LINE,
+  roundLine,
+} from "../src/engine/context-engine.js";
 import { Session } from "../src/session.js";
 import type { CompactionSettings, CompactionToolGate } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
@@ -76,13 +83,6 @@ import {
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import { compactionToolGate } from "../src/internal/compaction-tool-gate.js";
 import { buildCompactionHandoff } from "../src/engine/compaction-carry.js";
-import {
-  CLOSED_LINE,
-  EMPTY_LINE,
-  REFUSED_NO_ROUND,
-  TRUNCATED_LINE,
-  roundLine,
-} from "../src/engine/compaction-lines.js";
 import { REJECTED_IMAGE_NOTE } from "../src/engine/rejected-images.js";
 
 // ---------------------------------------------------------------------------
