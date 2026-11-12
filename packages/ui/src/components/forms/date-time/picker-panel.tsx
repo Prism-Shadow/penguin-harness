@@ -1,6 +1,7 @@
 /**
  * The panel a date or time picker opens: a small non-modal dialog portaled to the body and placed
- * against its trigger by `usePortalPanel`, so no ancestor's overflow clips it — a dialog's
+ * against its trigger by `usePortalPanel` (through the trigger's `usePickerPanel`, which holds
+ * the open state), so no ancestor's overflow clips it — a dialog's
  * scrolling body, a reply in the transcript — and it takes the `popover` layer over an open
  * dialog. It hangs under the trigger and opens above it when there is no room below, held inside
  * the viewport; on a phone (under 640px) it is a full-width sheet along the bottom edge instead.
@@ -15,55 +16,16 @@
  * The panel is the floating-layer glass (`ui-glass`) with the dialog role, so each theme draws it
  * as it draws its popovers' cards; it scrolls inside when the window is too short to hold it.
  */
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode, RefObject } from "react";
+import { useEffect } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FOCUSABLE_SELECTOR, nextFocusIndex } from "../../overlays/esc-layers/esc-layers";
-import { usePortalPanel } from "../../overlays/portal-panel/use-portal-panel";
-import type { PortalPanelPosition } from "../../overlays/portal-panel/use-portal-panel";
+import type { PickerPanelState } from "./picker-trigger";
 
 /** Below this viewport width the panel is a sheet along the bottom edge (Tailwind's `sm`). */
 const SHEET_BELOW = 640;
 /** The panel's distance from the viewport's edges as a sheet, and below its trigger's room (px). */
 const EDGE = 8;
-
-export interface PickerPanelState {
-  open: boolean;
-  /** Opens or closes the panel from the trigger. */
-  toggle: () => void;
-  /** Closes the panel, handing the focus back to the trigger if it was inside. */
-  close: () => void;
-  triggerRef: RefObject<HTMLButtonElement | null>;
-  panelRef: RefObject<HTMLDivElement | null>;
-  position: PortalPanelPosition | null;
-  /** The panel's id, for the trigger's `aria-controls`. */
-  panelId: string;
-}
-
-/**
- * Open state and placement for one picker. `estimatedHeight` decides only whether the panel opens
- * above or below; `width` is the panel's width in px at the default text size, for the first
- * clamp against the viewport (the portal hook clamps again against the width it renders at).
- */
-export function usePickerPanel(estimatedHeight: number, width: number): PickerPanelState {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  const closeRef = useRef<() => void>(() => {});
-  const { triggerRef, panelRef, position } = usePortalPanel({
-    open,
-    onClose: () => closeRef.current(),
-    estimatedHeight,
-    panelWidth: width,
-  });
-  const close = useCallback(() => {
-    const inside = panelRef.current?.contains(document.activeElement) ?? false;
-    setOpen(false);
-    if (inside) triggerRef.current?.focus();
-  }, [panelRef, triggerRef]);
-  closeRef.current = close;
-  const toggle = useCallback(() => setOpen((was) => !was), []);
-  return { open, toggle, close, triggerRef, panelRef, position, panelId };
-}
 
 /** The elements Tab reaches inside the panel: a grid's other days (`tabindex="-1"`) are not among them. */
 function tabbable(panel: HTMLElement): HTMLElement[] {

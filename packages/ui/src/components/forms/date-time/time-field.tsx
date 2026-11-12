@@ -15,8 +15,8 @@ import { clockOf, floorToStep, parseTime, timeValue } from "./calendar-date";
 import type { ClockTime } from "./calendar-date";
 import { formatTime, hourCycleOf } from "./date-locale";
 import type { HourCycle } from "./date-locale";
-import { PickerPanel, usePickerPanel } from "./picker-panel";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerPanel } from "./picker-panel";
+import { PickerTrigger, usePickerPanel } from "./picker-trigger";
 import type { PickerFieldProps } from "./picker-trigger";
 import { TimeWheels } from "./time-wheels";
 
