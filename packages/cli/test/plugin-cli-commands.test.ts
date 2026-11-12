@@ -254,6 +254,16 @@ describe("dispatchPluginCommand (e2e via stubbed fetch)", () => {
     process.env = originalEnv;
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+import os from "node:os";
+import path from "node:path";
+import { getMessages } from "../src/i18n.js";
+  it("pastes nothing after the id when the argv names the key exactly", () => {
+    reportAmbiguous(["greet"], [{ package: "@a/x", key: "greet", summary: { en: "", zh: "" } }], t);
+    expect(text).toContain("penguin exec @a/x:greet\n");
+        fs.mkdtemp(path.join(os.tmpdir(), "penguin-test-")),
+      ),
+    stdoutSpy?.mockRestore();
+    stderrSpy?.mockRestore();
     vi.unstubAllGlobals();
   });
 

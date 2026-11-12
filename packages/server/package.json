@@ -120,6 +120,7 @@
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
+    "css-tree": "^3.2.1",
     "commander": "^13.0.0",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",

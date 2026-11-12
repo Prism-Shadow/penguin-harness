@@ -98,5 +98,93 @@ describe("shellQuote (one word of a copyable command line, POSIX)", () => {
     expect(shellQuote("it's")).toBe("'it'\\''s'");
     expect(shellQuote("$(rm -rf /)")).toBe("'$(rm -rf /)'");
     expect(shellQuote("")).toBe("''");
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { MockInstance } from "vitest";
+import { Command } from "commander";
+  PluginCliCommandInfo,
+  PluginCliCommandRunRequest,
+import { registerExecCommand, resolveExecTarget } from "../src/commands/exec.js";
+import { getMessages, type Messages } from "../src/i18n.js";
+describe("registerExecCommand (through the real commander tree, a stand-in source)", () => {
+  const t = getMessages("en");
+  const listing: PluginCliCommandInfo[] = [
+    cmd("@acme/one", "one.deploy"),
+    { package: "@acme/one", key: "one.up", summary: { en: "One's up", zh: "One 的启动" } },
+    { package: "@acme/two", key: "two.up", summary: { en: "Two's up", zh: "Two 的启动" } },
+  ];
+  let stdoutSpy: MockInstance<typeof process.stdout.write>;
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
+  const recorded: PluginCliCommandRunRequest[] = [];
+  beforeEach(() => {
+    recorded.length = 0;
+    stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+  const source = () => ({
+    list: async () => listing,
+    run: async (req: PluginCliCommandRunRequest) => {
+      recorded.push(req);
+      return { exitCode: 0, stdout: "ok\n", stderr: "" };
+    },
+  const makeProgram = (messages: Messages = t): Command => {
+    const program = new Command();
+    program.name("penguin").version("1.0.0", "-v, --version").enablePositionalOptions();
+    registerExecCommand(program.command("exec"), messages, source());
+    return program;
+  };
+  const run = async (...argv: string[]) => {
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+    await makeProgram().parseAsync(argv, { from: "user" });
+    const out = stdoutSpy.mock.calls.map((c) => c[0]).join("");
+    const err = stderrSpy.mock.calls.map((c) => c[0]).join("");
+    return { out, err };
+  };
+  it("hands the id's arguments to the run request whole — options, the host's version flag and `--` included", async () => {
+    const { out } = await run("exec", "one.deploy", "--prod", "-v", "--", "--help");
+    expect(recorded).toEqual([
+      {
+        package: "@acme/one",
+        args: ["one", "deploy", "--prod", "-v", "--", "--help"],
+        language: "en",
+        prog: "penguin exec one.deploy",
+      },
+    ]);
+    expect(out).toBe("ok\n");
+  it("the prefixed form names the package and its id, and prog carries the colon", async () => {
+    await run("exec", "@acme/one:one.deploy", "--x");
+    expect(recorded[0]).toMatchObject({
+      package: "@acme/one",
+      args: ["one", "deploy", "--x"],
+      prog: "penguin exec @acme/one:one.deploy",
+  it("a bundle whose language is not one of the server's renders English", async () => {
+    const fr = { ...t, language: "fr" } as unknown as Messages;
+    await makeProgram(fr).parseAsync(["exec", "ls", "@acme/one"], { from: "user" });
+    const out = stdoutSpy.mock.calls.map((c) => c[0]).join("");
+    expect(out).toContain("One's up");
+    expect(out).not.toContain("One 的启动");
+  it("ls lists every command with its package and summary; with a package, that package's alone", async () => {
+    const all = await run("exec", "ls");
+    expect(all.out).toContain("Package");
+    expect(all.out).toContain("one.deploy");
+    expect(all.out).toContain("@acme/two");
+    const one = await run("exec", "ls", "@acme/one");
+    expect(one.out).not.toContain("Package");
+    expect(one.out).toContain("one.deploy");
+    expect(one.out).not.toContain("@acme/two");
+  it("ls refuses a package no plugin carries, with the candidate list", async () => {
+    const { err } = await run("exec", "ls", "@acme/nope");
+    expect(err).toContain(t.exec.unknownPackage("@acme/nope"));
+    expect(err).toContain(t.exec.candidates(["@acme/one", "@acme/two"]));
+    expect(process.exitCode).toBe(1);
+  it("bare exec shows exec's own help", async () => {
+    const { out } = await run("exec");
+    expect(out).toContain(t.exec.lsDesc);
+  it("an unknown id is refused with the id list", async () => {
+    const { err } = await run("exec", "one.nope");
+    expect(err).toContain(t.exec.unknownId("one.nope"));
+    expect(process.exitCode).toBe(1);
   });
 });

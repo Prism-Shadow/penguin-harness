@@ -39,6 +39,7 @@ import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { registerResetPasswordCommand } from "./reset-password.js";
+import type { Messages, WebProbeFailureKind } from "../i18n.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 

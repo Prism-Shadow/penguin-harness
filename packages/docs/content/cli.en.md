@@ -806,6 +806,13 @@ penguin exec @scope/my-plugin -- deploy --help   # -- hands every option to the 
 ```
 
 To pass options to the plugin rather than the CLI, put `--` before the plugin's own arguments, as in the second line above.
+penguin exec <id> [args...]
+penguin exec <package>:<id> [args...]
+The first word that names none of the CLI's own commands is looked up among the plugins before the CLI reports an unknown command: the server's listing of plugin commands is matched against it, one package answering runs, and the run's output and exit code are the caller's own. A server that is not running is left alone — the lookup asks only a server that already runs, and one that answers nothing leaves the command line to the CLI's own parse.
+Two or more plugins answering the same words is ambiguous: the report lists one copyable `penguin exec <package>:<id> …` line per candidate (the original argv shell-quoted) and exits with code 2, nothing runs.
+`penguin exec <id>` names the command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — resolved exactly against the listing: no prefix, suffix or short-form matching. Every option after the id, `--help` included, belongs to the plugin command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. A server that is not running is started, as for any command that needs one.
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # when ids collide
 
 ## penguin server / penguin web
 

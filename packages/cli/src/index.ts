@@ -20,6 +20,7 @@ import { bootBrowserCommands, bootCompanyCommands } from "@prismshadow/penguin-s
 import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";
 import { getMessages, resolveLanguage } from "@prismshadow/penguin-server/cli";
+import { getMessages, resolveLanguage } from "./i18n.js";
 
 /** The node for a dotted key under `program`, found or built one segment at a time. */
 function commandAt(program: Command, key: string): Command {
@@ -51,13 +52,18 @@ export async function cli(argv: string[]): Promise<number> {
     // and report the failure localized from the catch below (see usage-error.ts). Both
     // settings must be in place before the subcommands are created — that is when they
     // are copied down (commander's copyInheritedSettings).
-    .configureOutput({ outputError: () => {} });
+    .configureOutput({ outputError: () => {} })
+    // The root's options (its `-v, --version`) are parsed at the root's level only, so a
+    // subcommand's arguments are the subcommand's own — `penguin exec` passes every option
+    // after the id to the plugin command, and depends on the root not reading them.
+    .enablePositionalOptions();
 
   for (const command of [
     ...(await bootBuiltinCommands()),
     ...(await bootCompanyCommands()),
     ...(await bootBrowserCommands()),
   ]) {
+  for (const command of await bootBuiltinCommands()) {
     const node = commandAt(program, command.key).description(command.summary[language]);
     // CliCommandProgram is opaque in the contract; the host knows what it built. The locale
     // is resolved once, here, and every register consumes the bundle — no command resolves

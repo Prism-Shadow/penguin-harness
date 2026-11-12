@@ -21,6 +21,9 @@ import type {
 } from "@prismshadow/penguin-server/cli";
 import { resolveConnection, ServerClient } from "@prismshadow/penguin-server/cli";
 import type { Language, Messages } from "@prismshadow/penguin-server/cli";
+} from "@prismshadow/penguin-server/api";
+import { resolveConnection, ServerClient } from "./client.js";
+import type { Language, Messages } from "./i18n.js";
 
 /** A word POSIX shells read back unchanged: letters, digits, and the portable punctuation set. */
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;

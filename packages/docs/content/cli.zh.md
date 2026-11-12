@@ -806,6 +806,13 @@ penguin exec @scope/my-plugin -- deploy --help   # -- 把所有选项交给插�
 ```
 
 要把选项交给插件而非 CLI，在插件自己的参数之前放 `--`，如上第二行。
+penguin exec <id> [args...]
+penguin exec <包>:<id> [args...]
+不属于 CLI 自有命令的首个词，在 CLI 报未知命令之前先到插件里查证：server 的插件命令列表与之比对，恰有一个包命中即运行，运行打印的内容与退出码就是调用者的。server 未在运行时保持不动——查询只问已在运行的 server，无人应答时命令行交回 CLI 自己的解析。
+两个及以上插件命中同样的词即歧义：报告逐候选列出一行可直接复制执行的 `penguin exec <包>:<id> …`（原 argv 按 shell 转义）并以退出码 2 结束，什么都不运行。
+`penguin exec <id>` 按点分 id 直接点名命令——`sandbox.wsl.restart`，至少两段——对列表精确解析：无前缀、后缀或短名匹配。id 之后的每个选项（`--help` 在内）都属于插件命令。两个插件贡献同一个 id 时，用 npm 全名点名：`penguin exec <包>:<id>`，scope 不可省。`penguin exec ls [包]` 列出插件贡献的 id 与 summary。server 未在运行时会被启动，与任何需要 server 的命令一样。
+penguin exec sandbox.wsl.restart --prod
+penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 
 ## penguin server / penguin web
 

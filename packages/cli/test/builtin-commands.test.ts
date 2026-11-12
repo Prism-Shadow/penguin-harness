@@ -112,6 +112,12 @@ describe("help lists the collected commands", () => {
       ...(await bootCompanyCommands()).filter((c) => !c.key.includes(".")),
       ...(await bootBrowserCommands()).filter((c) => !c.key.includes(".")),
     ];
+ * - Booting the module yields every command once, in declaration order: an id of the form
+ *   `cli.<key>`, a well-formed key, a summary in both languages and a bound code half.
+/** The commands in the order they are declared, which is the order help lists them in. */
+  "org",
+  "browser",
+    const topLevel = commands.filter((c) => !c.key.includes("."));
     for (const language of ["en", "zh"] as const) {
       process.env.PENGUIN_LANG = language;
       const { code, out } = await run(["--help"]);
