@@ -6,16 +6,12 @@
  * rather than something the user typed. They come in three families:
  *
  *   - **engine blocks** (`engine-blocks.ts`): `[turn_aborted]` / `[turn_retried]` transcripts,
- *     the `[context_summary]` injection (a summary, or the hand-off note written in place of
- *     one) and the `[summary]` the compaction prompt asks for, read whole or salvaged from a
- *     reply that did not finish — produced by the ReAct loop and Trace replay;
+ *     the `[context_summary]` injection and the `[summary]` the compaction prompt asks for —
+ *     produced by the ReAct loop and Trace replay;
  *   - **origin blocks** (`origin-blocks.ts`): `[use_skills]`, `[handoff_from]`,
  *     `[scheduled_task]`, `[model_switch_from]` — prefixed to a user message by the hosts
  *     (Web composer, server scheduler) and collapsed into a banner when rendered;
  *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message.
- *
- * `trace-query.ts` is the guidance both the `[context_summary]` trailer and the
- * `[model_switch_from]` block give on reading a Trace file precisely — one wording, two blocks.
  *
  * `attachment-lines.ts` is the one exception to the block form: `[attached image: …]` /
  * `[attached file: …]` are single lines **appended after** a user message, naming a file the

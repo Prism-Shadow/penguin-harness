@@ -1,9 +1,8 @@
 /**
- * Engine-synthesized marker blocks: the interruption/retry transcripts, the compaction
- * summary and the hand-off note that stands in for a summary that could not be written. These
- * are produced by the ReAct loop (and rebuilt by Trace replay), never by a host — but their
- * spelling belongs here with the rest of the markers so the engine and the resume path cannot
- * drift apart (they used to duplicate the `[context_summary]` template).
+ * Engine-synthesized marker blocks: the interruption/retry transcripts and the compaction
+ * summary. These are produced by the ReAct loop (and rebuilt by Trace replay), never by a
+ * host — but their spelling belongs here with the rest of the markers so the engine and the
+ * resume path cannot drift apart (they used to duplicate the `[context_summary]` template).
  */
 import { markerBlock, markerClose, markerOpen, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TRANSCRIPT_TAGS } from "./tags.js";
@@ -21,10 +20,7 @@ export interface CompactedTranscript {
 export interface ContextSummaryExtras {
   /** The summary was salvaged from a reply that did not finish: a line says it was cut off. */
   cutOff?: boolean;
-  /**
-   * The tool calls the compaction made, each followed by its output, already transcribed as
-   * `[tool_call]` / `[tool_call_output]` lines, in call order. Empty or absent: no call section.
-   */
+  /** The compaction's tool calls with their outputs, transcribed (empty or absent: no section). */
   callLines?: readonly string[];
   /** A note from the harness about how this context was opened (empty or absent: no notice line). */
   notice?: string;
@@ -54,15 +50,10 @@ function transcriptLines(lead: string, transcript: CompactedTranscript): string[
 /**
  * Wraps a compaction summary as the new context's first input: `[context_summary]…[/context_summary]`.
  *
- * Under the model's summary, after a blank line, the harness adds what applies of: a line
- * saying the summary was cut off (`extras.cutOff`), the compaction's own tool calls with their
- * outputs (`extras.callLines` — a summary can name a hand-off file whose write did not succeed,
- * and the next context must be able to see that), a harness notice (`extras.notice`), and —
- * given the compacted context's Trace file — the trailer: the file's path, where its earlier
- * files are, and how to query it precisely (see trace-query.ts). All of it is text inside the
- * block, no marker or field of its own, so a reader that recognizes the block by its prefix
- * reads an old summary without it the same way. With no extras the block is exactly what it was
- * before they existed.
+ * Under the summary, after a blank line, come the extras that apply and, given the compacted
+ * context's Trace file, the trailer naming it. All of it is plain text inside the block, so a
+ * reader that knows the block by its prefix reads an old summary the same way; with neither,
+ * the block is exactly what it was before they existed.
  */
 export function buildContextSummaryText(
   summary: string,
@@ -98,11 +89,7 @@ export interface ContextHandoffSections {
   userLines: readonly string[];
   /** The last completed turn before the compaction: its `[text]`, `[tool_call]` and `[tool_call_output]` lines. */
   turnLines: readonly string[];
-  /**
-   * Why the context was closed, when the provider refused the request after that turn: its
-   * `[request_error]` line (see transcribeRequestError), the provider's words as they came.
-   * Empty: no section.
-   */
+  /** The provider's refusal of the request after that turn: a `[request_error]` line, or none. */
   refusalLines: readonly string[];
   /** The compaction's own tool calls with their outputs, as under a summary (see ContextSummaryExtras.callLines). */
   callLines: readonly string[];
@@ -122,15 +109,10 @@ const HANDOFF_REFUSAL_HEADING =
 
 /**
  * The hand-off note a compaction opens the next context with when no summary could be had,
- * wrapped like a summary (`[context_summary]…[/context_summary]`) so every reader that knows
- * the block by its prefix carries it exactly as one.
- *
- * It opens with the harness's explanation, then the sections it is given — the user messages,
- * the last completed turn, the provider's refusal of the request after it, the compaction's
- * tool calls — each under its heading and separated by a blank line, a section with no lines
- * left out; then, given the compacted context's Trace file, its path and how to query it. Pure
- * string work: what to quote, and how much of it, is chosen by the caller from the Trace
- * records (core's compaction-carry).
+ * wrapped like a summary so every reader that knows the block by its prefix carries it as one:
+ * the harness's explanation, each non-empty section under its heading, then, given the compacted
+ * context's Trace file, its path and how to query it. What to quote is the caller's choice
+ * (core's compaction-carry).
  */
 export function buildContextHandoffText(
   sections: ContextHandoffSections,
@@ -211,15 +193,11 @@ function summaryCloseAt(raw: string, from: number, close: string): number {
 }
 
 /**
- * The text a reply holds inside its summary tag: what follows the first `[summary]` open tag
- * (the legacy `<summary>` one when the reply has no square tag) up to its close tag when there
- * is one (a mixed-bracket close counts), else to the end of the reply — stray summary tags
- * stripped, trimmed. `closed` says whether a close tag was found. Null when the reply has no
- * summary open tag at all.
- *
- * Unlike {@link extractSummary} this reads only what is inside the tag, so it can tell a
- * reply that holds a summary from a preamble before tool calls, and keep the part of a summary
- * whose reply was cut off before it closed.
+ * The text after a reply's first `[summary]` open tag (the legacy `<summary>` one when it has no
+ * square tag) up to its close, a mixed-bracket one included, else to the reply's end — stray
+ * summary tags stripped, trimmed; `closed` says whether a close was found; null without an open
+ * tag. Unlike {@link extractSummary} it reads only inside the tag, so it tells a summary from a
+ * preamble before tool calls, and keeps a summary cut off before it closed.
  */
 export function summaryInTags(raw: string): { text: string; closed: boolean } | null {
   for (const [open, close] of SUMMARY_TAG_FORMS) {
@@ -234,9 +212,8 @@ export function summaryInTags(raw: string): { text: string; closed: boolean } | 
 }
 
 /**
- * The summary a reply that did not finish still holds, when it is worth keeping: the text
- * inside its summary tag (closed or not, see {@link summaryInTags}) once it reaches
- * {@link SALVAGE_MIN_CHARS}; otherwise the empty string.
+ * The summary a reply that did not finish still holds: {@link summaryInTags}'s text, closed or
+ * not, once it reaches {@link SALVAGE_MIN_CHARS}; otherwise the empty string.
  */
 export function salvageableSummary(raw: string): string {
   const inTags = summaryInTags(raw);
@@ -254,15 +231,13 @@ const SUMMARY_PATTERNS: readonly RegExp[] = SUMMARY_TAG_FORMS.map(
  * some models — deepseek-v4-flash observed — treat the tags as a "title" and write the body
  * outside them):
  *   1. the first `[summary]…[/summary]` pair whose content is non-empty once stray summary
- *      tags are stripped (so a nested `[summary]` line doesn't hide the text after it); a
- *      mixed-bracket close (`[/summary>`, `</summary]`) closes a pair too;
+ *      tags are stripped (so a nested `[summary]` line doesn't hide the text after it);
  *   2. otherwise, everything left after stripping the (empty) summary blocks and stray tags —
  *      rescues output shaped `[summary]\n[/summary]\n<the actual summary>`;
  *   3. tagless output stays used verbatim. An empty return means the output was genuinely
  *      empty — the caller treats that as a failed attempt.
  * Step 1 preserves the historical result for every healthy output, so resume re-extracting
- * from an old Trace reconstructs the same summary the live session used (one closed with a
- * mixed-bracket tag is now read without that tag).
+ * from an old Trace reconstructs the same summary the live session used.
  *
  * The legacy `<summary></summary>` form must stay accepted **indefinitely**:
  * `compaction.prompt` is persisted in every existing agent's `system_config.yaml`, so old

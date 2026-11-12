@@ -1,20 +1,8 @@
 /**
  * What a summarize compaction carries into the next context, read off the records of its span:
- * the pure functions the live engine and Trace replay share, so the opening a context gets live
- * and the one a restart rebuilds from the same file are the same text.
- *
- * - `closingSpan` cuts a file's last compaction out of it; `readSpan` reads its requests and its
- *   tool calls back the way the engine ran them (the engine fills the same shapes from what it
- *   ran).
- * - `pickSalvage` chooses the summary a reply cut off before its end still holds: the middle
- *   rung of the ladder, between a full summary and the hand-off note.
- * - `compactionCallLines` transcribes the compaction's calls for the next context, under a
- *   summary or inside the note: the harness's record of which writes really happened.
- * - `buildCompactionHandoff` writes the note that stands in for a summary none could be had of,
- *   from the Trace file being closed alone, so a restart rebuilds the note the live engine wrote.
- *
- * Everything here reads records and returns strings: no I/O, no engine state. The spelling of
- * every block lives in the markers module; what is quoted, and how much of it, is decided here.
+ * pure functions the live engine and Trace replay share, so a restart rebuilds from the same file
+ * the opening the live context got. The spelling of every block lives in the markers module;
+ * what is quoted, and how much of it, is decided here.
  */
 import { isCompleteModelMessage, isEventMessage } from "@prismshadow/amsp/records";
 import type {
@@ -88,12 +76,10 @@ function lastCompactionBegin(file: readonly AmspRecord[]): number {
 }
 
 /**
- * The records of the file's last compaction span: from its final `compaction_begin` through the
- * `compaction_end` that closes it (to the end of the file while none does; the whole file when it
- * holds no compaction). A span is one compaction's requests — its tool rounds, corrections, then
- * the request that wrote the summary — so the last completed request inside it is the summary's,
- * a request from before the span can never stand in for it, and the records written after its
- * end (Task records, the next Task's first input) are not part of it.
+ * The records of the file's last compaction span, from its final `compaction_begin` through the
+ * `compaction_end` that closes it (to the file's end while none does; the whole file when it
+ * holds no compaction): neither a request from before it nor a record written after its end
+ * (Task records, the next Task's first input) can stand in for its own.
  */
 export function closingSpan(file: AmspRecord[]): AmspRecord[] {
   const begin = lastCompactionBegin(file);
@@ -155,10 +141,9 @@ export function readSpan(span: AmspRecord[]): { requests: SpanRequest[]; calls: 
 }
 
 /**
- * The summary to adopt when none was completed: over every request that did not complete, the
- * text inside its summary tag that reaches the salvage floor (`salvageableSummary`, closed or
- * not); the longest wins, the latest on a tie. Null when no request holds one. A completed
- * request is never a candidate — a completed reply holding a tagged summary was the summary.
+ * The summary to adopt when none was completed: the longest `salvageableSummary` of a request
+ * that did not complete, the latest on a tie; null when none holds one. A completed request is
+ * never a candidate — a completed reply holding a tagged summary was the summary.
  */
 export function pickSalvage(requests: readonly SpanRequest[]): string | null {
   let best: string | null = null;
@@ -212,26 +197,12 @@ const SUMMARY_TAG_LINES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The note that opens the next context when no summary could be had, built from the records of
- * the Trace file being closed alone — the same file gives the same note, live and on replay, and
- * records written after the span's end change nothing:
- *
- * - the user messages of the compacted context (every user text before the closing span and
- *   outside any earlier compaction span, whatever its sender), the first one and the last
- *   {@link HANDOFF_LAST_USER_MESSAGES}, an earlier summary's tag lines removed so it is quoted
- *   without nesting the block;
- * - the last completed turn before the span: its assistant texts and its tool calls, each with
- *   the output that answered it (text only; thinking is not quoted);
- * - when the span's own `compaction_end` says the provider refused the request after that turn
- *   (`rejected`: an ordinary request answered by this hand-off, or the compaction's own), its
- *   error as the provider wrote it, the first {@link HANDOFF_REFUSAL_CHARS} characters; the
- *   cause of any other end is left out;
- * - the compaction's own calls ({@link compactionCallLines}).
- *
- * Every quoted text is cut to its cap, and the note is kept within its token budget by dropping
- * the oldest of the last messages one by one; when that is not enough (long non-ASCII text, a
- * turn with many outputs), every cap shrinks by one factor, the largest that fits. Without a
- * Trace path nothing can be pointed at or copied from, and the note is its explanation alone.
+ * The note that opens the next context when no summary could be had, from the closing Trace file
+ * alone, so live and replay build the same note and records after the span's end change nothing.
+ * It quotes the context's user messages outside every compaction span (the first and the last
+ * {@link HANDOFF_LAST_USER_MESSAGES}), the last completed turn, the provider's refusal when the
+ * span's end says `rejected`, and the compaction's calls. Over budget, the oldest of the last
+ * messages go first, then every cap shrinks by one factor. Without a Trace path: no quotes.
  */
 export function buildCompactionHandoff(
   file: AmspRecord[],
@@ -296,11 +267,7 @@ export function buildCompactionHandoff(
   return note;
 }
 
-/**
- * The refusal section of a note: the `[request_error]` line of the span's own `compaction_end`
- * when it says `rejected`, the provider's text cut to its cap; empty for any other end, and
- * while the span has none.
- */
+/** The `[request_error]` line of the span's own `compaction_end` when it says `rejected`. */
 function refusalLines(span: readonly AmspRecord[]): string[] {
   const end = span.at(-1);
   if (end === undefined || !isEvent(end, "compaction_end")) return [];

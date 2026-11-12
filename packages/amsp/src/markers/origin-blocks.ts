@@ -365,10 +365,8 @@ export interface ModelSwitchOrigin {
  * with this same block, word for word: there `session` names the Session itself, which is how a
  * reader tells the two apart (see `parseInPlaceModelSwitch`).
  *
- * How to read the trace file is the same guidance a compaction summary's trailer gives (see
- * trace-query.ts), its search worded for `opts.shell` — the shell the Session's commands run
- * in — when the builder knows it. The guidance names no path (the `trace:` line does), and none
- * of its lines starts with a field key, so the parser below reads the fields alone as before.
+ * The trace-query guidance (trace-query.ts, worded for `opts.shell`) names no path and starts no
+ * line with a field key, so the parser below reads the fields alone as before.
  */
 export function buildModelSwitchMessage(
   origin: ModelSwitchOrigin,

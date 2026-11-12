@@ -81,11 +81,7 @@ export interface ResumeResult {
   carryOver: AmspRecord[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /**
-   * Compaction closure in summarize mode: the reconstructed `[context_summary]` the next
-   * context opens with — the summary, a salvaged one marked as cut off, or the hand-off note,
-   * as the closing `compaction_end` says — prepended to the next run's input.
-   */
+  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: AmspRecord;
   /**
    * The `[context_summary]` this file's context opened with — or the `[model_switch_from]`
@@ -311,13 +307,10 @@ function toolCallOutputId(msg: AmspRecord): string | null {
   return p.type === "tool_call_output" ? (p.tool_call_id ?? null) : null;
 }
 
-/** Options for `resumeTrace`. */
 export interface ResumeTraceOptions {
   /**
-   * Absolute path of the file `messages` were read from. A context that file's last compaction
-   * closed opens with the summary (or hand-off note) rebuilt from it, and its trailer names this
-   * file (see buildContextSummaryText) — the one the live engine would have named. Absent: the
-   * summary is rebuilt without a trailer, and a hand-off note names no file and quotes nothing.
+   * Absolute path of the file `messages` were read from, named by the rebuilt opening's trailer
+   * as the live engine named it. Absent: no trailer, and a hand-off note quotes nothing.
    */
   tracePath?: string;
   /** The shell the resumed Session runs commands in, wording the trailer's search (see ContextEngineDeps.shell). */
@@ -354,10 +347,7 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         meta,
       };
       if (p.mode !== "summarize") return result;
-      // The next context opens with what the live engine opened it with, rebuilt from the
-      // closing span by the functions the engine itself used (engine/compaction-carry.ts):
-      // the summary, with the trailer naming this file when the caller says which file it
-      // is, and under it the compaction's tool calls with their outputs when it made any.
+      // The opening the live engine wrote, rebuilt by the functions it used (compaction-carry).
       const { requests, calls } = readSpan(closingSpan(messages));
       const { tracePath, shell } = opts;
       const transcript =
@@ -366,12 +356,10 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
           : undefined;
       const callLines = compactionCallLines(calls);
       if (p.error_code === undefined && p.error_message === undefined) {
-        // A full summary: the assistant text of the span's last completed Request (the
-        // requests before it there, if any, are its tool rounds and corrections). Always
+        // A full summary: the text of the span's last completed Request, even an empty one (an
+        // earlier one is a tool round's or a correction's reply, never the summary). Always
         // rebuilt in the current [context_summary] form — extractSummary itself still accepts
-        // the old <summary> tags an old Trace may contain. A completed request with no text
-        // still counts as the last one: falling back to an earlier request would inject a
-        // round's or an older turn's reply as the summary; the empty extract voids the closure.
+        // the old <summary> tags an old Trace may contain.
         const summaryText = extractSummary(
           requests.findLast((r) => r.status === "completed")?.text ?? "",
         );
@@ -387,11 +375,8 @@ export function resumeTrace(messages: AmspRecord[], opts: ResumeTraceOptions = {
         // turn-by-turn replay — the original context this file still holds is restored, and
         // the committed compaction turn stays in history like any committed turn.
       } else {
-        // Completed with the unified error pair: no full summary could be had, and the next
-        // context opened with the longest summary a reply cut off before its end still held,
-        // or — with none — with the hand-off note built from this file. A span that holds no
-        // request (an ordinary request the provider refused, answered by a hand-off) has none,
-        // so the note; the refused turn's own text input is not resent — the note quotes it.
+        // The error pair: a salvaged summary, else the hand-off note (see CompactionEndPayload).
+        // A refused ordinary request's own input is not resent: the note quotes it.
         const salvaged = pickSalvage(requests);
         result.pendingSummary = userText(
           salvaged !== null

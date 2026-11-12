@@ -439,8 +439,7 @@ export interface TaskEndPayload {
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
  * mechanical criterion Trace replay (Session resumption) uses to determine whether a turn was
  * committed, and it also gives performance analysis a basis for Request latency and turn counts.
- * A compaction request produces this same event pair too, written to Trace and streamed between
- * the paired compaction events (a frontend restarts the summary draft at each `request_begin`).
+ * A compaction request produces this same event pair too, streamed between the compaction events.
  */
 export interface RequestBeginPayload {
   type: "request_begin";
@@ -461,14 +460,13 @@ export interface RequestBeginPayload {
  * and additive: old Traces replay unchanged.
  */
 export interface RetryDetail extends ErrorInfo {
-  // error_code / error_message (ErrorInfo): present on non-completed statuses — the
+  // error_code / error_message (ErrorInfo): present only on non-completed statuses — the
   // classified cause and the real reason behind a retried/failed Request (e.g. `403 …
   // (insufficient_user_quota)`); the server's error records / Cost center read them here
-  // because a failed request never produces an abort event. One exception: a `completed`
-  // compaction_end may carry the pair too, meaning the compaction completed without a full
-  // summary (see CompactionEndPayload). Not plain `message`: in this
+  // because a failed request never produces an abort event. Not plain `message`: in this
   // protocol "message" means a record. (Traces written before the rename carry the
   // text as `message`; nothing reads that field semantically after the fact.)
+  // The one exception to "only": a `completed` compaction_end (see CompactionEndPayload).
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
    * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
@@ -480,9 +478,9 @@ export interface RetryDetail extends ErrorInfo {
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
-   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except a
-   * request sent again at once, which announces 0: `image_rejected` (retried with the images
-   * replaced) and `rejected` (answered by a hand-off to a new context); the Web App
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
+   * `image_rejected`, retried at once with the images replaced, which announces 0 (and so does
+   * `rejected`, answered at once by a hand-off to a new context); the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
    * terminal record (no abort event follows: abort marks a user interruption or the turn cap).
@@ -505,12 +503,11 @@ export type CompactionMode = "summarize" | "discard";
 /**
  * Compaction boundary event, produced **in pairs** by `context_engine`. Between the pair
  * the stream carries each compaction request's `request_begin` / `request_end` and
- * `token_usage`, its thinking and the summary being written (as `partial_*` fragments, or the
- * complete records when nothing streamed), and every tool call of the span with its approval
- * and output, whether it ran or was refused; the compaction Prompt and the harness's round and
- * corrective lines stay Trace-only. Both `reason` and `mode` are carried on both events, for
- * stateless frontend rendering; `status` on the end event uses the shared StopReason
- * vocabulary (see CompactionEndPayload).
+ * `token_usage`, its thinking and text (as `partial_*` fragments, or the complete records when
+ * nothing streamed), and each tool call of the span with its approval and output; the
+ * compaction Prompt and the harness's round and corrective lines stay Trace-only. Both `reason`
+ * and `mode` are carried on both events, for stateless frontend rendering; for `status` see
+ * CompactionEndPayload.
  */
 export interface CompactionBeginPayload {
   type: "compaction_begin";

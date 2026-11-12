@@ -15,9 +15,8 @@
  *
  * The text is the main Session's assistant text of the Requests that completed: a Request that
  * was retried, interrupted or failed contributes none, though its texts have their records. Child Sessions' records (with `origin`) never
- * decide the outcome; their usage counts. A compaction's span — its Requests, the tool rounds it
- * took before its summary and the summary itself — is neither text nor a Request of the run's:
- * its `compaction_end` speaks for it, and only its usage counts.
+ * decide the outcome; their usage counts. A compaction's span, tool rounds included, is neither
+ * text nor a Request of the run's: its `compaction_end` speaks for it, and only its usage counts.
  */
 import { AmspStreamError } from "./errors.js";
 import type {
@@ -133,8 +132,6 @@ export class RunCollector {
         return;
       }
       case "request_begin":
-        // A compaction's own Requests stream between its paired events, tool rounds included;
-        // the compaction_end is their verdict, and they are no Request of the run's.
         if (this.#compacting) return;
         this.#requests += 1;
         this.#requestTexts = [];
