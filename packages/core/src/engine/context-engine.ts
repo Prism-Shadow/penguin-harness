@@ -203,12 +203,6 @@ type CompactionResult =
       errorMessage?: string;
     };
 
-/** A context `openNextContext` opened and the records it published, not adopted yet. */
-interface OpenedNext {
-  opened: OpenedContext;
-  records: AmspRecord[];
-}
-
 /**
  * Options for `run`.
  * Docs: /docs/agent-loop § "Inputs and outputs".
@@ -2232,9 +2226,11 @@ export class ContextEngine {
     { status: "completed"; opening?: AmspRecord } | { status: "fatal"; errorMessage: string }
   > {
     const attempt = span?.attempt !== undefined ? { attempt: span.attempt } : {};
-    let next: OpenedNext;
+    // What the opener publishes while opening is held for adoptContext.
+    const records: AmspRecord[] = [];
+    let opened: OpenedContext;
     try {
-      next = await this.openContext();
+      opened = await this.deps.openNextContext!({ emit: (msg) => records.push(msg) });
     } catch (err) {
       if (span === null) throw err;
       const errorMessage = messageOf(err);
@@ -2247,22 +2243,11 @@ export class ContextEngine {
         ...span.error,
       });
     }
-    const built = opening ? await opening(next.opened) : undefined;
-    yield* this.adoptContext(next);
+    const built = opening ? await opening(opened) : undefined;
+    yield* this.adoptContext(opened, records);
     if (!built) return { status: "completed" };
     this.openingSummary = built;
     return { status: "completed", opening: built };
-  }
-
-  /**
-   * Opens the next model context through `openNextContext`, holding the records it publishes
-   * while opening (its MCP connect pair, its tool_list_ready) for `adoptContext`. Changes
-   * nothing here: an opener that throws propagates with the old context still current.
-   */
-  private async openContext(): Promise<OpenedNext> {
-    const records: AmspRecord[] = [];
-    const opened = await this.deps.openNextContext!({ emit: (msg) => records.push(msg) });
-    return { opened, records };
   }
 
   /**
@@ -2276,7 +2261,10 @@ export class ContextEngine {
    * further messages follow the compaction; a model switch opens the file right after this
    * returns instead (see `switchContext`).
    */
-  private async *adoptContext({ opened, records }: OpenedNext): AsyncGenerator<AmspRecord> {
+  private async *adoptContext(
+    opened: OpenedContext,
+    records: AmspRecord[],
+  ): AsyncGenerator<AmspRecord> {
     this.pendingTraceRotation = true;
     this.llm = opened.llm;
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
