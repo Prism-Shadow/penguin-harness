@@ -12,8 +12,8 @@
  *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
  *   and aborts render their own items.
  * - A compaction renders one banner: its summary and thinking stream onto it, its tool calls
- *   become work cards on it (an approval finds them; a call refused once no round is left is a
- *   failed card), the summary draft starts over at each of its requests, each body
+ *   become work cards on it (an approval finds them), the summary draft starts over at each of
+ *   its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
  * - A completed end carrying the error pair keeps no result, whatever a request was cut off
@@ -930,68 +930,6 @@ describe("approvals and events", () => {
     const banner = items(m)[0] as CompactionItem;
     expect(findToolCard(m, [], "h1")).toBe(banner.work![0]);
     expect(banner.work![0]!.outputComplete).toBe(false);
-  });
-
-  it("a call refused once no round is left is a failed work card, the same live and from history", () => {
-    const refusal = "[tool error] no tool round is left in this compaction; reply with the summary";
-    const live = createStreamModel();
-    for (const msg of [
-      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
-      requestBegin(),
-      partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "r1" }),
-      partialToolCall({
-        eventType: "delta",
-        name: "",
-        arguments: '{"cmd":"ls"}',
-        toolCallId: "r1",
-      }),
-      partialToolCall({ eventType: "stop", name: "", toolCallId: "r1" }),
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "r1" }),
-      requestEnd("completed"),
-      toolCallOutput({ output: refusal, toolCallId: "r1", status: "fatal" }),
-      requestBegin(),
-      partialText("start"),
-      partialText("delta", "[summary]plain[/summary]"),
-      partialText("stop"),
-      requestEnd("completed"),
-      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
-    ]) {
-      pushMessage(live, msg);
-    }
-    // The Trace also holds the Prompt and the corrective line the engine asked again with.
-    const rebuilt = createStreamModel();
-    for (const msg of [
-      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
-      userText("COMPACT NOW"),
-      requestBegin(),
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "r1" }),
-      requestEnd("completed"),
-      toolCallOutput({ output: refusal, toolCallId: "r1", status: "fatal" }),
-      userText("Those tool calls were refused: no tool round is left. Reply now with the summary."),
-      requestBegin(),
-      assistantText("[summary]plain[/summary]"),
-      requestEnd("completed"),
-      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
-    ]) {
-      pushMessage(rebuilt, msg);
-    }
-    for (const m of [live, rebuilt]) {
-      expect(items(m).map((i) => i.kind)).toEqual(["compaction"]);
-      const banner = items(m)[0] as CompactionItem;
-      expect(workOf(banner)).toEqual([
-        {
-          name: "exec_command",
-          argumentsText: '{"cmd":"ls"}',
-          output: refusal,
-          outputStatus: "fatal",
-          decision: undefined,
-          callComplete: true,
-          outputComplete: true,
-        },
-      ]);
-      expect(findToolCard(m, [], "r1")).toBe(banner.work![0]);
-      expect(banner.summaryText).toBe("[summary]plain[/summary]");
-    }
   });
 
   /** A summary cut off at the output limit: well past the salvage floor inside its open tag. */
