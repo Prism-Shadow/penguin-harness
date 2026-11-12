@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `ui`, `web`
+- **PR:** [#1548](https://github.com/Prism-Shadow/penguin-harness/pull/1548)
 
 [English](2026-11-12-date-time-pickers-in-app.md)
 
