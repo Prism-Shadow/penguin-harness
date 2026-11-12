@@ -210,6 +210,12 @@ type CompactionResult =
       errorMessage?: string;
     };
 
+/** How one compaction request ended, with its complete text and its real tool calls. */
+interface CompactionResponse extends LLMOutcome {
+  text: string;
+  toolCalls: AmspRecord<ToolCallPayload>[];
+}
+
 /** A context `openNextContext` opened and the records it published, not adopted yet. */
 interface OpenedNext {
   opened: OpenedContext;
@@ -475,17 +481,29 @@ interface TurnResult {
   outcome: LLMOutcome;
 }
 
-/**
- * A turn's retry bookkeeping, threaded into `runTurn` so its `request_end` can announce the
- * next attempt's planned backoff. `attempts` counts every attempt the turn has made so far
- * (the ordinal hosts render, and what the absolute ceiling measures); `consecutive` counts
- * only the tail of them that came back having received nothing — the backoff rung, and what
- * `maxReconnects` measures. The two diverge as soon as an attempt receives content: see the
- * reconnect loop in runToCompletion.
- */
-interface TurnRetryState {
+/** One request through the model (see runTurn): a turn's, or — `span` — a compaction's. */
+interface TurnOptions {
+  approve: ApproveFn;
+  preToolUse?: PreToolUseFn | undefined;
+  signal?: AbortSignal | undefined;
+  /**
+   * Attempts made before this one — a turn's, or a compaction's requests that were not rounds:
+   * the ordinal its `request_end` carries.
+   */
   attempts: number;
-  consecutive: number;
+  /**
+   * The wait a failed request's `request_end` announces (`retry_in_ms`), mirroring what the
+   * caller's loop will do, or the countdown is a lie; undefined when no retry follows.
+   */
+  retryInMs: (outcome: LLMOutcome, receivedContent: boolean) => number | undefined;
+  /** Whether any resend is still allowed; an image rejection announces 0 under it. Default true. */
+  resend?: boolean;
+  /**
+   * A compaction request: its tool calls are collected, not dispatched (the compaction answers
+   * them once the response committed); it counts no Session turn; and its complete text and
+   * thinking stay off the stream once partials carried them (see streamsInSpan).
+   */
+  span?: boolean;
 }
 
 /**
@@ -921,9 +939,11 @@ export class ContextEngine {
       // history by GenerativeModel before it returns `retryable`, so it holds the same way.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
-      // Two counters, because the ladder and the ceiling answer different questions (see
-      // TurnRetryState): `attempts` is every attempt this turn has made, `consecutive` only
-      // the tail that received nothing. Both live and die with the turn.
+      // Two counters, because the ladder and the ceiling answer different questions:
+      // `attempts` is every attempt this turn has made (the ordinal hosts render, and what the
+      // absolute ceiling measures), `consecutive` only the tail that received nothing (the
+      // backoff rung, and what `maxReconnects` measures). They diverge as soon as an attempt
+      // receives content. Both live and die with the turn.
       let attempts = 0;
       let consecutive = 0;
       let turn: TurnResult;
@@ -931,16 +951,25 @@ export class ContextEngine {
       for (;;) {
         // Both LLM and Environment handle errors internally and guarantee a complete, closed
         // output with no thrown exceptions; the engine doesn't handle exceptions —
-        // it decides retry/resend purely from `outcome`. The retry count so far is threaded
-        // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
-        // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(
-          attemptInput,
+        // it decides retry/resend purely from `outcome`. The counters are threaded in so the
+        // turn's request_end can announce the planned backoff (retry_in_ms) — they live in
+        // this loop while the event is built inside the turn — mirroring the branches below:
+        // an attempt that received content restarts the ladder at its first rung, and either
+        // budget running out means no retry is planned at all.
+        turn = yield* this.runTurn(attemptInput, {
           approve,
-          signal,
-          { attempts, consecutive },
           preToolUse,
-        );
+          signal,
+          attempts,
+          resend: attempts + 1 < this.maxTurnAttempts,
+          retryInMs: (outcome, received) =>
+            this.plannedRetryDelayMs(
+              outcome,
+              received ? 0 : consecutive,
+              this.maxReconnects,
+              RETRY_STATUSES,
+            ),
+        });
         attempts += 1;
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
@@ -1419,16 +1448,21 @@ export class ContextEngine {
    * feeds back an aborted output. partial/complete tool_call_output is yielded in completion
    * order. Returns all of this turn's tool outputs (for the next turn) and whether it was
    * interrupted midway.
+   *
+   * A compaction's requests go through here too (`span`): the same LLM object, the same frozen
+   * config and the same toolset as every turn (a changed tool list would change the request
+   * prefix and invalidate the provider's prompt cache at the moment the context is largest,
+   * issue #84), at the same effective thinking level. Every record is written to the old
+   * Trace; the calls are collected for the compaction to answer.
    * Docs: /docs/agent-loop § "Lifecycle of a turn".
    */
   private async *runTurn(
     input: AmspRecord[],
-    approve: ApproveFn,
-    signal?: AbortSignal,
-    /** This turn's retry bookkeeping from the caller's reconnect loop: lets request_end announce the NEXT attempt's planned backoff (and announce none once a budget is spent). */
-    retry: TurnRetryState = { attempts: 0, consecutive: 0 },
-    preToolUse?: PreToolUseFn,
+    opts: TurnOptions,
   ): AsyncGenerator<AmspRecord, TurnResult> {
+    const { approve, preToolUse, signal, span = false } = opts;
+    // Which partial kinds of a compaction request carried content (see streamsInSpan).
+    const partials = { text: false, thinking: false };
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
     // the tool_calls' **original order** is recorded separately, and reordered back to original
@@ -1470,7 +1504,7 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
-            if (sawUsage && outcome.status === "completed") {
+            if (!span && sawUsage && outcome.status === "completed") {
               this.sessionTurns += 1;
               // A turn completed: the summary the context opened with is history now.
               this.openingSummary = null;
@@ -1484,7 +1518,7 @@ export class ContextEngine {
             // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
             // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
             // refuses is in the committed history or the request's parameters, beyond the
-            // reach of a retry.
+            // reach of a retry. A compaction request takes the same rule.
             const imageRetry =
               outcome.status === "fatal" &&
               outcome.errorCode === "rejected" &&
@@ -1502,22 +1536,14 @@ export class ContextEngine {
             // request never produces an abort, so this is the only place observability
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
-            // (the frontend's live countdown); absent on final failures and completions.
-            // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
-            // attempt that received content restarts the ladder at its first rung, either
-            // budget running out means no retry is planned at all, and an image retry waits
-            // for nothing.
+            // (the frontend's live countdown); absent on final failures and completions. An
+            // image retry waits for nothing.
             const retryInMs =
-              retry.attempts + 1 >= this.maxTurnAttempts
+              opts.resend === false
                 ? undefined
                 : imageRetry
                   ? 0
-                  : this.plannedRetryDelayMs(
-                      outcome,
-                      receivedContent ? 0 : retry.consecutive,
-                      this.maxReconnects,
-                      RETRY_STATUSES,
-                    );
+                  : opts.retryInMs(outcome, receivedContent);
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
@@ -1526,8 +1552,8 @@ export class ContextEngine {
               // the backoff ladder — hosts render "attempt N", and a counter that went
               // backwards mid-turn would read as a lost attempt. A clean first-try completion
               // stays unstamped so the common case adds no noise.
-              ...(outcome.status !== "completed" || retry.attempts > 0
-                ? { attempt: retry.attempts + 1 }
+              ...(outcome.status !== "completed" || opts.attempts > 0
+                ? { attempt: opts.attempts + 1 }
                 : {}),
               ...(retryInMs !== undefined ? { retryInMs } : {}),
             });
@@ -1543,8 +1569,10 @@ export class ContextEngine {
           // Trace carry the Session series rather than the LLM's per-request stand-in. The
           // Session turn count (per committed LLM Request, across Tasks; used for compaction
           // threshold checks) waits for the outcome: an attempt cut off at its cap is no turn.
-          if (this.observeTokenUsage(msg)) sawUsage = true;
-          queue.push(msg);
+          // Every attempt's usage rides the stream (failed attempts burn real tokens, #170).
+          const usage = this.observeTokenUsage(msg);
+          if (usage) sawUsage = true;
+          if (!span || usage || streamsInSpan(msg, partials)) queue.push(msg);
           await this.write(msg);
           // Collect complete thinking/text segments (including partial segments finalized on
           // interruption), for carry-over flatten.
@@ -1568,8 +1596,9 @@ export class ContextEngine {
             callOrder.push(toolCallId);
             toolCalls.push(tc);
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
-            // returns its outcome (the LLM will close out quickly and return aborted).
-            if (signal?.aborted) continue;
+            // returns its outcome (the LLM will close out quickly and return aborted). A
+            // compaction request dispatches nothing.
+            if (span || signal?.aborted) continue;
             // Pre-tool-use hooks (RunOptions.preToolUse, wired by the Session from the
             // Agent's installed hook packages): consulted before the approval boundary,
             // every answer recorded as a `hook` event in stream order. A throw collapses
@@ -1862,7 +1891,7 @@ export class ContextEngine {
    *
    * What reaches the Human output stream between the paired compaction events: each request's
    * `request_begin` / `request_end` and `token_usage`, its thinking and text being generated
-   * (issue #290 — see runCompactionRequest), and every tool call with its approval decision and
+   * (issue #290 — see streamsInSpan), and every tool call with its approval decision and
    * output, run or refused, each as the Trace has it. The Prompt and the harness lines stay
    * Trace-only.
    *
@@ -1907,14 +1936,13 @@ export class ContextEngine {
     // opening's record of them).
     const requests: SpanRequest[] = [];
     const calls: SpanCall[] = [];
-    // The budgets: rounds (settings), corrections (MAX_COMPACTION_CORRECTIONS), transport
-    // retries (compactionMaxReconnects), and the one image retry. `attempts` counts the
-    // requests that were not rounds — the ordinal the compaction_end carries.
+    // The budgets: rounds (settings), corrections (MAX_COMPACTION_CORRECTIONS) and transport
+    // retries (compactionMaxReconnects); an image rejection is outside them. `attempts` counts
+    // the requests that were not rounds — the ordinal the compaction_end carries.
     let rounds = 0;
     let corrections = 0;
     let transport = 0;
     let attempts = 0;
-    let imagesStripped = false;
     let truncatedLine: AmspRecord | null = null;
     const roundOpen = (): boolean =>
       gate !== undefined &&
@@ -1923,11 +1951,7 @@ export class ContextEngine {
     // The wait announced on a request's request_end before the loop sends again (0: at once),
     // undefined when it will not: mirrors the branches below, or the countdown is a lie.
     const plannedRetry = (o: LLMOutcome): number | undefined => {
-      if (o.status === "fatal") {
-        return o.errorCode === "rejected" && !imagesStripped && hasInputImages(input)
-          ? 0
-          : undefined;
-      }
+      if (o.status === "fatal") return undefined;
       if (o.errorCode === "output_truncated") {
         return corrections < MAX_COMPACTION_CORRECTIONS ? 0 : undefined;
       }
@@ -1942,7 +1966,7 @@ export class ContextEngine {
         break;
       }
       const open = roundOpen();
-      const r = yield* this.runCompactionRequest(input, signal, attempts, plannedRetry);
+      const r = yield* this.compactionRequest(input, attempts, plannedRetry, approve, signal);
       requests.push(r);
       if (r.status === "completed") {
         pending = [];
@@ -2007,15 +2031,14 @@ export class ContextEngine {
         ...(r.errorMessage !== undefined ? { errorMessage: r.errorMessage } : {}),
       };
       if (r.status === "fatal") {
-        // The turn loop's image rule, once and outside every budget: a refused input that
-        // holds images is sent again with each image replaced by the fixed note.
-        if (r.errorCode === "rejected" && !imagesStripped && hasInputImages(input)) {
-          imagesStripped = true;
-          input = replaceInputImages(input);
-          continue;
-        }
         end = failure;
         break;
+      }
+      if (r.errorCode === "image_rejected" && hasInputImages(input)) {
+        // The turn loop's image rule, outside every budget: the refused input is sent again
+        // with each image replaced by the fixed note (runTurn already recorded it so).
+        input = replaceInputImages(input);
+        continue;
       }
       if (r.errorCode === "output_truncated") {
         // A correction, not a transient fault: asked again at once, with one line more.
@@ -2182,147 +2205,31 @@ export class ContextEngine {
   }
 
   /**
-   * Issues one compaction request — an ordinary LLM Request through the same object and the
-   * same frozen config as every other turn (the toolset is deliberately identical: a changed
-   * tool list would change the request prefix and invalidate the provider's prompt cache at
-   * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
-   * output, writing every complete message and event to the old Trace. What also rides the
-   * Human output stream, each right after its write and in the Trace's order: the request's
-   * `request_begin` / `request_end` and its `token_usage`; the thinking and the text being
-   * generated, as their own ordinary `partial_thinking`/`thinking` and `partial_text`/`text`
-   * messages (issue #290) so the frontend can show the compaction request working while it
-   * runs; and its `partial_tool_call` / `tool_call` records, as a turn streams them, whether
-   * the calls will run or be refused. Readers treat model messages between the paired
-   * compaction events as compaction-internal, and history rebuild reads the identical content
-   * back from the span's records. Complete text segments are collected as the response's text,
-   * and `toolCalls` collects its real tool requests, which summarizeContext answers. Token usage
-   * is counted into the Session cumulative totals (stamped onto every token_usage via
-   * observeTokenUsage).
+   * One compaction request: an ordinary request through `runTurn` (`span`), read back as the
+   * response the compaction classifies — its complete text, concatenated, and its real tool
+   * calls, which summarizeContext answers once the response committed.
    */
-  private async *runCompactionRequest(
+  private async *compactionRequest(
     input: AmspRecord[],
+    /** Requests of this compaction that were not rounds, before this one (see TurnOptions.attempts). */
+    attempts: number,
+    /** The wait the compaction loop takes before sending again after this outcome. */
+    retryInMs: (outcome: LLMOutcome) => number | undefined,
+    approve: ApproveFn,
     signal: AbortSignal | undefined,
-    /** Requests of this compaction that were not rounds, before this one: the ordinal its request_end carries, as the compaction_end does. */
-    attemptsSoFar: number,
-    /** The wait the compaction loop will take before sending again after this outcome (see summarizeContext); announced as retry_in_ms. */
-    plannedRetry: (outcome: LLMOutcome) => number | undefined,
-  ): AsyncGenerator<
-    AmspRecord,
-    {
-      status: StopReason;
-      text: string;
-      toolCalls: AmspRecord<ToolCallPayload>[];
-      /** Classified cause and error detail (LLMOutcome) on non-completed statuses — become compaction_end.error_code / error_message when this failure ends the compaction. */
-      errorCode?: ErrorCode;
-      errorMessage?: string;
-    }
-  > {
-    // The compaction request is itself an ordinary Request, emitting paired request events,
-    // written to the old Trace and streamed (a frontend restarts the summary draft at each
-    // request_begin).
-    // The effective thinking level, resolved live and carried exactly as a turn carries it
-    // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
-    // one Session never has two levels in flight at once. Were this request left on the level
-    // the context opened at while the turns around it run on the pin, a provider that reads the
-    // level as a thinking mode would see the mode change mid-conversation — and DeepSeek
-    // rejects a request whose current tool-call chain replays a turn that carries no chain of
-    // thought. The strict-tier prefix this request does hold identical to a turn's is its
-    // system prompt and toolset; the level is a request parameter, not part of either.
-    const level = this.effectiveThinkingLevel();
-    const startEvt = requestBegin(level);
-    await this.write(startEvt);
-    yield startEvt;
-    const gen = this.llm.streamGenerate({
-      newMessages: input,
-      ...(signal ? { signal } : {}),
-      ...(level !== undefined ? { thinkingLevel: level } : {}),
+  ): AsyncGenerator<AmspRecord, CompactionResponse> {
+    const turn = yield* this.runTurn(input, {
+      approve,
+      signal,
+      attempts,
+      retryInMs: (outcome) => retryInMs(outcome),
+      span: true,
     });
-    let text = "";
-    const toolCalls: AmspRecord<ToolCallPayload>[] = [];
-    // Whether this attempt streamed any partial_text / partial_thinking content: real LLM
-    // objects stream the summary (and the thinking ahead of it) as partial fragments
-    // (forwarded verbatim), and the complete message that follows must then stay off the
-    // stream or consumers would see the content twice; an implementation that yields only
-    // complete messages streams those instead. Tracked per kind, so a model that streams its
-    // thinking but delivers its text whole still gets that text forwarded once.
-    let sawPartialText = false;
-    let sawPartialThinking = false;
-    for (;;) {
-      const res = await gen.next();
-      if (res.done) {
-        // Same failure-detail + planned-retry pass-through as the turn loop's request_end. A
-        // completed response plans no retry: what follows it is a round or a correction, sent
-        // at once.
-        const retryInMs = res.value.status === "completed" ? undefined : plannedRetry(res.value);
-        const stopEvt = requestEnd(res.value.status, {
-          ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
-          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
-          // Same stamping rule as the turn loop: a clean first attempt stays unstamped.
-          ...(res.value.status !== "completed" || attemptsSoFar > 0
-            ? { attempt: attemptsSoFar + 1 }
-            : {}),
-          ...(retryInMs !== undefined ? { retryInMs } : {}),
-        });
-        await this.write(stopEvt);
-        yield stopEvt;
-        return {
-          status: res.value.status,
-          text,
-          toolCalls,
-          ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
-          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
-        };
-      }
-      const msg = res.value;
-      // Stamped with the Session series before the write, exactly like a turn's (runTurn);
-      // every attempt's usage rides the stream (failed attempts burn real tokens, issue #170).
-      const isUsage = this.observeTokenUsage(msg);
-      await this.write(msg);
-      if (isUsage) {
-        yield msg;
-        continue;
-      }
-      // Streamed compaction progress (issue #290): the request's thinking and the summary's
-      // own text ride the output stream between the paired compaction events —
-      // partial_thinking / partial_text fragments verbatim (all three phases, so the server's
-      // live tail opens and closes its fragment and a join mid-compaction is seeded with the
-      // accumulated prefix), or the complete thinking / text when no partial of that kind
-      // carried content (implementations that yield only complete messages) — never both,
-      // so consumers see each character once. Rejected attempts stream too: the frontend
-      // shows whatever the compaction request is really producing, and history rebuild reads
-      // the same content back from the span's complete assistant messages.
-      {
-        const p = msg.payload as { type?: string; text?: string; thinking?: string };
-        if (p.type === "partial_text") {
-          if (typeof p.text === "string" && p.text !== "") sawPartialText = true;
-          yield msg;
-        } else if (p.type === "partial_thinking") {
-          if (typeof p.thinking === "string" && p.thinking !== "") sawPartialThinking = true;
-          yield msg;
-        } else if (p.type === "partial_tool_call") {
-          yield msg;
-        }
-      }
-      if (isCompleteModelMessage(msg)) {
-        if (msg.payload.type === "text") {
-          const body = (msg.payload as TextPayload).text;
-          text += body;
-          if (!sawPartialText && body !== "") yield msg;
-        } else if (msg.payload.type === "thinking") {
-          // Forwarded for the banner only — the thinking is never summary material (the
-          // extraction reads `text` alone) — and a fidelity-only blank body has nothing to
-          // show.
-          const body = (msg.payload as ThinkingPayload).thinking;
-          if (!sawPartialThinking && body !== "") yield msg;
-        } else if (msg.payload.type === "tool_call") {
-          // Calls stream whole, after their fragments, as a turn's do.
-          yield msg;
-          // Same rule as the turn loop: a tool call closed early (its request ended before the
-          // call did) is no real request and gets no paired output; every other one needs one.
-          if (!isInterruptedToolCall(msg)) toolCalls.push(msg as AmspRecord<ToolCallPayload>);
-        }
-      }
-    }
+    const text = turn.assistantSegments
+      .filter((m) => (m.payload as { type?: string }).type === "text")
+      .map((m) => (m.payload as TextPayload).text)
+      .join("");
+    return { ...turn.outcome, text, toolCalls: turn.toolCalls };
   }
 
   /**
@@ -2659,6 +2566,35 @@ function compactionRefusal(
   } catch (err) {
     return messageOf(err);
   }
+}
+
+/**
+ * Whether a compaction request's record rides the output stream (every record is written; its
+ * token_usage always rides). Streamed compaction progress (issue #290): the partial thinking,
+ * text and tool-call fragments verbatim (all three phases, so the server's live tail opens and
+ * closes its fragment and a join mid-compaction is seeded with the accumulated prefix), and the
+ * complete tool calls, as a turn streams them; the complete thinking or text only when no
+ * partial of that kind carried content (an LLM that yields complete messages only), and never
+ * a blank one — so consumers see each character once. Tracked per kind in `partials`, so a
+ * model that streams its thinking but delivers its text whole still gets that text forwarded
+ * once. Rejected attempts stream too, and history rebuild reads the same content back from
+ * the span's complete assistant messages.
+ */
+function streamsInSpan(msg: AmspRecord, partials: { text: boolean; thinking: boolean }): boolean {
+  const p = msg.payload as { type?: string; text?: string; thinking?: string };
+  if (p.type === "partial_text") {
+    if (typeof p.text === "string" && p.text !== "") partials.text = true;
+    return true;
+  }
+  if (p.type === "partial_thinking") {
+    if (typeof p.thinking === "string" && p.thinking !== "") partials.thinking = true;
+    return true;
+  }
+  if (p.type === "partial_tool_call") return true;
+  if (!isCompleteModelMessage(msg)) return false;
+  if (p.type === "text") return !partials.text && p.text !== "";
+  if (p.type === "thinking") return !partials.thinking && p.thinking !== "";
+  return p.type === "tool_call";
 }
 
 /**

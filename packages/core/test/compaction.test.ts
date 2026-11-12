@@ -881,11 +881,16 @@ describe("context compaction", () => {
     expect(resent.images).toBeUndefined();
     expect(resent.output).toContain(REJECTED_IMAGE_NOTE);
     expect(textOf(llm1.calls[2]![1]!)).toBe("COMPACT NOW");
-    // The rejection announced a resend at once, and the summary completed the compaction.
+    // The rejection is recorded as a retried attempt, as a turn's is, announcing a resend at
+    // once, and the summary completed the compaction.
     const rejected = out.find(
-      (m) => (m.payload as { type?: string; status?: string }).status === "fatal",
+      (m) => (m.payload as { type?: string; status?: string }).status === "retryable",
     )!;
-    expect(rejected.payload).toMatchObject({ type: "request_end", retry_in_ms: 0 });
+    expect(rejected.payload).toMatchObject({
+      type: "request_end",
+      error_code: "image_rejected",
+      retry_in_ms: 0,
+    });
     expect(endOf(out)).toMatchObject({ status: "completed", attempt: 2 });
     expect(endOf(out)).not.toHaveProperty("error_code");
     expect(llm2.calls[0]!.map(textOf)).toEqual([
