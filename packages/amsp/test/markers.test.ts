@@ -240,6 +240,28 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(summaryInTags("[summary]\n[/summary]")).toEqual({ text: "", closed: true });
   });
 
+  it("a summary closed with mixed brackets reads as closed, and the tag never rides along", () => {
+    // deepseek-flash closes a square-open summary with `[/summary>` about one time in ten.
+    const reply = "[summary]\n## Request\nShip the fix.\n[/summary>";
+    expect(extractSummary(reply)).toBe("## Request\nShip the fix.");
+    expect(summaryInTags(`${reply}\nDone.`)).toEqual({
+      text: "## Request\nShip the fix.",
+      closed: true,
+    });
+    // The other mixed spelling, after either open form.
+    expect(extractSummary("<summary>old form</summary]")).toBe("old form");
+    expect(summaryInTags("[summary]the gist</summary] postscript")).toEqual({
+      text: "the gist",
+      closed: true,
+    });
+    // An empty pair closed that way, or a stray one, is stripped like a well-formed one.
+    expect(extractSummary("[summary]\n[/summary>\nThe actual summary body.")).toBe(
+      "The actual summary body.",
+    );
+    expect(extractSummary("[summary]\n[/summary>\nBody after.\n[/summary]")).toBe("Body after.");
+    expect(extractSummary("A tagless body.\n[/summary>")).toBe("A tagless body.");
+  });
+
   it("salvageableSummary keeps a summary cut off once it reaches the floor, and nothing shorter", () => {
     const body = "x".repeat(SALVAGE_MIN_CHARS);
     expect(salvageableSummary(`[summary]\n${body}`)).toBe(body);
