@@ -16,6 +16,8 @@ import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
 import { resolveRootOption } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -25,6 +27,9 @@ const STOP_TIMEOUT_MS = 15_000;
  * without a server to signal: the signal itself, the liveness of a pid, the clock, and the
  * platform — Windows is where a signal is not what it says it is.
  */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export interface StopEffects {
   kill: (pid: number, signal: NodeJS.Signals | 0) => void;
   platform: NodeJS.Platform;
@@ -114,5 +119,31 @@ export async function stopServer(root: string, fx: StopEffects = realEffects): P
       };
     }
     await fx.sleep(250);
+  }
+}
+
+/** `penguin server stop`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.stop",
+        key: "server.stop",
+        summary: {
+          en: "Stop the server running on this data root and report the outcome as JSON",
+          zh: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
+        },
+      },
+    ],
+  },
+})
+export class ServerStopCommand {
+  @Bind("cli.server.stop") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerStopCommand(node(command), ctx.messages);
+      },
+    };
   }
 }

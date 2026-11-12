@@ -36,8 +36,14 @@ import {
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/cli";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
+import { registerResetPasswordCommand } from "./reset-password.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
 export interface ReadinessFailure {
   kind: WebProbeFailureKind;
   detail: string;
@@ -395,4 +401,82 @@ export function registerWebCommand(web: Command, t: Messages): void {
       process.stdout.write(`${t.webReady(url + page)}\n`);
       if (opts.open) openBrowser(url + page);
     });
+}
+
+/** `penguin server`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server",
+        key: "server",
+        summary: {
+          en: "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
+          zh: "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
+        },
+      },
+    ],
+  },
+})
+export class ServerCommand {
+  @Bind("cli.server") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerServerCommand(node(command), ctx.messages);
+      },
+    };
+  }
+}
+
+/** `penguin server reset-admin-password`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.server.reset-admin-password",
+        key: "server.reset-admin-password",
+        summary: {
+          en: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
+          zh: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
+        },
+      },
+    ],
+  },
+})
+export class ServerResetAdminPasswordCommand {
+  @Bind("cli.server.reset-admin-password") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerResetPasswordCommand(node(command), ctx.messages);
+      },
+    };
+  }
+}
+
+/** `penguin web`. */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.web",
+        key: "web",
+        summary: {
+          en: "Start the Web service and open the UI in a browser once it is ready",
+          zh: "启动 Web 服务，就绪后用浏览器打开界面",
+        },
+      },
+    ],
+  },
+})
+export class WebCommand {
+  @Bind("cli.web") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerWebCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }
