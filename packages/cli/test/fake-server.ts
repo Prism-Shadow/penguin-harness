@@ -1958,6 +1958,38 @@ export class FakeServer {
       return this.json(answer.body, answer.status ?? 201);
     }
 
+    // Project-level session enumeration (what `penguin session ls` reads): every row,
+    // the activity or created order, an optional agent narrowing and a `before` cursor
+    // — the same contract routes/sessions.ts serves.
+    m = /^\/api\/projects\/([^/]+)\/sessions$/.exec(apiPath);
+    if (m && method === "GET") {
+      const q = url.searchParams;
+      const order = q.get("order") ?? "created";
+      const before = q.get("before");
+      const agentId = q.get("agentId");
+      const keyOf = (s: FakeSessionState): [string, string] =>
+        order === "activity" ? [s.lastActiveAt, s.sessionId] : [s.createdAt, s.sessionId];
+      let sessions: FakeSessionState[] = [...this.sessions.values()];
+      if (agentId !== null) sessions = sessions.filter((s) => s.agentId === agentId);
+      if (before !== null) {
+        const comma = before.indexOf(",");
+        const [bt, bid] = [before.slice(0, comma), before.slice(comma + 1)];
+        const below = (s: FakeSessionState): boolean => {
+          const [t1, id1] = keyOf(s);
+          return t1 < bt || (t1 === bt && id1 < bid);
+        };
+        sessions = sessions.filter(below);
+      }
+      const sorted = sessions
+        .sort((a, b) => {
+          const [ta, ia] = keyOf(a);
+          const [tb, ib] = keyOf(b);
+          return tb.localeCompare(ta) || ib.localeCompare(ia);
+        })
+        .map((s) => this.sessionInfo(s));
+      return this.json({ sessions: sorted });
+    }
+
     // Session create
     m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
     if (m) {
