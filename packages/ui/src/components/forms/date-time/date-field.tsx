@@ -11,8 +11,8 @@ import { dateValue, parseDate, todayOf, withinBounds } from "./calendar-date";
 import type { CalendarDate } from "./calendar-date";
 import { formatDate } from "./date-locale";
 import { MonthCalendar } from "./month-calendar";
-import { PickerFoot, PickerPanel, usePickerPanel } from "./picker-panel";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerFoot, PickerPanel } from "./picker-panel";
+import { PickerTrigger, usePickerPanel } from "./picker-trigger";
 import type { PickerFieldProps } from "./picker-trigger";
 
 /** The calendar panel's size at the default text size (px): its width, and its height with Today. */

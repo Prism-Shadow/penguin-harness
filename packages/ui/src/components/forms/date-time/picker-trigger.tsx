@@ -13,17 +13,59 @@
  * dialog, and carries `aria-invalid` and `aria-required` as the other fields do; the native
  * `required` is not set, since the app validates on submit. With a `name` it also writes its value
  * into a hidden input, so a form posts what a native input would have.
+ *
+ * The open state and the placement live here too (`usePickerPanel`), beside the button the portal
+ * hook's `triggerRef` lands on: a scroll dismisses the panel only when it moved that button.
  */
-import { useId } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useId, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { CloseIcon } from "../../icons/marks/marks";
 import { Field, controlBase } from "../field/field";
+import { usePortalPanel } from "../../overlays/portal-panel/use-portal-panel";
+import type { PortalPanelPosition } from "../../overlays/portal-panel/use-portal-panel";
 import { errorClass, sizeTextClass } from "../input/input";
 import type { ControlSize } from "../input/input";
-import type { PickerPanelState } from "./picker-panel";
+
+export interface PickerPanelState {
+  open: boolean;
+  /** Opens or closes the panel from the trigger. */
+  toggle: () => void;
+  /** Closes the panel, handing the focus back to the trigger if it was inside. */
+  close: () => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  panelRef: RefObject<HTMLDivElement | null>;
+  position: PortalPanelPosition | null;
+  /** The panel's id, for the trigger's `aria-controls`. */
+  panelId: string;
+}
+
+/**
+ * Open state and placement for one picker. `estimatedHeight` decides only whether the panel opens
+ * above or below; `width` is the panel's width in px at the default text size, for the first
+ * clamp against the viewport (the portal hook clamps again against the width it renders at).
+ */
+export function usePickerPanel(estimatedHeight: number, width: number): PickerPanelState {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const closeRef = useRef<() => void>(() => {});
+  const { triggerRef, panelRef, position } = usePortalPanel({
+    open,
+    onClose: () => closeRef.current(),
+    estimatedHeight,
+    panelWidth: width,
+  });
+  const close = useCallback(() => {
+    const inside = panelRef.current?.contains(document.activeElement) ?? false;
+    setOpen(false);
+    if (inside) triggerRef.current?.focus();
+  }, [panelRef, triggerRef]);
+  closeRef.current = close;
+  const toggle = useCallback(() => setOpen((was) => !was), []);
+  return { open, toggle, close, triggerRef, panelRef, position, panelId };
+}
 
 /** What every picker field takes besides its value. */
 export interface PickerFieldProps {
@@ -98,6 +140,7 @@ export function PickerTrigger({
   "aria-label": ariaLabel,
 }: PickerTriggerProps) {
   const strings = useUiStrings().dates;
+  const { triggerRef } = picker;
   const errorId = useId();
   const generatedId = useId();
   const controlId = id ?? generatedId;
@@ -118,7 +161,7 @@ export function PickerTrigger({
     >
       <span className="relative block">
         <button
-          ref={picker.triggerRef}
+          ref={triggerRef}
           id={controlId}
           type="button"
           aria-haspopup="dialog"

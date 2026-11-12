@@ -24,8 +24,8 @@ import { CALENDAR_PANEL } from "./date-field";
 import { formatDateRange } from "./date-locale";
 import { MonthCalendar } from "./month-calendar";
 import type { DayRange } from "./month-calendar";
-import { PickerFoot, PickerPanel, usePickerPanel } from "./picker-panel";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerFoot, PickerPanel } from "./picker-panel";
+import { PickerTrigger, usePickerPanel } from "./picker-trigger";
 import type { PickerFieldProps } from "./picker-trigger";
 
 /** A span of days as the field writes it: both ends `YYYY-MM-DD`, or both "". */
