@@ -3,23 +3,24 @@
  * tab that key names, or the workbench's first tab without one.
  *
  * No sidebar, no chat, no tab strip — the page fills the window, which is what
- * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
- * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
- * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
- * on the same Agent’s workbench tab — or back on the App Center, when the page was opened
- * from one of its tiles. The route sits outside the app shell (no ProjectProvider), so the exit
- * remembers the Project and Agent the way the shell does — its localStorage keys — before
- * navigating.
+ * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. A floating
+ * exit ball (exit-ball.tsx: it drags to either edge and tucks away into a handle there) and the
+ * command palette (the `palette.toggle` chord, re-raised from inside the page by
+ * forwardFrameKeys) both offer "Exit full page", which lands on the same Agent’s workbench
+ * tab — or back on the App Center, when the page was opened from one of its tiles. The route
+ * sits outside the app shell (no ProjectProvider), so the exit remembers the Project and Agent
+ * the way the shell does — its localStorage keys — before navigating.
  */
 import { useMemo } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
-import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
+import type { PaletteAction } from "@prismshadow/penguin-ui";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { rememberSelection } from "../../state/project";
 import { isAppCenterPath } from "../../lib/app-center-path";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
+import { WorkbenchExitBall } from "./exit-ball";
 import { useAppPageTab } from "./use-app-page-tab";
 import { WorkbenchFrame } from "./workbench-tabs";
 
@@ -130,11 +131,7 @@ export function WorkbenchAppPage() {
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>
       )}
-      <div className="fixed right-4 bottom-4 z-window-overlay">
-        <Button variant="secondary" size="sm" onClick={() => exit[0]!.run()}>
-          {S.workbenches.exitFullPageButton}
-        </Button>
-      </div>
+      <WorkbenchExitBall label={S.workbenches.exitFullPageButton} onExit={() => exit[0]!.run()} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 /**
  * LauncherBall and LauncherFan (src/components/shell/launcher/launcher.tsx): the floating ball
- * with its caption, and the arc of entries it opens.
+ * with its caption (or without one, as the floating ball over a page draws it), and the arc of
+ * entries it opens.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
@@ -41,6 +42,20 @@ describe("LauncherBall", () => {
 
   it("draws the ball on the glass hook", () => {
     expect(classTokens(ball())).toContain("ui-glass");
+  });
+
+  it("draws no readout when given no caption, and keeps its name", () => {
+    const html = renderStatic(
+      createElement(LauncherBall, {
+        size: 46,
+        glyph: "G",
+        label: "Exit full screen",
+        lit: false,
+        dragging: false,
+      }),
+    );
+    expect(html).toContain('aria-label="Exit full screen"');
+    expect(html).not.toMatch(/<span aria-hidden="true" class="ui-glass/);
   });
 });
 

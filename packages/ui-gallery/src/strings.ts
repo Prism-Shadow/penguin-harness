@@ -495,7 +495,8 @@ export const zh = {
     topics: {
       buttons: {
         title: "按钮",
-        description: "五种变体、五档尺寸与图标按钮，禁用与加载中，以及链接与键盘提示。",
+        description:
+          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接与键盘提示，以及可拖到边缘、可收起的悬浮球。",
       },
       inputs: {
         title: "输入与表单",
@@ -627,6 +628,14 @@ export const zh = {
       external: "查看全部版本",
       keys: "键盘提示",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]] as readonly (readonly string[])[],
+      ball: "悬浮球",
+      ballHint:
+        "拖到左缘或右缘，松手即贴边；推出边缘或点「×」收起，点边上的把手恢复。位置由调用方保存。",
+      ballLabel: "退出全屏",
+      ballTuck: "收起到边缘",
+      ballShow: "显示退出按钮",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side === "left" ? "左缘" : "右缘"}，高度 ${percent}%${tucked ? "，已收起" : ""} · 点击 ${presses} 次`,
     },
     inputs: {
       basics: "文本框",

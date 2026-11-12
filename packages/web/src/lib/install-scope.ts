@@ -216,6 +216,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.workbench.exitBall",
+    scope: "browser",
+    why: "Where the full-page workbench's exit ball rests and whether it is tucked away; this browser's layout, naming nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.files.treeVisible",
     scope: "browser",
     why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",

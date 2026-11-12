@@ -101,6 +101,10 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     // conversation with content moving underneath.
     "LauncherBall",
     "LauncherFan",
+    // The same ball floating over a page (FloatingBall): the × that tucks it away, and the
+    // handle it leaves on the edge, on the ball's glass.
+    "LauncherDismiss",
+    "LauncherEdgeHandle",
     // A plugin or skill tile (`data-glass="tile"`): the one glass that does not float.
     "SkillTile",
   ],
