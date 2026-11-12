@@ -14,12 +14,19 @@ function trimZero(v: number): string {
   return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
 
+/** True while the one-decimal rendering of `v` stays under 1000: 999.94 does, 999.95 does not. */
+function fitsThousand(v: number): boolean {
+  return Math.abs(Number(v.toFixed(1))) < 1000;
+}
+
 /** Abbreviate a token count for humans: 1234→1.2k, 1500000→1.5M, 1.77e10→17.7B, <1000 unchanged. */
 export function humanizeTokens(n: number): string {
   const abs = Math.abs(n);
   if (abs < 1000) return `${n}`;
-  if (abs < 1_000_000) return `${trimZero(n / 1000)}k`;
-  if (abs < 1_000_000_000) return `${trimZero(n / 1_000_000)}M`;
+  // The unit is picked from the rounded value, not the raw one: 999950 renders as `1000.0` k at
+  // one decimal, which has to carry into `1M` rather than print `1000k`.
+  if (fitsThousand(n / 1000)) return `${trimZero(n / 1000)}k`;
+  if (fitsThousand(n / 1_000_000)) return `${trimZero(n / 1_000_000)}M`;
   return `${trimZero(n / 1_000_000_000)}B`;
 }
 

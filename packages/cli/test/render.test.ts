@@ -78,9 +78,16 @@ describe("humanizeTokens", () => {
     expect(humanizeTokens(32000)).toBe("32k");
     expect(humanizeTokens(1_500_000)).toBe("1.5M");
     // A lifetime total reaches this tier; the web formatter it is meant to match already had it.
-    expect(humanizeTokens(999_999_999)).toBe("1000M");
     expect(humanizeTokens(2_000_000_000)).toBe("2B");
     expect(humanizeTokens(2_500_000_000)).toBe("2.5B");
+  });
+
+  it("a value that rounds up to 1000 carries into the next unit", () => {
+    // Picking the unit from the raw value would print 1000k / 1000M.
+    expect(humanizeTokens(999_950)).toBe("1M");
+    expect(humanizeTokens(999_999_999)).toBe("1B");
+    // Just below the carry the unit is unchanged.
+    expect(humanizeTokens(999_949)).toBe("999.9k");
   });
 });
 

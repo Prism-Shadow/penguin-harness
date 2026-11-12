@@ -169,16 +169,16 @@ function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string 
 export function humanizeTokens(n: number): string {
   const abs = Math.abs(n);
   if (abs < 1000) return `${n}`;
-  if (abs < 1_000_000) {
-    const v = n / 1000;
-    return `${trimZero(v)}k`;
-  }
-  if (abs < 1_000_000_000) {
-    const v = n / 1_000_000;
-    return `${trimZero(v)}M`;
-  }
-  const v = n / 1_000_000_000;
-  return `${trimZero(v)}B`;
+  // The unit is picked from the rounded value, not the raw one: 999950 renders as `1000.0` k at
+  // one decimal, which has to carry into `1M` rather than print `1000k`.
+  if (fitsThousand(n / 1000)) return `${trimZero(n / 1000)}k`;
+  if (fitsThousand(n / 1_000_000)) return `${trimZero(n / 1_000_000)}M`;
+  return `${trimZero(n / 1_000_000_000)}B`;
+}
+
+/** True while the one-decimal rendering of `v` stays under 1000: 999.94 does, 999.95 does not. */
+function fitsThousand(v: number): boolean {
+  return Math.abs(Number(v.toFixed(1))) < 1000;
 }
 
 /** Keeps one decimal place but drops a trailing `.0`. */

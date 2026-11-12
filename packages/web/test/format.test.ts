@@ -60,6 +60,15 @@ describe("humanizeTokens", () => {
     expect(humanizeTokens(-1200)).toBe("-1.2k");
     expect(humanizeTokens(-500)).toBe("-500");
   });
+
+  it("a value that rounds up to 1000 carries into the next unit", () => {
+    // Picking the unit from the raw value would print 1000k / 1000M.
+    expect(humanizeTokens(999_950)).toBe("1M");
+    expect(humanizeTokens(999_950_000)).toBe("1B");
+    expect(humanizeTokens(-999_950)).toBe("-1M");
+    // Just below the carry the unit is unchanged.
+    expect(humanizeTokens(999_949)).toBe("999.9k");
+  });
 });
 
 describe("humanizeDuration", () => {
