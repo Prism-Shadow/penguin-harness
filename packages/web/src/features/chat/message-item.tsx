@@ -457,7 +457,7 @@ export function MessageItem({
     case "reconnect":
       return <ReconnectLine item={item} ctx={ctx} last={last} />;
     case "compaction":
-      return <CompactionBanner item={item} />;
+      return <CompactionBanner item={item} ctx={ctx} />;
     case "model_change": {
       // A slim divider between two contexts on different models (an in-session model switch),
       // named by model id: it renders from the Trace alone, so a model removed from the

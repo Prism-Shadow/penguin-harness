@@ -608,6 +608,104 @@ describe("StreamRenderer", () => {
     );
   });
 
+  it("a completion without a full summary says so on its completion line, and what to correct when the provider refused it; nothing from inside the span prints", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // An empty reply with no round left to ask again in: no full summary, for a reason of its own.
+    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "malformed",
+        errorMessage: "the response contained no usable summary",
+      }),
+    );
+    // Refused outright after a short draft: too little room was left under the model's window.
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(assistantText("[summary]\n## Request\nFix the li"));
+    r.handle(requestEnd("retryable", { errorCode: "network", attempt: 1, retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 Bad Request" }));
+    r.handle(
+      compactionEnd({
+        reason: "manual",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "rejected",
+        errorMessage: "400 Bad Request",
+      }),
+    );
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — the response contained no usable summary)",
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 Bad Request; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  /** An ordinary request the provider refuses as sent, answered by a hand-off: no compaction request is made. */
+  const refusedHandOff = (status: "completed" | "fatal") => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: "400 prompt is too long",
+      attempt: 1,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }),
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status,
+      ...(status === "completed"
+        ? { errorCode: "rejected" as const, errorMessage: "400 prompt is too long" }
+        : { errorMessage: "no model client could be built" }),
+    }),
+  ];
+
+  it("a request the provider refused hands the context off: no error line, the completion line says what to correct, and the resend's retry line prints as it goes out", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("completed")) r.handle(msg);
+    r.handle(requestBegin());
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "back to the task"));
+    r.handle(partialText("stop"));
+    r.handle(requestEnd("completed"));
+    const out = stripAnsi(text());
+    expect(out).not.toContain("[error]");
+    expect(out.split("\n").slice(0, 3)).toEqual([
+      "[compaction] summarizing context (context)…",
+      "[compaction] done; continuing with the summarized context (no full summary: a Trace hand-off note — 400 prompt is too long; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+      "[retry] the model provider rejected the request; sending retry #1…",
+    ]);
+    expect(out).toContain("back to the task");
+  });
+
+  it("a refusal whose hand-off could not open the next context announces no resend on the next run", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("fatal")) r.handle(msg);
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] failed (no model client could be built); the next context could not be opened; keeping the current context",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("the thinking and summary streamed inside a compaction span stay off the terminal (issue #290)", () => {
     // Between the paired events the stream carries the compaction request's thinking and the
     // summary being written as ordinary partial_thinking / partial_text; the CLI keeps its
@@ -635,6 +733,51 @@ describe("StreamRenderer", () => {
     expect(out).not.toContain("the plan");
     expect(out).toContain("thinking again");
     expect(out).toContain("back to the task");
+  });
+
+  it("a compaction's tool round and its requests stay off the terminal too: no call, output, decision or retry line", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(requestBegin());
+    r.handle(partialToolCall({ eventType: "start", name: "write_file", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "toolu_h1" }));
+    r.handle(
+      toolCall({
+        name: "write_file",
+        arguments: '{"file_path":"/s/handoff/plan.md","content":"the plan"}',
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(requestEnd("retryable", { retryInMs: 2000 }));
+    r.handle(requestBegin());
+    r.handle(requestEnd("completed"));
+    r.handle(approvalDecision("allow", "toolu_h1"));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "toolu_h1" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: "Wrote plan.md",
+        toolCallId: "toolu_h1",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "toolu_h1" }));
+    r.handle(compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (manual)…",
+        "[compaction] done; continuing with the summarized context",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("compaction after the turn ends: the completion line shows its own cost, excluded from the turn stats delta; context not updated", () => {

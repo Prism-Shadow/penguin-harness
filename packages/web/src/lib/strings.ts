@@ -4443,7 +4443,9 @@ Benchmark：
                             ? "输入无法组成请求"
                             : kind === "failed"
                               ? "模型服务返回错误"
-                              : null,
+                              : kind === "denied"
+                                ? "服务商不为该账号或模型提供服务（余额、权限或模型不存在）"
+                                : null,
       /** A retry whose cause has no words (an unknown code). */
       unknownCause: "原因未知",
       /** Skips the remaining backoff wait. */
@@ -4697,6 +4699,9 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
+    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was a refusal hand-off (see composerNotice). */
+    contextRefusedHandoff:
+      "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -4782,7 +4787,9 @@ Benchmark：
     /** The row's title doubles as its status, the work-group header's idiom (`workRunning` / `workDone`): 压缩中 / 清空中 while the step runs, 压缩完毕 / 清空完毕 once it settles. With mode and state both in the title nothing is left for a detail line on either side — a `summarize` shows its summary in its own expandable body — so only `compactionFailed` keeps the detail slot, carrying the one thing a title cannot. */
     compactionRunning: (mode: string): string => (mode === "discard" ? "清空中" : "压缩中"),
     compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
-    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    /** The summarize row's middle body section, present when the compaction took tool rounds: the hand-off files it read and wrote, one tool row each. */
+    compactionWork: "工作",
+    /** The summarize row's last body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
     /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
     modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
@@ -4794,12 +4801,23 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
+    /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
+    compactionDegradedHint: (errorMessage?: string): string =>
+      errorMessage !== undefined
+        ? `未能生成完整摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
+        : "未能生成完整摘要，新上下文改以 Trace 交接说明开头",
+    /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
+    compactionRoomHint: (providerMessage?: string): string =>
+      `留给压缩的空间不足，新上下文改以 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
+        providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
+      }`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
-      // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+      // fatal = the next context could not be opened. Old Traces' abandoned compactions:
+      // retryable = given up this time, retried at the next trigger; legacy "failed" = either.
+      if (status === "fatal") return `失败${detail}，未能开启新的上下文，保留当前上下文`;
       if (status === "retryable") return `失败${detail}，保留当前上下文，下次触发时重试`;
-      if (status === "fatal") return `失败${detail}，保留当前上下文，需修复模型配置后重试`;
       return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",

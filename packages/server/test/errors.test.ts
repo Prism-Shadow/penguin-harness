@@ -28,7 +28,13 @@
  *   is expected under the tool's name, and a denial is none.
  * - Parallel and nested (child Session) calls never swap names or reasons, and a child's
  *   failures are attributed to the child Agent and Session.
- * - An abandoned compaction is one unexpected row carrying its attempts and error.
+ * - A compaction that completed without a full summary (its end carries the error pair) is one
+ *   expected row carrying its attempts and why; one whose next context could not be opened, or
+ *   an older core's abandoned one, is one unexpected row; the two never dedup each other. Its
+ *   own failed requests, streamed inside its span, add no LLM row of their own. A hand-off that
+ *   answers a refused request — an ordinary one or the compaction's own — is its own expected
+ *   row naming the window to correct; the refused ordinary request is a retried one, and a
+ *   request the provider will not serve (`denied`) stays a fatal LLM row.
  *
  * Through HTTP (onError):
  * - A business error is expected, an internal one unexpected with a 500, each attributed to
@@ -46,7 +52,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
+  approvalDecision,
   assistantText,
+  compactionBegin,
   compactionEnd,
   partialToolCallOutput,
   requestBegin,
@@ -939,10 +947,138 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— Compaction ——
 
-  it("an abandoned compaction records one error row; the message carries attempts and the error", () => {
-    // Issue #170: a compaction is an ordinary LLM request whose failures core retries under
-    // the standard budget — a retryable end means the retries ran out, and the cost
-    // center's row shows how many attempts were spent and what the last failure was.
+  it("a compaction refused by the model hands off: one expected context_refused row naming the window to correct, no LLM row", () => {
+    // The request was refused, so the next context opened with the harness's hand-off note:
+    // the run carried on, nobody has to step in, and the row says what to correct.
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 190_000, turns: 12 }),
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "rejected", errorMessage: "prompt is too long" }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "compaction",
+      kind: "expected",
+      code: "context_refused",
+      message:
+        "the provider refused a request on this context: prompt is too long; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.",
+      project_id: "p1",
+      agent_id: "a1",
+      session_id: "s1",
+    });
+  });
+
+  it("an ordinary request the provider refused, answered by a hand-off: one context_refused row and the request as a retried one, no fatal LLM row", () => {
+    // The refused request is recorded as a retried attempt, the span that follows holds no
+    // request, and the next context's first request is the resend.
+    const got = feed([
+      requestBegin(),
+      requestEnd("completed"),
+      requestBegin(),
+      requestEnd("retryable", {
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+        attempt: 1,
+        retryInMs: 0,
+      }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 9_000, turns: 3 }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        errorCode: "rejected",
+        errorMessage: "prompt is too long",
+      }),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    expect(got.map((r) => [r.source, r.code, r.kind])).toEqual([
+      ["compaction", "context_refused", "expected"],
+      ["llm", "llm_retried", "expected"],
+    ]);
+    expect(got[0]!.message).toBe(
+      "the provider refused a request on this context: prompt is too long; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.",
+    );
+    expect(got[1]!.message).toBe("prompt is too long");
+  });
+
+  it("a request the provider will not serve (denied) ends the run as a fatal LLM row, no compaction row", () => {
+    const got = feed([
+      requestBegin(),
+      requestEnd("fatal", { errorCode: "denied", errorMessage: "insufficient balance" }),
+    ]);
+    expect(got.map((r) => [r.source, r.code, r.kind])).toEqual([
+      ["llm", "llm_fatal", "unexpected"],
+    ]);
+    expect(got[0]!.message).toBe("llm request error: insufficient balance");
+  });
+
+  it("a degraded completion whose end carries only the error code gives the code as the reason", () => {
+    // The transport ladder ran out on requests that reported no detail of their own.
+    const got = feed([
+      compactionBegin({ reason: "turns", mode: "summarize", context: 900, turns: 40 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", attempt: 2 }),
+      compactionEnd({
+        reason: "turns",
+        mode: "summarize",
+        status: "completed",
+        attempt: 2,
+        errorCode: "timeout",
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_degraded",
+      kind: "expected",
+      message:
+        "summarize compaction completed without a full summary after 2 attempts: timeout; the next context opens with a Trace hand-off note.",
+    });
+  });
+
+  it("a compaction whose next context could not be opened is unexpected, and no degraded row dedups it away", () => {
+    // A degraded completion, then a compaction that could not open its next context at all —
+    // the original context is kept, and the trigger still holds: a human has to look.
+    const got = feed([
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 1,
+        errorCode: "output_truncated",
+        errorMessage: "the summary was cut off at the output limit",
+      }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no client can be built for the model",
+      }),
+    ]);
+    expect(got.map((r) => [r.code, r.kind])).toEqual([
+      ["compaction_degraded", "expected"],
+      ["compaction_failed", "unexpected"],
+    ]);
+    expect(got[1]!.message).toBe(
+      "summarize compaction failed after 1 attempt: no client can be built for the model; the next context could not be opened; original context kept.",
+    );
+  });
+
+  it("an older core's abandoned compaction records one error row; the message carries attempts and the error", () => {
+    // Issue #170: an older core gave up on a compaction whose retries ran out and ended it
+    // `retryable`, keeping the context; the cost center's row shows how many attempts were
+    // spent and what the last failure was.
     const got = feed([
       compactionEnd({
         reason: "context",
@@ -963,6 +1099,62 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       agent_id: "a1",
       session_id: "s1",
     });
+  });
+
+  it("a compaction's own failed requests are the compaction's: one compaction row, no LLM row", () => {
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 2 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", errorMessage: "idle", retryInMs: 2000 }),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "timeout", errorMessage: "idle", attempt: 2 }),
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "retryable",
+        attempt: 2,
+        errorMessage: "idle",
+      }),
+    ]);
+    expect(got.map((r) => r.source)).toEqual(["compaction"]);
+  });
+
+  it("a compaction call the harness refused is no error; one it ran that failed is", () => {
+    const tc = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
+    const got = feed([
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 2 }),
+      requestBegin(),
+      tc("exec_command", "c1"),
+      tc("write_file", "c2"),
+      requestEnd("completed"),
+      // Refused by the compaction's tool gate: never put to approval.
+      toolCallOutput({
+        output:
+          "[tool error] only read_file, and write_file/edit_file inside this Session's scratchpad, are available while compacting",
+        toolCallId: "c1",
+        status: "fatal",
+      }),
+      // Approved, run, and failed in the sandbox.
+      approvalDecision("allow", "c2"),
+      toolCallOutput({ output: "[tool error] EACCES", toolCallId: "c2", status: "fatal" }),
+      requestBegin(),
+      tc("write_file", "c3"),
+      requestEnd("completed"),
+      // No tool round is left: refused outright.
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "c3",
+        status: "fatal",
+      }),
+      requestBegin(),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempt: 2 }),
+      // Outside the span an unapproved fatal output is an ordinary tool failure again.
+      tc("read_file", "t1"),
+      toolCallOutput({ output: "[tool error] no such file", toolCallId: "t1", status: "fatal" }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:write_file", "tool_fatal:read_file"]);
+    expect(got[0]!.message).toContain("EACCES");
   });
 
   it("compaction completed / aborted are not errors; fatal and an old-core failed still record", () => {

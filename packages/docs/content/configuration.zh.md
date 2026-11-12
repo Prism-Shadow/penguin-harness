@@ -345,6 +345,9 @@ enabled = false
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 模式压缩使用的提示词 |
+| `compaction.max_rounds` | `8` | 摘要之前 harness 至多再问几次 |
+| `compaction.reminder` | 内置的一行 | 每次再问时追加在工具输出之后 |
+| `compaction.handoff_note` | 内置模板 | 取不到摘要时新上下文开头的交接说明 |
 | `memory.enabled` | `true` | 记忆是否进入上下文，以及是否准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 块中始终注入的那一半；包含 `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | 内置模板 | 仅在持久 Workspace 中追加；包含 `{{WORKSPACE_MEMORY_INDEX}}` 和 `{{WORKSPACE_MEMORY_DIR}}` |
@@ -366,8 +369,10 @@ enabled = false
 - `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
 - `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
 - `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
-- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
+- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 预留」中较小的一个。预留为窗口的八分之一，至少 8192、至多 32768 Token，为压缩自己的请求和摘要留出空间。因此窗口小的模型会在自己的窗口内触发压缩（32k 窗口在 24,576 处，200k 窗口在 175,000 处）；窗口不小于 288,768 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理，即 112,000。设为 `0` 或更小会关闭这一触发方式；请求被供应商拒绝时，上下文仍会交接（见[供应商拒绝请求时](#供应商拒绝请求时)）。
 - `compaction.max_session_turns`：`-1` 表示不限制。
+- `compaction.max_rounds`：这是上限，不是计划。轮数由 harness 计数，而不是由模型计数；默认 Prompt 要求约三轮内完成，不写上限。`0` 或更小时不再问，第一个不是摘要的回复即转入交接说明，宜搭配只要求纯文本摘要的 Prompt。每轮按缓存读价重读已缓存的上下文，250k 的上下文走三轮，每次压缩约多出 0.75 M 缓存读 Token。
+- `compaction.prompt`、`compaction.reminder`、`compaction.handoff_note`：见 [summarize 压缩的流程](#summarize-压缩的流程)。
 - `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **插件**，`schedules.prompt` 在 **定时任务**。
 - `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。
 - `skills.enabled`：关闭时，已安装的 Skill 仍可通过 `[use_skills]` 显式调用。
@@ -376,7 +381,7 @@ enabled = false
 - `tools.builtin`：每个条目包含 `name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`。`call_description` 是按工具控制调用参数 `description` 的开关；开启时调用必须带上这个参数；字段缺失则视为保留。
 - `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。`config` 中的字符串值可以写指向 Vault 键的 `${KEY}` 引用，在 Server 连接时填入，见 [Vault 引用](/tools#vault-引用)。`plugin` 是写入该条目的那次安装所属的插件：重新安装或卸载这个插件，只动带它名字的条目；不带这个字段的条目归你自己。删掉这个字段，条目就归你所有，此后该插件读作未安装，而且名称被占用期间无法再安装它。见 [MCP Server](/tools#mcp-server)。
 
-四个 `compaction.*` 字段是本文件中唯一即时生效的部分，运行中的对话无需等待。引擎会在每个压缩检查点重新读取这一节（每次请求上报 Token 用量之后，以及手动执行 `/compact` 时），因此保存的修改对已在运行的 Session 同样生效。其余内容都在模型上下文开启时读取，修改要到下一次压缩才生效。在 Web App 里，你还可以在上下文面板中拖动条上的虚线切刀来[修改阈值](/chat#修改压缩阈值)。
+七个 `compaction.*` 字段是本文件中唯一即时生效的部分，运行中的对话无需等待。引擎会在每个压缩检查点重新读取这一节（每次请求上报 Token 用量之后，以及手动执行 `/compact` 时），因此保存的修改对已在运行的 Session 同样生效；一次压缩始终使用开始它时读到的这一节，压缩进行中保存的修改从下一次压缩起生效。其余内容都在模型上下文开启时读取，修改要到下一次压缩才生效。在 Web App 里，你还可以在上下文面板中拖动条上的虚线切刀来[修改阈值](/chat#修改压缩阈值)。
 
 工具权限与审批语义见[工具与审批](/tools)。
 
@@ -403,11 +408,39 @@ compaction:
   max_context_length: 256000
   max_session_turns: -1
   mode: summarize
+  max_rounds: 8
 
 # Omitting the whole tools section = the full default toolset. Writing tools.builtin
 # REPLACES the default list wholesale: carry the complete definition (including the
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
+
+### summarize 压缩的流程
+
+上下文达到 `max_context_length`（或 `max_session_turns`）时，harness 在运行中的上下文末尾追加 `prompt`。每个回复只读一次：含摘要，下一个上下文即以它开头；不含摘要，harness 应答回复中的工具调用——`read_file` 以及本 Session scratchpad 内的 `write_file` / `edit_file` 会执行，其余一律以错误应答——再追加 `reminder`，读取下一个回复，至多 `max_rounds` 次。此后仍不是摘要的回复，或最终失败的请求（被拒、停在输出上限，或照常重试之后仍然失败），以 `handoff_note` 结束这次压缩：下一个上下文以这段依 Trace 文件填好的交接说明开头，不再发模型请求。两种情形下 Task 都照常继续。harness 发出的每一行也按顺序记录在被关闭的 Trace 文件里。见[上下文压缩](/agent-loop#上下文压缩)。
+
+harness 填入以下占位符：
+
+| 占位符 | 所在键 | 填入 |
+| --- | --- | --- |
+| `{{SCRATCHPAD_DIR}}` | 三者 | 本 Session scratchpad 的绝对路径，在读取这一节时填入 |
+| `{{ROUNDS_USED}}` | `reminder` | 已用的轮数，含刚应答的这一轮 |
+| `{{ROUNDS_LEFT}}` | `reminder` | `max_rounds` 减去已用的轮数（默认值不用） |
+| `{{ERROR}}` | `handoff_note` | 没有摘要的原因：压缩结束时的统一错误对，一行 `[request_error code="…"]…[/request_error]`，报文至多 500 字符 |
+| `{{USER_MESSAGES}}` | `handoff_note` | 被压缩上下文的第一条与最后三条用户消息，每条一行 `[user_input]`、至多 1,500 字符，其间一行注明舍去的条数 |
+| `{{LAST_TURN}}` | `handoff_note` | 压缩之前最后完成的一次请求：它的文本与最后四个工具调用及其输出，每项至多 500 字符 |
+| `{{TRACE_PATH}}` | `handoff_note` | 被关闭的 Trace 文件的绝对路径 |
+
+没有内容可引的占位符读作 `(not recorded)`。空白即 harness 不发这段文字：空白的 `reminder` 只发一轮的工具输出，空响应此时没有可发的内容，即转入交接说明；空白的 `handoff_note` 只留四项引述，各占一行。文件中缺少的键读作默认值：没有 `max_rounds`、`reminder` 与 `handoff_note` 的旧文件按默认值运行，其中编辑过的 `prompt` 照常保留；这几个键要等[内核更新](#内核更新)或还原默认改写这一节之后才出现在文件里。
+
+### 供应商拒绝请求时
+
+供应商拒绝了一个它此前接受过的上下文上的请求（HTTP 400、413、415 或 422），通常说明上下文已经超出模型的真实窗口：模型条目的 `context_window` 大于供应商实际提供的窗口，压缩因此被设在比供应商允许的更晚的位置触发。对话会改由 Trace 交接说明接续（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)），Web App 会标记那一行压缩，并在输入框上方给出提示；CLI 的完成行也会说明同样的情况。请修正下面两个数值之一：
+
+- **更正模型的上下文窗口**，改为供应商实际提供的大小：在模型页面编辑该模型（**详细配置** › **上下文窗口**，见[编辑或删除模型](/models#编辑或删除模型)），或修改[模型条目](#模型条目)的 `context_window`。自建服务器取它配置的上限，例如 vLLM 的 `--max-model-len`。
+- **调低 Agent 的压缩阈值** `compaction.max_context_length`：在 Agent 设置中修改，或拖动上下文面板里的虚线（见[修改压缩阈值](/chat#修改压缩阈值)），对正在进行的对话立即生效。
+
+压缩的摘要停在输出上限时，也会给出同样的建议：窗口下方留给压缩本身的空间不够。
 
 ### 内核更新
 

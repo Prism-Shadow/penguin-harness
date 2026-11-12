@@ -14,12 +14,12 @@
  * detail slot is left for the one thing a title cannot say — why a compaction failed, under
  * the bare mode word.
  *
- * The body follows the work group: **two stacked disclosure rows, each with its own status
- * icon and wall time exactly like a thinking block** — 「思考」/ "Thinking", what the
- * compaction request thought ahead of its summary (present only once any arrived; a model
- * that does not think leaves no empty row), and 「压缩结果」/ "Result", the summary itself.
- * Both carry the thinking block's own body (`md-body` through the shared `StreamText`) and
- * stream while the request writes them, revealed the way a reply is.
+ * The body follows the work group: **stacked disclosure rows, each with its own status icon
+ * exactly like a thinking block** — "Thinking", what the compaction request thought ahead of
+ * its summary (present only once any arrived; a model that does not think leaves no empty
+ * row); "Work", the compaction's tool calls (see CompactionWork); and "Result", the summary
+ * itself. Thinking and result carry the thinking block's own body (`md-body` through the shared
+ * `StreamText`) and stream while the request writes them, revealed the way a reply is.
  *
  * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
  * while the compaction runs the banner is open, so the two section rows are on
@@ -49,6 +49,9 @@ import {
   ActivityGroup,
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
   LiveDuration,
   StatusIcon,
   StreamText,
@@ -57,8 +60,16 @@ import {
 
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import type { CompactionItem } from "../../lib/amsp/stream-model";
-import { compactionResultVisible, compactionSummaryText } from "../../lib/amsp/compaction-summary";
+import { approvalKey } from "../../lib/amsp/stream-model";
+import type { CompactionItem, ToolCallItem } from "../../lib/amsp/stream-model";
+import {
+  compactionDegraded,
+  compactionResultVisible,
+  compactionShortOfRoom,
+  compactionSummaryText,
+} from "../../lib/amsp/compaction-summary";
+import type { StreamRenderContext } from "./message-stream";
+import { SessionToolCall } from "./tool-call-card";
 
 /**
  * One body section: the thinking block's row (status icon + label + wall time + chevron) over
@@ -111,14 +122,74 @@ function CompactionSection({
   );
 }
 
-export function CompactionBanner({ item }: { item: CompactionItem }) {
+/**
+ * The compaction's tool calls under one section row, each the transcript's tool row. Closed by
+ * default like its siblings, and open while a call waits for an approval — the buttons must be
+ * reachable (keyed on that state, so the reader's own choice is back once nothing waits).
+ */
+function CompactionWork({
+  cards,
+  ctx,
+  pending,
+}: {
+  cards: ToolCallItem[];
+  ctx: StreamRenderContext;
+  pending: boolean;
+}) {
+  const active = cards.some(
+    (c) => c.callStreaming || c.outputStreaming || (c.callComplete && !c.outputComplete),
+  );
+  const running = active || pending;
+  return (
+    <DisclosureRow
+      key={pending ? "work-pending" : "work"}
+      sticky
+      defaultOpen={pending}
+      activity={{ kind: "tool", state: running ? "running" : "done" }}
+      inFlight={active}
+      icon={
+        <StatusIcon
+          state={running ? "running" : "done"}
+          label={running ? S.chat.workRunning : S.chat.workDone}
+        />
+      }
+      label={S.chat.compactionWork}
+      trailing={
+        <span data-slot="detail" className="shrink-0 font-mono text-xs text-fg-muted">
+          {S.chat.workGroupSteps(cards.length)}
+        </span>
+      }
+    >
+      {/* Indented by the section's own mark, so the calls read as the section's, not as its siblings. */}
+      <div className="flex flex-col pl-6">
+        {cards.map((card) => (
+          <SessionToolCall key={card.id} item={card} ctx={ctx} />
+        ))}
+      </div>
+    </DisclosureRow>
+  );
+}
+
+export function CompactionBanner({
+  item,
+  ctx,
+}: {
+  item: CompactionItem;
+  ctx: StreamRenderContext;
+}) {
   const summary = compactionSummaryText(item);
   const thinking = item.thinkingText?.trim() ? item.thinkingText : "";
+  const work = item.work ?? [];
+  // A round's call waiting on the user: the row and its work section open for the buttons.
+  const pending = work.some((c) => ctx.pendingApprovals.has(approvalKey(ctx.origin, c.toolCallId)));
   // The chevron is stable for the whole life of a summarize compaction: present from the
   // start (before the first token arrives the result body is simply empty, as a thinking
   // block's is) rather than appearing mid-stream and shifting the row.
   const expandable =
-    summary !== "" || thinking !== "" || (item.running && item.mode === "summarize");
+    summary !== "" ||
+    thinking !== "" ||
+    work.length > 0 ||
+    (item.running && item.mode === "summarize");
   // The sections hang off the banner's head as its rows, the work group's steps' anatomy.
   const rows: ActivityGroupRow[] = [];
   if (thinking !== "") {
@@ -134,6 +205,12 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
           durationMs={item.thinkingDurationMs}
         />
       ),
+    });
+  }
+  if (work.length > 0) {
+    rows.push({
+      key: "work",
+      content: <CompactionWork cards={work} ctx={ctx} pending={pending} />,
     });
   }
   if (compactionResultVisible(item)) {
@@ -161,12 +238,21 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
         kind="event"
         state="running"
         title={S.chat.compactionRunning(item.mode)}
+        pending={pending}
         {...(item.beginTsMs !== undefined ? { startMs: item.beginTsMs } : {})}
         {...(expandable ? { rows } : {})}
       />
     );
   }
   const ok = item.status === "completed";
+  // A completion without a full summary is still a completion: only the head's mark changes, to
+  // the attention ink, its tooltip and accessible name saying why — and, short of room, what to
+  // correct. Only a refusal's message is the provider's words.
+  const degradedHint = !compactionDegraded(item)
+    ? undefined
+    : compactionShortOfRoom(item)
+      ? S.chat.compactionRoomHint(item.errorCode === "rejected" ? item.errorMessage : undefined)
+      : S.chat.compactionDegradedHint(item.errorMessage);
   return (
     <ActivityGroup
       kind="event"
@@ -176,6 +262,20 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
       // the part a title cannot carry.
       title={ok ? S.chat.compactionDone(item.mode) : S.chat.compactionTitle(item.mode)}
       detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
+      {...(degradedHint !== undefined
+        ? {
+            mark: (
+              <span
+                role="img"
+                aria-label={degradedHint}
+                data-tooltip={degradedHint}
+                className="flex shrink-0 text-tone-attention-fg"
+              >
+                <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.rowLead} />
+              </span>
+            ),
+          }
+        : {})}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
       {...(expandable ? { rows } : {})}
     />

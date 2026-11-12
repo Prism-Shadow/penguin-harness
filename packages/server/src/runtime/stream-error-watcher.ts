@@ -21,6 +21,10 @@
  *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
+ * A refused request the engine hands off ends `retryable` (`retry_in_ms: 0`) and resolves as
+ * `llm_retried` at the next context's first request; the hand-off is its `compaction_end`'s row.
+ * A compaction's own requests (inside its span) are not read here: its `compaction_end` speaks
+ * for them (source = `compaction`, below).
  *
  * The message uses the real reason: `request_end` carries the error detail on
  * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
@@ -49,6 +53,9 @@
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_fatal:exec_command`) — so the stats dashboard's "most common error
  * code" and the error table can show at a glance which tool failed.
+ * Inside a compaction span, a `fatal` output for a call that never reached an
+ * `approval_decision` is the harness refusing it and is not recorded; an approved call that
+ * then failed still is.
  *
  * **Attribution (ctx) is recorded against the session that actually produced the error,
  * not always the parent Session**: a subagent's LLM failures and tool failures also flow
@@ -167,6 +174,10 @@ export class StreamErrorWatcher {
   private readonly toolNames = new Map<string, string>();
   /** Subagent identity: origin → that subagent's `{agentId, sessionId}` (see the file header's attribution section). */
   private readonly originCtx = new Map<string, { agentId: string; sessionId: string }>();
+  /** Sessions (by origin key) inside a compaction span (see the file header). */
+  private readonly compacting = new Set<string>();
+  /** Compaction-span calls (`origin \0 tool_call_id`) awaiting an approval decision. */
+  private readonly unapproved = new Set<string>();
 
   constructor(
     private readonly errors: ErrorSink,
@@ -192,6 +203,8 @@ export class StreamErrorWatcher {
     this.pending.clear();
     this.toolNames.clear();
     this.originCtx.clear();
+    this.compacting.clear();
+    this.unapproved.clear();
   }
 
   // —— Attribution (see file header) ——
@@ -243,8 +256,21 @@ export class StreamErrorWatcher {
       retry_in_ms?: number;
     };
     const key = originKey(msg);
+    if (p.type === "compaction_begin") {
+      this.compacting.add(key);
+      return;
+    }
     if (p.type === "compaction_end") {
+      this.compacting.delete(key);
       this.observeCompactionEnd(msg, key);
+      return;
+    }
+    if (p.type === "approval_decision") {
+      const id = (msg.payload as { tool_call_id?: unknown }).tool_call_id;
+      if (typeof id === "string") this.unapproved.delete(`${key}\0${id}`);
+      return;
+    }
+    if ((p.type === "request_end" || p.type === "request_begin") && this.compacting.has(key)) {
       return;
     }
     if (p.type === "request_end") {
@@ -331,17 +357,17 @@ export class StreamErrorWatcher {
   }
 
   /**
-   * A failed compaction becomes its own error record (source = `compaction`) — a compaction
-   * is an ordinary LLM request whose failures (unusable summary and transport alike) core
-   * retries under the standard budget, so a `failed` end means the retries ran out
-   * (issue #170). This is the single record a failed compaction produces: the compaction
-   * request's own request_begin/request_end pair is written to Trace only and never reaches
-   * this stream, so the llm-source records above cannot double-count it. `completed` is not
-   * an error and `aborted` is a user interrupt — neither is recorded. kind is unexpected for
-   * the same reason `llm_failed` is: the budget is exhausted, and while the original context
-   * is kept, the trigger still holds — the session keeps re-entering compaction until a
-   * human changes something. The message carries the attempts and the last error detail
-   * (compaction_end's share of the RetryDetail block) so the cost center shows what failed.
+   * A compaction's outcome as its own error record (source = `compaction`), the one record for
+   * all of its requests (see the file header). The codes stay apart so the short-window dedup on
+   * `(source, code, Project)` never folds one into another:
+   * - `completed` with the error pair: `compaction_degraded`, expected — no full summary, but the
+   *   run carried on; with `error_code` `rejected`, `context_refused`, expected — usually the
+   *   configured window is larger than the one the provider enforces.
+   * - `fatal` (the next context could not be opened), and an older core's abandoned `retryable`
+   *   / `failed` (issue #170): `compaction_failed`, unexpected — the trigger still holds, so the
+   *   Session re-enters compaction until a human changes something.
+   * - A full summary and `aborted` are not errors.
+   * The message carries the attempts and the error detail (compaction_end's share of RetryDetail).
    */
   private observeCompactionEnd(msg: AmspRecord, key: string): void {
     const p = msg.payload as {
@@ -349,21 +375,50 @@ export class StreamErrorWatcher {
       reason?: string;
       status?: StopReason;
       attempt?: number;
+      error_code?: string;
       error_message?: string;
     };
-    // Abandoned (retryable — made up at the next trigger) and fatal ends both record;
-    // legacy Traces spell the abandoned case "failed".
     const status = p.status as string | undefined;
-    if (status !== "retryable" && status !== "fatal" && status !== "failed") return;
+    const mode = p.mode ?? "summarize";
     const attempts =
       typeof p.attempt === "number" && p.attempt > 0
         ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
         : "";
-    const detail =
-      typeof p.error_message === "string" && p.error_message ? `: ${p.error_message}` : "";
+    const detail = (text: unknown): string =>
+      typeof text === "string" && text !== "" ? `: ${text}` : "";
+    if (status === "completed") {
+      // Either half of the pair marks the completion degraded — the same test replay applies.
+      if (p.error_code === undefined && p.error_message === undefined) return;
+      if (p.error_code === "rejected") {
+        this.errors.record({
+          source: "compaction",
+          err: `the provider refused a request on this context${detail(p.error_message)}; it was handed off to a new context from its Trace. Too little room was left under the model's window: check the model's context_window or lower compaction.max_context_length.`,
+          ctx: this.ctxFor(key),
+          code: "context_refused",
+          kind: "expected",
+        });
+        return;
+      }
+      this.errors.record({
+        source: "compaction",
+        err: `${mode} compaction completed without a full summary${attempts}${detail(p.error_message || p.error_code)}; the next context opens with a Trace hand-off note.`,
+        ctx: this.ctxFor(key),
+        code: "compaction_degraded",
+        kind: "expected",
+      });
+      return;
+    }
+    let err: string;
+    if (status === "fatal") {
+      err = `${mode} compaction failed${attempts}${detail(p.error_message)}; the next context could not be opened; original context kept.`;
+    } else if (status === "retryable" || status === "failed") {
+      err = `${mode} compaction failed${attempts}${detail(p.error_message)}; trigger ${p.reason ?? "unknown"}, original context kept.`;
+    } else {
+      return;
+    }
     this.errors.record({
       source: "compaction",
-      err: `${p.mode ?? "summarize"} compaction failed${attempts}${detail}; trigger ${p.reason ?? "unknown"}, original context kept.`,
+      err,
       ctx: this.ctxFor(key),
       code: "compaction_failed",
       kind: "unexpected",
@@ -392,13 +447,21 @@ export class StreamErrorWatcher {
         const oldest = this.toolNames.keys().next().value;
         if (oldest !== undefined) this.toolNames.delete(oldest);
       }
+      if (this.compacting.has(origin)) {
+        this.unapproved.add(key);
+        if (this.unapproved.size > TOOL_NAMES_MAX) {
+          const oldest = this.unapproved.values().next().value;
+          if (oldest !== undefined) this.unapproved.delete(oldest);
+        }
+      }
       return;
     }
     if (p.type !== "tool_call_output") return;
 
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
-    if (p.status !== "fatal") return; // completed / aborted (a denial, an interruption) are not errors
+    const refused = this.unapproved.delete(key);
+    if (p.status !== "fatal" || refused) return; // completed / aborted (a denial, an interruption) are not errors
     const output = p.output ?? "";
     this.errors.record({
       source: "environment",

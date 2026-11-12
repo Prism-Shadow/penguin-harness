@@ -37,6 +37,7 @@ import {
   userText,
 } from "@prismshadow/amsp/records";
 import type { AmspRecord, SessionMetaPayload } from "@prismshadow/amsp/records";
+import { buildContextSummaryText } from "@prismshadow/amsp/markers";
 import type {
   ApproveFn,
   EnvironmentInterface,
@@ -88,7 +89,8 @@ const usage = (requestTotal: number, sessionTotal: number): AmspRecord =>
   );
 
 const SUMMARY_REPLY = "[summary]the distilled summary[/summary]";
-const SUMMARY_TEXT = "[context_summary]\nthe distilled summary\n[/context_summary]";
+/** The summary the Session's first compaction opens the next context with, its trailer naming the first file (set per test). */
+let SUMMARY_TEXT = "";
 
 const metaFor = (modelId: string): SessionMetaPayload => ({
   session_id: "sess_tasks",
@@ -142,6 +144,10 @@ describe("Task records", () => {
 
   beforeEach(async () => {
     traces = await mkdtemp(join(tmpdir(), "penguin-task-records-"));
+    SUMMARY_TEXT = buildContextSummaryText(
+      "the distilled summary",
+      new Writer({ tracesDir: traces, sessionId: "sess_tasks" }).currentPath(),
+    );
   });
 
   afterEach(async () => {
@@ -355,7 +361,8 @@ describe("Task records", () => {
     expect(kinds([(await next.next()).value as AmspRecord])).toEqual(["task_begin"]);
     await next.return(null);
 
-    const resumed = resumeTrace(await readTrace(oldPath));
+    // Rebuilt from the file, the summary is the one the live engine sent: trailer included.
+    const resumed = resumeTrace(await readTrace(oldPath), { tracePath: oldPath });
     expect(resumed.contextClosed).toBe(true);
     expect((resumed.pendingSummary?.payload as { text?: string }).text).toBe(SUMMARY_TEXT);
     expect(resumed.history).toEqual([]);

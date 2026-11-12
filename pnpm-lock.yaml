@@ -219,6 +219,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -392,6 +395,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -594,6 +600,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -714,6 +723,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/trace-lookup':
+        specifier: workspace:*
+        version: link:../../plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/trace-rsi-toolkit
@@ -1368,6 +1380,18 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/software-development:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/trace-lookup:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2421,6 +2445,9 @@ packages:
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/trace-lookup@file:plugins/trace-lookup':
+    resolution: {directory: plugins/trace-lookup, type: directory}
 
   '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit':
     resolution: {directory: plugins/trace-rsi-toolkit, type: directory}
@@ -7106,6 +7133,8 @@ snapshots:
 
   '@penguinharness/software-development@file:plugins/software-development': {}
 
+  '@penguinharness/trace-lookup@file:plugins/trace-lookup': {}
+
   '@penguinharness/trace-rsi-toolkit@file:plugins/trace-rsi-toolkit': {}
 
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides': {}
@@ -7223,6 +7252,7 @@ snapshots:
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
@@ -7271,6 +7301,7 @@ snapshots:
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
@@ -7379,6 +7410,7 @@ snapshots:
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
@@ -7438,6 +7470,7 @@ snapshots:
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
@@ -7497,6 +7530,7 @@ snapshots:
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code

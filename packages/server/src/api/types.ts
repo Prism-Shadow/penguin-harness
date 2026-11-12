@@ -3039,11 +3039,12 @@ export interface GoalResponse {
  *   after the switch.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
- *   other than `completed` or `aborted` — the switch still completes, by Trace handoff: right
+ *   without a summary — the switch still completes, by Trace handoff: right
  *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
- *   stopped compaction (`aborted`) means no switch: no `session_meta` follows and the Session
- *   keeps its model.
+ *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the
+ *   target; its `error_message` says why), means no switch: no `session_meta` follows and the
+ *   Session keeps its model and its context.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
  * - **409**, one code per refusal, before any event: `task_in_progress` / `compacting` (busy),

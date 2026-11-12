@@ -1070,12 +1070,15 @@ export interface Messages extends CliCommandMessages {
    * completed varies its text by mode). tokens is Token usage (same convention as the stats
    * line: total = Session cumulative, delta = consumed by this compaction, carrying its own
    * sign); when present it is appended at the end of the line, e.g. ` · tokens 14k (+6k)`.
+   * `degraded` marks a completion without a full summary (errorMessage says why) as a suffix;
+   * `room` adds what to correct when too little room was left for the compaction.
    */
   compactionStop(
     mode: string,
     status: string,
     tokens?: { total: string; delta: string },
     errorMessage?: string,
+    degraded?: { room: boolean },
   ): string;
   /** mcp_connect_begin event: the configured MCP servers are being connected (the first run, or a new context after compaction). */
   mcpConnectStart(servers: string[]): string;
@@ -2267,7 +2270,11 @@ const en: Messages = {
                 ? "the model's output was cut off at the output limit"
                 : kind === "failed"
                   ? "the model provider returned an error"
-                  : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+                  : kind === "rejected"
+                    ? "the model provider rejected the request"
+                    : kind === "denied"
+                      ? "the provider will not serve this account or model (balance, permission, or no such model)"
+                      : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -2279,22 +2286,25 @@ const en: Messages = {
       : failures.length === 0
         ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failures.map((f) => `${f.server} (${f.error})`).join(", ")}`,
-  compactionStop: (mode, status, tokens, errorMessage) =>
+  compactionStop: (mode, status, tokens, errorMessage, degraded) =>
     (status === "completed"
       ? mode === "discard"
         ? "[compaction] done; old context discarded"
         : "[compaction] done; continuing with the summarized context"
       : status === "aborted"
         ? "[compaction] aborted; keeping the current context"
-        : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context${
-            // retryable = abandoned this time, retried at the next trigger; fatal = a config
-            // or credential change has to come first. Legacy Traces spell both "failed".
-            status === "retryable"
-              ? "; retries at the next trigger"
-              : status === "fatal"
-                ? "; fix the model configuration to retry"
-                : ""
-          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+        : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}${status === "fatal" ? "; the next context could not be opened" : ""}; keeping the current context${
+            // retryable / legacy "failed": an old Trace's abandoned compaction.
+            status === "retryable" ? "; retries at the next trigger" : ""
+          }`) +
+    (degraded
+      ? ` (no full summary: a Trace hand-off note${errorMessage !== undefined ? ` — ${errorMessage}` : ""}${
+          degraded.room
+            ? "; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length"
+            : ""
+        })`
+      : "") +
+    (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   clearDone: () =>
     "[clear] your next message starts a fresh session (the previous one is kept and resumable)",
@@ -3387,7 +3397,11 @@ const zh: Messages = {
                 ? "模型输出达到输出上限，被截断"
                 : kind === "failed"
                   ? "模型服务返回错误"
-                  : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+                  : kind === "rejected"
+                    ? "模型服务拒绝了请求"
+                    : kind === "denied"
+                      ? "服务商不为该账号或模型提供服务（余额、权限或模型不存在）"
+                      : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
@@ -3399,22 +3413,25 @@ const zh: Messages = {
       : failures.length === 0
         ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failures.map((f) => `${f.server}（${f.error}）`).join("、")}`,
-  compactionStop: (mode, status, tokens, errorMessage) =>
+  compactionStop: (mode, status, tokens, errorMessage, degraded) =>
     (status === "completed"
       ? mode === "discard"
         ? "[压缩] 完成，旧上下文已丢弃"
         : "[压缩] 完成，已切换到摘要后的新上下文"
       : status === "aborted"
         ? "[压缩] 已中断，保留当前上下文"
-        : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
-            // retryable = abandoned this time, retried at the next trigger; fatal = a config
-            // or credential change has to come first. Legacy Traces spell both "failed".
-            status === "retryable"
-              ? "，下次触发时重试"
-              : status === "fatal"
-                ? "，需修复模型配置后重试"
-                : ""
-          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+        : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}${status === "fatal" ? "，未能开启新的上下文" : ""}，保留当前上下文${
+            // retryable / legacy "failed": an old Trace's abandoned compaction.
+            status === "retryable" ? "，下次触发时重试" : ""
+          }`) +
+    (degraded
+      ? `（没有完整摘要，改用 Trace 交接说明${errorMessage !== undefined ? `：${errorMessage}` : ""}${
+          degraded.room
+            ? "；留给压缩的空间不足，请更正该模型的 context_window 或调低 compaction.max_context_length"
+            : ""
+        }）`
+      : "") +
+    (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   clearDone: () => "[清空] 下一条消息将开启全新 Session（原会话仍保留，可恢复）",
   chatNewConversation: () => "新对话：发出第一条消息时才会创建。",

@@ -116,7 +116,18 @@ export interface CompactionConfig {
   mode?: CompactionMode;
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
+  /** Replies without the summary the harness answers (tool calls, then `reminder`) before it opens the next context with `handoff_note`; defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <=0 answers none. */
+  max_rounds?: number;
+  /** The line sent after each tool round of a summarize compaction; defaults to {@link DEFAULT_COMPACTION_REMINDER}, blank sends none. */
+  reminder?: string;
+  /** The note a context opens with when no summary could be had; defaults to {@link DEFAULT_COMPACTION_HANDOFF_NOTE}, blank gives the quoted data alone. */
+  handoff_note?: string;
 }
+
+/** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
+export const DEFAULT_COMPACTION_MAX_ROUNDS = 8;
+/** Inside `compaction.prompt`, `reminder` and `handoff_note`: the absolute path of this Session's scratchpad directory. */
+export const COMPACTION_SCRATCHPAD_PLACEHOLDER = "{{SCRATCHPAD_DIR}}";
 
 /**
  * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
@@ -616,20 +627,58 @@ export function insertSchedulesPlaceholder(template: string): string {
 }
 
 /**
- * Built-in default compaction Prompt (summarize mode): tells the model the summary will
- * replace the transcript as its only record (so it must include everything needed to
- * continue the task) and that no tools may be called. The format is shown as a concrete
+ * Built-in default compaction Prompt (summarize mode): a summary in fixed sections, with detail
+ * worth more than a paragraph saved to hand-off files in the Session's scratchpad. It names no
+ * round limit of its own (`max_rounds` is the harness's). The format is shown as a concrete
  * example rather than described in prose — some models treat the tags as a "title" and
  * write the body after the closing tag (issue #170); extraction salvages that shape, but
  * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
  * existing agents keep their stored prompt.
  */
-export const DEFAULT_COMPACTION_PROMPT =
-  "Summarize the task transcript above. The summary will replace the transcript as its " +
-  "only record, so include everything needed to continue the task — the original request, " +
-  "current state, next steps, and any learnings. Do not call any tools; reply with text " +
-  "only, in exactly this format and nothing after it:\n\n" +
-  "[summary]put the summary text here...[/summary]";
+export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
+
+Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. Give each hand-off file a new name rather than overwriting an earlier one, so nothing has to be read first; a file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
+
+Aim to be done within about three tool rounds, and in one reply when you can: put the calls a step needs into the same reply instead of one call per reply. You do not have to count rounds. After each one the harness says how many you have used, and it stops running tool calls when the compaction has gone on too long. Name every hand-off file by its absolute path and do not repeat its content.
+
+[summary]
+## Request
+The user's request and intent, in their own words where the wording matters.
+## Decisions and constraints
+What the user decided, authorized or ruled out, with the why. Consent does not carry into the next context: anything that needs a go-ahead is asked again there.
+## Progress
+What is done and verified, with file paths; what is in progress and where it stands.
+## Errors and fixes
+Errors met, what fixed them, and what not to repeat.
+## Files
+Workspace files that matter (read or changed), and every hand-off file, each with its absolute path and one line on what it holds.
+## Next steps
+The remaining work in order, and the exact next action.
+[/summary]`;
+
+/** Built-in default `compaction.reminder`: `{{ROUNDS_USED}}` and `{{ROUNDS_LEFT}}` are filled when it is sent. */
+export const DEFAULT_COMPACTION_REMINDER =
+  "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.";
+
+/**
+ * Built-in default `compaction.handoff_note`: `{{ERROR}}`, `{{USER_MESSAGES}}`, `{{LAST_TURN}}`
+ * and `{{TRACE_PATH}}` are filled from the closing Trace file.
+ */
+export const DEFAULT_COMPACTION_HANDOFF_NOTE = `No summary of the earlier conversation could be written, so the harness wrote this note in its place. That conversation is no longer in your context; what is quoted below is copied from its Trace file, shortened where marked.
+
+Why there is no summary (if it is about size, do not rebuild the same input: read large files and outputs in parts):
+{{ERROR}}
+
+The user's messages, oldest first:
+{{USER_MESSAGES}}
+
+The last completed turn:
+{{LAST_TURN}}
+
+Trace file (JSONL, one record per line): {{TRACE_PATH}}
+Hand-off files written earlier, if any, are under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/.
+
+Carry on with the task from where it stopped. Consent does not carry over: anything that needed a go-ahead is asked again.`;
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
@@ -955,11 +1004,15 @@ export function defaultSystemConfig(): SystemConfig {
       // the answer starts. 120s, and later 300s, cut such requests off mid-thought.
       timeoutMs: 600000,
     },
+    // Key order is the order a compaction uses them in.
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,
+      max_rounds: DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder: DEFAULT_COMPACTION_REMINDER,
+      handoff_note: DEFAULT_COMPACTION_HANDOFF_NOTE,
     },
     memory: {
       enabled: true,

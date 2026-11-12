@@ -33,6 +33,7 @@ import {
   parseUserSteeringText,
   startsWithMarker,
   stripConversationMarkers,
+  summaryInTags,
   stripMarkerBlocks,
   transcribeText,
   transcribeToolCall,
@@ -116,6 +117,16 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     );
   });
 
+  it("a summary given its compacted context's Trace file is followed, after a blank line, by one line naming it", () => {
+    const tracePath = "/data/p/agents/a/traces/2026-11-04/session-x_002.jsonl";
+    const text = buildContextSummaryText("the gist", tracePath);
+    expect(text).toBe(
+      `[context_summary]\nthe gist\n\nTrace file of the compacted context (JSONL, one record per line): ${tracePath}\n[/context_summary]`,
+    );
+    // Still a summary block to every reader that recognizes one by its prefix.
+    expect(startsWithMarker(text, MARKER_TAGS.contextSummary)).toBe(true);
+  });
+
   it("extractSummary accepts the current [summary] form, the legacy <summary> form, and tagless output", () => {
     // The legacy angle form must stay accepted indefinitely: compaction.prompt is persisted in
     // existing agents' system_config.yaml, so old agents keep instructing <summary> tags.
@@ -141,6 +152,57 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     // Genuinely empty output still extracts to "" — the engine treats that as a failed attempt.
     expect(extractSummary("[summary][/summary]")).toBe("");
     expect(extractSummary("[summary]\n[/summary]")).toBe("");
+  });
+
+  it("summaryInTags reads square and legacy angle tags, closed and open", () => {
+    expect(summaryInTags("preamble [summary]\nthe gist\n[/summary] postscript")).toEqual({
+      text: "the gist",
+      closed: true,
+    });
+    expect(summaryInTags("<summary>old form</summary>")).toEqual({
+      text: "old form",
+      closed: true,
+    });
+    // A reply cut off before its close tag keeps what it wrote, in either form.
+    expect(summaryInTags("[summary]\n## Request\nShip the fix")).toEqual({
+      text: "## Request\nShip the fix",
+      closed: false,
+    });
+    expect(summaryInTags("<summary>## Request\nhalf")).toEqual({
+      text: "## Request\nhalf",
+      closed: false,
+    });
+    // A stray open tag inside does not end up in the text.
+    expect(summaryInTags("[summary]\n[summary]\nBody inside.[/summary]")?.text).toBe(
+      "Body inside.",
+    );
+    // The current form wins when both appear, as everywhere else.
+    expect(summaryInTags("<summary>b</summary> [summary]a[/summary]")?.text).toBe("a");
+    // Text outside any tag is no summary in tags: a preamble before tool calls reads as nothing.
+    expect(summaryInTags("Writing the plan first.")).toBeNull();
+    expect(summaryInTags("[summary]\n[/summary]")).toEqual({ text: "", closed: true });
+  });
+
+  it("a summary closed with mixed brackets reads as closed, and the tag never rides along", () => {
+    // deepseek-flash closes a square-open summary with `[/summary>` about one time in ten.
+    const reply = "[summary]\n## Request\nShip the fix.\n[/summary>";
+    expect(extractSummary(reply)).toBe("## Request\nShip the fix.");
+    expect(summaryInTags(`${reply}\nDone.`)).toEqual({
+      text: "## Request\nShip the fix.",
+      closed: true,
+    });
+    // The other mixed spelling, after either open form.
+    expect(extractSummary("<summary>old form</summary]")).toBe("old form");
+    expect(summaryInTags("[summary]the gist</summary] postscript")).toEqual({
+      text: "the gist",
+      closed: true,
+    });
+    // An empty pair closed that way, or a stray one, is stripped like a well-formed one.
+    expect(extractSummary("[summary]\n[/summary>\nThe actual summary body.")).toBe(
+      "The actual summary body.",
+    );
+    expect(extractSummary("[summary]\n[/summary>\nBody after.\n[/summary]")).toBe("Body after.");
+    expect(extractSummary("A tagless body.\n[/summary>")).toBe("A tagless body.");
   });
 
   it("turn blocks round-trip through unwrapSyntheticBlock, both forms, single-level", () => {

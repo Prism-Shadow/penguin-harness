@@ -9,6 +9,16 @@
  *   pending input; failed compaction rounds are dropped by the generic rule; a "completed"
  *   summarize closure whose output extracts to an empty summary (a pre-#83 trace shape) is
  *   voided and the original context replays.
+ * - A compaction that took tool rounds: the summary is the closing span's last committed
+ *   request (a round's text is not), followed by the one line naming the replayed file; a round
+ *   the process died in leaves its outputs as carry-over, pairing its calls, and its reminder
+ *   is not resent.
+ * - A compaction completed with the unified error pair (no full summary could be had): the next
+ *   context opens with the hand-off note filled from the file with the template in force at
+ *   resume — the same note the live engine opened it with — and no text a reply in the span wrote.
+ * - A span with no request (an ordinary request the provider refused, answered by a hand-off)
+ *   resumes with that note, the refusal quoted in it; a process that died inside such a span
+ *   resumes on the old context with the refused turn's input pending.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -32,12 +42,14 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/amsp/records";
-import type { AmspRecord, TokenCounts } from "@prismshadow/amsp/records";
+import type { AmspRecord, ErrorCode, TokenCounts } from "@prismshadow/amsp/records";
+import { transcribeToolCallOutput } from "@prismshadow/amsp/markers";
 import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/resume.js";
+import { buildCompactionHandoff } from "../src/engine/compaction-carry.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
-import type { ApproveFn, LLMInterface } from "../src/interfaces/index.js";
+import type { ApproveFn, EnvironmentInterface, LLMInterface } from "../src/interfaces/index.js";
 
 const usage = (total: number): TokenCounts => ({
   cache_read: 0,
@@ -379,6 +391,79 @@ describe("resumeTrace", () => {
     expect(resumeTrace([meta(), userText("hello")]).openingSummary).toBeUndefined();
   });
 
+  it("closed context with tool rounds: the summary is the span's last committed request, then one line naming the replayed file", () => {
+    const file = "/data/agents/a/traces/2026-11-04/session-x_001.jsonl";
+    const result = resumeTrace(
+      [
+        meta(),
+        userText("hello"),
+        requestBegin(),
+        assistantText("hi"),
+        requestEnd("completed"),
+        tokenUsage(usage(10), usage(10)),
+        compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+        userText("please summarize"),
+        requestBegin(),
+        assistantText("Writing the plan first."),
+        toolCall({ name: "write_file", arguments: '{"file_path":"/s/plan.md"}', toolCallId: "h1" }),
+        requestEnd("completed"),
+        toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+        userText("R 1/8"),
+        requestBegin(),
+        assistantText("[summary]see /s/plan.md[/summary]"),
+        toolCall({ name: "write_file", arguments: '{"file_path":"/s/more.md"}', toolCallId: "h2" }),
+        requestEnd("completed"),
+        toolCallOutput({ output: "denied by the user", toolCallId: "h2", status: "aborted" }),
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      ],
+      { tracePath: file },
+    );
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    // No round's text and no call: the summary and the pointer only.
+    expect((result.pendingSummary!.payload as { text: string }).text).toBe(
+      `[context_summary]\nsee /s/plan.md\n\nTrace file of the compacted context (JSONL, one record per line): ${file}\n[/context_summary]`,
+    );
+  });
+
+  it("a round the process died in leaves its outputs as carry-over, pairing the committed calls", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+      userText("please summarize"),
+      requestBegin(),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/a.md"}', toolCallId: "h1" }),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/s/b.md"}', toolCallId: "h2" }),
+      requestEnd("completed"),
+      toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+      // The next request was under way when the process died; h2 never got its output.
+      requestBegin(),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.danglingCompaction).toMatchObject({ mode: "summarize" });
+    // The round's committed request is history; its output, and a placeholder for the call
+    // that got none, are what the next request sends first.
+    expect(textsOf(result.history)).toEqual([
+      "hello",
+      "hi",
+      "please summarize",
+      "write_file",
+      "read_file",
+    ]);
+    expect(
+      result.carryOver.map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["h1", "h2"]);
+    expect(textsOf(result.carryOver)).toEqual([
+      "written",
+      "[interrupted: process exited before the tool finished]",
+    ]);
+  });
+
   it("drops failed compaction rounds via the generic rule (prompt not in history)", () => {
     const result = resumeTrace([
       meta(),
@@ -402,6 +487,144 @@ describe("resumeTrace", () => {
     expect(textsOf(result.history)).toEqual(["hello", "hi", "continue", "sure"]);
     expect(result.carryOver).toEqual([]);
     expect(result.sessionTurns).toBe(2);
+  });
+});
+
+describe("resumeTrace over a compaction's span (summary, hand-off)", () => {
+  const file = "/data/agents/a/traces/2026-11-11/session-x_001.jsonl";
+  const begin = (): AmspRecord =>
+    compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 });
+  /** The end of a compaction that completed without a full summary, the error pair saying why. */
+  const degradedEnd = (attempt: number, errorCode: ErrorCode, errorMessage: string): AmspRecord =>
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      attempt,
+      errorCode,
+      errorMessage,
+    });
+  const opened = (): AmspRecord[] => [
+    meta(),
+    userText("hello"),
+    requestBegin(),
+    assistantText("hi"),
+    requestEnd("completed"),
+    tokenUsage(usage(10), usage(10)),
+  ];
+  const textOf = (msg: AmspRecord | undefined): string =>
+    (msg?.payload as { text?: string } | undefined)?.text ?? "";
+  const truncated = { errorCode: "output_truncated" as const, errorMessage: "output limit" };
+  const refused = { errorCode: "rejected" as const, errorMessage: "prompt is too long" };
+
+  it("a file closed with the error pair resumes with the template in force filled from it, a cut summary in its span unused", () => {
+    const result = resumeTrace(
+      [
+        ...opened(),
+        begin(),
+        userText("please summarize"),
+        requestBegin(),
+        assistantText("[summary]\n## Request\nShip the release.\n## Progress\nStep done."),
+        tokenUsage(usage(40), usage(50)),
+        requestEnd("retryable", truncated),
+        degradedEnd(1, "output_truncated", "output limit"),
+      ],
+      {
+        tracePath: file,
+        handoffNote: "Closed:\n{{ERROR}}\nAsked:\n{{USER_MESSAGES}}\nIn {{TRACE_PATH}}",
+      },
+    );
+    expect(result.contextClosed).toBe(true);
+    expect(result.history).toEqual([]);
+    expect(textOf(result.pendingSummary)).toBe(
+      [
+        "[context_summary]",
+        "Closed:",
+        '  [request_error code="output_truncated"]output limit[/request_error]',
+        "Asked:",
+        "  [user_input]hello[/user_input]",
+        `In ${file}`,
+        "[/context_summary]",
+      ].join("\n"),
+    );
+  });
+
+  it("a process that died inside a hand-off resumes on the old context with the refused turn's input pending", () => {
+    const result = resumeTrace([
+      meta(),
+      userText("migrate the database"),
+      requestBegin(),
+      toolCall({ name: "read_file", arguments: '{"file_path":"/ws/s.sql"}', toolCallId: "rs" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: "CREATE TABLE t", toolCallId: "rs", status: "completed" }),
+      userText("use the new column names"),
+      requestBegin(),
+      requestEnd("retryable", { ...refused, attempt: 1, retryInMs: 0 }),
+      begin(),
+      // The process died before the span's end was written.
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    expect(result.danglingCompaction).toEqual({ reason: "context", mode: "summarize" });
+    expect(result.sessionTurns).toBe(1);
+    expect(textsOf(result.history)).toEqual(["migrate the database", "read_file"]);
+    // The next run sends the refused turn again, as it was.
+    expect(textsOf(result.carryOver)).toEqual(["CREATE TABLE t", "use the new column names"]);
+  });
+
+  it("a span the process died in after a committed summary-with-calls response replays the old context with those calls paired", () => {
+    const result = resumeTrace([
+      ...opened(),
+      begin(),
+      userText("please summarize"),
+      requestBegin(),
+      assistantText("[summary]the gist[/summary]"),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/a.md"}', toolCallId: "h1" }),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/b.md"}', toolCallId: "h2" }),
+      requestEnd("completed"),
+      tokenUsage(usage(20), usage(30)),
+      toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+      // The process died while h2 ran (or while the next context was being opened).
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    expect(result.danglingCompaction).toMatchObject({ mode: "summarize" });
+    // The summary reply is an ordinary committed turn of the old context.
+    expect(textsOf(result.history)).toEqual([
+      "hello",
+      "hi",
+      "please summarize",
+      "[summary]the gist[/summary]",
+      "write_file",
+      "write_file",
+    ]);
+    expect(
+      result.carryOver.map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["h1", "h2"]);
+    expect(textsOf(result.carryOver)).toEqual([
+      "written",
+      "[interrupted: process exited before the tool finished]",
+    ]);
+  });
+
+  it("does not resend the reminder of an uncommitted compaction request", () => {
+    const result = resumeTrace([
+      ...opened(),
+      begin(),
+      userText("please summarize"),
+      requestBegin(),
+      toolCall({ name: "write_file", arguments: '{"file_path":"/s/a.md"}', toolCallId: "h1" }),
+      requestEnd("completed"),
+      toolCallOutput({ output: "written", toolCallId: "h1", status: "completed" }),
+      userText("R 1/8"),
+      // The process died during the request that followed.
+      requestBegin(),
+    ]);
+    expect(result.danglingCompaction).toMatchObject({ mode: "summarize" });
+    expect(textsOf(result.history)).toEqual(["hello", "hi", "please summarize", "write_file"]);
+    // Only the output the committed round is owed rides on; the harness's line does not.
+    expect(textsOf(result.carryOver)).toEqual(["written"]);
   });
 });
 
@@ -536,6 +759,9 @@ describe("readTraceTolerant", () => {
 describe("engine trace round-trip", () => {
   let workspace: string;
   let traces: string;
+  /** The hand-off note's template in force, live and at resume alike. */
+  const HANDOFF_NOTE =
+    "Handed off.\n{{ERROR}}\n{{USER_MESSAGES}}\n{{LAST_TURN}}\nIn {{TRACE_PATH}}";
 
   beforeEach(async () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-replay-ws-"));
@@ -645,6 +871,187 @@ describe("engine trace round-trip", () => {
     const result = resumeTrace(recorded);
     expect(result.history).toEqual([]);
     expect(textsOf(result.carryOver)).toEqual(["go"]);
+  });
+
+  it("a compaction its provider refused resumes with the hand-off note the live engine opened the next context with", async () => {
+    // One test drives both sides: the live engine completes a mid-Task compaction whose request
+    // was refused with the note built from the file being closed and the template in force (what
+    // the Session supplies as `buildHandoff`), and a restart over that file rebuilds the same text.
+    let call = 0;
+    const llm1: LLMInterface = {
+      async *streamGenerate() {
+        call += 1;
+        if (call === 1) {
+          yield toolCall({
+            name: "read_file",
+            arguments: '{"file_path":"/ws/notes.md"}',
+            toolCallId: "rn",
+          });
+          yield tokenUsage(usage(150), usage(150));
+          return { status: "completed" };
+        }
+        return { status: "fatal", errorCode: "rejected", errorMessage: "prompt is too long" };
+      },
+    };
+    const llm2: LLMInterface = {
+      async *streamGenerate() {
+        yield assistantText("carrying on");
+        yield tokenUsage(usage(20), usage(170));
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool({ toolCall: tc }) {
+        yield toolCallOutput({
+          output: "the notes",
+          toolCallId: tc.payload.tool_call_id,
+          status: "completed",
+        });
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess-handoff" });
+    const oldPath = trace.currentPath();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment,
+      trace,
+      sessionMeta: meta(),
+      compaction: {
+        maxContextLength: 100,
+        maxSessionTurns: -1,
+        mode: "summarize",
+        prompt: "COMPACT NOW",
+        handoffNote: HANDOFF_NOTE,
+      },
+      openNextContext: () => ({ llm: llm2 }),
+      buildHandoff: async (template) => {
+        const path = trace.currentPath();
+        return userText(
+          buildCompactionHandoff(await readTrace(path), { tracePath: path, template }),
+        );
+      },
+    });
+    const approve: ApproveFn = async () => "allow";
+    for await (const _ of engine.run([userText("summarize my notes")], { approve })) {
+      // consume
+    }
+
+    expect(trace.currentPath()).not.toBe(oldPath);
+    const opening = (await readTrace(trace.currentPath())).find((m) => {
+      const p = m.payload as { type?: string; role?: string };
+      return p.type === "text" && p.role === "user";
+    });
+    const live = (opening?.payload as { text?: string } | undefined)?.text ?? "";
+    expect(live.startsWith("[context_summary]\nHanded off.\n")).toBe(true);
+    expect(live).toContain("  [user_input]summarize my notes[/user_input]");
+    expect(live).toContain(transcribeToolCallOutput("rn", "completed", "the notes"));
+    expect(live).toContain(`\nIn ${oldPath}\n`);
+
+    const resumed = resumeTrace(await readTrace(oldPath), {
+      tracePath: oldPath,
+      handoffNote: HANDOFF_NOTE,
+    });
+    expect(resumed.contextClosed).toBe(true);
+    expect((resumed.pendingSummary?.payload as { text?: string } | undefined)?.text).toBe(live);
+  });
+
+  it("a request its provider refused resumes, from a span with no request, with the note the live engine opened the next context with", async () => {
+    // One test drives both sides: the live engine answers an ordinary request the provider
+    // refused, on a context that has completed a turn, by handing off — no compaction request —
+    // and a restart over the closed file rebuilds the same note, the refusal quoted in it.
+    const refusal = "prompt is too long: 250000 tokens > 200000 maximum";
+    let oldModelCalls = 0;
+    const llm1: LLMInterface = {
+      async *streamGenerate() {
+        oldModelCalls += 1;
+        if (oldModelCalls === 1) {
+          yield toolCall({
+            name: "read_file",
+            arguments: '{"file_path":"/ws/big.log"}',
+            toolCallId: "rb",
+          });
+          yield tokenUsage(usage(150), usage(150));
+          return { status: "completed" };
+        }
+        return { status: "fatal", errorCode: "rejected", errorMessage: refusal };
+      },
+    };
+    const llm2: LLMInterface = {
+      async *streamGenerate() {
+        yield assistantText("carrying on");
+        yield tokenUsage(usage(20), usage(170));
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool({ toolCall: tc }) {
+        yield toolCallOutput({
+          output: "a very long log",
+          toolCallId: tc.payload.tool_call_id,
+          status: "completed",
+        });
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess-refused" });
+    const oldPath = trace.currentPath();
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment,
+      trace,
+      sessionMeta: meta(),
+      // The threshold is far away: only the refusal closes the context.
+      compaction: {
+        maxContextLength: 100000,
+        maxSessionTurns: -1,
+        mode: "summarize",
+        prompt: "COMPACT NOW",
+        handoffNote: HANDOFF_NOTE,
+      },
+      openNextContext: () => ({ llm: llm2 }),
+      buildHandoff: async (template) => {
+        const path = trace.currentPath();
+        return userText(
+          buildCompactionHandoff(await readTrace(path), { tracePath: path, template }),
+        );
+      },
+    });
+    const approve: ApproveFn = async () => "allow";
+    for await (const _ of engine.run([userText("read the log")], { approve })) {
+      // consume
+    }
+
+    expect(oldModelCalls).toBe(2);
+    expect(trace.currentPath()).not.toBe(oldPath);
+    const closed = await readTrace(oldPath);
+    const typeAt = (m: AmspRecord): string => (m.payload as { type?: string }).type ?? "";
+    const spanStart = closed.findIndex((m) => typeAt(m) === "compaction_begin");
+    expect(spanStart).toBeGreaterThan(-1);
+    expect(closed.slice(spanStart).map(typeAt)).not.toContain("request_begin");
+
+    const opening = (await readTrace(trace.currentPath())).find((m) => {
+      const p = m.payload as { type?: string; role?: string };
+      return p.type === "text" && p.role === "user";
+    });
+    const live = (opening?.payload as { text?: string } | undefined)?.text ?? "";
+    expect(live.startsWith("[context_summary]\nHanded off.\n")).toBe(true);
+    expect(live).toContain(transcribeToolCallOutput("rb", "completed", "a very long log"));
+    expect(live).toContain(`  [request_error code="rejected"]${refusal}[/request_error]`);
+
+    const resumed = resumeTrace(closed, { tracePath: oldPath, handoffNote: HANDOFF_NOTE });
+    expect(resumed.contextClosed).toBe(true);
+    expect((resumed.pendingSummary?.payload as { text?: string } | undefined)?.text).toBe(live);
   });
 });
 

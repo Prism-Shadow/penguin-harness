@@ -233,8 +233,10 @@ type ErrorCode =
   | "malformed"               // response failed parsing/validation, or the stream was truncated
   | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
-  | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected"                // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied"                  // the provider will not serve this account or model: any other
+                              // definitive 4xx (402, 403, 404, …; 401 is auth; 408/429 retried)
+  | "image_rejected"          // a rejected request whose input held images, retried with them replaced
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
   // MCP connect failures (per-server results of mcp_connect_end)
@@ -322,7 +324,9 @@ interface RequestEndPayload {
                               // completion that needed retries; absent on a clean first try
   retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
                               // will retry in-run — the Web App renders it as a countdown;
-                              // a failed request_end without it is the run's terminal record
+                              // 0 for a resend at once (image_rejected, and a rejected
+                              // request answered by a hand-off); a failed request_end
+                              // without it is the run's terminal record
 }
 
 interface ApprovalDecisionPayload {
@@ -360,13 +364,18 @@ interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  status: StopReason;         // completed / retryable (abandoned after the retries ran out;
-                              // the standing trigger makes it up) / fatal (a failure no
-                              // retry can fix) / aborted (user interrupted); any status
-                              // but completed keeps the original context
-  attempt?: number;           // the final attempt's ordinal, failed attempts included
-  error_code?: ErrorCode;     // the last failure's cause and detail
-  error_message?: string;
+  status: StopReason;         // completed: the next context is open (with the error pair it
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
+  attempt?: number;           // the final attempt's ordinal, failed attempts included;
+                              // absent when the span made no request (a refused
+                              // request's hand-off)
+  error_code?: ErrorCode;     // the last failure's cause and detail; on a completed end,
+  error_message?: string;     // why there was no full summary
 }
 
 interface AbortPayload {
@@ -402,7 +411,7 @@ interface HookPayload {
 
 A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
 
-`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
+`compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. A `completed` end may carry the error pair: the compaction completed without a full summary, and the pair says why. It is the one fact replay reads to rebuild that opening, the hand-off note, from the `compaction.handoff_note` template in force at resume, so a `completed` end without the pair replays exactly as before (see [Compaction](/agent-loop#when-no-summary-can-be-had)). A span may hold no request at all: when the provider refuses an ordinary request on a context that has completed a turn, its `request_end` is `retryable` with `error_code: "rejected"` and `retry_in_ms: 0`, and the `compaction_begin` / `compaction_end` pair that follows, `completed` with that error pair and no `attempt`, holds nothing between them; replay rebuilds the hand-off note from it (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)). Only a `compaction_end` that is not `completed` can end a run. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 
 ## End reasons
 
@@ -422,7 +431,7 @@ A status answers one question: should this be retried? The kind of failure rides
 | `completed` | finished normally; the turn is committed | continue |
 | `aborted` | user interruption or cancellation | stop, emit an `abort` event, hand back to the user |
 | `retryable` | a failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, a response that arrived whole but stopped at its output cap (`error_code: "output_truncated"`), and anything unclassifiable | reconnect within the run on the backoff ladder; an attempt stopped at its cap is not committed. When the retries run out, the last `request_end` (no `retry_in_ms`) is the terminal record |
-| `fatal` | a failure no retry can fix: a definitive provider 4xx rejection (parameters, quota), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record |
+| `fatal` | a failure no retry can fix: the provider refusing the request as sent (`rejected`: 400, 413, 415, 422) or declining the account or model (`denied`: any other definitive 4xx), rejected credentials, or a deterministic client-side rejection | stop the run and hand back to the user; no `abort` event follows, and the `request_end` is the terminal record. A `rejected` request on a context with a completed turn is recorded `retryable` instead and answered by a hand-off |
 
 A tool result's `status` says what the result is:
 

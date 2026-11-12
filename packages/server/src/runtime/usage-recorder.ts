@@ -41,6 +41,11 @@ export class UsageRecorder implements UsageRecording {
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
   /** One request at a time per Session: whether its streamed request_begin has been metered. */
   private readonly requests = new Map<string, boolean>();
+  /**
+   * Sessions inside a compaction span: its requests bill their usage alone, no failed Request
+   * row (a failed attempt is the compaction's, which its `compaction_end` reports).
+   */
+  private readonly compacting = new Set<string>();
 
   @Use() private readonly usage!: UsageStore;
   @Use() private readonly clock!: Clock;
@@ -76,6 +81,14 @@ export class UsageRecorder implements UsageRecording {
     const originSessionId =
       msg.origin && msg.origin.length > 0 ? msg.origin[msg.origin.length - 1]! : null;
     const requestSessionId = originSessionId ?? ctx.sessionId;
+    if (payload.type === "compaction_begin") this.compacting.add(requestSessionId);
+    else if (payload.type === "compaction_end") this.compacting.delete(requestSessionId);
+    if (
+      (payload.type === "request_begin" || payload.type === "request_end") &&
+      this.compacting.has(requestSessionId)
+    ) {
+      return;
+    }
     if (payload.type === "request_begin") {
       this.requests.set(requestSessionId, false);
       return;
@@ -112,7 +125,7 @@ export class UsageRecorder implements UsageRecording {
         output: r.output,
         total: r.total,
       });
-      // Compaction streams usage but keeps its request boundaries in the Trace. Do not
+      // A compaction's request boundaries are skipped above. Do not
       // retain state for those unpaired records after the compaction has finished.
       if (source === "stream" && this.requests.has(requestSessionId)) {
         this.requests.set(requestSessionId, true);

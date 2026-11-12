@@ -128,6 +128,8 @@ export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
 export type {
   CompactAvailability,
   CompactionSettings,
+  CompactionToolGate,
+  CompactionToolVerdict,
   ContextEngineDeps,
   EngineInitialState,
   OpenContextOptions,

@@ -11,9 +11,20 @@
  * - Approval decisions annotate their card (manual when registered here, even across a resync
  *   rebuild; remote otherwise), including decisions that arrive before the card; fatal errors
  *   and aborts render their own items.
- * - A compaction renders one banner: its summary and thinking stream onto it, each body
+ * - A compaction renders one banner: its summary and thinking stream onto it, its tool calls
+ *   become work cards on it (an approval finds them), the summary draft starts over at each of
+ *   its requests, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
+ * - A completed end carrying the error pair keeps no result, whatever a request was cut off
+ *   writing, but keeps its thinking, its work and the error, live and rebuilt alike, and clears
+ *   the context figure as any completion does; a fatal end keeps the context and settles a
+ *   retry line still waiting.
+ * - A request the provider refused, answered by a hand-off, is a retry line that resolves at the
+ *   next context's first request and a degraded compaction row with no request inside it: no
+ *   error item, the Task stays open, and the row is the Session's refusal hand-off until a later
+ *   compaction ends otherwise — live and rebuilt alike. An old Trace's abandoned compaction
+ *   (`retryable`, `failed`) is no such row.
  * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
  *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
@@ -102,6 +113,7 @@ import {
   type UserSteeringItem,
   type UserTextItem,
 } from "../src/lib/amsp/stream-model";
+import { refusalHandoffOccurrence } from "../src/lib/amsp/compaction-summary";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
@@ -779,7 +791,7 @@ describe("approvals and events", () => {
     });
   });
 
-  it("a retried compaction times the whole span its concatenated draft covers", () => {
+  it("a retried compaction concatenates its thinking over the whole span, and its result starts over with the request that wrote the summary", () => {
     const m = createStreamModel();
     const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
     pushMessage(
@@ -788,29 +800,445 @@ describe("approvals and events", () => {
     );
     const banner = items(m)[0] as CompactionItem;
     // Attempt 1: thinks, starts writing, then the request dies and the engine resends.
+    pushMessage(m, at(requestBegin(), t(0)));
     pushMessage(m, at(partialThinking("start"), t(1)));
     pushMessage(m, at(partialThinking("delta", "first pass"), t(2)));
     pushMessage(m, at(partialThinking("stop"), t(3)));
     pushMessage(m, at(partialText("delta", "[summary]half"), t(4)));
-    // Attempt 2 continues the same span, so both drafts concatenate.
+    pushMessage(m, at(requestEnd("retryable", { retryInMs: 1 }), t(4)));
+    // Attempt 2 is a request of its own: the half-written draft was no summary.
+    pushMessage(m, at(requestBegin(), t(5)));
     pushMessage(m, at(partialThinking("start"), t(5)));
     pushMessage(m, at(partialThinking("delta", " second pass"), t(6)));
     pushMessage(m, at(partialThinking("stop"), t(9)));
-    pushMessage(m, at(partialText("delta", " the plan[/summary]"), t(10)));
+    pushMessage(m, at(partialText("delta", "[summary]the plan[/summary]"), t(10)));
+    pushMessage(m, at(requestEnd("completed"), t(11)));
     pushMessage(
       m,
       at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(12)),
     );
-    // Each start is recorded once and each later stop only extends it: the wall time covers
-    // the span that produced the prose on screen, the failed attempt included. Timing the
-    // last attempt alone would print 3s against text that took nine.
+    // The thinking start is recorded once and each later stop only extends it: the wall time
+    // covers the span that produced the prose on screen, the failed attempt included. The
+    // result is the last request's text, timed from its first summary token: an end without
+    // the error pair is a summary, whatever an earlier attempt left.
     expect(banner).toMatchObject({
       thinkingText: "first pass second pass",
       thinkingStartedAtMs: Date.parse(t(2)),
       thinkingDurationMs: 7000,
-      summaryStartedAtMs: Date.parse(t(4)),
-      summaryDurationMs: 8000,
+      summaryText: "[summary]the plan[/summary]",
+      summaryStartedAtMs: Date.parse(t(10)),
+      summaryDurationMs: 2000,
     });
+  });
+
+  /**
+   * A compaction that took a tool round, as the stream and the Trace carry it: the round's
+   * request (text, a write_file call), its decision and output, then the summary's request.
+   */
+  const roundLive = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "Writing the plan first."),
+    partialText("stop"),
+    partialToolCall({ eventType: "start", name: "write_file", toolCallId: "h1" }),
+    partialToolCall({
+      eventType: "delta",
+      name: "",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    partialToolCall({ eventType: "stop", name: "", toolCallId: "h1" }),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    partialText("start"),
+    partialText("delta", "[summary]see plan.md[/summary]"),
+    partialText("stop"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const roundHistory = (): AmspRecord[] => [
+    compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    userText("COMPACT NOW"),
+    requestBegin(),
+    assistantText("Writing the plan first."),
+    toolCall({
+      name: "write_file",
+      arguments: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+      toolCallId: "h1",
+    }),
+    tokenUsage(counts(900), counts(900)),
+    requestEnd("completed"),
+    approvalDecision("allow", "h1"),
+    toolCallOutput({ output: "Wrote /s/handoff/plan.md", toolCallId: "h1", status: "completed" }),
+    requestBegin(),
+    assistantText("[summary]see plan.md[/summary]"),
+    tokenUsage(counts(950), counts(1850)),
+    requestEnd("completed"),
+    compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+  ];
+  const workOf = (banner: CompactionItem) =>
+    (banner.work ?? []).map((c) => ({
+      name: c.name,
+      argumentsText: c.argumentsText,
+      output: c.output,
+      outputStatus: c.outputStatus,
+      decision: c.decision,
+      callComplete: c.callComplete,
+      outputComplete: c.outputComplete,
+    }));
+
+  it("a compaction's tool round is a work card on its banner, the same live and from history, and never a transcript item", () => {
+    const live = createStreamModel();
+    for (const msg of roundLive()) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    for (const msg of roundHistory()) pushMessage(rebuilt, msg);
+
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual(["compaction"]);
+      const banner = items(m)[0] as CompactionItem;
+      expect(workOf(banner)).toEqual([
+        {
+          name: "write_file",
+          argumentsText: '{"file_path":"/s/handoff/plan.md","content":"1. ship"}',
+          output: "Wrote /s/handoff/plan.md",
+          outputStatus: "completed",
+          decision: "allow",
+          callComplete: true,
+          outputComplete: true,
+        },
+      ]);
+      // The result is the last request's text: the round's own words are no summary.
+      expect(banner.summaryText).toBe("[summary]see plan.md[/summary]");
+      // Housekeeping, not the Task's tool work.
+      expect(m.stats.taskToolIntervals).toEqual([]);
+    }
+  });
+
+  it("an approval request for a round's call finds its work card, so the banner can show the buttons", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 11)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    expect(findToolCard(m, [], "h1")).toBe(banner.work![0]);
+    expect(banner.work![0]!.outputComplete).toBe(false);
+  });
+
+  /** A summary cut off at the output limit, inside its open tag. */
+  const cutSummary = (lead: string, repeat: number) =>
+    `[summary]\n## Request\n${`${lead} Fix the three broken links in the release-notes draft. `.repeat(repeat)}`;
+  /** What the banner settles to, for comparing a live model with one rebuilt from history. */
+  const rowOf = (m: StreamModel) => {
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    return {
+      running: banner.running,
+      status: banner.status,
+      errorCode: banner.errorCode,
+      errorMessage: banner.errorMessage,
+      summaryText: banner.summaryText,
+      thinkingText: banner.thinkingText,
+      work: workOf(banner),
+    };
+  };
+  const degradedEnd = (
+    errorCode: "malformed" | "rejected" | "output_truncated",
+    errorMessage: string,
+    attempt?: number,
+  ) =>
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status: "completed",
+      ...(attempt !== undefined ? { attempt } : {}),
+      errorCode,
+      errorMessage,
+    });
+
+  it("a completed end with the error pair keeps no result after a summary cut off at the output limit, and keeps the thinking and the error, live and from history alike", () => {
+    const cut = cutSummary("Cut.", 9);
+    const end = () => degradedEnd("output_truncated", "stopped at the output limit", 1);
+    const live = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      requestBegin(),
+      partialThinking("start"),
+      partialThinking("delta", "what the next context needs"),
+      partialThinking("stop"),
+      partialText("start"),
+      partialText("delta", cut),
+      partialText("stop"),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      end(),
+    ]) {
+      pushMessage(live, msg);
+    }
+    const rebuilt = createStreamModel();
+    for (const msg of [
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      thinkingMessage("what the next context needs"),
+      assistantText(cut),
+      requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
+      end(),
+    ]) {
+      pushMessage(rebuilt, msg);
+    }
+    // One presentation for every completion without a full summary: the cut-off text the row
+    // streamed is no result.
+    expect(rowOf(live)).toEqual({
+      running: false,
+      status: "completed",
+      errorCode: "output_truncated",
+      errorMessage: "stopped at the output limit",
+      summaryText: undefined,
+      thinkingText: "what the next context needs",
+      work: [],
+    });
+    expect(rowOf(rebuilt)).toEqual(rowOf(live));
+    const banner = items(live)[0] as CompactionItem;
+    expect(banner.summaryStartedAtMs).toBeUndefined();
+    expect(banner.summaryDurationMs).toBeUndefined();
+  });
+
+  it("a degraded end keeps the work its tool rounds did", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, -1)) pushMessage(m, msg);
+    pushMessage(m, degradedEnd("rejected", "400 prompt is too long", 2));
+    expect(rowOf(m)).toMatchObject({ errorCode: "rejected", summaryText: undefined });
+    expect(rowOf(m).work.map((c) => c.output)).toEqual(["Wrote /s/handoff/plan.md"]);
+  });
+
+  it("a degraded end clears the context figure like any completion; a fatal end keeps the failed row and the context", () => {
+    const degraded = createStreamModel();
+    pushMessage(degraded, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      degraded,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(degraded, degradedEnd("rejected", "400 Bad Request", 1));
+    expect(degraded.stats.contextStale).toBe(true);
+
+    const fatal = createStreamModel();
+    pushMessage(fatal, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(
+      fatal,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(fatal, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(
+      fatal,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "fatal",
+        attempt: 1,
+        errorMessage: "no model client could be built",
+      }),
+    );
+    expect(fatal.stats.contextStale).toBe(false);
+    expect(rowOf(fatal)).toMatchObject({
+      status: "fatal",
+      errorCode: undefined,
+      errorMessage: "no model client could be built",
+      summaryText: undefined,
+    });
+  });
+
+  const REFUSAL = "400 prompt is too long: 140000 tokens > 131072 maximum";
+  /** The refused request and its request-less hand-off span, as the stream and the Trace both carry them. */
+  const refusedRequest = (end: "completed" | "fatal"): AmspRecord[] => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: REFUSAL,
+      attempt: 2,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    end === "completed"
+      ? degradedEnd("rejected", REFUSAL)
+      : compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          status: "fatal",
+          errorMessage: "no model client could be built",
+        }),
+  ];
+  /** A Task whose second request the provider refuses: the hand-off opens the next context, where the turn is sent again. */
+  const refusedTask = (history: boolean): AmspRecord[] => [
+    meta("s1"),
+    taskBegin(),
+    userText("fix the links"),
+    requestBegin(),
+    toolCall({ name: "read_file", arguments: '{"path":"/w/notes.md"}', toolCallId: "t1" }),
+    tokenUsage(counts(1000), counts(1000)),
+    requestEnd("completed"),
+    toolCallOutput({ output: "a very long file", toolCallId: "t1", status: "completed" }),
+    ...refusedRequest("completed"),
+    meta("s1"),
+    // The hand-off note opens the next context in the Trace; the stream never carries it.
+    ...(history
+      ? [userText("[context_summary]\nthe harness's hand-off note\n[/context_summary]")]
+      : []),
+    requestBegin(),
+    ...(history
+      ? [assistantText("Read it in parts; the links are fixed.")]
+      : [
+          partialText("start"),
+          partialText("delta", "Read it in parts; the links are fixed."),
+          partialText("stop"),
+          assistantText("Read it in parts; the links are fixed."),
+        ]),
+    tokenUsage(counts(1200), counts(400)),
+    requestEnd("completed"),
+  ];
+  /** What a refusal's hand-off leaves on screen, for comparing live with rebuilt. */
+  const handOffView = (m: StreamModel) => ({
+    kinds: items(m).map((i) => i.kind),
+    retry: items(m)
+      .filter((i): i is ReconnectItem => i.kind === "reconnect")
+      .map((r) => ({
+        errorCode: r.errorCode,
+        attempt: r.attempt,
+        retrying: r.retrying,
+        gaveUp: r.gaveUp,
+      })),
+    row: rowOf(m),
+    refusal: refusalHandoffOccurrence(m.items) !== null,
+    taskOpen: m.taskOpen,
+    runEnded: m.runEnded,
+  });
+
+  it("a request the provider refused, answered by a hand-off, shows no error and keeps the Task open; the retry line resolves at the next context's first request — live and from history alike", () => {
+    const live = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(live, msg);
+    const rebuilt = createStreamModel();
+    pushMessages(rebuilt, refusedTask(true));
+    expect(handOffView(live)).toEqual({
+      kinds: ["user_text", "tool_call", "reconnect", "compaction", "assistant_text"],
+      retry: [{ errorCode: "rejected", attempt: 2, retrying: true, gaveUp: undefined }],
+      row: {
+        running: false,
+        status: "completed",
+        errorCode: "rejected",
+        errorMessage: REFUSAL,
+        summaryText: undefined,
+        thinkingText: undefined,
+        work: [],
+      },
+      refusal: true,
+      taskOpen: true,
+      runEnded: false,
+    });
+    expect(handOffView(rebuilt)).toEqual(handOffView(live));
+  });
+
+  it("the Session's refusal hand-off is its latest compaction row until a later compaction ends otherwise", () => {
+    const m = createStreamModel();
+    for (const msg of refusedTask(false)) pushMessage(m, msg);
+    const first = refusalHandoffOccurrence(m.items);
+    expect(first).not.toBeNull();
+    // A later refusal is an occurrence of its own, so a dismissed notice is raised again for it.
+    for (const msg of refusedRequest("completed")) {
+      pushMessage(m, at(msg, "2026-01-01T00:05:00.000Z"));
+    }
+    const second = refusalHandoffOccurrence(m.items);
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    // A later compaction that completes normally takes it down; so does one that fails.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    for (const msg of refusedRequest("completed")) pushMessage(m, msg);
+    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    // A compaction request the provider refused presents the same way as a refused turn.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 3 }),
+    );
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("fatal", { errorCode: "rejected", errorMessage: REFUSAL }));
+    pushMessage(m, degradedEnd("rejected", REFUSAL, 1));
+    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    // Any other degraded end is no refusal.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 4 }),
+    );
+    pushMessage(m, degradedEnd("malformed", "the response contained no usable summary", 3));
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+  });
+
+  it("a refusal whose hand-off could not open the next context settles the retry line it announced", () => {
+    const m = createStreamModel();
+    for (const msg of refusedRequest("fatal")) pushMessage(m, msg);
+    const retry = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(retry.gaveUp).toBe(true);
+    expect(rowOf(m)).toMatchObject({ status: "fatal", summaryText: undefined });
+    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    // The next run's first request is no retry of it.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(false);
+  });
+
+  it("an old Trace's abandoned compaction is no refusal hand-off, whatever its code", () => {
+    for (const status of ["retryable", "failed"]) {
+      const m = createStreamModel();
+      pushMessage(
+        m,
+        compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+      );
+      pushMessage(m, requestBegin());
+      pushMessage(m, assistantText("[summary]half-writ"));
+      pushMessage(
+        m,
+        compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          // `failed` is an old Trace's spelling, outside today's StopReason.
+          status: status as "retryable",
+          errorCode: "rejected",
+          errorMessage: "400 Bad Request",
+        }),
+      );
+      expect(rowOf(m)).toMatchObject({
+        status,
+        errorMessage: "400 Bad Request",
+        summaryText: undefined,
+        thinkingText: undefined,
+      });
+      expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    }
+  });
+
+  it("a compaction that does not complete drops its work with its drafts, and a call it cut short settles", () => {
+    const m = createStreamModel();
+    for (const msg of roundLive().slice(0, 10)) pushMessage(m, msg);
+    const banner = items(m)[0] as CompactionItem;
+    const card = banner.work![0]!;
+    pushMessage(m, requestEnd("aborted"));
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(banner.work).toBeUndefined();
+    expect(card).toMatchObject({ outputComplete: true, outputStatus: "aborted" });
   });
 
   it("history replay rebuilds the same section timings from the span's complete messages", () => {

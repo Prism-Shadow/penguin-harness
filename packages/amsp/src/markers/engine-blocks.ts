@@ -4,15 +4,99 @@
  * host — but their spelling belongs here with the rest of the markers so the engine and the
  * resume path cannot drift apart (they used to duplicate the `[context_summary]` template).
  */
-import { dualFormPatterns, markerBlock, matchDualForm, stripMarkerBlocks } from "./block.js";
+import { markerBlock, markerClose, markerOpen, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TRANSCRIPT_TAGS } from "./tags.js";
 
-/** Wraps a compaction summary as the new context's first input: `[context_summary]…[/context_summary]`. */
-export function buildContextSummaryText(summary: string): string {
-  return markerBlock(MARKER_TAGS.contextSummary, summary);
+/**
+ * Wraps a compaction summary, or the hand-off note written in its place, as the new context's
+ * first input: `[context_summary]…[/context_summary]`. Given the compacted context's Trace file,
+ * a blank line and one line naming it follow the body; without one the block is main's.
+ */
+export function buildContextSummaryText(body: string, tracePath?: string): string {
+  if (tracePath === undefined) return markerBlock(MARKER_TAGS.contextSummary, body);
+  return markerBlock(
+    MARKER_TAGS.contextSummary,
+    `${body}\n\nTrace file of the compacted context (JSONL, one record per line): ${tracePath}`,
+  );
 }
 
-const SUMMARY_PATTERNS = dualFormPatterns(MARKER_TAGS.summary, "([\\s\\S]*?)", "g");
+/** The summary tag's two spellings, current form first (see block.ts for the dual-form policy). */
+const SUMMARY_TAG_FORMS: readonly (readonly [open: string, close: string])[] = [
+  [markerOpen(MARKER_TAGS.summary), markerClose(MARKER_TAGS.summary)],
+  [`<${MARKER_TAGS.summary}>`, `</${MARKER_TAGS.summary}>`],
+];
+
+/**
+ * Summary close tags spelled with mixed brackets, `[/summary>` and `</summary]`: a reply that
+ * closed the tag half in the other form (deepseek-flash observed, about one summary in ten).
+ * Either one closes a summary opened in either form and is stripped where stray, so it never
+ * rides into the next context; a reply without one reads exactly as it did before.
+ */
+const MIXED_SUMMARY_CLOSES: readonly string[] = [
+  `[/${MARKER_TAGS.summary}>`,
+  `</${MARKER_TAGS.summary}]`,
+];
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** A regex alternative matching every close of a summary opened in `close`'s form. */
+function summaryCloseSource(close: string): string {
+  return `(?:${[close, ...MIXED_SUMMARY_CLOSES].map(escapeRegExp).join("|")})`;
+}
+
+/**
+ * Removes, in order, each form's blocks (closed by their own close or a mixed one) and its stray
+ * tags, then stray mixed closes — for well-formed tags, exactly what stripMarkerBlocks removes.
+ */
+const SUMMARY_STRIPS: readonly RegExp[] = [
+  ...SUMMARY_TAG_FORMS.flatMap(([open, close]) => [
+    new RegExp(`${escapeRegExp(open)}[\\s\\S]*?${summaryCloseSource(close)}`, "g"),
+    new RegExp(`${escapeRegExp(open)}|${escapeRegExp(close)}`, "g"),
+  ]),
+  new RegExp(MIXED_SUMMARY_CLOSES.map(escapeRegExp).join("|"), "g"),
+];
+
+/** `text` without summary blocks and stray summary tags, mixed-bracket closes included. */
+function stripSummaryTags(text: string): string {
+  return SUMMARY_STRIPS.reduce((out, pattern) => out.replace(pattern, ""), text);
+}
+
+/** Where the first close of a summary opened in `close`'s form starts at or after `from`, or -1. */
+function summaryCloseAt(raw: string, from: number, close: string): number {
+  let at = -1;
+  for (const spelling of [close, ...MIXED_SUMMARY_CLOSES]) {
+    const i = raw.indexOf(spelling, from);
+    if (i !== -1 && (at === -1 || i < at)) at = i;
+  }
+  return at;
+}
+
+/**
+ * The text after a reply's first `[summary]` open tag (the legacy `<summary>` one when it has no
+ * square tag) up to its close, a mixed-bracket one included, else to the reply's end — stray
+ * summary tags stripped, trimmed; `closed` says whether a close was found; null without an open
+ * tag. Unlike {@link extractSummary} it reads only inside the tag, so it tells a summary from a
+ * preamble before tool calls, and keeps a summary cut off before it closed.
+ */
+export function summaryInTags(raw: string): { text: string; closed: boolean } | null {
+  for (const [open, close] of SUMMARY_TAG_FORMS) {
+    const start = raw.indexOf(open);
+    if (start === -1) continue;
+    const from = start + open.length;
+    const end = summaryCloseAt(raw, from, close);
+    const inside = end === -1 ? raw.slice(from) : raw.slice(from, end);
+    return { text: stripSummaryTags(inside).trim(), closed: end !== -1 };
+  }
+  return null;
+}
+
+/** Each form's summary block, its body captured; a mixed-bracket close ends it too. */
+const SUMMARY_PATTERNS: readonly RegExp[] = SUMMARY_TAG_FORMS.map(
+  ([open, close]) =>
+    new RegExp(`${escapeRegExp(open)}([\\s\\S]*?)${summaryCloseSource(close)}`, "g"),
+);
 
 /**
  * Extracts the summary the model wrote during compaction, with a tolerance ladder (issue #170:
@@ -34,11 +118,11 @@ const SUMMARY_PATTERNS = dualFormPatterns(MARKER_TAGS.summary, "([\\s\\S]*?)", "
 export function extractSummary(raw: string): string {
   for (const pattern of SUMMARY_PATTERNS) {
     for (const match of raw.matchAll(pattern)) {
-      const inside = stripMarkerBlocks(match[1]!, MARKER_TAGS.summary).trim();
+      const inside = stripSummaryTags(match[1]!).trim();
       if (inside !== "") return inside;
     }
   }
-  return stripMarkerBlocks(raw, MARKER_TAGS.summary).trim();
+  return stripSummaryTags(raw).trim();
 }
 
 /** One transcribed line inside a turn block: an inner tag, optional attributes, and the body. */

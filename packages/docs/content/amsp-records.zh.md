@@ -233,8 +233,10 @@ type ErrorCode =
   | "malformed"               // response failed parsing/validation, or the stream was truncated
   | "output_truncated"        // the response stopped at its output cap; retried, never committed
   | "auth"                    // the provider rejected the credentials
-  | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
+  | "rejected"                // the provider refused this request as sent: HTTP 400, 413, 415 or 422
+  | "denied"                  // the provider will not serve this account or model: any other
+                              // definitive 4xx (402, 403, 404, …; 401 is auth; 408/429 retried)
+  | "image_rejected"          // a rejected request whose input held images, retried with them replaced
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
   // MCP connect failures (per-server results of mcp_connect_end)
@@ -322,7 +324,9 @@ interface RequestEndPayload {
                               // completion that needed retries; absent on a clean first try
   retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
                               // will retry in-run — the Web App renders it as a countdown;
-                              // a failed request_end without it is the run's terminal record
+                              // 0 for a resend at once (image_rejected, and a rejected
+                              // request answered by a hand-off); a failed request_end
+                              // without it is the run's terminal record
 }
 
 interface ApprovalDecisionPayload {
@@ -360,13 +364,18 @@ interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
-  status: StopReason;         // completed / retryable (abandoned after the retries ran out;
-                              // the standing trigger makes it up) / fatal (a failure no
-                              // retry can fix) / aborted (user interrupted); any status
-                              // but completed keeps the original context
-  attempt?: number;           // the final attempt's ordinal, failed attempts included
-  error_code?: ErrorCode;     // the last failure's cause and detail
-  error_message?: string;
+  status: StopReason;         // completed: the next context is open (with the error pair it
+                              // opened with a Trace hand-off note, not a full summary) /
+                              // aborted (user interrupted) / fatal (the next context could
+                              // not be opened); both keep the original context / retryable:
+                              // written only by resume, closing a span the process died in.
+                              // Old Traces' retryable, fatal and failed all read "abandoned,
+                              // original context kept"
+  attempt?: number;           // the final attempt's ordinal, failed attempts included;
+                              // absent when the span made no request (a refused
+                              // request's hand-off)
+  error_code?: ErrorCode;     // the last failure's cause and detail; on a completed end,
+  error_message?: string;     // why there was no full summary
 }
 
 interface AbortPayload {
@@ -402,7 +411,7 @@ interface HookPayload {
 
 因条目引用了 Agent 的 Vault 中没有的键、或需要 OAuth 登录而被跳过、没有连接的 MCP Server，在 `results` 中记为 `fatal`，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`；其 `error_message` 列出缺少的键名，从不包含值。见 [Vault 引用](/tools#vault-引用)。
 
-`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
+`compaction_end` 从不携带 `retry_in_ms`：压缩的重试由压缩请求自己的 `request_end` 宣告，而这条记录只写入 Trace。`completed` 的结束事件可以带错误字段：表示压缩完成但没有完整的摘要，错误字段说明原因。重放只读这一个事实，按恢复时的 `compaction.handoff_note` 模板重建那段开头（交接说明），因此不带错误字段的 `completed` 与此前的重放完全一致（见[上下文压缩](/agent-loop#取不到摘要时)）。区间内也可以没有任何请求：供应商在已有完成轮次的上下文上拒绝普通请求时，该请求的 `request_end` 为 `retryable`，带 `error_code: "rejected"` 与 `retry_in_ms: 0`；随后的 `compaction_begin` / `compaction_end` 事件对以 `completed` 结束，带这对错误字段、不带 `attempt`，两者之间没有任何记录；重放据此重建交接说明（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)）。只有非 `completed` 的 `compaction_end` 才可能结束一次运行。旧 Trace 可能仍把 MCP 连接失败或被放弃的压缩记为 `failed`，逐个 Server 的结果里也可能是 `error` 字段，而不是这对错误字段。
 
 ## 结束原因
 
@@ -422,7 +431,7 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 | `completed` | 正常完成，该轮已提交 | 继续 |
 | `aborted` | 用户中断或取消 | 停止，产出 `abort` 事件，交还用户 |
 | `retryable` | 值得重试的失败：传输中断、空闲超时、408/429/5xx、解析失败的响应、完整送达却停在输出上限的响应（`error_code` 为 `output_truncated`），以及一切无法归类的错误 | 同一次运行内按退避阶梯自动重连；停在输出上限的尝试不提交。重试用尽时，最后一条不带 `retry_in_ms` 的 `request_end` 即终局记录 |
-| `fatal` | 重试也无法修复的失败：供应商确定性的 4xx 拒绝（参数、配额）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录 |
+| `fatal` | 重试也无法修复的失败：供应商拒绝按原样发出的请求（`rejected`：400、413、415、422）或不为该账号或模型提供服务（`denied`：其余确定性的 4xx）、凭据被拒，或确定性的客户端拒绝 | 停止本次运行，交还用户；不产出 `abort` 事件，`request_end` 即终局记录。上下文已有完成轮次时，`rejected` 的请求改记为 `retryable`，并以交接应对 |
 
 工具结果的 `status` 说明结果是什么：
 
