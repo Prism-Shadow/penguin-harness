@@ -28,7 +28,7 @@ import {
   registerUpdateCommand,
   resolveRelease,
 } from "../src/commands/update.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 // POSIX-only: the fixtures are POSIX install layouts and detectInstall normalizes through
 // path.* (backslashes on Windows) — where in-place `penguin update` is refused anyway

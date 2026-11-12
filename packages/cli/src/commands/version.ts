@@ -21,7 +21,7 @@ import path from "node:path";
 import type { Command } from "commander";
 import { buildInfo, resolveRoot } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 export function registerVersionCommand(version: Command, t: Messages): void {
   version

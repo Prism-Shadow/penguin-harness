@@ -10,7 +10,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { commandForArgv } from "../src/usage-error.js";
 
 let stdout: string[];

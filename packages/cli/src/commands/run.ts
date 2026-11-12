@@ -38,7 +38,11 @@ import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
-import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
+import {
+  denyActivePrompt,
+  promptApproval,
+  resolveApprovalMode,
+} from "@prismshadow/penguin-server/cli";
 import {
   connectionLabel,
   resolveAgentId,
@@ -47,7 +51,7 @@ import {
   resolveSessionRef,
   ServerClient,
   shortSessionId,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
 import {
   callerSessionContext,
   checkSessionTitle,
@@ -58,7 +62,7 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 export function registerRunCommand(run: Command, t: Messages): void {
   run

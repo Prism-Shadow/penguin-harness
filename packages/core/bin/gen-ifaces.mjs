@@ -81,10 +81,11 @@ const opt = (name) => {
 };
 const projects = args.flatMap((a, i) => (a === "--project" ? [args[i + 1]] : []));
 const outPath = opt("--out");
+const componentsOut = opt("--components-out");
 const checkOnly = args.includes("--check");
 if (projects.length === 0 || outPath === null) {
   console.error(
-    "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--check]",
+    "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
   );
   process.exit(2);
 }
@@ -140,6 +141,18 @@ const manifests = {};
  * it. Absent for a package that has no such default export (the harness itself).
  */
 let pluginDecl = null;
+
+// Per-project symbol → manifest name (rebound each project; read after the loop for the
+// last project's symbols) and class name → manifest name, across ALL projects: a module class one package imports from
+// another (a resource command contributed from the server package into the CLI's module
+// tree) resolves through the importing project's declaration file, whose symbol is not the
+// source symbol the declaring project registered — the class name is the shared key.
+const moduleNameByClassName = new Map();
+let moduleNameBySymbol = new Map();
+// Children whose symbol has not resolved yet; finished after every project is read.
+const pendingChildren = [];
+/** Every project's @Module / @Component classes, keyed by class symbol; read after the loop. */
+const moduleClasses = new Map(); // class symbol → { node, meta, file }
 
 for (const project of projects) {
   const configPath = path.resolve(project);
@@ -273,7 +286,6 @@ for (const project of projects) {
   // the @Use / @Provide fields, whose TYPE ANNOTATION names the interface class and whose
   // decorator argument names the providing module class. Identifiers resolve to their
   // declarations — never executed. Pass 1 collects names; pass 2 resolves references.
-  const moduleClasses = new Map(); // class symbol → { node, meta, file }
   /** A key as it reads in a path: `.id`, or `["PluginLibraryModule.skills"]`. */
   const keyLabel = (key) =>
     /^[A-Za-z_$][\w$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`;
@@ -343,7 +355,13 @@ for (const project of projects) {
   const refLiteral = (node, file, owner = null) => {
     if (ts.isIdentifier(node)) {
       const sym = checker.getSymbolAtLocation(node);
-      return { $id: sym && sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym };
+      const resolved =
+        sym && sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+      // An import whose target is not in any scanned project (a workspace package's `exports`
+      // points at unbuilt `dist`) resolves to the checker's error symbol; keep the identifier
+      // text so the deferred children resolution below can still fall back to the class name.
+      const usable = resolved && (resolved.declarations?.length ?? 0) > 0;
+      return { $id: usable ? resolved : undefined, ...(usable ? {} : { $name: node.text }) };
     }
     if (ts.isObjectLiteralExpression(node)) {
       const out = {};
@@ -415,19 +433,17 @@ for (const project of projects) {
     };
     visit(sf);
   }
-  const moduleNameBySymbol = new Map();
+  moduleNameBySymbol = new Map();
   /** component class symbol → its interface key: a component's name is its own module. */
   const componentKeyBySymbol = new Map();
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     // A node is named by its class: `export class AuthService` is the node `AuthService`.
-    if ("name" in meta) {
-      errors.push(
-        `${file}: @${kind === "module" ? "Module" : "Component"} meta names the node — a node is named by its class ('${className}')`,
-      );
-      continue;
-    }
+    // Classes already named by an earlier project's pass are skipped: the map is shared
+    // across projects, and naming a node twice would read as a hand-written `name`.
+    if ("name" in meta) continue;
     meta.name = className;
     moduleNameBySymbol.set(sym, meta.name);
+    moduleNameByClassName.set(className, meta.name);
     // `export default class X` names its symbol "default"; the class keeps its own name.
     if (kind === "component")
       componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
@@ -1217,47 +1233,15 @@ for (const project of projects) {
       (m.exports ??= []).push(isym.getName());
     }
     for (const child of meta.children ?? []) {
-      const childName = moduleNameBySymbol.get(child?.$id);
-      if (childName === undefined)
-        errors.push(`${file}: children: an entry is not a @Module or @Component class`);
-      m.children.push(childName ?? "?");
+      // Resolve after every project is read: a child may be a module class this package
+      // imports from another one (its symbol belongs to the importing project's program).
+      m.children.push(child?.$id ?? "?");
+      pendingChildren.push({ m, sym: child?.$id, file, name: child?.$name });
     }
-    if (manifests[m.name]) errors.push(`${file}: module '${m.name}' is defined twice`);
+    // A class named by an earlier project has its manifest built: the map is shared across
+    // projects, and building it twice would read as a module defined twice.
+    if (manifests[meta.name]) continue;
     manifests[m.name] = m;
-  }
-  // Wire every requirement that names no module to the module that will provide it —
-  // the one visible provider declaring that very interface (siblings, or an ancestor's
-  // siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
-  // node depends on, not only which interface, and the booter follows the same choice.
-  {
-    const childOf = new Map();
-    for (const m of Object.values(manifests))
-      for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
-    const visibleOf = (name) => {
-      const out = new Set();
-      const ancestors = new Set();
-      let cur = name;
-      for (;;) {
-        const parent = childOf.get(cur);
-        if (parent === undefined) break;
-        ancestors.add(parent);
-        for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
-        cur = parent;
-      }
-      for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
-      return out;
-    };
-    for (const m of Object.values(manifests)) {
-      if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
-      const visible = visibleOf(m.name);
-      for (const [alias, req] of Object.entries(m.requires)) {
-        if (req.from !== undefined) continue;
-        const declaring = [...visible].filter((v) =>
-          Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
-        );
-        if (declaring.length === 1) req.from = declaring[0];
-      }
-    }
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker
@@ -1274,6 +1258,57 @@ for (const project of projects) {
       continue;
     }
     table[key].slots = slotsOf(symbol, decl);
+  }
+}
+
+// Resolve the deferred children now that every project's module classes are registered.
+for (const { m, sym, file, name } of pendingChildren) {
+  const childName =
+    (sym && moduleNameBySymbol.get(sym)) ??
+    (name && moduleNameByClassName.get(name)) ??
+    (sym &&
+      moduleNameByClassName.get(typeof sym.getName === "function" ? sym.getName() : sym.name));
+  if (childName === undefined) {
+    errors.push(`${file}: children: an entry is not a @Module or @Component class`);
+    continue;
+  }
+  const i = m.children.indexOf(sym);
+  if (i === -1) m.children.push(childName);
+  else m.children[i] = childName;
+}
+
+// Wire every requirement that names no module to the module that will provide it —
+// the one visible provider declaring that very interface (siblings, or an ancestor's
+// siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
+// node depends on, not only which interface, and the booter follows the same choice.
+{
+  const childOf = new Map();
+  for (const m of Object.values(manifests))
+    for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
+  const visibleOf = (name) => {
+    const out = new Set();
+    const ancestors = new Set();
+    let cur = name;
+    for (;;) {
+      const parent = childOf.get(cur);
+      if (parent === undefined) break;
+      ancestors.add(parent);
+      for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
+      cur = parent;
+    }
+    for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
+    return out;
+  };
+  for (const m of Object.values(manifests)) {
+    if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
+    const visible = visibleOf(m.name);
+    for (const [alias, req] of Object.entries(m.requires)) {
+      if (req.from !== undefined) continue;
+      const declaring = [...visible].filter((v) =>
+        Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
+      );
+      if (declaring.length === 1) req.from = declaring[0];
+    }
   }
 }
 
@@ -1304,6 +1339,61 @@ const body = {
 };
 const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
 const text = `${JSON.stringify({ hash, ...body }, null, 1)}\n`;
+// The `@Component` classes contributing to a named module slot, emitted as a generated TS
+// table (`--components-out <path>`): the source-scan replacement for a hand-kept list of
+// command classes. Classes sort by their source file path, then by class name, so the
+// order is stable across machines; help lists commands in this order.
+const SLOT_KEY = "CliCommandsModule.commands";
+const componentsText = () => {
+  const found = [];
+  for (const [, { meta, file, kind, className }] of moduleClasses) {
+    if (kind !== "component") continue;
+    if (!meta.contributes || !(SLOT_KEY in meta.contributes)) continue;
+    found.push({ file, className });
+  }
+  found.sort((a, b) => (a.file + a.className < b.file + b.className ? -1 : 1));
+  const byImport = new Map(); // import specifier → class names, in order
+  for (const { file, className } of found) {
+    // The CLI package's own classes come in by relative path (the file is under this
+    // package's `src/`); the server package's classes come in through its `cli` subpath.
+    const spec = file.startsWith(`..${path.sep}server${path.sep}`)
+      ? "@prismshadow/penguin-server/cli"
+      : `./${path.relative("src", file).replaceAll(path.sep, "/").replace(/\.ts$/, ".js")}`;
+    if (!byImport.has(spec)) byImport.set(spec, []);
+    byImport.get(spec).push(className);
+  }
+  const lines = [
+    "/**",
+    ` * Generated by gen-ifaces — the \`@Component\` classes contributing to \`${SLOT_KEY}\`.`,
+    " * Do not edit; regenerate with `pnpm gen:ifaces`.",
+    " */",
+  ];
+  for (const [spec, names] of byImport)
+    lines.push(`import { ${names.join(", ")} } from "${spec}";`);
+  lines.push("");
+  lines.push(
+    "/** The CLI's command contributors, in the order help lists them (source-file path order). */",
+  );
+  lines.push(
+    `export const cliCommandComponents = [${found.map((f) => f.className).join(", ")}] as const;`,
+  );
+  return `${lines.join("\n")}\n`;
+};
+
+if (componentsOut !== null) {
+  const genText = componentsText();
+  const genExisting = fs.existsSync(componentsOut) ? fs.readFileSync(componentsOut, "utf8") : null;
+  if (checkOnly) {
+    if (genExisting !== genText) {
+      console.error(`gen-ifaces: ${componentsOut} is stale — run \`pnpm gen:ifaces\``);
+      process.exit(1);
+    }
+  } else if (genExisting !== genText) {
+    fs.mkdirSync(path.dirname(componentsOut), { recursive: true });
+    fs.writeFileSync(componentsOut, genText);
+    console.log(`gen-ifaces: wrote ${componentsOut}`);
+  }
+}
 const existing = fs.existsSync(outPath) ? fs.readFileSync(outPath, "utf8") : null;
 if (checkOnly) {
   if (existing !== text) {

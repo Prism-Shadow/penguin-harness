@@ -23,14 +23,9 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { MessageOrigin } from "@prismshadow/penguin-core";
-import {
-  StreamRenderer,
-  formatAbort,
-  humanizeTokens,
-  renderHistory,
-  supportsColor,
-} from "../src/render.js";
-import { getMessages } from "../src/i18n.js";
+import { StreamRenderer, formatAbort, renderHistory, supportsColor } from "../src/render.js";
+import { humanizeTokens } from "@prismshadow/penguin-server/cli";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 const t = getMessages("en");
 

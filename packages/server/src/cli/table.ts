@@ -57,3 +57,25 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (seconds < 14 * 86400) return `${Math.floor(seconds / 86400)}d`;
   return new Date(then).toISOString().slice(0, 10);
 }
+
+/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
+export function humanizeTokens(n: number): string {
+  const abs = Math.abs(n);
+  if (abs < 1000) return `${n}`;
+  if (abs < 1_000_000) {
+    const v = n / 1000;
+    return `${trimZero(v)}k`;
+  }
+  if (abs < 1_000_000_000) {
+    const v = n / 1_000_000;
+    return `${trimZero(v)}M`;
+  }
+  const v = n / 1_000_000_000;
+  return `${trimZero(v)}B`;
+}
+
+/** Keeps one decimal place but drops a trailing `.0`. */
+function trimZero(v: number): string {
+  const s = v.toFixed(1);
+  return s.endsWith(".0") ? s.slice(0, -2) : s;
+}
