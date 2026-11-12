@@ -241,6 +241,15 @@ export function PluginsPage() {
   const [indexPending, setIndexPending] = useState(0);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
+  /**
+   * The channel download under that install: which specifier it is for and how far the bytes
+   * have come. npm's own installs answer no progress, so they leave this null.
+   */
+  const [installProgress, setInstallProgress] = useState<{
+    specifier: string;
+    received: number;
+    total: number | null;
+  } | null>(null);
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -411,7 +420,16 @@ export function PluginsPage() {
     setPendingSpecifier(specifier);
     try {
       const next = install
-        ? await api.installPlugin(target.projectId, specifier, target.machineId)
+        ? await api.installPluginStream(
+            target.projectId,
+            specifier,
+            target.machineId,
+            // A download the user has navigated away from does not write this visit's state;
+            // the request itself runs on.
+            (received, total) => {
+              if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
+            },
+          )
         : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
       // A later read owns the snapshot; an old write cannot invalidate it.
       if (!isCurrentVisit() || request !== deploymentRequest.current) return;
@@ -427,6 +445,7 @@ export function PluginsPage() {
     } finally {
       if (isCurrentVisit()) {
         setPendingSpecifier(null);
+        setInstallProgress(null);
         setPendingApply(null);
       }
     }
@@ -814,6 +833,11 @@ export function PluginsPage() {
       isOwner={isOwner}
       projectId={projectId}
       busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
+      progress={
+        row.module !== undefined && installProgress?.specifier === row.module.specifier
+          ? installProgress
+          : null
+      }
       blocked={
         row.module !== undefined &&
         (viewMachine === undefined ||
@@ -909,6 +933,18 @@ export function PluginsPage() {
         {remote !== null &&
           "error" in remote &&
           samePluginTarget(remote, { projectId, machineId: viewMachine }) && (
+        {/* While searching, sources still loading mean the results — and especially an empty
+            result — are not yet final: say so rather than let noMatch read as "does not exist". */}
+        {searching && (indexPending > 0 || (registry.reading && index === null)) && (
+          <Notice tone="attention" className="mt-4">
+            {S.pluginRegistry.searchWhileDownloading}
+          </Notice>
+        )}
+        {/* Only while there is no answer to show: a failed re-read changes nothing on screen. */}
+        {remoteKey !== null &&
+          viewMachine !== undefined &&
+          remote.value === null &&
+          remote.error !== null && (
             <Notice tone="attention" className="mt-4">
               {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
             </Notice>
@@ -976,7 +1012,11 @@ export function PluginsPage() {
                 );
               })}
           {sections.length === 0 && (
-            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
+            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
+              {searching && (indexPending > 0 || (registry.reading && index === null))
+                ? S.pluginRegistry.searchWhileDownloading
+                : S.plugins.noMatch}
+            </p>
           )}
         </div>
       )}

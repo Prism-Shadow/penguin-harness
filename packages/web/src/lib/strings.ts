@@ -3320,6 +3320,8 @@ export const zh = {
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
+    /** A channel install's download: the percent while the total is known, a pulse before that. */
+    downloading: (percent: number | null) => (percent === null ? "下载中…" : `下载中 ${percent}%`),
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
@@ -3676,6 +3678,8 @@ export const zh = {
       count === 1
         ? "有 1 个插件来源仍在加载，加载完成后其中的插件会出现在这里。"
         : `有 ${count} 个插件来源仍在加载，加载完成后其中的插件会出现在这里。`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading: "插件索引仍在下载，搜索结果暂时不含未加载来源的插件，稍等片刻再试。",
     copySpecifier: "复制包名",
   },
 

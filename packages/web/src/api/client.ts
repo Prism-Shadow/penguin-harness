@@ -99,16 +99,16 @@ function requestInit(options: {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 }): RequestInit {
   return {
     method: options.method ?? "GET",
     credentials: "same-origin",
-    ...(options.body !== undefined
-      ? {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(options.body),
-        }
-      : {}),
+    headers: {
+      ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers ?? {}),
+    },
+    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   };
 }
@@ -230,6 +230,10 @@ export interface ApiFetchStreamOptions {
   body?: unknown;
   /** Aborting it closes the connection; the call then rejects with the abort's reason. */
   signal?: AbortSignal;
+  /** Which machine answers, as on {@link ApiFetchOptions.server}. */
+  server?: string | null;
+  /** Extra request headers (merged beside the JSON body's Content-Type). */
+  headers?: Record<string, string>;
 }
 
 /**

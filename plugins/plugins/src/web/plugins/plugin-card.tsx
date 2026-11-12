@@ -142,6 +142,8 @@ export interface PluginCardProps {
   projectId: string | null;
   /** This row's module install or removal is running. */
   busy: boolean;
+  /** The install under way is a channel download: bytes received so far, the total when known. */
+  progress?: { received: number; total: number | null } | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
   onQuickStart: (plugin: PluginItem) => void;
@@ -297,9 +299,18 @@ export function PluginCard(props: PluginCardProps) {
         ...(mod.state !== "none" ? [false] : []),
       ];
       for (const install of verbs) {
+        // A channel download reports itself: the percent while the total is known, a pulse
+        // before that. npm's own fetches stay "installing" — npm reports no progress here.
+        const total = props.progress?.total ?? null;
+        const percent =
+          props.progress != null && total !== null && total > 0
+            ? Math.floor((props.progress.received / total) * 100)
+            : null;
         const label = install
           ? props.busy
-            ? S.plugins.installing
+            ? props.progress != null
+              ? S.plugins.downloading(percent)
+              : S.plugins.installing
             : S.plugins.install
           : S.plugins.uninstall;
         out.push(
