@@ -3,7 +3,7 @@ title: "用 PenguinHarness 对比不同 Harness 的能力与性价比"
 date: 2026-11-05
 category: practice
 author: "Zhihao Liu (Prism Shadow AI)"
-excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三轮对比实验，拆解任务通过率、多轮稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
+excerpt: "固定底层模型与思考强度，在五个评测集、共 50 道题上对 PenguinHarness、DSH、Pi、Codex 四种 Harness 开展三次对比实验，拆解任务通过率、解题稳定性与资源开销差异，并说明如何通过 PenguinHarness 组织和复现这套评测。"
 ---
 
 本文介绍如何使用 PenguinHarness 0.2.19 组织不同 Harness 的对比实验。实验从五个公开 Benchmark 中筛选出 50 道测试题，将模型固定为 DeepSeek-V4.1-Flash-1017，思考强度设为 max，对 PenguinHarness、DSH、Pi 和 Codex 各测 3 次。下文将依次介绍 Benchmark 与实验设置、如何用 PenguinHarness 启动实验、单题执行与统计规则，以及实验结果与案例分析。
