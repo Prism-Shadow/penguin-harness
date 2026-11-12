@@ -267,19 +267,22 @@ async function targetRunsThisBuild(auth, build) {
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
-  // The platform imports its generated interface table; make sure it is current.
+  // The platform and the CLI each import their generated interface table; make sure both
+  // are current.
   const { execFileSync } = await import("node:child_process");
-  execFileSync(
-    process.execPath,
-    [
-      path.join(ROOT, "scripts/gen-ifaces.mjs"),
-      "--project",
-      path.join(ROOT, "packages/server/tsconfig.json"),
-      "--out",
-      path.join(ROOT, "packages/server/src/ifaces.json"),
-    ],
-    { stdio: "inherit" },
-  );
+  for (const pkg of ["server", "cli"]) {
+    execFileSync(
+      process.execPath,
+      [
+        path.join(ROOT, "scripts/gen-ifaces.mjs"),
+        "--project",
+        path.join(ROOT, "packages", pkg, "tsconfig.json"),
+        "--out",
+        path.join(ROOT, "packages", pkg, "src", "ifaces.json"),
+      ],
+      { stdio: "inherit" },
+    );
+  }
   await compilePushBundle(pushBundleOptions(entry, outfile));
 }
 

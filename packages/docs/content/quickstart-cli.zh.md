@@ -8,7 +8,7 @@ description: 安装 penguin 命令，配置模型，打开 Web App，在终端�
 ## 开始之前
 
 - Linux 或 macOS（x64 或 arm64），或 Windows 10 及以上（x64）且 PowerShell 为 5.1 或更高版本。这些平台的安装器自带官方 Node.js 运行时，机器上不需要另装 Node.js。
-- Node.js >= 24：用 npm 安装、从源码构建或在其他平台上使用时才需要。
+- Node.js >= 24：用 npm 安装、从源码构建或在其他平台上使用时才需要。Node 更旧时，CLI 与服务端启动即退出，并说出检测到的版本。
 - 一个模型供应商的 API Key。
 
 ## 安装 CLI

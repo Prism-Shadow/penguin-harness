@@ -51,6 +51,7 @@ import { ChatInput, type ComposerControl } from "./chat-input";
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
 import { machineForSession } from "../../lib/session-machines";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -115,6 +116,7 @@ export function SubagentsView({
   parentThinkingLevel: string;
 }) {
   const { agents, setCurrentAgentId } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   const { sessions } = useSessions();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -172,6 +174,16 @@ export function SubagentsView({
     // Last-resort label is the short session id, not a generic word: two unknown children must stay distinguishable in the graph.
     return resolveAgentLabel(node, agents, sessions) ?? shortSessionId(node.sessionId);
   };
+  /** A node's Agent's own picture, the Agent found as the label finds it (the root is this Session's). */
+  const avatarFor = (node: TopologyNode): string | undefined => {
+    const agentId =
+      node.depth === 0
+        ? session.agentId
+        : (node.agentId ?? sessions.find((s) => s.sessionId === node.sessionId)?.agentId);
+    return agentId === undefined
+      ? undefined
+      : avatarSrc(agentId, machineForSession(node.sessionId));
+  };
 
   const isRoot = active !== null && active.origin.length === 0;
   const activeNode = active ? (nodes.find((n) => n.sessionId === active.sessionId) ?? null) : null;
@@ -221,6 +233,7 @@ export function SubagentsView({
               nodes={nodes}
               selectedId={active?.sessionId ?? null}
               labelFor={labelFor}
+              avatarFor={avatarFor}
               onSelect={(node) => setSelected({ sessionId: node.sessionId, origin: node.origin })}
             />
           </div>
@@ -252,8 +265,8 @@ export function SubagentsView({
           <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
             <AgentAvatar
               id={activeModel.meta?.agentId ?? active.sessionId}
-              name={activeLabel}
               size={16}
+              src={avatarSrc(activeModel.meta?.agentId ?? "", machineForSession(active.sessionId))}
             />
             <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
               {activeLabel}

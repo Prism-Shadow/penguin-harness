@@ -8,10 +8,11 @@
  * theme. So the source is parsed for the ways a theme id can be read in JS, and each is refused
  * outside the modules whose job the theme id is.
  *
- * Refused: the identifiers that carry the id (`useTheme`, `themeId`, `ThemeId`, `THEME_IDS`,
- * `DEFAULT_THEME_ID`, `INITIAL_THEME_ID`), any string or template text naming `data-theme` (an
- * attribute read, a selector, or a `[data-theme=…]:` class variant), a JSX `data-theme`
- * attribute, and `dataset.theme`. Comments are not code and are not scanned.
+ * Refused: the identifiers that carry the id or the pack (`useTheme`, `themeId`, `ThemeId`,
+ * `THEME_IDS`, `INITIAL_THEME_ID`, `BUILTIN_PACKS`, `builtinPack`, `isThemeId`), any string or
+ * template text naming `data-theme` (an attribute read, a selector, a `[data-theme=…]:` class
+ * variant, or `data-theme-base`), a JSX `data-theme` attribute, and `dataset.theme` /
+ * `dataset.themeBase`. Comments are not code and are not scanned.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -19,10 +20,12 @@ import { scanSourceRoots, unscannedRoots } from "../src/testing";
 import { REPO_ROOT, SRC_DIR } from "./helpers/paths";
 
 /**
- * Modules whose job is the theme id, relative to src/. The contract names the ids, the boot script
- * applies them, and the test helpers read the theme files by id. Nothing a component imports.
+ * Modules whose job is the theme id, relative to src/. The registry holds the packs' manifests,
+ * the contract names the ids, the boot script applies them, and the test helpers read the pack
+ * folders by id. Nothing a component imports.
  */
 const THEME_MACHINERY: readonly string[] = [
+  "themes/index.ts",
   "tokens.ts",
   "boot.ts",
   "testing/",
@@ -36,8 +39,10 @@ const THEME_IDENTIFIERS = new Set([
   "themeId",
   "ThemeId",
   "THEME_IDS",
-  "DEFAULT_THEME_ID",
   "INITIAL_THEME_ID",
+  "BUILTIN_PACKS",
+  "builtinPack",
+  "isThemeId",
 ]);
 
 function themeReads(text: string): string[] {
@@ -64,11 +69,11 @@ function themeReads(text: string): string[] {
       report(node, "data-theme attribute");
     } else if (
       ts.isPropertyAccessExpression(node) &&
-      node.name.text === "theme" &&
+      (node.name.text === "theme" || node.name.text === "themeBase") &&
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "dataset"
     ) {
-      report(node, "dataset.theme");
+      report(node, `dataset.${node.name.text}`);
     }
     ts.forEachChild(node, visit);
   };
@@ -114,6 +119,13 @@ describe("theme reads", () => {
     expect(themeReads('import type { ThemeId } from "../../tokens";')).toEqual(["1: ThemeId"]);
     expect(themeReads("const t = document.documentElement.dataset.theme;")).toEqual([
       "1: dataset.theme",
+    ]);
+    expect(themeReads("const b = root.dataset.themeBase;")).toEqual(["1: dataset.themeBase"]);
+    expect(themeReads('const p = BUILTIN_PACKS.find((pack) => pack.base === "modern");')).toEqual([
+      "1: BUILTIN_PACKS",
+    ]);
+    expect(themeReads('const s = "[data-theme-base=modern] .x";')).toEqual([
+      '1: "[data-theme-base=modern] .x"',
     ]);
     expect(themeReads('const t = root.getAttribute("data-theme");')).toEqual(['1: "data-theme"']);
     expect(themeReads("const c = `px-2 [[data-theme=geek]_&]:rounded-none ${x}`;")).toEqual([

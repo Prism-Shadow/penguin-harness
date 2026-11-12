@@ -15,7 +15,7 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { panelWidth } from "../chat";
+import { panelWidth } from "./use-panel-width";
 import { bottomDockHeight } from "./bottom-dock-size";
 import { composerHeight } from "./composer-height";
 import { bottomRatio, type DockPosition } from "./dock-state";
@@ -115,7 +115,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
           data-testid="dock-layout-preview"
           data-pos={candidate}
           aria-hidden
-          className="pointer-events-none fixed z-[65] rounded-sm border border-sky-400/70 bg-sky-500/20"
+          className="pointer-events-none fixed z-drag-preview rounded-sm border border-sky-400/70 bg-sky-500/20"
           style={previewStyle(host, candidate)}
         />
       )}
@@ -123,7 +123,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
       {/* Drop-target widget, kept a comfortable margin off the host's corner. */}
       <div
         data-testid="dock-layout-widget"
-        className="fixed z-[70] flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
+        className="fixed z-drag-preview flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
         style={{ left: host.right - 108, top: host.bottom - 96 }}
       >
         <DropTarget position="bottom" candidate={candidate} shape="h-4 w-9" />

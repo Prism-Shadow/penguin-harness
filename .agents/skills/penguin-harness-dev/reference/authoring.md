@@ -105,5 +105,4 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
   configured here, so narrowing means choosing test files, not proving coverage over a source scope.
 - **Adding a skill to the repo root's `plugins/`** because it is "a skill". Those packages are the
   shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the
-  bilingual skills pages, the README tables are test-checked, and everything there installs into
-  users' agents. Repo development skills live in `.agents/skills/`.
+  bilingual skills pages, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.

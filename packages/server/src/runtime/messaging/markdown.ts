@@ -4,16 +4,18 @@
  *
  * It sits beside the connectors for the same reason media.ts does. The Agent writes one
  * reply, and which constructs that reply CONTAINS is a fact about the text, not about the
- * chat it lands in — so the dialect is fixed here (CommonMark plus GFM, matching what the
- * web transcript renders) and each connector renders the resulting tree into its own
- * markup. A channel that parsed for itself would disagree with the others about what the
- * model wrote, and the same reply would then carry different content in two chats.
+ * chat it lands in — so the dialect is fixed here and each connector renders the resulting
+ * tree into its own markup. A channel that parsed for itself would disagree with the others
+ * about what the model wrote, and the same reply would then carry different content in two
+ * chats.
  *
- * The parser is `remark-parse` + `remark-gfm` over `unified` — the stack packages/web
- * already renders Markdown with, so the two surfaces read a reply the same way. A parser
- * is not something to hand-roll here: emphasis, links and fenced code are context-
- * sensitive, and a substitution pass mangles exactly the replies (code containing
- * asterisks, nested emphasis, links with parentheses) that make the feature worth having.
+ * The parser is `remark-parse` over `unified` with the chat dialect
+ * (`@prismshadow/chat-markdown`: GFM, a bare URL made of ASCII URL characters only, and
+ * CJK-friendly emphasis) — the plugin the Web App renders a reply with, so the transcript
+ * and every chat link and bold the same characters. A parser is not something to hand-roll
+ * here: emphasis, links and fenced code are context-sensitive, and a substitution pass
+ * mangles exactly the replies (code containing asterisks, nested emphasis, links with
+ * parentheses) that make the feature worth having.
  *
  * The RENDER is deliberately not shared. Four channels accept four different subsets —
  * Telegram has code and no headings, lists or tables; Feishu has all of them; QQ has
@@ -26,7 +28,7 @@
  * beside the adapter that sends its output. Nothing in this module knows any channel's
  * markup.
  */
-import remarkGfm from "remark-gfm";
+import { remarkChatMarkdown } from "@prismshadow/chat-markdown";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { Nodes, Root, RootContent } from "mdast";
@@ -36,7 +38,7 @@ import type { Nodes, Root, RootContent } from "mdast";
  * a fresh processor per relayed message would redo that for every reply. Parsing is
  * stateless, so one instance serves every binding.
  */
-const processor = unified().use(remarkParse).use(remarkGfm);
+const processor = unified().use(remarkParse).use(remarkChatMarkdown);
 
 /** Reads a reply as Markdown. Never throws: any text at all is a valid document. */
 export function parseMarkdown(text: string): Root {
@@ -53,8 +55,8 @@ export function parseMarkdown(text: string): Root {
  * Model replies use `~` for ranges (`3~5 天`) and "about" (`~30 秒`) far more often than for
  * strikethrough, and two such tildes in one paragraph strike out everything between them. The
  * Web App renders replies the same way (packages/ui's remark-literal-tildes.ts), so a reply reads
- * alike in the transcript and in every chat. remark-gfm has no switch for strikethrough alone,
- * and the rest of GFM — tables, task lists, autolinks — stays wanted, hence a pass on the tree.
+ * alike in the transcript and in every chat. The chat dialect still parses strikethrough, and
+ * the rest of GFM — tables, task lists, footnotes — stays wanted, hence a pass on the tree.
  * The markers are read from the source at the node's offset, so `~` stays one tilde and `~~` two;
  * the synthesized text nodes carry the markers' own spans.
  */

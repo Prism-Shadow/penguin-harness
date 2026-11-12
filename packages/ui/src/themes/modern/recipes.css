@@ -1,0 +1,575 @@
+/*
+ * Style hooks (hooks.ts). A component opts into a hook with its class; this theme decides what
+ * the hook does. These rules are served in `ui-base`, after Tailwind's `utilities`, so a hook wins
+ * over the utilities its component also carries — that is what lets `.ui-live` re-time an
+ * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
+ * window's columns.
+ *
+ * They are the base's rendering, so they key on `data-theme-base="modern"`, not on Frost's own
+ * id: every pack whose manifest says `base: "modern"` draws them too, and a pack's own recipe in
+ * `ui-theme` replaces one by layer. Primer and Console say `base: "foundation"` and draw none.
+ *
+ * Frost gives sixteen of the hooks a recipe: glass, eyebrow (its ink; the rung is theme.css's),
+ * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart,
+ * stream, widget, avatar. `.ui-scrim` is a documented no-op: the page behind a dialog is the
+ * host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's own,
+ * and their duotone bodies show through `--ui-icon-duo-opacity`.
+ */
+
+/* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
+   layers with content moving underneath, which is what a light frost shows. Not on cards or
+   the login card; the navigation column's glass is the shell's (below), a plugin tile's its
+   own anatomy (`data-glass="tile"`, below). Elevation stays the host's own shadow token; the
+   edge is the glass hairline, barely there. */
+:root[data-theme-base="modern"] .ui-glass {
+  background-color: var(--ui-glass-bg);
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  border-color: var(--ui-glass-line);
+}
+/* A dialog is opaque, unfrosted and edgeless, with the large corner, on a dimmed backdrop —
+   the reference's About and settings dialogs: a page of its own to read, nothing of the page
+   behind showing through (even at 96% the Settings dialog let the transcript's lines ghost
+   through its rows). Menus, popovers and tooltips keep the frost at a translucency whose ink
+   clears 4.5:1 on the worst backdrop — the contrast suite measures the glass over black in
+   light and over white in dark. */
+:root[data-theme-base="modern"] .ui-glass[role="dialog"] {
+  background-color: var(--ui-overlay);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: transparent;
+  border-radius: var(--ui-radius-lg);
+}
+/* Frost parts a dialog by space and type, not by rules — as it parts a frame's head from its
+   body — so the head and the foot draw none; a rule there would also stop short of the card's
+   sides by the card's own hairline. */
+:root[data-theme-base="modern"]
+  .ui-glass[role="dialog"]
+  > :is([data-slot="head"], [data-slot="foot"]) {
+  border-color: transparent;
+}
+/* With no rule under it, the head's padding and the body's would add up to a gap that parts
+   the title from what it heads. The title sits above the body as a section title sits above
+   its rows — three space units, as the settings pane spaces its title from the first row — and
+   the body keeps two of them for the focus ring of a field at its top, which its scroller
+   would otherwise clip. A headerless dialog (a confirmation) keeps the host's padding. */
+:root[data-theme-base="modern"]
+  .ui-glass[role="dialog"]
+  > [data-slot="head"]:has(+ [data-slot="body"]) {
+  padding-bottom: var(--ui-space-unit);
+}
+:root[data-theme-base="modern"] .ui-glass[role="dialog"] > [data-slot="head"] + [data-slot="body"] {
+  padding-top: calc(var(--ui-space-unit) * 2);
+}
+/* A plugin or skill tile is a small frosted tile in its own hue, on its host's corner. The
+   host sets the hue as its ink, so `currentColor` is the tile's colour: a tenth of it is the
+   glass, an inner glow of it deepens the tile toward its foot, a hairline of it is the edge, a
+   white inner highlight lights the top, and a soft drop of it sets the tile on the card. The
+   deepening is an inset shadow rather than a gradient — gradients belong to the hooks whose
+   job needs one. */
+:root[data-theme-base="modern"] .ui-glass[data-glass="tile"] {
+  background-color: color-mix(in oklab, currentColor 11%, transparent);
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.8),
+    inset 0 0 0 1px color-mix(in oklab, currentColor 16%, transparent),
+    inset 0 -10px 14px -10px color-mix(in oklab, currentColor 20%, transparent),
+    0 1px 2px color-mix(in oklab, currentColor 14%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  backdrop-filter: blur(8px) saturate(1.4);
+}
+:root[data-theme-base="modern"].dark .ui-glass[data-glass="tile"] {
+  background-color: color-mix(in oklab, currentColor 14%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+    inset 0 0 0 1px color-mix(in oklab, currentColor 22%, transparent),
+    inset 0 -10px 14px -10px color-mix(in oklab, currentColor 22%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.3);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-theme-base="modern"] .ui-glass {
+    background-color: color-mix(in srgb, var(--ui-overlay) 96%, transparent);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme-base="modern"] .ui-glass {
+    background-color: color-mix(in srgb, var(--ui-overlay) 96%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* The tile's tint is laid on the card's own surface instead of let through. */
+  :root[data-theme-base="modern"] .ui-glass[data-glass="tile"] {
+    background-color: color-mix(in oklab, currentColor 11%, var(--ui-surface));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root[data-theme-base="modern"].dark .ui-glass[data-glass="tile"] {
+    background-color: color-mix(in oklab, currentColor 14%, var(--ui-surface));
+  }
+}
+
+/* A menu's rows — a Menu's items in a dropdown, a select's options — are inset bands rather
+   than edge-to-edge ones: on the panel's large corner a full-width band is cut by the curve
+   where the first or last row lights up. Each row stands one space unit in from the panel's
+   sides (its block padding is the unit already) and is rounded concentric with the panel —
+   the panel's radius less its hairline and that unit; the inset comes out of the row's own
+   inline padding, so its text keeps the column a menu's label and separator line up with. */
+:root[data-theme-base="modern"] .ui-glass:not([role="dialog"]) [role="menu"] > [role^="menuitem"],
+:root[data-theme-base="modern"] .ui-glass[role="listbox"] > [role="option"] {
+  width: calc(100% - 2 * var(--ui-space-unit));
+  margin-inline: var(--ui-space-unit);
+  padding-inline: calc(var(--ui-space-unit) * 2);
+  border-radius: calc(var(--ui-radius-md) - var(--ui-border-w) - var(--ui-space-unit));
+}
+
+/* The scrim — the dimmed layer behind a dialog, drawer or sheet — is the host's dim
+   (--ui-overlay-backdrop) alone: the page behind a dialog is dimmed, never frosted. Frost's
+   frost is for the chrome a reader works in (the navigation column, the plugin tiles) and the
+   small layers floating over content, and the dialog itself is opaque. No recipe. */
+
+/* Group label, in sentence case on the h6 rung (theme.css), in the muted ink. */
+:root[data-theme-base="modern"] .ui-eyebrow {
+  color: var(--ui-fg-muted);
+}
+
+/* Regular-weight display title with tight tracking. */
+:root[data-theme-base="modern"] .ui-display {
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+
+:root[data-theme-base="modern"] .ui-live {
+  animation-timing-function: var(--ui-live-timing);
+}
+:root[data-theme-base="modern"] .ui-live[data-live="caret"] {
+  animation-duration: 1.2s;
+}
+
+/* Tool cards, code blocks and the work group: rounded on the box scale with an edge that
+   barely exists, the header inside the box with no fill or rule of its own — it takes the
+   box's fill rather than none, because a work group's header sticks while its rows scroll
+   under it and must stay opaque. */
+:root[data-theme-base="modern"] .ui-frame {
+  border-radius: var(--ui-radius-md);
+  border-color: var(--ui-line-muted);
+}
+:root[data-theme-base="modern"] .ui-frame > [data-slot="head"] {
+  background-color: inherit;
+  border-bottom-color: transparent;
+}
+
+/* An activity card — a frame headed by an activity row: the agent's work group, a harness
+   event, a one-line note — is lineless in every state, the way Codex and macOS list work: no
+   card border, no fill, and no rule anywhere in it — none under the head, none between the
+   rows, none atop a row's expanded body (the `body` slot after an activity row is a fold: its
+   track, the box inside the track, and the parts that box holds directly; a code block inside
+   a part keeps its own box). Head and rows sit on the page, painted in its colour so they stay
+   opaque while they stick, spaced by whitespace; a running step adds nothing but the sweep
+   across its label. */
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) > *,
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"],
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) .ui-activity ~ [data-slot="body"] > *,
+:root[data-theme-base="modern"]
+  .ui-frame:has(> .ui-activity)
+  .ui-activity
+  ~ [data-slot="body"]
+  > *
+  > *,
+:root[data-theme-base="modern"]
+  .ui-frame:has(> .ui-activity)
+  .ui-activity
+  ~ [data-slot="under"]
+  > * {
+  border-color: transparent;
+}
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) > [data-slot="head"],
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity {
+  border-radius: var(--ui-radius-sm);
+  background-color: var(--ui-canvas);
+}
+/* No fill on hover or open either: a row that does something answers the pointer by lifting
+   its words to the body ink, the line otherwise unchanged; a harness note or a server with
+   nothing to open is held still. The keyboard ring is drawn inside the row, since the card
+   clips at the row's own edges. */
+:root[data-theme-base="modern"]
+  .ui-frame:has(> .ui-activity)
+  > [data-slot="head"]:is(button, :has(button)):hover
+  :is([data-slot="label"], [data-slot="detail"]),
+:root[data-theme-base="modern"]
+  .ui-frame:has(> .ui-activity)
+  .ui-tree
+  .ui-activity:is(button, :has(button)):hover
+  :is([data-slot="label"], [data-slot="detail"]) {
+  color: var(--ui-fg);
+}
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) button.ui-activity:focus-visible {
+  outline-offset: -3px;
+}
+/* No status marks: a step reads as its words, its details and the small chevron after them —
+   the sweep across the label says it runs, the label at rest that it settled. An error keeps
+   its mark, the danger cross beside the danger-ink label. */
+:root[data-theme-base="modern"] .ui-activity:not([data-state="error"]) [data-slot="mark"] {
+  display: none;
+}
+:root[data-theme-base="modern"] .ui-frame:has(> .ui-activity) .ui-tree > [data-depth] {
+  border-color: transparent;
+  margin-block: var(--ui-stack-0);
+}
+
+/* Tabs: a rounded accent bar under the selected tab. */
+:root[data-theme-base="modern"] .ui-underline-nav [role="tab"] {
+  position: relative;
+  /* The marker below is the only one: the host's own bottom border (Primer's) gives way. */
+  border-bottom-color: transparent;
+}
+:root[data-theme-base="modern"] .ui-underline-nav [role="tab"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0.5rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--ui-radius-pill);
+  background-color: transparent;
+  transition: background-color var(--ui-dur-fast) var(--ui-ease-out);
+  pointer-events: none;
+}
+:root[data-theme-base="modern"] .ui-underline-nav [role="tab"]:hover::after {
+  background-color: var(--ui-line);
+}
+:root[data-theme-base="modern"] .ui-underline-nav [role="tab"][aria-selected="true"]::after {
+  background-color: var(--ui-accent);
+}
+
+/* The app window: the navigation column is frosted glass over the field, the main column and
+   the dock the opaque canvas — the reading surface — with no rule between those two. The field
+   is one flat colour painted on the window, so the glass shows it only where the column is, and
+   the column is the same colour from top to bottom at every size: no wash and no gradient, so
+   nothing in the chrome is there for atmosphere (owner, 2026-10-11). The column's edge is the
+   host's rule in the faint shell line, with a hairline highlight just inside it, the glass's
+   lit edge. The column carries no backdrop filter: the flat field is all that lies behind it,
+   so a blur would change no pixel — and a backdrop filter would make the column a stacking
+   context and a containing block for fixed descendants, which the window's columns must
+   never be (they open menus). Under reduced transparency the column is the opaque muted
+   surface. */
+:root[data-theme-base="modern"] .ui-shell {
+  background-color: var(--ui-shell-field);
+}
+:root[data-theme-base="modern"] .ui-shell > [data-slot="nav"] {
+  background-color: var(--ui-shell-nav-bg);
+  border-color: var(--ui-shell-line);
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.7);
+}
+:root[data-theme-base="modern"].dark .ui-shell > [data-slot="nav"] {
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.05);
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme-base="modern"] .ui-shell > [data-slot="nav"],
+  :root[data-theme-base="modern"].dark .ui-shell > [data-slot="nav"] {
+    background-color: var(--ui-surface-muted);
+    box-shadow: none;
+  }
+}
+:root[data-theme-base="modern"] .ui-shell > [data-slot="main"],
+:root[data-theme-base="modern"] .ui-shell > [data-slot="dock"] {
+  margin: var(--ui-shell-gap);
+  border-radius: var(--ui-shell-radius);
+  border-color: transparent;
+  background-color: var(--ui-shell-main-bg);
+  box-shadow: var(--ui-shell-shadow);
+  overflow: clip;
+}
+:root[data-theme-base="modern"] .ui-shell > [data-slot="nav"] + [data-slot="main"],
+:root[data-theme-base="modern"] .ui-shell > [data-slot="main"] + [data-slot="dock"] {
+  margin-inline-start: 0;
+}
+/* Decorative icons wear their glyph's hue (`data-tint`, from ICON_TINTS): a nav row's, a group
+   header's and an empty state's icon is coloured by the concept it stands for, soft beside a
+   label in the body ink, its duotone body following the same hue. A decorative icon whose
+   path is not a registry glyph has no tint and keeps the muted ink; a menu row's icon keeps
+   the row's own ink (a danger row's stays as red as its label). Ink only: no tinted chip
+   behind an icon. */
+:root[data-theme-base="modern"] .ui-icon-decor:not([data-role="menu"]) {
+  color: var(--ui-fg-muted);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="blue"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-blue);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="violet"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-violet);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="pink"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-pink);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="red"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-red);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="orange"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-orange);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="amber"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-amber);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="green"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-green);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="teal"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-teal);
+}
+:root[data-theme-base="modern"] .ui-icon-decor[data-tint="slate"]:not([data-role="menu"]) {
+  color: var(--ui-icon-tint-slate);
+}
+
+/* Nested rows sit against a soft guide inside the host's own card: each row past its tree's
+   first level indents on the tree tokens and draws a hairline down its parent's column — half
+   an indent before its own content — and a branch continues its parent's guide alongside the
+   rows it holds, so every ancestor's guide runs the whole way down. No elbows and no box of
+   its own. The first level is the tree's base (theme.css): a file tree's roots sit at the
+   inset, and a work group's steps, which hang off the header, sit flush with it — their
+   icons in the header's icon column, no gutter and no guide, the card alone holding them. */
+:root[data-theme-base="modern"] .ui-tree [data-depth]:not([data-branch]) {
+  position: relative;
+  padding-inline-start: calc(var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base)));
+}
+:root[data-theme-base="modern"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base) - 0.5)
+  );
+  border-inline-start: var(--ui-border-w) solid var(--ui-tree-guide);
+  pointer-events: none;
+}
+:root[data-theme-base="modern"] .ui-tree [data-branch] {
+  position: relative;
+}
+:root[data-theme-base="modern"]
+  .ui-tree
+  [data-branch]:not([data-depth="0"], [data-depth="1"])::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(
+    var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base) - 1.5)
+  );
+  border-inline-start: var(--ui-border-w) solid var(--ui-tree-guide);
+  pointer-events: none;
+}
+/* In a tree that starts a level in, its first level has no parent column to draw on. */
+:root[data-theme-base="modern"] .ui-tree:not(:has([data-depth="0"])) [data-depth="1"]::before,
+:root[data-theme-base="modern"]
+  .ui-tree:not(:has([data-depth="0"]))
+  [data-branch][data-depth="2"]::before {
+  content: none;
+}
+
+/* A labelled control row is a band in a grouped block, the way the reference lists its
+   settings: the muted fill, the row's own padding, the label beside its control (the host's
+   layout), the host's faint divider between rows, and the block's corners rounded on its first
+   and last rows. Grouping by fill, not by border. */
+:root[data-theme-base="modern"] .ui-field {
+  padding: var(--ui-row-py) var(--ui-row-px);
+  background-color: var(--ui-surface-muted);
+}
+:root[data-theme-base="modern"] .ui-field:first-child {
+  border-start-start-radius: var(--ui-radius-md);
+  border-start-end-radius: var(--ui-radius-md);
+}
+:root[data-theme-base="modern"] .ui-field:last-child {
+  border-end-start-radius: var(--ui-radius-md);
+  border-end-end-radius: var(--ui-radius-md);
+}
+
+/* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
+   fill, no border, no ring, no halo (a first pass drew a luminous surface; the owner asked
+   for the lineless version) — and a soft highlight in the accent's hue sweeping across the
+   label, the one running signal once the status mark is hidden (above). The band is the
+   accent mixed toward the page, so it stands off the ink whatever the accent: the theme's own
+   accent is the ink itself, and the band would vanish into it. At rest (done, error) the row
+   is its plain words, so a finished transcript adds nothing. The highlight is a gradient
+   clipped to the label's glyphs and slid across them; parked at either end it shows only the
+   ink, which is what reduced motion shows: a plain label. The slots are found anywhere inside
+   the row (a card nests them in its own button); a work group's header shares the recipe with
+   its rows. */
+:root[data-theme-base="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
+  color: var(--ui-fg);
+  background-image: linear-gradient(
+    90deg,
+    currentColor 0 38%,
+    color-mix(in oklab, var(--ui-accent) 55%, var(--ui-canvas)) 50%,
+    currentColor 62% 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: ui-frost-shimmer 2.8s var(--ui-ease-in-out) infinite;
+}
+@keyframes ui-frost-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* A reply still arriving surfaces through a soft veil, so the newest words read as fading in
+   (the reveal paces them word by word): over the trailing line and a half the text itself
+   fades, down to six tenths of its ink at the foot, so how faint a line is says how new it is
+   — no line, no box, no band where the veil stops, and nothing painted: the veil is a mask on
+   the host, so whatever lies behind the text (the page, a card, a custom background image)
+   shows through the newest words and nothing is laid over it. The text moving up through it
+   is the only motion; each line brightens as it leaves.
+   The veil is drawn only while the stream's caret is the host's last child: the caret marks
+   where the text ends, so what the host appends after it (a stop reason, a files card) is
+   never veiled; the caret itself is not shown. How far it is drawn is `--_stream-veil`
+   (theme.css: 1 while the edge is live, registered so it interpolates): on `done` it eases to
+   nothing over the reveal duration while the host holds `data-settling` (StreamText drops it
+   when the transition ends), so the last lines settle into full ink instead of snapping, and a
+   settled reply carries no mask at all; one that mounts finished never had one. Each run of new
+   words also fades in on its own (theme.css, `[data-arrive]`). Under reduced motion the veil is
+   not drawn. */
+:root[data-theme-base="modern"] .ui-stream > [data-slot="caret"] {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme-base="modern"]:not([data-motion="reduced"]) .ui-stream {
+    transition: --_stream-veil var(--ui-dur-reveal) var(--ui-ease-out);
+  }
+  /* The veil says which lines are newest. */
+  :root[data-theme-base="modern"]:not([data-motion="reduced"])
+    .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child),
+  :root[data-theme-base="modern"]:not([data-motion="reduced"]) .ui-stream[data-settling] {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000000 calc(100% - 1.5lh),
+      rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000000 calc(100% - 1.5lh),
+      rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+    );
+  }
+}
+
+/* A notice is a soft card: the overlay surface under the overlay's shadow, no coloured border
+   and no tinted fill — the tone is one small dot of its ink at the start (a toast is a button;
+   the dot is its `::before`, which a button draws too). The dot sits out of the flow,
+   absolutely at the row's inset with the host padded to make room, because a host lays its
+   body and actions out as a flex row — a dot in the flow would be a third item and push the
+   body to the middle. A toast that also carries `ui-glass` frosts like every other floating
+   layer. On a custom background a notice in the page is a card like any other there: the
+   panel's light glass (wallpaper.css), shadow and dot kept, never a tinted slab; a toast, or
+   a notice in a dialog, keeps the overlay. */
+:root[data-theme-base="modern"] .ui-notice {
+  position: relative;
+  padding-inline-start: calc(var(--ui-row-px) + 1.125em);
+  border-color: transparent;
+  border-radius: var(--ui-radius-lg);
+  background-color: var(--wallpaper-panel-fill, var(--ui-overlay));
+  box-shadow: var(--ui-shadow-overlay);
+  color: var(--ui-fg);
+}
+/* The host's own leading mark gives way to the dot: two marks would say the same thing. */
+:root[data-theme-base="modern"] .ui-notice [data-slot="icon"] {
+  display: none;
+}
+:root[data-theme-base="modern"] .ui-notice::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: var(--ui-row-px);
+  top: 50%;
+  width: 0.5em;
+  height: 0.5em;
+  margin-top: -0.25em;
+  border-radius: var(--ui-radius-pill);
+  background-color: var(--_tone-fg);
+}
+
+/* A notice laid edge to edge (a banner) is still a rounded card here, so it stands off the
+   column's edges and whatever sits beside it instead of butting its corners against them —
+   with the same room above and below. What the page renders after it paints over anything
+   reaching past its margin (a page's own header or background is positioned, the banner is
+   not raised: chrome makes no stacking context), so the banner's shadow is fitted to that
+   room: a contact shadow and a soft drop that fades out within about ten pixels below, inside
+   the two and a half units of margin at every font-size tier, instead of the overlay shadow
+   a toast floats on, which reaches twice as far. */
+:root[data-theme-base="modern"] .ui-notice[data-banner] {
+  margin: calc(var(--ui-space-unit) * 2.5) calc(var(--ui-space-unit) * 3);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 3px 10px -3px rgb(0 0 0 / 0.1);
+}
+:root[data-theme-base="modern"].dark .ui-notice[data-banner] {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 3px 10px -3px rgb(0 0 0 / 0.45);
+}
+
+/* Folds: the chevron sits right after the row's words rather than at its far edge; a tool row
+   shows its inline chevron and drops the one at its end. */
+:root[data-theme-base="modern"] .ui-activity [data-slot="toggle"] {
+  order: 0;
+  display: flex;
+}
+:root[data-theme-base="modern"] .ui-activity [data-slot="toggle-end"] {
+  display: none;
+}
+
+/* Charts: the chart primitives write everything a token can say — colours, widths, radii,
+   opacities, the curve — so the recipe owns only what a token cannot: lines join and end
+   round, a line's area fades to nothing towards the baseline (a mask, the one gradient a
+   chart may paint), and a point wears a thin ring of the surface. */
+:root[data-theme-base="modern"] .ui-chart :is(path, polyline)[data-part="series"] {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+:root[data-theme-base="modern"] .ui-chart [data-part="area"] {
+  /* The area fades towards its baseline: the data's shape. deslop-ignore-next-line 06 */
+  -webkit-mask-image: linear-gradient(to bottom, #000000, transparent);
+  /* deslop-ignore-next-line 06 */
+  mask-image: linear-gradient(to bottom, #000000, transparent);
+}
+:root[data-theme-base="modern"] .ui-chart [data-part="point"] {
+  stroke: var(--ui-surface);
+  stroke-width: 1.5;
+}
+
+/* Widgets: a glanceable reading as a soft tile — no hairline, the muted fill with white tiles
+   inside, and numerals at the regular weight with tight tracking, the way Frost sets a title
+   large. The box radius is the host's md rung, so its p-3 clears the corners. */
+:root[data-theme-base="modern"] .ui-widget {
+  border-color: transparent;
+  background-color: var(--ui-surface-muted);
+}
+:root[data-theme-base="modern"] .ui-widget [data-tile] {
+  background-color: var(--ui-surface);
+}
+:root[data-theme-base="modern"] .ui-widget [data-figure] {
+  font-weight: var(--ui-weight-body);
+  letter-spacing: -0.02em;
+}
+
+/* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather
+   than as a synthesized bold, which smears Han strokes; Frost's own weights stop at 500. */
+:root[data-theme-base="modern"] {
+  font-synthesis-weight: none;
+}
+
+/* An Agent's avatar is the soft drawing: the ball penguin on a round tile. Every pack built on the
+   base shows it, Doodle included, until it draws its own. */
+:root[data-theme-base="modern"] .ui-avatar > [data-variant="flat"] {
+  display: none;
+}
+:root[data-theme-base="modern"] .ui-avatar > [data-variant="soft"] {
+  display: inline;
+}

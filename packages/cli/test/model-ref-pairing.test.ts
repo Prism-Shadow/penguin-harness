@@ -35,10 +35,11 @@ afterEach(async () => {
 async function runCommand(
   register: (program: Command, t: ReturnType<typeof getMessages>) => void,
   args: string[],
+  name = "run",
 ): Promise<{ out: string; err: string; code: number }> {
   const program = new Command();
   program.exitOverride();
-  register(program, getMessages("en"));
+  register(program.command(name), getMessages("en"));
   const out: string[] = [];
   const err: string[] = [];
   const outSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -86,19 +87,21 @@ describe("run: --model-id and --provider must be given together", () => {
 
 describe("chat: --model-id and --provider must be given together", () => {
   it("--model-id without --provider: error on stderr, exit code 1", async () => {
-    const bad = await runCommand(registerChatCommand, ["chat", "--model-id", "deepseek-v4-flash"]);
+    const bad = await runCommand(
+      registerChatCommand,
+      ["chat", "--model-id", "deepseek-v4-flash"],
+      "chat",
+    );
     expect(bad.code).toBe(1);
     expect(bad.err).toContain("--model-id and --provider must be given together");
   });
 
   it("--resume plus a lone --model-id keeps the more specific resume error", async () => {
-    const bad = await runCommand(registerChatCommand, [
+    const bad = await runCommand(
+      registerChatCommand,
+      ["chat", "--resume", "sess-1", "--model-id", "deepseek-v4-flash"],
       "chat",
-      "--resume",
-      "sess-1",
-      "--model-id",
-      "deepseek-v4-flash",
-    ]);
+    );
     expect(bad.code).toBe(1);
     expect(bad.out).toContain("--resume does not accept");
     expect(`${bad.out}${bad.err}`).not.toContain("must be given together");

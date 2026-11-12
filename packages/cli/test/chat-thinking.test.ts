@@ -54,7 +54,7 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   try {
     const program = new Command();
     program.exitOverride();
-    registerChatCommand(program, t);
+    registerChatCommand(program.command("chat"), t);
     const done = program.parseAsync(["node", "penguin", "chat", ...argv]);
     for (let i = 0; i < lines.length; i++) {
       await Promise.race([waitForPrompt(i + 1), done]);

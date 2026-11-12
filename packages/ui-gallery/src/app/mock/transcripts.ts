@@ -9,7 +9,7 @@
  * - an open `partial_text` fragment, carried the same way, is a reply streaming in;
  * - a tool call the stream has escalated with `approval_request` is waiting on a human.
  */
-import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
+import type { ApprovalReason, GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { IDS } from "./ids";
 import type { Lang, AmspRecord, PayloadOf, ThinkingLevel, ToolCallMessage } from "./types";
 
@@ -494,6 +494,8 @@ export interface Transcript {
   openText?: { startedAt: number; text: string };
   /** A tool call awaiting a human decision. */
   pendingApproval?: ToolCallMessage;
+  /** Why it waits, when a command-policy rule rather than the approval mode asked. */
+  pendingReason?: ApprovalReason;
   /** Goal-mode events a fresh subscription is told after the run state (the goal banner's). */
   goalEvents?: GoalServerEvent[];
   running: boolean;
@@ -607,7 +609,7 @@ export function streamingTranscript(lang: Lang, now: number, ref: ModelRef): Tra
   };
 }
 
-/** A Task waiting on a human: the publish command awaits approval. */
+/** A Task waiting on a human: the publish command awaits approval, which the factory `package-publish` rule asked for. */
 export function approvalTranscript(lang: Lang, now: number, ref: ModelRef): Transcript {
   const c = COPY[lang].approval;
   const t0 = now - 30_000;
@@ -619,6 +621,7 @@ export function approvalTranscript(lang: Lang, now: number, ref: ModelRef): Tran
   return {
     running: true,
     pendingApproval: call,
+    pendingReason: { kind: "policy", rule: "package-publish" },
     history: [
       meta(s(0), IDS.sessions.approval, ref, IDS.workspace),
       userText(s(0), c.prompt),

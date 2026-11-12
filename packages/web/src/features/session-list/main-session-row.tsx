@@ -17,6 +17,8 @@ import { writeClipboard } from "../../lib/clipboard";
 import { sessionActivityLabel, type SessionActivity } from "../../lib/session-activity";
 
 import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { machineForSession } from "../../lib/session-machines";
 
 export function SidebarSessionRow({
   s,
@@ -90,6 +92,7 @@ export function SidebarSessionRow({
     handler[action](s);
   };
   const rowState = { pinned };
+  const avatarSrc = useAgentAvatarSrc();
   const extensions = useContext(MainRowExtensions);
   if (extensions === null) throw new Error("Session row mounted outside contributed list");
   const { rows } = extensions;
@@ -121,7 +124,16 @@ export function SidebarSessionRow({
           />
         )}
         active={active}
-        {...(agentHint !== undefined ? { agent: { id: s.agentId, name: agentHint } } : {})}
+        {...(agentHint !== undefined
+          ? {
+              agent: {
+                id: s.agentId,
+                name: agentHint,
+                // The Agent of the machine the Session lives on, where the same id is another Agent.
+                avatarSrc: avatarSrc(s.agentId, machineForSession(s.sessionId)),
+              },
+            }
+          : {})}
         // The marks for the row's STANDING arrangements, all in one dim cluster: which program
         // opened it (a Session the user kept after a program opened it), how the row is filed
         // (pinned), where it can be reached from (the messaging relay, named by its channel),

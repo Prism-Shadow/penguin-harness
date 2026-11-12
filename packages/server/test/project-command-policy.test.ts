@@ -7,7 +7,13 @@
  * - Any member reads; only the owner writes, and a non-member cannot tell the Project exists.
  * - The rules are plain data: edit, disable, delete and add all round-trip, as do an empty
  *   list and a disabled policy, and a PUT materializes the full list.
- * - An uncompilable pattern is refused naming its rule; malformed bodies are refused.
+ * - A rule's action round-trips: the seeded `ask` rules are served as `ask`, an `ask` rule is
+ *   stored as `action = "ask"`, and a `deny` rule — the default — is stored and served
+ *   without one.
+ * - An uncompilable pattern is refused by its rule's name, its index and the engine's reason,
+ *   never by the pattern's own text; malformed bodies are refused.
+ * - A stored rule this engine cannot compile (matching skips it) is served with the engine's
+ *   reason, so the settings page can mark it; the other rules carry none.
  * - The write is read-modify-write: the models table survives.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -117,6 +123,28 @@ describe("project command policy", () => {
     expect(((await restore.json()) as CommandPolicyDto).rules).toEqual(before.defaultRules);
   });
 
+  it("a rule's action round-trips, stored only when it asks", async () => {
+    const seeded = (await (await owner.get(url)).json()) as CommandPolicyDto;
+    expect(seeded.rules.find((r) => r.name === "gh-pr-merge-close")?.action).toBe("ask");
+    expect(seeded.rules.find((r) => r.name === "rm-recursive-force")?.action).toBeUndefined();
+
+    const rules = [
+      { name: "ask-deploy", pattern: "\\bfly deploy\\b", enabled: true, action: "ask" as const },
+      { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true, action: "deny" as const },
+    ];
+    const put = await owner.put(url, { enabled: true, rules });
+    expect(put.status).toBe(200);
+    const stored = (await put.json()) as CommandPolicyDto;
+    expect(stored.rules).toEqual([
+      rules[0],
+      { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true },
+    ]);
+
+    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml.match(/action = "ask"/g) ?? []).toHaveLength(1);
+    expect(toml).not.toContain('action = "deny"');
+  });
+
   it("an empty rules list and a disabled policy both round-trip", async () => {
     expect((await owner.put(url, { enabled: false, rules: [] })).status).toBe(200);
     const dto = (await (await owner.get(url)).json()) as CommandPolicyDto;
@@ -131,12 +159,49 @@ describe("project command policy", () => {
     expect((await outsider.put(url, { rules: [] })).status).toBe(404);
   });
 
-  it("rejects an uncompilable pattern with the rule's name in the message", async () => {
-    const res = await owner.put(url, { rules: [{ name: "broken", pattern: "(" }] });
+  it("refuses an uncompilable pattern by the rule's name, its place and the engine's reason, not by its text", async () => {
+    const long = `${"(?:a|b)".repeat(60)}(`;
+    const res = await owner.put(url, {
+      rules: [
+        { name: "fine", pattern: "\\bcurl\\b" },
+        { name: "broken", pattern: long },
+      ],
+    });
     expect(res.status).toBe(400);
     const body = (await res.json()) as ErrorBody;
     expect(body.error.code).toBe("invalid_rule_pattern");
     expect(body.error.message).toContain("broken");
+    expect(body.error.message).toContain("Unterminated group");
+    expect(body.error.message).not.toContain(long);
+    expect(body.error.details).toEqual({
+      rule: "broken",
+      index: "1",
+      reason: "Unterminated group",
+    });
+    // Nothing was stored: the list is still the seeded one.
+    const stored = (await (await owner.get(url)).json()) as CommandPolicyDto;
+    expect(stored.rules.map((r) => r.name)).toContain("rm-recursive-force");
+  });
+
+  it("serves a stored rule this engine cannot compile with the engine's reason, and only that rule", async () => {
+    // A file written where the engine accepted the pattern, read where it does not: placed by
+    // hand here, since this server refuses to store it.
+    const placed = await owner.put(url, {
+      rules: [
+        { name: "fine", pattern: "\\bcurl\\b" },
+        { name: "stored-broken", pattern: "PLACEHOLDER" },
+      ],
+    });
+    expect(placed.status).toBe(200);
+    const file = path.join(t.root, projectId, ".project_config.toml");
+    const toml = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, toml.replace('"PLACEHOLDER"', '"(?<broken"'), "utf8");
+
+    const dto = (await (await member.get(url)).json()) as CommandPolicyDto;
+    const byName = new Map(dto.rules.map((r) => [r.name, r]));
+    expect(byName.get("stored-broken")?.patternError).toEqual(expect.any(String));
+    expect(byName.get("fine")?.patternError).toBeUndefined();
+    expect(dto.defaultRules.every((r) => r.patternError === undefined)).toBe(true);
   });
 
   it("rejects malformed bodies (missing rules, bad entries, wrong types)", async () => {
@@ -148,6 +213,7 @@ describe("project command policy", () => {
       [{ name: "n", pattern: "" }],
       [{ name: "n", pattern: "x", enabled: "yes" }],
       [{ name: "n", pattern: "x", description: 42 }],
+      [{ name: "n", pattern: "x", action: "maybe" }],
       ["not-an-object"],
       "not-an-array",
     ]) {

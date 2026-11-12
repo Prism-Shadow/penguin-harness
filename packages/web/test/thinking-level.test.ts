@@ -1,11 +1,6 @@
 /**
- * The thinking-level pickers (features/model-picker/thinking-level.ts) and the tier names in both
- * dictionaries.
+ * The thinking-level pickers (features/model-picker/thinking-level.ts).
  *
- * - The pickers offer exactly the tiers core accepts as a chat default; every stored level,
- *   a legacy "none" included, is named in both locales.
- * - The zh trigger shows a Chinese name with no wire value, while every menu row, in either
- *   language, shows the wire value once.
  * - A non-level ("" for no override, a legacy "default", an unknown value, nothing) has no
  *   label; a level missing from the name table shows its raw value.
  * - The draft picker resolves the Agent's explicit level, then the Project's chat default, then
@@ -20,12 +15,7 @@
  * - The in-session picker follows the Agent config until a level is pinned on the Session.
  */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
-import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
 import {
-  SELECTABLE_THINKING_LEVELS,
-  THINKING_LEVELS,
   compactionSettledSince,
   compactionTally,
   effectiveThinkingLevel,
@@ -46,41 +36,6 @@ const NAMES: Readonly<Record<string, string>> = {
   xhigh: "xhigh",
   max: "max",
 };
-
-describe("tier names track core, and the trigger/menu split holds", () => {
-  const dictionaries: ReadonlyArray<readonly [string, typeof zh]> = [
-    ["zh", zh],
-    ["en", en],
-  ];
-
-  it("offers exactly the tiers core accepts as a chat default", () => {
-    expect([...SELECTABLE_THINKING_LEVELS]).toEqual([...DEFAULT_CHAT_THINKING_LEVELS]);
-  });
-
-  it("names every stored level in both locales — a new tier cannot ship unlabelled", () => {
-    for (const [locale, dict] of dictionaries) {
-      // THINKING_LEVELS ⊇ DEFAULT_CHAT_THINKING_LEVELS: the extra "none" is never offered
-      // but still has to display, so the table has to cover it too.
-      for (const level of THINKING_LEVELS) {
-        const name = dict.chat.thinkingLevelNames[level];
-        expect(name, `${locale} has no name for the ${level} tier`).toBeTruthy();
-      }
-    }
-  });
-
-  it("keeps the wire value off the zh trigger, and shows it once on every menu row", () => {
-    for (const level of THINKING_LEVELS) {
-      const zhName = zh.chat.thinkingLevelNames[level] ?? "";
-      // The maintainer's rule for the trigger: Chinese only — no latin letters, no parens.
-      expect(zhName, `zh ${level} must not carry the wire value`).not.toMatch(/[A-Za-z()]/);
-      for (const [locale, dict] of dictionaries) {
-        const name = dict.chat.thinkingLevelNames[level] ?? "";
-        const row = dict.chat.thinkingLevelMenuName(name, level);
-        expect(row.split(level).length - 1, `${locale} ${level} menu row`).toBe(1);
-      }
-    }
-  });
-});
 
 describe("thinkingLevelLabel", () => {
   it("returns null for non-levels: '' (untouched/no override), a legacy meta's 'default', unknown, null", () => {

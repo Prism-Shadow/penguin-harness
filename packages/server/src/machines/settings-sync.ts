@@ -44,6 +44,7 @@ export function localSettings(
         pattern: rule.pattern,
         ...(rule.description !== undefined ? { description: rule.description } : {}),
         enabled: rule.enabled !== false,
+        ...(rule.action === "ask" ? { action: "ask" as const } : {}),
       })),
     },
     chatDefaults: {

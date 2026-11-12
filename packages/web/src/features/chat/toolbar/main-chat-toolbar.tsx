@@ -1,6 +1,5 @@
 import { renderMainSessionDetails } from "./main-session-details";
 import {
-  ActivityIcon,
   Dot,
   Dropdown,
   GlyphIcon,
@@ -12,13 +11,13 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
 import { formatDateTime } from "../../../lib/format";
-import { sessionActivityLabel } from "../../../lib/session-activity";
 import { Truncated } from "../../../components/ui/truncated";
 import { CostPartsRows, StatHint } from "../../../components/ui/stat-hint";
 import { OutlineMenuButton } from "../conversation-outline";
 import { nameOnMachine } from "../../../lib/workspace-machines";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { DockToggles } from "../dock-toggles";
+import { RunStatus } from "../run-status";
 import { toneInk } from "../../../lib/tone";
 import { STAT_ICONS } from "../../../lib/stat-icons";
 import { SessionIdRow } from "../session/main-chat-helpers";
@@ -38,9 +37,6 @@ export function renderMainChatToolbar(scope: MainChatView) {
     stream,
     outline,
     streamScrollRef,
-    workflowTabs,
-    projectId,
-    pageAgentId,
     railFit,
     machineNameOf,
     onRemoveProcess,
@@ -53,44 +49,24 @@ export function renderMainChatToolbar(scope: MainChatView) {
     headerActivity,
     backgroundCount,
   } = scope;
-  const coveredByWorkbench =
-    workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null
-      ? "invisible"
-      : "";
   return (
     <>
       {archivedRow && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <Heading level={5} as="h1" className="flex min-w-0">
             <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
           </Heading>
         </div>
       )}
       {selected && (
-        <div
-          className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800 ${coveredByWorkbench}`}
-        >
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* The page's h1 on the compact title rung: a toolbar title, not a display title. */}
             <Heading level={5} as="h1" className="flex min-w-0">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </Heading>
-            {/* Session-level state: a turning hourglass while the run is active, and nothing at
-                all once it settles — the conversation on screen is by definition read, and the
-                unread dot is a sidebar affordance for the rows you are NOT looking at. The
-                compacting state stays in the stream banner rather than being repeated here.
-                Below sm only the glyph remains so the title keeps its room. */}
-            {headerActivity === "running" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <ActivityIcon
-                  activity={headerActivity}
-                  label={sessionActivityLabel(headerActivity)}
-                />
-                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
-              </span>
-            )}
+            {/* Session-level state: the run indicator (run-status.tsx). */}
+            <RunStatus activity={headerActivity} />
           </div>
 
           {/* Panel switcher (icon-only): pinned triggers + the "create" dropdown with
@@ -115,7 +91,9 @@ export function renderMainChatToolbar(scope: MainChatView) {
               viewports show the live chips (Token / cost / elapsed, plus the running-services
               count while any process is alive) and clicking them opens the details card; narrow
               viewports collapse the whole thing to the single info icon. There is no separate
-              info icon while the chips are visible. */}
+              info icon while the chips are visible. The card drops over the docks: portaled,
+              so a dock lifted to fullscreen or the built-in browser's page, which is laid over
+              the Chat window from outside it, never covers it. */}
           {renderMainSessionDetails(scope)}
         </div>
       )}

@@ -36,7 +36,7 @@ async function captureStdout<T>(body: () => Promise<T>): Promise<{ out: string; 
 async function run(argv: string[]): Promise<string> {
   const program = new Command();
   program.exitOverride();
-  registerVersionCommand(program, getMessages("en"));
+  registerVersionCommand(program.command("version"), getMessages("en"));
   const { out } = await captureStdout(() => program.parseAsync(argv, { from: "user" }));
   return out;
 }

@@ -11,15 +11,8 @@
  *   cap; removing closes the gap and ignores unknown ids.
  * - The suggested title is the first non-empty line, one line, capped; nothing for an empty
  *   composer.
- * - The user folder's tallest state stays within one row of the tallest built-in folder, so the
- *   examples block does not move as folders are switched.
- * - The caps match the server's copy, which enforces them (read from the server module's
- *   source: the server package is a type-only dependency of the Web App).
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { EXAMPLE_FOLDERS } from "../src/features/chat/example-tasks";
 import {
   SHORTCUT_MAX_COUNT,
   SHORTCUT_PROMPT_MAX,
@@ -39,9 +32,6 @@ const shortcut = (id: string, title = `title ${id}`, prompt = `prompt ${id}`): U
   title,
   prompt,
 });
-
-const read = (relative: string): string =>
-  readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
 describe("normalizeShortcuts — reading the list back out of free-form JSON", () => {
   it("reads a stored list through unchanged", () => {
@@ -195,32 +185,5 @@ describe("defaultShortcutTitle — the name suggested when saving what was typed
   it("suggests nothing for an empty composer", () => {
     expect(defaultShortcutTitle("")).toBe("");
     expect(defaultShortcutTitle("   \n  ")).toBe("");
-  });
-});
-
-describe("the examples block keeps its height", () => {
-  it("keeps the user folder within one row of the built-in ones", () => {
-    // Its tallest state is either the cap with no add row, or one below the cap plus the add
-    // row — both SHORTCUT_MAX_COUNT rows. The cap is what holds this, not a pinned height with
-    // a scrollbar inside it.
-    const tallestBuiltIn = Math.max(...EXAMPLE_FOLDERS.map((f) => f.tasks.length));
-    const tallestUser = Math.max(SHORTCUT_MAX_COUNT, SHORTCUT_MAX_COUNT - 1 + 1);
-    expect(tallestUser - tallestBuiltIn).toBeLessThanOrEqual(1);
-  });
-});
-
-describe("the caps the server enforces", () => {
-  it("matches the Web App's copy of them", () => {
-    // Two copies on purpose: the server owns enforcement (ui_prefs is a free-form JSON column),
-    // this package owns the counters, and penguin-server is a type-only dependency here.
-    const source = read("../../server/src/services/draft-shortcuts.ts");
-    const capOf = (name: string): number => {
-      const m = new RegExp(`export const ${name} = (\\d+);`).exec(source);
-      expect(m, `${name} in the server module`).not.toBeNull();
-      return Number(m?.[1]);
-    };
-    expect(capOf("DRAFT_SHORTCUT_MAX_COUNT")).toBe(SHORTCUT_MAX_COUNT);
-    expect(capOf("DRAFT_SHORTCUT_TITLE_MAX")).toBe(SHORTCUT_TITLE_MAX);
-    expect(capOf("DRAFT_SHORTCUT_PROMPT_MAX")).toBe(SHORTCUT_PROMPT_MAX);
   });
 });

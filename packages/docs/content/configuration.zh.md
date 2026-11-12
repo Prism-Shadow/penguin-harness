@@ -218,21 +218,22 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 ## 命令策略
 
-`[command_policy]` 块是 Project 为 shell 命令设下的护栏：一组在审批边界直接生效的拒绝规则。
+`[command_policy]` 块是 Project 为 shell 命令设下的护栏：一组在审批边界直接生效的规则。每条规则对命中的命令要么直接拒绝（`deny`），要么等人允许后才放行（`ask`）。
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `enabled` | 布尔 | 启用 | 总开关；只以 `enabled = false` 的形式存储 |
-| `[[command_policy.rules]]` | 表数组 | 出厂规则集 | 拒绝规则，按顺序匹配。存储为空列表表示没有规则；不存储列表则表示使用出厂规则集 |
+| `[[command_policy.rules]]` | 表数组 | 出厂规则集 | 规则列表。存储为空列表表示没有规则；不存储列表则表示使用出厂规则集 |
 
 每条规则包含以下键：
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `name` | 字符串 | — | 在设置界面中标识这条规则 |
-| `pattern` | 字符串 | — | JavaScript 正则表达式源码，与空白符归一化后的命令匹配 |
+| `pattern` | 字符串 | — | JavaScript 正则表达式源码，与空白符归一化后的命令匹配。须能在服务端的运行时上编译：编译不过的已存规则在匹配命令时被跳过，记一次日志，并在设置页标出 |
 | `description` | 字符串 | — | 可选的描述 |
 | `enabled` | 布尔 | 启用 | 单条规则的开关 |
+| `action` | `"deny"` \| `"ask"` | `"deny"` | 命中后怎么办：`deny` 拒绝调用；`ask` 无论审批模式都交人决定。只以 `action = "ask"` 的形式存储 |
 
 ```toml
 [command_policy]
@@ -242,6 +243,12 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "gh-pr-merge-close"
+pattern = "…" # seeded from the factory set
+description = "gh pr merge / close — a pull request is merged or closed only with a person's go-ahead"
+action = "ask"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -254,9 +261,12 @@ enabled = false
 ### 生效方式
 
 - **检查范围：** 两个会触达 shell 的工具：`exec_command` 的 `cmd`（启动的命令）和 `input_command` 的 `chars`（往运行中的命令键入的内容）。
-- **生效时机：** `Session.run` 会用策略包住注入的审批回调，所以只要命中规则，在任何审批模式下（`allow-all` 也不例外）都会在询问宿主之前直接拒绝。
-- **模型看到什么：** 一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法。
-- **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。策略否决的调用，无论已安装的钩子给出什么答复，都保持禁止。
+- **生效时机：** `Session.run` 会用策略包住注入的审批回调，在任何审批模式下（`allow-all` 也不例外）都生效。命中 `deny` 规则，在询问宿主之前直接拒绝；命中 `ask` 规则，带着策略原因交给宿主的审批回调，由它交给人决定而不按审批模式作答（见[工具与审批](/tools#审批)），审批卡片会写明是哪条规则要求确认。
+- **以哪条为准：** 无论两者在列表里的先后，`deny` 命中都优先于 `ask` 命中，所以新增一条 `ask` 规则不会把原本的拒绝变成询问。同一种规则之间，以列表中第一条命中的规则命名这次决定。
+- **模型看到什么：** 命中 `deny` 时，是一行固定的 `Tool call denied by policy.`，与人为取消不同，模型会据此改变做法；命中 `ask` 时，是人的决定，与其他审批一样记录。
+- **钩子：** 策略的优先级高于 [pre-tool-use 钩子](/agent-loop#pre-tool-use-hook)的 `allow`。无论已安装的钩子给出什么答复，命中 `deny` 规则的调用都保持禁止，命中 `ask` 规则的调用仍交人决定。
+- **Subagent：** 子 Session 对继承来的审批回调施加同一套策略，而这个回调就是父 Session 的，所以 Subagent 里的 `ask` 命中会带着原因交给同一个人。
+- **无人值守的 Session：** 组织的工位与工单 Session 无人可问，`ask` 命中当场拒绝；`deny-all` 下同样拒绝。
 - **存放位置：** 策略存放在 Project 配置里，而不是 Agent State 里，所以 Agent 通过自身设置修改配置时碰不到它。
 - **修改何时生效：** 策略属于严格层级的运行时参数，只在模型上下文开启时读取一次。改动要等运行中的 Session 下一次轮换（压缩）才生效，新对话则立即生效。
 
@@ -264,7 +274,9 @@ enabled = false
 
 规则就是**普通数据，没有特殊层级**。出厂规则集会像模型预设一样预置到每个新建 Project 里：创建时复制一份，之后绝不重写。此后每条规则都能编辑、停用或删除，你也可以添加自己的规则。在预置机制上线之前创建的 Project（存储中没有 `rules` 列表）会按出厂规则集运作，直到第一次保存编辑、把列表写进去为止。设置页面上的 **恢复默认** 会把出厂规则集重新载入编辑器，保存后写回。
 
-出厂规则集刻意保持精简，只覆盖那些原样执行就会造成破坏、且无法撤销的命令：
+由于预置的规则之后绝不重写，后续版本新增的出厂规则不会自动进入已经存储了规则列表的 Project。下面五条 `ask` 规则就属于这种情况：已有的 Project 通过 **恢复默认** 采纳它们，保存后会替换整张列表（包括自定义规则）。从未保存过规则列表的 Project 本就按出厂规则集运作，已经包含它们。
+
+出厂规则集刻意保持精简。其中的 `deny` 规则只覆盖那些原样执行就会造成破坏、且无法撤销的命令：
 
 - 同时带递归和强制标志的 `rm`
 - `mkfs`
@@ -278,6 +290,18 @@ enabled = false
 - 卷格式化（`format C:`、`Format-Volume`）
 - 裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）
 - cmd 版的 fork 炸弹
+
+其后是五条 `ask` 规则。它们覆盖的命令都会作用到本机之外、难以收回，却也是人很可能确实想做的日常操作，所以等人同意，而不是直接拒绝：
+
+| 规则 | 匹配 |
+| --- | --- |
+| `gh-pr-merge-close` | `gh pr merge`、`gh pr close` |
+| `gh-release` | `gh release create`、`delete`、`edit` |
+| `git-push-force` | 带 `-f`、`--force` 或 `--force-with-lease` 的 `git push` |
+| `git-push-default-branch` | 推到 `main` 或 `master` 的 `git push`，作为目标或 refspec 的目的端。不写目标的 `git push` 无从判别，留给 Agent 的提示词 |
+| `package-publish` | `npm publish`、`pnpm publish`、`yarn publish` |
+
+与所有规则一样，它们只匹配文本：`gh pr merge --help` 和 `npm publish --dry-run` 也会要求确认（点一下即可），而经别名、脚本或 API 调用做同一件事则会绕过。默认系统提示词的 `# Tool use` 小节要求 Agent 在做这些动作以及同一类动作之前先征得同意。
 
 ### 匹配规则
 
@@ -309,6 +333,7 @@ enabled = false
 | --- | --- | --- |
 | `name` | — | Agent 显示名称；未设置时回退到 id |
 | `description` | — | Agent 描述 |
+| `author` | `user` | Agent 由谁创建：`user`、`agent` 或 `company` |
 | `version` | `1` | Agent State 版本（自然数），每次成功优化后递增 |
 | `kernel_version` | 当前内核版本 | 配置基于哪一代内置默认值（日期字符串） |
 | `system_prompt` | 内置模板 | 必填；唯一支持占位符替换的模板 |
@@ -335,6 +360,7 @@ enabled = false
 
 ### 字段说明
 
+- `author`：用户在 Web App 中创建的 Agent 为 `user`，由 Agent 创建的（**用 AI 创建**，或在对话中运行 `penguin agent create`）为 `agent`，由公司模式创建的为 `company`。值缺失或不认识时视为 `user`。可以在**概览**标签页修改，**智能体**页面可以按它分组。
 - `kernel_version`：在创建时、还原为默认配置时以及内核更新时打上标记。它与 `version` 无关，也不会因你的编辑而改变。值缺失说明配置早于这套机制，视为过时。
 - `max_turns`：`-1` 表示不限制；正整数则为单个 Task 的轮数上限。
 - `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
@@ -342,7 +368,7 @@ enabled = false
 - `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
 - `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 2048」中较小的一个。因此窗口小的模型会在自己的窗口内触发压缩；窗口超过 258048 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理。
 - `compaction.max_session_turns`：`-1` 表示不限制。
-- `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **技能**，`schedules.prompt` 在 **定时任务**。
+- `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **插件**，`schedules.prompt` 在 **定时任务**。
 - `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。
 - `skills.enabled`：关闭时，已安装的 Skill 仍可通过 `[use_skills]` 显式调用。
 - `schedules.enabled`：关闭时，服务端仍会触发任务，只是模型不再了解任务系统。
@@ -387,15 +413,15 @@ compaction:
 
 已有 Agent 始终按磁盘上的配置原样运行，新版代码的默认值绝不会自动合并进来。当内置默认值发生实质性变化时，配置的 `kernel_version` 会落后于当前内核，设置页面和智能体列表会显示更新提示。设置总览上有两个操作可以采纳当前默认值。
 
-**更新内核**是一次无损合并，按设置标签页逐一进行（**系统提示词**、**运行参数**、**工具**、**技能**、**记忆**、**密钥保险柜**、**定时任务**）：
+**更新内核**是一次无损合并，按设置标签页逐一进行（**系统提示词**、**运行参数**、**工具**、**插件**上的技能设置、**记忆**、**密钥保险柜**、**定时任务**）：
 
 - 配置里完全没有的标签页，或者哈希仍与某一*已记录*代的内置默认值一致的标签页，会按当前默认值重写。之后版本新增的工具，也是通过这条途径进入已有 Agent 的。
 - 只要你以任何方式改动过，标签页就会**完整**保持不变，并列入结果。哪怕只改了一个内置工具，整个**工具**标签页也会保留：你新增的工具和删除的工具都原样留存，这个标签页也不再跟随新默认值，直到你执行还原为默认配置。
-- `name`、`description`、`version`、`hooks` 和 `tools.mcpServers` 不属于任何标签页，更新永远不会碰它们。
+- `name`、`description`、`author`、`version`、`hooks` 和 `tools.mcpServers` 不属于任何标签页，更新永远不会碰它们。
 - 最后，配置会打上当前 `kernel_version` 的标记。
 - 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
 
-**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description`、`author` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
 
 面向开发者的说明：
 
@@ -457,13 +483,17 @@ agent_state/memory/
 └── my-app-a81f32c4/              # one Workspace
     ├── .workspace                # the Workspace path this key stands for
     ├── MEMORY.md
-    └── testing-conventions.md
+    ├── testing-conventions.md
+    ├── csv-tools.md
+    └── csv-tools/                # optional: the scripts csv-tools.md keeps
+        ├── dedupe.py
+        └── lib/io.py
 ```
 
 每个作用域都有自己的 `MEMORY.md` 索引，而且不同 Agent 绝不共享记忆，即使在同一个 Workspace 里也是如此。记忆存放在 Agent State 中，因此会随导出、导入和快照一起迁移。
 
 > [!WARNING]
-> 能访问这个 Agent 的所有 Project 成员都能读到它的记忆。不要把凭证和敏感的个人数据存进去。
+> 能访问这个 Agent 的所有 Project 成员都能读到它的记忆，脚本也不例外。不要把凭证和敏感的个人数据存进去。
 
 要读取或删除记忆，或者让 Agent 来修改，使用 [Agent 设置](/agents)的 **记忆** 标签页。
 
@@ -507,6 +537,24 @@ frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目�
 
 用户想保存的其他内容都可以存。对于纠正和决策，模型会加上 **Why:** 和 **How to apply:** 两行。事后证明有误的记忆会连同索引行一起删除。日期一律写绝对日期（`YYYY-MM-DD`），因为相对日期对后续 Session 毫无意义。
 
+### 脚本
+
+一条记忆可以附带脚本：Agent 不保存就得重写一遍的程序，比如解析器、报表生成器或检查器。脚本放在与记忆文件同名（去掉 `.md`）、紧挨着它的文件夹里：`csv-tools.md` 附带 `csv-tools/`。文件夹里的文件数量不限，语言和扩展名也不限，脚本需要的话可以有子文件夹。Agent 写下第一个文件之前，这条记忆没有文件夹。
+
+默认的记忆提示词要求模型：
+
+- 文件只依赖自己的解释器
+- 在这条记忆自己的正文里列出各文件，写明用途、运行方式并附相对链接，如 `[dedupe.py](csv-tools/dedupe.py)`；绝不写进 `MEMORY.md`，那里每条记忆只占一行
+- 用 `exec_command` 经解释器（`python3`、`node`、`bash` 等）按绝对路径运行脚本，因为文件工具写出的文件没有执行位
+- 删除记忆时连同文件夹一起删除
+- 运行一个不是本 Session 写的脚本之前先读它的内容；密钥放在 vault 里，绝不写进文件
+
+脚本没有专用工具。运行脚本就是一次普通的 `exec_command`，和其他命令一样显示在对话中，也同样受该 Session 的沙盒、审批模式与命令策略约束。写入脚本与写入记忆的任何内容一样需要完全访问：受限的[沙盒](/settings#沙盒)会让 Agent State 保持只读。
+
+脚本与 Agent 为自己写的 Skill 处于同一信任级别。该 Agent 此后的每个 Session 都可能运行它，能访问该 Agent 的每位 Project 成员都能在 **记忆** 标签页、附带它的那条记忆下读到它。旁边没有同名记忆的文件夹不属于任何记忆，标签页把其中的文件单独列在 **不属于任何记忆的文件** 下。
+
+脚本出现之前创建的 Agent 保留其存储的记忆提示词，其中不提脚本，直到[内核更新](#内核更新)换上当前版本。
+
 ### 注入方式
 
 只有索引会进入上下文，通过模板中的 `{{MEMORY}}` 占位符注入。每个 `MEMORY.md` 每行列出本作用域的一条记忆，格式为 `- [Title](file.md) — hook`，链接相对于作用域目录。模型更新文件时同步更新索引，删除也不例外，两者始终保持一致。
@@ -523,7 +571,7 @@ frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目�
 - 索引为空时，会注入一条明确的「还没有保存任何内容」提示。
 - 每个作用域的注入上限是 200 行（按惯例一条记忆一行），另外还有一个 25,000 字符的总量兜底上限，应对索引里出现几条超长行的情况。超过上限时，会附上一条截断说明，让模型自己去打开完整的 `MEMORY.md`。磁盘上的文件始终原样不动。
 - 默认记忆提示词写明了行数上限，并要求索引行控制在约 150 字符以内，让模型在触及上限之前就把索引保持得很短。字符数兜底只存在于代码中。
-- 模型按需读取主题正文。
+- 模型按需读取主题正文及其附带的文件。
 
 这两段是各自独立的配置键，因为占位符替换不支持条件判断。临时 Workspace 绝不能收到 Workspace 小节（即它的目录行和选择作用域的规则），所以那一段在那里根本不会追加。Harness 只决定记忆存放在哪里，并把写入限制在这个范围内。判断什么值得保存、拆分主题、维护索引，这些都是模型的工作，用普通文件工具完成。
 

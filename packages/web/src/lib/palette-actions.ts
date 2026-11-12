@@ -1,6 +1,6 @@
 /**
  * How a mounted page adds actions to the one command palette. The palette mounts beside the
- * shell's tree (features/palette/app-palette.tsx) and imports no feature, so a page that has a command of
+ * shell's tree (rescue/palette.tsx) and imports no feature, so a page that has a command of
  * its own registers it here for as long as it is mounted — the full-page workflow route offers
  * its way out this way. Registered actions are listed ahead of the palette's standing ones,
  * the newest registration first.

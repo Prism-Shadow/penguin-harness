@@ -74,7 +74,7 @@ export function FormPickerTrigger({
       aria-expanded={expanded}
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass[size]} disabled:cursor-not-allowed disabled:opacity-60`}
+      className={`ui-edge flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass[size]} disabled:cursor-not-allowed disabled:opacity-60`}
     >
       {leading}
       <span

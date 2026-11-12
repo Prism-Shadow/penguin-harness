@@ -2,15 +2,14 @@
  * Guard: a consequential action is reached only through its confirmation.
  *
  * Each entry names a module and the function in it that does the consequential thing — removes
- * a member, restores the default command rules, imports a snapshot over an Agent State, deletes
- * a machine from the Project, stops a machine's server, uninstalls the program from a machine or
- * installs it there again, stops a running process, restores a workbench revision, runs a plugin's action,
- * clears an organization draft, syncs the model presets, revokes a paired Chrome, turns Chrome
- * extension connections off server-wide, turns an Agent's API off, opens it to keyless callers, deletes one of its keys, turns
- * the Agent API off server-wide, turns company mode off server-wide, deletes an archived conversation from its stub or the archive page. Every reference to that function must
- * sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a function that
- * `onConfirm` names. A button wired straight back to the action is one short line in a long
- * element and reads fine in review, so the JSX is parsed rather than remembered.
+ * a member, restores the default command rules, deletes a machine from the Project, stops a
+ * machine's server, uninstalls the program from a machine or installs it there again, stops a
+ * running process, runs a plugin's action, clears an organization draft, deletes an
+ * organization (and by default its Agents), syncs the model presets, revokes a paired Chrome,
+ * deletes an archived conversation from its stub or the archive page. Every reference to that
+ * function must sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a
+ * function that `onConfirm` names. A button wired straight back to the action is one short line
+ * in a long element and reads fine in review, so the JSX is parsed rather than remembered.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -18,27 +17,25 @@ import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots
 
 const SCAN = scanSources();
 
-/** [module under packages/web/src, the function only a confirmation may call]. */
+/**
+ * [module under packages/web/src, the function only a confirmation may call], for the actions
+ * no rendered scenario holds yet. An action leaves this list once a click scenario holds it
+ * (confirm-first.test.ts, or the surface's own suite: agent-workbenches.test.ts for a restore),
+ * and the list is meant to empty.
+ */
 const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/projects/project-dialogs/members-section.tsx", "doRemove"],
   ["features/projects/project-dialogs/security-policy-section.tsx", "restoreDefaults"],
-  ["features/agents/agent-settings-page.tsx", "runImport"],
   ["features/machines/machines-page.tsx", "deleteMachine"],
   ["features/machines/machines-page.tsx", "stopServer"],
   ["features/machines/machines-page.tsx", "uninstall"],
   ["features/machines/machines-page.tsx", "reinstall"],
   ["features/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
-  ["features/workbenches/workbench-tabs.tsx", "rollback"],
   ["features/settings/plugins-section.tsx", "runAction"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
+  ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
   ["features/settings/browser-section.tsx", "revokeChrome"],
-  ["features/settings/chrome-extension-section.tsx", "switchOffExtensions"],
-  ["features/agents/api-tab.tsx", "switchOffAgentApi"],
-  ["features/agents/api-tab.tsx", "deleteKey"],
-  ["features/agents/api-tab.tsx", "switchOnKeyless"],
-  ["features/settings/agent-api-section.tsx", "switchOffAgentApiServer"],
-  ["features/settings/company-section.tsx", "switchOffCompanyMode"],
   ["features/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],
 ];
