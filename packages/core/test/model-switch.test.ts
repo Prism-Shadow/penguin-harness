@@ -1738,8 +1738,9 @@ describe("in-session model switch", () => {
     const llmA = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(50, 50)] },
-        // The next Task's request is refused: its prompt is held as text.
-        { messages: [], outcome: { status: "fatal", errorCode: "rejected", errorMessage: "no" } },
+        // The next Task's request is refused, by a refusal that never hands off: its prompt is
+        // held as text.
+        { messages: [], outcome: { status: "fatal", errorCode: "denied", errorMessage: "no" } },
         // The summary request answers, but with nothing usable: committed, then given up on.
         { messages: [assistantText(""), usage(60, 110)] },
       ],

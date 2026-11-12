@@ -463,7 +463,12 @@ interface TurnResult {
   receivedContent: boolean;
   /** Terminal state of this turn's LLM request (completed / failed / aborted / timeout / malformed). */
   outcome: LLMOutcome;
+  /** The provider refused the request and the refusal is answered by a hand-off (TurnOptions.handOff). */
+  handOff: boolean;
 }
+
+/** Refusal hand-offs one run may take (see handOffContext); a further refusal ends the run like any fatal request. */
+const MAX_REFUSAL_HANDOFFS = 3;
 
 /** One request through the model (see runTurn): a turn's, or — `span` — a compaction's. */
 interface TurnOptions {
@@ -480,8 +485,17 @@ interface TurnOptions {
    * caller's loop will do, or the countdown is a lie; undefined when no retry follows.
    */
   retryInMs: (outcome: LLMOutcome, receivedContent: boolean) => number | undefined;
-  /** Whether any resend is still allowed; an image rejection announces 0 under it. Default true. */
+  /**
+   * Whether any resend is still allowed; an image rejection and a hand-off announce 0 under it.
+   * Default true.
+   */
   resend?: boolean;
+  /**
+   * Whether a refusal of this request (`fatal` / `rejected`, no image in the input) is answered
+   * by a hand-off to a new context: it is then recorded as a retried attempt (see
+   * ContextEngine.handOffContext).
+   */
+  handOff?: boolean;
   /**
    * A compaction request: its tool calls are collected, not dispatched (the compaction answers
    * them once the response committed); it counts no Session turn; and its complete text and
@@ -864,6 +878,8 @@ export class ContextEngine {
     }
 
     let turnCount = 0;
+    // Refusals of this run answered by a hand-off (at most MAX_REFUSAL_HANDOFFS).
+    let handoffs = 0;
     // Each turn's LLM input: the first turn is the Prompt, later turns are the previous turn's
     // tool outputs. Background notices that arrived while the session sat idle (and were not
     // taken by the host as their own task input) ride the first request, behind the Prompt.
@@ -920,13 +936,22 @@ export class ContextEngine {
         // turn's request_end can announce the planned backoff (retry_in_ms) — they live in
         // this loop while the event is built inside the turn — mirroring the branches below:
         // an attempt that received content restarts the ladder at its first rung, and either
-        // budget running out means no retry is planned at all.
+        // budget running out means no retry is planned at all. A refusal hands off only on a
+        // context the provider has accepted a request on (so never twice in a row), with the
+        // capability to open the next one, within this run's allowance and the ceiling.
+        const resend = attempts + 1 < this.maxTurnAttempts;
         turn = yield* this.runTurn(attemptInput, {
           approve,
           preToolUse,
           signal,
           attempts,
-          resend: attempts + 1 < this.maxTurnAttempts,
+          resend,
+          handOff:
+            this.sessionTurns > 0 &&
+            this.compaction !== undefined &&
+            this.deps.openNextContext !== undefined &&
+            handoffs < MAX_REFUSAL_HANDOFFS &&
+            resend,
           retryInMs: (outcome, received) =>
             outcome.status === "retryable"
               ? this.retryDelayMs((received ? 0 : consecutive) + 1, this.maxReconnects)
@@ -943,7 +968,8 @@ export class ContextEngine {
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
         // deterministic client-side rejection — the identical request can never succeed, so
-        // the ladder would only delay the actionable message the outcome already carries.
+        // the ladder would only delay the actionable message the outcome already carries
+        // (a refusal answered by a hand-off is no longer `fatal`: see below).
         // No abort event: abort marks a user interruption, and the already-written
         // request_end (status `fatal`, `error_message`, no `retry_in_ms`) is the terminal
         // record frontends and observability read.
@@ -959,6 +985,27 @@ export class ContextEngine {
         }
         // Completed normally.
         if (turn.outcome.status === "completed") break;
+
+        // The provider refused the request as sent on a context it accepted requests on: what
+        // grew since — the history or this input — is refused, and would be on every later
+        // run. The context is closed with no request and the next opens with the hand-off
+        // note; the turn is sent again behind it, its text alone (tool outputs pair with calls
+        // of the closed context, and the note quotes the last turn's). The same turn: the turn
+        // cap is unaffected, the ceiling keeps counting, the retry ledger and the ladder
+        // restart. A next context that cannot be opened ends the run as a failed compaction.
+        if (turn.handOff) {
+          const handed = yield* this.handOffContext(turn.outcome);
+          if ("errorMessage" in handed) {
+            this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+            return { kind: "compaction_failure", errorMessage: handed.errorMessage };
+          }
+          handoffs += 1;
+          nextInput = [handed.opening, ...nextInput.filter(isTextMessage)];
+          attemptInput = nextInput;
+          failedTurns.length = 0;
+          consecutive = 0;
+          continue;
+        }
 
         // An image rejection is the one fatal outcome that retries: runTurn turned a provider
         // 4xx `retryable` because this input holds images (checked again here, so an LLM that
@@ -1439,6 +1486,8 @@ export class ContextEngine {
     const assistantSegments: AmspRecord[] = [];
     // This turn's LLM terminal state: taken from streamGenerate's generator return value.
     let outcome: LLMOutcome = { status: "completed" };
+    // Whether the outcome is a refusal answered by a hand-off (see TurnResult.handOff).
+    let turnHandOff = false;
     // Set by the first message the stream yields (see TurnResult.receivedContent).
     let receivedContent = false;
     // Whether this attempt reported its usage (a completed request does, and so does one cut off
@@ -1479,18 +1528,19 @@ export class ContextEngine {
             // reconnect loop answers it: it replaces the images with a note and sends the turn
             // again at once, the provider's text in the retry block's `[request_error]` line
             // for the model to judge. The rejection is recorded as what it
-            // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
-            // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
-            // refuses is in the committed history or the request's parameters, beyond the
-            // reach of a retry. A compaction request takes the same rule.
-            const imageRetry =
-              outcome.status === "fatal" &&
-              outcome.errorCode === "rejected" &&
-              hasInputImages(input);
-            if (imageRetry) {
+            // turns out to be — a retried attempt, `retryable`, coded `image_rejected`. A
+            // compaction request takes the same rule. The same refusal of an input with no
+            // image refuses something in the committed history or the request's parameters,
+            // beyond the reach of a retry: it stays `fatal` as `rejected`, unless the turn loop
+            // answers it with a hand-off to a new context (`handOff`), when it too is recorded
+            // as a retried attempt, keeping its code.
+            const refused = outcome.status === "fatal" && outcome.errorCode === "rejected";
+            const imageRetry = refused && hasInputImages(input);
+            const handOff = refused && !imageRetry && opts.handOff === true;
+            if (imageRetry || handOff) {
               outcome = {
                 status: "retryable",
-                errorCode: "image_rejected",
+                errorCode: imageRetry ? "image_rejected" : "rejected",
                 ...(outcome.errorMessage !== undefined
                   ? { errorMessage: outcome.errorMessage }
                   : {}),
@@ -1501,13 +1551,14 @@ export class ContextEngine {
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions. An
-            // image retry waits for nothing.
+            // image retry and a hand-off wait for nothing.
             const retryInMs =
               opts.resend === false
                 ? undefined
-                : imageRetry
+                : imageRetry || handOff
                   ? 0
                   : opts.retryInMs(outcome, receivedContent);
+            turnHandOff = handOff;
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
@@ -1608,7 +1659,14 @@ export class ContextEngine {
     const orderedOutputs = outputsByCall(callOrder, toolOutputs).filter(
       (out): out is AmspRecord => out !== undefined,
     );
-    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, receivedContent, outcome };
+    return {
+      toolOutputs: orderedOutputs,
+      toolCalls,
+      assistantSegments,
+      receivedContent,
+      outcome,
+      handOff: turnHandOff,
+    };
   }
 
   /**
@@ -1819,6 +1877,35 @@ export class ContextEngine {
   ): AsyncGenerator<AmspRecord, "completed" | "fatal"> {
     yield* this.emitCompactionBegin(reason, "discard");
     return (yield* this.rotate({ reason, mode: "discard" })).status;
+  }
+
+  /**
+   * A refused request's answer (see the turn loop): the running context is closed with no
+   * request — a compaction span that holds none and ends `completed` with the provider's error
+   * — and the next opens with the hand-off note, built from the closing file (its refusal
+   * section reads that end), whatever the mode and thresholds say. The note is written as the
+   * new file's first input, as a mid-Task summary is. An opener that throws ends the span
+   * `fatal` and keeps the context.
+   */
+  private async *handOffContext(
+    outcome: LLMOutcome,
+  ): AsyncGenerator<AmspRecord, { opening: AmspRecord } | { errorMessage: string }> {
+    yield* this.emitCompactionBegin("context", "summarize");
+    const rotated = yield* this.rotate(
+      {
+        reason: "context",
+        mode: "summarize",
+        error: {
+          errorCode: "rejected",
+          ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
+        },
+      },
+      () => this.inPlaceHandoff(this.deps.trace?.currentPath?.()),
+    );
+    if (rotated.status === "fatal") return { errorMessage: rotated.errorMessage };
+    yield* this.openPendingContext();
+    await this.write(rotated.opening!);
+    return { opening: rotated.opening! };
   }
 
   /**
