@@ -14,17 +14,17 @@
  * Docs: /docs/cli § "penguin session ls".
  */
 import type { Command } from "commander";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo } from "@prismshadow/penguin-server/cli";
 import {
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
   ServerClient,
   shortSessionId,
-} from "../client.js";
-import { listAgents, listAgentSessions } from "../server-session.js";
-import { relativeTime, renderTable } from "../table.js";
-import type { Messages } from "../i18n.js";
+} from "@prismshadow/penguin-server/cli";
+import { listAgents, listAgentSessions } from "@prismshadow/penguin-server/cli";
+import { relativeTime, renderTable } from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Registers `ls` under the `penguin session` group (see session.ts). */
 export function registerLsCommand(session: Command, t: Messages): void {

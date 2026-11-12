@@ -15,7 +15,7 @@ import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { resetAdminPassword } from "@prismshadow/penguin-server/reset-admin-password";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Fills in `penguin server reset-admin-password`, on the node the host located by its key. */
 export function registerResetPasswordCommand(reset: Command, t: Messages): void {

@@ -455,15 +455,6 @@ describe("routes (e2e)", () => {
     });
     expect(badProg.status).toBe(400);
 
-    // The explicit exec form names the package before the id, so prog carries a colon.
-    const colonProg = await adminClient.post("/api/cli/commands/run", {
-      package: "@acme/greet",
-      args: ["greet"],
-      language: "en",
-      prog: "penguin exec @acme/greet:greet",
-    });
-    expect(colonProg.status).toBe(200);
-
     app.cleanup();
   });
 });

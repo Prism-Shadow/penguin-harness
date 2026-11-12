@@ -21,12 +21,13 @@ import {
   isModelMessage,
 } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
-import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
-import { ServerClient } from "./client.js";
-import type { SseFrame } from "./client.js";
-import { dim, humanizeTokens } from "./render.js";
+import type { GoalServerEvent } from "@prismshadow/penguin-server/cli";
+import { ServerClient } from "@prismshadow/penguin-server/cli";
+import type { SseFrame } from "@prismshadow/penguin-server/cli";
+import { dim } from "./render.js";
+import { humanizeTokens } from "@prismshadow/penguin-server/cli";
 import type { StreamRenderer } from "./render.js";
-import type { Messages } from "./i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** Server events the watcher understands (structural subset of the server's ServerEvent union). */
 interface ServerEventFrame {

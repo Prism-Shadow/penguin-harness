@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Readable, Writable } from "node:stream";
 import { toolCall } from "@prismshadow/penguin-core";
 import type { AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
-import { makeApprove, promptApproval, resolveApprovalMode } from "../src/approval.js";
-import { getMessages } from "../src/i18n.js";
+import { makeApprove, promptApproval, resolveApprovalMode } from "../../src/cli/approval.js";
+import { getMessages } from "../../src/cli/i18n.js";
 
 const t = getMessages("en");
 

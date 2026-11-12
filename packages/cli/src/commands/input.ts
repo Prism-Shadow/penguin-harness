@@ -32,17 +32,17 @@ import { isModelMessage, type AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
-import { promptApproval } from "../approval.js";
+import { promptApproval } from "@prismshadow/penguin-server/cli";
 import {
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
   ServerClient,
   shortSessionId,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
 import { getSessionInfo, getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "../i18n.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 
 /** The most recent complete assistant text of the main session (poll's snapshot); null when none exists yet. */
 export function latestAssistantText(messages: AmspRecord[]): string | null {
