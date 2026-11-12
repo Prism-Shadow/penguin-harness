@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import os from "node:os";
+import path from "node:path";
 import type { MockInstance } from "vitest";
 import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
 import {
@@ -248,7 +250,9 @@ describe("dispatchPluginCommand (e2e via stubbed fetch)", () => {
     process.env = {
       ...originalEnv,
       PENGUIN_API_URL: "http://127.0.0.1:7399",
-      PENGUIN_HOME: await import("fs/promises").then((fs) => fs.mkdtemp("/tmp/penguin-test-")),
+      PENGUIN_HOME: await import("fs/promises").then((fs) =>
+        fs.mkdtemp(path.join(os.tmpdir(), "penguin-test-")),
+      ),
     };
     delete process.env.PENGUIN_API_TOKEN;
     delete process.env.PENGUIN_SESSION_ID;
@@ -258,8 +262,8 @@ describe("dispatchPluginCommand (e2e via stubbed fetch)", () => {
 
   afterEach(() => {
     process.env = originalEnv;
-    stdoutSpy.mockRestore();
-    stderrSpy.mockRestore();
+    stdoutSpy?.mockRestore();
+    stderrSpy?.mockRestore();
     vi.unstubAllGlobals();
   });
 

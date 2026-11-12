@@ -13,7 +13,15 @@
  * writes the summary as the node's description, then calls the bound register with that
  * node. A register never names its own path.
  */
-import { Bind, Component, Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import {
+  Bind,
+  bootModules,
+  Component,
+  Interface,
+  moduleDefOf,
+  Module,
+  Provide,
+} from "@prismshadow/penguin-core/kernel";
 import type {
   ClassCtx,
   IfaceTable,
@@ -21,7 +29,6 @@ import type {
   Resources,
   Slot,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type {
   CliCommandCode,
   CliCommandData,
