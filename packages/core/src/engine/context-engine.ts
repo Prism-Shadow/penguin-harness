@@ -491,25 +491,6 @@ interface TurnOptions {
 }
 
 /**
- * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the LLM
- * interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a
- * response cut off at its output cap (`output_truncated`) and everything unclassifiable come
- * back `retryable`, while definitive provider rejections and credential failures come back
- * `fatal` and the turn loop aborts on them before consulting this set.
- *
- * Both loops retry the same set on the same backoff ladder, and by default with the same
- * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
- * set explicitly (issue #170 — a compaction request is an ordinary LLM request and gets the
- * turn loop's patience). Compaction takes one cause out of it: a response cut at its output
- * cap (`output_truncated`) is a correction there, asked again at once (see summarizeContext).
- *
- * One rule is the turn loop's alone: received content resets its ladder. A compaction's
- * ladder spans the whole compaction and never resets: it is bounded so that a provider which
- * cannot produce the summary hands over to the salvage and the hand-off note in bounded time.
- */
-const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
-
-/**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (2s base, 30s ceiling,
  * 5 reconnects) the ladder is 2s, 4s, 8s, 16s, 30s ≈ 60s of total patience: one shared
@@ -947,12 +928,9 @@ export class ContextEngine {
           attempts,
           resend: attempts + 1 < this.maxTurnAttempts,
           retryInMs: (outcome, received) =>
-            this.plannedRetryDelayMs(
-              outcome,
-              received ? 0 : consecutive,
-              this.maxReconnects,
-              RETRY_STATUSES,
-            ),
+            outcome.status === "retryable"
+              ? this.retryDelayMs((received ? 0 : consecutive) + 1, this.maxReconnects)
+              : undefined,
         });
         attempts += 1;
 
@@ -1350,27 +1328,29 @@ export class ContextEngine {
   }
 
   /**
-   * The wait the engine WILL apply before retrying this failure in-run, or undefined when
-   * it won't (a non-retryable status, or `reconnectsSoFar` has reached `cap` — an abort
-   * follows instead). Announced on the failure's `request_end` as `retry_in_ms` so the
-   * frontend can render a live countdown; shares `reconnectDelayMs` with `backoff`, so the
-   * announced wait and the actual sleep cannot drift. The caps differ by loop: the turn
-   * loop passes `maxReconnects`, the compaction loop `compactionMaxReconnects`; `retries` must
-   * match what the calling loop actually does, or the announced countdown is a lie.
+   * The wait the engine WILL apply before reconnect retry `n` (1-based) of a `retryable`
+   * failure, or undefined past a budget of `cap` retries — an abort or a fallback follows
+   * instead. Announced on the failure's `request_end` as `retry_in_ms` so the frontend can
+   * render a live countdown; shares `reconnectDelayMs` with `backoff`, so the announced wait and
+   * the actual sleep cannot drift. The caps differ by loop: the turn loop's is `maxReconnects`,
+   * the compaction loop's `compactionMaxReconnects`.
+   *
+   * Only `retryable` reconnects in-run. The classification lives in the LLM interface (see
+   * LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed responses, a response cut
+   * off at its output cap (`output_truncated`) and everything unclassifiable come back
+   * `retryable`, while definitive provider rejections and credential failures come back
+   * `fatal`. Both loops retry it on the same backoff ladder, and by default with the same budget
+   * (issue #170 — a compaction request is an ordinary LLM request and gets the turn loop's
+   * patience). Compaction takes one cause out of it: a response cut at its output cap is a
+   * correction there, asked again at once (see runCompactionLoop). One rule is the turn loop's
+   * alone: received content resets its ladder. A compaction's ladder spans the whole compaction
+   * and never resets: it is bounded so that a provider which cannot produce the summary hands
+   * over to the salvage and the hand-off note in bounded time.
    */
-  private plannedRetryDelayMs(
-    outcome: LLMOutcome,
-    reconnectsSoFar: number,
-    cap: number,
-    retries: readonly StopReason[],
-  ): number | undefined {
-    if (!retries.includes(outcome.status)) return undefined;
-    if (reconnectsSoFar >= cap) return undefined;
-    return reconnectDelayMs(
-      this.reconnectBackoffMs,
-      this.reconnectBackoffMaxMs,
-      reconnectsSoFar + 1,
-    );
+  private retryDelayMs(n: number, cap: number): number | undefined {
+    return n > cap
+      ? undefined
+      : reconnectDelayMs(this.reconnectBackoffMs, this.reconnectBackoffMaxMs, n);
   }
 
   /** Resolves the in-progress backoff wait early ("retry now"); null when no wait is in progress. */
@@ -1901,10 +1881,7 @@ export class ContextEngine {
       answer: (calls, open) =>
         this.runCompactionToolRound(calls, open ? gate : undefined, approve, signal),
       backoff: (n) => this.backoff(n, signal),
-      retryDelayMs: (n) =>
-        n > this.compactionMaxReconnects
-          ? undefined
-          : reconnectDelayMs(this.reconnectBackoffMs, this.reconnectBackoffMaxMs, n),
+      retryDelayMs: (n) => this.retryDelayMs(n, this.compactionMaxReconnects),
       contextTotal: () => this.lastRequestTotal,
       signal,
     };
