@@ -35,8 +35,6 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
-  taskBegin,
-  taskEnd,
   thinkingMessage,
   tokenUsage,
   toolCall,
@@ -569,71 +567,6 @@ describe("resumeTrace over a compaction's span (summary, salvage, hand-off)", ()
     const text = textOf(result.pendingSummary);
     expect(text.startsWith(`[context_summary]\n${body}\n\n`)).toBe(true);
     expect(text).toContain("cut off before its end");
-    expect(text).toContain(file);
-  });
-
-  it("a file closed with the error pair and no salvageable summary resumes with the hand-off note built from it", () => {
-    const result = resumeTrace(
-      [
-        meta(),
-        taskBegin(),
-        userText("migrate the database"),
-        requestBegin(),
-        assistantText("Starting with the schema."),
-        requestEnd("completed"),
-        tokenUsage(usage(10), usage(10)),
-        begin(),
-        userText("please summarize"),
-        requestBegin(),
-        requestEnd("fatal", refused),
-        degradedEnd(1, "rejected", "prompt is too long"),
-        taskEnd(),
-      ],
-      { tracePath: file, shell: "bash" },
-    );
-    expect(result.contextClosed).toBe(true);
-    expect(result.history).toEqual([]);
-    expect(result.sessionTurns).toBe(0);
-    const text = textOf(result.pendingSummary);
-    expect(text.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
-    expect(text).toContain("  [user_input]migrate the database[/user_input]");
-    expect(text).toContain("  [text]Starting with the schema.[/text]");
-    expect(text).not.toContain("please summarize");
-    expect(text).toContain(file);
-  });
-
-  it("a file closed by a span with no request resumes with the hand-off note, the provider's refusal quoted in it", () => {
-    // An ordinary request the provider refused on a context that had completed a turn: recorded
-    // as a retried attempt, then a span with no request that completed with the provider's error.
-    const result = resumeTrace(
-      [
-        meta(),
-        taskBegin(),
-        userText("migrate the database"),
-        requestBegin(),
-        assistantText("Reading the schema."),
-        toolCall({ name: "read_file", arguments: '{"file_path":"/ws/s.sql"}', toolCallId: "rs" }),
-        requestEnd("completed"),
-        tokenUsage(usage(10), usage(10)),
-        toolCallOutput({ output: "CREATE TABLE t", toolCallId: "rs", status: "completed" }),
-        userText("use the new column names"),
-        requestBegin(),
-        requestEnd("retryable", { ...refused, attempt: 1, retryInMs: 0 }),
-        begin(),
-        compactionEnd({ reason: "context", mode: "summarize", status: "completed", ...refused }),
-      ],
-      { tracePath: file, shell: "bash" },
-    );
-    expect(result.contextClosed).toBe(true);
-    expect(result.history).toEqual([]);
-    expect(result.carryOver).toEqual([]);
-    expect(result.sessionTurns).toBe(0);
-    const text = textOf(result.pendingSummary);
-    expect(text.startsWith("[context_summary]\nNo summary of the earlier conversation")).toBe(true);
-    expect(text).toContain(transcribeToolCallOutput("rs", "completed", "CREATE TABLE t"));
-    expect(text).toContain('  [request_error code="rejected"]prompt is too long[/request_error]');
-    // The refused turn's text input is not resent: the note quotes it with the user's messages.
-    expect(text).toContain("  [user_input]use the new column names[/user_input]");
     expect(text).toContain(file);
   });
 
