@@ -144,9 +144,10 @@ describe("Task records", () => {
 
   beforeEach(async () => {
     traces = await mkdtemp(join(tmpdir(), "penguin-task-records-"));
-    SUMMARY_TEXT = buildContextSummaryText("the distilled summary", {
-      tracePath: new Writer({ tracesDir: traces, sessionId: "sess_tasks" }).currentPath(),
-    });
+    SUMMARY_TEXT = buildContextSummaryText(
+      "the distilled summary",
+      new Writer({ tracesDir: traces, sessionId: "sess_tasks" }).currentPath(),
+    );
   });
 
   afterEach(async () => {

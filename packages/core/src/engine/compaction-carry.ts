@@ -74,15 +74,6 @@ export function lastCompletedReply(span: AmspRecord[]): string {
   return turn === null ? "" : replyText(turn);
 }
 
-// Transitional until the round-5 cleanup commit, for the engine: no opening lists calls any more.
-export interface SpanCall {
-  call: AmspRecord<ToolCallPayload>;
-  output?: AmspRecord<ToolCallOutputPayload>;
-}
-export function compactionCallLines(calls: readonly SpanCall[]): string[] {
-  return calls.flatMap(({ call, output }) => callPairLines(call, output));
-}
-
 /**
  * The note that opens the next context when a compaction ends without a summary: `template`
  * (`compaction.handoff_note`; blank: the four placeholders one per line) with `{{ERROR}}`, the
@@ -90,11 +81,11 @@ export function compactionCallLines(calls: readonly SpanCall[]): string[] {
  * and its last three outside every compaction span; `{{LAST_TURN}}`, the last completed
  * request's text and its last four calls with their outputs; `{{TRACE_PATH}}`. Each is read off
  * the file up to the span's end, so live and replay build the same note; an empty one reads
- * `(not recorded)`. `opts.shell` is ignored until the round-5 cleanup commit.
+ * `(not recorded)`.
  */
 export function buildCompactionHandoff(
   file: AmspRecord[],
-  opts: { tracePath?: string; shell?: string; template?: string },
+  opts: { tracePath?: string; template?: string },
 ): string {
   const main = file.filter(isMainSession);
   const begin = lastCompactionBegin(main);

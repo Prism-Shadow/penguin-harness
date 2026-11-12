@@ -12,45 +12,13 @@ import { MARKER_TAGS, TRANSCRIPT_TAGS } from "./tags.js";
  * first input: `[context_summary]…[/context_summary]`. Given the compacted context's Trace file,
  * a blank line and one line naming it follow the body; without one the block is main's.
  */
-export function buildContextSummaryText(
-  body: string,
-  trace?: CompactedTranscript | string,
-  _extras?: ContextSummaryExtras, // ignored, as is `trace.shell`
-): string {
-  const tracePath = typeof trace === "string" ? trace : trace?.tracePath;
+export function buildContextSummaryText(body: string, tracePath?: string): string {
   if (tracePath === undefined) return markerBlock(MARKER_TAGS.contextSummary, body);
   return markerBlock(
     MARKER_TAGS.contextSummary,
     `${body}\n\nTrace file of the compacted context (JSONL, one record per line): ${tracePath}`,
   );
 }
-
-// Transitional until the round-5 cleanup commit, for callers outside this package: the union and
-// `extras` of buildContextSummaryText, buildContextHandoffText (the gallery), SALVAGE_MIN_CHARS.
-export interface CompactedTranscript {
-  tracePath: string;
-  shell?: string;
-}
-export interface ContextSummaryExtras {
-  callLines?: readonly string[];
-  notice?: string;
-}
-export interface ContextHandoffSections {
-  userLines: readonly string[];
-  turnLines: readonly string[];
-  refusalLines: readonly string[];
-  callLines: readonly string[];
-}
-/** The sections' lines, with no prose of the harness's, as a blank `handoff_note` gives them. */
-export function buildContextHandoffText(
-  sections: ContextHandoffSections,
-  transcript?: CompactedTranscript,
-): string {
-  const { userLines, turnLines, refusalLines, callLines } = sections;
-  const lines = [...userLines, ...turnLines, ...refusalLines, ...callLines];
-  return buildContextSummaryText(lines.join("\n"), transcript);
-}
-export const SALVAGE_MIN_CHARS = 400;
 
 /** The summary tag's two spellings, current form first (see block.ts for the dual-form policy). */
 const SUMMARY_TAG_FORMS: readonly (readonly [open: string, close: string])[] = [

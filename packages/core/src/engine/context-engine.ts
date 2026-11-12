@@ -116,8 +116,6 @@ export interface CompactionSettings {
   prompt: string;
   /** Replies short of the summary a summarize compaction answers; absent or <= 0: none. */
   maxRounds?: number;
-  /** Unused by the engine; removed once no caller sets it. */
-  roundLimit?: number;
   /**
    * The line sent behind a non-summary reply's tool outputs; `{{ROUNDS_USED}}` and
    * `{{ROUNDS_LEFT}}` are filled when it is sent. Blank: no line.
@@ -147,8 +145,6 @@ export interface OpenedContext {
   maxTurns?: number;
   /** Compaction settings of this context (thresholds, mode, Prompt). */
   compaction?: CompactionSettings;
-  /** Unused by the engine; removed once no opener sets it. */
-  notice?: string;
 }
 
 /** What {@link ContextEngineDeps.openNextContext} is called with. */
@@ -300,8 +296,6 @@ export interface ContextEngineDeps {
    * the engine writes a bare note of its own.
    */
   buildHandoff?: (template?: string) => AmspRecord | Promise<AmspRecord>;
-  /** Unused by the engine; removed once no caller sets it. */
-  shell?: string;
   /**
    * Live compaction settings, re-read at every point the engine consults them for a decision:
    * the post-request checkpoint (threshold and turn count), and the start of a compaction

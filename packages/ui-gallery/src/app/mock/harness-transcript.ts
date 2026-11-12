@@ -34,7 +34,6 @@
 import {
   attachedFileLine,
   buildBackgroundTaskDoneMessage,
-  buildContextHandoffText,
   buildContextSummaryText,
   buildHandoffMessage,
   buildOrgTriggerMessage,
@@ -43,6 +42,7 @@ import {
   markerBlock,
   MARKER_TAGS,
   transcribeRequestError,
+  transcribeText,
   transcribeToolCall,
   transcribeToolCallOutput,
   transcribeUserInput,
@@ -131,6 +131,34 @@ const TOO_LONG = "400 Bad Request: prompt is too long: 16502 tokens > 16384 maxi
 /** The Session's n-th Trace file, in the date folder of the day it opened. */
 function traceFile(sessionId: string, openedAt: number, n: number): string {
   return `${AGENT_DIR}/traces/${iso(openedAt).slice(0, 10)}/${sessionId}_${String(n).padStart(3, "0")}.jsonl`;
+}
+
+/** A hand-off note as the harness fills the default `compaction.handoff_note` template. */
+function handoffNoteText(
+  error: string,
+  users: readonly string[],
+  turn: readonly string[],
+  tracePath: string,
+): string {
+  return buildContextSummaryText(
+    [
+      "No summary of the earlier conversation could be written, so the harness wrote this note in its place. That conversation is no longer in your context; what is quoted below is copied from its Trace file, shortened where marked.",
+      "",
+      "Why there is no summary (if it is about size, do not rebuild the same input: read large files and outputs in parts):",
+      error,
+      "",
+      "The user's messages, oldest first:",
+      ...users.map(transcribeUserInput),
+      "",
+      "The last completed turn:",
+      ...turn,
+      "",
+      `Trace file (JSONL, one record per line): ${tracePath}`,
+      `Hand-off files written earlier, if any, are under ${SCRATCHPAD}/handoff/.`,
+      "",
+      "Carry on with the task from where it stopped. Consent does not carry over: anything that needed a go-ahead is asked again.",
+    ].join("\n"),
+  );
 }
 
 /** The harness's completion notice of a background command, worded as the Session words it. */
@@ -232,32 +260,34 @@ export function harnessTranscript(lang: Lang, now: number, ref: ModelRef): Trans
     "顺便把 hooks.md 的导语也改写一下。",
     "Rewrite the intro of hooks.md while you're at it.",
   );
-  // The manual compaction's note, abridged to the request the person interrupted.
-  const handoffNote = buildContextHandoffText(
-    {
-      userLines: [transcribeUserInput(rewriteIntro)],
-      turnLines: [],
-      refusalLines: [],
-      callLines: [],
-    },
-    { tracePath: traceFile(id, startedAt, 1) },
+  // The manual compaction's note: the provider's refusal, the user messages abridged to the
+  // request the person interrupted, and the weekly check's last reply.
+  const handoffNote = handoffNoteText(
+    transcribeRequestError("denied", "402 Insufficient Balance"),
+    [rewriteIntro],
+    [
+      transcribeText(
+        L(
+          "坏的还是之前那 3 条，这周没有新坏掉的链接。",
+          "The same three links as before are broken; nothing new broke this week.",
+        ),
+      ),
+    ],
+    traceFile(id, startedAt, 1),
   );
   const steer = L("用新的锚点，别用重定向。", "Use the new anchors, not redirects.");
   const recheck = checkLinks(L("重新检查链接", "Re-check the links"));
   // The goal's hand-off note: the file the refusal closed opened with the switch's summary,
   // held the objective and the steering message, and last completed round 2's re-check; the
   // provider's refusal of the request after it is quoted, so the model does not rebuild it.
-  const refusalNote = buildContextHandoffText(
-    {
-      userLines: [summary, objective, steer].map(transcribeUserInput),
-      turnLines: [
-        transcribeToolCall("exec_command", "call_round2_links", JSON.stringify(recheck)),
-        transcribeToolCallOutput("call_round2_links", "completed", "211 links checked, 0 broken."),
-      ],
-      refusalLines: [transcribeRequestError("rejected", TOO_LONG)],
-      callLines: [],
-    },
-    { tracePath: traceFile(id, b(741.4), 3) },
+  const refusalNote = handoffNoteText(
+    transcribeRequestError("rejected", TOO_LONG),
+    [summary, objective, steer],
+    [
+      transcribeToolCall("exec_command", "call_round2_links", JSON.stringify(recheck)),
+      transcribeToolCallOutput("call_round2_links", "completed", "211 links checked, 0 broken."),
+    ],
+    traceFile(id, b(741.4), 3),
   );
 
   const history: AmspRecord[] = [

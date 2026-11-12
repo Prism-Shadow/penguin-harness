@@ -364,10 +364,7 @@ export interface ModelSwitchOrigin {
  * with this same block, word for word: there `session` names the Session itself, which is how a
  * reader tells the two apart (see `parseInPlaceModelSwitch`).
  */
-export function buildModelSwitchMessage(
-  origin: ModelSwitchOrigin,
-  _opts?: { shell?: string }, // ignored; goes in the round-5 cleanup commit
-): string {
+export function buildModelSwitchMessage(origin: ModelSwitchOrigin): string {
   const title = origin.sessionTitle ? ` (${origin.sessionTitle})` : "";
   const lines = [`session: ${origin.sessionId}${title}`];
   if (origin.tracePath) lines.push(`trace: ${origin.tracePath}`);

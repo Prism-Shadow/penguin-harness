@@ -308,8 +308,6 @@ function toolCallOutputId(msg: AmspRecord): string | null {
 export interface ResumeTraceOptions {
   /** Absolute path of the file `messages` were read from, which the rebuilt opening names. */
   tracePath?: string;
-  /** Ignored; goes in the round-5 cleanup commit. */
-  shell?: string;
   /** The hand-off note's template in force at resume (see CompactionSettings.handoffNote). */
   handoffNote?: string;
 }

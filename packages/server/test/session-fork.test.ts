@@ -774,10 +774,7 @@ describe("session fork", () => {
       "utf8",
     );
     const plan = modelVisiblePath(path.join(scratch, "handoff", "plan.md"));
-    const summary = buildContextSummaryText(`## Files\n${plan}: the release plan`, {
-      tracePath: sourceFile,
-      shell: "bash",
-    });
+    const summary = buildContextSummaryText(`## Files\n${plan}: the release plan`, sourceFile);
     await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 2, [
       at(
         "2026-08-14T10:01:05.000Z",
@@ -823,10 +820,10 @@ describe("session fork", () => {
     );
     const forkFile = path.join(path.dirname(sourceFile), `${forkId}_001.jsonl`);
     expect(text).toBe(
-      buildContextSummaryText(`## Files\n${modelVisiblePath(forkPlan)}: the release plan`, {
-        tracePath: forkFile,
-        shell: "bash",
-      }),
+      buildContextSummaryText(
+        `## Files\n${modelVisiblePath(forkPlan)}: the release plan`,
+        forkFile,
+      ),
     );
     // Both are the fork's own copies, there to be read.
     expect(await fs.readFile(forkPlan, "utf8")).toBe("the plan");
@@ -952,7 +949,7 @@ describe("a forked summary's paths", () => {
         ),
         transcribeToolCallOutput("toolu_h1", "completed", `Created "${plan}" (1 lines, 10 bytes).`),
       ].join("\n"),
-      { tracePath: `${traces}\\${sessionId}_001.jsonl`, shell: "powershell" },
+      `${traces}\\${sessionId}_001.jsonl`,
     );
   }
 
