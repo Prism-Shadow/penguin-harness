@@ -1315,9 +1315,8 @@ export class ContextEngine {
     text: AmspRecord[],
     handoff?: AmspRecord,
   ): AsyncGenerator<AmspRecord, StopReason> {
-    yield* this.adoptContext(await this.openContext());
+    yield* this.rotate(null, handoff && (() => handoff));
     this.pendingCarryOver = handoff ? [handoff, ...text] : text;
-    if (handoff) this.openingSummary = handoff;
     yield* this.openSwitchedContext();
     if (handoff) yield handoff;
     return "completed";
@@ -1827,16 +1826,7 @@ export class ContextEngine {
     reason: CompactionReason,
   ): AsyncGenerator<AmspRecord, "completed" | "fatal"> {
     yield* this.emitCompactionBegin(reason, "discard");
-    let next: OpenedNext;
-    try {
-      next = await this.openContext();
-    } catch (err) {
-      yield* this.emitCompactionEnd(reason, "discard", "fatal", { errorMessage: messageOf(err) });
-      return "fatal";
-    }
-    yield* this.emitCompactionEnd(reason, "discard", "completed");
-    yield* this.adoptContext(next);
-    return "completed";
+    return (yield* this.rotate({ reason, mode: "discard" })).status;
   }
 
   /**
@@ -1868,7 +1858,8 @@ export class ContextEngine {
    *   - `fatal`: no next context could be opened; the old context is kept.
    * In the last two, the result carries what the kept context is still owed (`pending`).
    * The next context is opened before the `compaction_end` is written, so the Trace never says
-   * `completed` for a context that does not exist.
+   * `completed` for a context that does not exist, and the opening is built after it (see
+   * `rotate`), so a note built from the closing file reads the end too.
    *
    * What reaches the Human output stream between the paired compaction events: each request's
    * `request_begin` / `request_end` and `token_usage`, its thinking and text being generated
@@ -2059,46 +2050,36 @@ export class ContextEngine {
       );
       return { status: "aborted", pending };
     }
+    const cutOff = !("summary" in end);
     const summary = "summary" in end ? end.summary : pickSalvage(requests);
-    let next: OpenedNext;
-    try {
-      next = await this.openContext();
-    } catch (err) {
-      const errorMessage = messageOf(err);
-      yield* this.emitCompactionEnd(reason, "summarize", "fatal", {
-        attempt: attempts,
-        errorMessage,
-      });
-      return { status: "fatal", pending, errorMessage };
+    const rotated = yield* this.rotate(
+      { reason, mode: "summarize", attempt: attempts, ...("summary" in end ? {} : { error: end }) },
+      async ({ notice }) => {
+        // The trailer names the file being closed: the rotation is not armed yet, so the
+        // Trace's current path is this context's own file.
+        const tracePath = this.deps.trace?.currentPath?.();
+        if (summary === null) return handoff ?? (await this.inPlaceHandoff(tracePath));
+        const shell = this.deps.shell !== undefined ? { shell: this.deps.shell } : {};
+        return userText(
+          buildContextSummaryText(
+            summary,
+            tracePath !== undefined ? { tracePath, ...shell } : undefined,
+            {
+              callLines: compactionCallLines(calls),
+              cutOff,
+              ...(notice !== undefined ? { notice } : {}),
+            },
+          ),
+        );
+      },
+    );
+    if (rotated.status === "fatal") {
+      return { status: "fatal", pending, errorMessage: rotated.errorMessage };
     }
-    // The trailer names the file being closed: the rotation is not armed yet, so the Trace's
-    // current path is this context's own file.
-    const tracePath = this.deps.trace?.currentPath?.();
-    const shell = this.deps.shell !== undefined ? { shell: this.deps.shell } : {};
-    const opening =
-      summary !== null
-        ? userText(
-            buildContextSummaryText(
-              summary,
-              tracePath !== undefined ? { tracePath, ...shell } : undefined,
-              {
-                callLines: compactionCallLines(calls),
-                cutOff: !("summary" in end),
-                ...(next.opened.notice !== undefined ? { notice: next.opened.notice } : {}),
-              },
-            ),
-          )
-        : (handoff ?? (await this.inPlaceHandoff(tracePath)));
-    yield* this.emitCompactionEnd(reason, "summarize", "completed", {
-      attempt: attempts,
-      ...("summary" in end ? {} : end),
-    });
-    yield* this.adoptContext(next);
-    this.openingSummary = opening;
     // A hand-off absorbed nothing: the text input the compaction held rides on behind the note.
     return {
       status: "completed",
-      opening,
+      opening: rotated.opening!,
       residual: summary !== null ? [] : folded.filter(isTextMessage),
     };
   }
@@ -2381,6 +2362,50 @@ export class ContextEngine {
         }
       }
     }
+  }
+
+  /**
+   * Closes the running context and opens the next. The opener runs first; then the span's
+   * `compaction_end` is written (when there is a span), then `opening` is built — it may read
+   * the closing file, end included: the rotation is armed only by the adopt — then the context
+   * is adopted and opens with it. An opener that throws ends the span `fatal` with its message
+   * and keeps the context; with no span (a switch with nothing to record) it propagates, with
+   * nothing written.
+   */
+  private async *rotate(
+    span: {
+      reason: CompactionReason;
+      mode: CompactionMode;
+      attempt?: number;
+      /** Why a completion had no full summary: the error pair its `compaction_end` carries. */
+      error?: { errorCode: ErrorCode; errorMessage?: string };
+    } | null,
+    opening?: (opened: OpenedContext) => AmspRecord | Promise<AmspRecord>,
+  ): AsyncGenerator<
+    AmspRecord,
+    { status: "completed"; opening?: AmspRecord } | { status: "fatal"; errorMessage: string }
+  > {
+    const attempt = span?.attempt !== undefined ? { attempt: span.attempt } : {};
+    let next: OpenedNext;
+    try {
+      next = await this.openContext();
+    } catch (err) {
+      if (span === null) throw err;
+      const errorMessage = messageOf(err);
+      yield* this.emitCompactionEnd(span.reason, span.mode, "fatal", { ...attempt, errorMessage });
+      return { status: "fatal", errorMessage };
+    }
+    if (span !== null) {
+      yield* this.emitCompactionEnd(span.reason, span.mode, "completed", {
+        ...attempt,
+        ...span.error,
+      });
+    }
+    const built = opening ? await opening(next.opened) : undefined;
+    yield* this.adoptContext(next);
+    if (!built) return { status: "completed" };
+    this.openingSummary = built;
+    return { status: "completed", opening: built };
   }
 
   /**
