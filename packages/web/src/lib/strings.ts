@@ -4699,7 +4699,7 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
-    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was forced by the provider refusing a request, which means its window is set larger than the real one or the threshold is too close to it. */
+    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was a refusal hand-off (see composerNotice). */
     contextRefusedHandoff:
       "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
     slashHint: "输入 / 使用命令",
@@ -4806,7 +4806,7 @@ Benchmark：
       errorMessage !== undefined
         ? `未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头：${errorMessage}`
         : "未能生成完整摘要，新上下文改以已写出的部分摘要或 Trace 交接说明开头",
-    /** The same when too little room was left for the compaction (the provider refused a request, or the summary was cut off at the output limit every time): what to correct, then the provider's own words when it refused. */
+    /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
     compactionRoomHint: (providerMessage?: string): string =>
       `留给压缩的空间不足，新上下文改以已写出的部分摘要或 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
         providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""

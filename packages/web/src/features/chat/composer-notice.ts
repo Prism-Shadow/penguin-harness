@@ -1,16 +1,10 @@
 /**
- * Which attention notice the composer raises above its input. There is one slot, holding one
- * notice at a time, with the same two buttons (open the Agent's settings, dismiss):
- *
- * - `refused` — the Session's latest compaction was forced by the provider refusing a request
- *   (`refusalHandoffOccurrence`): the model's window is set larger than the real one, or the
- *   threshold sits too close to it. It goes first, because nothing else on screen can see it.
- * - `window` — the model's window is below the Agent's compaction threshold.
- *
- * A dismissal is remembered per Session: the refusal per occurrence, so the next one is raised
- * again, and the small window per model, so switching the conversation onto another model asks
- * afresh. Raised only where a Session id gives the dismissal a key; the draft and subagent
- * composers have none.
+ * Which attention notice the composer's one slot raises: `refused` — the Session's latest
+ * compaction was a refusal hand-off (`refusalHandoffOccurrence`), the model's window set larger
+ * than the real one or the threshold too close to it — else `window` — the model's window is
+ * below the Agent's compaction threshold. A dismissal is keyed by Session and by the refusal's
+ * occurrence or the model, so the next refusal, or another model, asks afresh; no Session id,
+ * no notice.
  */
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
 
@@ -26,7 +20,6 @@ export function composerNotice(state: {
   /** The model's context window, and the Agent's configured compaction threshold. */
   contextWindow: number | undefined;
   compactionLimit: number | undefined;
-  /** Keys of the notices already put down. */
   dismissed: ReadonlySet<string>;
 }): ComposerNotice | null {
   const { sessionId, model, contextWindow, compactionLimit, dismissed } = state;

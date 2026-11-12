@@ -560,11 +560,9 @@ export interface ComposerControl {
 /**
  * Attention notices already put down, for the rest of the tab session (keys: `composerNotice`).
  *
- * Module state rather than storage: a notice reports a live mismatch between settings, so a
- * dismissal should not outlive the tab that saw it — reopening the app after changing either
- * side deserves a fresh answer. The small-window notice is keyed by model as well as Session
- * because switching the conversation onto another model is exactly the case where the mismatch
- * may no longer hold, or may hold with different numbers.
+ * Module state rather than storage: the notice reports a live mismatch between two settings, so
+ * a dismissal should not outlive the tab that saw it — reopening the app after changing either
+ * side deserves a fresh answer.
  */
 const dismissedNotices = new Set<string>();
 
@@ -780,11 +778,7 @@ export function ChatInput({
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
   /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
-  /**
-   * The occurrence id of the Session's latest compaction when the provider's refusal of a
-   * request forced it (`refusalHandoffOccurrence`), else null: raises the attention notice that
-   * asks for the model's window or the threshold to be corrected. Absent off session state.
-   */
+  /** The Session's refusal hand-off occurrence (`refusalHandoffOccurrence`), raising its notice; absent off session state. */
   refusalHandoff?: string | null;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
@@ -1136,12 +1130,8 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
-  // The attention slot above the input: a refused request's hand-off, else the model being
-  // unable to hold what the Agent is configured to compact at. Raised only in session state,
-  // where a Session id gives the dismissal a key; the draft composer has none. Read from the
-  // module set at every render, so a dismissal that belongs to another Session or model never
-  // suppresses this one, and one that belongs to this pairing survives a trip away and back;
-  // a dismissal bumps the counter to render again.
+  // Read from the module set at every render, so a dismissal survives a trip away and back and
+  // never suppresses another Session's or model's notice; a dismissal bumps the counter to render.
   const [, setDismissals] = useState(0);
   const attention = composerNotice({
     sessionId,
@@ -2240,15 +2230,11 @@ export function ChatInput({
         </SlashPicker>
       )}
 
-      {/* A setting needs changing: the provider refused a request and the conversation went on
-          from a hand-off note (the model's window is set larger than the real one, or the
-          threshold sits too close to it), or the Agent's compaction threshold is above what
-          this model can hold, so compaction fires at the window's edge instead of at the number
-          the user set. Amber rather than muted body text like the notices below it: the other
-          two describe what the composer is about to do, this one asks for a settings change,
-          and `attention` is the tone for a thing waiting on the user. Dismissible, because
-          keeping a setting on purpose is a legitimate answer and a notice with no way down
-          stops being read. */}
+      {/* A setting needs changing (`composerNotice` says which). Amber rather than muted
+          body text like the notices below it: the other two describe what the composer is about
+          to do, this one asks for a settings change, and `attention` is the tone for a thing
+          waiting on the user. Dismissible, because keeping the threshold high on purpose is a
+          legitimate answer and a notice with no way down stops being read. */}
       {attention !== null && (
         // The shared notice: its buttons keep their labels whole, so where the sentence would
         // be left a few characters a line beside them (a phone at a large text size), they

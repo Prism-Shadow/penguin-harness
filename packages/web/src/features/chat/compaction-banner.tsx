@@ -14,21 +14,12 @@
  * detail slot is left for the one thing a title cannot say — why a compaction failed, under
  * the bare mode word.
  *
- * A compaction that completed without a full summary — the next context opens with what was
- * written of it, or with the harness's Trace hand-off note — is still a completion: its row
- * reads exactly as a successful one, and only the head's status mark changes, to the attention
- * ink, with the explanation as its tooltip and accessible name. It has no result section.
- *
  * The body follows the work group: **stacked disclosure rows, each with its own status icon
  * exactly like a thinking block** — "Thinking", what the compaction request thought ahead of
  * its summary (present only once any arrived; a model that does not think leaves no empty
- * row); "Work", present when the compaction made tool calls, whose body lists each call as the
- * transcript's tool row ("Write plan.md") — its approval buttons included, so under always-ask
- * a hand-off file write is allowed or denied here, and the section opens itself while one
- * waits; a call refused once no round was left is a failed row showing the refusal — and
- * "Result", the summary itself (the last request's text). Thinking and result
- * carry the thinking block's own body (`md-body` through the shared `StreamText`) and stream
- * while the request writes them, revealed the way a reply is.
+ * row); "Work", the compaction's tool calls (see CompactionWork); and "Result", the summary
+ * itself. Thinking and result carry the thinking block's own body (`md-body` through the shared
+ * `StreamText`) and stream while the request writes them, revealed the way a reply is.
  *
  * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
  * while the compaction runs the banner is open, so the two section rows are on
@@ -132,10 +123,9 @@ function CompactionSection({
 }
 
 /**
- * The tool calls the compaction made, run or refused: one section row over the calls, each the
- * transcript's tool row. Closed by default like its siblings, and open while a call waits for an approval —
- * the buttons must be reachable (keyed on that state, so the reader's own choice is back once
- * nothing waits).
+ * The compaction's tool calls under one section row, each the transcript's tool row. Closed by
+ * default like its siblings, and open while a call waits for an approval — the buttons must be
+ * reachable (keyed on that state, so the reader's own choice is back once nothing waits).
  */
 function CompactionWork({
   cards,
@@ -255,10 +245,9 @@ export function CompactionBanner({
     );
   }
   const ok = item.status === "completed";
-  // A completion without a full summary is still a completion: the title, the wall time and
-  // the row stay as they are, and only the head's mark turns to the attention ink, its tooltip
-  // and accessible name saying why — and, when too little room was left, what to correct. Only
-  // a refusal's message is the provider's words; a cut-off summary's is the harness's own.
+  // A completion without a full summary is still a completion: only the head's mark changes, to
+  // the attention ink, its tooltip and accessible name saying why — and, short of room, what to
+  // correct. Only a refusal's message is the provider's words.
   const degradedHint = !compactionDegraded(item)
     ? undefined
     : compactionShortOfRoom(item)

@@ -32,16 +32,12 @@
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
  *   - Compaction-internal messages: model_msg within a
- *     compaction_begin↔end range (the compaction prompt, thinking, tool rounds and summary
- *     output) are never rendered as transcript items and never counted toward Task
+ *     compaction_begin↔end range (the compaction prompt, thinking and summary output)
+ *     are never rendered as transcript items and never counted toward Task
  *     segmentation; the request's thinking and the summary's own text (live
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
- *     banner instead (issue #290), the summary draft starting over at each of the span's
- *     request_begin events (only the last request's text is the summary, and an end that
- *     says the compaction completed without one keeps none — CompactionItem.errorCode), and
- *     every tool call of the span, run or refused, becomes a work card on the banner
- *     (CompactionItem.work);
+ *     banner instead (issue #290), and its tool calls become cards on it (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -380,14 +376,9 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
-  /**
-   * The end's error pair (compaction_end.error_code / error_message). On a `completed` end it
-   * means the compaction completed without a full summary — the next context opened with what
-   * was written of one, or with the harness's Trace hand-off note — and says why: the row's
-   * status mark explains it (see compactionDegraded). On an end that did not complete it is
-   * the failure's reason.
-   */
+  /** compaction_end.error_code; either half of the pair on a `completed` end: no full summary (compactionDegraded). */
   errorCode?: string;
+  /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
   errorMessage?: string;
   /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
   beginTsMs?: number;
@@ -399,20 +390,14 @@ export interface CompactionItem {
    * replay from the span's complete assistant text — the banner shows the summary being
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
-   * While the span runs it is the text of its latest request alone: each request_begin starts
-   * it over, since a request that took a tool round, or was retried, wrote no summary. An end
-   * carrying the error pair drops it: the last draft is not what the next context opened with.
+   * Each of the span's requests starts it over (only the last one's text is the summary), and
+   * an end carrying the error pair drops it: that draft is not what the next context opened with.
    */
   summaryText?: string;
   /**
-   * The tool calls the compaction made (hand-off files read and written, and the calls it
-   * refused once no round was left): one card per call, in call order, built like the
-   * transcript's tool cards — streamed arguments, the approval decision, the output — and
-   * registered in the model's `toolCards`, so an approval request finds its card here. A
-   * refused call is a failed card showing the refusal, live and from history alike, since the
-   * engine streams every call of the span. Never transcript items and never counted in the
-   * Task's tool time (the server's window scanner skips the span too). Absent when the
-   * compaction made no call; dropped with the drafts when it did not complete.
+   * The compaction's tool calls, run or refused, one transcript tool card each (registered in
+   * `toolCards`, so an approval finds it): never transcript items nor the Task's tool time, and
+   * dropped with the drafts when the compaction does not complete.
    */
   work?: ToolCallItem[];
   /**
@@ -440,12 +425,11 @@ export interface CompactionItem {
    * the complete message's own time settles it — the ThinkingItem convention (see
    * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
    *
-   * A compaction of several requests (tool rounds, retried attempts) concatenates every
-   * request's thinking into one draft, so a thinking start is recorded once and a later stop
-   * only extends the settled value: the wall time covers the whole span that produced the prose
-   * on screen, the gaps between requests included. The result section starts over with each
-   * request, as its text does (see `summaryText`), and is timed from the last request's first
-   * summary text.
+   * A compaction of several requests concatenates their thinking into one draft (`summaryText`
+   * starts over instead), so a start is recorded once and a later stop only extends the settled
+   * value: the wall time covers the whole span that produced the prose on screen, the failed
+   * attempts and the gaps between them included. Timing the last attempt alone would print a
+   * short number against text it did not write.
    */
   thinkingStartedAtMs?: number;
   /** Settled thinking wall time (boundaries: see thinkingStartedAtMs). */
@@ -841,8 +825,7 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     // reads the identical content back from the span's complete thinking and assistant text
     // — both accumulate onto the running banner, so a reload shows the same text the live
     // viewer watched being written.
-    // A tool round's records take the transcript's path below; createToolCard puts their cards
-    // on the banner.
+    // A tool round's records take the transcript's path below.
     const type = (msg.payload as { type?: string }).type ?? "";
     if (model.stats.compactionActive && !/^(partial_)?tool_call(_output)?$/.test(type)) {
       touchTask(model, msg.timestamp);
@@ -868,8 +851,6 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       // section's start (the ThinkingItem convention), this message's own time settles it.
       // Read before advanceLastTs below, exactly as the ordinary complete path reads it.
       const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
-      // A user text inside the span (the Prompt, a round's harness line, a corrective line)
-      // renders nothing: the calls it follows stay on the banner, refused ones as failed cards.
       if (p.type === "text" && p.role === "assistant" && p.text) {
         appendCompactionSummaryText(model, p.text, startMs);
       } else if (p.type === "thinking" && p.thinking) {
@@ -1974,8 +1955,6 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const waiting = findLastWaitingReconnect(model);
         if (waiting) waiting.gaveUp = true;
       }
-      // A completed end carrying the error pair completed without a full summary: whatever the
-      // last request wrote is not what the next context opened with, so the row keeps no result.
       const degraded =
         p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
       const item = findLastRunningCompaction(model);
@@ -1995,13 +1974,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
           item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
         }
-        // A compaction that did not complete produced no summary — only a half-written
-        // draft that was never adopted (a user stopping it is the common case; an old Trace's
-        // abandoned one reads `retryable`, `fatal` or `failed`). Discard it, and the thinking
-        // that led to it, rather than leave a truncated summary on screen implying the context
-        // was replaced by it.
         // A call card that never got its output will not get one now.
         for (const card of item.work ?? []) if (!card.outputComplete) settleUnfinishedCard(card);
+        // A compaction that did not complete produced no summary — only a half-written
+        // draft that was never adopted (a user quitting mid-compaction is the common case,
+        // closed as `failed` when the session next loads). Discard it, and the thinking that
+        // led to it, rather than leave a truncated summary on screen implying the context
+        // was replaced by it.
         if (p.status !== "completed") {
           delete item.work;
           delete item.summaryText;
@@ -2018,8 +1997,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           settleCompactionThinking(item, tsMs);
         }
       } else {
-        // Mid-stream join (missed the begin): append a settled banner directly.
-        model.items.push({
+        // Mid-stream join (missed the begin): append a completed banner directly.
+        const created: CompactionItem = {
           kind: "compaction",
           id: nextId(model),
           reason: p.reason,
@@ -2028,14 +2007,14 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           status: p.status,
           ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
-        });
+        };
+        model.items.push(created);
       }
       return;
     }
     case "request_begin": {
-      // A compaction's request (a tool round's next one, or a retried attempt): the summary
-      // draft starts over — only the last request's text is the summary — and nothing else
-      // here is about it (compaction requests aren't timed, and no reconnect hint is theirs).
+      // A compaction's request starts its summary over (CompactionItem.summaryText); it is
+      // neither timed nor the resend a waiting reconnect hint announced.
       if (model.stats.compactionActive) {
         const item = findLastRunningCompaction(model);
         if (item) {
@@ -2062,9 +2041,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // produced, rendering a retry hint (with the attempt number); the terminal
       // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
-      // within a compaction range are neither rendered nor counted (the banner times the
-      // compaction as a whole); a tool round's call the request cut short will never run,
-      // as in a turn.
+      // within a compaction range (a call one cut short settles as in a turn)
+      // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
       if (model.stats.compactionActive) {
         settleCutShortCalls(model, p.status === "completed");
         return;
