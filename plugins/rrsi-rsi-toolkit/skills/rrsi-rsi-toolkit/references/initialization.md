@@ -1,15 +1,14 @@
 # Initialize the target harness
 
-Prepare the Target before H_0 is measured. The State-only mode edits a target-owned Skill and its
+The inner Optimizer follows this file to prepare the Target before H_0 is measured. The State-only mode edits a target-owned Skill and its
 supporting files. When target source is available, source mode also edits the implementation of
-the harness, using an isolated checkout and its own build. Keep the controller's installation,
-policy model and Benchmark fixed. `STATE`, `SOURCE`, `SKILL_DIR` and `OUT` are the paths of the
-Skill's "Paths and records".
+the harness, using an isolated checkout and its own build. Keep the Organizer's and Optimizer's installations,
+policy model and Benchmark fixed. `STATE`, `SOURCE`, `SKILL_DIR` and `OUT` are the absolute paths in the training request.
 
 ## Source and build, when available
 
 Use the source revision supplied by the user, or resolve the source of the target installation.
-Create a separate checkout under OUT; do not edit the installation running this Skill. Record
+Create a separate checkout under OUT; do not edit either the Organizer or Optimizer installation. Record
 the starting revision and any existing diff before initializing H_0. If source is unavailable,
 record `harness_mode: state`; the rest of the method still operates on the declared State paths.
 
@@ -19,7 +18,7 @@ For source mode, record a build and launch recipe in `OUT/experiment.yaml`:
   tool registration, configuration, output handling, context, Skills, memory and delegation.
 - The repository's build command, runtime dependencies, and the absolute target CLI entry or
   install-bundle path used by evaluation. For Penguin, build workspace dependencies through
-  pnpm so injected package copies are updated; do not relink the controller's global CLI.
+  pnpm so injected package copies are updated; do not relink the Organizer's or Optimizer's global CLI.
 - How the Benchmark runner receives that build and the frozen State. A State archive alone
   changes the Agent's files, not its runtime implementation.
 
@@ -31,7 +30,7 @@ For a local CLI launch, use the recorded absolute entry and a separate data root
 target build, populated with that version's State and the configured model connection. Each
 trial starts from a fresh runtime copy. Clear inherited `PENGUIN_API_URL`, `PENGUIN_API_TOKEN`
 and `PENGUIN_SESSION_ID` before launching it; those variables otherwise route CLI calls back to
-the controller. Keep runtime writes within that copy and discard them
+the Optimizer's existing server. Keep runtime writes within that copy and discard them
 after collecting the result; they do not modify the frozen candidate or carry task data to the
 next trial.
 
@@ -53,9 +52,9 @@ State. No candidate source changes are pushed to a public repository during evol
    experiment to resume, which needs the matching `OUT/experiment.yaml`, or learning that must
    not be lost: ask the user, and never overwrite a slot a previous run evolved.
 2. **Version.** A Target created for this experiment is initialized in place, at `version` 1. For
-   an existing agent, make sure the snapshot of its current version exists (the Skill's snapshot
-   rule); initialize at one more than the highest version in its current State, snapshots and
-   scoreboard, as the Skill's version rule requires.
+   an existing agent, make sure the snapshot of its current version exists (the snapshot
+   rule below); initialize at one more than the highest version in its current State, snapshots and
+   scoreboard, as the version rule below requires.
 3. **Declare the component set.** Write `OUT/components.yaml` with the components this run may
    edit — the K of `references/training.md` — and their State/source paths. The layout below is
    the State-only starting point; in source mode also map the actual implementation paths found
@@ -145,8 +144,34 @@ Before your first substantive action on any task, read `skills/rrsi-harness/SKIL
    and check that the reader line
    appears exactly once in `STATE/AGENTS.md`. Record the SHA-256 of every slot file and of
    `AGENTS.md` in `OUT/experiment.yaml` as `h0`, and retain the version's State snapshot and
-   source/build record. The "Measure" step checks the frozen State again after every matrix.
+   source/build record. The training measurement procedure checks the frozen State again after every matrix.
 
 H_0 is the initialized State together with the starting source/build, with nothing learned yet;
 that is what the baseline measures. Only accepted edits change it. If a candidate replaces a
 State entry point, update its reader in the same edit so the measured mechanism is still invoked.
+
+## Versions and snapshots
+
+A new State version is one more than the highest of the current `version`, every `SNAPSHOTS/v<N>.tar.gz`, and every version the scoreboard records for the Target; versions only increase, and a measured or abandoned number is never reused. Snapshot each State before you measure it, and stop if the snapshot cannot be made. The archive holds `agent_state/` without its vault, as the Web App's snapshots do; an existing snapshot of the same version is kept, never overwritten:
+
+```bash
+cd "<TARGET>" && mkdir -p snapshots && { [ -e "snapshots/v<N>.tar.gz" ] \
+  || { tar --exclude=.vault.toml -czf "snapshots/v<N>.tar.gz.tmp" agent_state \
+       && mv "snapshots/v<N>.tar.gz.tmp" "snapshots/v<N>.tar.gz"; }; }
+```
+
+Hashes are SHA-256 (`sha256sum`, or `shasum -a 256` on macOS). The State digest covers every file but the vault: `cd "<STATE>" && find . -type f ! -name .vault.toml -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum`.
+
+For each version, also retain `OUT/versions/v<N>.json`: the State snapshot path and, in source mode, the source revision, candidate diff, build command and absolute CLI entry or install-bundle path. Keep measured builds immutable so restoring a version restores the code that was evaluated as well as its State.
+
+## Restore a frozen version
+
+The Optimizer uses this when finishing training; the Organizer uses it to restore H_0 and
+final for testing. Restore the State at its measured version, without renumbering, and select
+the same version's recorded CLI or install bundle. Never rebuild from a different source tree.
+
+```bash
+cd "<TARGET>" && STAGE="$(mktemp -d .restore-XXXXXX)" && tar -xzf "snapshots/v<W>.tar.gz" -C "$STAGE" \
+  && { [ ! -e agent_state/.vault.toml ] || cp -p agent_state/.vault.toml "$STAGE/agent_state/"; } \
+  && mv agent_state "$STAGE/replaced" && mv "$STAGE/agent_state" agent_state && rm -r "$STAGE"
+```

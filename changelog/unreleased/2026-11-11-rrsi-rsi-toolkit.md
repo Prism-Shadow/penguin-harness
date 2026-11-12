@@ -16,7 +16,15 @@ Added the RRSI RSI Toolkit, `rrsi-rsi-toolkit`, reproducing Regularized Recursiv
 - The Pruner reports components whose recent best gain is non-positive as deletion targets.
 - Algorithm 2 selected candidates using the calibrated score floor, policy-token cost and structural novelty, then retained the final accepted harness for held-out evaluation.
 - Calibration followed the authors' repeated-baseline estimator and pooled-trial bootstrap fallback, using the same per-task trial count as candidate evaluation.
+- Attribution used the domain's regression threshold, separately from the calibrated noise band.
 - Evaluation recorded policy tokens separately from dollar cost and followed the upstream missing-token convention.
+
+## Experiment organization
+
+The outer Penguin prepared the environment, launched training and collected the frozen harness
+before arranging testing and reporting. A dedicated inner Penguin Session ran the complete RRSI
+loop, including calibration, proposal review, candidate builds, evaluation and version selection.
+It returned the recorded H_0/final builds and States; test feedback did not reopen training.
 
 ## Editable harness
 

@@ -55,10 +55,12 @@ version string is not.
 
 1. Build the Target and the Benchmark from the two case directories, publish it, and record both
    ids.
-2. Run the Skill with the smoke profile and `T = 1`, `m = 1`, `k = 1`: calibrate `delta` from three
-   H_0 matrices, each with k = 1. Use the repeated-baseline estimate and bootstrap fallback in
-   `references/training.md`, then run one round. Do not assume the matrices will be identical.
+2. The Organizer launches a separate Optimizer Session with the smoke profile and `T = 1`,
+   `m = 1`, `k = 1`, using `references/training.md`. The Optimizer calibrates delta from three
+   H_0 matrices, each with k = 1, runs one round and returns the frozen versions. The Organizer
+   collects and reports them; it runs additional baseline/final tests only when requested.
 3. The expected shape of the outcome, which is what the user should check:
+   - one continuing Optimizer Session owning the full loop;
    - one Proposer candidate with at most `b_max = 2` edits, each with a component and a hypothesis;
    - a Critic verdict, and a repair round when the first draft leaks;
    - `b_0 = 2`, `sigma_0 = 0`, `U_0 = K` = every component untried;

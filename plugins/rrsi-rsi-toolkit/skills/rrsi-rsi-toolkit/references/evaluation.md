@@ -1,13 +1,13 @@
-# Evaluate one cell
+# Evaluate the recorded harness
 
-How RRSI measures a Target Agent: the controller dispatches workers through `run_subagent`, records full-precision scores and policy-token usage in its experiment directory, and writes complete evaluations to the Benchmark's `scoreboard.yaml`. Each worker receives the measured version's State and source/build record. This reference extends the common evaluation protocol for RRSI's token-cost rule and source candidates.
+The measurement coordinator is the inner Optimizer during training, and the outer Organizer during frozen baseline/final testing. It dispatches workers through `run_subagent`, records full-precision scores and policy-token usage in its experiment directory, and writes complete evaluations to the Benchmark's `scoreboard.yaml`. Each worker receives the measured version's State and source/build record. This reference extends the common evaluation protocol for RRSI's token-cost rule and source candidates.
 
 ## Paths
 
-Resolve every path from the Environment's `App Data Dir`; never search for the Project:
+Use the experiment's supplied absolute paths, originally resolved from the Organizer's App Data Dir. Keep the same OUT across Sessions; do not search for or substitute another Project:
 
 ```text
-PROJECT_DIR  = <app_data_dir>
+PROJECT_DIR  = <supplied_project_dir>
 PROJECT_ID   = basename of PROJECT_DIR
 PENGUIN_HOME = dirname of PROJECT_DIR
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
@@ -15,15 +15,15 @@ STATE        = TARGET/agent_state
 BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
 CASE         = BENCHMARK/<case_id>       # statement/README.md is public; rubric/README.md is private
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
-OUT          = <experiment directory supplied by the controller>
+OUT          = <experiment directory supplied by the coordinator>
 ```
 
 Use the declared Target, Benchmark, experiment and candidate-runtime paths. Keep credentials out of candidate copies, snapshots, results and logs. Source-mode runtime setup uses the configured model connection through the harness's supported configuration flow; the Proposer and Critic never receive credentials.
 
-## The controller
+## The measurement coordinator
 
-1. Require `benchmark_config.toml` and read its `status`: a literal `draft` is not frozen and a literal `failed` one never calibrated (stop and say so); a missing or any other value is published. Read the Agent State `version` from `STATE/system_config.yaml` (1 when absent) and `model.thinking_level` (`medium` when absent).
-2. Fix the runtime once per experiment: `provider` and `model_id` are the pair the user named, else the `Provider` and `Model ID` lines of your own Environment. Never read a pair from the Target's files, a Project default or the server. A half pair stops the run.
+1. Require `benchmark_config.toml` and read its `status`: a literal `draft` is not frozen and a literal `failed` one never calibrated (stop and say so); a missing or any other value is published. Read the measured State version from its version record and confirm it matches `STATE/system_config.yaml`.
+2. Use the Target's provider, model and thinking level recorded by the Organizer in the experiment request. Pass them explicitly to every worker. Never substitute the Optimizer's or a worker's runtime, or a Project/server default. A missing or incomplete runtime stops the measurement.
 3. Set `runs = k` for calibration and candidate measurements, or `runs = test_repetitions` for the requested baseline/final report measurements. Read the Benchmark's execution instructions first: preserve a specified shared Session/container rather than launching a grouped training task once per Case. For independent cases, call `run_subagent` once per Case and run index `1..runs` (omit `agent_id`: the worker is this Agent, so it can read this file) with:
 
 ```text
@@ -38,6 +38,8 @@ provider: <provider>
 model_id: <model_id>
 thinking_level: <fixed_target_thinking_level>
 harness_record: <absolute OUT/versions/vN.json path>
+output_dir: <absolute OUT path>
+project_dir: <absolute PROJECT_DIR path>
 ```
 
 Independent cases of one frozen version may run in parallel within capacity; two versions of the same Target never run at the same time. Follow a Harbor launch when the Benchmark's instructions name Harbor; do not depend on a particular Markdown heading. Run independent cells in the background, at most four at a time unless the user named another limit (never above eight), and retry once at lower concurrency when Docker cannot allocate a network.
@@ -54,7 +56,7 @@ case_scores:
 The other return fields describe that one execution, including its `session_id`, cost, duration and tokens. Require `case_scores` to cover exactly the requested Case IDs, without duplicates. Expand its scores into the matrix using the Benchmark's mapping, but count usage once per execution. Record this change of RRSI's evaluation unit as an adaptation; do not invent per-question usage from the shared total.
 
 4. Before reading any field, check that the worker-authored text is exactly one plain YAML document. If not, ask the same worker to resend the YAML from its existing result; never rerun the Target for a formatting repair. Require every scored result's `agent_id`, `provider`, `model_id`, `thinking_level` and `harness_record` to match the request, else the matrix is invalid. Save raw cells, scoring weights and token usage under OUT. Derive the score and token aggregates there before rounding for display.
-5. `invalid_request`: correct and resend. `version_changed`, `benchmark_invalid` or a runtime mismatch: stop. For `evaluation_failed`, diagnose the missing trial and apply the missing-trial and retry rule in `references/training.md`. Preserve completed results, distinguish an unfinished execution from one that never started, and never rerun a Target merely to repair its result's formatting.
+5. `invalid_request`: correct and resend. `version_changed`, `benchmark_invalid` or a runtime mismatch: stop. For `evaluation_failed`, preserve completed results and diagnose the missing trial. During training, the Optimizer applies the missing-trial rule in `references/training.md`. During reporting, the Organizer follows the Benchmark's failure/scoring contract and reports any remaining missing measurements; it does not run candidate selection. Never rerun a Target merely to repair its result's formatting.
 6. Append one evaluation per complete matrix to `SCOREBOARD` (create the file with `evaluations: []` if the Benchmark has none), then re-parse the file and verify the appended record. Its Case rows require individual costs/durations; a grouped execution without that breakdown stays in OUT and the final report rather than inventing per-question measurements:
 
 ```yaml
@@ -110,7 +112,7 @@ You evaluate one requested execution unit. Do not spawn another evaluation worke
 2. **Workspace cases.** Create a unique Workspace under `TARGET/workspaces/`, resolve it to an absolute canonical path under that directory, and copy only `statement/` into it. The Target may see the statement and its own State, never the rubric. Grouped cases follow the Benchmark's shared-workspace and execution instructions. For an independent case, run one foreground execution as separate shell statements in this order:
 
 ```bash
-PROJECT_DIR="<app_data_dir>"
+PROJECT_DIR="<supplied_project_dir>"
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
 export PENGUIN_HOME
@@ -122,10 +124,10 @@ penguin run \
   --approve allow-all
 ```
 
-   This command is the State-only launch. In source mode, replace the PATH-resolved `penguin` with the recorded absolute candidate entry (for example, `node <candidate>/packages/cli/dist/penguin.js`), and set PENGUIN_HOME to a fresh target data root prepared as `initialization.md` describes. Load the version's frozen State there, use the configured model connection, and bind the resulting Trace to that runtime State path. Before invoking the candidate CLI, run `unset PENGUIN_API_URL PENGUIN_API_TOKEN PENGUIN_SESSION_ID` in that shell; otherwise inherited connection settings override PENGUIN_HOME and route the call back to the controller's server. Never fall back to a stock CLI when the candidate entry fails.
+   This command is the State-only launch. In source mode, replace the PATH-resolved `penguin` with the recorded absolute candidate entry (for example, `node <candidate>/packages/cli/dist/penguin.js`), and set PENGUIN_HOME to a fresh target data root prepared as `initialization.md` describes. Load the version's frozen State there, use the configured model connection, and bind the resulting Trace to that runtime State path. Before invoking the candidate CLI, run `unset PENGUIN_API_URL PENGUIN_API_TOKEN PENGUIN_SESSION_ID` in that shell; otherwise inherited connection settings override PENGUIN_HOME and route the call back to the coordinator's server. Never fall back to a stock CLI when the candidate entry fails.
 
-   Never pass `--source`: it is retired. Use the requested Agent, Project, Workspace and model pair. Return `evaluation_failed` for a launch or execution failure, retaining its evidence. The controller applies the retry rule in `references/training.md`; confirm the previous process has ended before resuming a missing trial, and never rerun a completed result or an execution whose state is still unclear.
-3. **Harbor cases.** Run the Benchmark's documented launch from a checkout of its specified 40-character commit, following its repository instructions for task layout, grouping, environment, scoring and credentials. Pack the frozen State without credentials, runtime memory or schedules, with the State contents at the archive root; do not pass a snapshot with an enclosing `agent_state/` directory. Pass it as `--ak agent_state_tar=<archive>` and pass the fixed thinking level through `--ak thinking=<thinking_level>`. Use the controller's configured host Project for model connection setup. For a source candidate, also pass its recorded `--ak install_bundle=<candidate bundle>` (or the adapter's equivalent custom-build option); match the bundle's package/Node versions and never substitute a release bundle. A State-only run may use the fixed release bundle. Give every job a unique name and retain its installation metadata and trial directory. Convert the verifier reward using the Benchmark's normalization; read dollar cost from `agent_result.cost_usd`, tokens as above, duration from `agent_execution`, and use `harbor:<trial directory name>` as session id.
+   Never pass `--source`: it is retired. Use the requested Agent, Project, Workspace and model pair. Return `evaluation_failed` for a launch or execution failure, retaining its evidence. The coordinator handles retries under the phase-specific rule above; confirm the previous process has ended before resuming a missing trial, and never rerun a completed result or an execution whose state is still unclear.
+3. **Harbor cases.** Run the Benchmark's documented launch from a checkout of its specified 40-character commit, following its repository instructions for task layout, grouping, environment, scoring and credentials. Pack the frozen State without credentials, runtime memory or schedules, with the State contents at the archive root; do not pass a snapshot with an enclosing `agent_state/` directory. Pass it as `--ak agent_state_tar=<archive>` and pass the fixed thinking level through `--ak thinking=<thinking_level>`. Use the coordinator's configured host Project for model connection setup. For a source candidate, also pass its recorded `--ak install_bundle=<candidate bundle>` (or the adapter's equivalent custom-build option); match the bundle's package/Node versions and never substitute a release bundle. A State-only run may use the fixed release bundle. Give every job a unique name and retain its installation metadata and trial directory. Convert the verifier reward using the Benchmark's normalization; read dollar cost from `agent_result.cost_usd`, tokens as above, duration from `agent_execution`, and use `harbor:<trial directory name>` as session id.
 4. After the run, verify that the frozen State/build, model settings and Benchmark materials are unchanged (`version_changed` / `benchmark_invalid` otherwise). Verify the actual entry or installation record against `harness_record`. Bind one root Trace whose Workspace, runtime State path, provider and model match the request (`evaluation_failed` if no unique match), or the Harbor trial and its `agent_result.model_usage`. A trial the Benchmark declares unscorable is `evaluation_failed`.
 5. For workspace cases, score against the private Rubric from the Workspace and bound Target Traces. For Harbor, use the verifier result without a second worker-authored grade. A wrong, missing or malformed answer is scored behavior (`status: ok`); a launcher, binding or scoring failure is not. Use recorded duration, dollar cost and token usage, with missing usage null. Preserve full precision for RRSI's calculations.
 6. Return the YAML as the only worker-authored text, without fences. Scored:
@@ -167,4 +169,4 @@ thinking_level: <thinking_level_or_null>
 failure_code: <invalid_request | benchmark_invalid | version_changed | evaluation_failed>
 ```
 
-If the controller reports invalid formatting, resend only the clean YAML from the result already in this Session; do not call tools, relaunch or rescore.
+If the coordinator reports invalid formatting, resend only the clean YAML from the result already in this Session; do not call tools, relaunch or rescore.

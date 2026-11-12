@@ -39,7 +39,7 @@ State/source scope supplied with the candidate; source edits are allowed within 
    anything that implies finishing should wait for a confirmation that may never come. A bounded
    pass with an explicit exit is fine.
 7. **RUNTIME OR CONTRACT BREAK.** The diff changes the runtime pair (provider, model, thinking
-   level), touches the controller, credentials, runtime task data, Benchmark or verifier, or
+   level), touches the Organizer or Optimizer, credentials, runtime task data, Benchmark or verifier, or
    breaks the target's declared interface: valid Skill frontmatter, entry points and the
    Benchmark's input/output contract. A source implementation or State entry point may change
    when its callers are updated with it.

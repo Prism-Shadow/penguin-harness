@@ -11,7 +11,7 @@ grader and the task set are frozen.
 ## Protocol
 
 Use the native file and shell tools available in your Penguin Session to inspect the supplied
-training Traces and edit the candidate's working copy. The controller supplies the editable
+training Traces and edit the candidate's working copy. The inner Optimizer supplies the editable
 State/source paths and read-only Trace files. Do not emit fictional tool actions and wait for
 them to execute: the upstream Python action dispatcher is not installed in this Session.
 
@@ -23,7 +23,7 @@ When the edits are complete, return exactly one JSON submission as your final re
 
 Include every changed and new file in the reviewed diff. Wire a new module into the target's
 actual entry point, tool registry or Skill procedure; a file that is never loaded is not a
-working mechanism. The controller builds and evaluates the candidate after review.
+working mechanism. The Optimizer builds and evaluates the candidate after review.
 
 There is no abort action. You must ship a candidate. A round that ships nothing tests nothing: the
 history records what was MEASURED, and a mechanism you declined to build has no measurement behind

@@ -1,10 +1,76 @@
-# One round of RRSI
+# Run the inner RRSI optimization
+
+You are the inner **Optimizer**, launched by the outer experiment Organizer in a dedicated
+Penguin Session. Execute the complete RRSI loop here: prepare H_0, calibrate, analyze Traces,
+propose and review edits, build and evaluate candidates, select versions, and repeat. Use
+`run_subagent` for the Analyst, Proposer, Critic and evaluation workers. If that capability is
+unavailable, return the execution problem to the Organizer rather than asking it to perform
+algorithm steps itself.
+
+Use the training request's fixed runtimes, parameters and absolute paths. `OUT` belongs to this
+experiment, `SKILL_DIR` contains the supplied `references/`, `TARGET` is the Agent being evolved,
+`STATE` is its State, and `SOURCE` is its isolated source checkout when available. Resolve
+`references/...` paths relative to `SKILL_DIR`. Follow the
+Benchmark's training execution contract. Do not read held-out tasks or run the final Test phase;
+the Organizer does that after collecting your frozen result. Existing Traces are evidence to
+read, never files to rewrite.
 
 Algorithm 1 (proposal side) then Algorithm 2 (selection side), with the exact arithmetic of
 `rrsi/schedule.py`, `rrsi/history.py`, `rrsi/components.py`, `rrsi/propose.py`,
-`rrsi/critic.py` and `rrsi/selection.py`. This file is the controller's working reference: it
+`rrsi/critic.py` and `rrsi/selection.py`. This file is the Optimizer's working reference: it
 fixes every formula, every prompt and every JSON shape so a round is reproducible.
-`SKILL_DIR`, `OUT`, `TARGET`, `STATE` and `SOURCE` are the paths of the Skill's "Paths and records".
+
+## Run the training experiment
+
+Follow `references/initialization.md` to initialize the Target and H_0, including its frozen
+State snapshot and any source/build record. Keep the Organizer's and Optimizer's installations
+unchanged. The policy model, provider, thinking level, Benchmark and verifier stay fixed.
+
+Then calibrate the noise band `delta` before the first round, because the floor of Algorithm 2 is meaningless without it:
+
+1. Measure unchanged `H_0` three times on the whole evolve set, each a complete matrix with the same `k` used for candidates. Retain the full-precision per-trial scores and scoring weights.
+2. Follow the pinned authors' `rrsi/calibrate.py`: for repeated baseline scores `S_i`, `sd_null = sqrt(2) * sample_sd(S_i)` and `delta = z * sd_null`, with `z = 2.0`. If the repeated estimate is zero, use that implementation's pooled-trial bootstrap fallback. The exact calculation is under "Noise calibration" below. Write the selected estimate, method and source jobs to `OUT/calibration.json`.
+3. Reuse the first matrix as `H_0`'s evaluation `S_0`; do not measure it a fourth time for initialization.
+
+Three evaluations are this toolkit's calibration default. Reuse a supplied calibration only when its H_0 State/source/build, `k`, tasks, scoring and runtime match; otherwise recalibrate. Record its source. Equal aggregate scores or a small task set alone do not justify `delta = 0`: use zero only if the upstream fallback also returns zero.
+
+Keep in OUT, append-only: every meta-prompt and raw Proposer reply, every Analyst report, every candidate diff with its Critic verdict and every repair attempt, every measurement with its cells and Session ids, every round's `directives.json` (the `b_t`, `sigma_t`, `T_t`, `U_t`, `E_t` and `B_t` this round used) and every failure. `OUT/history.jsonl` is the edit history `L_t`: one record per edit, in the shape defined below.
+
+Keep `OUT/frontier.json` in the shape the paper's loop keeps: the incumbent's `t`, commit, job, `S` and `C`, plus `S_star` and the trajectory of every round. Its version identifies the State snapshot and the source/build record together. A resumed Session reads it and continues from the round it names instead of restarting.
+
+Run rounds `t = 0 .. T-1`. Each round is Algorithm 1 then Algorithm 2, with the detailed prompts, arithmetic and JSON shapes below. In summary:
+
+1. **Analyze.** F_t: run the Analyst over the incumbent's own measurement. Rank failure modes, name capability gaps, list the success habits the change must not break, and write one digest per task. It never sees a Rubric.
+2. **Directives.** Compute `b_t` from the schedule, `sigma_t` from the trajectory, `T_t`/`U_t` from the history, `E_t` and `B_t` (the Pruner set). Write `OUT/r<t>/directives.json`.
+3. **Propose.** Draw `m` candidates, each in its own copy of the editable State and source paths, each with the annealed budget, the edit history `L_t`, the exploration directive and the Pruner targets. The Proposer edits files using Penguin's native tools and returns its edit declaration. A candidate over budget, untagged, or missing its reserved exploration slot is bounced back to the Proposer, never accepted.
+4. **Screen.** The Critic reads the diff before any measurement and rejects leakage (task names, entity names, per-task values, expected answers, benchmark-specific branching), degenerate edits, grader gaming, undeclared bundling, runtime memory leakage and unbounded loops. A rejection goes back to the Proposer for at most `repair_rounds` repairs; a candidate that cannot be repaired is recorded without a measurement and never enters `T_t` or `g_t`. Then re-tag every edit from the diff when its declared component has no evidence in it, and check that the reserved exploration slot still holds.
+5. **Measure.** Build each screened source candidate, run the liveness check, and evaluate survivors on the whole evolve set using their own build and State.
+6. **Select.** Apply Algorithm 2 to every screened candidate: `Delta S = S' - S_t`, `Delta C = (C' - C_t) / C_t`, the floor `S' >= S_star - delta`, then the cost rule, then the domain guards. The winner is the highest `S'` among the admissible; if none is admissible, `H_{t+1} = H_t`. Record every candidate's decision, its per-edit history rows and its attribution scoreboard.
+7. **Advance.** Make the winner's State and source/build record the incumbent, update `S_star = max(S_star, S_{t+1})`, and discard only unmeasured temporary files. Retain the artifacts required to restore measured versions.
+
+The Pruner is not a separate pass: `B_t` is computed from the history's recent-yield summary and handed to the next round's Proposer as deletion targets, so removal is itself a measured edit. Never delete accepted machinery outside a round.
+
+## Measure a candidate
+
+Every measurement covers the full matrix, each case in `case_ids` × Runs `1..k`, dispatched and recorded through `references/evaluation.md` with the fixed runtime. `H_0` is measured first. A prior measurement is reusable only if its State, source/build, cases, scoring, runtime and trial count all match. For each version:
+
+1. Snapshot it, then take the State digest.
+2. Run the matrix with that version's recorded build. Measure one version at a time; nothing changes the candidate while its cells run. Source-mode workers use isolated runtime data roots, so an Organizer or Optimizer server cannot execute a candidate's tasks.
+3. Hash again. A difference (a memory the Target saved, a hook's write) invalidates the matrix: restore the snapshot and stop. The fix is switching that off in the Target's `system_config.yaml` (`memory.enabled: false`, `hooks.enabled: false`), which for an existing Target is the user's call.
+4. Append a complete Case-level evaluation to `SCOREBOARD` as `references/evaluation.md` describes, with a `summary_title` such as `RRSI round 2 · variant A · 74.17` and the harness change as its `summary`. Keep grouped execution usage and incomplete matrices with their RRSI decisions in OUT, following the missing-trial rule below.
+
+Compute `S` and `C` from full-precision trial records in OUT before rounding display scores. `S` uses the Benchmark's declared aggregation, scaled to `0..1`; equal task weights give the mean of the case means. `C` is the mean of known positive policy-token totals (`n_input_tokens + n_output_tokens`) across trials. Do not add cached tokens a second time or substitute dollar cost. If either harness has no usable `C`, set `Delta C = 0` and still apply Algorithm 2, as the authors' `relative_cost_change` does. Record missing usage alongside the measurements.
+
+## Finish training
+
+Freeze the incumbent at the end of round `T-1`: the last harness accepted by Algorithm 2, or H_0 if none was accepted. `S_star` is the selection floor's history, not a second final-selection rule. Restore the incumbent's State snapshot exactly, at its measured version and never renumbered, using the restore procedure in `references/initialization.md`.
+
+Verify that the State version matches the frozen incumbent and that every evolved slot matches its hash; in source mode also restore the matching source/build record. Keep every snapshot and every OUT record. If H_0 is still the incumbent, report that no candidate was accepted. Report score and token changes separately for an accepted harness.
+
+Return whether training completed, the H_0 and final version numbers and their absolute
+`OUT/versions/v<N>.json` paths, and the location of the frontier, measurements, decisions and
+usage. Include any stop or missing measurements. Do not run held-out evaluation or reinterpret
+the final selection for the Organizer.
 
 ## The component set K
 
@@ -138,7 +204,7 @@ For each `l` in `B_t`, `B_t`'s entry also carries the accepted machinery to remo
 A component outside `B_t` still earns its place because its recent best measured gain was
 strictly positive; a component inside it has stopped earning it and is reported as a deletion
 target. This is the Lasso-style structural pruning of the paper: removal is proposed, measured
-and selected like any other edit, never executed by the controller.
+and selected like any other edit, never executed outside a measured candidate.
 
 `nu(l')` for a candidate: the number of **distinct** structural components (`K_str`) among its
 edits on which the incumbent has never had an accepted edit. It contributes to the shaped
@@ -174,7 +240,7 @@ the same incumbent, history snapshot and Analyst report; no variant sees another
 or edits. Each is measured on the full evolve set with k trials per task.
 
 Only declared target harness paths enter the diff. Keep credentials, runtime task data, the
-controller's State and Benchmark/verifier files out of the candidate copy. Render the incumbent's
+Organizer's and Optimizer's State and Benchmark/verifier files out of the candidate copy. Render the incumbent's
 training Traces separately as read-only evidence for the Proposer.
 
 ## The Proposer
@@ -326,7 +392,7 @@ The domain guards for this toolkit:
   provider or the thinking level is rejected outright, because a score gain from a different
   model is not a harness improvement.
 - The candidate may edit its declared State and target source paths. A diff reaching the
-  controller, credentials, runtime task data, a Rubric or the verifier rejects. The build used
+  Organizer or Optimizer, credentials, runtime task data, a Rubric or the verifier rejects. The build used
   for measurement must match the candidate's recorded source and State.
 - An added mechanism that persists or injects task-specific runtime data is a Critic rejection,
   not a guard: keep it there, so the objection reaches the Proposer's repair.
@@ -345,10 +411,12 @@ Write every decision, including the rejected ones, to `OUT/r<t>/decisions.json` 
  "hit_rate": 0.33, "unpredicted_regressions": ["case-9"]}
 ```
 
-A prediction hits when the task's mean rose on the candidate. A regression is a task whose mean
-dropped by at least the domain's regression threshold (`delta`); one that the edit did not
-predict is an `unpredicted_regression`. This file is shown back to the next round's Proposer as
-its scoreboard, so over-claiming costs it credibility.
+A prediction hits when the task's mean rose on the candidate. A regression has
+`candidate_mean - incumbent_mean <= -threshold`, where `threshold = domain.regression_threshold(k)`:
+`1 / max(1, k)` by default, or `0.05` for the upstream workspace domain. This is independent of
+calibration `delta`; record the selected domain threshold. A regression the edit did not predict
+is an `unpredicted_regression`. This file is shown back to the next round's Proposer as its
+scoreboard, so over-claiming costs it credibility.
 
 ## Failure handling
 
