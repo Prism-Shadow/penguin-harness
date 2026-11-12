@@ -2,9 +2,10 @@
  * The server package's CLI module: the five resource commands (agent/project/schedule/cost/config)
  * as @Component contributions to the CLI's `CliCommandsModule.commands` slot, the org command
  * as a contribution to this package's own `CompanyCommandsModule.commands` slot
- * (`bootCompanyCommands()`), and the server-backed command code they share (connection
- * client, stored sign-in, table renderer, approval parsing, agent listing, `--root`
- * resolution, language persistence).
+ * (`bootCompanyCommands()`), the browser command as a contribution to the browser module's
+ * own `commands` slot (`bootBrowserCommands()`), and the server-backed command code they
+ * share (connection client, stored sign-in, table renderer, approval parsing, agent
+ * listing, `--root` resolution, language persistence).
  *
  * The CLI collects the contributions at boot (its generated table carries this package's
  * manifest) and imports the shared code back through this subpath; type-only DTO shapes the
@@ -31,6 +32,9 @@ export * from "./lang-config.js";
 export * from "./render.js";
 export * from "./server-session.js";
 export * from "./company.js";
+export * from "./browser.js";
+export * from "./browser-output.js";
+export * from "./commands/browser.js";
 export * from "./commands/agent.js";
 export * from "./commands/cost.js";
 export * from "./commands/project.js";

@@ -3,8 +3,9 @@
  * `CliCommandsModule.commands` entry carries its key and summary and whose `@Bind` field
  * carries its code, and `CliCommandsModule` collects them.
  *
- * - Booting the module yields every command once, in declaration order: an id of the form
- *   `cli.<key>`, a well-formed key, a summary in both languages and a bound code half.
+ * - Booting the module yields every command once, in source-file path order (the order
+ *   help lists them in): an id of the form `cli.<key>`, a well-formed key, a summary in
+ *   both languages and a bound code half.
  * - `penguin --help` lists the top-level commands in that order, each described by its
  *   summary in the invocation's language; `penguin server --help` lists the commands whose
  *   keys sit under `server`, and keeps the options `server` registers itself.
@@ -15,28 +16,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 import type { BuiltinCommand } from "../src/cli-commands.js";
-import { bootCompanyCommands } from "@prismshadow/penguin-server/cli";
+import { bootBrowserCommands, bootCompanyCommands } from "@prismshadow/penguin-server/cli";
 import { cli } from "../src/index.js";
 
-/** The commands in the order they are declared, which is the order help lists them in. */
+/** The commands in the generated table's order (source-file path order), which help follows. */
 const KEYS = [
-  "auth",
-  "config",
-  "run",
-  "chat",
-  "session",
   "agent",
-  "project",
-  "plugin",
+  "config",
   "cost",
+  "project",
   "schedule",
-  "browser",
+  "auth",
+  "chat",
+  "exec",
+  "plugin",
+  "run",
   "server",
   "server.reset-admin-password",
+  "web",
   "server.status",
   "server.stop",
-  "web",
-  "exec",
+  "session",
   "update",
   "version",
 ];
@@ -106,10 +106,11 @@ describe("help lists the collected commands", () => {
   it("penguin --help lists the top-level commands in order, each with its summary, in each language", async () => {
     const commands = await bootBuiltinCommands();
     // Help lists the CLI's own commands first, then the commands the server contributes
-    // through the company module (`org` among them).
+    // through the company module (`org` among them) and the browser module (`browser`).
     const topLevel = [
       ...commands.filter((c) => !c.key.includes(".")),
       ...(await bootCompanyCommands()).filter((c) => !c.key.includes(".")),
+      ...(await bootBrowserCommands()).filter((c) => !c.key.includes(".")),
     ];
     for (const language of ["en", "zh"] as const) {
       process.env.PENGUIN_LANG = language;
