@@ -198,18 +198,16 @@ type CompactionResult =
     }
   | {
       status: "aborted" | "fatal";
+      /**
+       * What the kept context is still owed, which every caller holds as its carry-over (issue
+       * #85): the folded input when no compaction response was committed (only a `completed`
+       * request commits), else the outputs answering the latest committed response's calls —
+       * the folded input then lives in the old LLM object's history and must never be resent,
+       * since strict providers reject the duplicates as stale tool_results.
+       */
+      pending: AmspRecord[];
       /** Why the next context could not be opened (`fatal`). */
       errorMessage?: string;
-      /**
-       * Whether a compaction response was **committed** by MMSP (only a `completed` request
-       * commits). The carry rule at every caller is a two-case binary on this flag (issue #85):
-       * committed → the input the caller folded in (mid-Task tool outputs, or the carry-over a
-       * manual `compact()` folds in) lives in the old LLM object's history and must never be
-       * resent — strict providers reject the duplicates as stale tool_results; not committed →
-       * the folded input is untouched and is resent exactly as before. Outputs still owed to the
-       * latest committed response are already stashed as carry-over (see stashRepairs).
-       */
-      committed: boolean;
     };
 
 /** A context `openNextContext` opened and the records it published, not adopted yet. */
@@ -1104,21 +1102,14 @@ export class ContextEngine {
             continue;
           }
           // Aborted, or no next context could be opened: the original context and Trace index
-          // stay, and the next trigger compacts again. Mid-Task the run ends: this turn's
-          // pending state is held as carry-over under the same two-case binary as everywhere
-          // (issue #85) — a committed response consumed the turn's outputs into history, so
-          // only what summarizeContext stashed in pendingCarryOver still needs resending;
-          // otherwise the outputs are untouched and are appended behind the stash as case-A
-          // carry-over. The next run resends that carry-over merged with the user's message,
+          // stay, and the next trigger compacts again. What the kept context is still owed is
+          // held as carry-over (see CompactionResult): this turn's outputs when nothing
+          // committed, else the outputs answering the last committed response. Mid-Task the run
+          // ends, and the next run resends that carry-over merged with the user's message,
           // exactly like any interrupted turn. The run's end also discards the steering queue
           // (run's finally — control goes back to the user).
+          this.pendingCarryOver = result.pending;
           if (midTask) {
-            if (!result.committed) {
-              this.pendingCarryOver = [
-                ...this.pendingCarryOver,
-                ...this.buildCarryOver(attemptInput, turn),
-              ];
-            }
             // Only the user interruption is an abort; the other end's terminal record is the
             // compaction_end (status fatal + error_message) already written.
             if (result.status === "aborted") {
@@ -1240,13 +1231,9 @@ export class ContextEngine {
       return status;
     }
     // Completed: the opening is pending, and the text the hand-off did not absorb rides behind
-    // it. Otherwise the context stays, and the carry seam is a clean binary on whether the
-    // compaction committed anything to MMSP (PR #87 review):
-    //   - nothing committed: the fold never reached the model context — restore the prior
-    //     carry-over **verbatim** (nothing is owed, so there is no stash to interleave with);
-    //   - something committed: the carry-over is **consumed** — it lives in the committed
-    //     history now and must never be resent; only the outputs owed to the last committed
-    //     response (already stashed in pendingCarryOver) remain pending.
+    // it. Otherwise the context stays with what it is still owed (PR #87 review): the prior
+    // carry-over verbatim when nothing committed, else only the outputs owed to the last
+    // committed response — the carry-over lives in the committed history then.
     const folded = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const result = yield* this.summarizeContext(
@@ -1259,9 +1246,7 @@ export class ContextEngine {
     if (result.status === "completed") {
       this.pendingSummary = result.opening;
       this.pendingCarryOver = result.residual;
-    } else if (!result.committed) {
-      this.pendingCarryOver = folded;
-    }
+    } else this.pendingCarryOver = result.pending;
     return result.status;
   }
 
@@ -1881,7 +1866,7 @@ export class ContextEngine {
    *     the Trace. Such a `compaction_end` carries the error pair saying why.
    *   - `aborted`: the user stopped it, at any point before the fallback.
    *   - `fatal`: no next context could be opened; the old context is kept.
-   * In the last two, outputs owed to the latest committed response are stashed as carry-over.
+   * In the last two, the result carries what the kept context is still owed (`pending`).
    * The next context is opened before the `compaction_end` is written, so the Trace never says
    * `completed` for a context that does not exist.
    *
@@ -1923,12 +1908,11 @@ export class ContextEngine {
     };
     let input = [...folded, await line(settings.prompt)];
 
-    // Whether a response was committed by MMSP (only a `completed` request commits): the folded
-    // input then lives in the old object's history and must never be resent (issue #85).
-    let committed = false;
-    // Outputs answering the latest committed response's calls, not yet carried by a committed
-    // request: they lead the next request, or are stashed if the context is kept.
-    let owed: AmspRecord[] = [];
+    // What the old context is still owed (see CompactionResult): the folded input until a
+    // response is committed by MMSP — it then lives in the old object's history and must never
+    // be resent (issue #85) — then the outputs answering the latest committed response's calls,
+    // which lead the next request, or stay pending if the context is kept.
+    let pending = folded;
     // What the requests produced (for the salvage) and every call with its output (for the
     // opening's record of them).
     const requests: SpanRequest[] = [];
@@ -1971,8 +1955,7 @@ export class ContextEngine {
       const r = yield* this.runCompactionRequest(input, signal, attempts, plannedRetry);
       requests.push(r);
       if (r.status === "completed") {
-        committed = true;
-        owed = [];
+        pending = [];
         const kind = classifyCompactionResponse(r.text, r.toolCalls.length > 0);
         if (kind === "empty") {
           attempts += 1;
@@ -1995,7 +1978,7 @@ export class ContextEngine {
             signal,
           );
           calls.push(...answered);
-          owed = answered.map((c) => c.output!);
+          pending = answered.map((c) => c.output!);
           if (signal?.aborted) {
             end = "aborted";
             break;
@@ -2008,7 +1991,7 @@ export class ContextEngine {
         }
         if (open) {
           rounds += 1;
-          input = [...owed, await line(roundLine(rounds, maxRounds, roundOpen()))];
+          input = [...pending, await line(roundLine(rounds, maxRounds, roundOpen()))];
           continue;
         }
         attempts += 1;
@@ -2020,7 +2003,7 @@ export class ContextEngine {
           };
           break;
         }
-        input = [...owed, await line(CLOSED_LINE)];
+        input = [...pending, await line(CLOSED_LINE)];
         continue;
       }
       attempts += 1;
@@ -2068,14 +2051,13 @@ export class ContextEngine {
 
     // A stop that lands before the fallback keeps the context like any other stop.
     if (end === "aborted" || (!("summary" in end) && signal?.aborted)) {
-      this.stashRepairs(owed);
       yield* this.emitCompactionEnd(
         reason,
         "summarize",
         "aborted",
         attempts > 0 ? { attempt: attempts } : undefined,
       );
-      return { status: "aborted", committed };
+      return { status: "aborted", pending };
     }
     const summary = "summary" in end ? end.summary : pickSalvage(requests);
     let next: OpenedNext;
@@ -2083,12 +2065,11 @@ export class ContextEngine {
       next = await this.openContext();
     } catch (err) {
       const errorMessage = messageOf(err);
-      this.stashRepairs(owed);
       yield* this.emitCompactionEnd(reason, "summarize", "fatal", {
         attempt: attempts,
         errorMessage,
       });
-      return { status: "fatal", committed, errorMessage };
+      return { status: "fatal", pending, errorMessage };
     }
     // The trailer names the file being closed: the rotation is not armed yet, so the Trace's
     // current path is this context's own file.
@@ -2256,19 +2237,6 @@ export class ContextEngine {
       answered.push({ call: tc, output: out as AmspRecord<ToolCallOutputPayload> });
     }
     return answered;
-  }
-
-  /**
-   * Holds the outputs owed to a compaction's latest committed response as carry-over when the
-   * compaction keeps the context (aborted, or no next context could be opened): the next run's
-   * first request (or the next manual compaction, which folds carry-over in) sends them ahead
-   * of everything else, completing the tool_use/tool_result pairing on the live LLM object
-   * that the provider would otherwise reject every subsequent request over. They were written
-   * to Trace when produced, and carry-over is never re-written at send time.
-   */
-  private stashRepairs(repairs: AmspRecord[]): void {
-    if (repairs.length === 0) return;
-    this.pendingCarryOver = [...repairs, ...this.pendingCarryOver];
   }
 
   /**
