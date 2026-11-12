@@ -23,11 +23,10 @@
  * its columns, so every column starts below it and a column rule never runs between the traffic
  * lights, whatever width the navigation column is folded to. With no `band` the reserved strip
  * shows the window's own fill. With one, the strip is a `band` slot holding the caller's controls
- * after whatever the system draws at its start (the macOS traffic lights, `titlebar-area-x`), and
- * the window takes on the desktop look: the band and the gaps around the main column in the
- * navigation column's colour, and the main column a card inset from the band and the window's
- * edges, in the theme's own surface, line and radius. The band drags the window; its controls do
- * not.
+ * after whatever the system draws at its start (the macOS traffic lights, `titlebar-area-x`), in
+ * the navigation column's colour, so the band and the column read as one surface; the main column
+ * keeps the theme's own framing, as in a browser, ruled off from the band by the line that rules
+ * it off from the column. The band drags the window; its controls do not.
  */
 import type { ReactNode } from "react";
 import { NavigationBackdrop, WallpaperContext, WallpaperLayer } from "./wallpaper";
@@ -48,7 +47,7 @@ export interface AppShellProps {
   overlays?: ReactNode;
   /**
    * The desktop window's title band: its controls (the sidebar toggle, back and forward). Given
-   * only where the page draws the band itself; the window then frames the main column as a card.
+   * only where the page draws the band itself.
    */
   band?: ReactNode;
 }
