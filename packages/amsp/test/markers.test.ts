@@ -240,6 +240,28 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(summaryInTags("[summary]\n[/summary]")).toEqual({ text: "", closed: true });
   });
 
+  it("a summary closed with mixed brackets reads as closed, and the tag never rides along", () => {
+    // deepseek-flash closes a square-open summary with `[/summary>` about one time in ten.
+    const reply = "[summary]\n## Request\nShip the fix.\n[/summary>";
+    expect(extractSummary(reply)).toBe("## Request\nShip the fix.");
+    expect(summaryInTags(`${reply}\nDone.`)).toEqual({
+      text: "## Request\nShip the fix.",
+      closed: true,
+    });
+    // The other mixed spelling, after either open form.
+    expect(extractSummary("<summary>old form</summary]")).toBe("old form");
+    expect(summaryInTags("[summary]the gist</summary] postscript")).toEqual({
+      text: "the gist",
+      closed: true,
+    });
+    // An empty pair closed that way, or a stray one, is stripped like a well-formed one.
+    expect(extractSummary("[summary]\n[/summary>\nThe actual summary body.")).toBe(
+      "The actual summary body.",
+    );
+    expect(extractSummary("[summary]\n[/summary>\nBody after.\n[/summary]")).toBe("Body after.");
+    expect(extractSummary("A tagless body.\n[/summary>")).toBe("A tagless body.");
+  });
+
   it("salvageableSummary keeps a summary cut off once it reaches the floor, and nothing shorter", () => {
     const body = "x".repeat(SALVAGE_MIN_CHARS);
     expect(salvageableSummary(`[summary]\n${body}`)).toBe(body);
@@ -300,7 +322,7 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
       transcribeToolCallOutput("c9", "completed", "12 passed"),
     ];
     const note = buildContextHandoffText(
-      { userLines, turnLines, callLines: [] },
+      { userLines, turnLines, refusalLines: [], callLines: [] },
       { tracePath, shell: "bash" },
     );
     // Recognized as a summary block by every reader that knows one by its prefix.
@@ -316,7 +338,9 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
       "The last completed turn before the compaction:",
       ...turnLines,
     ]);
-    // No compaction call section: the compaction made none.
+    // No refusal and no compaction call section: nothing was refused, and the compaction made
+    // no call.
+    expect(note).not.toContain("refused by the provider");
     expect(note).not.toContain("Tool calls made during this compaction");
     expect(parts[3]).toContain(tracePath);
     expect(parts[3]).toContain("rg -n -o");
@@ -324,8 +348,32 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(note.endsWith("\n[/context_summary]")).toBe(true);
   });
 
+  it("the hand-off note says why the context was closed when the provider refused, between the last turn and the compaction's calls", () => {
+    const turnLines = [transcribeText("Reading the log.")];
+    const refusalLines = [transcribeRequestError("rejected", "prompt is too long")];
+    const callLines = [transcribeToolCall("write_file", "w1", "{}")];
+    const note = buildContextHandoffText(
+      { userLines: [], turnLines, refusalLines, callLines },
+      { tracePath: "/t/session-x_002.jsonl" },
+    );
+    const parts = note.split("\n\n");
+    expect(parts[1]!.split("\n")).toEqual([
+      "The last completed turn before the compaction:",
+      ...turnLines,
+    ]);
+    const [heading, ...quoted] = parts[2]!.split("\n");
+    expect(heading).toMatch(/^The request after that turn was refused by the provider/);
+    expect(quoted).toEqual(['  [request_error code="rejected"]prompt is too long[/request_error]']);
+    expect(parts[3]!.startsWith("Tool calls made during this compaction")).toBe(true);
+  });
+
   it("the hand-off note without a Trace path says no transcript is recorded and names no file", () => {
-    const note = buildContextHandoffText({ userLines: [], turnLines: [], callLines: [] });
+    const note = buildContextHandoffText({
+      userLines: [],
+      turnLines: [],
+      refusalLines: [],
+      callLines: [],
+    });
     const lines = note.split("\n");
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain("no transcript of it is recorded");

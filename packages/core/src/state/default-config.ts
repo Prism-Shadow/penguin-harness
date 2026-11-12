@@ -117,24 +117,23 @@ export interface CompactionConfig {
   /**
    * Tool rounds the harness allows a summarize compaction before its summary, writing hand-off
    * files to this Session's scratchpad (`read_file`, and `write_file` / `edit_file` inside the
-   * scratchpad); the harness counts them and tells the model how many are left. Defaults to
+   * scratchpad); the harness counts them and tells the model how many it has used. A ceiling,
+   * not a plan: the Prompt aims at about three. Defaults to
    * {@link DEFAULT_COMPACTION_MAX_ROUNDS}; <= 0: every tool call is refused.
    */
   max_rounds?: number;
   /**
    * Prompt template for summarize compaction; defaults to the built-in value (editable config,
-   * not hardcoded). {@link COMPACTION_SCRATCHPAD_PLACEHOLDER} and
-   * {@link COMPACTION_MAX_ROUNDS_PLACEHOLDER} are substituted when the settings are read.
+   * not hardcoded). {@link COMPACTION_SCRATCHPAD_PLACEHOLDER} is substituted when the settings
+   * are read.
    */
   prompt?: string;
 }
 
 /** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
-export const DEFAULT_COMPACTION_MAX_ROUNDS = 3;
+export const DEFAULT_COMPACTION_MAX_ROUNDS = 8;
 /** Inside `compaction.prompt`: the absolute path of this Session's scratchpad directory. */
 export const COMPACTION_SCRATCHPAD_PLACEHOLDER = "{{SCRATCHPAD_DIR}}";
-/** Inside `compaction.prompt`: the tool rounds the compaction may take (`compaction.max_rounds`). */
-export const COMPACTION_MAX_ROUNDS_PLACEHOLDER = "{{MAX_ROUNDS}}";
 
 /**
  * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
@@ -638,22 +637,23 @@ export function insertSchedulesPlaceholder(template: string): string {
  * longer be visible in the next context and asks for the summary in fixed sections — when there
  * is detail worth more than a paragraph, saved alongside it to hand-off files in this Session's
  * scratchpad, in the same reply when it can (`read_file`, and `write_file` / `edit_file` inside
- * the scratchpad, are the only tools that work while compacting). It says the harness counts
- * the `{{MAX_ROUNDS}}` tool rounds and lists, under the summary, the calls it ran and how each
- * ended — so the summary names hand-off files by absolute path rather than repeating them, and
- * consent is not carried across the boundary. The format is shown as a concrete example rather
- * than described in prose — some models treat the tags as a "title" and write the body after
- * the closing tag (issue #170); extraction salvages that shape, but generating it right beats
- * repairing it. `{{SCRATCHPAD_DIR}}` and `{{MAX_ROUNDS}}` are substituted where the settings are
- * read; the prompt is the appended user turn of the compaction request, outside the cached
- * prefix. Persisted per-agent in system_config.yaml — existing agents keep their stored prompt
- * until a kernel update.
+ * the scratchpad, are the only tools that work while compacting), each hand-off file under a new
+ * name so none has to be read before it is written. It aims at about three tool rounds in words
+ * and names no limit of its own (the harness's round lines carry the numbers), and says the
+ * harness lists, under the summary, the calls it ran and how each ended — so the summary names
+ * hand-off files by absolute path rather than repeating them, and consent is not carried across
+ * the boundary. The format is shown as a concrete example rather than described in prose — some
+ * models treat the tags as a "title" and write the body after the closing tag (issue #170);
+ * extraction salvages that shape, but generating it right beats repairing it.
+ * `{{SCRATCHPAD_DIR}}` is substituted where the settings are read; the prompt is the appended
+ * user turn of the compaction request, outside the cached prefix. Persisted per-agent in
+ * system_config.yaml — existing agents keep their stored prompt until a kernel update.
  */
 export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Compact the transcript above into a hand-off for the next context window, where this transcript will no longer be visible.
 
-Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. A file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
+Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. Give each hand-off file a new name rather than overwriting an earlier one, so nothing has to be read first; a file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
 
-The harness counts tool rounds for you: ${COMPACTION_MAX_ROUNDS_PLACEHOLDER} are allowed, each round's results say how many are left, and once none are left every tool call is refused. Under your summary the harness lists the tool calls it actually ran and how each ended, so name every hand-off file by its absolute path and do not repeat its content.
+Aim to be done within about three tool rounds, and in one reply when you can: put the calls a step needs into the same reply instead of one call per reply. You do not have to count rounds. After each one the harness says how many you have used, and it stops running tool calls when the compaction has gone on too long. Under your summary the harness lists the tool calls it actually ran and how each ended, so name every hand-off file by its absolute path and do not repeat its content.
 
 [summary]
 ## Request

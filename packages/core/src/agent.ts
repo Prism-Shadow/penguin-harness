@@ -23,7 +23,6 @@ import {
   assembleSystemPrompt,
   buildToolConfig,
   selectBuiltinToolsForModel,
-  COMPACTION_MAX_ROUNDS_PLACEHOLDER,
   COMPACTION_SCRATCHPAD_PLACEHOLDER,
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
@@ -413,11 +412,12 @@ function resolveCompaction(
   scratchpadDir: string,
 ): CompactionSettings {
   const maxRounds = config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS;
-  // The Prompt's placeholders are substituted here, where the settings are read: the Prompt
-  // is the compaction request's appended user turn, so what it says costs no cached prefix.
-  const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT)
-    .replaceAll(COMPACTION_SCRATCHPAD_PLACEHOLDER, modelVisiblePath(scratchpadDir))
-    .replaceAll(COMPACTION_MAX_ROUNDS_PLACEHOLDER, String(Math.max(0, maxRounds)));
+  // The Prompt's placeholder is substituted here, where the settings are read: the Prompt is
+  // the compaction request's appended user turn, so what it says costs no cached prefix.
+  const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT).replaceAll(
+    COMPACTION_SCRATCHPAD_PLACEHOLDER,
+    modelVisiblePath(scratchpadDir),
+  );
   const roundLimit = compactionRoundLimit(contextWindow);
   return {
     maxContextLength: effectiveMaxContextLength(

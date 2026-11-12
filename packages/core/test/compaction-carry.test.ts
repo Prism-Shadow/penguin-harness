@@ -88,6 +88,17 @@ function refusedCompaction(): AmspRecord[] {
   ];
 }
 
+/** The end of a span that completed by handing off because the provider refused a request. */
+function refusedEnd(errorMessage: string): AmspRecord {
+  return compactionEnd({
+    reason: "context",
+    mode: "summarize",
+    status: "completed",
+    errorCode: "rejected",
+    errorMessage,
+  });
+}
+
 /** The bodies of the `[user_input]` lines a note quotes, in order. */
 function quotedUserInputs(note: string): string[] {
   return [...note.matchAll(/^ {2}\[user_input\]([\s\S]*?)\[\/user_input\]$/gm)].map((m) => m[1]!);
@@ -216,25 +227,71 @@ describe("the hand-off note", () => {
   });
 
   it("is not changed by the records written after the closing compaction_end", () => {
-    const file = [meta(), ...exchange("ask one"), ...exchange("ask two"), ...refusedCompaction()];
     const closed = [
-      ...file,
-      compactionEnd({
-        reason: "context",
-        mode: "summarize",
-        status: "completed",
-        attempt: 1,
-        errorCode: "rejected",
-        errorMessage: "prompt is too long",
-      }),
+      meta(),
+      ...exchange("ask one"),
+      ...exchange("ask two"),
+      ...refusedCompaction(),
+      refusedEnd("prompt is too long"),
+    ];
+    const later = [
+      ...closed,
       taskEnd(),
       hookEvent({ hook: "stop", name: "goal", decision: "continue", reason: "keep going" }),
       taskBegin(),
       userText("a late question"),
     ];
-    // Live, the note is built before the end is written; on replay, from the closed file.
-    expect(buildCompactionHandoff(closed, OPTS)).toBe(buildCompactionHandoff(file, OPTS));
-    expect(buildCompactionHandoff(closed, OPTS)).not.toContain("a late question");
+    // Live, the note is built once the end is written; on replay, from the file as it grew on.
+    expect(buildCompactionHandoff(later, OPTS)).toBe(buildCompactionHandoff(closed, OPTS));
+    expect(buildCompactionHandoff(later, OPTS)).not.toContain("a late question");
+  });
+
+  it("says the provider refused the request after the last turn, quoting its error from the span's own end", () => {
+    const refusal = `prompt is too long: ${"x".repeat(600)}`;
+    // An ordinary request the provider refused, answered by a hand-off: its span holds no request.
+    const file = [
+      meta(),
+      ...exchange("read the build log", "Reading it."),
+      userText("and the test log too"),
+      requestBegin(),
+      requestEnd("retryable", { errorCode: "rejected", errorMessage: refusal, retryInMs: 0 }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 1 }),
+      refusedEnd(refusal),
+    ];
+    const note = buildCompactionHandoff(file, OPTS);
+    const parts = note.split("\n\n");
+    const turnAt = parts.findIndex((p) => p.startsWith("The last completed turn"));
+    const [heading, ...quoted] = parts[turnAt + 1]!.split("\n");
+
+    expect(heading).toMatch(/^The request after that turn was refused by the provider/);
+    expect(quoted).toHaveLength(1);
+    // The provider's words as they came, cut to 500 characters where marked.
+    expect(quoted[0]).toMatch(
+      /^ {2}\[request_error code="rejected"\]prompt is too long: x+ …\[120 characters left out\]\[\/request_error\]$/,
+    );
+    expect(quoted[0]!.split("x").length - 1).toBe(500 - "prompt is too long: ".length);
+    // The refused turn's own text input is quoted with the user's messages.
+    expect(quotedUserInputs(note)).toEqual(["read the build log", "and the test log too"]);
+  });
+
+  it("quotes no cause for an end that is not a refusal, nor before the span has an end", () => {
+    const file = [meta(), ...exchange("ask one"), ...refusedCompaction()];
+    const truncated = [
+      ...file,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "completed",
+        attempt: 3,
+        errorCode: "output_truncated",
+        errorMessage: "the response stopped at the output limit",
+      }),
+    ];
+    for (const records of [file, truncated]) {
+      const note = buildCompactionHandoff(records, OPTS);
+      expect(note).not.toContain("refused by the provider");
+      expect(note).not.toContain("[request_error");
+    }
   });
 
   it("lists the compaction's own calls under their heading", () => {
