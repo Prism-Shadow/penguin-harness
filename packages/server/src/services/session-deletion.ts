@@ -19,6 +19,7 @@ import path from "node:path";
 import { scratchpadDir } from "@prismshadow/penguin-core";
 import type { SessionIndex, SessionOrigins } from "@penguinharness/plugin-sessions/server";
 import type { Traces } from "@penguinharness/plugin-usage/server";
+import type { UserDraftsStore } from "../mechanisms/account-data.js";
 
 /** What deleting a Session reaches. */
 export interface SessionDeletionDeps {
@@ -34,6 +35,8 @@ export interface SessionDeletionDeps {
   /** Closes and drops the Session's messaging bindings (no-op when unbound). */
   unbindMessaging(sessionId: string): void;
   sources: Pick<SessionOrigins, "delete">;
+  /** Every user's unsent drafts of the Session (its composer, its form answers). */
+  drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
 
 /** The Session to delete: its id, where its files live, and when it was created. */
@@ -131,6 +134,8 @@ async function deleteOne(
     deps.unbindMessaging(row.sessionId);
     // Session ids are never reused, so a stale entry would never be matched; dropped anyway.
     deps.sources.delete(row.sessionId);
+    // A draft of a Session that is gone has nowhere to be sent, in any user's browser.
+    deps.drafts.deleteBySession(row.sessionId);
     onDeleted(row.sessionId);
   } finally {
     deps.manager.endSessionDeletion(row.sessionId);

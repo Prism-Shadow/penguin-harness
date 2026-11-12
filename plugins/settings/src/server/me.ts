@@ -1,4 +1,17 @@
-import type { MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "@prismshadow/penguin-server/api";
+import { Hono } from "hono";
+import { setCookie } from "hono/cookie";
+import { createHash } from "node:crypto";
+import { BACKGROUND_IMAGE_MAX_CHARS } from "@prismshadow/penguin-server/api";
+import type {
+  BackgroundImagePutResponse,
+  BackgroundImageResponse,
+  DraftsResponse,
+  MeResponse,
+  PrefsResponse,
+  UiPrefs,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
+} from "@prismshadow/penguin-server/api";
 import { toUserInfo } from "@prismshadow/penguin-server/internal";
 import { SESSION_COOKIE, cookieOptions } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
@@ -15,6 +28,12 @@ import { INLINE_IMAGE_MAX_MB, MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_MB, MIN_ATTAC
 import { Config, Desktop } from "@prismshadow/penguin-server/internal";
 import type { Auth, Users } from "@prismshadow/penguin-server/internal";
 import type { Settings, UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import { DRAFTS_MAX_COUNT, DRAFTS_MAX_TOTAL_CHARS, parseDraftsPatch } from "@prismshadow/penguin-server/internal";
+import { validateAccountSettings } from "@prismshadow/penguin-server/internal";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { UserDraftsStore, BackgroundImageStore } from "@prismshadow/penguin-server/internal";
+import { sessionCookieName } from "./auth/middleware.js";
 
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
@@ -117,6 +136,19 @@ function parseAvatar(raw: unknown): string | null {
   }
   if (decodedLength === 0) throw badRequest("avatar is not valid base64.");
   return raw;
+}
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MeRouteDeps {
+  authService: Auth;
+  config: ServerConfig;
+  desktop: DesktopService | null;
+  prefsRepo: UiPrefsStore;
+  draftsRepo: UserDraftsStore;
+  backgroundImages: BackgroundImageStore;
+  serverSettingsRepo: Settings;
+  /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
+  usersRepo: Users;
 }
 
 export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {

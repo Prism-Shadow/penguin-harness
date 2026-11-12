@@ -9,7 +9,7 @@
  * once per folder below `ui/` and once for `ui/` itself — so the same HTML works under
  * `/api/…` and under a machine's `/server/<id>/api/…`.
  */
-import type { WorkbenchUiRuntime } from "../mechanisms/workbenches.js";
+import type { WorkbenchUiRuntime } from "../mechanism.js";
 
 /** Marks the stylesheet written here; the frame leaves its own base stylesheet out of such a page. */
 export const PENGUIN_UI_ATTR = "data-penguin-ui";

@@ -1,5 +1,10 @@
+import { randomBytes } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
 import type { WorkbenchVersion } from "../mechanism.js";
+import { removeLeftovers } from "./leftovers.js";
+import { blobOid, isGitName, treeId, type SourceFile } from "./repo.js";
 
 
 

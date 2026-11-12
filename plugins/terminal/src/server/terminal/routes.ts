@@ -90,6 +90,15 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/** A conversation id as a request names it: a non-empty string, or null / absent for none. */
+function sessionIdOf(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw badRequest("sessionId must be a non-empty string or null.");
+  }
+  return value.trim();
+}
+
 type TerminalEnv = { Variables: { user: IdentifiedUser } };
 
 /**
@@ -119,6 +128,13 @@ export function terminalRoutes(manager: TerminalManager, identity: Identity): Ho
   app.get("/api/terminals/:id", gate, (c) =>
     json(manager.require(c.req.param("id"), c.var.user.userId).info()),
   );
+  app.patch("/api/terminals/:id", gate, async (c) => {
+    const body = await readBody(c.req.raw);
+    // Required, so an empty or mistyped body cannot silently file a shell under no one.
+    if (body.sessionId === undefined) throw badRequest("sessionId is required (null for none).");
+    const sessionId = sessionIdOf(body.sessionId);
+    return json(manager.reown(c.req.param("id"), c.var.user.userId, sessionId).info());
+  });
   app.delete("/api/terminals/:id", gate, (c) => {
     manager.kill(c.req.param("id"), c.var.user.userId);
     return new Response(null, { status: 204 });

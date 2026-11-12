@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { renderDts } from "@prismshadow/penguin-server/internal";
+import { IDLE_RELEASE_MS } from "./subscribe.js";
 
 
 export const HARNESS_DIR = ".harness";

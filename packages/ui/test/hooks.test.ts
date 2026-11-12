@@ -16,9 +16,14 @@
  * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
  * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
- * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
- * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
- * source to it:
+ * style, of which the theme's CSS shows its own), the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04), the eighteenth,
+ * `ui-edge` (the edge of what a person presses, types into or wrote, which Doodle draws with a
+ * pen; 2026-11-04), the nineteenth to twenty-third, the section hooks `ui-start`,
+ * `ui-library`, `ui-ledger`, `ui-empty` and `ui-run` (a section a pack may dress as a whole: the
+ * start page, the model library, a ledger of figures, an empty state, the run indicator;
+ * 2026-11-05), and the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
+ * every theme's style; 2026-11-04). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -32,18 +37,20 @@
  *   the renderer being a host loosens nothing;
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
  *   sits on an h1, a `.ui-glass` that names its anatomy names `tile` or `navigation`, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
- *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
+ *   `nav`, `main`, `dock` or `band` (the desktop window's title band), `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
  *   (`caret`), `.ui-widget` its kind (the six widgets) and its slots (`head`, `body`, `foot`),
- *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
- *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
- *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
- *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
- *   wherever a `data-fold` is written.
+ *   a chart's parts are the seven the recipes style and a legend's swatch, and a glyph's the one
+ *   (`duo`), wherever a `data-part` is written, and a drawing's sets are the ones a recipe shows
+ *   (a glyph's `line`, `octicons` and `pixel`, the spinner's `arc` and `scribble`, an empty
+ *   state's art's `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which
+ *   the foundation's layout motion turns into a track, is one of the three it knows (`open`,
+ *   `closing`, `settled`) wherever a `data-fold` is written; the run indicator's state is
+ *   `running` and an empty state's form `page` or `slot`.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -53,31 +60,11 @@ import { analyzeFile, matchesPolicyPath, scanSourceRoots, unscannedRoots } from 
 import type { ClassToken, FileAnalysis, JsxElementInfo, SourceFile } from "../src/testing";
 import { REPO_ROOT, SRC_DIR, WEB_DIR } from "./helpers/paths";
 
-/** Appendix A. Adding a hook is a catalog change: this list, the host table and every theme. */
-const APPENDIX_A = [
-  "ui-glass",
-  "ui-eyebrow",
-  "ui-display",
-  "ui-live",
-  "ui-frame",
-  "ui-underline-nav",
-  "ui-shell",
-  "ui-icon-decor",
-  "ui-tree",
-  "ui-field",
-  "ui-activity",
-  "ui-notice",
-  "ui-chart",
-  "ui-scrim",
-  "ui-stream",
-  "ui-glyph",
-  "ui-widget",
-];
-
 /**
  * Appendix B: the components that may apply each hook — the web app's own components, which the
- * gallery frames as they are (the package itself renders none). A component is listed only while
- * it exists: the last test below fails on a host no scanned file declares.
+ * gallery frames as they are (the package itself renders none). Keyed by `HOOKS`, so the compiler
+ * asks for an entry for every hook. A component is listed only while it exists: the last test
+ * below fails on a host no scanned file declares.
  *
  * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
  * menus, popovers, tooltips, the floating launcher) and for a plugin or skill tile; the eyebrow and display rungs for the
@@ -93,7 +80,7 @@ const APPENDIX_A = [
  * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
  * one-line note.
  */
-const HOSTS: Readonly<Record<string, readonly string[]>> = {
+const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
   "ui-glass": [
     "ComposerCard",
@@ -123,7 +110,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text", "SiteToc", "SiteSidebarNav"],
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
-  "ui-live": ["Spinner", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
+  // The App Center's install ring turns with the spinner's motion, so it is the spinner's host too.
+  "ui-live": ["Spinner", "InstallRing", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
   // The transcript's cards (the tool call, the activity card — the work group and the harness's
   // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
   // page-level boxes (W4): the card and a table that is its own box.
@@ -191,13 +179,44 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
   // blocks render on, and the chart and resources blocks (2026-10-19).
   "ui-widget": ["WidgetSurface"],
+  // The edge of what a person presses, types into or wrote (2026-11-04): a button with a fill or
+  // a line, the text fields and select triggers on the shared control look, a checkbox's box and
+  // a radio's disc, native and drawn, a switch's track, the start page's Agent and Workspace
+  // pickers, and the person's own message bubble.
+  "ui-edge": [
+    "Button",
+    "Input",
+    "Textarea",
+    "Select",
+    "OptionMenu",
+    "SearchInput",
+    "FormPickerTrigger",
+    "Checkbox",
+    "CheckboxBox",
+    "Radio",
+    "RadioDisc",
+    "Switch",
+    "MessageBubble",
+    "AgentSelect",
+    "WorkspaceSelect",
+  ],
+  // The section hooks (2026-11-05): the start page, the model library, a ledger of figures (the
+  // usage summary card, the company KPI tile, a Benchmark card's score), an empty state and the
+  // chat toolbar's run indicator.
+  "ui-start": ["StartDashboard"],
+  "ui-library": ["ModelsPage"],
+  "ui-ledger": ["SummaryCard", "StatTile", "BenchmarkCard"],
+  "ui-empty": ["EmptyState"],
+  "ui-run": ["RunStatus"],
+  // An Agent's default avatar in every theme's style (2026-11-04): the one avatar component.
+  "ui-avatar": ["AgentAvatar"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
 const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded"]);
 
 const FRAME_SLOTS = new Set(["head", "body", "foot", "pane"]);
-const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
+const SHELL_SLOTS = new Set(["nav", "main", "dock", "band"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
@@ -210,13 +229,19 @@ const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
 const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart", "resources"]);
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
+const RUN_STATES = new Set(["running"]);
+const EMPTY_FORMS = new Set(["page", "slot"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
-const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
+const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label", "swatch"]);
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
-const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/**
+ * The sets a drawing made in every style at once is drawn in: a glyph's three, the spinner's
+ * arc and scribble, and an empty state's art in the line set and as a doodle.
+ */
+const DRAWING_SETS = new Set(["line", "octicons", "pixel", "arc", "scribble", "doodle"]);
 /** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
 const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
@@ -272,11 +297,6 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the seventeen of Appendix A, each with its hosts", () => {
-    expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
-    expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
-  });
-
   it("scans the package and the web app", () => {
     expect(unscannedRoots(SCAN)).toEqual([]);
   });
@@ -314,7 +334,8 @@ describe("style hooks", () => {
         .filter((t) => hooks.has(t.utility))
         .flatMap((t) => {
           const component = componentOf(analysis, t);
-          return component !== null && HOSTS[t.utility]!.includes(component)
+          return component !== null &&
+            HOSTS[t.utility as (typeof HOOKS)[number]].includes(component)
             ? []
             : [`${file.id}:${t.line} ${t.utility} in ${component ?? "module scope"}`];
         });
@@ -323,7 +344,7 @@ describe("style hooks", () => {
       const byProp = analysis.elements
         .filter((e) => ICON_RENDERERS.has(e.tag) && e.attributes.has("decor"))
         .flatMap((e) =>
-          e.component !== null && HOSTS["ui-icon-decor"]!.includes(e.component)
+          e.component !== null && HOSTS["ui-icon-decor"].includes(e.component)
             ? []
             : [`${file.id}:${e.line} decor on <${e.tag}> in ${e.component ?? "module scope"}`],
         );
@@ -379,7 +400,7 @@ describe("style hooks", () => {
         if (names.has("ui-shell")) {
           for (const { slot } of childSlots(element)) {
             if (!SHELL_SLOTS.has(slot)) {
-              problems.push(`${at} .ui-shell slot "${slot}" is not nav, main or dock`);
+              problems.push(`${at} .ui-shell slot "${slot}" is not nav, main, dock or band`);
             }
           }
         }
@@ -453,12 +474,21 @@ describe("style hooks", () => {
         const part = element.attributes.get("data-part");
         if (typeof part === "string" && !CHART_PARTS.has(part) && !GLYPH_PARTS.has(part)) {
           problems.push(
-            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label or duo`,
+            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label|swatch or duo`,
           );
         }
         const set = element.attributes.get("data-set");
-        if (typeof set === "string" && !GLYPH_SETS.has(set)) {
-          problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
+        if (typeof set === "string" && !DRAWING_SETS.has(set)) {
+          problems.push(`${at} data-set="${set}" is not line|octicons|pixel|arc|scribble|doodle`);
+        }
+        // A section names its state or form as a literal the recipes select on, or an expression.
+        const runState = element.attributes.get("data-state");
+        if (names.has("ui-run") && typeof runState === "string" && !RUN_STATES.has(runState)) {
+          problems.push(`${at} .ui-run data-state="${runState}" is not running`);
+        }
+        const form = element.attributes.get("data-form");
+        if (names.has("ui-empty") && typeof form === "string" && !EMPTY_FORMS.has(form)) {
+          problems.push(`${at} .ui-empty data-form="${form}" is not page or slot`);
         }
         const fold = element.attributes.get("data-fold");
         if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {

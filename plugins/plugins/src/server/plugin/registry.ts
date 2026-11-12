@@ -23,8 +23,7 @@ import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parsePluginPackage, readPluginIcon, userAgent } from "@prismshadow/penguin-core";
-import type { PluginPackageFields } from "@prismshadow/penguin-core";
+import { readPackageCard, userAgent } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -160,23 +159,16 @@ export async function localPluginDisplay(
 ): Promise<PluginDisplay> {
   const found = resolvePluginPackage(name, bases);
   if (found === null) return {};
-  let penguin: PluginPackageFields;
-  try {
-    const raw = JSON.parse(await fs.readFile(found.manifest, "utf8")) as unknown;
-    penguin = parsePluginPackage(raw, found.manifest).manifest.penguin;
-  } catch {
-    return {};
-  }
+  const { card, icon } = readPackageCard(found.dir);
   const display: PluginDisplay = {};
-  if (penguin.title !== undefined) display.title = penguin.title;
-  if (penguin.titleZh !== undefined) display.titleZh = penguin.titleZh;
-  if (penguin.descriptionZh !== undefined) display.descriptionZh = penguin.descriptionZh;
-  if (penguin.shortDescription !== undefined) display.shortDescription = penguin.shortDescription;
-  if (penguin.shortDescriptionZh !== undefined) {
-    display.shortDescriptionZh = penguin.shortDescriptionZh;
+  if (card.title !== undefined) display.title = card.title;
+  if (card.titleZh !== undefined) display.titleZh = card.titleZh;
+  if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;
+  if (card.shortDescription !== undefined) display.shortDescription = card.shortDescription;
+  if (card.shortDescriptionZh !== undefined) {
+    display.shortDescriptionZh = card.shortDescriptionZh;
   }
   // No icon, or one that will not do: the card draws the puzzle piece.
-  const { icon } = readPluginIcon(found.dir, penguin.icon);
   if (icon !== undefined) display.icon = icon;
   return display;
 }

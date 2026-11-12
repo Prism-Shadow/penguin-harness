@@ -16,6 +16,7 @@
  */
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { parse } from "hono/utils/cookie";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { UserRow } from "../repos/users.js";
 import type { SessionVia } from "./service.js";
@@ -23,6 +24,11 @@ import type { Auth } from "@prismshadow/penguin-server/internal";
 
 /** Session cookie name. */
 export const SESSION_COOKIE = "penguin_session";
+
+/** A request's Cookie header as a record: the websocket seam has no Hono context to ask. */
+export function parseCookieHeader(header: string | null | undefined): Record<string, string> {
+  return parse(header ?? "");
+}
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the

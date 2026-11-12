@@ -6,6 +6,7 @@
 export { MachinesService, MachinesModule, machinesServerProxyRoutes } from "./service.js";
 export type { MachinesEffects } from "./service.js";
 export { machinesRoutes } from "./machines.js";
+export type { MachineApi } from "./machine-api.js";
 export type { MachinesRouteDeps } from "./machines.js";
 export { readMachineStatus } from "./machine-status.js";
 export type { Machines } from "./service.js";

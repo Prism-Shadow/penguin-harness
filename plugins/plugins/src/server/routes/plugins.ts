@@ -51,10 +51,11 @@ import {
   libraryPluginPackage,
   libraryPluginReadme,
   loadPluginGroups,
-  parsePluginPackage,
+  libraryParts,
+  readPackageJson,
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
-import type { PluginPackageManifest, LibraryPlugin } from "@prismshadow/penguin-core";
+import type { NpmPackage, LibraryPlugin } from "@prismshadow/penguin-core";
 import type { PluginSkills } from "../plugin/skills.js";
 import type {
   AgentMcpServersResponse,
@@ -371,11 +372,10 @@ async function prefixEntries(
   for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
     if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
     const dir = installedPackageDir(prefix, name);
-    if (!existsSync(path.join(dir, "ifaces.json"))) continue;
-    const file = path.join(dir, "package.json");
-    let manifest: PluginPackageManifest;
+    if (!libraryParts(dir).modules) continue;
+    let manifest: NpmPackage;
     try {
-      manifest = parsePluginPackage(JSON.parse(await fs.readFile(file, "utf8")), file).manifest;
+      manifest = readPackageJson(dir).manifest;
     } catch {
       continue;
     }

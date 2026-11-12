@@ -1,4 +1,7 @@
-import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { normalizeModelScopeBridgeUrl } from "@prismshadow/penguin-server/internal";
 import { Config } from "@prismshadow/penguin-server/internal";

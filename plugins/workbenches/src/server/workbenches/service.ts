@@ -1,4 +1,3 @@
-import { isSafeRelPath } from "@prismshadow/penguin-server/internal";
 /**
  * WorkbenchService: boots every workbench folder of an Agent as a module tree of its own.
  *
@@ -14,13 +13,15 @@ import { isSafeRelPath } from "@prismshadow/penguin-server/internal";
  * types the harness wrote into the folder when the workbench was new (./harness-types.ts,
  * ./compile.ts); those are compared with this platform's, both ways, by the compiler
  * (../plugin/iface-check.ts); and the tree is checked like any other — wiring, slots,
- * contribution shapes.
+ * contribution shapes. A `ui/` with TSX pages adds one more: the pages are type-checked
+ * against the page runtime this server serves them with (./compile-ui.ts).
  *
  * Loading is by content: the folder's revision (store.ts) names the directory the source
  * is emitted into, so an edited workbench is a new import URL rather than a hit in the ESM
- * cache, and every successful load records the folder as a version the Agent (or the
- * user) can roll back to. A watcher on the `workbenches/` folder reloads on change, debounced, and the users of
- * the Project hear `workbench_updated` on their event stream.
+ * cache, and every successful load commits the folder to the Agent State repository
+ * (./repo.ts) as a version the Agent (or the user) can roll back to. A watcher on the Agent
+ * State's `workbenches/` folder reloads on change, debounced, and the users of the Project
+ * hear `workbench_updated` on their event stream.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -37,30 +38,45 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
-import type { Channels, Clock, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import type { Channels, Clock, Config, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
 import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-server/internal";
 import type { Traces } from "@prismshadow/penguin-server/internal";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
-import type { WorkbenchInfo, WorkbenchInput, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchVersion, Workbenches } from "../mechanism.js";
-
+import type {
+  WorkbenchInfo,
+  WorkbenchInput,
+  WorkbenchRecord,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchTab,
+  WorkbenchUiFile,
+  WorkbenchUiRuntime,
+  WorkbenchUiRuntimeFile,
+  WorkbenchVersion,
+  Workbenches,
+} from "../mechanism.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import { migrateWorkbenches } from "./migrate.js";
-import { compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { WorkbenchSubscriptions } from "./subscribe.js";
+import { BUILD_DIR, compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "@prismshadow/penguin-server/internal";
 import { loadTypeScript } from "@prismshadow/penguin-server/internal";
+import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
+import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
-  historyDir,
+  isSafeRelPath,
   isTempName,
   isWorkbenchId,
   listFolders,
-  listVersions,
   readFolder,
+  readLoadedSource,
   readState,
-  recordVersion,
-  restoreVersion,
+  restoreSource,
   STATE_FILE,
   UI_DIR,
   workbenchesDir,
@@ -88,14 +104,32 @@ interface Loaded {
   tabs: WorkbenchTab[];
   loadedAt: string;
   error: string | null;
+  /**
+   * The revision whose `.build/<revision>/ui/` holds the SERVING instance's compiled pages —
+   * the previous one's while `error` is set — or null when its pages are served as written.
+   */
+  uiBuild: string | null;
 }
 
 function key(projectId: string, agentId: string, workbenchId: string): string {
   return `${projectId}/${agentId}/${workbenchId}`;
 }
 
+/** Where a workbench's folder sits in the Agent State repository. */
+function repoPath(workbenchId: string): string {
+  return `workbenches/${workbenchId}`;
+}
+
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+async function isFile(file: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(file)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** Reads `package.json`: the manifests, and that the package is an ES module. */
@@ -228,6 +262,7 @@ async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<
 @Component()
 export class WorkbenchService implements Workbenches {
   @Use() private readonly paths!: Paths;
+  @Use() private readonly config!: Config;
   @Use() private readonly clock!: Clock;
   @Use() private readonly log!: Log;
   @Use() private readonly channels!: Channels;
@@ -251,20 +286,41 @@ export class WorkbenchService implements Workbenches {
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
-  private readonly migrations = new Map<string, Promise<void>>();
+  /** The Agent State repository; its writes stay in order across instances (./repo.ts). */
+  private repo(projectId: string, agentId: string): AgentStateRepo {
+    return new AgentStateRepo({
+      gitdir: agentStateRepoDir(agentDir(this.paths.root, projectId, agentId)),
+      now: () => this.clock.now(),
+      log: (line) => this.log.line(`[workbenches] ${projectId}/${agentId}: ${line}`),
+    });
+  }
 
-  private migrate(projectId: string, agentId: string): Promise<void> {
-    const key = `${projectId}/${agentId}`;
-    const existing = this.migrations.get(key);
-    if (existing) return existing;
-    const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
-      (error) => {
-        this.migrations.delete(key);
-        throw error;
-      },
-    );
-    this.migrations.set(key, pending);
-    return pending;
+  /** A read of the repository that fails is logged and answered as an error the caller can retry. */
+  private async fromRepo<T>(k: string, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (err) {
+      this.log.line(`[workbenches] ${k}: history not read: ${messageOf(err)}`);
+      throw new HttpError(
+        500,
+        "workbench_history_unreadable",
+        `The workbench's history could not be read: ${messageOf(err)}`,
+      );
+    }
+  }
+
+  /** Agents whose State is being replaced (whileReleased), and when that ends. */
+  private readonly held = new Map<string, Promise<void>>();
+
+  /**
+   * Every way into an Agent's workbenches comes through here, so it waits out an import first.
+   * Asked on every access, not once: until the old place is a link, a workbench can still be
+   * written there and is moved in once it settles (./migrate-state.ts). Absent or linked, it
+   * costs a few stats, and concurrent callers share a run.
+   */
+  private async migrate(projectId: string, agentId: string): Promise<void> {
+    await this.held.get(`${projectId}/${agentId}`);
+    return migrateWorkbenches(agentDir(this.paths.root, projectId, agentId));
   }
 
   setup(ctx: ClassCtx) {
@@ -346,23 +402,39 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
     rel: string,
-  ): Promise<string | null> {
+  ): Promise<WorkbenchUiFile | null> {
     if (!isWorkbenchId(workbenchId)) return null;
     await this.migrate(projectId, agentId);
     // No default document: which page a tab shows is what its contribution says.
-    const file = rel;
-    if (!isSafeRelPath(file)) return null;
-    const abs = path.join(
-      workbenchesDir(this.paths.root, projectId, agentId),
-      workbenchId,
-      UI_DIR,
-      file,
-    );
-    try {
-      return (await fs.promises.stat(abs)).isFile() ? abs : null;
-    } catch {
-      return null;
+    if (!isSafeRelPath(rel)) return null;
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    const onDisk = path.join(dir, UI_DIR, rel);
+    if (await isFile(onDisk)) {
+      // Only a page needs to know whether it is compiled; every other file is served as it is.
+      if (!/\.html?$/i.test(rel)) return { path: onDisk, compiled: null };
+      const build = await this.uiBuild(projectId, agentId, workbenchId);
+      return { path: onDisk, compiled: build === null ? null : this.runtimeLinks() };
     }
+    // What a TSX page compiled to, from the instance that is serving.
+    if (!rel.endsWith(".js")) return null;
+    const build = await this.uiBuild(projectId, agentId, workbenchId);
+    if (build === null) return null;
+    const emitted = path.join(dir, BUILD_DIR, build, UI_DIR, rel);
+    return (await isFile(emitted)) ? { path: emitted, compiled: null } : null;
+  }
+
+  async uiRuntimeFile(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    rel: string,
+  ): Promise<WorkbenchUiRuntimeFile | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    // A folder without package.json is not a workbench (./store.ts).
+    if (!(await isFile(path.join(dir, "package.json")))) return null;
+    return (await this.runtime()?.file(rel)) ?? null;
   }
 
   async history(
@@ -370,9 +442,11 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<WorkbenchVersion[]> {
-    if (!isWorkbenchId(workbenchId)) return Promise.resolve([]);
+    if (!isWorkbenchId(workbenchId)) return [];
     await this.migrate(projectId, agentId);
-    return listVersions(historyDir(this.paths.root, projectId, agentId), workbenchId);
+    return this.fromRepo(key(projectId, agentId, workbenchId), () =>
+      this.repo(projectId, agentId).history(repoPath(workbenchId)),
+    );
   }
 
   async rollback(
@@ -383,12 +457,12 @@ export class WorkbenchService implements Workbenches {
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
-    const restored = await restoreVersion(
-      historyDir(this.paths.root, projectId, agentId),
-      folder,
-      revision,
+    const files = await this.fromRepo(key(projectId, agentId, workbenchId), () =>
+      this.repo(projectId, agentId).filesAt(repoPath(workbenchId), revision),
     );
-    if (!restored) throw new WorkbenchNotFound("no such version");
+    if (!files) throw new WorkbenchNotFound("no such version");
+    // The load this triggers records the restored files as the newest version.
+    await restoreSource(folder, files);
     return this.reload(projectId, agentId, workbenchId);
   }
 
@@ -413,11 +487,51 @@ export class WorkbenchService implements Workbenches {
     } finally {
       this.removing.delete(k);
     }
-    await fs.promises.rm(path.join(historyDir(this.paths.root, projectId, agentId), workbenchId), {
-      recursive: true,
-      force: true,
-    });
+    try {
+      await this.repo(projectId, agentId).removePath(
+        repoPath(workbenchId),
+        `workbench ${workbenchId}: removed`,
+      );
+    } catch (err) {
+      this.log.line(`[workbenches] ${k}: removal not recorded: ${messageOf(err)}`);
+    }
     this.forget(projectId, agentId, workbenchId);
+  }
+
+  async releaseAgent(projectId: string, agentId: string): Promise<void> {
+    const agentKey = `${projectId}/${agentId}`;
+    // On Windows a recursive watcher holds its folder open, and a folder held open cannot be
+    // moved; everywhere, a reload or a load finishing late would write `.build/` back into it.
+    this.watchers.get(agentKey)?.close();
+    this.watchers.delete(agentKey);
+    const prefix = key(projectId, agentId, "");
+    for (const [k, t] of this.pending) {
+      if (!k.startsWith(prefix)) continue;
+      clearTimeout(t);
+      this.pending.delete(k);
+    }
+    await Promise.all(
+      [...this.loading].filter(([k]) => k.startsWith(prefix)).map(([, p]) => p.catch(() => {})),
+    );
+    for (const [k, l] of this.loaded) {
+      if (!k.startsWith(prefix)) continue;
+      l.tree?.dispose();
+      this.loaded.delete(k);
+    }
+  }
+
+  async whileReleased<T>(projectId: string, agentId: string, work: () => Promise<T>): Promise<T> {
+    const agentKey = `${projectId}/${agentId}`;
+    for (let held = this.held.get(agentKey); held; held = this.held.get(agentKey)) await held;
+    let end!: () => void;
+    this.held.set(agentKey, new Promise<void>((resolve) => (end = resolve)));
+    try {
+      await this.releaseAgent(projectId, agentId);
+      return await work();
+    } finally {
+      this.held.delete(agentKey);
+      end();
+    }
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -433,6 +547,49 @@ export class WorkbenchService implements Workbenches {
     const folder = await readFolder(dir, workbenchId);
     if (!folder) throw new WorkbenchNotFound("no such workbench");
     return folder;
+  }
+
+  /** The Web App's files this server serves, where the page runtime travels (./ui-runtime.ts). */
+  private webFiles(): WebFiles {
+    return this.hmr.resolveWebSource() ?? { kind: "dir", dir: this.config.webDist };
+  }
+
+  /** The page runtime, or null when this server has none or cannot read it. */
+  private runtime(): UiRuntime | null {
+    try {
+      return openUiRuntime(this.webFiles());
+    } catch (err) {
+      this.log.line(`[workbenches] ${messageOf(err)}`);
+      return null;
+    }
+  }
+
+  /** What a compiled page's import map names; null leaves the page as written. */
+  private runtimeLinks(): WorkbenchUiRuntime | null {
+    const manifest = this.runtime()?.manifest;
+    return manifest === undefined
+      ? null
+      : { imports: manifest.imports, stylesheet: manifest.stylesheet };
+  }
+
+  /**
+   * The serving instance's compiled-pages revision. A page can be asked for before anything
+   * in this process listed its workbench (a frame reloading after a restart), so an instance
+   * not yet loaded is loaded first.
+   */
+  private async uiBuild(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<string | null> {
+    const loaded = this.loaded.get(key(projectId, agentId, workbenchId));
+    if (loaded) return loaded.uiBuild;
+    try {
+      return (await this.current(projectId, agentId, workbenchId)).uiBuild;
+    } catch (err) {
+      if (err instanceof WorkbenchNotFound) return null;
+      throw err;
+    }
   }
 
   private async current(projectId: string, agentId: string, workbenchId: string): Promise<Loaded> {
@@ -501,6 +658,10 @@ export class WorkbenchService implements Workbenches {
     let next: Loaded;
     /** The tree this attempt booted, so a later throw can let it go instead of leaking it. */
     let booted: { dispose: () => void } | null = null;
+    /** Its handler's subscriptions (./subscribe.ts): they end with the tree, or here if it never serves. */
+    let subscriptions: WorkbenchSubscriptions | null = null;
+    /** Its compiled pages, emitted aside until the load has succeeded. */
+    let pages: UiBuild | null = null;
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -514,6 +675,11 @@ export class WorkbenchService implements Workbenches {
         this.clock.now(),
       );
       const entry = compileWorkbench(ts, folder.dir, folder.revision);
+      // Pages in TSX are the same load's second program, checked against the runtime this
+      // server serves them with; a folder of plain pages never touches the runtime.
+      if (hasTsxPages(folder.files)) {
+        pages = compileWorkbenchUi(ts, folder, requireUiRuntime(this.webFiles()));
+      }
       const written = readHarnessTable(folder.dir);
       if (typeof written === "string") throw new Error(written);
       const fit = checkIfaces(
@@ -532,8 +698,15 @@ export class WorkbenchService implements Workbenches {
       ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       const root = await loadDefs(manifests, entry);
-      const host = await this.host(projectId, agentId, folder);
-      const tree = await bootModules(root, {
+      const own = new WorkbenchSubscriptions({
+        channels: this.channels,
+        statusOf: (sessionId) => this.runner.statusOf(sessionId),
+        now: () => this.clock.now().getTime(),
+        log: (line) => this.log.line(`[workbench ${folder.id}] ${line}`),
+      });
+      subscriptions = own;
+      const host = await this.host(projectId, agentId, folder, own);
+      const modules = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
         published: {
@@ -541,24 +714,59 @@ export class WorkbenchService implements Workbenches {
           values: { [HOST_MODULE]: { host }, [WEB_MODULE]: { web: {} } },
         },
       });
+      // Whatever lets this tree go — a reload replacing it, a removal, the platform going away —
+      // ends its handler's subscriptions with it: each one holds a Session's channel.
+      const tree: ModuleTree = {
+        ...modules,
+        dispose: () => {
+          try {
+            modules.dispose();
+          } finally {
+            own.close();
+          }
+        },
+      };
       const alias = Object.entries(root.manifest.provides).find(
         ([, ref]) => ref === MAIN_IFACE,
       )![0];
       const main = tree.api<Loaded["main"]>(ROOT_MODULE, alias);
-      next = { folder, tree, main, tabs, loadedAt, error: null };
       booted = tree;
+      // In place before this tree serves, and before anything the old one served is let go.
+      pages?.commit();
+      next = {
+        folder,
+        tree,
+        main,
+        tabs,
+        loadedAt,
+        error: null,
+        uiBuild: pages === null ? null : folder.revision,
+      };
       // Recording the version is bookkeeping around a load that has already succeeded, so it
-      // cannot be inside the try that decides whether the load failed: a copy that ENOENTs on
-      // a file rewritten since it was hashed would hand the caller back the tree disposed
-      // just above, and leak the one that is actually serving.
+      // cannot be inside the try that decides whether the load failed: a repository that
+      // cannot be written would hand the caller back the tree disposed just above, and leak
+      // the one that is actually serving.
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
       try {
-        await recordVersion(
-          historyDir(this.paths.root, projectId, agentId),
-          folder,
-          this.clock.now(),
-        );
+        if (folder.refused.length > 0) {
+          this.log.line(
+            `[workbenches] ${k}@${folder.revision}: not in its versions, git refuses the name: ${folder.refused.join(", ")}`,
+          );
+        }
+        // Exactly the bytes that loaded: an edit since then is the next load's version.
+        const files = await readLoadedSource(folder);
+        if (files === null) {
+          this.log.line(
+            `[workbenches] ${k}@${folder.revision}: version not recorded: the files changed after they were read`,
+          );
+        } else {
+          await this.repo(projectId, agentId).commitPath(
+            repoPath(folder.id),
+            files,
+            `workbench ${folder.id} @${folder.revision}`,
+          );
+        }
       } catch (err) {
         this.log.line(
           `[workbenches] ${k}@${folder.revision}: version not recorded: ${messageOf(err)}`,
@@ -571,6 +779,12 @@ export class WorkbenchService implements Workbenches {
       // rather than left behind. The previous instance keeps answering — it was never
       // disposed, because that only happens once the new one is in place.
       booted?.dispose();
+      subscriptions?.close();
+      try {
+        pages?.discard();
+      } catch {
+        // Left aside; the next load of this revision clears it.
+      }
       next = {
         folder,
         tree: previous?.tree ?? null,
@@ -578,6 +792,7 @@ export class WorkbenchService implements Workbenches {
         tabs: previous?.tabs ?? [],
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,
+        uiBuild: previous?.uiBuild ?? null,
       };
     }
     if (this.disposed) {
@@ -596,7 +811,12 @@ export class WorkbenchService implements Workbenches {
     return next;
   }
 
-  private async host(projectId: string, agentId: string, folder: WorkbenchFolder) {
+  private async host(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    subscriptions: WorkbenchSubscriptions,
+  ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
     return {
@@ -645,6 +865,10 @@ export class WorkbenchService implements Workbenches {
         // A new task can begin while reading the trace; never label its prior answer complete.
         return workbenchResult(service.runner.statusOf(sessionId), messages);
       },
+      subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void) {
+        service.ownSession(projectId, sessionId, "subscribe");
+        return subscriptions.subscribe(sessionId, listener);
+      },
       getState: () => state,
       async setState(next: unknown) {
         await writeState(folder.dir, next ?? null);
@@ -688,7 +912,7 @@ export class WorkbenchService implements Workbenches {
 
   private watch(projectId: string, agentId: string): void {
     const k = `${projectId}/${agentId}`;
-    if (this.watchers.has(k) || this.disposed) return;
+    if (this.watchers.has(k) || this.disposed || this.held.has(k)) return;
     const declared = workbenchesDir(this.paths.root, projectId, agentId);
     if (!fs.existsSync(declared)) {
       this.awaitFirstWorkbench(projectId, agentId, declared);

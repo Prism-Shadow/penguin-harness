@@ -1,3 +1,9 @@
+import { Hono } from "hono";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config, Desktop, Clock, Paths } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import { memoryRoutes } from "../memory.js";
 import { benchmarksRoutes } from "@penguinharness/plugin-usage/server";
 import { agentSkillsRoutes } from "../skills.js";

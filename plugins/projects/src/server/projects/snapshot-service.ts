@@ -1,7 +1,25 @@
+import { randomBytes } from "node:crypto";
+import type { Stats } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
+import * as tar from "tar";
+import { parse as parseYaml } from "yaml";
+import {
+  agentDir,
+  agentStateDir,
+  agentStateVersion,
+  agentVaultPath,
+  snapshotsDir,
+  systemConfigPath,
+} from "@prismshadow/penguin-core";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { Snapshots } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Clock, Log } from "@prismshadow/penguin-server/internal";
+import { isGitName } from "@penguinharness/plugin-workbenches/server";
+import { isTempName } from "@penguinharness/plugin-workbenches/server";
 
 
 

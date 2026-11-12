@@ -26,3 +26,4 @@ export * from "./messaging/wechat-scan.js";
 export * from "./messaging/account-holders.js";
 export * from "./routes/messaging.js";
 export * from "./routes/messaging-channels.js";
+export * from "./messaging/accounts-module.js";

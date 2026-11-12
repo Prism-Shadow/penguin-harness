@@ -5,15 +5,15 @@
  */
 import { Bind, Module, Use } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
-import type { AppEnv } from "../../auth/middleware.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import {
   messagingAccountHoldersRoutes,
   messagingAccountsRoutes,
-} from "../../http/routes/messaging-accounts.js";
-import type { Machines } from "../../machines/service.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+} from "@prismshadow/penguin-server/http/routes/messaging-accounts.js";
+import type { Machines } from "@penguinharness/plugin-machines/server";
+import type { MessagingBindings } from "../mechanism.js";
+import type { Access } from "@penguinharness/plugin-projects/server";
+import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 
 @Module({
   contributes: {

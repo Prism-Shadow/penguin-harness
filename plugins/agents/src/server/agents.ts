@@ -1,4 +1,4 @@
-import type { AgentCreateResponse, AgentsResponse, AgentSummary, Employment } from "@prismshadow/penguin-server/api";
+import type { AgentCreateResponse, AgentDeleteResponse, AgentDeletionInfo, AgentDeletionResponse, AgentsResponse, AgentSummary, Employment } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 
 import type { SessionManager } from "@prismshadow/penguin-server/internal";
@@ -9,6 +9,15 @@ import type { ErrorLog } from "@prismshadow/penguin-server/internal";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
 import type { AgentApi } from "@prismshadow/penguin-server/internal";
+import { Hono } from "hono";
+import { OrgService } from "@penguinharness/plugin-company/server";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import type { UserDraftsStore } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { requireValidId, readJson, requireString, optionalString, optionalStringArray, badRequest } from "@prismshadow/penguin-server/internal";
+import { settleWithin, requireProjectDir } from "@prismshadow/penguin-server/internal";
+import { refuseBuiltinDeletion } from "./agents/agent-service.js";
+import { readArchiveBase64 } from "./agent-transfer.js";
 
 
 /** What this route group reaches — bound by its module (src/modules). */

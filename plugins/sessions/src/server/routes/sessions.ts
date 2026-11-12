@@ -20,6 +20,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/amsp";
+import type { Machines } from "@prismshadow/penguin-server/internal";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { SessionRow } from "@prismshadow/penguin-server/internal";
@@ -84,6 +85,24 @@ import { compactionThresholdFor } from "@penguinharness/plugin-usage/server";
 import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest } from "@penguinharness/plugin-usage/server";
 import { withImagesByReference } from "@penguinharness/plugin-usage/server";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Sessions as ManagerIface, SessionServiceIface } from "@penguinharness/plugin-sessions/server";
+import { Messaging } from "@penguinharness/plugin-messaging/server";
+import type { SessionManager, RecallStore } from "@penguinharness/plugin-sessions/server";
+import type { MessagingBridge } from "@penguinharness/plugin-messaging/server";
+import type { ModelScopeAuth } from "@penguinharness/plugin-models/server";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import type { UserDraftsStore } from "@prismshadow/penguin-server/internal";
+import { sessionMessages, sessionTraceImage } from "@prismshadow/penguin-server/internal";
+import { readableSession, amspSessionStream, pendingApprovals } from "@prismshadow/penguin-server/internal";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
+import { agentsRoutes, agentDeletionsRoutes } from "@penguinharness/plugin-agents/server";
+import { agentConfigRoutes } from "@penguinharness/plugin-agents/server";
+import { modelsRoutes, modelOAuthCallbackRoutes, modelOAuthRoutes, modelScopeAuthRoutes } from "@penguinharness/plugin-models/server";
+import { chatDefaultsRoutes, archivedSessionsRoutes } from "@penguinharness/plugin-sessions/server";
+import { usageRoutes } from "@penguinharness/plugin-usage/server";
+import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "@penguinharness/plugin-projects/server";
 
 
 
@@ -168,6 +187,8 @@ export interface SessionsRouteDeps {
   auth: Auth;
   /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
   drivers?: SessionDrivers;
+  /** Users' unsent drafts, which go with the Session they were written for. */
+  drafts: Pick<UserDraftsStore, "deleteBySession">;
 }
 
 export const APPROVAL_MODES: readonly ApprovalMode[] = [

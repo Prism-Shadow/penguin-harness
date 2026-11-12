@@ -43,6 +43,11 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { DirListResponse, MachineDiagnosis, MachineUninstallRequest, MachinesResponse, MachinesUseResponse, SshHostResponse, SshHostsResponse } from "@prismshadow/penguin-server/api";
 
+import type { WatchedMachine } from "@prismshadow/penguin-server/machines/aggregate-stream.js";
+import { machineEventsStream } from "@prismshadow/penguin-server/machines/aggregate-stream.js";
+import { MachineEventHub } from "@prismshadow/penguin-server/machines/event-hub.js";
+import { machineHistory } from "@prismshadow/penguin-server/machines/history-routes.js";
+import { answerOf } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { requireValidId } from "@prismshadow/penguin-server/internal";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";

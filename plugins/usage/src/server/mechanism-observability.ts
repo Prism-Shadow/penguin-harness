@@ -39,7 +39,7 @@ import type {
   McpConnectBeginPayload,
   McpConnectEndPayload,
   AmspRecord,
-  OmniPayload,
+  AmspPayload,
   PartialTextPayload,
   PartialThinkingPayload,
   PartialToolCallOutputPayload,
@@ -120,7 +120,11 @@ export abstract class UsageStore {
 /** UsageRecording: the mechanism UsageRecorder implements. */
 @Interface()
 export abstract class UsageRecording {
-  abstract record(ctx: UsageContext, msg: AmspRecord<OmniPayload>): Promise<void>;
+  abstract record(
+    ctx: UsageContext,
+    msg: AmspRecord<AmspPayload>,
+    source?: "stream" | "standalone",
+  ): Promise<void>;
 }
 
 /** UsageQueries: the mechanism UsageService implements. */

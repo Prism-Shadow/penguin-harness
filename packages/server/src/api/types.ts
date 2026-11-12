@@ -28,6 +28,11 @@ import type {
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 /** A request the workbench's handler receives (the HTTP shape, minus the transport). */
+export type {
+  WorkbenchVersion,
+  WorkbenchRecord,
+} from "@penguinharness/plugin-workbenches/server";
+
 export interface WorkbenchRequest {
   method: string;
   /** Path below the workbench's `api/` mount, always starting with `/`. */
@@ -102,17 +107,6 @@ export interface WorkbenchInfo {
    */
   hints: string[];
 }
-
-export interface WorkbenchVersion {
-  revision: string;
-  savedAt: string;
-  name: string;
-  version: string | null;
-  uiRev: string | null;
-  /** The files of that version (relative paths), for display. */
-  files: string[];
-}
-
 
 // ---------------------------------------------------------------------------
 // General
@@ -2755,6 +2749,14 @@ export interface MessagesPageInfo {
    * window never mis-numbers. 0 when the window starts at the beginning.
    */
   earlierTurns: number;
+  /**
+   * How many units (Tasks) the window holds, as the window was cut: the same boundaries the
+   * cut is made at (message-window.ts `scanMessages`), so a client that pages until it has N
+   * Tasks on screen counts what `tailLimit` / `limit` count — a prompt with its images, or two
+   * sends merged into one, is one. At most the `tailLimit` / `limit` asked for; fewer when the
+   * byte budget cut the window short or the history begins inside it.
+   */
+  units: number;
   /**
    * Cumulative stats accrued before this window, seeded into the client's stats
    * tracker so header chips and per-turn cumulative rows equal a full load:
@@ -5400,6 +5402,23 @@ export interface DesktopTrayCommandMessage {
   locale?: DesktopTrayLocale;
 }
 
+/**
+ * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
+ * still want to change the model or configure a key first. The actual Session is only created
+ * once **the first message is sent**. Real session ids always start with `session-`, so there's
+ * no collision; nor with parked draft conversations, whose route ids start with `draft-`.
+ * Shared so the desktop tray's "New Session" opens the same draft route the Web App uses.
+ */
+export const DRAFT_SESSION_ID = "new";
+
+/**
+ * The session cookie's name as every non-browser client spells it (a browser's carries the
+ * server's port; auth/middleware.ts): the CLI, a server speaking to a machine it holds, and the
+ * desktop shell that mints its window's session. Shared so they all write the cookie the server
+ * reads.
+ */
+export const SESSION_COOKIE = "penguin_session";
+
 // Desktop folder access (desktop mode, macOS)
 //
 // macOS privacy protection (TCC) guards Desktop, Documents, Downloads and removable and network
@@ -5603,6 +5622,20 @@ export interface HostCommandMessage {
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+export const UPDATE_REFUSAL_MARKERS: readonly string[] = [
+  "runs from a source checkout", // sourceCheckout
+  "Cannot tell how this penguin was installed", // unknownInstall
+  "could not be identified", // npmUnknownManager
+  "does not run on Windows", // windowsUnsupported
+  "cannot run your package manager for you", // windowsGlobalInstall
+];
 
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
@@ -5755,6 +5788,15 @@ export interface MachineInfo {
    */
   keepConnected?: true;
   /**
+   * The API socket this server holds to that machine — connected, dialling, refused or failed,
+   * and since when (machines/machine-sockets.ts). Null for `local`, and until a stream has
+   * asked for a socket at all. A fact about one process on THIS side, like `connection` and
+   * for the same reason: it says the socket exists and what it is doing, never that the far
+   * side is answering. The Machines page reads it so a stuck stream does not have to be found
+   * in the browser console.
+   */
+  socket: MachineSocketFact | null;
+  /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
    * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
@@ -5837,12 +5879,23 @@ export interface MachineEnvOnly {
  * answer is what the page shows as the explanation.
  */
 export interface MachineReconnect {
-  /** When this streak began: the moment the machine was found not connected. */
+  /** When this streak began: the moment the machine was found not connected, or the Retry that began it again. */
   since: string;
   /** Attempts that failed in this streak; 0 while the first is still to run or running. */
   attempts: number;
-  /** When the next attempt runs; null while one is running. */
+  /** How many failures in a row end the streak: the page says "attempt n of this". */
+  maxAttempts: number;
+  /** When the next attempt runs; null while one is running, and once the streak stopped. */
   nextAt: string | null;
+  /**
+   * The streak stopped, and nothing runs until a person asks for a Retry, which begins a new
+   * one: `attempts` — `maxAttempts` failed in a row; `ssh` — ssh refused in a way retrying
+   * cannot fix (a host key unknown or changed, an unusable key file, a key refused, a broken
+   * ssh config), said by `sshReason`; `cancelled` — a person stopped it. An attempt that was
+   * under way when it was stopped runs out: it may still connect the machine, and its failure
+   * is the `lastError`.
+   */
+  gaveUp?: "attempts" | "ssh" | "cancelled";
   /** The last attempt's failure in the far side's words; null before the first one fails. */
   lastError: string | null;
   /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */

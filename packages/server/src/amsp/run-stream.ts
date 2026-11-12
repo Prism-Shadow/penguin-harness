@@ -13,7 +13,7 @@ import type { ChannelEvent } from "../runtime/channel.js";
 import type { SessionManager } from "@penguinharness/plugin-sessions/server";
 import { toAttachmentLimits } from "../services/attachment-limits.js";
 import type { SessionService } from "../services/session-service.js";
-import { assertWorkspaceAllowed } from "@penguinharness/plugin-projects/server/projects/workspace-guard.js";
+import { assertWorkspaceAllowed } from "@penguinharness/plugin-projects/server";
 import { reserveStart } from "./admission.js";
 import { sessionNotFound } from "./gate.js";
 import type { AmspEnv } from "./gate.js";

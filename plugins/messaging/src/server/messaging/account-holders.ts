@@ -22,10 +22,10 @@ import type {
   MessagingChannel,
   MessagingUnreachableMachine,
   MessagingUnreachableReason,
-} from "../../api/types.js";
-import type { MachineApi } from "../../machines/machine-api.js";
-import type { MessagingBindings } from "../../mechanisms/messaging.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
+} from "@prismshadow/penguin-server/api";
+import type { MachineApi } from "@penguinharness/plugin-machines/server";
+import type { MessagingBindings } from "@prismshadow/penguin-server/internal";
+import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import { isMessagingChannel } from "./enabled-channel.js";
 
 /** Where a server answers its enabled accounts (GET, admin only). */

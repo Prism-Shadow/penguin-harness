@@ -1,4 +1,4 @@
-import { ensureColumn } from "../../database.js";
+import { ensureColumn } from "@penguinharness/plugin-db/server";
 import type { Migration } from "../migration.js";
 
 export const machinesAdoptedAt: Migration = {

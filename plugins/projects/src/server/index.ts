@@ -14,6 +14,7 @@ export * from "./projects/project-config-service.js";
 export * from "./projects/project-access.js";
 export * from "./projects/project-events.js";
 export * from "./projects/snapshot-service.js";
+export * from "./projects/workspace-guard.js";
 export * from "./projects/workspace-files-service.js";
 export * from "./projects/reveal-path.js";
 export * from "./projects/semantic-id.js";

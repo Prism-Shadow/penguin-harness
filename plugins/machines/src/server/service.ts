@@ -132,7 +132,9 @@ import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 
 import { MachineEventRelay } from "./event-relay.js";
-import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
+import type { EventRelay, EventRelayDeps } from "./event-relay.js";
+import { streamRevocation } from "@prismshadow/penguin-server/internal";
+import type { SseRevocation } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
 
@@ -164,7 +166,8 @@ import type { Dirent, Stats } from "node:fs";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AmspRecord } from "@prismshadow/amsp";
-import type { MachineSocketFact, Projects } from "@prismshadow/penguin-server/api";
+import type { MachineSocketFact } from "@prismshadow/penguin-server/api";
+import type { Projects } from "@penguinharness/plugin-projects/server";
 import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
 
 

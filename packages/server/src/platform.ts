@@ -37,6 +37,7 @@ import {
   Messaging,
   MessagingTaskRunner,
   MessagingModule,
+  MessagingAccountsModule,
   QQScan,
   MessagingBindings,
   MessagingBindingsRepo,
@@ -454,6 +455,7 @@ export class WorkspaceModule {}
     MessagingBindingsRepo,
     MessagingConversationsRepo,
     MessagingModule,
+    MessagingAccountsModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
 })

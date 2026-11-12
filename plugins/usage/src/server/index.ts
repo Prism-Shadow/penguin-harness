@@ -24,6 +24,6 @@ export type { PricingRates, TieredRates } from "./usage-service.js";
 export { compactionThresholdFor } from "./context-breakdown.js";
 export { SESSION_ROUTES_BASE, traceImageUrl, traceRecordImage, withImagesByReference } from "./trace-images.js";
 export { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";
-export type { MessagesPageRequest, MessagesPageResult, ForkTraceResult, HistoryTraceFile, HistoryWindowRead, RecordSource, HistoryMessage } from "./trace-service.js";
+export type { MessagesPageRequest, MessagesPageResult, ForkTraceResult, HistoryTraceFile, HistoryWindowRead, RecordSource } from "./trace-service.js";
 export type { BenchmarkArchive, BenchmarkCreateInput, BenchmarkImportOptions, BenchmarkCaseInput } from "./benchmark-service.js";
 export type { UsageQuery, UsageErrorsQuery, UsageErrorsClearQuery } from "./usage-service.js";

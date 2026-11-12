@@ -89,14 +89,13 @@
     "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- node ../../scripts/dev-server.mjs src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json --project ../../plugins/company/tsconfig.json --project ../../plugins/terminal/tsconfig.json --project ../../plugins/browser/tsconfig.json --project ../../plugins/usage/tsconfig.json --project ../../plugins/schedules/tsconfig.json --project ../../plugins/machines/tsconfig.json --project ../../plugins/workbenches/tsconfig.json --project ../../plugins/projects/tsconfig.json --project ../../plugins/agents/tsconfig.json --project ../../plugins/settings/tsconfig.json --project ../../plugins/models/tsconfig.json --project ../../plugins/messaging/tsconfig.json --project ../../plugins/sessions/tsconfig.json --project ../../plugins/sandbox/tsconfig.json --project ../../plugins/plugins/tsconfig.json",
+    "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
     "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
-
     "@penguinharness/plugin-agents": "workspace:*",
     "@penguinharness/plugin-browser": "workspace:*",
     "@penguinharness/plugin-company": "workspace:*",
@@ -112,7 +111,6 @@
     "@penguinharness/plugin-terminal": "workspace:*",
     "@penguinharness/plugin-usage": "workspace:*",
     "@penguinharness/plugin-workbenches": "workspace:*",
-
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/mmsp": "^0.5.6",
     "@prismshadow/penguin-core": "workspace:*",
@@ -131,17 +129,7 @@
     "undici": "^7.29.1",
     "unified": "^11.0.5",
     "ws": "^8.18.3",
-    "yaml": "^2.5.0",
-    "@penguinharness/plugin-agents": "workspace:*",
-    "@penguinharness/plugin-browser": "workspace:*",
-    "@penguinharness/plugin-company": "workspace:*",
-    "@penguinharness/plugin-machines": "workspace:*",
-    "@penguinharness/plugin-projects": "workspace:*",
-    "@penguinharness/plugin-schedules": "workspace:*",
-    "@penguinharness/plugin-settings": "workspace:*",
-    "@penguinharness/plugin-terminal": "workspace:*",
-    "@penguinharness/plugin-usage": "workspace:*",
-    "@penguinharness/plugin-workbenches": "workspace:*"
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",

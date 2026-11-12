@@ -12,6 +12,13 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { AgentDeletionInfo } from "@prismshadow/penguin-server/api";
+import { PluginLibrary } from "@prismshadow/penguin-server/internal";
+import { countEntries, FsLimiter, purgeTree } from "@prismshadow/penguin-server/internal";
+import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
+import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server/workbenches/migrate.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import {
   agentDir,

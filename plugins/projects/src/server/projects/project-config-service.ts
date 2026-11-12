@@ -28,6 +28,7 @@
  * as immutable — every mutating method here copies before changing.
  */
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
@@ -42,40 +43,44 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
-  MODELSCOPE_PROVIDER_ID,
-  PENGUIN_GO_PROVIDER_ID,
-  catalogEntryFor,
-  catalogGroupConnection,
   defaultProjectConfig,
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
   metaMaxTokens,
   migrateProjectConfigTable,
-  migratePenguinGoRoutes,
   parseProviderTable,
-  presetModelEntries,
-  presetPromotions,
   projectConfigFromTable,
-  retainedCatalogPricing,
   projectConfigPath,
   providerConnectionShape,
   renderProjectConfigToml,
-  modelEnvFallback,
-  modelEnvPreviewKey,
   resolveEntryCredential,
+  sameClientType,
+  sameEndpoint,
   userText,
 } from "@prismshadow/penguin-core";
 import {
-  VENDOR_ENDPOINTS,
+  MODELSCOPE_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
+  catalogEntryFor,
   fixedClientType,
   fixedClientTypeRefuses,
   providerInfo,
-  sameClientType,
-  sameEndpoint,
+  retainedCatalogPricing,
   unaddableModel,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core/model-catalog";
+  vendorClientType,
+  modelEnvPreviewKey,
+} from "@prismshadow/penguin-server/internal";
+import {
+  catalogGroupConnection,
+  clientEnvKey,
+  detectModelProtocol,
+  presetModelEntries,
+  presetPromotions,
+} from "@prismshadow/penguin-server/internal";
+import { migratePenguinGoRoutes } from "@prismshadow/penguin-server/internal";
+import { presetProjectConfig } from "@prismshadow/penguin-server/internal";
 import type {
   PluginTables,
   CommandPolicyRule,

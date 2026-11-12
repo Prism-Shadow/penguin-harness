@@ -15,15 +15,15 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strFromU8 } from "fflate";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "@prismshadow/penguin-server/internal";
 import {
   MAX_ARCHIVE_FILES,
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "../services/skill-import-limits.js";
-import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
+} from "@prismshadow/penguin-server/internal";
+import { CONTROL_CHARACTER, specialEntries } from "@prismshadow/penguin-server/internal";
 import { HARNESS_DIR } from "./harness-types.js";
 import { removeLeftovers } from "./leftovers.js";
 import { isGitName } from "./repo.js";

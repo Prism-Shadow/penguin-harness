@@ -730,24 +730,26 @@ export class RestartRequiredError extends Error {
  * database at the last version that fully applied — never half-migrated. Already-current
  * databases do no work and touch nothing.
  *
- * `swapPath` marks the caller as a booting pushed platform: the first pending migration
- * that is not `swapSafe` throws RestartRequiredError BEFORE anything is applied, so the
- * push is refused whole rather than partially landed.
+ * `swapPath` marks the caller as a booting pushed platform: contract migrations
+ * (`swapSafe: false`) are skipped and stay pending — never applied, never a reason to refuse
+ * the boot — and are returned in `deferred`. A hot push therefore never fails on a migration
+ * it is not allowed to run, and never runs a contract.
  */
 export function migrate(
   db: DatabaseSync,
   { swapPath = false }: { swapPath?: boolean } = {},
-): { from: number; to: number; applied: readonly string[] } {
+): { from: number; to: number; applied: readonly string[]; deferred: readonly string[] } {
   const from = schemaVersion(db);
   const pending = [...MIGRATIONS]
     .sort((a, b) => a.version - b.version)
     .filter((m) => m.version > from);
-  if (swapPath) {
-    const blocked = pending.find((m) => !m.swapSafe);
-    if (blocked) throw new RestartRequiredError(blocked);
-  }
+  const deferred: string[] = [];
   const applied: string[] = [];
   for (const m of pending) {
+    if (swapPath && !m.swapSafe) {
+      deferred.push(m.name);
+      continue;
+    }
     db.exec("BEGIN");
     try {
       m.up(db);
@@ -760,7 +762,7 @@ export function migrate(
     }
     applied.push(m.name);
   }
-  return { from, to: schemaVersion(db), applied };
+  return { from, to: schemaVersion(db), applied, deferred };
 }
 
 /**

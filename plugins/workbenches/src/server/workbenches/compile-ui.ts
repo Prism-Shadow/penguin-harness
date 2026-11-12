@@ -24,7 +24,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { TypeScript } from "../plugin/typescript.js";
+import type { TypeScript } from "@prismshadow/penguin-server/internal";
 import { BUILD_DIR, describe, WorkbenchCompileError } from "./compile.js";
 import { UI_DIR, type WorkbenchFolder } from "./store.js";
 import { installUiTypes, type UiRuntime } from "./ui-runtime.js";

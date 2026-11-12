@@ -1,4 +1,16 @@
+import http from "node:http";
+import { Readable } from "node:stream";
+import { buffer } from "node:stream/consumers";
 import { ADOPTED_AT_HEADER } from "@prismshadow/penguin-server/internal";
+import { answerOf } from "@prismshadow/penguin-server/internal";
+import { MachineAnswers, keepable, keptResponse } from "@prismshadow/penguin-server/machines/answer-cache.js";
+import type { AnswerReader, KeptAnswer } from "@prismshadow/penguin-server/machines/answer-cache.js";
+import { ASKED_ENCODINGS, decodableEncoding, decodedBody } from "@prismshadow/penguin-server/machines/answer-decoding.js";
+import type { MachineEventHub } from "@prismshadow/penguin-server/machines/event-hub.js";
+import { isHistoryRead } from "@prismshadow/penguin-server/machines/history-paths.js";
+import type { HistoryCaller, MachineHistory } from "@prismshadow/penguin-server/machines/history-routes.js";
+import { MachineSocketRelay } from "@prismshadow/penguin-server/machines/socket-relay.js";
+import type { MachineSockets } from "@prismshadow/penguin-server/machines/machine-sockets.js";
 
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */

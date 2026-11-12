@@ -21,14 +21,14 @@ import { Command, CommanderError } from "commander";
 import { Hono } from "hono";
 import { Bind, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
-import { cliCommandKeyFault } from "@prismshadow/penguin-core/plugin";
+import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import type {
   CliCommandCode,
   CliCommandContext,
   CliCommandData,
   CliCommandProgram,
   CliCommandSummary,
-} from "@prismshadow/penguin-core/plugin";
+} from "@prismshadow/penguin-core/cli";
 import type {
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
@@ -126,58 +126,69 @@ function commandAt(program: Command, key: string): Command {
  * everything printed. A command's own failure is reported on stderr with exit code 1, and
  * never escapes into the server.
  */
+let runs: Promise<unknown> = Promise.resolve();
+
 export async function runPluginCommands(
   commands: readonly PluginCliCommand[],
   request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
 ): Promise<PluginCliCommandRunResponse> {
-  let stdout = "";
-  let stderr = "";
-  let exitCode = 0;
-  const ctx: CliCommandContext = {
-    language: request.language,
-    write: (text) => {
-      stdout += `${text}\n`;
-    },
-    writeErr: (text) => {
-      stderr += `${text}\n`;
-    },
-    setExitCode: (code) => {
-      exitCode = code;
-    },
-  };
-  const program = new Command();
-  program
-    .name(request.prog)
-    .exitOverride()
-    .configureOutput({
-      writeOut: (text) => {
-        stdout += text;
-      },
-      writeErr: (text) => {
-        stderr += text;
-      },
-    });
-  try {
-    for (const c of commands) {
-      const node = commandAt(program, c.key).description(c.summary[request.language]);
-      c.code.register(node as unknown as CliCommandProgram, ctx);
-    }
-    // Only print help when no args given, so unknown words are reported as they are.
-    if (request.args.length === 0) {
-      program.outputHelp();
-      return { exitCode: 0, stdout, stderr };
-    }
-    await program.parseAsync(request.args, { from: "user" });
-  } catch (err) {
-    if (err instanceof CommanderError) {
-      // Commander already printed what it had to say (help, or the usage error).
-      return { exitCode: err.exitCode, stdout, stderr };
-    }
-    stderr += `${err instanceof Error ? err.message : String(err)}\n`;
-    return { exitCode: 1, stdout, stderr };
-  }
-  return { exitCode, stdout, stderr };
+  const run = runs.then(() => runPluginCommandOnce(commands, request));
+  runs = run.catch(() => undefined);
+  return run;
 }
+
+async function runPluginCommandOnce(
+  commands: readonly PluginCliCommand[],
+  request: Pick<PluginCliCommandRunRequest, "args" | "language" | "prog">,
+): Promise<PluginCliCommandRunResponse> {
+  const stdout = { text: "" };
+  const stderr = { text: "" };
+  const capture =
+    (sink: { text: string }): typeof process.stdout.write =>
+    (chunk: unknown) => {
+      sink.text += typeof chunk === "string" ? chunk : String(chunk);
+      return true;
+    };
+  const stdoutWrite = process.stdout.write;
+  const stderrWrite = process.stderr.write;
+  const priorExitCode = process.exitCode;
+  process.stdout.write = capture(stdout);
+  process.stderr.write = capture(stderr);
+  process.exitCode = 0;
+  try {
+    const program = new Command();
+    program.name(request.prog).exitOverride();
+    try {
+      for (const c of commands) {
+        const node = commandAt(program, c.key).description(c.summary[request.language]);
+        // The server host holds no shared command vocabulary yet, so its bundle is the
+        // locale the caller resolved — the one thing every host's bundle guarantees.
+        c.code.register(node as unknown as CliCommandProgram, {
+          messages: { language: request.language },
+        });
+      }
+      // Only print help when no args given, so unknown words are reported as they are.
+      if (request.args.length === 0) {
+        program.outputHelp();
+        return { exitCode: 0, stdout: stdout.text, stderr: stderr.text };
+      }
+      await program.parseAsync(request.args, { from: "user" });
+      return { exitCode: process.exitCode ?? 0, stdout: stdout.text, stderr: stderr.text };
+    } catch (err) {
+      if (err instanceof CommanderError) {
+        // Commander already printed what it had to say (help, or the usage error).
+        return { exitCode: err.exitCode, stdout: stdout.text, stderr: stderr.text };
+      }
+      stderr.text += `${err instanceof Error ? err.message : String(err)}\n`;
+      return { exitCode: 1, stdout: stdout.text, stderr: stderr.text };
+    }
+  } finally {
+    process.stdout.write = stdoutWrite;
+    process.stderr.write = stderrWrite;
+    process.exitCode = priorExitCode;
+  }
+}
+
 
 /** The `prog` a run may name: the program name followed by plain words, nothing a terminal would interpret. */
 const PROG_PATTERN = /^[A-Za-z0-9@/._ -]{1,256}$/;

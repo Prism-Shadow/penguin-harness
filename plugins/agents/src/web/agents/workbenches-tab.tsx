@@ -8,6 +8,19 @@ import { useProject } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "@prismshadow/penguin-web/internal";
 
+import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+
+/** A zip waiting on the overwrite confirm: the payload to resend with `overwrite`, and the id it would replace. */
+interface PendingOverwrite {
+  dataBase64: string;
+  workbenchId: string;
+}
+
+/** The row of the newest version holding the workbench's current files; -1 when none does. */
+function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
+  return history.versions.findIndex((version) => version.revision === history.workbench.revision);
+}
+
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {

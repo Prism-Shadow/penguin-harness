@@ -260,6 +260,13 @@ export class TerminalManager {
     this.scheduleReap(id, 2000);
   }
 
+  /** Files one of the user's shells under another conversation (a self-healed Session id). */
+  reown(id: string, userId: string, sessionId: string | null): TerminalSession {
+    const session = this.require(id, userId);
+    session.setSession(sessionId);
+    return session;
+  }
+
   /** Drops the session once nothing can usefully be read from it any more. */
   private scheduleReap(id: string, delayMs = this.graceMs): void {
     const existing = this.reapTimers.get(id);

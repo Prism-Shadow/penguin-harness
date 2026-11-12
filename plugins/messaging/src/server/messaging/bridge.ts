@@ -1,4 +1,5 @@
 import type { AmspRecord } from "@prismshadow/amsp";
+import { userText, scratchpadDir, imageUrlMessage } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
 import type { MessagingBindingRow } from "../repos/messaging-bindings.js";

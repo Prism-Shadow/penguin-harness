@@ -32,7 +32,8 @@ import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/web";
 
 /**
- * The folded navigation column: the unfold button on top; below it, in product-specified order,
+ * The folded navigation column: the unfold button on top (in the desktop window it is the title
+ * band's sidebar toggle instead, and the rail has none); below it, in product-specified order,
  * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
  * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
  * sidebar's avatar does. No logo.
@@ -47,7 +48,7 @@ import { DRAFT_SESSION_ID, useNewChat } from "@penguinharness/plugin-sessions/we
  * words in a styled tooltip (the package's `RailItem`). The entries' names come from the same
  * strings as the pinned nav's, so the rail follows the UI language with it.
  */
-export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const { user } = useAuth();
   const navPages = navPagesOf(useWebAppPages());
   const { locale } = useLocale();
@@ -175,13 +176,15 @@ export function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
     <Rail
       head={
-        <RailItem
-          label={S.nav.expandSidebar}
-          tooltip={expandTitle}
-          glyph={ICONS.chevronRightPipe}
-          onClick={onExpand}
-          className="shrink-0"
-        />
+        onExpand === undefined ? undefined : (
+          <RailItem
+            label={S.nav.expandSidebar}
+            tooltip={expandTitle}
+            glyph={ICONS.chevronRightPipe}
+            onClick={onExpand}
+            className="shrink-0"
+          />
+        )
       }
       foot={
         /* The account menu opens here, on the rail, instead of the avatar expanding the sidebar

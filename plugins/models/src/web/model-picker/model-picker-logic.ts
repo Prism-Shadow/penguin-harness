@@ -1,5 +1,8 @@
-  type ModelTag,
+import type {
+  ModelRowLike,
+  ModelTag,
 } from "@penguinharness/plugin-models/web";
+
 
 
 /**

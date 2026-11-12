@@ -21,6 +21,9 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The desktop window's title band: back and forward through the pages visited. */
+    back: "后退",
+    forward: "前进",
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
@@ -37,6 +40,14 @@ export const zh = {
       finance: "财务",
       handbook: "手册",
     },
+  },
+
+  /** The desktop window's own buttons, which the page draws at the title band's right end. */
+  window: {
+    minimize: "最小化",
+    maximize: "最大化",
+    restore: "向下还原",
+    close: "关闭",
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */

@@ -23,8 +23,8 @@
  */
 import { createHash } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
-import { providerInfo } from "../model-catalog/catalog.js";
-import type { ModelProviderBalance } from "../model-catalog/catalog.js";
+import { providerInfo } from "@prismshadow/penguin-server/internal";
+import type { ModelProviderBalance } from "@prismshadow/penguin-server/internal";
 import type {
   ModelBalanceAmount,
   ModelBalanceFailure,

@@ -29,6 +29,7 @@ import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { Access, AgentIndex, Members, ProjectConfigStore, ProjectLifecycle, Projects } from "@prismshadow/penguin-server/internal";
 
 import type { Users } from "@prismshadow/penguin-server/internal";
+import type { UserDraftsStore } from "@prismshadow/penguin-server/internal";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-server/internal";
 import type { ErrorLog, UsageStore } from "@prismshadow/penguin-server/internal";
 import type { TraceIndex } from "@prismshadow/penguin-server/internal";

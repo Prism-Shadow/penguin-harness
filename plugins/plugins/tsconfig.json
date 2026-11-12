@@ -7,8 +7,38 @@
     ],
     "resolveJsonModule": true,
     "paths": {
-      "@penguinharness/plugin-sessions/server": [
-        "../sessions/src/server/index.ts"
+      "@penguinharness/plugin-agents/server": [
+        "../agents/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-agents/web": [
+        "../agents/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-browser/server": [
+        "../../plugins/browser/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-browser/server/*": [
+        "../../plugins/browser/src/server/*"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../db/src/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server": [
+        "../machines/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server/*": [
+        "../../plugins/machines/src/server/*"
+      ],
+      "@penguinharness/plugin-machines/web": [
+        "../machines/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-messaging/server": [
+        "../../plugins/messaging/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-models/server": [
+        "../models/src/server/index.ts"
       ],
       "@penguinharness/plugin-plugins/server": [
         "./src/server/index.ts"
@@ -16,50 +46,56 @@
       "@penguinharness/plugin-plugins/web": [
         "./src/web/index.ts"
       ],
-      "@penguinharness/plugin-agents/server": [
-        "../agents/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-models/server": [
-        "../models/src/server/index.ts"
-      ],
       "@penguinharness/plugin-projects/server": [
         "../projects/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-terminal/server": [
-        "../terminal/src/server/index.ts"
-      ],
-      "@prismshadow/penguin-server/api": [
-        "../../packages/server/src/api/types.ts"
-      ],
-      "@prismshadow/penguin-server/internal": [
-        "../../packages/server/src/internal.ts"
-      ],
-      "@prismshadow/penguin-web/internal": [
-        "../../packages/web/src/internal.ts"
-      ],
-      "@penguinharness/plugin-machines/server": [
-        "../machines/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-machines/web": [
-        "../machines/src/web/index.ts"
-      ],
-      "@penguinharness/plugin-agents/web": [
-        "../agents/src/web/index.ts"
-      ],
-      "@penguinharness/plugin-settings/web": [
-        "../settings/src/web/index.ts"
-      ],
-      "@penguinharness/plugin-company/server": [
-        "../company/src/server/index.ts"
-      ],
-      "@prismshadow/penguin-server/ifaces.json": [
-        "../../packages/server/src/ifaces.json"
       ],
       "@penguinharness/plugin-sandbox/server": [
         "../../plugins/sandbox/src/server/index.ts"
       ],
-      "@penguinharness/plugin-db/server": [
-        "../db/src/index.ts"
+      "@penguinharness/plugin-schedules/server": [
+        "../../plugins/schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-settings/server": [
+        "../../plugins/settings/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-settings/web": [
+        "../settings/src/web/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server": [
+        "../terminal/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server/*": [
+        "../../plugins/terminal/src/server/*"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../../plugins/usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "../../packages/server/src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "../../packages/server/src/db/repos/organizations.ts"
+      ],
+      "@prismshadow/penguin-server/http/routes/messaging-accounts.js": [
+        "../../packages/server/src/http/routes/messaging-accounts.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../../packages/server/src/ifaces.json"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../../packages/server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/machines/*": [
+        "../../packages/server/src/machines/*"
+      ],
+      "@prismshadow/penguin-web/internal": [
+        "../../packages/web/src/internal.ts"
       ]
     }
   },

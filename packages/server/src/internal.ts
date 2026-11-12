@@ -86,6 +86,11 @@ export type {
   Users,
 } from "@penguinharness/plugin-settings/server";
 export * from "./services/task-attachments.js";
+export { sessionMessages, sessionTraceImage } from "./services/session-history.js";
+export { readableSession } from "./http/session-access.js";
+export { amspSessionStream } from "./amsp/session-stream.js";
+export { pendingApprovals } from "./amsp/approvals.js";
+export type { UserDraftsStore } from "./mechanisms/account-data.js";
 // The sessions face is a package.json dep, so the bundler keeps it external and a bare
 // `export *` from it contributes nothing statically knowable to this module's export
 // list — the desktop bundle then fails on the names plugins take from here (see the
@@ -132,6 +137,12 @@ export * from "./services/desktop-service.js";
 export * from "./http/routes/desktop.js";
 export * from "./http/routes/directory-skills.js";
 export * from "./services/protocol-detect.js";
+export * from "./model-catalog/catalog.js";
+export * from "./model-catalog/env-keys.js";
+export * from "./model-catalog/client-protocols.js";
+export * from "./model-catalog/seed.js";
+export * from "./services/project-config-migrations.js";
+export * from "./services/project-config-seed.js";
 export * from "./services/vision-detect.js";
 export * from "./services/platform-auth-types.js";
 export * from "./services/skill-import-limits.js";
@@ -152,9 +163,18 @@ export { parsePluginIndex, withoutIcon, BUILTIN_REGISTRY_SOURCE, builtinPluginRe
 export type { PluginRegistry, PluginDisplay, HttpRegistryOptions } from "./plugin/registry.js";
 export * from "./services/attachment-limits.js";
 export * from "./services/draft-shortcuts.js";
+export * from "./services/user-drafts.js";
+export * from "./services/account-settings.js";
+export type { MeRouteDeps } from "../../../plugins/settings/src/server/me.js";
+export type { BackgroundImageStore } from "./mechanisms/account-data.js";
 export * from "./services/keybindings.js";
 export * from "./services/memory-service.js";
 export * from "./services/plugin-library.js";
+export * from "./plugin/library-module.js";
+export * from "./services/tree-purge.js";
+export * from "./http/public-origin.js";
+export * from "./socket/ref.js";
+export * from "./socket/compression.js";
 export * from "./services/preview-token.js";
 export * from "./services/cli-shim.js";
 export * from "./http/routes/vault.js";
@@ -179,5 +199,8 @@ export * from "./services/archived-sessions-service.js";
 export * from "./runtime/goal-events.js";
 export * from "./services/session-deletion.js";
 export * from "./http/sse.js";
+export * from "./socket/stream-answer.js";
+export * from "./http/media-type.js";
+export * from "./services/zip-entries.js";
 export * from "../../../plugins/settings/src/server/auth/live-streams.js";
 export * from "./services/platform-auth-service.js";

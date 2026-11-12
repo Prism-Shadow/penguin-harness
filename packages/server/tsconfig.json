@@ -29,6 +29,12 @@
       "@penguinharness/plugin-machines/server/*": [
         "../../plugins/machines/src/server/*"
       ],
+      "@prismshadow/penguin-server/machines/*": [
+        "./src/machines/*"
+      ],
+      "@prismshadow/penguin-server/http/routes/messaging-accounts.js": [
+        "./src/http/routes/messaging-accounts.ts"
+      ],
       "@penguinharness/plugin-agents/server": [
         "../../plugins/agents/src/server/index.ts"
       ],

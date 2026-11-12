@@ -1,9 +1,26 @@
+import { Hono } from "hono";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import type {
+  ModelOAuthCodeResponse,
+  ModelOAuthMode,
+  ModelOAuthStartResponse,
+  ModelOAuthStatusResponse,
+} from "@prismshadow/penguin-server/api";
+import type { AppEnv, ServerConfig, SessionManager } from "@prismshadow/penguin-server/internal";
+import { publicOriginOf } from "@prismshadow/penguin-server/internal";
 
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
 import type { Access, ModelOAuth } from "@prismshadow/penguin-server/internal";
+
+/** The model-oauth route group's deps: the base's, over the models group's own. */
+export interface ModelOauthRouteDeps extends ModelsRouteDeps {
+  config: ServerConfig;
+  manager: SessionManager;
+  modelOAuth: ModelOAuth;
+  access: Access;
+}
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;

@@ -1,9 +1,25 @@
+import fs from "node:fs/promises";
+import { Hono } from "hono";
+import { agentDir } from "@prismshadow/penguin-core";
 import type { AgentImportResponse } from "@prismshadow/penguin-server/api";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, Snapshots } from "@prismshadow/penguin-server/internal";
 import type { Access } from "@prismshadow/penguin-server/internal";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server/workbenches/migrate.js";
+import { ensureWorkbenchLinkTarget } from "@penguinharness/plugin-workbenches/server/workbenches/migrate-state.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentTransferRouteDeps {
+  /** The data root, for the Agent's directory the workbench migration works in. */
+  root: string;
+  agentConfigService: AgentConfig;
+  access: Access;
+  snapshots: Snapshots;
+  workbenches: Pick<Workbenches, "whileReleased">;
+}
 
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */

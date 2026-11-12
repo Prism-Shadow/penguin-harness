@@ -1,6 +1,7 @@
-import { userAgent } from "@prismshadow/penguin-core";
-import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { APP_URL, userAgent } from "@prismshadow/penguin-core";
+import { providerInfo } from "@prismshadow/penguin-server/internal";
+import type { ModelProviderOAuth } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 
