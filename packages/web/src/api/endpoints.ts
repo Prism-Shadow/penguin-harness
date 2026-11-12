@@ -278,8 +278,8 @@ import type {
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta, apiUpload } from "./client";
 import { iconsOn } from "./machine-icons";
+import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
@@ -3015,6 +3015,84 @@ export const installPlugin = (
     method: "POST",
     body: machineId === null ? { specifier } : { specifier, machineId },
   });
+
+/** How a channel install reports its download as it arrives: bytes so far, the total when known. */
+export type InstallProgressListener = (received: number, total: number | null) => void;
+
+/**
+ * The same install as {@link installPlugin}, read as it arrives: the server answers a
+ * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
+ * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
+ * `error` event carries the status the JSON answer would have had, and is raised as an
+ * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ */
+export const installPluginStream = async (
+  projectId: string,
+  specifier: string,
+  machineId: string | null,
+  onProgress: InstallProgressListener,
+): Promise<InstalledPluginsResponse> => {
+  const response = await apiFetchStream(pluginsPath(projectId), {
+    method: "POST",
+    body: machineId === null ? { specifier } : { specifier, machineId },
+    headers: { accept: "text/event-stream" },
+  });
+  for await (const { event, data } of sseEvents(response)) {
+    if (event === "result") return JSON.parse(data) as InstalledPluginsResponse;
+    if (event === "download") {
+      const progress = JSON.parse(data) as { received: number; total: number | null };
+      onProgress(progress.received, progress.total);
+    } else if (event === "error") {
+      const failure = JSON.parse(data) as { status: number; code: string; message: string };
+      throw new ApiError(failure.status, failure.code, failure.message);
+    }
+    // `npm` marks the hand-off and carries nothing to read; anything unknown is skipped so a
+    // newer server can add events this page has not heard of.
+  }
+  throw new ApiError(0, "network_error", "the stream ended with no result.");
+};
+
+/**
+ * Reads a `text/event-stream` answer one event at a time: a blank line ends an event, whose
+ * `event:` names it and whose `data:` lines join with newlines into its payload. Text decodes
+ * incrementally, so a chunk split inside a multi-byte character still lands whole.
+ */
+async function* sseEvents(response: Response): AsyncGenerator<{ event: string; data: string }> {
+  const body = response.body;
+  if (!body) throw new ApiError(0, "network_error", "the answer carried no stream.");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (buffer.trim() !== "")
+          throw new ApiError(0, "network_error", "the stream ended mid-event.");
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf("\n\n");
+      while (cut !== -1) {
+        const lines = buffer.slice(0, cut).split("\n");
+        buffer = buffer.slice(cut + 2);
+        const event = lines
+          .find((line) => line.startsWith("event:"))
+          ?.slice("event:".length)
+          .trim();
+        if (event === undefined) continue; // a comment or a keep-alive with no event name
+        const data = lines
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice("data:".length).trim())
+          .join("\n");
+        yield { event, data };
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
  * machine's own table; the package leaves this server's disk once nothing asks it to run here.

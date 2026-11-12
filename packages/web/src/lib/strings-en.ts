@@ -3134,6 +3134,9 @@ export const en: Strings = {
     uninstall: "Remove",
     install: "Install",
     installing: "Installing…",
+    /** A channel install's download: the percent while the total is known, a pulse before that. */
+    downloading: (percent: number | null) =>
+      percent === null ? "Downloading…" : `Downloading ${percent}%`,
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
@@ -3497,6 +3500,9 @@ export const en: Strings = {
       count === 1
         ? "One plugin source is still loading. Its plugins will appear here when it answers."
         : `${count} plugin sources are still loading. Their plugins will appear here when they answer.`,
+    /** Shown while searching as sources are still loading: the empty result is not yet final. */
+    searchWhileDownloading:
+      "The plugin index is still downloading; results do not yet include plugins from sources that have not loaded. Try again shortly.",
     copySpecifier: "Copy specifier",
   },
 
