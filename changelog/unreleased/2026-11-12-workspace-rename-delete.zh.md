@@ -3,6 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#1542](https://github.com/Prism-Shadow/penguin-harness/pull/1542)
 
 [English](2026-11-12-workspace-rename-delete.md)
 
