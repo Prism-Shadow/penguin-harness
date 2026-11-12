@@ -1590,57 +1590,9 @@ export class ContextEngine {
               }
               if (signal?.aborted) continue;
             }
-            // The approval callback is injected externally (RunOptions.approve): any throw
-            // collapses to deny (conservative), so the exception never escapes the engine —
-            // otherwise it would propagate through session.run without building carry-over,
-            // leaving the already-committed tool_use unanswered. A hook decision skips the
-            // callback: deny refuses without asking, allow approves without asking (the
-            // Session already gave the command policy the last word on an allow).
-            let decision: ApprovalDecision;
-            if (hooked?.decision === "deny" || hooked?.decision === "allow") {
-              decision = hooked.decision;
-            } else {
-              try {
-                decision = await approve(tc);
-              } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-                decision = "deny";
-              }
-            }
-            if (signal?.aborted) continue;
-            // approve is a callback; context_engine emits its decision as an approval_decision
-            // AmspRecord: pushed to the stream for frontend rendering, and written to Trace.
-            const decisionMsg = approvalDecision(decision, toolCallId);
-            queue.push(decisionMsg);
-            await this.write(decisionMsg);
-            if (decision !== "allow") {
-              // Denied: feed back an aborted output immediately, so the already-committed
-              // tool_use never dangles. One fixed line either way — the wording names the
-              // decider ("forbidden" is the command policy's answer, via the Session
-              // wrapper; a hook deny names the hook and carries its reason), and the
-              // approval_decision event above carries the decision itself.
-              const denied = toolCallOutput({
-                output:
-                  hooked?.decision === "deny"
-                    ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
-                    : decision === "forbidden"
-                      ? "Tool call denied by policy."
-                      : "Tool call denied by user.",
-                toolCallId,
-                status: "aborted",
-              });
-              queue.push(denied);
-              await this.write(denied);
-              toolOutputs.push(denied);
-              continue;
-            }
-            // Approved: run concurrently, without blocking further consumption of the LLM
-            // stream or approval of the next tool.
-            queue.addProducer();
-            void this.executeOne(tc, queue, toolOutputs, signal, approve).finally(() => {
-              queue.removeProducer();
-            });
+            // Approved calls run concurrently, without blocking further consumption of the
+            // LLM stream or approval of the next tool.
+            await this.decideAndRun(tc, queue, toolOutputs, approve, signal, hooked);
           }
         }
       } finally {
@@ -1659,21 +1611,68 @@ export class ContextEngine {
     await drive;
 
     // Feed into the next turn: reordered to the original tool_call order (each tool_call has
-    // exactly one output, see the executeOne invariant).
-    const byId = new Map<string, AmspRecord>();
-    for (const out of toolOutputs) {
-      const id = (out.payload as { tool_call_id?: string }).tool_call_id;
-      if (id !== undefined) byId.set(id, out);
-    }
-    const orderedOutputs: AmspRecord[] = [];
-    const seen = new Set<string>();
-    for (const id of callOrder) {
-      if (seen.has(id)) continue; // Dedupe: feed back exactly one output per tool_call_id, to preserve pairing
-      seen.add(id);
-      const out = byId.get(id);
-      if (out) orderedOutputs.push(out);
-    }
+    // exactly one output, see the executeOne invariant), one per tool_call_id to keep pairing.
+    const orderedOutputs = outputsByCall(callOrder, toolOutputs).filter(
+      (out): out is AmspRecord => out !== undefined,
+    );
     return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, receivedContent, outcome };
+  }
+
+  /**
+   * One call through the approval boundary, for a turn and a compaction round alike: the
+   * decision — the pre-tool-use hook's when it gave one (deny refuses without asking, allow
+   * approves without asking: the Session already gave the command policy the last word on an
+   * allow), else the approval callback's, any throw of which collapses to deny so it never
+   * escapes the engine and leaves a committed tool_use unanswered — recorded as an
+   * `approval_decision` on the stream and in the Trace. A denied call gets an aborted output at
+   * once, one fixed line naming the decider ("forbidden" is the command policy's answer; a hook
+   * deny names the hook and its reason); an allowed one runs through `executeOne`
+   * concurrently. Nothing is recorded once `signal` fired during the decision.
+   */
+  private async decideAndRun(
+    tc: AmspRecord<ToolCallPayload>,
+    queue: MergeQueue,
+    outputs: AmspRecord[],
+    approve: ApproveFn,
+    signal: AbortSignal | undefined,
+    hooked: PreToolUseOutcome | null = null,
+  ): Promise<void> {
+    const toolCallId = tc.payload.tool_call_id;
+    let decision: ApprovalDecision;
+    if (hooked?.decision === "deny" || hooked?.decision === "allow") {
+      decision = hooked.decision;
+    } else {
+      try {
+        decision = await approve(tc);
+      } catch (err) {
+        process.stderr.write(`[penguin] approve callback threw: ${messageOf(err)}; denying.\n`);
+        decision = "deny";
+      }
+    }
+    if (signal?.aborted) return;
+    const decisionMsg = approvalDecision(decision, toolCallId);
+    queue.push(decisionMsg);
+    await this.write(decisionMsg);
+    if (decision === "allow") {
+      queue.addProducer();
+      void this.executeOne(tc, queue, outputs, signal, approve).finally(() => {
+        queue.removeProducer();
+      });
+      return;
+    }
+    const denied = toolCallOutput({
+      output:
+        hooked?.decision === "deny"
+          ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
+          : decision === "forbidden"
+            ? "Tool call denied by policy."
+            : "Tool call denied by user.",
+      toolCallId,
+      status: "aborted",
+    });
+    queue.push(denied);
+    await this.write(denied);
+    outputs.push(denied);
   }
 
   /**
@@ -2131,62 +2130,28 @@ export class ContextEngine {
     signal?: AbortSignal,
   ): AsyncGenerator<AmspRecord, SpanCall[]> {
     // One output per tool_call_id (a provider reusing an id is answered once, as in runTurn).
-    const calls: AmspRecord<ToolCallPayload>[] = [];
-    const seen = new Set<string>();
-    for (const tc of toolCalls) {
-      if (seen.has(tc.payload.tool_call_id)) continue;
-      seen.add(tc.payload.tool_call_id);
-      calls.push(tc);
-    }
+    const ids = toolCalls.map((tc) => tc.payload.tool_call_id);
+    const calls = toolCalls.filter((tc, i) => ids.indexOf(tc.payload.tool_call_id) === i);
     const queue = new MergeQueue();
     const outputs: AmspRecord[] = [];
-    const answer = async (out: AmspRecord): Promise<void> => {
-      queue.push(out);
-      await this.write(out);
-      outputs.push(out);
-    };
     queue.addProducer();
     const drive = (async () => {
       try {
         for (const tc of calls) {
           if (signal?.aborted) break;
-          const toolCallId = tc.payload.tool_call_id;
           const refusal = compactionRefusal(tc, gate);
-          if (refusal !== null) {
-            await answer(
-              toolCallOutput({ output: `[tool error] ${refusal}`, toolCallId, status: "fatal" }),
-            );
+          if (refusal === null) {
+            await this.decideAndRun(tc, queue, outputs, approve, signal);
             continue;
           }
-          let decision: ApprovalDecision;
-          try {
-            decision = await approve(tc);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-            decision = "deny";
-          }
-          if (signal?.aborted) break;
-          const decisionMsg = approvalDecision(decision, toolCallId);
-          queue.push(decisionMsg);
-          await this.write(decisionMsg);
-          if (decision !== "allow") {
-            await answer(
-              toolCallOutput({
-                output:
-                  decision === "forbidden"
-                    ? "Tool call denied by policy."
-                    : "Tool call denied by user.",
-                toolCallId,
-                status: "aborted",
-              }),
-            );
-            continue;
-          }
-          queue.addProducer();
-          void this.executeOne(tc, queue, outputs, signal, approve).finally(() => {
-            queue.removeProducer();
+          const out = toolCallOutput({
+            output: `[tool error] ${refusal}`,
+            toolCallId: tc.payload.tool_call_id,
+            status: "fatal",
           });
+          queue.push(out);
+          await this.write(out);
+          outputs.push(out);
         }
       } finally {
         queue.removeProducer();
@@ -2198,14 +2163,10 @@ export class ContextEngine {
       yield msg;
     }
     await drive;
-    const byId = new Map<string, AmspRecord>();
-    for (const out of outputs) {
-      const id = (out.payload as { tool_call_id?: string }).tool_call_id;
-      if (id !== undefined) byId.set(id, out);
-    }
+    const found = outputsByCall(ids, outputs);
     const answered: SpanCall[] = [];
-    for (const tc of calls) {
-      let out = byId.get(tc.payload.tool_call_id);
+    for (const [i, tc] of calls.entries()) {
+      let out = found[i];
       if (!out) {
         out = toolCallOutput({
           output: "[interrupted: tool aborted by user]",
@@ -2698,6 +2659,22 @@ function compactionRefusal(
   } catch (err) {
     return messageOf(err);
   }
+}
+
+/**
+ * The output answering each call, in call order and once per tool_call_id (a provider reusing
+ * an id is answered once); undefined for a call that has none.
+ */
+function outputsByCall(
+  ids: readonly string[],
+  outputs: readonly AmspRecord[],
+): (AmspRecord | undefined)[] {
+  const byId = new Map<string, AmspRecord>();
+  for (const out of outputs) {
+    const id = (out.payload as { tool_call_id?: string }).tool_call_id;
+    if (id !== undefined) byId.set(id, out);
+  }
+  return [...new Set(ids)].map((id) => byId.get(id));
 }
 
 /**
