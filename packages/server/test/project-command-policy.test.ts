@@ -2,14 +2,13 @@
  * A Project's sandbox command policy (GET|PUT /api/projects/:p/command-policy, the
  * `[command_policy]` block of .project_config.toml).
  *
- * - A new Project is seeded with the factory rules; one from before seeding (no stored block)
- *   still serves them as the effective set.
+ * - A new Project is seeded with the factory rules, every one of which asks; one from before
+ *   seeding (no stored block) still serves them as the effective set, asking too.
  * - Any member reads; only the owner writes, and a non-member cannot tell the Project exists.
  * - The rules are plain data: edit, disable, delete and add all round-trip, as do an empty
  *   list and a disabled policy, and a PUT materializes the full list.
- * - A rule's action round-trips: the seeded `ask` rules are served as `ask`, an `ask` rule is
- *   stored as `action = "ask"`, and a `deny` rule — the default — is stored and served
- *   without one.
+ * - A rule's action round-trips: an `ask` rule is stored as `action = "ask"`, and a `deny`
+ *   rule — what a rule without an action does — is stored and served without one.
  * - An uncompilable pattern is refused by its rule's name, its index and the engine's reason,
  *   never by the pattern's own text; malformed bodies are refused.
  * - A stored rule this engine cannot compile (matching skips it) is served with the engine's
@@ -63,7 +62,7 @@ describe("project command policy", () => {
     ).toBe(201);
   });
 
-  it("a new project is seeded with the factory rules; any member reads; a non-member gets 404", async () => {
+  it("a new project is seeded with the factory rules, all asking; any member reads; a non-member gets 404", async () => {
     // Seeded at creation, model-presets style: the file itself carries the block.
     const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(toml).toContain("[[command_policy.rules]]");
@@ -74,6 +73,8 @@ describe("project command policy", () => {
     expect(dto.enabled).toBe(true);
     expect(dto.rules.map((r) => r.name)).toContain("rm-recursive-force");
     expect(dto.rules.every((r) => r.enabled)).toBe(true);
+    // A hit on any of them waits for a person; none refuses on its own.
+    expect(dto.rules.every((r) => r.action === "ask")).toBe(true);
     expect(dto.defaultRules).toEqual(dto.rules);
     expect((await outsider.get(url)).status).toBe(404);
   });
@@ -91,6 +92,7 @@ describe("project command policy", () => {
     const dto = (await (await owner.get(url)).json()) as CommandPolicyDto;
     expect(dto.enabled).toBe(true);
     expect(dto.rules.map((r) => r.name)).toContain("rm-recursive-force");
+    expect(dto.rules.every((r) => r.action === "ask")).toBe(true);
   });
 
   it("rules are editable data: edit, disable, delete and add all round-trip", async () => {
@@ -124,10 +126,6 @@ describe("project command policy", () => {
   });
 
   it("a rule's action round-trips, stored only when it asks", async () => {
-    const seeded = (await (await owner.get(url)).json()) as CommandPolicyDto;
-    expect(seeded.rules.find((r) => r.name === "gh-pr-merge-close")?.action).toBe("ask");
-    expect(seeded.rules.find((r) => r.name === "rm-recursive-force")?.action).toBeUndefined();
-
     const rules = [
       { name: "ask-deploy", pattern: "\\bfly deploy\\b", enabled: true, action: "ask" as const },
       { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true, action: "deny" as const },

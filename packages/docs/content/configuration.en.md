@@ -242,6 +242,7 @@ enabled = true
 name = "rm-recursive-force"
 pattern = "…" # seeded from the factory set
 description = "rm with recursive + force flags in one command (rm -rf and friends)"
+action = "ask"
 
 [[command_policy.rules]]
 name = "gh-pr-merge-close"
@@ -273,9 +274,9 @@ Manage the policy on the **Security policy** tab of **Project settings** in the 
 
 The rules are **plain data with no special tiers**. The factory set is seeded into each new Project exactly like the model presets: copied in at creation and never rewritten afterward. Every rule can then be edited, disabled or deleted, and you can add your own. A Project created before the seeding (no stored `rules` list) behaves as the factory set until its first saved edit writes the list. On the settings page, **Restore defaults** loads the factory set back into the editor, and saving writes it.
 
-Because seeded rules are never rewritten, a factory rule added in a later release does not reach a Project that already stores its list. The five `ask` rules below are such rules: an existing Project adopts them with **Restore defaults**, which replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the factory set and has them already.
+Because seeded rules are never rewritten, a change to the factory set in a later release does not reach a Project that already stores its list. A Project whose stored list came from an earlier factory set keeps it as stored, `deny` rules included, until **Restore defaults** replaces the whole list (custom rules included) once you save. A Project that never saved its list reads as the current factory set.
 
-The factory set is deliberately small. Its `deny` rules cover commands whose verbatim execution is destructive with no undo:
+The factory set is deliberately small, and every rule in it asks: a hit waits for a person's go-ahead, whatever the approval mode, instead of being refused. To refuse a command outright, switch its rule to **Deny** on the settings page. A host whose approval callback ignores the policy reason, such as an SDK callback that answers by mode alone, decides these hits like any other call; the server puts them to a person. The first rules cover commands whose verbatim execution is destructive with no undo:
 
 - `rm` with both a recursive and a force flag
 - `mkfs`
@@ -290,7 +291,7 @@ Four more rules cover the same ground in Windows spellings, since `exec_command`
 - a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`)
 - the cmd fork bomb
 
-Five `ask` rules follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done, so it waits for a go-ahead instead of being refused:
+Five more follow them. Each covers a command that acts beyond this machine and is hard to take back, but is also routine work a person may well want done:
 
 | Rule | Matches |
 | --- | --- |
@@ -322,7 +323,7 @@ The command policy is an **accident guardrail, not a security boundary**. This i
 - **Commands not on the list are not covered.** `shred`, `wipefs`, `find -delete`, `git clean -xfd` and `chmod -R 000 /` match no factory rule. Add your own rules for what your Project cares about.
 - **It is not a filesystem permission.** A tool that writes arbitrary paths can still rewrite the config file itself, and the change takes effect at the next rotation.
 
-What the policy does buy: a destructive one-liner does not run by accident, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
+What the policy does buy: a destructive one-liner does not run without a person's go-ahead, through either tool that reaches a shell, in POSIX or Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary, a process that cannot reach the rest of the filesystem whatever it runs, the mechanism is confinement (bubblewrap, dsh), a separate layer this policy complements rather than replaces.
 
 ## Agent config
 

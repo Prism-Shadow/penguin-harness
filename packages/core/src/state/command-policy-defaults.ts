@@ -5,13 +5,17 @@
  * reads the same constant as its "absent = factory set" fallback. Data only, no
  * matching — so nothing here can drag the tool chain into the state module.
  *
- * Kept deliberately small. The `deny` entries are commands whose verbatim execution is
- * destructive with no undo, so a false negative is worse than the occasional false
- * positive. The `ask` entries after them are the commonest commands that act beyond this
- * machine and are hard to take back (merging a pull request, publishing, a force-push):
- * they are put to a person rather than refused, so a false positive costs one click. Each
- * pattern assumes the command has been whitespace-normalized (runs collapsed to single
- * spaces) and never crosses a `;`, `|` or `&` separator.
+ * Kept deliberately small, and every entry asks: a hit is put to a person, whatever the
+ * approval mode, rather than refused. The first entries are commands whose verbatim
+ * execution is destructive with no undo; the last are the commonest commands that act beyond
+ * this machine and are hard to take back (merging a pull request, publishing, a force-push).
+ * Asking keeps the person who can tell a mistake from an intended wipe in the loop, and a
+ * false positive costs one click. A Project that wants a rule to refuse outright switches it
+ * to `deny` on its security page; the stored list is the Project's own. A host whose approval
+ * callback ignores the policy reason decides a hit like any other call (see `ApproveFn`), so an
+ * SDK embedder that answers by mode alone gets no guard from these rules. Each pattern assumes
+ * the command has been whitespace-normalized (runs collapsed to single spaces) and never
+ * crosses a `;`, `|` or `&` separator.
  *
  * Every pattern sticks to syntax that every runtime the server ships on, and every browser
  * the settings page checks a pattern in, compiles: no inline modifier groups (`(?i:…)`, ES2025),
@@ -93,6 +97,7 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // `--red-flag` doesn't.
     pattern: `${CMD_START}rm(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*[fF][a-zA-Z]*|-force)(?:\\s|$))`,
     description: "rm with recursive + force flags in one command (rm -rf and friends)",
+    action: "ask",
   },
   {
     name: "mkfs",
@@ -101,12 +106,14 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // file merely named `mkfs.sh` — a false positive the guardrail accepts.
     pattern: `${CMD_START}mkfs(?:\\.[a-zA-Z0-9]+)?(?![a-zA-Z0-9])`,
     description: "mkfs — formatting a filesystem destroys it wholesale",
+    action: "ask",
   },
   {
     name: "dd-to-block-device",
     // `dd` writing straight to a block device. `of=/dev/null` stays legal (see BLOCK_DEVICES).
     pattern: `${CMD_START}dd\\s[^;&|]*\\bof=${QUOTE}/dev/${BLOCK_DEVICES}`,
     description: "dd writing directly to a block device (of=/dev/null stays allowed)",
+    action: "ask",
   },
   {
     name: "fork-bomb",
@@ -114,12 +121,14 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // whitespace inside the function definition, so every token boundary takes `\s*`.
     pattern: ":\\s*\\(\\s*\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:",
     description: "the classic fork bomb — exhausts the process table in seconds",
+    action: "ask",
   },
   {
     name: "overwrite-block-device",
     // Shell redirection onto a block device (`> /dev/sda`); `/dev/null` etc. stay legal.
     pattern: `>\\s*${QUOTE}/dev/${BLOCK_DEVICES}`,
     description: "shell redirection onto a block device (/dev/null stays allowed)",
+    action: "ask",
   },
   // The four below are the Windows counterparts of the five above — no new command classes,
   // just the same destruction spelled for pwsh and cmd, which `shell.ts` will happily resolve.
@@ -134,6 +143,7 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
       `${CMD_START}${ci("remove-item")}(?![a-zA-Z0-9])(?=(?:\\s[^;&|]*)?\\s-(?:${ci("rec")}[a-zA-Z]*|${ci("r")})(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-${ci("force", "f")}(?:\\s|$))` +
       `|${CMD_START}${ci("rmdir", "rd", "del", "erase")}(?![a-zA-Z0-9])(?=[^;&|]*/${ci("s")}(?![a-zA-Z]))(?=[^;&|]*/${ci("q")}(?![a-zA-Z]))`,
     description: "Windows recursive force delete (Remove-Item -Recurse -Force, rd /s /q)",
+    action: "ask",
   },
   {
     name: "windows-format-volume",
@@ -143,24 +153,26 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
       `${CMD_START}${ci("format")}(?![a-zA-Z0-9-])(?=[^;&|]*\\s[a-zA-Z]:(?![a-zA-Z0-9]))` +
       `|${CMD_START}${ci("format-volume")}(?![a-zA-Z0-9])`,
     description: "Windows volume format (format C:, Format-Volume) — destroys it wholesale",
+    action: "ask",
   },
   {
     name: "windows-disk-overwrite",
     // A raw write to the physical disk device, and the cmdlet that wipes one.
     pattern: `${WINDOWS_RAW_DISK}|${CMD_START}${ci("clear-disk")}(?![a-zA-Z0-9])`,
     description: "Windows raw disk overwrite (\\\\.\\PhysicalDriveN, Clear-Disk)",
+    action: "ask",
   },
   {
     name: "windows-fork-bomb",
     // The cmd batch fork bomb: a script that pipes itself into itself.
     pattern: "%0\\s*\\|\\s*%0",
     description: "the cmd fork bomb (%0|%0) — exhausts the process table in seconds",
+    action: "ask",
   },
-  // The five below ask instead of refusing: each acts beyond this machine and is hard to take
-  // back, but is also routine work a person may well want done. A `deny` hit outranks them
-  // wherever they sit (see internal/command-policy.ts). Text matching only: the same action
-  // through an alias, a script or an API call walks past, and the go-ahead rule in the default
-  // prompt's # Tool use covers what they cannot see.
+  // The five below act beyond this machine and are hard to take back, but are also routine work
+  // a person may well want done. Text matching only: the same action through an alias, a
+  // script or an API call walks past, and the go-ahead rule in the default prompt's # Tool use
+  // covers what they cannot see.
   {
     name: "gh-pr-merge-close",
     pattern: `${CMD_START}gh\\s+pr\\s+(?:merge|close)(?![a-zA-Z0-9-])`,

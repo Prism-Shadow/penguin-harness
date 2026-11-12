@@ -13,7 +13,7 @@
  *
  * A `deny` hit outranks an `ask` hit wherever the two sit in the list: the settings page puts a
  * new rule at the head of the list and offers no reordering, so letting list order decide
- * between the two would let an added `ask` rule turn a factory refusal into a question.
+ * between the two would let an added `ask` rule turn a refusal into a question.
  * Within one action the first match in list order is the rule a decision names.
  *
  * A child Session wraps the callback it was forwarded the same way, and that callback is the
