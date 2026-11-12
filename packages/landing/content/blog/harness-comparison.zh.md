@@ -125,7 +125,7 @@ API 费用、运行时间与 Token 用量则先按单次 50 道题累加，再�
 
 <figure class="post-figure"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-01-overall-bars-zh.png" width="2880" height="956" alt="图 4 四个 Harness 的总体得分" /><figcaption>图 4 四个 Harness 的总体得分</figcaption></figure>
 
-从三次总体均分来看，DSH 与 PenguinHarness 明显领先于 Pi 和 Codex，并且在 150 次测试中 DSH 与 PenguinHarness 分别通过 58 次和 57 次。；Pi 与 Codex 分别通过 51 次和 45 次。仅看总体均分，前两名十分接近；下面进一步从五个任务子集、单题通过频次、同分测试的题目分布以及资源开销四个方面展开分析。
+从三次总体均分来看，DSH 与 PenguinHarness 明显领先于 Pi 和 Codex，并且在 150 次测试中 DSH 与 PenguinHarness 分别通过 58 次和 57 次；Pi 与 Codex 分别通过 51 次和 45 次。仅看总体均分，前两名十分接近；下面进一步从五个任务子集、单题通过频次、同分测试的题目分布以及资源开销四个方面展开分析。
 
 ### 5.1 五个子集的得分对比
 
