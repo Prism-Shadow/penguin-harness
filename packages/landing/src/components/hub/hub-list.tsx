@@ -1,7 +1,7 @@
 /**
  * The list page the Plugins, Benchmarks and Leaderboards pages share: a title, a line saying what
- * the list is and the source it is read from and, beside them, the search box and the order; facets (a side column from
- * 1024 px, rows above the list below it) and the cards. The query, the facets and the order live
+ * the list is and the source it is read from and, beside them, the search box and the order;
+ * facets (a side column from 1024 px, rows above the list below it) and the cards. The query, the facets and the order live
  * in the URL, so a filtered list can be linked and Back restores it; the scroll is noted on every
  * click inside the page, so Back returns to it too (lib/hub/back.ts).
  */
