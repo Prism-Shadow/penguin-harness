@@ -608,11 +608,11 @@ describe("StreamRenderer", () => {
     );
   });
 
-  it("a completion without a full summary says so on its completion line, by whether a cut-off summary was kept; nothing from inside the span prints", () => {
+  it("a completion without a full summary says so on its completion line, and what to correct when the provider refused it; nothing from inside the span prints", () => {
     const cut = `[summary]\n## Request\n${"Fix the three broken links in the release-notes draft. ".repeat(9)}`;
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    // Cut at the output limit, then an empty reply: the cut summary is what was kept.
+    // Cut at the output limit, then an empty reply: no full summary, for a reason of its own.
     r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
     r.handle(requestBegin());
     r.handle(partialText("start"));
@@ -631,7 +631,7 @@ describe("StreamRenderer", () => {
         errorMessage: "the response contained no usable summary",
       }),
     );
-    // Refused outright with only a short draft before it: the next context opens with the hand-off note.
+    // Refused outright after a short draft: too little room was left under the model's window.
     r.handle(compactionBegin({ reason: "manual", mode: "summarize", context: 150, turns: 3 }));
     r.handle(requestBegin());
     r.handle(assistantText("[summary]\n## Request\nFix the li"));
@@ -651,9 +651,62 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe(
       [
         "[compaction] summarizing context (context)…",
-        "[compaction] done; continuing with the summarized context (summary cut off)",
+        "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — the response contained no usable summary)",
         "[compaction] summarizing context (manual)…",
-        "[compaction] done; continuing with the summarized context (no summary: Trace hand-off — 400 Bad Request)",
+        "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — 400 Bad Request; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  /** An ordinary request the provider refuses as sent, answered by a hand-off: no compaction request is made. */
+  const refusedHandOff = (status: "completed" | "fatal") => [
+    requestBegin(),
+    requestEnd("retryable", {
+      errorCode: "rejected",
+      errorMessage: "400 prompt is too long",
+      attempt: 1,
+      retryInMs: 0,
+    }),
+    compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }),
+    compactionEnd({
+      reason: "context",
+      mode: "summarize",
+      status,
+      ...(status === "completed"
+        ? { errorCode: "rejected" as const, errorMessage: "400 prompt is too long" }
+        : { errorMessage: "no model client could be built" }),
+    }),
+  ];
+
+  it("a request the provider refused hands the context off: no error line, the completion line says what to correct, and the resend's retry line prints as it goes out", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("completed")) r.handle(msg);
+    r.handle(requestBegin());
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "back to the task"));
+    r.handle(partialText("stop"));
+    r.handle(requestEnd("completed"));
+    const out = stripAnsi(text());
+    expect(out).not.toContain("[error]");
+    expect(out.split("\n").slice(0, 3)).toEqual([
+      "[compaction] summarizing context (context)…",
+      "[compaction] done; continuing with the summarized context (no full summary: what was written of it, or a Trace hand-off — 400 prompt is too long; too little room was left for compaction: correct the model's context_window or lower compaction.max_context_length)",
+      "[retry] the model provider rejected the request; sending retry #1…",
+    ]);
+    expect(out).toContain("back to the task");
+  });
+
+  it("a refusal whose hand-off could not open the next context announces no resend on the next run", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    for (const msg of refusedHandOff("fatal")) r.handle(msg);
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).toBe(
+      [
+        "[compaction] summarizing context (context)…",
+        "[compaction] failed (no model client could be built); the next context could not be opened; keeping the current context",
         "",
       ].join("\n"),
     );

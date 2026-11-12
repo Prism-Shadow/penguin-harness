@@ -173,9 +173,9 @@ import {
 } from "./input-history";
 
 import { isStopAction, midRunAction } from "./composer-send";
+import { composerNotice } from "./composer-notice";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
-import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { isLongPaste, longPasteFileName } from "../../lib/long-paste";
 import { splitBySize } from "../../lib/upload-limits";
@@ -558,15 +558,15 @@ export interface ComposerControl {
 }
 
 /**
- * Small-window notices already put down, keyed Session + model, for the rest of the tab session.
+ * Attention notices already put down, for the rest of the tab session (keys: `composerNotice`).
  *
- * Module state rather than storage: the notice reports a live mismatch between two settings, so
- * a dismissal should not outlive the tab that saw it — reopening the app after changing either
- * side deserves a fresh answer. Keyed by model as well as Session because switching the
- * conversation onto another model is exactly the case where the mismatch may no longer hold, or
- * may hold with different numbers.
+ * Module state rather than storage: a notice reports a live mismatch between settings, so a
+ * dismissal should not outlive the tab that saw it — reopening the app after changing either
+ * side deserves a fresh answer. The small-window notice is keyed by model as well as Session
+ * because switching the conversation onto another model is exactly the case where the mismatch
+ * may no longer hold, or may hold with different numbers.
  */
-const dismissedWindowNotices = new Set<string>();
+const dismissedNotices = new Set<string>();
 
 export function ChatInput({
   status,
@@ -599,6 +599,7 @@ export function ChatInput({
   compactionLimit,
   onChangeCompactionLimit,
   onOpenAgentSettings,
+  refusalHandoff,
   contextNow,
   contextStale = false,
   sessionId,
@@ -777,8 +778,14 @@ export function ChatInput({
   compactionLimit?: number;
   /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
-  /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
+  /**
+   * The occurrence id of the Session's latest compaction when the provider's refusal of a
+   * request forced it (`refusalHandoffOccurrence`), else null: raises the attention notice that
+   * asks for the model's window or the threshold to be corrected. Absent off session state.
+   */
+  refusalHandoff?: string | null;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -1129,26 +1136,21 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
-  // The model cannot hold what the Agent is configured to compact at. Raised only in session
-  // state, where a Session id gives the dismissal a key and `/compact` is available to act on
-  // the advice; the draft composer has neither.
-  const windowNoticeKey =
-    sessionId !== undefined && modelRef
-      ? `${sessionId}\u0000${modelRef.provider}\u0000${modelRef.modelId}`
-      : null;
-  const [windowNoticeDismissed, setWindowNoticeDismissed] = useState(false);
-  // Re-read on every key change (a `/model` fork, a new Session) so a dismissal that belongs to
-  // another pairing never suppresses this one, and one that belongs to this pairing survives a
-  // trip away and back.
-  useEffect(() => {
-    setWindowNoticeDismissed(
-      windowNoticeKey !== null && dismissedWindowNotices.has(windowNoticeKey),
-    );
-  }, [windowNoticeKey]);
-  const windowNoticeOpen =
-    windowNoticeKey !== null &&
-    !windowNoticeDismissed &&
-    modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+  // The attention slot above the input: a refused request's hand-off, else the model being
+  // unable to hold what the Agent is configured to compact at. Raised only in session state,
+  // where a Session id gives the dismissal a key; the draft composer has none. Read from the
+  // module set at every render, so a dismissal that belongs to another Session or model never
+  // suppresses this one, and one that belongs to this pairing survives a trip away and back;
+  // a dismissal bumps the counter to render again.
+  const [, setDismissals] = useState(0);
+  const attention = composerNotice({
+    sessionId,
+    model: modelRef,
+    refusalHandoff,
+    contextWindow,
+    compactionLimit,
+    dismissed: dismissedNotices,
+  });
   // The Agent the threshold confirmation is about to name. Its display name where it has one,
   // else the id, which is the same fallback the `/agent` picker draws rows with.
   const currentAgent = agents.find((a) => a.agentId === currentAgentId);
@@ -2238,13 +2240,16 @@ export function ChatInput({
         </SlashPicker>
       )}
 
-      {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
-          at the window's edge instead of at the number the user set. Amber rather than muted
-          body text like the notices below it: the other two describe what the composer is about
-          to do, this one asks for a settings change, and `attention` is the tone for a thing
-          waiting on the user. Dismissible, because keeping the threshold high on purpose is a
-          legitimate answer and a notice with no way down stops being read. */}
-      {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+      {/* A setting needs changing: the provider refused a request and the conversation went on
+          from a hand-off note (the model's window is set larger than the real one, or the
+          threshold sits too close to it), or the Agent's compaction threshold is above what
+          this model can hold, so compaction fires at the window's edge instead of at the number
+          the user set. Amber rather than muted body text like the notices below it: the other
+          two describe what the composer is about to do, this one asks for a settings change,
+          and `attention` is the tone for a thing waiting on the user. Dismissible, because
+          keeping a setting on purpose is a legitimate answer and a notice with no way down
+          stops being read. */}
+      {attention !== null && (
         // The shared notice: its buttons keep their labels whole, so where the sentence would
         // be left a few characters a line beside them (a phone at a large text size), they
         // drop to a row of their own instead.
@@ -2254,8 +2259,8 @@ export function ChatInput({
           dismiss={{
             label: S.chat.contextWindowUnderThresholdDismiss,
             onClick: () => {
-              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-              setWindowNoticeDismissed(true);
+              dismissedNotices.add(attention.key);
+              setDismissals((n) => n + 1);
             },
           }}
           {...(onOpenAgentSettings
@@ -2267,10 +2272,12 @@ export function ChatInput({
               }
             : {})}
         >
-          {S.chat.contextWindowUnderThreshold(
-            humanizeTokens(contextWindow),
-            humanizeTokens(compactionLimit),
-          )}
+          {attention.kind === "refused"
+            ? S.chat.contextRefusedHandoff
+            : S.chat.contextWindowUnderThreshold(
+                humanizeTokens(attention.window),
+                humanizeTokens(attention.threshold),
+              )}
         </Notice>
       )}
 

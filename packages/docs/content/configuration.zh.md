@@ -344,7 +344,7 @@ enabled = false
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值 |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
-| `compaction.max_rounds` | `3` | harness 允许 summarize 压缩在给出摘要之前使用的工具轮数 |
+| `compaction.max_rounds` | `8` | summarize 压缩在给出摘要之前，harness 至多执行的工具轮数 |
 | `compaction.prompt` | 内置模板 | summarize 模式压缩使用的提示词 |
 | `memory.enabled` | `true` | 记忆是否进入上下文，以及是否准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 块中始终注入的那一半；包含 `{{USER_MEMORY_INDEX}}` |
@@ -367,10 +367,10 @@ enabled = false
 - `model.max_tokens`：`-1` 表示不设上限（使用供应商默认值）。每次请求都会把实际生效值限制在「模型 `context_window` − 估算输入」以内，因此不会向窗口小的模型要求放不下的输出量。
 - `model.thinking_level`：可选 `none` / `low` / `medium` / `high` / `xhigh` / `max`。思考等级在一个模型上下文内固定，修改要等下一次压缩才生效。没有此字段时，采用 Project `[default_chat]` 中的 `thinking_level`；若仍未设置，则为 `medium`。
 - `model.timeoutMs`：等待下一个上游事件的最长时长，每收到一个事件就重新计时。它限制的不是请求总时长，而是两段等待：从建立连接到收到第一个事件，以及事件之间的空档。有的模型在思考阶段不向网络输出任何内容，整个思考期都落在第一段空档里；有的中转站会在上游消费掉思考内容，直到开始作答才发出数据，经由它访问的模型也是如此。默认值已为这两种情况留出余量。
-- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 预留」中较小的一个。预留为窗口的八分之一，至少 8192、至多 32768 Token，为压缩自己的请求和摘要留出空间。因此窗口小的模型会在自己的窗口内触发压缩（32k 窗口在 24,576 处，200k 窗口在 175,000 处）；窗口不小于 288,768 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理，即 112,000。
+- `compaction.max_context_length`：实际阈值取此值与「模型 `context_window` − 预留」中较小的一个。预留为窗口的八分之一，至少 8192、至多 32768 Token，为压缩自己的请求和摘要留出空间。因此窗口小的模型会在自己的窗口内触发压缩（32k 窗口在 24,576 处，200k 窗口在 175,000 处）；窗口不小于 288,768 的模型则按此数值触发。没有 `context_window` 的模型条目按 128000 窗口处理，即 112,000。设为 `0` 或更小会关闭这一触发方式；请求被供应商拒绝时，上下文仍会交接（见[供应商拒绝请求时](#供应商拒绝请求时)）。
 - `compaction.max_session_turns`：`-1` 表示不限制。
-- `compaction.max_rounds`：工具轮由 harness 计数，而不是由模型计数。每轮的结果会写明还剩几轮；没有剩余轮次，或上下文已达 `context_window` − 12288 时，所有工具调用一律拒绝；`0` 或更小时所有工具调用都被拒绝，模型只给出摘要。工具轮中模型只能读文件，以及在本 Session 的 scratchpad 里写交接文件，摘要与它的写入也可以放在同一个回复里。每轮按缓存读价重读已缓存的上下文，250k 的上下文走三轮，每次压缩约多出 0.75 M 缓存读 Token。见[上下文压缩](/agent-loop#交接文件摘要之前的工具轮)。
-- `compaction.prompt`：读取这一节时替换 `{{SCRATCHPAD_DIR}}`（本 Session scratchpad 的绝对路径）与 `{{MAX_ROUNDS}}`。
+- `compaction.max_rounds`：这是上限，不是计划。工具轮由 harness 计数，而不是由模型计数；压缩 Prompt 要求模型约三轮内完成，并把一步所需的调用放进同一个回复。每轮的结果会写明已用几轮，从第三轮起要求模型给出摘要，并写明还会执行几轮。没有剩余轮次，或上下文已达 `context_window` − 12288 时，所有工具调用一律拒绝，因此 200k 窗口下工具轮仍会在一到三轮后关闭，上限只在窗口留有余量时才起作用。`0` 或更小时所有工具调用都被拒绝，模型只给出摘要。工具轮中模型只能读文件，以及在本 Session 的 scratchpad 里写交接文件，摘要与它的写入也可以放在同一个回复里。每轮按缓存读价重读已缓存的上下文，250k 的上下文走三轮，每次压缩约多出 0.75 M 缓存读 Token。见[上下文压缩](/agent-loop#交接文件摘要之前的工具轮)。
+- `compaction.prompt`：读取这一节时替换 `{{SCRATCHPAD_DIR}}`（本 Session scratchpad 的绝对路径）。Prompt 本身不写轮数上限，具体数字由 harness 的每轮提示给出。
 - `*.prompt`：各小节的提示词都能在对应的设置标签页编辑：两段记忆提示词在 **记忆**，`vault.prompt` 在 **密钥保险柜**，`skills.prompt` 在 **插件**，`schedules.prompt` 在 **定时任务**。
 - `vault.enabled`：关闭时，值仍会注入子进程环境，只是模型看不到键名列表。
 - `skills.enabled`：关闭时，已安装的 Skill 仍可通过 `[use_skills]` 显式调用。
@@ -406,12 +406,21 @@ compaction:
   max_context_length: 256000
   max_session_turns: -1
   mode: summarize
-  max_rounds: 3
+  max_rounds: 8
 
 # Omitting the whole tools section = the full default toolset. Writing tools.builtin
 # REPLACES the default list wholesale: carry the complete definition (including the
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
+
+### 供应商拒绝请求时
+
+供应商拒绝了一个它此前接受过的上下文上的请求（HTTP 400、413、415 或 422），通常说明上下文已经超出模型的真实窗口：模型条目的 `context_window` 大于供应商实际提供的窗口，压缩因此被设在比供应商允许的更晚的位置触发。对话会改由 Trace 交接说明接续（见[请求被拒时的交接](/agent-loop#请求被拒时的交接)），Web App 会标记那一行压缩，并在输入框上方给出提示；CLI 的完成行也会说明同样的情况。请修正下面两个数值之一：
+
+- **更正模型的上下文窗口**，改为供应商实际提供的大小：在模型页面编辑该模型（**详细配置** › **上下文窗口**，见[编辑或删除模型](/models#编辑或删除模型)），或修改[模型条目](#模型条目)的 `context_window`。自建服务器取它配置的上限，例如 vLLM 的 `--max-model-len`。
+- **调低 Agent 的压缩阈值** `compaction.max_context_length`：在 Agent 设置中修改，或拖动上下文面板里的虚线（见[修改压缩阈值](/chat#修改压缩阈值)），对正在进行的对话立即生效。
+
+压缩的摘要每次都停在输出上限时，也会给出同样的建议：窗口下方留给压缩本身的空间不够。
 
 ### 内核更新
 

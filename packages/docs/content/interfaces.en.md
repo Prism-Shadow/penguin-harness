@@ -84,7 +84,8 @@ interface RunOptions {
 interface RunCutoff {       // how a run was cut off early
   kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
                             // compaction_failure: mid-Task, no next context could be opened
-                            // (the old context is kept, the pending input is carry-over)
+                            // (the old context is kept, the pending input is carry-over),
+                            // a refused request's hand-off included
   errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
   errorMessage?: string;    // mirrors the terminal record's error_message
 }
@@ -92,7 +93,7 @@ interface RunCutoff {       // how a run was cut off early
 
 The CLI wires terminal I/O onto this boundary. The Server wires HTTP requests and SSE channels onto it. Any programmatic caller that connects becomes a new Human implementation, with nothing to register.
 
-The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream. A compaction that completes without a full summary is no cutoff: its `compaction_end` is `completed`, carrying the error pair, and the run carries on in the new context.
+The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream. A compaction that completes without a full summary is no cutoff: its `compaction_end` is `completed`, carrying the error pair, and the run carries on in the new context. Nor is a refused request answered by a hand-off: its `request_end` is `retryable` and the turn is sent again in the next context (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)).
 
 ## LLMInterface
 
@@ -130,7 +131,7 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | Finished normally (`token_usage` already emitted) | Proceed |
 | `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed responses, and anything unclassifiable. A response that arrived whole but stopped at its output cap is one too, coded `output_truncated`: the implementation removes the turn from its stateful history, and still emits its `token_usage` (it was billed) | Reconnect within the run on the backoff ladder |
-| `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
+| `fatal` | A failure no retry can fix: a definitive provider 4xx — `rejected` when it refuses the request as sent (400, 413, 415, 422), `denied` for any other (402, 403, 404, …; 408 and 429 are retried) — rejected credentials (`auth`, 401 included), or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
 | `aborted` | User interrupt | Stop and hand back to the user |
 
 The status answers one question: should this request be retried? `errorCode` says what kind of failure it was. Unclassifiable errors are `retryable` on purpose: the fatal detector is an allowlist, so a gateway that words a transient fault its own way keeps its retries.

@@ -38,9 +38,10 @@
  *     partial_thinking / partial_text fragments, or the span's complete thinking
  *     and assistant text on rebuild) accumulate onto the running compaction
  *     banner instead (issue #290), the summary draft starting over at each of the span's
- *     request_begin events (only the last request's text is the summary, unless the end says
- *     the compaction completed without one — CompactionItem.outcome), and every tool call of
- *     the span, run or refused, becomes a work card on the banner (CompactionItem.work);
+ *     request_begin events (only the last request's text is the summary, and an end that
+ *     says the compaction completed without one keeps none — CompactionItem.errorCode), and
+ *     every tool call of the span, run or refused, becomes a work card on the banner
+ *     (CompactionItem.work);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -70,7 +71,6 @@ import {
   parseBackgroundTaskDoneMessage,
   parseInPlaceModelSwitch,
   parseUserSteeringText,
-  salvageableSummary,
 } from "@prismshadow/amsp/markers";
 import type {
   ApprovalDecision,
@@ -380,22 +380,19 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
-  /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
+  /**
+   * The end's error pair (compaction_end.error_code / error_message). On a `completed` end it
+   * means the compaction completed without a full summary — the next context opened with what
+   * was written of one, or with the harness's Trace hand-off note — and says why: the row's
+   * status mark explains it (see compactionDegraded). On an end that did not complete it is
+   * the failure's reason.
+   */
+  errorCode?: string;
   errorMessage?: string;
   /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
   beginTsMs?: number;
   /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
   durationMs?: number;
-  /**
-   * How a completed summarize compaction opened the next context, read off its `compaction_end`
-   * and the span's drafts: `summary` — the end carries no error pair, and the span's latest
-   * request wrote the summary; `salvaged` — the end carries the error pair and some request left
-   * a summary cut off before its end (`salvageableSummary`), the longest of which is the result;
-   * `handoff` — the end carries the error pair and no request left such a summary, so the next
-   * context opens with the harness's Trace hand-off note and the row has no result. Absent while
-   * running, on an end that did not complete, and on a discard (which opens with nothing).
-   */
-  outcome?: "summary" | "salvaged" | "handoff";
   /**
    * Raw text of the summary the compaction request is generating (issue #290): accumulated
    * live from the span's own partial_text fragments, and rebuilt identically on history
@@ -403,19 +400,10 @@ export interface CompactionItem {
    * written and keeps it readable after a reload. Raw model output (summary tags included;
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
    * While the span runs it is the text of its latest request alone: each request_begin starts
-   * it over, since a request that took a tool round, or was retried, wrote no summary. A
-   * `salvaged` end puts the kept draft back (see `salvageDraft`); a `handoff` end drops it.
+   * it over, since a request that took a tool round, or was retried, wrote no summary. An end
+   * carrying the error pair drops it: the last draft is not what the next context opened with.
    */
   summaryText?: string;
-  /**
-   * While the span runs: the longest draft an earlier request left that still holds a summary
-   * worth keeping (`salvageableSummary` non-empty; the latest wins a tie, as the engine picks),
-   * and its result section's start. Each request_begin starts `summaryText` over, so this is
-   * what remembers a cut-off summary for a degraded end; cleared at `compaction_end`.
-   */
-  salvageDraft?: string;
-  /** The kept draft's result-section start (see `salvageDraft`). */
-  salvageStartedAtMs?: number;
   /**
    * The tool calls the compaction made (hand-off files read and written, and the calls it
    * refused once no round was left): one card per call, in call order, built like the
@@ -1986,22 +1974,29 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     case "compaction_end": {
       // status decides whether context usage is cleared: when not completed, the original context is kept (see endCompaction).
       endCompaction(model.stats, p.status);
-      // A completed end carrying the error pair completed without a full summary: the next
-      // context opens with the summary a request was cut off in, or with the hand-off note.
-      const degraded = p.error_code !== undefined || p.error_message !== undefined;
+      // A refused request announced a resend at once and its hand-off then could not open the
+      // next context: that resend will never go out, so the retry line waiting on it settles.
+      if (p.status === "fatal") {
+        const waiting = findLastWaitingReconnect(model);
+        if (waiting) waiting.gaveUp = true;
+      }
+      // A completed end carrying the error pair completed without a full summary: whatever the
+      // last request wrote is not what the next context opened with, so the row keeps no result.
+      const degraded =
+        p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
         item.status = p.status;
+        if (p.error_code !== undefined) item.errorCode = p.error_code;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
-        if (p.status === "completed" && p.mode !== "discard") {
-          settleCompactionOutcome(item, degraded);
+        if (degraded) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
         }
-        delete item.salvageDraft;
-        delete item.salvageStartedAtMs;
         // The result section runs for as long as the row does, so its wall time ends here too.
         if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
           item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
@@ -2029,31 +2024,30 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           settleCompactionThinking(item, tsMs);
         }
       } else {
-        // Mid-stream join (missed the begin): append a completed banner directly. It saw no
-        // draft, so a degraded end reads as a hand-off by the same rule.
-        const created: CompactionItem = {
+        // Mid-stream join (missed the begin): append a settled banner directly.
+        model.items.push({
           kind: "compaction",
           id: nextId(model),
           reason: p.reason,
           mode: p.mode,
           running: false,
           status: p.status,
+          ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
-        };
-        if (p.status === "completed" && p.mode !== "discard") {
-          settleCompactionOutcome(created, degraded);
-        }
-        model.items.push(created);
+        });
       }
       return;
     }
     case "request_begin": {
       // A compaction's request (a tool round's next one, or a retried attempt): the summary
-      // draft starts over — only the last request's text is the summary, a cut-off one kept
-      // aside for a degraded end — and nothing else here is about it (compaction requests
-      // aren't timed, and no reconnect hint is theirs).
+      // draft starts over — only the last request's text is the summary — and nothing else
+      // here is about it (compaction requests aren't timed, and no reconnect hint is theirs).
       if (model.stats.compactionActive) {
-        restartCompactionSummary(model);
+        const item = findLastRunningCompaction(model);
+        if (item) {
+          delete item.summaryText;
+          delete item.summaryStartedAtMs;
+        }
         return;
       }
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
@@ -2227,60 +2221,6 @@ function appendCompactionSummaryText(
   if (startMs !== undefined && item.summaryStartedAtMs === undefined) {
     item.summaryStartedAtMs = startMs;
   }
-}
-
-/**
- * Starts the running compaction's summary draft over, for the request that begins now, after
- * keeping the draft aside when it holds a cut-off summary (see CompactionItem.salvageDraft).
- */
-function restartCompactionSummary(model: StreamModel): void {
-  const item = findLastRunningCompaction(model);
-  if (!item) return;
-  keepSalvageCandidate(item);
-  delete item.summaryText;
-  delete item.summaryStartedAtMs;
-}
-
-/**
- * Keeps the current draft as the salvage candidate when it holds a summary worth keeping and
- * is at least as long as the one already kept — the latest wins a tie, which is how the engine
- * picks the summary it salvages, so the row shows the text the next context opened with.
- */
-function keepSalvageCandidate(item: CompactionItem): void {
-  const draft = item.summaryText;
-  if (draft === undefined) return;
-  const candidate = salvageableSummary(draft);
-  if (candidate === "") return;
-  const kept = item.salvageDraft === undefined ? "" : salvageableSummary(item.salvageDraft);
-  if (kept !== "" && candidate.length < kept.length) return;
-  item.salvageDraft = draft;
-  if (item.summaryStartedAtMs !== undefined) item.salvageStartedAtMs = item.summaryStartedAtMs;
-  else delete item.salvageStartedAtMs;
-}
-
-/**
- * The outcome of a completed summarize compaction (see CompactionItem.outcome): without the
- * error pair the latest draft is the summary; with it, the longest cut-off summary of the span
- * (the final draft counted too) is the result, or — with none — the result is dropped, since
- * the next context opens with the hand-off note.
- */
-function settleCompactionOutcome(item: CompactionItem, degraded: boolean): void {
-  if (!degraded) {
-    item.outcome = "summary";
-    return;
-  }
-  keepSalvageCandidate(item);
-  if (item.salvageDraft !== undefined) {
-    item.outcome = "salvaged";
-    item.summaryText = item.salvageDraft;
-    if (item.salvageStartedAtMs !== undefined) item.summaryStartedAtMs = item.salvageStartedAtMs;
-    else delete item.summaryStartedAtMs;
-    return;
-  }
-  item.outcome = "handoff";
-  delete item.summaryText;
-  delete item.summaryStartedAtMs;
-  delete item.summaryDurationMs;
 }
 
 /**
