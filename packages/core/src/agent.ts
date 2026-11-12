@@ -343,9 +343,7 @@ interface SessionRuntime {
    * Opens the context that follows a completed compaction (see ContextEngineDeps.openNextContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
-   * the context alongside its engine settings, with the hooks the context runs with. On a
-   * same-model rotation an Agent State that cannot be assembled reopens the configuration in
-   * force instead, and the result carries the `notice` the opening tells the model.
+   * the context alongside its engine settings, with the hooks the context runs with.
    */
   openNextContext: (opts: SessionOpenContextOptions) => Promise<SessionOpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
@@ -397,9 +395,8 @@ interface AssembledContext {
 
 /**
  * The Session's compaction settings as they follow from a `compaction` section: defaults
- * filled in, the threshold capped by what the model's window leaves room for, the context size
- * past which no tool round opens (none for an unconfigured window), and an unknown mode read as
- * the default `summarize`.
+ * filled in, the threshold capped by what the model's window leaves room for, and an unknown
+ * mode read as the default `summarize`.
  *
  * Stated once because two callers need the same answer from the same input — the context
  * assembly below, and the live re-reader every checkpoint calls (see `compactionReader`). Two
@@ -411,7 +408,6 @@ function resolveCompaction(
   contextWindow: number | undefined,
   scratchpadDir: string,
 ): CompactionSettings {
-  const maxRounds = config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS;
   // The Prompt's placeholder is substituted here, where the settings are read: the Prompt is
   // the compaction request's appended user turn, so what it says costs no cached prefix.
   const prompt = (config?.prompt ?? DEFAULT_COMPACTION_PROMPT).replaceAll(
@@ -426,18 +422,13 @@ function resolveCompaction(
     ),
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
-    maxRounds,
+    maxRounds: config?.max_rounds ?? DEFAULT_COMPACTION_MAX_ROUNDS,
     ...(roundLimit !== undefined ? { roundLimit } : {}),
     prompt,
   };
 }
 
-/**
- * What the model is told in the opening of a context the opener reopened on the configuration
- * in force, because the Agent State could not be assembled (see `openNextContext`): the error,
- * and that an edit of its own may be what broke it — an Agent that rewrote its
- * `system_config.yaml` badly can repair it from the next context.
- */
+/** What the opening of a context reopened on the configuration in force tells the model. */
 function configurationFallbackNotice(error: string): string {
   return `this Agent's configuration could not be read when this context opened (${error}); the previous configuration is still in force. If you changed system_config.yaml, fix it.`;
 }
@@ -878,8 +869,6 @@ export class Agent {
         `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
       );
     }
-    // A context the file's last compaction closed opens with the summary rebuilt from the file,
-    // its trailer naming this very file, worded for the shell this process runs commands in.
     const resumed = resumeTrace(await readTraceTolerant(located.path), {
       tracePath: located.path,
       shell: sessionShell().name,
@@ -1136,9 +1125,7 @@ export class Agent {
       // Live tier: the baseline above is what this context opened on, and this is how every
       // checkpoint after it asks the disk again.
       readCompaction: this.compactionReader(rt.contextWindow, scratchpad),
-      // A compaction's tool rounds read anything and write only the Session's scratchpad.
       compactionToolGate: compactionToolGate(scratchpad),
-      // The shell the system prompt's `Shell:` line names, for the Trace-query hints.
       shell: sessionShell().name,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: scratchpad,
@@ -1583,18 +1570,12 @@ export class Agent {
     // on the model the closing context ran on, or on the one a model switch names
     // (`modelRef`, resolved against the Project config on disk). The Environment is
     // re-equipped with the new toolset and vault, then the context is opened by the same
-    // procedure as the first one — the engine holds the published records until the
-    // compaction's `compaction_end` is written, then yields them, behind it, and writes them at
-    // the head of the rotated Trace file.
-    //
-    // An Agent State that cannot be assembled (a config that no longer parses) does not end
-    // the run on a same-model rotation: the configuration in force is reopened on a fresh LLM
-    // object — the same prompt and toolset, nothing reconnected — the model is told so in the
-    // opening (`notice`), and the broken state is tried again at the next rotation. That is the
-    // rule the live compaction re-read already follows: keep the settings in force and warn. A
-    // model switch rethrows instead, so it keeps the model it was on. When the open itself
-    // fails, this layer throws as well: `current` moves only once the context is open, and the
-    // Environment goes back to the running one.
+    // procedure as the first one. An Agent State that cannot be assembled (a config that no
+    // longer parses) does not end a same-model rotation: the configuration in force reopens on
+    // a fresh LLM object, the opening tells the model (`notice`), and the next rotation tries
+    // the state again — the rule the live compaction re-read follows. A model switch rethrows,
+    // keeping its model; so does this layer when the open itself fails: `current` moves
+    // only once the context is open, and the Environment goes back to the running one.
     const openNextContext = async ({
       emit,
       modelRef,

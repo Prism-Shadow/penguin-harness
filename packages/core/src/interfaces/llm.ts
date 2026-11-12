@@ -119,13 +119,11 @@ export interface GenerativeModelParameters {
  *     implementation takes the turn back out of its stateful history but still emits its
  *     `token_usage`, since the provider billed it. A one-shot caller may read the text of an
  *     `output_truncated` answer as it would a completed one;
- *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (408/429 stay
- *     retryable), coded `rejected` when the status refuses the request as sent (400, 413, 415,
- *     422) and `denied` for any other (402 payment, 403 permission, 404 no such model, …),
- *     a credentials failure (see `isAuthenticationError`), or a deterministic client-side
- *     rejection thrown before any network I/O (fast mode on a model without a fast tier).
- *     The engine stops the run and surfaces `errorMessage` (a `rejected` request it can
- *     answer itself — images replaced, or a hand-off to a new context — excepted);
+ *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request or
+ *     quota; 408/429 stay retryable), a credentials failure (see `isAuthenticationError`),
+ *     or a deterministic client-side rejection thrown before any network I/O (fast mode on
+ *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`
+ *     (save a 4xx coded `rejected`, see `providerRejectionCode`, which it may answer itself);
  *     the fix is a config or credential change, then a new request (only the model
  *     reference is fixed at Session creation — credentials come from the current Project
  *     config, so a key update lets the Session continue).
