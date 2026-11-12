@@ -524,8 +524,11 @@ export interface CompactionBeginPayload {
 
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
- * (failed attempts and retries included — stamped by summarize mode), the error pair is the
- * reason the compaction did not get a full summary or could not finish, and `retry_in_ms` is
+ * (the span's requests that were not tool rounds, failed attempts and retries included —
+ * stamped by summarize mode; absent when the span made no request, as when a refused ordinary
+ * request is answered by a hand-off), the error pair is the reason the compaction did not get
+ * a full summary or could not finish (`rejected`: the provider refused a request on the
+ * context, the compaction's own or the ordinary one before the span), and `retry_in_ms` is
  * never stamped here (compaction retries are announced on the compaction request's own
  * request_end).
  */
