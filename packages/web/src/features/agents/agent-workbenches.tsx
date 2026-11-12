@@ -1,12 +1,14 @@
 /**
- * The workbenches of one Agent on its settings page's Plugins tab (plugins-tab.tsx): the row each
- * workbench shows in its plugin's group or among the user's own — broken and handler-only
- * packages included — and the "Import workbench" dialog. The files are the truth, so the tab
- * reads its lists again after every action.
+ * The workbenches of one Agent on its settings page's Plugins tab, Workbenches sub-page
+ * (plugins-tab.tsx): the row each workbench shows — broken and handler-only packages included —
+ * and the "Import workbench" dialog. The files are the truth, so the tab reads its lists again
+ * after every action.
  *
  * A row says what its controls do (workbench-row.tsx): its two switches carry their words
  * ("Enable", "App Center"), "Open" is a text button, and the rest — reload, version history,
- * export, remove — are the rows of its "More" menu.
+ * export, remove — are the rows of its "More" menu. A workbench a plugin installed carries the
+ * puzzle mark after its title, naming the plugin and opening its detail, and its removal says
+ * which plugin installed it.
  *
  * - The Enable switch is the Project owner's and commits at once; while the Agent-wide "Enable
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
@@ -29,8 +31,16 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
-import type { IconRef, WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
-import { Button, ConfirmModal, ListRow, Modal, Switch } from "@prismshadow/penguin-ui";
+import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ConfirmModal,
+  GlyphAction,
+  ICONS,
+  ListRow,
+  Modal,
+  Switch,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
@@ -44,6 +54,7 @@ import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
+import type { PartSource } from "./plugins-subpages";
 import { AppCenterToggle, LabelledSwitch, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
@@ -62,6 +73,10 @@ export interface WorkbenchRowsOptions {
   allEnabled: boolean | undefined;
   /** The switches are the Project owner's. */
   canSwitch: boolean;
+  /** The plugin that installed a workbench, by its id; undefined for the user's own. */
+  sourceOf: (id: string) => PartSource | undefined;
+  /** Opens a plugin's detail on the Plugins sub-page. */
+  onOpenPlugin: (plugin: string) => void;
 }
 
 /**
@@ -144,14 +159,14 @@ function WorkbenchAppCenterSwitch({
 
 /**
  * The rows of an Agent's workbenches, and the history dialog and the confirmation (restore,
- * remove) they share. `icon` on a row is its plugin's icon, shown when the workbench declares no
- * App Center icon of its own; the anvil without either.
+ * remove) they share. A row shows the icon of the plugin it came from when the workbench declares
+ * no App Center icon of its own; the anvil without either.
  */
 export function useWorkbenchRows(options: WorkbenchRowsOptions): {
-  row: (workbench: WorkbenchInfo, icon?: IconRef) => ReactNode;
+  row: (workbench: WorkbenchInfo) => ReactNode;
   modals: ReactNode;
 } {
-  const { agentId, onChanged } = options;
+  const { agentId, onChanged, sourceOf, onOpenPlugin } = options;
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its workbenches are; null for this server. */
@@ -190,18 +205,28 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     }
   };
 
-  const row = (workbench: WorkbenchInfo, icon?: IconRef) => {
+  const row = (workbench: WorkbenchInfo) => {
     const first = workbenchTabsOf([workbench])[0];
     const title = first ? localizedText(locale, first.title, first.titleZh) : workbench.name;
     /** A switched-off workbench loads nothing: there is no page to open and nothing to reload. */
     const running = options.allEnabled !== false && workbench.enabled !== false;
     const { enabled } = workbench;
+    const source = sourceOf(workbench.id);
     return (
       <ListRow
         key={`workbench:${workbench.id}`}
         as="li"
-        leading={<WorkbenchMark workbench={workbench} pluginIcon={icon} />}
+        leading={<WorkbenchMark workbench={workbench} pluginIcon={source?.icon} />}
         title={title}
+        titleTrail={
+          source !== undefined && (
+            <GlyphAction
+              glyph={ICONS.puzzle}
+              label={S.agent.mcpInstalledBy(source.title)}
+              onClick={() => onOpenPlugin(source.name)}
+            />
+          )
+        }
         description={workbench.error ?? workbench.id}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
@@ -270,6 +295,9 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     );
   };
 
+  /** The plugin the workbench being removed came from: the confirmation says where to get it back. */
+  const removingSource =
+    confirm !== null && confirm.revision === undefined ? sourceOf(confirm.workbench.id) : undefined;
   const modals = projectId !== null && (
     <>
       <Modal
@@ -333,9 +361,16 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
           })
         }
       >
-        {confirm?.revision
-          ? S.workbenches.restoreConfirm(confirm.revision)
-          : S.workbenches.removeConfirm}
+        {confirm?.revision ? (
+          S.workbenches.restoreConfirm(confirm.revision)
+        ) : (
+          <div className="space-y-2">
+            <p>{S.workbenches.removeConfirm}</p>
+            {removingSource !== undefined && (
+              <p>{S.agentPlugins.partFromPluginNote(removingSource.title)}</p>
+            )}
+          </div>
+        )}
       </ConfirmModal>
     </>
   );
@@ -361,7 +396,7 @@ export function WorkbenchImportDialog({
   agentId: string;
   machineId: string | null;
   onClose: () => void;
-  /** A zip landed, as its load left the workbench: the tab closes the dialog and reads the lists again. */
+  /** A zip landed, as its load left the workbench: the sub-page closes the dialog and reads the lists again. */
   onImported: (workbench: WorkbenchInfo) => void;
 }) {
   return (

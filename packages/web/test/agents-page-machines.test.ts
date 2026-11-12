@@ -9,7 +9,8 @@
  *   machine — the shared id is two cards — each of the machine's named `[SSH: gpu-box]` after
  *   its name, and none of this server's.
  * - A machine card's name and Settings open that Agent's settings page on that machine; the card
- *   does not make it the current Agent here.
+ *   does not make it the current Agent here. Its Skill, hook package and workbench counts open the
+ *   Plugins tab on the sub-page that lists them, on that machine.
  * - Delete on a machine card names the machine before it deletes, deletes through that machine,
  *   and leaves this server's Agent of the same id where it was.
  * - Once a machine-only Agent is deleted, the session list stops asking that machine for its
@@ -96,6 +97,18 @@ describe("a machine's Agents on the Agents page", () => {
       [...card.querySelectorAll("button")].find((b) => b.textContent === en.common.settings)!,
     );
     expect(whereIs(router)).toBe("/agents/helper?machine=gpu1");
+  });
+
+  it.each([
+    ["skills", en.skills.skillCount(0)],
+    ["hooks", en.hooks.hookCount(0)],
+    ["workbenches", en.workbenches.count(0)],
+  ])("opens a machine Agent's %s from its count, on that machine", async (tab, count) => {
+    const { router } = await openPage([GPU]);
+    await waitFor(() => cards().length === 3);
+    const card = cardOf("helper", "gpu-box");
+    await click(card.querySelector<HTMLButtonElement>(`button[aria-label="${count}"]`)!);
+    expect(whereIs(router)).toBe(`/agents/helper?machine=gpu1&tab=${tab}`);
   });
 
   it("deletes a machine's Agent through that machine, after naming it, and keeps this server's", async () => {

@@ -56,7 +56,7 @@ An MCP server may need values before it can connect, such as an API token. The p
 
 When the agent already has an MCP server of the same name that this plugin did not install, the install is refused with the server's name and nothing is written. Rename or remove that server on the agent's **Tools** tab first.
 
-To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits, removes the plugin's MCP servers from the agent, and deletes its workbenches with their data. The server removes every part in one go; if one cannot be removed, the message names it and the rest are removed anyway. The agent's [Plugins tab](/agents#plugins-tab) has the same **Uninstall**, with the parts listed before you confirm.
+To uninstall a plugin, point at **Installed** next to the agent, select **Uninstall**, and confirm. Uninstalling deletes the installed Skill and hook files, including any local edits, removes the plugin's MCP servers from the agent, and deletes its workbenches with their data. The server removes every part in one go; if one cannot be removed, the message names it and the rest are removed anyway. The **Plugins** sub-page of the agent's [Plugins tab](/agents#plugins-tab) has the same **Uninstall**, with the parts listed before you confirm, and installs and updates plugins on that one agent too.
 
 Any Project member can install and update plugins. Only the Project owner can uninstall them.
 
@@ -102,13 +102,13 @@ The **Skills** menu lists only the Skills installed on the current agent, and it
 
 ## Manage an agent's Skills
 
-To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Plugins** tab. A Skill from a plugin is listed under that plugin; select the plugin's row to see it. A Skill you made or imported is listed under **Not from a plugin**.
+To see the Skills installed on one agent, open **Agents**, select the agent, and open the **Skills** sub-page of the **Plugins** tab. Every Skill is listed there; one from a plugin shows a puzzle icon after its name, which names the plugin and opens it.
 
 - Each row shows a Skill's name, short description and version, with two actions: **Export** downloads the Skill as a zip file, and **Uninstall** deletes its directory.
 - **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work. Only the Project owner can change it and the **Skills prompt**.
 - **Skills prompt** is the text that introduces the Skill list in the system prompt. Its `{{SKILL_METADATA}}` placeholder becomes one line per installed Skill.
 
-To update a plugin's Skills, select **Update** on the plugin's row, or update it on the **Plugins** page. Install plugins from the library on the **Plugins** page.
+To update a plugin's Skills, select **Update** on the plugin's card on the **Plugins** sub-page, or update it on the **Plugins** page. Install plugins from the library on either of them.
 
 ### Import a Skill
 
@@ -116,14 +116,14 @@ You can import a Skill from outside the library in two ways. The first is recomm
 
 To import it through a chat:
 
-1. On the **Plugins** tab, select **Import**, then **Skill**.
+1. On the **Skills** sub-page of the **Plugins** tab, select **Import skill**.
 2. In **Skill source**, enter a web page, a GitHub repository or directory, a local path, or an install command from another ecosystem, such as `npx skills add <name>`.
 3. Select **Open a new chat**. A new chat opens with the prompt filled in. You can also select **Copy prompt** to use the prompt elsewhere.
 4. Send the message. The agent reads the source in full, checks that it is safe, and installs the Skill. If the `skill-porting` Skill is installed, the agent follows its process.
 
 To upload a zip file:
 
-1. On the **Plugins** tab, select **Import**, then **Skill**.
+1. On the **Skills** sub-page of the **Plugins** tab, select **Import skill**.
 2. Under **Upload a skill zip**, select **Choose zip file**. The zip must hold `SKILL.md` at its root, or exactly one top-level directory that contains `SKILL.md`.
 3. If a Skill with the same name is already installed, confirm with **Overwrite**. Overwriting replaces all of its files.
 
@@ -137,7 +137,7 @@ Hook packages usually come with a plugin from the library, but any directory und
 
 A conversation reads the installed packages each time it opens a model context: when it starts, after each compaction, and when it resumes. A package written into the directory therefore runs in new conversations at once, and in a conversation already open from its next compaction. An install, zip import or uninstall through the Web App or the API reaches open conversations sooner, from their next turn, because the server rebuilds the agent's runtimes once they are idle.
 
-To manage one agent's hook packages, open **Agents**, select the agent, and open the **Plugins** tab. A hook package from a plugin is listed under that plugin, one you imported under **Not from a plugin**.
+To manage one agent's hook packages, open **Agents**, select the agent, and open the **Hooks** sub-page of the **Plugins** tab. Every hook package is listed there; one from a plugin shows a puzzle icon after its name.
 
 - **Enable hooks** turns hooks on or off for the whole agent, not one package at a time. With it on, every Session the agent starts runs all installed hook packages. With it off, no Session runs hooks, and the packages stay installed. The change takes effect from the next turn, in open conversations too; a Task that is already running keeps its hooks unless a compaction opens a new context before the Task ends. Only the Project owner can change this switch.
 - Each row shows a package's name, the hook points it runs at, its description and version, with **Export** and **Uninstall**.
@@ -146,14 +146,14 @@ To manage one agent's hook packages, open **Agents**, select the agent, and open
 
 To import it through a chat:
 
-1. On the **Plugins** tab, select **Import**, then **Hook package**.
+1. On the **Hooks** sub-page of the **Plugins** tab, select **Import hook**.
 2. In **Hook source**, enter a URL, a GitHub repository, a local path, a description of the hook you want, or another tool's hook configuration, such as the `hooks` block of a Claude Code `settings.json`.
 3. Select **Open a new chat**, or **Copy prompt**.
 4. Send the message. The agent reads the source, reviews every script, and installs the package on this agent.
 
 To upload a zip file:
 
-1. On the **Plugins** tab, select **Import**, then **Hook package**.
+1. On the **Hooks** sub-page of the **Plugins** tab, select **Import hook**.
 2. Under **Upload a hook package zip**, select **Choose zip file**. The zip must hold `hooks.json` and the scripts at its root, or in exactly one top-level directory. Every command in `hooks.json` must name a file inside the zip.
 3. If a package with the same name is already installed, confirm with **Overwrite**.
 
@@ -483,7 +483,7 @@ A plugin declares a workbench with a `PluginLibraryModule.workbenches` entry, `{
 
 Installing the plugin copies the workbench into the agent's `agent_state/workbenches/<id>/` directory, inside its Agent State, where the workbenches an agent writes for itself live too. Updates replace shipped source files and retain ticket state and history. A name already used by another plugin or a manually created workbench is refused. Uninstalling removes the workbench and its state, and its earlier versions are no longer listed.
 
-Every successful load that changes a workbench's source records a version: a commit in `agent_state.git/`, a bare git repository beside the agent's `agent_state/` that the server writes itself, so git does not have to be installed. Only the workbench's source is committed; its `state.json`, the server's `.build/` and `.harness/`, `node_modules/`, the vault and the rest of the Agent State never are. Restoring a version makes the source exactly that version and reloads it, leaving `state.json` as it is. Because the repository sits outside the Agent State, snapshots, exports and imports of the Agent State neither carry nor touch it. With git installed you can read the history, for example `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`; never commit to the repository or delete it. To switch a workbench off, or to restore, remove, export or import one, see [Plugins tab](/agents#plugins-tab).
+Every successful load that changes a workbench's source records a version: a commit in `agent_state.git/`, a bare git repository beside the agent's `agent_state/` that the server writes itself, so git does not have to be installed. Only the workbench's source is committed; its `state.json`, the server's `.build/` and `.harness/`, `node_modules/`, the vault and the rest of the Agent State never are. Restoring a version makes the source exactly that version and reloads it, leaving `state.json` as it is. Because the repository sits outside the Agent State, snapshots, exports and imports of the Agent State neither carry nor touch it. With git installed you can read the history, for example `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`; never commit to the repository or delete it. To switch a workbench off, or to restore, remove, export or import one, see [Workbenches](/agents#workbenches).
 
 A workbench can follow the Sessions it starts while the agent works. Its page imports `../sdk/workbench.js`, a page SDK the server serves beside every workbench, and `followSession(sessionId)` reads that Session's [AMSP records](/amsp-records) with the signed-in user's access, so the answer appears as the agent writes it; `abortSession(sessionId)` stops the turn. The workbench's server code gets the same records from `host.subscribe(sessionId, listener)`. Starting turns and saving results stay in the workbench's own handler; reading results with `host.sessionResult` and polling still work. A workbench never needs an Agent API key for this.
 

@@ -1228,7 +1228,7 @@ export const zh = {
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
     open: "打开工作台",
-    /** The Agent-wide switch on the Plugins tab, and what it does. */
+    /** The Agent-wide switch on the Plugins tab's Workbenches sub-page, and what it does. */
     enableAll: "启用工作台",
     enableAllHint:
       "关闭后，这个 Agent 的所有工作台都会停用：对话页和应用中心不再显示它们，页面也打不开。每个工作台的开关、数据和历史版本都会保留，重新打开即恢复原样。",
@@ -1239,7 +1239,7 @@ export const zh = {
     /** Why a workbench's switch is greyed: the Agent-wide one is off. */
     offByAll: "「启用工作台」已关闭，先打开它",
     /** The full-page route of a switched-off workbench. */
-    offPage: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
+    offPage: "这个工作台已关闭。可以在 Agent 设置的「插件 › 工作台」里打开它。",
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",
 
@@ -2008,7 +2008,7 @@ export const zh = {
     createPluginsPlaceholder: "未选择插件",
     createPluginsPicked: (n: number): string => `已选 ${n} 个插件`,
     createPluginsHint:
-      "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
+      "创建时安装到该 Agent（技能、钩子包、MCP 服务器与工作台），之后可在其设置的「插件」里增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
     /** Where the new Agent is created (shown once a machine is connected), and its "?". */
     createLocation: "位置",
@@ -2244,7 +2244,7 @@ export const zh = {
     mcpInstalledBy: (plugin: string): string => `由插件 ${plugin} 安装`,
     mcpFromPlugin: (plugin: string): string => `来自插件 ${plugin}：重新安装该插件会覆盖此条目。`,
     mcpRemoveFromPlugin: (plugin: string): string =>
-      `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
+      `它由插件 ${plugin} 安装，可在这个 Agent 的「插件」里重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     /** The hint on a machine Agent's `[SSH: …]` tag: whose Agent this is, and where its actions go. */
@@ -3425,7 +3425,7 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "Workbenches",
+    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
@@ -3571,20 +3571,38 @@ export const zh = {
 
   /** The Agent settings "Plugins" tab (features/agents/plugins-tab.tsx): the Agent's plugins and the parts each brought, the Agent's own parts last. */
   agentPlugins: {
-    tabDesc:
-      "这个 Agent 装了哪些插件，以及每个插件带来的技能、钩子、MCP 服务器和工作台。卸载插件会一次删掉它的全部部件。你自己创建或导入的部件列在最后。",
-    /** Appended to the description for a member. */
-    readOnlyHint: "开关、技能提示词和卸载插件只有 Project 所有者可以操作。",
-    importAction: "导入",
-    importMenu: "导入什么",
-    importSkill: "技能",
-    importHook: "钩子包",
-    importWorkbench: "工作台",
-    importChatOrZip: "上传 zip，或在对话中让 Agent 导入",
-    browseLibrary: "浏览插件库",
-    installedTitle: "已装插件",
-    empty: "这个 Agent 还没有装插件。点「浏览插件库」挑一个装上。",
-    ownTitle: "不属于插件",
+    /** The Plugins tab's sub-page switch: its accessible name, and each sub-page's label. */
+    subNav: "插件的子页面",
+    subPages: {
+      plugins: "插件",
+      skills: "技能",
+      hooks: "钩子",
+      workbenches: "工作台",
+    },
+    /** Each sub-page's fold: what it holds and what its actions do. */
+    desc: {
+      plugins:
+        "这个 Agent 装了哪些插件，以及插件库里还能给它装哪些。安装会把插件的技能、钩子包、MCP 服务器和工作台写进这个 Agent，卸载会一次删掉它们。",
+      skills:
+        "这个 Agent 的全部技能，插件装进来的和你自己创建或导入的都在这里。元数据进入系统提示词，正文由模型按需读取。卸载会删除整个技能目录。",
+      hooks:
+        "这个 Agent 的全部钩子包：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
+      workbenches:
+        "这个 Agent 的全部工作台。可以打开、重新加载、查看历史版本、导出或移除，也可以只关掉它而保留数据。",
+    },
+    /** The fold's second paragraph for a member: what only the owner can do on that sub-page. */
+    readOnly: {
+      plugins: "卸载插件只有 Project 所有者可以操作。",
+      skills: "「启用技能」和技能提示词只有 Project 所有者可以修改。",
+      hooks: "「启用钩子」只有 Project 所有者可以修改。",
+      workbenches: "「启用工作台」和每个工作台的开关只有 Project 所有者可以修改。",
+    },
+    openMarket: "打开插件市场",
+    /** The Plugins sub-page's two sections. */
+    installedSection: "已安装",
+    availableSection: "可安装",
+    installedEmpty: "这个 Agent 还没有装插件。",
+    libraryEmpty: "插件库里还没有可以装到 Agent 上的插件。",
     /** What a plugin brought to this Agent, beside its name: "3 个技能、钩子、1 个工作台". */
     partSummary: (skills: number, hooks: boolean, mcp: number, workbenches: number): string =>
       [
@@ -3601,12 +3619,14 @@ export const zh = {
       update: "可更新",
       incomplete: "不完整",
       "not-in-library": "不在插件库",
+      available: "可安装",
     },
     statusHint: {
       installed: "这个插件的部件都在。",
       update: "插件库里有更新的版本。点「更新」换成新版本。",
       incomplete: "这个插件少了一些部件。点「更新」把它们装回来。",
       "not-in-library": "管理员已把这个插件从插件库中删除，所以无法更新。",
+      available: "这个 Agent 还没有装这个插件。",
     },
     /** The parts the uninstall confirmation lists, one per line. */
     partSkill: (name: string) => `技能：${name}`,
@@ -3622,13 +3642,33 @@ export const zh = {
     uninstallPartly: (plugin: string, failed: string) =>
       `${plugin} 已卸载，但这些部件没能删除：${failed}`,
     updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
-    /** An MCP server row: what keeps it from connecting, and where it is edited. */
-    mcpNeedsSetup: "待设置",
-    mcpNeedsSignIn: "需登录",
-    mcpEdit: "去「工具」编辑",
+    /** A plugin's detail: what of it is on this Agent, by kind, and where each kind is managed. */
+    onAgentTitle: "在这个 Agent 上",
+    partKinds: {
+      skills: "技能",
+      hooks: "钩子包",
+      mcpServers: "MCP 服务器",
+      workbenches: "工作台",
+    },
+    managePart: {
+      skills: "去「技能」管理",
+      hooks: "去「钩子」管理",
+      workbenches: "去「工作台」管理",
+      mcpServers: "去「工具」编辑",
+    },
+    /** A part the library ships and the Agent lacks. */
+    missingPart: "缺失",
+    missingPartHint: "插件库里的这个部件不在这个 Agent 上。点「更新」把它装回来。",
+    /** The removal of a part a plugin installed: where it can be put back. */
+    partFromPluginNote: (plugin: string) =>
+      `它由插件 ${plugin} 安装，之后可以在「插件」里点「更新」装回。`,
+    /** Each kind sub-page's list with no row. */
+    skillsEmpty: "这个 Agent 还没有技能。",
+    hooksEmpty: "这个 Agent 还没有钩子包。",
+    workbenchesEmpty: "这个 Agent 还没有工作台。",
   },
 
-  /** An Agent's hook packages on its Plugins tab (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** An Agent's hook packages on its Plugins tab's Hooks sub-page (features/agents/agent-hooks.tsx): the rows, the enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
@@ -3721,7 +3761,7 @@ export const zh = {
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
-    /** An Agent's Skills on its Plugins tab (rows + import modal). */
+    /** An Agent's Skills on its Plugins tab's Skills sub-page (rows + import modal). */
     exportSkill: "打包导出",
     importSkill: "导入技能",
     importChatTitle: "推荐：让 Agent 在对话中安装",
@@ -6981,7 +7021,7 @@ Benchmark：
       machine_not_found: "这台机器不在当前 Project 的机器列表中。",
       machine_outdated: "这台机器上的版本较旧，请在「机器管理」更新它。",
       plugin_not_installed: "这个 Agent 上已经没有这个插件的任何部件。",
-      workbench_disabled: "这个工作台已关闭。可以在 Agent 设置的「插件」里打开它。",
+      workbench_disabled: "这个工作台已关闭。可以在 Agent 设置的「插件 › 工作台」里打开它。",
       machine_answered: "机器给出的应答无法使用，请重试。",
       trace_changed: "读取期间这个对话的 Trace 一再变化，请重试。",
       internal: "服务器内部错误，请稍后重试。",

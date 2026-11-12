@@ -36,4 +36,4 @@ export type { PluginRow } from "./plugin-groups";
 
 export { agentPluginGroups, hasParts } from "./agent-plugin-groups";
 
-export type { AgentPluginGroup, AgentPluginStatus } from "./agent-plugin-groups";
+export type { AgentPluginGroup, AgentPluginGroups, AgentPluginStatus } from "./agent-plugin-groups";

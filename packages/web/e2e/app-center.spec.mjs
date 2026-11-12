@@ -4,8 +4,9 @@
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
  *   served by the icon route. A click opens it windowed over the grid, and the window's close
  *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins tab)
- *   takes the tile off (the empty page offers Create with AI) and puts it back.
+ *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins
+ *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
+ *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
@@ -19,15 +20,11 @@ import { setAccountPrefs } from "./account-prefs.mjs";
 import { zip } from "./workbench-zip.mjs";
 
 const BASE = process.env.BASE_URL;
-const SUPPORT = "/agents/penguin_support?tab=plugins";
+const SUPPORT = "/agents/penguin_support?tab=workbenches";
 
-/** The Plugins tab of Support's Agent, with the plugin group that holds the workbench unfolded. */
+/** The Workbenches sub-page of Support's Agent, which lists the workbench's row. */
 async function openSupportRow(page) {
   await page.goto(`${BASE}${SUPPORT}`);
-  await page
-    .locator('button[aria-expanded="false"]')
-    .filter({ hasText: /1 workbench/ })
-    .click();
 }
 
 test("the App Center opens Support windowed and full screen, and its switch takes the tile off and back", async ({

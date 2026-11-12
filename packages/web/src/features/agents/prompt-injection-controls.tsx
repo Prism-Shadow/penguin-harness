@@ -1,6 +1,6 @@
 /**
  * Shared enable-switch (and, where the feature has one, prompt) controls for the skills and
- * hooks switches of the Plugins tab and for the Vault / Schedules tabs, mirroring the Memory tab's layout: an enable-switch card
+ * hooks switches of the Plugins tab's Skills and Hooks sub-pages and for the Vault / Schedules tabs, mirroring the Memory tab's layout: an enable-switch card
  * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
  * never drags an unfinished prompt edit along), an amber alert when the template lacks the
  * feature's section placeholder — with one-click insert, or one-click migration when the
