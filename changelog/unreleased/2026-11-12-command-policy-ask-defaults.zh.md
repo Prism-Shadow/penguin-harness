@@ -3,7 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `core`, `docs`, `skills`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1536](https://github.com/Prism-Shadow/penguin-harness/pull/1536)
 - **Breaking:** yes — 命中出厂规则的命令改为等人确认，不再直接拒绝
 
 [English](2026-11-12-command-policy-ask-defaults.md)

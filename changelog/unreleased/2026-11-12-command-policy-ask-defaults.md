@@ -3,7 +3,7 @@
 - **Date:** 2026-11-12
 - **Type:** feature
 - **Scope:** `core`, `docs`, `skills`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1536](https://github.com/Prism-Shadow/penguin-harness/pull/1536)
 - **Breaking:** yes — a command a factory rule matches now waits for a person instead of being refused
 
 [中文版](2026-11-12-command-policy-ask-defaults.zh.md)
