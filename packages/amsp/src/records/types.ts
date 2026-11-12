@@ -505,7 +505,7 @@ export type CompactionMode = "summarize" | "discard";
  * the stream carries each compaction request's `request_begin` / `request_end` and
  * `token_usage`, its thinking and text (as `partial_*` fragments, or the complete records when
  * nothing streamed), and each tool call of the span with its approval and output; the
- * compaction Prompt and the harness's round and corrective lines stay Trace-only. Both `reason`
+ * compaction Prompt and the reminders sent after tool rounds stay Trace-only. Both `reason`
  * and `mode` are carried on both events, for stateless frontend rendering; for `status` see
  * CompactionEndPayload.
  */

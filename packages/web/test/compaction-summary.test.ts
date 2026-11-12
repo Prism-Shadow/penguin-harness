@@ -170,7 +170,7 @@ describe.each([
         settled({ status: "completed", errorCode: "rejected", errorMessage: refusal }),
         dict.chat.compactionRoomHint(refusal),
       ],
-      // A summary cut off every time: the reason is the harness's, so no one is quoted.
+      // A summary cut off at the output limit: the reason is the harness's, so no one is quoted.
       [
         settled({
           status: "completed",

@@ -7,8 +7,8 @@
  *   writes a hand-off file into the Session's scratchpad and then replies with its summary: the
  *   file is on disk as the model wrote it, the session stream carries the round between the
  *   compaction events as the Trace has it, the round's request sends the tool result with the
- *   harness's round line behind it, and the next Task opens with the summary, the write the
- *   harness ran for it, and its trailer naming the Trace file the compaction closed.
+ *   Agent's reminder behind it, and the next Task opens with the summary and one line naming
+ *   the Trace file the compaction closed.
  * - Given an always-ask Session, the round's write waits for the user: an approval request is
  *   published for it, nothing is written before the answer, and the file is written once it is
  *   allowed.
@@ -32,6 +32,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildContextSummaryText } from "@prismshadow/amsp/markers";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -184,7 +185,7 @@ describe("a compaction that hands files to the next context", { timeout: 30_000 
   const planFile = () =>
     path.join(sessionScratchpadDir(root, PROJECT, AGENT, sessionId), "handoff", "plan.md");
 
-  it("writes the hand-off file, streams the round, sends its result with the round line behind it, and the next Task opens with the summary, the write and its trailer", async () => {
+  it("writes the hand-off file, streams the round, sends its result with the reminder behind it, and the next Task opens with the summary and the closed Trace file's path", async () => {
     compactionReply = writePlan;
     await open("allow-all");
     await manager.startTask(sessionId, [userText("plan the release")]);
@@ -209,8 +210,8 @@ describe("a compaction that hands files to the next context", { timeout: 30_000 
       "token_usage",
       "request_end",
     ]);
-    // The round's request appends one user turn: the tool result, then the harness's line that
-    // counts the rounds — nothing else, so the cached prefix is extended, not changed.
+    // The round's request appends one user turn: the tool result, then the Agent's reminder —
+    // nothing else, so the cached prefix is extended, not changed.
     const roundRequest = mock.requests[2]! as { messages: { role: string; content: unknown }[] };
     const last = roundRequest.messages.at(-1)!;
     expect(last.role).toBe("user");
@@ -221,16 +222,12 @@ describe("a compaction that hands files to the next context", { timeout: 30_000 
 
     await manager.startTask(sessionId, [userText("go on")]);
     await idle();
-    const next = requestText(mock.requests[3]!);
-    expect(next).toContain("[context_summary]");
-    expect(next).toContain("Tag v1 as the plan says.");
-    // Under the summary, the write the harness ran for it: a new context has no other record of
-    // the call, so its id names the harness's own line.
-    expect(next).toContain("toolu_h1");
+    // The next context opens with the summary and the path of the file the compaction closed,
+    // and nothing else of the harness's: the write is in that file, not listed here.
     const day = (await fs.readdir(tracesDir(root, PROJECT, AGENT)))[0]!;
     const closed = path.join(tracesDir(root, PROJECT, AGENT), day, `${sessionId}_001.jsonl`);
-    expect(next).toContain(JSON.stringify(closed).slice(1, -1));
-    expect(next).toContain("read_file offset/limit");
+    const opening = buildContextSummaryText("## Next steps\nTag v1 as the plan says.", closed);
+    expect(requestText(mock.requests[3]!)).toContain(`"text":${JSON.stringify(opening)}`);
   });
 
   it("under always-ask the round's write waits for the user, and lands once allowed", async () => {

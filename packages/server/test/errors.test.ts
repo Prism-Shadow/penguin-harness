@@ -1054,7 +1054,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         reason: "context",
         mode: "summarize",
         status: "completed",
-        attempt: 3,
+        attempt: 1,
         errorCode: "output_truncated",
         errorMessage: "the summary was cut off at the output limit",
       }),
@@ -1142,7 +1142,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestEnd("completed"),
       // No tool round is left: refused outright.
       toolCallOutput({
-        output: "[tool error] no tool round is left in this compaction; reply with the summary",
+        output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c3",
         status: "fatal",
       }),

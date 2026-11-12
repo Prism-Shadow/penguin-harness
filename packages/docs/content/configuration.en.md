@@ -343,8 +343,10 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
-| `compaction.max_rounds` | `8` | The most tool rounds the harness runs for a summarize compaction before its summary |
 | `compaction.prompt` | Built-in template | Prompt used for summarize compaction |
+| `compaction.max_rounds` | `8` | How many times the harness asks again before the summary |
+| `compaction.reminder` | Built-in line | Sent behind the tool outputs each time the harness asks again |
+| `compaction.handoff_note` | Built-in template | The note the next context opens with when no summary could be had |
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | Built-in template | The always-injected half of the `{{MEMORY}}` block; carries `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | Built-in template | Appended only in a persistent Workspace; carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
@@ -368,8 +370,8 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `model.timeoutMs`: the longest wait for the next upstream event, reset by every event. It is not a cap on the request's total duration. It bounds the wait to connect and receive the first event, and the gaps between events. A model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, and so does a model behind a relay that consumes the thinking stream upstream and sends nothing until the answer starts. The default leaves room for both.
 - `compaction.max_context_length`: the effective threshold is the smaller of this value and the model's `context_window` minus a reserve of an eighth of the window, at least 8192 and at most 32768 tokens, which leaves the compaction room for its own request and the summary. A small-window model therefore compacts inside its window (a 32k window at 24,576, a 200k one at 175,000), while a window of 288,768 or more fires at this number. An entry with no `context_window` assumes a 128000 window, i.e. 112,000. `0` or less turns this trigger off; a request the provider refuses as sent still hands the context off (see [When the provider refuses a request](#when-the-provider-refuses-a-request)).
 - `compaction.max_session_turns`: `-1` means unlimited.
-- `compaction.max_rounds`: a ceiling, not a plan. The harness counts the rounds, not the model, and the Prompt asks for about three, with the calls a step needs in one reply. Each round's results say how many rounds are used; from the third on they ask for the summary and say how many more will run. Once none is left, or once the context has reached `context_window` − 12288, every tool call is refused, so on a 200k window the rounds still close after one to three and the ceiling binds only where the window leaves room. `0` or less refuses every tool call, so the model replies with its summary alone. In a round the model may read files and write hand-off files into its Session's scratchpad, nothing else, and a reply may carry the summary and its writes together. Each round re-reads the cached context at the cache-read price, about 0.75 M cached tokens per compaction at three rounds of a 250k context. See [Compaction](/agent-loop#hand-off-files-tool-rounds-before-the-summary).
-- `compaction.prompt`: `{{SCRATCHPAD_DIR}}` (the Session's scratchpad, absolute) is substituted when the section is read. The Prompt names no round limit: the numbers are in the harness's per-round lines.
+- `compaction.max_rounds`: a ceiling, not a plan. The harness counts the rounds, not the model; the default Prompt asks for about three and names no limit. `0` or less asks nothing again, so a first reply that is not the summary ends with the hand-off note: pair it with a Prompt that asks for text only. Each round re-reads the cached context at the cache-read price, about 0.75 M cached tokens per compaction at three rounds of a 250k context.
+- `compaction.prompt`, `compaction.reminder`, `compaction.handoff_note`: see [How a summarize compaction runs](#how-a-summarize-compaction-runs).
 - `*.prompt`: each section prompt is editable on its settings tab: both Memory prompts on **Memory**, `vault.prompt` on **Vault**, `skills.prompt` on **Plugins**, and `schedules.prompt` on **Schedules**.
 - `vault.enabled`: when off, values are still injected into subprocess environments; the model just does not see the key-name list.
 - `skills.enabled`: when off, installed Skills can still be invoked explicitly with `[use_skills]`.
@@ -378,7 +380,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `tools.builtin`: each entry has `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`. `call_description` is the per-tool switch for the `description` call argument, which is required while on; missing means kept.
 - `tools.mcpServers`: the transport is `stdio`, `http` or `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`. `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that server instead of trusting its `readOnlyHint`. A string value in `config` may hold a `${KEY}` reference to a Vault key, filled in when the server connects; see [Vault references](/tools#vault-references). `plugin` names the plugin whose install wrote the entry: reinstalling or uninstalling that plugin touches exactly the entries carrying its name, and an entry without the field is your own. Removing the field makes the entry yours, after which the plugin reads as not installed and installing it again is refused while the name is taken. See [MCP Servers](/tools#mcp-servers).
 
-The five `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
+The seven `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running; a compaction keeps the section it started with, and an edit saved while it runs applies from the next one. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
 
 For tool permissions and approval semantics, see [Tools & Approval](/tools).
 
@@ -412,6 +414,24 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
+### How a summarize compaction runs
+
+When the context reaches `max_context_length` (or `max_session_turns`), the harness appends `prompt` to the running context. Each reply is read once. If it holds the summary, the next context opens with it. If not, the harness answers the reply's tool calls — `read_file`, and `write_file` / `edit_file` inside the Session's scratchpad, run; anything else gets an error — appends `reminder`, and reads the next reply, at most `max_rounds` times. A reply that is still not the summary after that, or a request that fails for good (refused, cut at the output limit, or still failing after the usual retries), ends the compaction with `handoff_note`: the next context opens with that note, filled from the Trace file, without another model request. Either way the Task continues. Every line the harness sends is also in the closed Trace file, in order. See [Compaction](/agent-loop#compaction).
+
+The harness fills these placeholders:
+
+| Placeholder | In | Filled with |
+| --- | --- | --- |
+| `{{SCRATCHPAD_DIR}}` | all three | The Session's scratchpad, absolute, when the section is read |
+| `{{ROUNDS_USED}}` | `reminder` | The rounds used, the one just answered included |
+| `{{ROUNDS_LEFT}}` | `reminder` | `max_rounds` minus the rounds used (the default does not use it) |
+| `{{ERROR}}` | `handoff_note` | Why there is no summary: the error pair the compaction ended with, as one `[request_error code="…"]…[/request_error]` line, the message cut at 500 characters |
+| `{{USER_MESSAGES}}` | `handoff_note` | The compacted context's first user message and its last three, one `[user_input]` line each, cut at 1,500 characters, with a line saying how many were left out between |
+| `{{LAST_TURN}}` | `handoff_note` | The last completed request before the compaction: its text and its last four tool calls with their outputs, each cut at 500 characters |
+| `{{TRACE_PATH}}` | `handoff_note` | The absolute path of the Trace file the compaction closed |
+
+A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section.
+
 ### When the provider refuses a request
 
 A provider that refuses a request on a context it accepted before (HTTP 400, 413, 415 or 422) usually means the context has outgrown the model's real window: the model entry's `context_window` is larger than what the provider serves, so compaction was set to fire later than the provider allows. The conversation carries on from a Trace hand-off note (see [A refused request hands off](/agent-loop#a-refused-request-hands-off)), and the Web App marks the compaction row and raises a notice above the composer; the CLI's completion line says the same. Fix one of the two numbers:
@@ -419,7 +439,7 @@ A provider that refuses a request on a context it accepted before (HTTP 400, 413
 - **Correct the model's context window** to what the provider really serves: edit the model on the Models page (**Details** › **Context window**, see [Edit or delete a model](/models#edit-or-delete-a-model)), or the entry's `context_window` in the [model entries](#model-entries). For a self-hosted server, that is its configured maximum, such as vLLM's `--max-model-len`.
 - **Lower the agent's compaction threshold**, `compaction.max_context_length`, in the agent settings or by dragging the dashed marker in the context panel (see [Change the compaction threshold](/chat#change-the-compaction-threshold)). It applies to the running conversation at once.
 
-The same advice appears when a compaction's summary was cut off at the output limit every time it was asked for: too little room was left under the window for the compaction itself.
+The same advice appears when a compaction's summary was cut off at the output limit: too little room was left under the window for the compaction itself.
 
 ### Kernel updates
 

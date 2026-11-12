@@ -932,7 +932,7 @@ describe("approvals and events", () => {
     expect(banner.work![0]!.outputComplete).toBe(false);
   });
 
-  /** A summary cut off at the output limit: hundreds of characters inside its open tag. */
+  /** A summary cut off at the output limit, inside its open tag. */
   const cutSummary = (lead: string, repeat: number) =>
     `[summary]\n## Request\n${`${lead} Fix the three broken links in the release-notes draft. `.repeat(repeat)}`;
   /** What the banner settles to, for comparing a live model with one rebuilt from history. */
@@ -949,7 +949,7 @@ describe("approvals and events", () => {
     };
   };
   const degradedEnd = (
-    errorCode: "malformed" | "rejected",
+    errorCode: "malformed" | "rejected" | "output_truncated",
     errorMessage: string,
     attempt?: number,
   ) =>
@@ -962,9 +962,9 @@ describe("approvals and events", () => {
       errorMessage,
     });
 
-  it("a completed end with the error pair keeps no result, even after a cut-off summary, and keeps the thinking and the error, live and from history alike", () => {
+  it("a completed end with the error pair keeps no result after a summary cut off at the output limit, and keeps the thinking and the error, live and from history alike", () => {
     const cut = cutSummary("Cut.", 9);
-    const end = () => degradedEnd("malformed", "the response contained no usable summary", 3);
+    const end = () => degradedEnd("output_truncated", "stopped at the output limit", 1);
     const live = createStreamModel();
     for (const msg of [
       compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
@@ -976,13 +976,6 @@ describe("approvals and events", () => {
       partialText("delta", cut),
       partialText("stop"),
       requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
-      requestBegin(),
-      requestEnd("completed"),
-      requestBegin(),
-      partialText("start"),
-      partialText("delta", "[summary]\n## Request\nFix the li"),
-      partialText("stop"),
-      requestEnd("completed"),
       end(),
     ]) {
       pushMessage(live, msg);
@@ -995,13 +988,6 @@ describe("approvals and events", () => {
       thinkingMessage("what the next context needs"),
       assistantText(cut),
       requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }),
-      userText("Your previous reply hit the output limit and was discarded."),
-      requestBegin(),
-      requestEnd("completed"),
-      userText("Your previous reply held no summary."),
-      requestBegin(),
-      assistantText("[summary]\n## Request\nFix the li"),
-      requestEnd("completed"),
       end(),
     ]) {
       pushMessage(rebuilt, msg);
@@ -1011,8 +997,8 @@ describe("approvals and events", () => {
     expect(rowOf(live)).toEqual({
       running: false,
       status: "completed",
-      errorCode: "malformed",
-      errorMessage: "the response contained no usable summary",
+      errorCode: "output_truncated",
+      errorMessage: "stopped at the output limit",
       summaryText: undefined,
       thinkingText: "what the next context needs",
       work: [],

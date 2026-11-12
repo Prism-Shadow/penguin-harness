@@ -17,9 +17,10 @@
  *   tail page.
  * - A Trace with Task records is cut after the selected Task's task_end, before the next Task's
  *   task_begin: the fork never ends on an unclosed Task.
- * - A compaction summary's hand-off file paths and its trailer's Trace file are rewritten to the
- *   fork's scratchpad copy and the fork's copy of the file; a quoted compaction tool call's JSON
- *   arguments (a Windows path's backslashes doubled) are rewritten too.
+ * - A compaction summary's hand-off file paths and the Trace file its block names are rewritten
+ *   to the fork's scratchpad copy and the fork's copy of the file; a quoted tool call's JSON
+ *   arguments (a hand-off note quotes the last turn; a Windows path's backslashes doubled) are
+ *   rewritten too.
  * - An in-session switch's Trace handoff is rewritten to name the fork and the fork's copy of the
  *   file it points at.
  * - Concurrent forks get unique Sessions and never overwrite the source.
@@ -744,7 +745,7 @@ describe("session fork", () => {
     });
   });
 
-  it("a compaction summary's hand-off files and trailer name the fork's copies, so the fork reads its own", async () => {
+  it("a compaction summary's hand-off files and Trace file name the fork's copies, so the fork reads its own", async () => {
     const { scratch } = await seedSource();
     await fs.mkdir(path.join(scratch, "handoff"), { recursive: true });
     await fs.writeFile(path.join(scratch, "handoff", "plan.md"), "the plan", "utf8");
@@ -936,7 +937,7 @@ describe("a forked summary's paths", () => {
   const scratchpads = String.raw`C:\Users\u\.penguin\data\p1\agents\default_agent\scratchpad`;
   const traces = String.raw`C:\Users\u\.penguin\data\p1\agents\default_agent\traces\2026-08-14`;
 
-  /** A summary naming a hand-off file, the quoted compaction write of it, and its trailer. */
+  /** An opening naming a hand-off file, a quoted write of it, and the Trace file it came from. */
   function summaryOf(sessionId: string): string {
     const plan = `${scratchpads}\\${sessionId}\\handoff\\plan.md`;
     return buildContextSummaryText(
@@ -953,7 +954,7 @@ describe("a forked summary's paths", () => {
     );
   }
 
-  it("a quoted tool call's JSON arguments name the fork's scratchpad, as do its output, the summary and the trailer", () => {
+  it("a quoted tool call's JSON arguments name the fork's scratchpad, as do its output, the summary and the Trace file line", () => {
     expect(
       rewriteSummaryPaths(summaryOf(SID), `${scratchpads}\\${SID}`, `${scratchpads}\\${FORK}`, {
         source: SID,

@@ -159,7 +159,7 @@ function rewriteForkText(
     return null;
   };
   // A compaction summary names files of the Session it was written in: the hand-off files in
-  // its scratchpad, and its trailer the compacted context's Trace file. The fork copied the
+  // its scratchpad, and its last line the compacted context's Trace file. The fork copied the
   // whole scratchpad and has its own copy of every Trace file, so both are the fork's there.
   if (text.startsWith("[context_summary]")) {
     return rewriteSummaryPaths(text, sourceScratchpad, forkScratchpad, sessions);

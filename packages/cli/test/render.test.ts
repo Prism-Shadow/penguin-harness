@@ -609,16 +609,10 @@ describe("StreamRenderer", () => {
   });
 
   it("a completion without a full summary says so on its completion line, and what to correct when the provider refused it; nothing from inside the span prints", () => {
-    const cut = `[summary]\n## Request\n${"Fix the three broken links in the release-notes draft. ".repeat(9)}`;
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    // Cut at the output limit, then an empty reply: no full summary, for a reason of its own.
+    // An empty reply with no round left to ask again in: no full summary, for a reason of its own.
     r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
-    r.handle(requestBegin());
-    r.handle(partialText("start"));
-    r.handle(partialText("delta", cut));
-    r.handle(partialText("stop"));
-    r.handle(requestEnd("retryable", { errorCode: "output_truncated", attempt: 1 }));
     r.handle(requestBegin());
     r.handle(requestEnd("completed"));
     r.handle(
@@ -626,7 +620,7 @@ describe("StreamRenderer", () => {
         reason: "context",
         mode: "summarize",
         status: "completed",
-        attempt: 2,
+        attempt: 1,
         errorCode: "malformed",
         errorMessage: "the response contained no usable summary",
       }),
