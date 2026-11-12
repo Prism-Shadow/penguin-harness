@@ -1,5 +1,10 @@
-import { useMemo } from "react";
+import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
 import { groupPageOf, workspaceGroupKey } from "../../lib/session-grouping";
+import { machineForSession } from "../../lib/session-machines";
+import { S } from "../../lib/strings";
+import { toastApiError } from "../../lib/toast-api-error";
+import { deleteWorkspaceGroup, isOutdatedMachine } from "./delete-workspace";
 import {
   registerWorkspace,
   saveWorkspaceRegistry,
@@ -25,8 +30,14 @@ export function useMainSidebarApplyRegistryChange(
     setWorkspaceAliasText,
     deletingWorkspace,
     setDeletingWorkspace,
+    deletingWorkspaceBusy,
+    setDeletingWorkspaceBusy,
     setGroupPage,
     orderedWorkspaceGroups,
+    sessions,
+    activeSessionId,
+    newChat,
+    archiveGroup,
   } = scope;
 
   /** Persist-if-changed for every registry mutation (register / alias / unregister share the same-reference fast exit). */
@@ -60,12 +71,6 @@ export function useMainSidebarApplyRegistryChange(
   const machineNameOf = (machineId: string | null): string | null =>
     machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
 
-  /** Registered Workspaces by GROUP key — only their groups offer the rename/remove overflow. */
-  const registeredKeys = useMemo(
-    () => new Set(registeredWorkspaces.map((e) => workspaceGroupKey(e.path, e.machineId ?? null))),
-    [registeredWorkspaces],
-  );
-
   /** Open the alias editor pre-filled with the current alias ("" = following the basename). */
   const openRenameWorkspace = (path: string, machineId: string | null) => {
     setWorkspaceAliasText(
@@ -75,7 +80,10 @@ export function useMainSidebarApplyRegistryChange(
     setRenamingWorkspace({ path, machineId });
   };
 
-  /** Commit the alias (blank reverts the label to the directory basename). Direct save — no server, nothing destructive. */
+  /**
+   * Commit the alias (blank reverts the label to the directory basename). Direct save — no
+   * server, nothing destructive. Naming a group that was never registered registers it.
+   */
   const confirmRenameWorkspace = (alias: string) => {
     if (!renamingWorkspace) return;
     applyRegistryChange(
@@ -90,28 +98,50 @@ export function useMainSidebarApplyRegistryChange(
   };
 
   /**
-   * 删除工作区 (confirmed via the shared ConfirmModal, like every destructive-looking
-   * action): drops the sidebar registry entry only — disk and Sessions are never
-   * touched, the confirm copy says exactly that, and re-adding restores it. A group
-   * that still has Sessions simply persists as session-derived.
+   * 删除工作区, once the shared ConfirmModal is confirmed (delete-workspace.ts): the group's
+   * active conversations are archived on the server that holds them, then the group leaves the
+   * list and its registry entry goes; disk is never touched. A group with none only loses its
+   * entry. A failed request keeps the dialog open and everything as it was.
    */
-  const confirmDeleteWorkspace = () => {
-    if (!deletingWorkspace) return;
-    applyRegistryChange(
-      unregisterWorkspace(
-        registeredWorkspaces,
-        deletingWorkspace.path,
-        deletingWorkspace.machineId,
-      ),
-    );
-    setDeletingWorkspace(null);
+  const confirmDeleteWorkspace = async () => {
+    if (!deletingWorkspace || deletingWorkspaceBusy || currentProjectId === null) return;
+    setDeletingWorkspaceBusy(true);
+    const target = deletingWorkspace;
+    const projectId = currentProjectId;
+    try {
+      const outcome = await deleteWorkspaceGroup(target, {
+        archive: (group, machineId) =>
+          api.archiveWorkspaceSessions(projectId, group, machineId).then((r) => r.done),
+        leaveIfOpenIn: (key) => {
+          const open = sessions.find((s) => s.sessionId === activeSessionId);
+          if (
+            open &&
+            workspaceGroupKey(open.workspace, machineForSession(open.sessionId)) === key
+          ) {
+            newChat();
+          }
+        },
+        archiveGroup,
+        unregister: (path, machineId) =>
+          applyRegistryChange(unregisterWorkspace(registeredWorkspaces, path, machineId)),
+      });
+      if (outcome.ok) {
+        setDeletingWorkspace(null);
+        if (outcome.archived > 0) toastSuccess(S.chat.deleteWorkspaceArchived(outcome.archived));
+      } else if (isOutdatedMachine(outcome.error, target.machineId)) {
+        toastError(S.chat.deleteWorkspaceMachineOutdated(machineNameOf(target.machineId) ?? ""));
+      } else {
+        toastApiError(outcome.error);
+      }
+    } finally {
+      setDeletingWorkspaceBusy(false);
+    }
   };
   return {
     ...scope,
     applyRegistryChange,
     addWorkspace,
     machineNameOf,
-    registeredKeys,
     openRenameWorkspace,
     confirmRenameWorkspace,
     confirmDeleteWorkspace,

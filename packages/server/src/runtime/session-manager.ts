@@ -3008,6 +3008,7 @@ export abstract class SessionServiceIface extends Interface<
     | "listingOf"
     | "listSessions"
     | "archivedRows"
+    | "activeRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"

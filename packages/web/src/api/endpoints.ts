@@ -201,6 +201,8 @@ import type {
   SessionsResponse,
   SessionSwitchModelRequest,
   SessionBatchPageRequest,
+  SessionsArchiveRequest,
+  SessionsArchiveResponse,
   SessionsBatchRequest,
   SessionsBatchResponse,
   SessionTracesResponse,
@@ -956,6 +958,24 @@ export const batchSessions = (
     body: { requests } satisfies SessionsBatchRequest,
     server: machineId,
   });
+
+/**
+ * Archives every active conversation of one Workspace group (its path, or `temp`) on the server
+ * that holds it — the sidebar's "delete workspace", loaded rows or not, in one request.
+ */
+export const archiveWorkspaceSessions = (
+  projectId: string,
+  workspaceGroup: string,
+  machineId: string | null,
+) =>
+  apiFetch<SessionsArchiveResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/sessions/archive`,
+    {
+      method: "POST",
+      body: { workspaceGroup } satisfies SessionsArchiveRequest,
+      server: machineId,
+    },
+  );
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**

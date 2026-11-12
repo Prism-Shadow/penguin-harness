@@ -106,6 +106,7 @@ import {
   activityKeyOf,
   activityWatermark,
   isOrgSession,
+  isSidebarRow,
   sessionCategory,
   splitPage,
   workspaceGroupKey,
@@ -241,6 +242,13 @@ interface SessionsContextValue {
   add: (session: SessionInfo) => void;
   /** Remove from the list in place after deletion (also tombstones the id — see isDeleted). */
   remove: (sessionId: string) => void;
+  /**
+   * A Workspace group was archived whole (the sidebar's "delete workspace", already done on the
+   * server): its loaded rows turn archived and its counted share leaves the active totals in one
+   * update, so the group is gone before any event or reload lands; then one reload trues up.
+   * `groupKey` is the machine-qualified workspaceGroupKey the counts are stored under.
+   */
+  archiveGroup: (groupKey: string) => void;
   /**
    * Whether this client deleted the Session during this page's lifetime. A row missing from
    * the paged list normally means "not fetched yet", which the chat page resolves with a
@@ -425,6 +433,7 @@ interface SessionsStoreState {
   loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
   add: (session: SessionInfo) => void;
   remove: (sessionId: string) => void;
+  archiveGroup: (groupKey: string) => void;
   replace: (session: SessionInfo) => void;
   /**
    * A Session's listing changed somewhere — archived, unarchived or deleted, by this tab or
@@ -742,9 +751,11 @@ export function createSessionsStore() {
     /**
      * Applies the gathered listing changes in one update. An archive flip of a row this list
      * holds moves it between the lists in place — out of the sidebar but still held, so a page
-     * showing it turns into the archived stub or back — with the totals in step. An unarchived
-     * Session this list does not hold joins the sidebar where its activity puts it, which only
-     * a fetch can tell: one reload for the whole batch. A deleted Session is dropped and
+     * showing it turns into the archived stub or back — with the totals in step. A Session of
+     * this Project the list does not hold asks for one reload for the whole batch, either way: an
+     * unarchived one joins the sidebar where its activity puts it, and an archived one leaves its
+     * Workspace group's count, which only a fetch can tell (without it, a group deleted in another
+     * tab stays here as a counted group with nothing in it). A deleted Session is dropped and
      * tombstoned, held or not, so a page routed at it stops asking for it.
      */
     const flushListing = () => {
@@ -770,7 +781,7 @@ export function createSessionsStore() {
         // An unarchived id may have been looked up while it was archived and declined then.
         if (!archived) declined.delete(change.sessionId);
         if (row === undefined) {
-          if (!archived && change.projectId === projectId) fetchUnheld = true;
+          if (change.projectId === projectId) fetchUnheld = true;
           continue;
         }
         if (row.archived === archived) continue;
@@ -1453,6 +1464,36 @@ export function createSessionsStore() {
           deletedSessionIds: withTombstones(get().deletedSessionIds, [sessionId]),
           sessions: get().sessions.filter((s) => s.sessionId !== sessionId),
         });
+      },
+
+      archiveGroup: (groupKey) => {
+        // Invalidate any in-flight reload: read before the archive, it would bring the rows back.
+        gen += 1;
+        const inGroup = (s: SessionInfo) =>
+          isSidebarRow(s) &&
+          workspaceGroupKey(s.workspace, machineForSession(s.sessionId)) === groupKey;
+        const sessions = get().sessions.map((s) => (inGroup(s) ? { ...s, archived: true } : s));
+        // The group's whole counted share leaves the active totals, loaded rows or not: the server
+        // archived all of it, and a share left standing would form the group again from counts.
+        const countsByAgent = new Map(get().countsByAgent);
+        const workspaceCountsByAgent = new Map(get().workspaceCountsByAgent);
+        for (const [agentId, byGroup] of get().workspaceCountsByAgent) {
+          const share = byGroup[groupKey];
+          if (share === undefined || !(share.active > 0)) continue;
+          workspaceCountsByAgent.set(agentId, {
+            ...byGroup,
+            [groupKey]: { active: 0, archived: share.archived + share.active },
+          });
+          const total = countsByAgent.get(agentId);
+          if (total !== undefined) {
+            countsByAgent.set(agentId, {
+              active: Math.max(0, total.active - share.active),
+              archived: total.archived + share.active,
+            });
+          }
+        }
+        set({ sessions, countsByAgent, workspaceCountsByAgent });
+        void get().reload();
       },
 
       replace: (session) => {
@@ -2140,6 +2181,7 @@ export function SessionsProvider({
       loadMoreFor: state.loadMoreFor,
       add: state.add,
       remove: state.remove,
+      archiveGroup: state.archiveGroup,
       isDeleted,
       replace: state.replace,
       setStatus: state.setStatus,

@@ -129,6 +129,7 @@ export function renderMainSessionDialogs(scope: MainSidebarState) {
     setRenameError,
     deletingWorkspace,
     setDeletingWorkspace,
+    deletingWorkspaceBusy,
     deletingSession,
     setDeletingSession,
     deletingBusy,
@@ -205,19 +206,23 @@ export function renderMainSessionDialogs(scope: MainSidebarState) {
         </p>
       </ConfirmModal>
 
-      {/* Remove-workspace confirmation (shared ConfirmModal, same stop as the other
-          destructive-looking actions): the copy is honest about the scope — sidebar
-          registry entry only, disk and Sessions untouched, re-addable anytime. */}
+      {/* Delete-workspace confirmation (shared ConfirmModal): the copy names how many active
+          conversations will be archived, that the files on disk are untouched, and that
+          unarchiving any of them brings the Workspace back. Busy while the archive request is
+          out; a failure keeps it open. */}
       <ConfirmModal
         open={deletingWorkspace !== null}
         title={S.chat.deleteWorkspace}
         confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
-        onClose={() => setDeletingWorkspace(null)}
-        onConfirm={confirmDeleteWorkspace}
+        busy={deletingWorkspaceBusy}
+        onClose={() => (deletingWorkspaceBusy ? undefined : setDeletingWorkspace(null))}
+        onConfirm={() => void confirmDeleteWorkspace()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          {deletingWorkspace ? S.chat.deleteWorkspaceConfirm(deletingWorkspace.label) : ""}
+          {deletingWorkspace
+            ? S.chat.deleteWorkspaceConfirm(deletingWorkspace.label, deletingWorkspace.count)
+            : ""}
         </p>
       </ConfirmModal>
 

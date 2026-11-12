@@ -60,7 +60,6 @@ export function renderMainSessionList(scope: MainSidebarState) {
     newEntityLabel,
     addWorkspace,
     machineNameOf,
-    registeredKeys,
     openRenameWorkspace,
     renderGroupBody,
     onNavigate,
