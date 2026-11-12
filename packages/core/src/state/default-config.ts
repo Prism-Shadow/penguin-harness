@@ -114,10 +114,10 @@ export interface CompactionConfig {
   max_session_turns?: number;
   /** Compaction mode; defaults to summarize. */
   mode?: CompactionMode;
-  /** Tool rounds the harness allows a summarize compaction before its summary — a ceiling, not a plan; defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <=0 refuses every tool call. */
-  max_rounds?: number;
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
+  /** Replies without the summary the harness answers (tool calls, then `reminder`) before it opens the next context with `handoff_note`; defaults to {@link DEFAULT_COMPACTION_MAX_ROUNDS}, <=0 answers none. */
+  max_rounds?: number;
   /** The line sent after each tool round of a summarize compaction; defaults to {@link DEFAULT_COMPACTION_REMINDER}, blank sends none. */
   reminder?: string;
   /** The note a context opens with when no summary could be had; defaults to {@link DEFAULT_COMPACTION_HANDOFF_NOTE}, blank gives the quoted data alone. */
@@ -126,7 +126,7 @@ export interface CompactionConfig {
 
 /** Tool rounds a summarize compaction may take when `compaction.max_rounds` is absent. */
 export const DEFAULT_COMPACTION_MAX_ROUNDS = 8;
-/** Inside `compaction.prompt`: the absolute path of this Session's scratchpad directory. */
+/** Inside `compaction.prompt`, `reminder` and `handoff_note`: the absolute path of this Session's scratchpad directory. */
 export const COMPACTION_SCRATCHPAD_PLACEHOLDER = "{{SCRATCHPAD_DIR}}";
 
 /**
@@ -629,7 +629,7 @@ export function insertSchedulesPlaceholder(template: string): string {
 /**
  * Built-in default compaction Prompt (summarize mode): a summary in fixed sections, with detail
  * worth more than a paragraph saved to hand-off files in the Session's scratchpad. It names no
- * round limit of its own (the harness's round lines say them). The format is shown as a concrete
+ * round limit of its own (`max_rounds` is the harness's). The format is shown as a concrete
  * example rather than described in prose — some models treat the tags as a "title" and
  * write the body after the closing tag (issue #170); extraction salvages that shape, but
  * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
@@ -639,7 +639,7 @@ export const DEFAULT_COMPACTION_PROMPT = `The context window is nearly full. Com
 
 Reply with the summary in exactly the format below, and nothing after its closing tag. When there is detail worth more than a paragraph (a plan, findings, a decision log, data, drafts), also save it to files under ${COMPACTION_SCRATCHPAD_PLACEHOLDER}/handoff/ with write_file or edit_file (absolute paths), in the same reply as the summary when you can. Give each hand-off file a new name rather than overwriting an earlier one, so nothing has to be read first; a file that already exists must be read before it is overwritten. Only read_file, and write_file/edit_file inside that scratchpad, work now: no commands, no other writes.
 
-Aim to be done within about three tool rounds, and in one reply when you can: put the calls a step needs into the same reply instead of one call per reply. You do not have to count rounds. After each one the harness says how many you have used, and it stops running tool calls when the compaction has gone on too long. Under your summary the harness lists the tool calls it actually ran and how each ended, so name every hand-off file by its absolute path and do not repeat its content.
+Aim to be done within about three tool rounds, and in one reply when you can: put the calls a step needs into the same reply instead of one call per reply. You do not have to count rounds. After each one the harness says how many you have used, and it stops running tool calls when the compaction has gone on too long. Name every hand-off file by its absolute path and do not repeat its content.
 
 [summary]
 ## Request
@@ -1004,12 +1004,15 @@ export function defaultSystemConfig(): SystemConfig {
       // the answer starts. 120s, and later 300s, cut such requests off mid-thought.
       timeoutMs: 600000,
     },
+    // Key order is the order a compaction uses them in.
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
-      max_rounds: DEFAULT_COMPACTION_MAX_ROUNDS,
       prompt: DEFAULT_COMPACTION_PROMPT,
+      max_rounds: DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder: DEFAULT_COMPACTION_REMINDER,
+      handoff_note: DEFAULT_COMPACTION_HANDOFF_NOTE,
     },
     memory: {
       enabled: true,

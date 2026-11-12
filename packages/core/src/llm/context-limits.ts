@@ -13,8 +13,8 @@
  *
  * `OUTPUT_SAFETY_MARGIN` is the tunable of the per-request margin: the output floor is derived
  * from it (PR #235 review), so the floor cannot drift above the margin. The compaction room
- * under the window ({@link compactionReserve}, {@link COMPACTION_ROUND_ROOM}) is its own fact,
- * as are `DEFAULT_CONTEXT_WINDOW`, `DEFAULT_MAX_CONTEXT_LENGTH` and `IMAGE_TOKEN_ESTIMATE`.
+ * under the window ({@link compactionReserve}) is its own fact, as are
+ * `DEFAULT_CONTEXT_WINDOW`, `DEFAULT_MAX_CONTEXT_LENGTH` and `IMAGE_TOKEN_ESTIMATE`.
  *
  * Thinking-level interaction (considered, out of scope): on a high-reasoning session a
  * small derived cap can be consumed by thinking tokens before any visible answer, ending
@@ -111,9 +111,6 @@ export function compactionReserve(window: number): number {
   // threshold instead of falling into the `<= 0` range that means compaction is off.
   return Math.min(reserve, Math.floor(window / 2));
 }
-
-/** Room a tool round needs to leave for the summary that follows it. */
-export const COMPACTION_ROUND_ROOM = 12288;
 
 /**
  * Flat allowance for one image input: provider vision token counts vary widely
@@ -228,14 +225,4 @@ export function effectiveMaxContextLength(configured: number, contextWindow: unk
   if (configured <= 0) return configured;
   const window = resolveContextWindow(contextWindow) ?? DEFAULT_CONTEXT_WINDOW;
   return Math.min(configured, window - compactionReserve(window));
-}
-
-/**
- * The context size past which a compaction opens no further tool round
- * (`CompactionSettings.roundLimit`); `undefined` for an unconfigured window — like the output
- * clamp, a hard rule is not derived from an assumption (`compaction.max_rounds` still bounds).
- */
-export function compactionRoundLimit(contextWindow: unknown): number | undefined {
-  const window = resolveContextWindow(contextWindow);
-  return window === undefined ? undefined : window - COMPACTION_ROUND_ROOM;
 }
