@@ -841,6 +841,7 @@ export const zh = {
       pagedGroups: { app: "应用", you: "账号" },
       pages: { general: "通用", appearance: "外观", account: "个人资料" },
       pageBody: "当前页的设置项放在这里。",
+      pageRow: (n: number) => `第 ${n} 项设置`,
       appearanceInfo: "主题、强调色与密度只作用于这个浏览器。",
       drawer: "抽屉",
       openDrawer: "打开抽屉",
