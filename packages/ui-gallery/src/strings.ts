@@ -51,7 +51,8 @@ export const zh = {
       leaderboards: "榜单",
       amsp: "AMSP",
       docs: "文档",
-      gallery: "画廊",
+      gallery: "主题包",
+      more: "更多",
       github: "GitHub",
       openMenu: "打开菜单",
       closeMenu: "关闭菜单",
@@ -218,7 +219,7 @@ export const zh = {
     },
   } satisfies Record<SurfaceId, SurfaceCopy>,
   home: {
-    eyebrow: "界面画廊",
+    eyebrow: "主题包",
     title: "Penguin UI",
     lead: "真实的 Web App，在三套主题、两种明暗、五档字号、可选字体组合与两种语言下运行——数据来自浏览器内的演示接口，可以随意点击。",
     app: "应用",
@@ -546,7 +547,7 @@ export const zh = {
       site: {
         title: "公开站点",
         description:
-          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
+          "落地页与文档站共用的组件：导航栏、页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
       },
       files: {
         title: "文件",
@@ -1155,12 +1156,15 @@ export const zh = {
       ] as readonly { id: string; name: string }[],
     },
     site: {
+      nav: "导航栏",
+      navHint:
+        "三站共用：行末的「更多」收着 AMSP 与主题包，悬停或按下展开，其中一页是当前页时「更多」标为当前页；手机菜单把这两页缩进列在「更多」之下。",
       footer: "页脚",
       footerHint: "落地页的品牌与链接栏，文档站的一行版权与链接。",
       tagline: "统一、稳定的 Agent 自进化框架",
       columns: [
         { title: "产品", links: ["案例", "快速开始", "博客", "下载"] },
-        { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
+        { title: "资源", links: ["GitHub 仓库", "文档", "主题包"] },
       ] as readonly { title: string; links: readonly string[] }[],
       lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
       copyright: "© 2026 Prism Shadow，基于 Apache-2.0 协议开源",

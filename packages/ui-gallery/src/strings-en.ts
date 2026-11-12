@@ -16,7 +16,8 @@ export const en: GalleryStrings = {
       leaderboards: "Leaderboards",
       amsp: "AMSP",
       docs: "Docs",
-      gallery: "Gallery",
+      gallery: "Theme Packs",
+      more: "More",
       github: "GitHub",
       openMenu: "Open menu",
       closeMenu: "Close menu",
@@ -194,7 +195,7 @@ export const en: GalleryStrings = {
     },
   },
   home: {
-    eyebrow: "Surface gallery",
+    eyebrow: "Theme Packs",
     title: "Penguin UI",
     lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
@@ -536,7 +537,7 @@ export const en: GalleryStrings = {
       site: {
         title: "Public site",
         description:
-          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+          "What the landing page and the docs share: the navigation bar, the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
       },
       files: {
         title: "Files",
@@ -1188,13 +1189,16 @@ export const en: GalleryStrings = {
       ],
     },
     site: {
+      nav: "Navigation bar",
+      navHint:
+        "Shared by the three sites: More ends the row and holds AMSP and Theme Packs; it opens on hover or a press, and reads as current while one of them is. The phone menu lists the two set in under More.",
       footer: "Footer",
       footerHint:
         "The landing page's brand and link columns; the docs' single line of copyright and links.",
       tagline: "Unified and Stable RSI Framework.",
       columns: [
         { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
-        { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
+        { title: "Resources", links: ["GitHub repository", "Docs", "Theme Packs"] },
       ],
       lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
       copyright: "© 2026 Prism Shadow. Open source under Apache-2.0.",

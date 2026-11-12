@@ -50,7 +50,12 @@ export function Nav() {
       logo={`${import.meta.env.BASE_URL}penguin-logo.svg`}
       labels={S.nav}
       links={links}
-      home={{ ...links[0]!, render: (props) => routeLink({ ...props, onClick: close }) }}
+      home={{
+        id: "home",
+        href: "/",
+        label: S.nav.home,
+        render: (props) => routeLink({ ...props, onClick: close }),
+      }}
       language={{ value: lang, onChange: setLang, labels: S.lang }}
       theme={{ mode, onChange: setMode, labels: S.theme }}
       repo={{ href: REPO_URL, apiUrl: REPO_API_URL }}
