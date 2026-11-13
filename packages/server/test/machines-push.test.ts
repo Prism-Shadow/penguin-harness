@@ -8,6 +8,7 @@
  * answered as the scenario dictates, so what is exercised is what the install asks of a
  * machine, not the far side.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -170,6 +171,44 @@ describe("installOnRemote", () => {
     // The far side's own output is relayed as it arrives, not withheld until exit.
     expect(progress).toContain("PenguinHarness 0.2.4 installed");
   });
+
+  it.skipIf(process.platform === "win32")(
+    "reads the installer without parking the event loop on the read",
+    async () => {
+      // The installer asset is a FIFO: a read on it waits until a writer shows
+      // up. Read synchronously, that wait parks the whole process — every other
+      // request this server owes a client waits with it, which is the starved
+      // GET /api/version the report shows. Read asynchronously, the loop keeps
+      // turning while the bytes are outstanding.
+      const assetsDir = path.join(work, "assets");
+      fs.mkdirSync(assetsDir, { recursive: true });
+      const fifo = path.join(assetsDir, "install.sh");
+      execFileSync("mkfifo", [fifo]);
+      const channel = scripted({
+        probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+        afterInstall: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`,
+      });
+      const outcomePromise = installOnRemote({
+        target,
+        layout: RELEASE,
+        plan: plan(),
+        assets: () => assetsDir,
+        channel,
+      });
+      // The install is now parked on the installer read; a timer must still fire.
+      let ticked = false;
+      await new Promise<void>((resolve) =>
+        setTimeout(() => {
+          ticked = true;
+          resolve();
+        }, 150),
+      );
+      expect(ticked).toBe(true);
+      // Feed the installer; the install runs on over the channel to its outcome.
+      await fs.promises.writeFile(fifo, "#!/bin/sh\n# the installer\n");
+      await expect(outcomePromise).resolves.toMatchObject({ kind: "installed" });
+    },
+  );
 
   it("calls an install that ran cleanly and changed nothing a failure", async () => {
     // The installer exits 0 and says it installed; the machine still has nothing. Every step

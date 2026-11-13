@@ -583,7 +583,11 @@ export async function installOnRemote(opts: {
       const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
       let installer: Buffer;
       try {
-        installer = fs.readFileSync(path.join(installerHome, installerFile));
+        // Off the event loop: this read can sit on a slow or network-mounted
+        // asset directory for as long as the filesystem takes, and every other
+        // request this process owes a client waits with it when it is read
+        // synchronously.
+        installer = await fs.promises.readFile(path.join(installerHome, installerFile));
       } catch (err) {
         return {
           kind: "failed",
