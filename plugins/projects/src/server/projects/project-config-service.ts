@@ -87,7 +87,7 @@ import type {
   PlatformModelApplyResult,
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
-import { detectModelProtocol } from "./protocol-detect.js";
+import { detectModelProtocol } from "@prismshadow/penguin-server/internal";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";
 import {
