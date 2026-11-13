@@ -39,6 +39,7 @@ export function useFrameSrc(surface: Surface, theme: ThemeId): string {
       route: surface.route,
       ...(surface.signedOut ? { signedOut: true } : {}),
       ...(surface.open ? { open: surface.open } : {}),
+      ...(surface.window ? { window: surface.window } : {}),
     },
   );
 }
