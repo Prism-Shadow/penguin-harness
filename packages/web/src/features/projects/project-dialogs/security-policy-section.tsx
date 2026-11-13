@@ -9,6 +9,7 @@ import {
   ConfirmModal,
   FieldLegend,
   Input,
+  PagedDialogFoot,
   Pager,
   Segmented,
   SettingRow,
@@ -390,14 +391,10 @@ export function SecurityPolicySection({
             )}
           </div>
           {/* Under the table, held to the dialog's bottom edge while the rows scroll beneath it,
-              so Save is in reach however many rules the page shows. A sticky box stops short of
-              its scroller's padding, so it reaches 1rem (the dialog body's bottom padding) past
-              it and pads that back inside — no row shows through below it — and the negative
-              margin gives the same 1rem back where it rests at the end of the list. Its fill is
-              the dialog's own. The page steps rest while a rule editor is open: the editor
-              belongs to a row of the page it was opened on. */}
+              so Save is in reach however many rules the page shows. The page steps rest while a
+              rule editor is open: the editor belongs to a row of the page it was opened on. */}
           {(isOwner || pageCount > 1) && (
-            <div className="sticky -bottom-4 z-sticky-head -mb-4 flex min-h-10 items-center justify-between gap-2 border-t border-line-muted bg-overlay pt-2 pb-6">
+            <PagedDialogFoot className="flex min-h-10 items-center justify-between gap-2">
               {pageCount > 1 ? (
                 <Pager
                   page={shownPage}
@@ -421,7 +418,7 @@ export function SecurityPolicySection({
                   {S.common.save}
                 </Button>
               )}
-            </div>
+            </PagedDialogFoot>
           )}
         </>
       )}

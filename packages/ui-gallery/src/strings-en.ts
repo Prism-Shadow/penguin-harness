@@ -858,6 +858,7 @@ export const en: GalleryStrings = {
       pagedGroups: { app: "App", you: "Account" },
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
+      pageRow: (n: number) => `Setting ${n}`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",

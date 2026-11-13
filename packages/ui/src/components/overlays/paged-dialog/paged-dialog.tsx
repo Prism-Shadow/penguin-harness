@@ -1,6 +1,7 @@
 /**
  * PagedDialog: a large modal whose left rail switches sub-pages — the shared shell for multi-page
- * settings surfaces (Settings today; Project settings converges on the same shell). Purely
+ * settings surfaces (Settings and Project settings). The rail and the pane heading stay put and
+ * only the pane scrolls, so a long page never carries the rail away with it. Purely
  * presentational: the caller owns which pages exist, which one is active, and what the pane
  * renders; the shell draws the rail (a `NavList` of `NavRow`s, grouped, icon + label, solid-fill
  * active row — the sidebar's convention), the pane heading, and the close control.
@@ -111,11 +112,40 @@ export function PagedDialog<K extends string>({
             </h2>
             <CloseButton onClose={onClose} label={closeLabel} />
           </div>
+          {/* The pane is the dialog's one scroller for the page: the rail and the heading stay
+              put while a long page scrolls under them. Its bottom padding is the distance
+              PagedDialogFoot reaches back over; the two change together. */}
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-6">
             {children}
           </div>
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * A row held to the bottom edge of a PagedDialog's pane while the page scrolls beneath it: what
+ * must stay in reach however long the page grows (a table's pager and its Save). It rests at the
+ * end of the page once the page is scrolled there.
+ *
+ * A sticky box stops short of its scroller's padding, so the row reaches past the pane's bottom
+ * padding (`pb-4`, `sm:pb-6`) and pads that back inside, so nothing scrolls through below it; the
+ * negative margin gives the same space back where it rests. Its fill is the dialog's own, ruled
+ * off from the page above it. The caller lays out what it holds.
+ */
+export function PagedDialogFoot({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`sticky -bottom-4 z-sticky-head -mb-4 border-t border-line-muted bg-overlay pt-2 pb-6 sm:-bottom-6 sm:-mb-6 sm:pb-8 ${className}`}
+    >
+      {children}
+    </div>
   );
 }

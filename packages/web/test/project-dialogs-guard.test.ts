@@ -65,7 +65,7 @@ const idField = () => {
   );
   return document.getElementById(label!.htmlFor) as HTMLInputElement;
 };
-const heading = () => document.querySelector('[role="dialog"] h3')?.textContent ?? "";
+const heading = () => document.querySelector('[role="dialog"] h2')?.textContent ?? "";
 const nameField = () => field(en.project.displayName);
 /** The security page's delete button for the one stored rule. */
 const deleteRule = en.project.commandPolicyDeleteRuleNamed(FACTORY_RULE.name);
