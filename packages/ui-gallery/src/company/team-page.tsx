@@ -9,7 +9,7 @@ import { Button, PageFrame, PageHeader, Pill } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
 import { EMPLOYEES } from "./fixtures";
 import type { Byline } from "./fixtures";
-import { costOf, employeeMetrics, liveSessions, sessionStatus } from "./model";
+import { costOf, employeeMetrics, liveSessions, sessionStatus, spendOf } from "./model";
 import type { CompanyState } from "./model";
 import { waitOf } from "./spec";
 import { money, titleOf, tokens } from "./text";
@@ -48,7 +48,10 @@ export function TeamPage({
           </Button>
         }
       />
-      <ul className="divide-y divide-line">
+      <p className="text-xs tabular-nums text-fg-muted">
+        {W.team.total(tokens(spendOf(state)), money(spendOf(state)))}
+      </p>
+      <ul className="mt-2 divide-y divide-line">
         {team.map((byline) => (
           <Member key={byline} byline={byline} state={state} onOpenSession={onOpenSession} />
         ))}

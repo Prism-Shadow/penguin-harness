@@ -8,6 +8,7 @@ export const en: Words = {
       "Maintain the penguin-harness repository: identify issues, fix defects, and guide new users through setup.",
   },
   nav: {
+    inbox: "Inbox",
     talk: "Tell the lead…",
     talkHint: "Anything new goes to the lead; it files a ticket",
     team: "Team",
@@ -16,7 +17,6 @@ export const en: Words = {
     record: "Record",
     sessionTab: (name: string, role: string, round: number | null) =>
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
-    usage: (tokens: string, cost: string) => `${tokens} Tokens · ${cost} this month`,
     pick: "Pick a ticket on the left.",
     notStarted:
       "The company has not started. Say what you care about and the lead proposes a few tickets.",
@@ -134,6 +134,8 @@ export const en: Words = {
     examplesLabel: "Examples",
   },
   team: {
+    total: (tokens: string, cost: string) =>
+      `${tokens} Tokens · ${cost} across the company this month`,
     title: "Team",
     info: "Employees are defined by name, role and duties. Only the lead runs permanently; others launch sessions per assigned ticket.",
     hire: "Hire",

@@ -27,6 +27,7 @@ export const zh = {
     mission: "维护 penguin-harness 代码库：排查问题、修复缺陷，让新用户顺利完成首次配置。",
   },
   nav: {
+    inbox: "收件箱",
     talk: "对主理说…",
     talkHint: "新的事都找主理，它会记成工单",
     team: "团队",
@@ -35,7 +36,6 @@ export const zh = {
     record: "记录",
     sessionTab: (name: string, role: string, round: number | null) =>
       round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
-    usage: (tokens: string, cost: string) => `本月 ${tokens} Token · ${cost}`,
     pick: "在左栏选一张工单。",
     notStarted: "公司还没开始。说一句你关心的事，主理会提几张工单。",
     you: "你",
@@ -144,6 +144,7 @@ export const zh = {
     examplesLabel: "示例",
   },
   team: {
+    total: (tokens: string, cost: string) => `全公司本月 ${tokens} Token · ${cost}`,
     title: "团队",
     info: "员工包含姓名、职位和职责。仅主理常驻，其他员工仅在所负责工单的会话中执行任务。",
     hire: "招人",

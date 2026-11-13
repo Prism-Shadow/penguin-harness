@@ -1013,7 +1013,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Sidebar",
           now: "Six standalone pages, channels, and employee desks",
-          spec: "The left column is the inbox: tell the lead, then a folding group per state, and the schedules; team, handbook and all tickets sit on the top bar",
+          spec: "Laid out as the Agent page: tell the lead, team, handbook and all tickets at the top, then the inbox grouped by state, and the schedules",
         },
         {
           topic: "Employees",
@@ -1033,7 +1033,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Calendar and finance",
           now: "Standalone pages for calendar and finances",
-          spec: "Removed. Schedules live in the inbox; Token use and cost show on the top bar, the team page and each ticket",
+          spec: "Removed. Schedules live in the inbox; Token use and cost show on the team page and each ticket",
         },
       ],
     },

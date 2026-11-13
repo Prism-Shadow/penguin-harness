@@ -4,12 +4,11 @@
  * (model.ts). It is the spec's main exhibit: what the mode shows first, where a decision is
  * taken, and what never reaches the reader.
  *
- * Two columns. The left is the inbox, and it is the whole navigation (inbox-list.tsx): the line
- * to the lead, what waits on the reader, what is in progress, the schedules. The right reads what
- * the left names: a ticket, its record and its work sessions as tabs (ticket-pane.tsx), the
- * lead's conversation, or the schedules. It opens on the first ticket that waits on the reader.
- * The team, the handbook and the board are on the bar above the right column, with the Tokens
- * the company has used this month and what they cost; they are where the reader looks now and then, not where the work is.
+ * Two columns. The left is the whole navigation (inbox-list.tsx), laid out as the Agent sidebar
+ * is: the line to the lead and the team, handbook and board in its fixed block, and the inbox
+ * below them where the Agent sidebar lists its Workspaces. The right reads what the left names: a
+ * ticket, its record and its work sessions as tabs (ticket-pane.tsx), the lead's conversation, a
+ * page, or the schedules. It opens on the first ticket that waits on the reader.
  *
  * No agent runs here. The bar under the page moves every work session one step when the reader
  * asks, so they see a ticket come to the inbox and nothing else change.
@@ -44,7 +43,6 @@ import {
   sessionsOf,
   sessionStatus,
   setScheduleAuto,
-  spendOf,
   startCompany,
   ticketsIn,
   triageTicket,
@@ -52,20 +50,17 @@ import {
 } from "./model";
 import type { CompanyState } from "./model";
 import { entryWords, HandbookPage } from "./handbook-page";
-import { InboxList, TalkRow } from "./inbox-list";
+import { InboxList, PinnedRows } from "./inbox-list";
 import type { TicketActions } from "./needs-you";
 import { BoardPage, LeadPage, SchedulesPage, SetupPage } from "./pages";
 import { TeamPage } from "./team-page";
-import { money, titleOf, tokens } from "./text";
+import { titleOf } from "./text";
 import { TicketPane } from "./ticket-pane";
 import type { TicketTab } from "./ticket-pane";
 import { useWords } from "./use-words";
 
 /** What the right column shows. */
 type Pane = "ticket" | "lead" | "schedules" | "team" | "handbook" | "board";
-
-/** The bar's pages, in its order. */
-const BAR: readonly ("team" | "handbook" | "board")[] = ["team", "handbook", "board"];
 
 /** The first ticket that waits on the reader, else the first in progress. */
 function firstTicket(state: CompanyState): string | null {
@@ -180,7 +175,21 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
           {running && <OrgStatusPill org={{ status: "active" }} />}
         </div>
       }
-      pinned={<TalkRow active={pane === "lead"} disabled={!running} onTalk={talk} />}
+      pinned={
+        <PinnedRows
+          current={
+            pane === "lead" || pane === "team" || pane === "handbook" || pane === "board"
+              ? pane
+              : null
+          }
+          running={running}
+          onTalk={talk}
+          onPage={(page) => {
+            if (page === "handbook") setHandbookPath(null);
+            show(page);
+          }}
+        />
+      }
       account={
         <div className="flex items-center gap-2 px-2 py-2 text-sm">
           <UserAvatar userId="you" displayName={W.nav.you} />
@@ -270,31 +279,6 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         onMenu={() => setMenuOpen(true)}
         {...(waiting > 0 ? { menuBadge: <Pill tone="attention">{waiting}</Pill> } : {})}
       />
-      {running && (
-        <div
-          data-slot="company-bar"
-          className="flex shrink-0 flex-wrap items-center justify-end gap-x-1 gap-y-1 border-b border-line px-3 py-1.5"
-        >
-          <span className="hidden min-w-0 flex-1 truncate px-1 text-xs tabular-nums text-fg-muted sm:block">
-            {W.nav.usage(tokens(spendOf(state)), money(spendOf(state)))}
-          </span>
-          {BAR.map((page) => (
-            <Button
-              key={page}
-              size="sm"
-              variant="ghost"
-              aria-pressed={pane === page}
-              className={pane === page ? "text-fg" : "text-fg-muted"}
-              onClick={() => {
-                if (page === "handbook") setHandbookPath(null);
-                show(page);
-              }}
-            >
-              {W.nav[page]}
-            </Button>
-          ))}
-        </div>
-      )}
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">{body}</main>
       {running && (
         <div

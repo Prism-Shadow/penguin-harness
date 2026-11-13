@@ -1,14 +1,15 @@
 /**
- * The left column: the inbox as the company's whole navigation. At its head, the line to the lead,
- * for anything new (⌘K or Ctrl+K from anywhere). Under it, one folding group per view of the
+ * The left column, laid out as the Agent sidebar is. Its fixed block holds the line to the lead,
+ * for anything new (⌘K or Ctrl+K from anywhere), where New chat sits, and the team, the handbook
+ * and the board as page rows. Under it, at the level of the Agent sidebar's Workspaces, the
+ * inbox: one folding group per view of the
  * tickets, side by side at one level: what waits on the reader, what is in progress, what they
  * set aside for later, what is handled, what is archived; then the schedules, the daily patrol
  * and the weekly retrospective. What needs the reader or is moving starts open; the piles start
  * folded. Each ticket row reads like a mail: its title, and under it what it asks, what it
  * delivered, or its last progress line.
  *
- * The shipped sidebar's pages and the list of running sessions are gone from here: a session is a
- * tab of its ticket, and the team, the handbook and the board are on the main column's bar.
+ * The list of running sessions is gone from here: a session is a tab of its ticket.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -20,8 +21,10 @@ import {
   NAV_FILL,
   NavRow,
   Pill,
+  SidebarListHeader,
   SidebarNavArea,
 } from "@prismshadow/penguin-ui";
+import { COMPANY_NAV_ICONS } from "../../../web/src/features/company/company-nav-icons";
 import { ticketsIn } from "./model";
 import type { CompanyState, Ticket } from "./model";
 import { PersonAvatar } from "./people";
@@ -159,85 +162,116 @@ export function InboxList({
     return <p className="px-4 py-2 text-xs text-fg-subtle">{W.nav.notStarted}</p>;
   }
   return (
-    <div className="flex flex-col gap-1 px-2 pb-3">
-      {INBOX_VIEWS.map((view) => {
-        const tickets = ticketsIn(state, view);
-        return (
-          <section key={view} aria-label={W.views[view]}>
-            <GroupHeader
-              open={open[view]}
-              onToggle={() => toggle(view)}
-              glyph={GROUP_GLYPH[view]}
-              label={W.views[view]}
-              count={tickets.length}
-            />
-            <Fold open={open[view]}>
-              {() =>
-                tickets.length === 0 ? (
-                  <p className="px-7 pb-2 pt-0.5 text-xs text-fg-subtle">{W.inbox.empty[view]}</p>
-                ) : (
-                  <TicketRows tickets={tickets} selected={selected} onOpen={onOpen} />
-                )
-              }
-            </Fold>
-          </section>
-        );
-      })}
-      <section aria-label={W.inbox.schedules}>
-        <GroupHeader
-          open={open.schedules}
-          onToggle={() => toggle("schedules")}
-          glyph={GROUP_GLYPH.schedules}
-          label={W.inbox.schedules}
-          count={state.schedules.length}
-        />
-        <Fold open={open.schedules}>
-          {() => (
-            <div className="flex flex-col gap-px pb-2">
-              {state.schedules.map((schedule) => (
-                <Row
-                  key={schedule.id}
-                  active={schedulesOpen}
-                  onClick={onSchedules}
-                  leading={<PersonAvatar byline="lead" size={16} />}
-                  title={W.schedule.names[schedule.id]}
-                  line={`${W.schedule.when[schedule.id]} · ${
-                    schedule.auto ? W.schedule.autoOn : W.schedule.autoOff
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-        </Fold>
-      </section>
+    <div className="flex flex-col pb-3">
+      {/* The inbox's own header, at the level of the Agent sidebar's Workspaces. */}
+      <SidebarListHeader label={W.nav.inbox}>{null}</SidebarListHeader>
+      <div className="flex flex-col gap-1 px-2 pt-1">
+        {INBOX_VIEWS.map((view) => {
+          const tickets = ticketsIn(state, view);
+          return (
+            <section key={view} aria-label={W.views[view]}>
+              <GroupHeader
+                open={open[view]}
+                onToggle={() => toggle(view)}
+                glyph={GROUP_GLYPH[view]}
+                label={W.views[view]}
+                count={tickets.length}
+              />
+              <Fold open={open[view]}>
+                {() =>
+                  tickets.length === 0 ? (
+                    <p className="px-7 pb-2 pt-0.5 text-xs text-fg-subtle">{W.inbox.empty[view]}</p>
+                  ) : (
+                    <TicketRows tickets={tickets} selected={selected} onOpen={onOpen} />
+                  )
+                }
+              </Fold>
+            </section>
+          );
+        })}
+        <section aria-label={W.inbox.schedules}>
+          <GroupHeader
+            open={open.schedules}
+            onToggle={() => toggle("schedules")}
+            glyph={GROUP_GLYPH.schedules}
+            label={W.inbox.schedules}
+            count={state.schedules.length}
+          />
+          <Fold open={open.schedules}>
+            {() => (
+              <div className="flex flex-col gap-px pb-2">
+                {state.schedules.map((schedule) => (
+                  <Row
+                    key={schedule.id}
+                    active={schedulesOpen}
+                    onClick={onSchedules}
+                    leading={<PersonAvatar byline="lead" size={16} />}
+                    title={W.schedule.names[schedule.id]}
+                    line={`${W.schedule.when[schedule.id]} · ${
+                      schedule.auto ? W.schedule.autoOn : W.schedule.autoOff
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </Fold>
+        </section>
+      </div>
     </div>
   );
 }
 
-/** The pinned line to the lead, at the column's head. */
-export function TalkRow({
-  active,
-  disabled,
+/** The pages the column links to, under the line to the lead, as the Agent sidebar's page rows. */
+export type CompanyPage = "team" | "handbook" | "board";
+
+const PAGE_GLYPH: Record<CompanyPage, string> = {
+  team: ICONS[COMPANY_NAV_ICONS.chart],
+  handbook: ICONS[COMPANY_NAV_ICONS.handbook],
+  board: ICONS[COMPANY_NAV_ICONS.tickets],
+};
+
+/**
+ * The fixed block at the column's head, the place the Agent sidebar keeps New chat and its pages:
+ * the line to the lead, in New chat's weight, then the team, the handbook and the board.
+ */
+export function PinnedRows({
+  current,
+  running,
   onTalk,
+  onPage,
 }: {
-  active: boolean;
-  disabled: boolean;
+  /** What the main column shows, when it is one of these. */
+  current: "lead" | CompanyPage | null;
+  running: boolean;
   onTalk: () => void;
+  onPage: (page: CompanyPage) => void;
 }) {
   const W = useWords();
   return (
     <SidebarNavArea>
       <NavRow
+        surface="muted"
         label={W.nav.talk}
         glyph={<PersonAvatar byline="lead" size={16} />}
-        active={active}
-        disabled={disabled}
-        surface="muted"
+        active={current === "lead"}
+        disabled={!running}
         tooltip={W.nav.talkHint}
         tooltipExtra
         badge={<Kbd keys={TALK_KEYS} variant="plain" className="text-fg-subtle" />}
         onClick={onTalk}
+        className="font-medium"
       />
+      {(["team", "handbook", "board"] as const).map((page) => (
+        <NavRow
+          key={page}
+          surface="muted"
+          label={W.nav[page]}
+          glyph={PAGE_GLYPH[page]}
+          active={current === page}
+          disabled={!running}
+          onClick={() => onPage(page)}
+        />
+      ))}
     </SidebarNavArea>
   );
 }
