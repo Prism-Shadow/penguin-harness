@@ -21,28 +21,22 @@ import fs from "node:fs/promises";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { bodyAt, decodeBodyRef } from "@prismshadow/penguin-core/interfaces";
-import type { HistoryProgress, HistoryRecords } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
-import { Channels, Log } from "../../hmr/capabilities.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Traces } from "../../mechanisms/traces.js";
+import type { type HistoryProgress, type HistoryRecords } from "../../api/types.js";
+import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import type { type SessionRow } from "@prismshadow/penguin-server/internal";
+import { Channels, Log } from "@prismshadow/penguin-server/internal";
+import type { type Access } from "@prismshadow/penguin-server/internal";
+import type { type SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { type Traces } from "@prismshadow/penguin-server/internal";
 import { Sessions } from "../../runtime/session-manager.js";
-import {
-  HISTORY_LINES_BEAT_MS,
-  parseHistoryLinesQuery,
-  planHistoryLines,
-  sendHistoryLines,
-  sendHistoryLinesError,
-} from "../../services/history-lines.js";
-import type { HistoryLinesDeps } from "../../services/history-lines.js";
+import { HISTORY_LINES_BEAT_MS, parseHistoryLinesQuery, planHistoryLines, sendHistoryLines, sendHistoryLinesError } from "../../services/history-lines.js";
+import type { type HistoryLinesDeps } from "../../services/history-lines.js";
 import { FRAME_TEXT_BUDGET } from "../../socket/line-frames.js";
-import { HttpError } from "../errors.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import { eventStream } from "../event-stream.js";
 import { readableSession } from "../session-access.js";
-import type { EventSink } from "../event-stream.js";
-import { badRequest } from "../validate.js";
+import type { type EventSink } from "../event-stream.js";
+import { badRequest } from "@prismshadow/penguin-server/internal";
 
 /** Bytes [start, end) of a file. */
 async function readLine(path: string, start: number, end: number): Promise<Buffer> {

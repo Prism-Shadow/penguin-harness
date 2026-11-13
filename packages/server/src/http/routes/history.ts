@@ -18,34 +18,22 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { LiveStreams } from "../../auth/live-streams.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow } from "../../db/repos/sessions.js";
-import type { Channels } from "../../hmr/capabilities.js";
-import type { Auth } from "../../mechanisms/identity.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { SessionIndex } from "../../mechanisms/sessions.js";
-import type { Traces } from "../../mechanisms/traces.js";
-import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
-import {
-  HeldWindows,
-  openHistoryOut,
-  parseHistoryQuery,
-  resumePoint,
-  sendError,
-  sendWindow,
-  serializeWindow,
-} from "../../services/history-stream.js";
-import type { HistoryOut, HistoryQuery } from "../../services/history-stream.js";
-import {
-  captureHistoryEnvelope,
-  historyResponse,
-  messagesPageInfo,
-} from "../../services/session-history.js";
-import type { SessionHistoryDeps } from "../../services/session-history.js";
+import type { type LiveStreams } from "@prismshadow/penguin-server/internal";
+import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import type { type SessionRow } from "@prismshadow/penguin-server/internal";
+import type { type Channels } from "@prismshadow/penguin-server/internal";
+import type { type Auth } from "@prismshadow/penguin-server/internal";
+import type { type Access } from "@prismshadow/penguin-server/internal";
+import type { type SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { type Traces } from "@prismshadow/penguin-server/internal";
+import type { type Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
+import { HeldWindows, openHistoryOut, parseHistoryQuery, resumePoint, sendError, sendWindow, serializeWindow } from "../../services/history-stream.js";
+import type { type HistoryOut, type HistoryQuery } from "../../services/history-stream.js";
+import { captureHistoryEnvelope, historyResponse, messagesPageInfo } from "../../services/session-history.js";
+import type { type SessionHistoryDeps } from "../../services/session-history.js";
 import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
 import { readableSession } from "../session-access.js";
-import { streamRevocation } from "../sse.js";
+import { streamRevocation } from "@prismshadow/penguin-server/internal";
 
 export interface HistoryRouteDeps {
   sessions: Pick<SessionIndex, "findById">;

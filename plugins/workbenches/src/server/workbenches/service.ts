@@ -45,30 +45,18 @@ import type {
 import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import type { ServerEvent } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
-import { userChannelKey } from "../http/routes/events.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
-import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { type ServerEvent } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import type { type Channels, type Clock, type Config, type Hmr, type Log, type Paths } from "@prismshadow/penguin-server/internal";
+import { userChannelKey } from "@prismshadow/penguin-server/internal";
+import type { type AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { type AgentIndex, type Members, type Projects } from "@prismshadow/penguin-server/internal";
+import type { type Traces } from "@prismshadow/penguin-server/internal";
 import { workbenchResult } from "./result.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type {
-  AppCenterShortcut,
-  WorkbenchInfo,
-  WorkbenchInput,
-  WorkbenchRecord,
-  WorkbenchRequest,
-  WorkbenchResponse,
-  WorkbenchTab,
-  WorkbenchUiFile,
-  WorkbenchUiRuntime,
-  WorkbenchUiRuntimeFile,
-  WorkbenchVersion,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import type { type SessionIndex } from "@prismshadow/penguin-server/internal";
+import type { type AppCenterShortcut, type WorkbenchInput, type WorkbenchRecord, type WorkbenchUiFile, type WorkbenchUiRuntime, type WorkbenchUiRuntimeFile, type Workbenches } from "../mechanisms/workbenches.js";
+import type { type WorkbenchInfo, type WorkbenchRequest, type WorkbenchResponse, type WorkbenchTab, type WorkbenchVersion } from "@prismshadow/penguin-server/api";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import {
   agentShortcuts,
   appCenterIconRef,
@@ -89,8 +77,8 @@ import {
 } from "./compile.js";
 import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
-import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
-import { loadTypeScript } from "../plugin/typescript.js";
+import { checkIfaces, ifaceQuestions } from "@prismshadow/penguin-server/internal";
+import { loadTypeScript } from "@prismshadow/penguin-server/internal";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {

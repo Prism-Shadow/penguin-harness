@@ -44,28 +44,19 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type {
-  AppCenterLayoutResponse,
-  AppCenterResponse,
-  WorkbenchAppCenterResponse,
-  WorkbenchArchiveInstallResponse,
-  WorkbenchesResponse,
-} from "../api/types.js";
-import type { AppEnv } from "../auth/middleware.js";
-import type { Paths } from "../hmr/capabilities.js";
-import { HttpError } from "../http/errors.js";
+import type { type AppCenterLayoutResponse, type AppCenterResponse, type WorkbenchAppCenterResponse, type WorkbenchArchiveInstallResponse, type WorkbenchesResponse } from "../api/types.js";
+import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import type { type Paths } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
-import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
-import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { type AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { type Access, type Projects } from "@prismshadow/penguin-server/internal";
+import type { type UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-server/internal";
+import type { type WorkbenchRequest, type WorkbenchResponse } from "@prismshadow/penguin-server/api";
+import type { type Workbenches } from "../mechanisms/workbenches.js";
 import {
   parseAppCenterLayout,
   readAppCenterLayout,

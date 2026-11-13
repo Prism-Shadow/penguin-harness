@@ -53,16 +53,11 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AppEnv } from "../../auth/middleware.js";
-import type {
-  InstalledPlugin,
-  InstalledPluginsResponse,
-  PluginInstallOutcome,
-  UnsatisfiedPlugin,
-} from "../../api/types.js";
-import { HttpError } from "../errors.js";
+import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import type { type InstalledPlugin, type InstalledPluginsResponse, type PluginInstallOutcome, type UnsatisfiedPlugin } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-server/internal";
 import { eventStream } from "../event-stream.js";
-import { readJson, requireString, requireValidId } from "../validate.js";
+import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
@@ -72,31 +67,16 @@ import {
   type PluginTables,
 } from "@prismshadow/penguin-core";
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "@prismshadow/penguin-server/internal";
-import {
-  discoverBuiltinPlugins,
-  PACKAGE_NAME,
-  loadPlugins,
-  PLUGINS_FILE,
-  pluginBases,
-  readPluginClosure,
-  readPluginDeclaration,
-} from "../plugin/loader.js";
-import type { PluginPackages } from "../mechanism.js";
-import {
-  installedPackageDir,
-  installPluginChannel,
-  PluginInstallError,
-  pluginsPrefix,
-  readInstalledVersion,
-  type InstalledPackage,
-} from "../../plugin/install.js";
+import { discoverBuiltinPlugins, PACKAGE_NAME, loadPlugins, PLUGINS_FILE, pluginBases, readPluginClosure, readPluginDeclaration } from "../plugin/loader.js";
+import type { type PluginPackages } from "../mechanism.js";
+import { installedPackageDir, installPluginChannel, PluginInstallError, pluginsPrefix, readInstalledVersion, type InstalledPackage } from "../../plugin/install.js";
 import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { type Machines } from "@penguinharness/plugin-machines/server";
+import { MachinesRepo } from "@prismshadow/penguin-server/internal";
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;

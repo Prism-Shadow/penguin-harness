@@ -11,11 +11,11 @@ import { randomBytes } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_GO_PROVIDER_ID } from "../model-catalog/catalog.js";
-import { HttpError } from "../http/errors.js";
-import { normalizePenguinGoOrigin } from "../config.js";
-import { Config } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
-import type { DefaultModelOffer, PlatformAuthFlowStatusResponse } from "../api/types.js";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { normalizePenguinGoOrigin } from "@prismshadow/penguin-server/internal";
+import { Config } from "@prismshadow/penguin-server/internal";
+import type { type ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { type DefaultModelOffer, type PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
   type PlatformCatalogPricing,

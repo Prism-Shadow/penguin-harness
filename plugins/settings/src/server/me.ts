@@ -20,23 +20,16 @@ import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
 import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
-import type {
-  BackgroundImagePutResponse,
-  BackgroundImageResponse,
-  DraftsResponse,
-  MeResponse,
-  PrefsResponse,
-  UiPrefs,
-  UpdateProfileRequest,
-  UpdateProfileResponse,
-} from "../../api/types.js";
-import { toUserInfo } from "../../auth/service.js";
-import { cookieOptions, sessionCookieName } from "../../auth/middleware.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import { badRequest, readJson, requireString } from "../validate.js";
-import { HttpError } from "../errors.js";
-import type { ServerConfig } from "../../config.js";
-import type { DesktopService } from "../../services/desktop-service.js";
+import type { type BackgroundImagePutResponse, type BackgroundImageResponse, type DraftsResponse } from "../../api/types.js";
+import type { type MeResponse, type PrefsResponse, type UiPrefs, type UpdateProfileRequest, type UpdateProfileResponse } from "@prismshadow/penguin-server/api";
+import { toUserInfo } from "@prismshadow/penguin-server/internal";
+import { cookieOptions } from "@prismshadow/penguin-server/internal";
+import { sessionCookieName } from "../../auth/middleware.js";
+import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import type { type ServerConfig } from "@prismshadow/penguin-server/internal";
+import type { type DesktopService } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MeRouteDeps {
@@ -50,27 +43,18 @@ export interface MeRouteDeps {
   /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
   usersRepo: Users;
 }
-import { resolvePreviewTarget } from "../../services/preview-token.js";
-import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import { validateKeybindings } from "../../services/keybindings.js";
+import { resolvePreviewTarget } from "@prismshadow/penguin-server/internal";
+import { validateDraftShortcuts } from "@prismshadow/penguin-server/internal";
+import { validateKeybindings } from "@prismshadow/penguin-server/internal";
 import { validateAccountSettings } from "../../services/account-settings.js";
-import {
-  DRAFTS_MAX_COUNT,
-  DRAFTS_MAX_TOTAL_CHARS,
-  parseDraftsPatch,
-} from "../../services/user-drafts.js";
-import {
-  INLINE_IMAGE_MAX_MB,
-  MAX_ATTACHMENT_COUNT,
-  MAX_ATTACHMENT_MB,
-  MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+import { DRAFTS_MAX_COUNT, DRAFTS_MAX_TOTAL_CHARS, parseDraftsPatch } from "../../services/user-drafts.js";
+import { INLINE_IMAGE_MAX_MB, MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop } from "../../hmr/capabilities.js";
-import type { Auth, Users } from "../../mechanisms/identity.js";
-import type { Settings, UiPrefsStore } from "../../mechanisms/settings.js";
-import type { BackgroundImageStore, UserDraftsStore } from "../../mechanisms/account-data.js";
+import { Config, Desktop } from "@prismshadow/penguin-server/internal";
+import type { type Auth, type Users } from "@prismshadow/penguin-server/internal";
+import type { type Settings, type UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import type { type BackgroundImageStore, type UserDraftsStore } from "../../mechanisms/account-data.js";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
