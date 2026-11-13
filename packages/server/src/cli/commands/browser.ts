@@ -79,11 +79,12 @@ import {
   pngSize,
   BASE,
   STDIN_GRACE_MS,
+  BrowserCliError,
+  errorText,
+  type CommonOpts,
 } from "./browser-args.js";
 import fs from "node:fs";
 import path from "node:path";
-import { BrowserCliError, errorText } from "./browser-args.js";
-import type { CommonOpts } from "./browser-args.js";
 
 export function registerBrowserCommand(browser: Command, t: Messages): void {
   /** `--json` and `--server`, which every leaf takes, after its own options. */

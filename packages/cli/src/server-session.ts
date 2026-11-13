@@ -4,20 +4,19 @@
  * (type-only — nothing of the server is loaded at runtime).
  */
 import path from "node:path";
-import type {
-  MessagesResponse,
-  ModelRefDto,
-  ModelsResponse,
-  SessionCreateResponse,
-  SessionInfo,
-  SessionResponse,
-  SessionsResponse,
-  Messages,
-} from "@prismshadow/penguin-server/cli";
 import {
+  type MessagesResponse,
+  type ModelRefDto,
+  type ModelsResponse,
+  type SessionCreateResponse,
+  type SessionInfo,
+  type SessionResponse,
+  type SessionsResponse,
+  type Messages,
   listAgentSessions,
   resolveSessionRef,
   ServerClient,
+  getSessionInfo,
 } from "@prismshadow/penguin-server/cli";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 
@@ -148,8 +147,6 @@ export async function renameSession(
   });
   return res.session;
 }
-
-import { getSessionInfo } from "@prismshadow/penguin-server/cli";
 
 export { getSessionInfo };
 

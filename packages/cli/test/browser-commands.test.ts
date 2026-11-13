@@ -22,8 +22,12 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserExecResult, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { cli } from "../src/index.js";
-import { getMessages } from "@prismshadow/penguin-server/cli";
-import { localMinute, RETURN_LIMIT, renderExec } from "@prismshadow/penguin-server/cli";
+import {
+  getMessages,
+  localMinute,
+  RETURN_LIMIT,
+  renderExec,
+} from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");

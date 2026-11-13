@@ -7,69 +7,35 @@
  * command/option help descriptions and runtime output, one implementation per language.
  */
 
-import type { SessionRuntimeText } from "./session-runtime.messages.js";
-import { sessionruntimeEn } from "./session-runtime.messages.js";
-import { sessionruntimeZh } from "./session-runtime.messages.js";
-import type { RenderText } from "./render.messages.js";
-import { renderEn } from "./render.messages.js";
-import { renderZh } from "./render.messages.js";
-import type { AgentText } from "./commands/agent.messages.js";
-import { agentEn } from "./commands/agent.messages.js";
-import { agentZh } from "./commands/agent.messages.js";
-import type { AuthText } from "./commands/auth.messages.js";
-import { authEn } from "./commands/auth.messages.js";
-import { authZh } from "./commands/auth.messages.js";
-import type { ChatText } from "./commands/chat.messages.js";
-import { chatEn } from "./commands/chat.messages.js";
-import { chatZh } from "./commands/chat.messages.js";
-import type { ConfigText } from "./commands/config.messages.js";
-import { configEn } from "./commands/config.messages.js";
-import { configZh } from "./commands/config.messages.js";
-import type { CostText } from "./commands/cost.messages.js";
-import { costEn } from "./commands/cost.messages.js";
-import { costZh } from "./commands/cost.messages.js";
-import type { ExecText } from "./commands/exec.messages.js";
-import { execEn } from "./commands/exec.messages.js";
-import { execZh } from "./commands/exec.messages.js";
-import type { InputText } from "./commands/input.messages.js";
-import { inputEn } from "./commands/input.messages.js";
-import { inputZh } from "./commands/input.messages.js";
-import type { LogText } from "./commands/log.messages.js";
-import { logEn } from "./commands/log.messages.js";
-import { logZh } from "./commands/log.messages.js";
-import type { LsText } from "./commands/ls.messages.js";
-import { lsEn } from "./commands/ls.messages.js";
-import { lsZh } from "./commands/ls.messages.js";
-import type { PluginText } from "./commands/plugin.messages.js";
-import { pluginEn } from "./commands/plugin.messages.js";
-import { pluginZh } from "./commands/plugin.messages.js";
-import type { ProjectText } from "./commands/project.messages.js";
-import { projectEn } from "./commands/project.messages.js";
-import { projectZh } from "./commands/project.messages.js";
-import type { ResetPasswordText } from "./commands/reset-password.messages.js";
-import { resetpasswordEn } from "./commands/reset-password.messages.js";
-import { resetpasswordZh } from "./commands/reset-password.messages.js";
-import type { RunText } from "./commands/run.messages.js";
-import { runEn } from "./commands/run.messages.js";
-import { runZh } from "./commands/run.messages.js";
-import type { ServeText } from "./commands/serve.messages.js";
-import { serveEn } from "./commands/serve.messages.js";
-import { serveZh } from "./commands/serve.messages.js";
-import type { SessionText } from "./commands/session.messages.js";
-import { sessionEn } from "./commands/session.messages.js";
-import { sessionZh } from "./commands/session.messages.js";
-import type { ScheduleText } from "./commands/schedule.messages.js";
-import { scheduleEn } from "./commands/schedule.messages.js";
-import { scheduleZh } from "./commands/schedule.messages.js";
-import type { UpdateText } from "./commands/update.messages.js";
-import { updateEn } from "./commands/update.messages.js";
-import { updateZh } from "./commands/update.messages.js";
-import type { VersionText } from "./commands/version.messages.js";
-import { versionEn } from "./commands/version.messages.js";
-import { versionZh } from "./commands/version.messages.js";
-import type { BrowserText } from "./commands/browser.messages.js";
-import { browserEn } from "./commands/browser.messages.js";
-import { browserZh } from "./commands/browser.messages.js";
+import {
+  type SessionRuntimeText,
+  sessionruntimeEn,
+  sessionruntimeZh,
+} from "./session-runtime.messages.js";
+import { type RenderText, renderEn, renderZh } from "./render.messages.js";
+import { type AgentText, agentEn, agentZh } from "./commands/agent.messages.js";
+import { type AuthText, authEn, authZh } from "./commands/auth.messages.js";
+import { type ChatText, chatEn, chatZh } from "./commands/chat.messages.js";
+import { type ConfigText, configEn, configZh } from "./commands/config.messages.js";
+import { type CostText, costEn, costZh } from "./commands/cost.messages.js";
+import { type ExecText, execEn, execZh } from "./commands/exec.messages.js";
+import { type InputText, inputEn, inputZh } from "./commands/input.messages.js";
+import { type LogText, logEn, logZh } from "./commands/log.messages.js";
+import { type LsText, lsEn, lsZh } from "./commands/ls.messages.js";
+import { type PluginText, pluginEn, pluginZh } from "./commands/plugin.messages.js";
+import { type ProjectText, projectEn, projectZh } from "./commands/project.messages.js";
+import {
+  type ResetPasswordText,
+  resetpasswordEn,
+  resetpasswordZh,
+} from "./commands/reset-password.messages.js";
+import { type RunText, runEn, runZh } from "./commands/run.messages.js";
+import { type ServeText, serveEn, serveZh } from "./commands/serve.messages.js";
+import { type SessionText, sessionEn, sessionZh } from "./commands/session.messages.js";
+import { type ScheduleText, scheduleEn, scheduleZh } from "./commands/schedule.messages.js";
+import { type UpdateText, updateEn, updateZh } from "./commands/update.messages.js";
+import { type VersionText, versionEn, versionZh } from "./commands/version.messages.js";
+import { type BrowserText, browserEn, browserZh } from "./commands/browser.messages.js";
 import type { OrgText } from "./commands/org.messages.js";
 import { orgEn } from "./commands/org-en.messages.js";
 import { orgZh } from "./commands/org-zh.messages.js";

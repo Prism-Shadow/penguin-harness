@@ -8,7 +8,15 @@
  * The host boots this module once per invocation, turns the key into its command node, writes
  * the summary as the node's description, then calls the bound register with that node.
  */
-import { Bind, Component, Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import {
+  Bind,
+  Component,
+  Interface,
+  Module,
+  Provide,
+  bootModules,
+  moduleDefOf,
+} from "@prismshadow/penguin-core/kernel";
 import type {
   ClassCtx,
   IfaceTable,
@@ -16,7 +24,6 @@ import type {
   Resources,
   Slot,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import type {
   CliCommandCode,
   CliCommandData,
