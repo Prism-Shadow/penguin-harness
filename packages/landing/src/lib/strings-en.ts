@@ -1028,7 +1028,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Calendar and finance",
           now: "Standalone pages for calendar and finances",
-          spec: "Removed. Schedules live in the inbox, spend on the team page and tickets; a budget warning line files a ticket",
+          spec: "Removed. Schedules live in the inbox; Token use and cost are a record only, on the top bar, the team page and each ticket",
         },
       ],
     },

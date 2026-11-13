@@ -35,6 +35,7 @@ import {
   resultOf,
   returnOf,
   titleOf,
+  tokens,
 } from "./text";
 import { useWords } from "./use-words";
 
@@ -101,7 +102,8 @@ export function TicketPane({
             {W.ticket.source} {W.sources[ticket.source]}
           </span>
           <span className="tabular-nums">
-            {T.cost} <span className="font-medium text-fg">{money(cost)}</span>
+            {T.cost}{" "}
+            <span className="font-medium text-fg">{W.ticket.usage(tokens(cost), money(cost))}</span>
           </span>
         </p>
         <div className="mt-3">

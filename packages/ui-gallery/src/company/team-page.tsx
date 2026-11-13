@@ -1,7 +1,7 @@
 /**
  * The team: who works here, in the place of the shipped org chart. Each employee is a standing
- * role, read in one row: its name and title, who it reports to, what it is responsible for, what
- * it has spent of its budget this month, and the work sessions it has open, each a link to the
+ * role, read in one row: its name and title, who it reports to, what it is responsible for, the
+ * Tokens it has used this month and what they cost, and the work sessions it has open, each a link to the
  * conversation. A role the lead has proposed and the reader has not yet accepted is listed under
  * the team as a proposal; hiring goes through the lead, like any other request.
  */
@@ -12,7 +12,7 @@ import type { Byline } from "./fixtures";
 import { costOf, employeeMetrics, liveSessions, sessionStatus } from "./model";
 import type { CompanyState } from "./model";
 import { waitOf } from "./spec";
-import { money, titleOf } from "./text";
+import { money, titleOf, tokens } from "./text";
 import { SessionStatusPill } from "./needs-you";
 import { PersonAvatar } from "./people";
 import { useWords } from "./use-words";
@@ -111,7 +111,7 @@ function Member({
           <span className={`text-sm ${QUIET}`}>{person.title}</span>
           {employee.reportsTo === null && <Pill>{W.team.standing}</Pill>}
           <span className={`ml-auto text-xs tabular-nums ${QUIET}`}>
-            {W.team.spend(money(spent), money(state.budgets[byline]))}
+            {W.team.usage(tokens(spent), money(spent))}
           </span>
         </div>
         <p className={`mt-0.5 flex flex-wrap gap-x-3 text-xs ${QUIET}`}>

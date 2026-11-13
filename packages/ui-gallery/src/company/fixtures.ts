@@ -1,5 +1,5 @@
 /**
- * The sample work the prototype is staged with: fourteen tickets' worth of facts that are not
+ * The sample work the prototype is staged with: thirteen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
  * Everything is fictional; no agent runs.
@@ -16,7 +16,6 @@ export type FixtureId =
   | "survey"
   | "patrol"
   | "verifier"
-  | "budget"
   | "skill"
   | "patrolScope";
 
@@ -37,8 +36,8 @@ export type HandbookDocId = "readme" | "state" | "docsLesson" | "bilingualSkill"
 export type Byline = "lead" | "engineer" | "verifier";
 
 /**
- * An employee, apart from its words: its Agent id, who it reports to, and its monthly budget in
- * US dollars. The id picks the avatar's colour; these three fall a third of the wheel apart, so
+ * An employee, apart from its words: its Agent id and who it reports to. The id picks the
+ * avatar's colour; these three fall a third of the wheel apart, so
  * no two employees share a colour.
  * Its name, title and duties are the dictionaries' `people`. The lead is the one that stays up;
  * the others work only in the sessions of the tickets they own.
@@ -46,22 +45,26 @@ export type Byline = "lead" | "engineer" | "verifier";
 export interface Employee {
   agentId: string;
   reportsTo: Byline | null;
-  budget: number;
 }
 
-/** The company's employees, the lead first, with the budgets they start the month with. */
+/**
+ * What a million Tokens cost in the sample, input, output and cache together, in US dollars. A
+ * ticket's cost is its fixture's; its Tokens are read back from it at this price.
+ */
+export const USD_PER_MILLION_TOKENS = 3;
+
+/** The company's employees, the lead first. */
 export const EMPLOYEES: Record<Byline, Employee> = {
-  lead: { agentId: "harness-lead", reportsTo: null, budget: 20 },
-  engineer: { agentId: "org-engineer", reportsTo: "lead", budget: 12 },
-  verifier: { agentId: "org-verifier", reportsTo: "lead", budget: 8 },
+  lead: { agentId: "harness-lead", reportsTo: null },
+  engineer: { agentId: "org-engineer", reportsTo: "lead" },
+  verifier: { agentId: "org-verifier", reportsTo: "lead" },
 };
 
 /**
- * One step a work session takes: it notes progress, stops on its one question, delivers for
- * review, or closes a ticket that has nothing to review. A session never does anything else that
- * a person sees.
+ * One step a work session takes: it notes progress, stops on its one question, or delivers for
+ * review. A session never does anything else that a person sees.
  */
-export type ScriptStep = "progress" | "ask" | "deliver" | "close";
+export type ScriptStep = "progress" | "ask" | "deliver";
 
 export interface Fixture {
   kind: TicketKind;
@@ -159,14 +162,6 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
   },
   patrol: { kind: "schedule", owner: "lead", priority: "P1", script: [], cost: 0 },
   verifier: { kind: "role", owner: "lead", priority: "P2", script: [], cost: 0 },
-  budget: {
-    kind: "task",
-    owner: "lead",
-    priority: "P1",
-    script: ["ask", "close"],
-    recommended: 0,
-    cost: 0,
-  },
   skill: {
     kind: "skill",
     owner: "lead",

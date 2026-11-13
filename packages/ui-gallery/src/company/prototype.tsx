@@ -8,8 +8,8 @@
  * to the lead, what waits on the reader, what is in progress, the schedules. The right reads what
  * the left names: a ticket, its record and its work sessions as tabs (ticket-pane.tsx), the
  * lead's conversation, or the schedules. It opens on the first ticket that waits on the reader.
- * The team, the handbook and the board are on the bar above the right column, with what the
- * company has spent; they are where the reader looks now and then, not where the work is.
+ * The team, the handbook and the board are on the bar above the right column, with the Tokens
+ * the company has used this month and what they cost; they are where the reader looks now and then, not where the work is.
  *
  * No agent runs here. The bar under the page moves every work session one step when the reader
  * asks, so they see a ticket come to the inbox and nothing else change.
@@ -57,7 +57,7 @@ import type { AsideView } from "./inbox-list";
 import type { TicketActions } from "./needs-you";
 import { BoardPage, LeadPage, SchedulesPage, SetupPage } from "./pages";
 import { TeamPage } from "./team-page";
-import { money, titleOf } from "./text";
+import { money, titleOf, tokens } from "./text";
 import { TicketPane } from "./ticket-pane";
 import type { TicketTab } from "./ticket-pane";
 import { useWords } from "./use-words";
@@ -158,7 +158,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     }
     for (const event of passed.events) {
       // A progress line reaches nobody: only what waits on the reader, or what a patrol files, is said.
-      if (event.kind === "progress" || event.kind === "closed") continue;
+      if (event.kind === "progress") continue;
       if (event.kind === "retro") {
         toastInfo(W.pass.events.retro(event.id));
         continue;
@@ -258,7 +258,6 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     body = <p className="px-6 py-8 text-sm text-fg-muted">{W.nav.pick}</p>;
   }
 
-  const budget = Object.values(state.budgets).reduce((sum, value) => sum + value, 0);
   return (
     <AppShell
       nav={sidebar}
@@ -280,7 +279,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
           className="flex shrink-0 flex-wrap items-center justify-end gap-x-1 gap-y-1 border-b border-line px-3 py-1.5"
         >
           <span className="hidden min-w-0 flex-1 truncate px-1 text-xs tabular-nums text-fg-muted sm:block">
-            {W.nav.spend(money(spendOf(state)), money(budget))}
+            {W.nav.usage(tokens(spendOf(state)), money(spendOf(state)))}
           </span>
           {BAR.map((page) => (
             <Button

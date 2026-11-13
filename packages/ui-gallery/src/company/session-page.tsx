@@ -171,7 +171,6 @@ function Message({
     // The options are the block that takes the answer, and the answer names the one chosen.
     return <p className={BODY}>{questionOf(ticket, W)}</p>;
   }
-  if (message.step === "close") return <p className={BODY}>{resultOf(ticket, W)}</p>;
   if (message.step === "deliver") {
     const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
     return (

@@ -2,6 +2,7 @@
  * A ticket's words, read from the dictionary by what the ticket holds. A sample ticket shows its
  * fixture's words; one the reader asked for shows their own sentence and a few generic lines.
  */
+import { USD_PER_MILLION_TOKENS } from "./fixtures";
 import type { Ticket } from "./model";
 import type { TicketWords, Words } from "./words";
 
@@ -44,3 +45,11 @@ export function lineOf(ticket: Ticket, W: Words): string {
 
 /** A sum of money, in dollars to the cent. */
 export const money = (usd: number) => `$${usd.toFixed(2)}`;
+
+/** The Tokens a sum bought at the sample's price, shortened: 4.5M, 830K, 0. */
+export function tokens(usd: number): string {
+  const count = (usd / USD_PER_MILLION_TOKENS) * 1_000_000;
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${Math.round(count / 1_000)}K`;
+  return String(Math.round(count));
+}

@@ -26,8 +26,6 @@
  *   its ticket; a delivered document is filed only once it is accepted; a skill is filed and
  *   installed for its employee only once it is accepted; progress and talk in a session file
  *   nothing.
- * - Given a budget alert, the answer sets the employee's budget, and carrying it out closes the
- *   ticket with nothing to review.
  * - Given work sent back, or something said in a session, the employee notes it in its own skill
  *   with no approval; accepting a delivery notes nothing.
  * - Given tickets closing, a retrospective comes due once enough have closed since the last one:
@@ -121,12 +119,12 @@ describe("the waiting rule and the inbox views", () => {
     const state = weekState();
     const counts = inboxCounts(state);
     expect(Object.values(counts).reduce((a, b) => a + b)).toBe(state.tickets.length);
-    expect(counts.waiting).toBe(4);
+    expect(counts.waiting).toBe(3);
     expect(
       ticketsIn(state, "waiting")
         .map((ticket) => waitOf(ticket))
         .sort(),
-    ).toEqual(["accept", "answer", "answer", "review"]);
+    ).toEqual(["accept", "answer", "review"]);
   });
 });
 
@@ -272,7 +270,7 @@ describe("the three things a person does", () => {
 describe("triage", () => {
   it("refuses to snooze or archive a ticket that waits on the person", () => {
     const state = weekState();
-    for (const id of ["csv", "connection", "flaky", "budget"]) {
+    for (const id of ["csv", "connection", "flaky"]) {
       expect(triageTicket(state, id, "snooze")).toBe(state);
       expect(triageTicket(state, id, "archive")).toBe(state);
     }
@@ -350,7 +348,6 @@ describe("which sessions are live", () => {
       ["jitter", "running"],
       ["connection", "review"],
       ["csv", "answer"],
-      ["budget", "answer"],
     ]);
   });
 });
@@ -418,22 +415,6 @@ describe("the handbook", () => {
   });
 });
 
-describe("a budget alert", () => {
-  it("raises the budget on the first option and keeps it on the second", () => {
-    expect(answerTicket(weekState(), "budget", 0).budgets.engineer).toBe(20);
-    expect(answerTicket(weekState(), "budget", 1).budgets.engineer).toBe(12);
-  });
-
-  it("closes once carried out, with nothing for the person to review", () => {
-    const { state, events } = settle(answerTicket(weekState(), "budget", 0));
-    expect(events.filter((event) => event.id === "budget").map((event) => event.kind)).toEqual([
-      "closed",
-    ]);
-    expect(get(state, "budget")).toMatchObject({ status: "done", unread: false });
-    expect(transcript(state, "budget")).toEqual(["brief", "agent:ask", "person", "agent:close"]);
-  });
-});
-
 describe("an employee learning on its own", () => {
   it("notes a send-back and something said in its session, and nothing on an accepted delivery", () => {
     const week = weekState();
@@ -450,9 +431,9 @@ describe("retrospectives", () => {
   const due = () => {
     let state = approveTicket(weekState(), "connection");
     state = rejectTicket(state, "flaky");
-    state = answerTicket(state, "budget", 1);
-    while (get(state, "budget").status !== "done") state = letTimePass(state).state;
-    return state;
+    state = answerTicket(state, "csv", 0);
+    while (get(state, "csv").status !== "review") state = letTimePass(state).state;
+    return approveTicket(state, "csv");
   };
 
   it("counts what the first one's window says", () => {
@@ -541,7 +522,6 @@ describe("the order of a view", () => {
       "connection",
       "csv",
       "flaky",
-      "budget",
     ]);
     expect(ticketsIn(state, "handled").map((ticket) => ticket.id)).toEqual([
       "skill",

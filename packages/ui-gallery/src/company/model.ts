@@ -47,9 +47,9 @@ export const PERSON = "user:you";
 
 /**
  * Where a ticket came from: something the reader said, a patrol's find, the lead's own proposal,
- * or a budget crossing its warning line.
+ * or a retrospective's.
  */
-export type Source = "person" | "patrol" | "lead" | "budget" | "retro";
+export type Source = "person" | "patrol" | "lead" | "retro";
 
 export interface Ticket extends TicketState, Triage {
   id: string;
@@ -87,8 +87,6 @@ export type SessionMessage =
   | { from: "agent"; step: "progress"; line: number }
   | { from: "agent"; step: "ask" }
   | { from: "agent"; step: "deliver" }
-  /** The ticket closed with nothing to review: its result. */
-  | { from: "agent"; step: "close" }
   /** The agent's reply to something the person said in the session. */
   | { from: "agent"; step: "noted" }
   | { from: "person"; answer: number; note: string }
@@ -207,8 +205,6 @@ export interface CompanyState {
   schedules: Schedule[];
   /** The employees besides the lead, in the order they joined. */
   roles: Byline[];
-  /** Each employee's monthly budget, in US dollars. */
-  budgets: Record<Byline, number>;
   /** The handbook's files, oldest first. */
   handbook: HandbookEntry[];
   /** Ticket ids in the order they closed (done or rejected). */
@@ -224,7 +220,7 @@ export interface CompanyState {
 
 /** What letting time pass did to a ticket, for the note the prototype raises. */
 export interface PassEvent {
-  kind: "progress" | "asked" | "delivered" | "closed" | "proposed" | "started" | "retro";
+  kind: "progress" | "asked" | "delivered" | "proposed" | "started" | "retro";
   id: string;
 }
 
@@ -280,13 +276,6 @@ function replay(ticket: Ticket): SessionMessage[] {
   return messages;
 }
 
-/** Every employee's budget as it starts the month. */
-const budgetsOf = (): Record<Byline, number> => ({
-  lead: EMPLOYEES.lead.budget,
-  engineer: EMPLOYEES.engineer.budget,
-  verifier: EMPLOYEES.verifier.budget,
-});
-
 /** Before anything: the person has not said what the company should look after. */
 export function freshState(): CompanyState {
   return {
@@ -297,7 +286,6 @@ export function freshState(): CompanyState {
     schedules: [],
     // A company starts with the lead and one engineer; anyone else joins by an accepted proposal.
     roles: ["engineer"],
-    budgets: budgetsOf(),
     handbook: [fixedEntry("readme", null)],
     closed: [],
     retros: [],
@@ -309,7 +297,7 @@ export function freshState(): CompanyState {
 }
 
 /**
- * A week in: a question, a delivery, a patrol's proposal and a budget alert wait; a lesson from a
+ * A week in: a question, a delivery and a patrol's proposal wait; a lesson from a
  * send-back has already become a skill; the rest is quiet.
  */
 export function weekState(): CompanyState {
@@ -354,11 +342,6 @@ export function weekState(): CompanyState {
       working({ step: 2, progress: 1, asked: true, blockedBy: PERSON, unread: true }),
     ),
     ticketOf("flaky", "patrol"),
-    ticketOf(
-      "budget",
-      "budget",
-      working({ step: 1, asked: true, blockedBy: PERSON, unread: true }),
-    ),
   ];
   return {
     stage: "running",
@@ -375,7 +358,6 @@ export function weekState(): CompanyState {
       })),
     schedules: [{ id: "patrol", auto: false }],
     roles: ["engineer", "verifier"],
-    budgets: budgetsOf(),
     handbook: [
       fixedEntry("readme", null),
       fixedEntry("state", "survey"),
@@ -546,12 +528,7 @@ export function answerTicket(
     blockedBy: undefined,
     unread: false,
   });
-  // A budget alert's first option raises the employee's budget; the second keeps it.
-  const decided =
-    ticket.fixture === "budget" && option === 0
-      ? { ...answered, budgets: { ...answered.budgets, engineer: 20 } }
-      : answered;
-  const recorded = file(decided, {
+  const recorded = file(answered, {
     path: `decisions/${id}.md`,
     kind: "decision",
     ticket: id,
@@ -676,7 +653,7 @@ export function setScheduleAuto(state: CompanyState, id: FixtureId, auto: boolea
 }
 
 /**
- * One step of a ticket's work: a progress line, its question, its delivery, or its close, and
+ * One step of a ticket's work: a progress line, its question, or its delivery, and
  * what the session says.
  */
 function stepTicket(
@@ -686,14 +663,6 @@ function stepTicket(
   const step = scriptOf(ticket)[ticket.step];
   if (step === undefined) return null;
   const next = { ...ticket, step: ticket.step + 1 };
-  if (step === "close") {
-    // Nothing to review: the person's answer was the decision, and carrying it out ends the ticket.
-    return {
-      ticket: { ...next, status: "done" },
-      event: { kind: "closed", id: ticket.id },
-      message: { from: "agent", step },
-    };
-  }
   if (step === "progress") {
     return {
       ticket: { ...next, progress: ticket.progress + 1 },
@@ -743,10 +712,7 @@ export function letTimePass(state: CompanyState): { state: CompanyState; events:
       ...state,
       tickets,
     });
-    const moved = events
-      .filter((event) => event.kind === "closed")
-      .reduce((next, event) => close(next, event.id), told);
-    return { state: moved, events };
+    return { state: told, events };
   }
 
   const schedule = state.schedules[0];
