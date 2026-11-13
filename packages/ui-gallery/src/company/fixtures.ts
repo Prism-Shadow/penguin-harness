@@ -1,5 +1,5 @@
 /**
- * The sample work the prototype is staged with: eleven tickets' worth of facts that are not
+ * The sample work the prototype is staged with: thirteen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
  * Everything is fictional; no agent runs.
@@ -15,10 +15,21 @@ export type FixtureId =
   | "lint"
   | "survey"
   | "patrol"
-  | "verifier";
+  | "verifier"
+  | "budget"
+  | "skill";
 
-/** What accepting a ticket sets going: work, a patrol schedule, or a dedicated role. */
-export type TicketKind = "task" | "schedule" | "role";
+/**
+ * What accepting a ticket sets going: work, a patrol schedule, a dedicated role, or a skill the
+ * lead distilled, installed for the employee who needs it.
+ */
+export type TicketKind = "task" | "schedule" | "role" | "skill";
+
+/**
+ * The handbook's fixed documents, whose words are the dictionaries' `handbook.docs`. Decisions
+ * and lessons are written from their tickets instead (model.ts).
+ */
+export type HandbookDocId = "readme" | "state" | "docsLesson" | "bilingualSkill";
 
 /** Whose byline a ticket carries: one of the company's employees. */
 export type Byline = "lead" | "engineer" | "verifier";
@@ -36,18 +47,19 @@ export interface Employee {
   budget: number;
 }
 
-/** The company's employees, the lead first. Their budgets add up to the company's. */
+/** The company's employees, the lead first, with the budgets they start the month with. */
 export const EMPLOYEES: Record<Byline, Employee> = {
-  lead: { agentId: "harness-lead", reportsTo: null, budget: 40 },
-  engineer: { agentId: "org-engineer", reportsTo: "lead", budget: 40 },
-  verifier: { agentId: "org-verifier", reportsTo: "lead", budget: 20 },
+  lead: { agentId: "harness-lead", reportsTo: null, budget: 20 },
+  engineer: { agentId: "org-engineer", reportsTo: "lead", budget: 12 },
+  verifier: { agentId: "org-verifier", reportsTo: "lead", budget: 8 },
 };
 
 /**
- * One step a work session takes: it notes progress, stops on its one question, or delivers.
- * A session never does anything else that a person sees.
+ * One step a work session takes: it notes progress, stops on its one question, delivers for
+ * review, or closes a ticket that has nothing to review. A session never does anything else that
+ * a person sees.
  */
-export type ScriptStep = "progress" | "ask" | "deliver";
+export type ScriptStep = "progress" | "ask" | "deliver" | "close";
 
 export interface Fixture {
   kind: TicketKind;
@@ -61,6 +73,10 @@ export interface Fixture {
   deliverable?: string;
   /** What its sessions have cost so far, in US dollars, once work has started. */
   cost: number;
+  /** The handbook document it adds once it is done. */
+  handbook?: HandbookDocId;
+  /** Who a skill is installed for, once accepted. */
+  installsOn?: Byline;
 }
 
 export const FIXTURES: Record<FixtureId, Fixture> = {
@@ -71,7 +87,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "ask", "progress", "deliver"],
     recommended: 0,
     deliverable: "pull/128",
-    cost: 0.42,
+    cost: 4.2,
   },
   connection: {
     kind: "task",
@@ -79,7 +95,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "progress", "deliver"],
     deliverable: "pull/126",
-    cost: 0.31,
+    cost: 3.1,
   },
   flaky: {
     kind: "task",
@@ -87,7 +103,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "deliver"],
     deliverable: "pull/129",
-    cost: 0.18,
+    cost: 1.8,
   },
   jitter: {
     kind: "task",
@@ -95,7 +111,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "progress", "deliver"],
     deliverable: "reports/sidebar-jitter.md",
-    cost: 0.12,
+    cost: 1.2,
   },
   types: {
     kind: "task",
@@ -110,7 +126,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/121",
-    cost: 0.09,
+    cost: 0.9,
   },
   timeout: {
     kind: "task",
@@ -118,7 +134,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/119",
-    cost: 0.14,
+    cost: 1.4,
   },
   lint: {
     kind: "task",
@@ -126,7 +142,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P2",
     script: ["progress", "deliver"],
     deliverable: "pull/130",
-    cost: 0.07,
+    cost: 0.7,
   },
   survey: {
     kind: "task",
@@ -134,10 +150,28 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     priority: "P1",
     script: ["progress", "progress", "deliver"],
     deliverable: "handbook/state-of-the-repo.md",
-    cost: 0.26,
+    handbook: "state",
+    cost: 2.6,
   },
   patrol: { kind: "schedule", owner: "lead", priority: "P1", script: [], cost: 0 },
   verifier: { kind: "role", owner: "lead", priority: "P2", script: [], cost: 0 },
+  budget: {
+    kind: "task",
+    owner: "lead",
+    priority: "P1",
+    script: ["ask", "close"],
+    recommended: 0,
+    cost: 0,
+  },
+  skill: {
+    kind: "skill",
+    owner: "lead",
+    priority: "P2",
+    script: [],
+    cost: 0,
+    handbook: "bilingualSkill",
+    installsOn: "engineer",
+  },
 };
 
 /** The steps of a ticket the reader asked for in their own words. */

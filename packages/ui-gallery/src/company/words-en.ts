@@ -10,9 +10,8 @@ export const en: Words = {
   nav: {
     inbox: "Inbox",
     lead: "Lead",
-    more: "More pages",
-    less: "Fold",
     team: "Team",
+    handbook: "Handbook",
     sessions: "Work sessions",
     sessionsEmpty: "No work session is running",
     sessionOf: (n: number) => `Session ${n}`,
@@ -38,7 +37,12 @@ export const en: Words = {
       duties: "Runs every delivery before it reaches your review; also reproduces problems.",
     },
   },
-  sources: { person: "You asked", patrol: "Daily patrol", lead: "Lead's proposal" },
+  sources: {
+    person: "You asked",
+    patrol: "Daily patrol",
+    lead: "Lead's proposal",
+    budget: "Budget alert",
+  },
   waits: { accept: "To accept", answer: "To answer", review: "To review" },
   views: {
     waiting: "Waiting",
@@ -72,6 +76,8 @@ export const en: Words = {
       schedule:
         "Once accepted, this schedule files what it finds each day as tickets for you to decide.",
       role: "Once accepted, this role appears in the byline of tickets.",
+      skill:
+        "Once accepted, the skill is installed in the employee's own skills, and read before work of its kind starts.",
     },
     accept: "Accept",
     reject: "Reject",
@@ -84,6 +90,7 @@ export const en: Words = {
     deliverable: "Delivered",
     source: "Source",
     decisions: "Decisions",
+    handbook: "In the handbook",
     returned: "Sent back",
     sessionsEmpty: "No work session yet. Accepting opens one.",
     sessionRow: (n: number, owner: string, messages: number) =>
@@ -171,10 +178,6 @@ export const en: Words = {
       started: (title: string) => `The patrol found and started “${title}”`,
     },
   },
-  kept: {
-    title: "This page keeps its current design",
-    body: "The spec leaves it as it is, so the prototype does not redraw it.",
-  },
   tickets: {
     csv: {
       title: "Add CSV to the export",
@@ -235,8 +238,9 @@ export const en: Words = {
       title: "Correct the port in the quickstart",
       gist: "The docs say 7364; dev mode serves on 7365.",
       acceptance: ["Both languages are corrected"],
-      progress: ["Corrected the English and the Chinese page."],
+      progress: ["Corrected the port on the Chinese page."],
       result: "Both pages are corrected.",
+      returned: "The English page still has the old port.",
     },
     timeout: {
       title: "Say so when a model request times out",
@@ -273,6 +277,80 @@ export const en: Words = {
       gist: "Another agent tries every delivery by hand before it comes to you for review.",
       acceptance: ["The agent that writes the code is not the one that verifies it"],
       progress: [],
+    },
+    budget: {
+      title: "Mara Lind has used 80% of this month's budget",
+      gist: "A week into the month, Mara Lind has spent $9.60 of a $12 budget. At this pace she reaches the pause line mid-month, and then opens no new work session.",
+      acceptance: [],
+      progress: [],
+      question: "What should happen to Mara Lind's monthly budget?",
+      options: [
+        { label: "Raise it to $20", hint: "This month's work goes on as planned" },
+        { label: "Keep $12", hint: "Work pauses at the line and resumes next month" },
+      ],
+      result: "The budget is updated as you decided.",
+    },
+    skill: {
+      title: "Distill a skill: keep both languages of the docs in step",
+      gist: "“Correct the port in the quickstart” was sent back once for changing one language only. Write the checks down as a skill and install it for Mara Lind.",
+      acceptance: [
+        "The skill says to check both languages after a change",
+        "It is installed for the engineer who edits the docs",
+      ],
+      progress: [],
+    },
+  },
+  handbook: {
+    title: "Handbook",
+    info: "The company's memory: handbook/ in the organization's directory. The lead writes to it at three moments: you answer a question, and it records a decision; a delivery is sent back, and it records a lesson; the same kind of work comes up often enough, and it proposes a skill, installed for the employee who does that work once you accept. Employees read it before they start.",
+    groups: {
+      index: "Index",
+      decision: "Decisions",
+      lesson: "Lessons",
+      skill: "Skills",
+      doc: "Documents",
+    },
+    empty: "None yet",
+    from: "From ticket",
+    installedOn: "Installed for",
+    decisionBody: (label: string) => `Chose “${label}”.`,
+    lessonTitle: (title: string) => `Sent back: ${title}`,
+    lessonAfter: "Before delivering work of this kind again, check this first.",
+    docs: {
+      readme: {
+        title: "Handbook index",
+        body: [
+          "This is the company's memory. Employees read it before they start.",
+          "Decisions: questions you have answered. When one comes up again, it is settled here, without asking you.",
+          "Lessons: deliveries that were sent back, what was missed, and how to avoid it next time.",
+          "Skills: fixed ways of working distilled from lessons, installed in an employee's own skills.",
+          "Documents: what tickets delivered, such as the state of the repository.",
+        ],
+      },
+      state: {
+        title: "State of the repository",
+        body: [
+          "42 new issues in the last 30 days, 9 of them about the export.",
+          "CI failures cluster in the export test: 3 of the last 20 runs, from a timeout that is too short.",
+          "The three things to do first: fix the flaky export test, add a connection test to first-time setup, export CSV.",
+        ],
+      },
+      docsLesson: {
+        title: "Change both languages of a docs page",
+        body: [
+          "“Correct the port in the quickstart” was first delivered with the Chinese page only, and sent back.",
+          "When changing a docs page, find its other language first, change both, and compare the numbers before delivering.",
+        ],
+      },
+      bilingualSkill: {
+        title: "bilingual-docs: keep both languages of the docs in step",
+        body: [
+          "When to use: a ticket changes any page under packages/docs.",
+          "1. Find the page's two files, under zh and under en.",
+          "2. Make the same change in both.",
+          "3. Before delivering, compare the numbers, commands and links section by section.",
+        ],
+      },
     },
   },
 };

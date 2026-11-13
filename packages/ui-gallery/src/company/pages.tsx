@@ -8,13 +8,11 @@
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
  * - Setting up asks one sentence, in the frame of the shipped empty landing.
- * - A page the spec leaves alone says so instead of being redrawn.
  */
 import { useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import {
   Button,
-  EmptyState,
   GlyphIcon,
   Heading,
   ICONS,
@@ -46,8 +44,6 @@ import { money } from "./ticket-dialog";
 import { useWords } from "./use-words";
 
 const QUIET = "text-fg-muted";
-/** The company's monthly budget in the sample: the shipped default for a new organization. */
-const BUDGET = 100;
 
 /** What a ticket waits for, or else where it stands: one mark per row. */
 function Standing({ ticket }: { ticket: Ticket }) {
@@ -88,7 +84,11 @@ export function InboxPage({
         }
       />
       <p className={`text-xs ${QUIET}`}>
-        {W.inbox.summary(counts.working, money(spendOf(state)), money(BUDGET))}
+        {W.inbox.summary(
+          counts.working,
+          money(spendOf(state)),
+          money(Object.values(state.budgets).reduce((sum, budget) => sum + budget, 0)),
+        )}
       </p>
 
       <div className="mt-4 max-w-2xl" role="group" aria-label={W.inbox.title}>
@@ -380,17 +380,6 @@ export function SetupPage({ onStart }: { onStart: (mission: string) => void }) {
           </ul>
         </div>
       </form>
-    </PageFrame>
-  );
-}
-
-/** A page the spec leaves as it is: named, and not redrawn. */
-export function KeptPage({ title }: { title: ReactNode }) {
-  const W = useWords();
-  return (
-    <PageFrame width="xl">
-      <PageHeader title={title} />
-      <EmptyState title={W.kept.title} description={W.kept.body} />
     </PageFrame>
   );
 }

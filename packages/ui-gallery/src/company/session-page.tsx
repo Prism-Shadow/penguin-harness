@@ -14,7 +14,16 @@ import { Button, MessageBubble, Textarea } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
 import type { SessionMessage, SessionStatus, Ticket, WorkSession } from "./model";
-import { acceptanceOf, gistOf, optionsOf, progressOf, questionOf, resultOf, titleOf } from "./text";
+import {
+  acceptanceOf,
+  gistOf,
+  optionsOf,
+  progressOf,
+  questionOf,
+  resultOf,
+  returnOf,
+  titleOf,
+} from "./text";
 import { PersonAvatar, PersonName } from "./people";
 import { NeedsYou, SessionStatusPill } from "./ticket-dialog";
 import type { TicketActions } from "./ticket-dialog";
@@ -71,7 +80,12 @@ export function SessionPage({
         <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
           <p className={`text-xs ${QUIET}`}>{W.session.info}</p>
           {session.messages.map((message, i) => (
-            <Message key={i} message={message} ticket={ticket} />
+            <Message
+              key={i}
+              message={message}
+              ticket={ticket}
+              sentBack={session.messages.slice(i + 1).some((later) => "sendBack" in later)}
+            />
           ))}
           {status !== "running" && (
             <p className={`text-xs ${QUIET}`}>
@@ -113,7 +127,19 @@ export function SessionPage({
   );
 }
 
-function Message({ message, ticket }: { message: SessionMessage; ticket: Ticket }) {
+/**
+ * One line of the conversation. `sentBack` marks a delivery the person later sent back: the
+ * ticket's result describes the last delivery, so an earlier one says only that it was done.
+ */
+function Message({
+  message,
+  ticket,
+  sentBack,
+}: {
+  message: SessionMessage;
+  ticket: Ticket;
+  sentBack: boolean;
+}) {
   const W = useWords();
   if (message.from === "brief") {
     const acceptance = acceptanceOf(ticket, W);
@@ -138,7 +164,7 @@ function Message({ message, ticket }: { message: SessionMessage; ticket: Ticket 
       const label = optionsOf(ticket, W)[message.answer]?.label ?? "";
       text = [W.session.answered(label), message.note].filter((part) => part !== "").join(" ");
     } else if ("sendBack" in message) {
-      text = W.session.sentBack(message.sendBack);
+      text = W.session.sentBack(returnOf(ticket, message.sendBack, W));
     } else {
       text = message.text;
     }
@@ -157,11 +183,12 @@ function Message({ message, ticket }: { message: SessionMessage; ticket: Ticket 
     // The options are the block that takes the answer, and the answer names the one chosen.
     return <p className={BODY}>{questionOf(ticket, W)}</p>;
   }
+  if (message.step === "close") return <p className={BODY}>{resultOf(ticket, W)}</p>;
   if (message.step === "deliver") {
     const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
     return (
       <div className={BODY}>
-        <p>{resultOf(ticket, W)}</p>
+        <p>{sentBack ? W.ticket.saidResult : resultOf(ticket, W)}</p>
         {deliverable !== undefined && (
           <p className={`mt-1 text-xs ${QUIET}`}>
             {W.ticket.deliverable} <span className="font-mono text-fg">{deliverable}</span>

@@ -4,7 +4,7 @@
  * ticket's section titles, the board's columns) are read from the Web App's dictionary instead,
  * so the prototype says them as the app does. `tickets` is keyed by fixtures.ts.
  */
-import type { FixtureId } from "./fixtures";
+import type { FixtureId, HandbookDocId } from "./fixtures";
 
 export interface TicketWords {
   title: string;
@@ -15,6 +15,8 @@ export interface TicketWords {
   question?: string;
   options?: readonly { label: string; hint: string }[];
   result?: string;
+  /** The note it was sent back with, for a sample staged as sent back once. */
+  returned?: string;
 }
 
 export const zh = {
@@ -25,9 +27,8 @@ export const zh = {
   nav: {
     inbox: "收件箱",
     lead: "主理",
-    more: "更多页面",
-    less: "收起",
     team: "团队",
+    handbook: "手册",
     sessions: "工作会话",
     sessionsEmpty: "没有正在运行的工作会话",
     sessionOf: (n: number) => `会话 ${n}`,
@@ -50,7 +51,7 @@ export const zh = {
       duties: "把每份交付实际跑一遍再交给你验收；也负责复现问题。",
     },
   },
-  sources: { person: "你说的", patrol: "每日巡检", lead: "主理提议" },
+  sources: { person: "你说的", patrol: "每日巡检", lead: "主理提议", budget: "预算提醒" },
   waits: { accept: "待接受", answer: "待回答", review: "待验收" },
   views: { waiting: "等你", working: "进行中", later: "稍后", handled: "已处理", archived: "归档" },
   inbox: {
@@ -77,6 +78,7 @@ export const zh = {
       task: "接受后开一个工作会话。它写进展，有问题才来找你。",
       schedule: "接受后，这个日程每天把发现的问题提成工单，由你逐张决定。",
       role: "接受后，这个角色出现在工单的署名里。",
+      skill: "接受后，技能装到负责员工自己的技能目录里，同类工单开工前先读它。",
     },
     accept: "接受",
     reject: "驳回",
@@ -90,6 +92,7 @@ export const zh = {
     deliverable: "交付物",
     source: "来源",
     decisions: "决定",
+    handbook: "记入手册",
     returned: "打回",
     sessionsEmpty: "还没有工作会话。接受后开一个。",
     /** A session's row on the ticket: who works in it and how long it is. */
@@ -175,10 +178,6 @@ export const zh = {
       started: (title: string) => `巡检发现并已开工：「${title}」`,
     },
   },
-  kept: {
-    title: "这一页沿用现有设计",
-    body: "这次的规格没有改动它，所以原型里没有重画。",
-  },
   tickets: {
     csv: {
       title: "给导出加上 CSV",
@@ -224,8 +223,9 @@ export const zh = {
       title: "修正快速开始里的端口号",
       gist: "文档写的是 7364，开发模式实际是 7365。",
       acceptance: ["两种语言都改"],
-      progress: ["中英两页都改了。"],
+      progress: ["改了中文页的端口号。"],
       result: "两页都已修正。",
+      returned: "英文页的端口号还没改。",
     },
     timeout: {
       title: "给模型请求加上超时提示",
@@ -260,7 +260,72 @@ export const zh = {
       acceptance: ["写代码的和验证的不是同一个 Agent"],
       progress: [],
     },
+    budget: {
+      title: "沈知远本月预算已用 80%",
+      gist: "本月过去一周，沈知远已用 $9.60，预算 $12。照这个速度，月中会到暂停线；到线后他不再开新的工作会话。",
+      acceptance: [],
+      progress: [],
+      question: "沈知远的月预算怎么办？",
+      options: [
+        { label: "提高到 $20", hint: "这个月的工作照常推进" },
+        { label: "保持 $12", hint: "到线后暂停，下个月恢复" },
+      ],
+      result: "按你的决定更新了预算。",
+    },
+    skill: {
+      title: "提炼技能：中英文档同步修改",
+      gist: "「修正快速开始里的端口号」因为只改了一种语言被打回过。把检查步骤写成技能，装给沈知远。",
+      acceptance: ["技能写明改完后检查两种语言", "装给负责文档的工程师"],
+      progress: [],
+    },
   } satisfies Record<FixtureId, TicketWords>,
+  handbook: {
+    title: "手册",
+    info: "公司的记忆，也就是组织目录下的 handbook/。主理在三种时候往里写：你回答了问题，记一条决定；交付被打回，记一条教训；同类的事做多了，提议把做法提炼成技能，你接受后装给负责的员工。员工开工前先读这里。",
+    groups: { index: "目录", decision: "决定", lesson: "教训", skill: "技能", doc: "文档" },
+    empty: "还没有",
+    from: "来自工单",
+    installedOn: "已装给",
+    decisionBody: (label: string) => `选了「${label}」。`,
+    lessonTitle: (title: string) => `打回：${title}`,
+    lessonAfter: "下次同类工单交付前，先检查这一点。",
+    docs: {
+      readme: {
+        title: "手册目录",
+        body: [
+          "这是公司的记忆。员工开工前先读这里。",
+          "决定：你回答过的问题。同类问题再出现时先照这里办，不再问你。",
+          "教训：被打回的交付，哪里没做好，下次怎么避免。",
+          "技能：从教训里提炼的固定做法，装在员工自己的技能目录里。",
+          "文档：工单交付的说明，比如代码库现状。",
+        ],
+      },
+      state: {
+        title: "代码库现状",
+        body: [
+          "近 30 天有 42 个新 issue，其中 9 个与导出有关。",
+          "CI 失败集中在导出测试：最近 20 次里失败 3 次，原因是超时太短。",
+          "最值得先做的三件事：修偶发失败的导出测试；首次配置加连接测试；导出支持 CSV。",
+        ],
+      },
+      docsLesson: {
+        title: "改文档要中英两页一起改",
+        body: [
+          "「修正快速开始里的端口号」第一次交付只改了中文页，被打回。",
+          "改文档时，先找出同一页的另一种语言版本，两边一起改，交付前对一遍数字。",
+        ],
+      },
+      bilingualSkill: {
+        title: "bilingual-docs：中英文档同步修改",
+        body: [
+          "何时使用：工单要改 packages/docs 下的任何一页。",
+          "1. 找到这一页在 zh 和 en 下的两个文件。",
+          "2. 两边做同样的改动。",
+          "3. 交付前逐段比对两边的数字、命令和链接。",
+        ],
+      },
+    } satisfies Record<HandbookDocId, { title: string; body: readonly string[] }>,
+  },
 };
 
 export type Words = typeof zh;

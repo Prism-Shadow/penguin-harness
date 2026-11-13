@@ -33,7 +33,16 @@ import type { SessionStatus, Ticket, WorkSession } from "./model";
 import { PersonName, whoOf } from "./people";
 import { waitOf } from "./spec";
 import type { Wait } from "./spec";
-import { acceptanceOf, gistOf, optionsOf, progressOf, questionOf, resultOf, titleOf } from "./text";
+import {
+  acceptanceOf,
+  gistOf,
+  optionsOf,
+  progressOf,
+  questionOf,
+  resultOf,
+  returnOf,
+  titleOf,
+} from "./text";
 import { useWords } from "./use-words";
 
 export interface TicketActions {
@@ -55,8 +64,10 @@ export function TicketDialog({
   sessions,
   statusOf,
   cost,
+  filed,
   actions,
   onOpenSession,
+  onOpenHandbook,
   onClose,
 }: {
   ticket: Ticket;
@@ -64,8 +75,11 @@ export function TicketDialog({
   sessions: readonly WorkSession[];
   statusOf: (session: WorkSession) => SessionStatus;
   cost: number;
+  /** The handbook files it gave rise to: a decision, a lesson, a skill, a document. */
+  filed: readonly { path: string; title: string }[];
   actions: TicketActions;
   onOpenSession: (id: string) => void;
+  onOpenHandbook: (path: string) => void;
   onClose: () => void;
 }) {
   const W = useWords();
@@ -156,7 +170,7 @@ export function TicketDialog({
 
           {ticket.returns.length > 0 && (
             <RuledSection level={3} title={W.ticket.returned}>
-              <Lines lines={ticket.returns} />
+              <Lines lines={ticket.returns.map((note) => returnOf(ticket, note, W))} />
             </RuledSection>
           )}
 
@@ -164,6 +178,20 @@ export function TicketDialog({
             <RuledSection level={3} title={T.result}>
               <p className={BODY}>{resultOf(ticket, W)}</p>
               {deliverable !== undefined && <Deliverable path={deliverable} />}
+            </RuledSection>
+          )}
+
+          {filed.length > 0 && (
+            <RuledSection level={3} title={W.ticket.handbook} count={filed.length}>
+              <ul className="space-y-1">
+                {filed.map((entry) => (
+                  <li key={entry.path} className="text-sm">
+                    <TitleButton onClick={() => onOpenHandbook(entry.path)}>
+                      {entry.title}
+                    </TitleButton>
+                  </li>
+                ))}
+              </ul>
             </RuledSection>
           )}
 

@@ -987,7 +987,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     changes: {
       title: "What changes against the shipped version",
       subtitle:
-        "The shell, the board, the ticket file and the schedule stay. Three things change: what you see first, where you decide, and what comes to you.",
+        "The shell, the board, the ticket file and the schedule stay. What changes is what you see first, where you decide, what comes to you, and which pages the company keeps.",
       head: { topic: "Matter", now: "Today", spec: "This spec" },
       items: [
         {
@@ -1008,12 +1008,27 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "The sidebar",
           now: "Six pages, the channel list, and a desk per employee.",
-          spec: "Inbox, Lead, Tickets, Team; Calendar, Handbook and Finance fold away, and below them the work sessions that are not over, each opening the conversation itself.",
+          spec: "Inbox, Lead, Tickets, Team and Handbook, with nothing folded away. Below them are the work sessions that are not over, each opening the conversation itself.",
         },
         {
           topic: "Employees",
           now: "Every employee has a standing desk session; employees work together in channels; the org chart is a page of its own.",
           spec: "Employees are standing roles with a name, a title, duties and a budget, and every byline shows the title. Only the lead stays up; the others work only in the sessions of the tickets they own, and work together through sub-tickets. A team page replaces the org chart and shows what each one is doing and has spent.",
+        },
+        {
+          topic: "Calendar",
+          now: "Month, week and day views. Each employee has one recurring event that wakes its desk session to plan work.",
+          spec: "Removed. With no desks there is no rota to keep; the schedules that remain only file tickets, and are listed under the inbox.",
+        },
+        {
+          topic: "Finance",
+          now: "A page of its own: figures, a spend tree, a ticket cost ledger, warnings and pauses; a budget crossing its line posts a system message in the all-hands channel.",
+          spec: "The page is removed. Total spend is at the top of the inbox, each employee's spend and budget on the team page, a ticket's cost on the ticket. When a budget crosses its warning line, the lead files a ticket for you to answer: raise the budget, or pause at the line.",
+        },
+        {
+          topic: "Handbook",
+          now: "The files in the organization's directory, viewed and edited in a file browser.",
+          spec: "Sorted by purpose into decisions, lessons, skills and documents. Your answers are recorded as decisions and your send-backs as lessons; when lessons of one kind pile up, the lead proposes a skill, installed in the employee's own skills once you accept. Every file links the ticket it came from, and a ticket lists the files it added.",
         },
         {
           topic: "Setting up",

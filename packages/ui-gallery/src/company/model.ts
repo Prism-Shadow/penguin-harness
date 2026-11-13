@@ -25,17 +25,26 @@
  *   switched that schedule to automatic;
  * - triage never changes the work, and a ticket that waits on the person cannot be snoozed or
  *   archived.
+ *
+ * The handbook is how the company learns, and the lead writes to it at fixed moments only: an
+ * answer becomes a decision, a delivery sent back becomes a lesson, a delivered document is filed
+ * when it is accepted, and a skill distilled from lessons is installed for its employee only when
+ * the person accepts it.
  */
 import { FIXTURES, SAID_SCRIPT } from "./fixtures";
-import type { Byline, FixtureId, ScriptStep, TicketKind } from "./fixtures";
+import { EMPLOYEES } from "./fixtures";
+import type { Byline, FixtureId, HandbookDocId, ScriptStep, TicketKind } from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
 
 /** The reader, as a ticket names them. */
 export const PERSON = "user:you";
 
-/** Where a ticket came from: something the reader said, a patrol's find, or the lead's own proposal. */
-export type Source = "person" | "patrol" | "lead";
+/**
+ * Where a ticket came from: something the reader said, a patrol's find, the lead's own proposal,
+ * or a budget crossing its warning line.
+ */
+export type Source = "person" | "patrol" | "lead" | "budget";
 
 export interface Ticket extends TicketState, Triage {
   id: string;
@@ -58,7 +67,7 @@ export interface Ticket extends TicketState, Triage {
   /** What the person added to their answer. */
   answerNote: string;
   delivered: boolean;
-  /** The notes it was sent back with, oldest first. */
+  /** The notes it was sent back with, oldest first; an empty note is the sample's own, in the dictionary. */
   returns: string[];
   /** What the person said to its work session, oldest first. */
   notes: string[];
@@ -73,6 +82,8 @@ export type SessionMessage =
   | { from: "agent"; step: "progress"; line: number }
   | { from: "agent"; step: "ask" }
   | { from: "agent"; step: "deliver" }
+  /** The ticket closed with nothing to review: its result. */
+  | { from: "agent"; step: "close" }
   /** The agent's reply to something the person said in the session. */
   | { from: "agent"; step: "noted" }
   | { from: "person"; answer: number; note: string }
@@ -90,6 +101,43 @@ export interface WorkSession {
 
 /** Where a session stands: working, waiting on the person, or over. */
 export type SessionStatus = "running" | "answer" | "review" | "ended";
+
+/** What a handbook entry is: the index, a document, a decision, a lesson, or a skill. */
+export type HandbookKind = "index" | "doc" | "decision" | "lesson" | "skill";
+
+/** A file under the organization's handbook/. */
+export interface HandbookEntry {
+  /** Its path under handbook/. */
+  path: string;
+  kind: HandbookKind;
+  /** The ticket it came from; null for the index. */
+  ticket: string | null;
+  /** A fixed document's words; null for a decision or lesson, written from its ticket. */
+  doc: HandbookDocId | null;
+  /** A lesson's note: which of its ticket's send-backs. */
+  returnIndex?: number;
+  /** A skill's employee: it is installed in that employee's own skills. */
+  installedOn?: Byline;
+}
+
+/** The fixed documents' paths and kinds. */
+const FIXED_DOCS: Record<HandbookDocId, { path: string; kind: HandbookKind }> = {
+  readme: { path: "README.md", kind: "index" },
+  state: { path: "state-of-the-repo.md", kind: "doc" },
+  docsLesson: { path: "lessons/docs-both-languages.md", kind: "lesson" },
+  bilingualSkill: { path: "skills/bilingual-docs/SKILL.md", kind: "skill" },
+};
+
+const fixedEntry = (
+  doc: HandbookDocId,
+  ticket: string | null,
+  installedOn?: Byline,
+): HandbookEntry => ({
+  ...FIXED_DOCS[doc],
+  ticket,
+  doc,
+  ...(installedOn !== undefined ? { installedOn } : {}),
+});
 
 export interface Schedule {
   id: FixtureId;
@@ -118,6 +166,10 @@ export interface CompanyState {
   schedules: Schedule[];
   /** The employees besides the lead, in the order they joined. */
   roles: Byline[];
+  /** Each employee's monthly budget, in US dollars. */
+  budgets: Record<Byline, number>;
+  /** The handbook's files, oldest first. */
+  handbook: HandbookEntry[];
   chat: ChatLine[];
   /** What a patrol can still find, in the order it finds it. */
   pool: FixtureId[];
@@ -127,7 +179,7 @@ export interface CompanyState {
 
 /** What letting time pass did to a ticket, for the note the prototype raises. */
 export interface PassEvent {
-  kind: "progress" | "asked" | "delivered" | "proposed" | "started";
+  kind: "progress" | "asked" | "delivered" | "closed" | "proposed" | "started";
   id: string;
 }
 
@@ -167,6 +219,7 @@ const working = (patch: Partial<Ticket> = {}): Partial<Ticket> => ({
 function replay(ticket: Ticket): SessionMessage[] {
   const messages: SessionMessage[] = [{ from: "brief" }];
   let line = 0;
+  let delivered = 0;
   for (const step of scriptOf(ticket).slice(0, ticket.step)) {
     messages.push(
       step === "progress" ? { from: "agent", step, line: line++ } : { from: "agent", step },
@@ -174,9 +227,20 @@ function replay(ticket: Ticket): SessionMessage[] {
     if (step === "ask" && ticket.answer !== null) {
       messages.push({ from: "person", answer: ticket.answer, note: ticket.answerNote });
     }
+    if (step === "deliver") {
+      const note = ticket.returns[delivered++];
+      if (note !== undefined) messages.push({ from: "person", sendBack: note });
+    }
   }
   return messages;
 }
+
+/** Every employee's budget as it starts the month. */
+const budgetsOf = (): Record<Byline, number> => ({
+  lead: EMPLOYEES.lead.budget,
+  engineer: EMPLOYEES.engineer.budget,
+  verifier: EMPLOYEES.verifier.budget,
+});
 
 /** Before anything: the person has not said what the company should look after. */
 export function freshState(): CompanyState {
@@ -188,13 +252,18 @@ export function freshState(): CompanyState {
     schedules: [],
     // A company starts with the lead and one engineer; anyone else joins by an accepted proposal.
     roles: ["engineer"],
+    budgets: budgetsOf(),
+    handbook: [fixedEntry("readme", null)],
     chat: [],
     pool: ["flaky", "lint"],
     said: 0,
   };
 }
 
-/** A week in: a question and a delivery wait, a patrol has proposed one thing, the rest is quiet. */
+/**
+ * A week in: a question, a delivery, a patrol's proposal and a budget alert wait; a lesson from a
+ * send-back has already become a skill; the rest is quiet.
+ */
 export function weekState(): CompanyState {
   const tickets: Ticket[] = [
     ticketOf("patrol", "lead", { status: "done", unread: false }),
@@ -217,11 +286,13 @@ export function weekState(): CompanyState {
     }),
     ticketOf("docs", "person", {
       status: "done",
-      step: 2,
-      progress: 1,
+      step: 4,
+      progress: 2,
       delivered: true,
+      returns: [""],
       unread: false,
     }),
+    ticketOf("skill", "lead", { status: "done", unread: false }),
     ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
     ticketOf("connection", "person", {
       status: "review",
@@ -235,6 +306,11 @@ export function weekState(): CompanyState {
       working({ step: 2, progress: 1, asked: true, blockedBy: PERSON, unread: true }),
     ),
     ticketOf("flaky", "patrol"),
+    ticketOf(
+      "budget",
+      "budget",
+      working({ step: 1, asked: true, blockedBy: PERSON, unread: true }),
+    ),
   ];
   return {
     stage: "running",
@@ -251,6 +327,13 @@ export function weekState(): CompanyState {
       })),
     schedules: [{ id: "patrol", auto: false }],
     roles: ["engineer", "verifier"],
+    budgets: budgetsOf(),
+    handbook: [
+      fixedEntry("readme", null),
+      fixedEntry("state", "survey"),
+      fixedEntry("docsLesson", "docs"),
+      fixedEntry("bilingualSkill", "skill", "engineer"),
+    ],
     chat: [
       { from: "person", about: "csv" },
       { from: "lead", line: "filed", tickets: ["csv"] },
@@ -340,15 +423,29 @@ export function startCompany(state: CompanyState, mission: string): CompanyState
   };
 }
 
-/** Accept a proposal: a task's work session opens, a schedule is switched on, or a role joins. */
+/** Add a file to the handbook. */
+const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
+  ...state,
+  handbook: [...state.handbook, entry],
+});
+
+/**
+ * Accept a proposal: a task's work session opens, a schedule is switched on, a role joins, or a
+ * skill is filed in the handbook and installed for its employee.
+ */
 export function acceptTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
   if (ticket.kind === "task") return openSession(withTicket(state, id, working()), id);
   const settled = withTicket(state, id, { status: "done", unread: false });
-  return ticket.kind === "schedule"
-    ? { ...settled, schedules: [...state.schedules, { id: ticket.fixture, auto: false }] }
-    : { ...settled, roles: [...state.roles, "verifier"] };
+  const fixture = FIXTURES[ticket.fixture];
+  if (ticket.kind === "schedule") {
+    return { ...settled, schedules: [...state.schedules, { id: ticket.fixture, auto: false }] };
+  }
+  if (ticket.kind === "skill" && fixture.handbook !== undefined) {
+    return file(settled, fixedEntry(fixture.handbook, id, fixture.installsOn));
+  }
+  return { ...settled, roles: [...state.roles, "verifier"] };
 }
 
 /** Reject a proposal. The ticket stays on record. */
@@ -378,14 +475,28 @@ export function answerTicket(
     blockedBy: undefined,
     unread: false,
   });
-  return tell(answered, id, { from: "person", answer: option, note: said });
+  // A budget alert's first option raises the employee's budget; the second keeps it.
+  const decided =
+    ticket.fixture === "budget" && option === 0
+      ? { ...answered, budgets: { ...answered.budgets, engineer: 20 } }
+      : answered;
+  const recorded = file(decided, {
+    path: `decisions/${id}.md`,
+    kind: "decision",
+    ticket: id,
+    doc: null,
+  });
+  return tell(recorded, id, { from: "person", answer: option, note: said });
 }
 
 /** Accept a delivery: the ticket is done and its session is over. */
 export function approveTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "review") return state;
-  return withTicket(state, id, { status: "done", unread: false });
+  const done = withTicket(state, id, { status: "done", unread: false });
+  // A delivered document joins the handbook once it is accepted.
+  const doc = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].handbook;
+  return doc === undefined ? done : file(done, fixedEntry(doc, id));
 }
 
 /** Send a delivery back with what to change: the note goes into the session that delivered it. */
@@ -399,7 +510,15 @@ export function returnTicket(state: CompanyState, id: string, note: string): Com
     returns: [...ticket.returns, said],
     unread: false,
   });
-  return tell(returned, id, { from: "person", sendBack: said });
+  // What was missed is a lesson: the lead files it before the session takes the note up.
+  const learned = file(returned, {
+    path: `lessons/${id}-${ticket.returns.length + 1}.md`,
+    kind: "lesson",
+    ticket: id,
+    doc: null,
+    returnIndex: ticket.returns.length,
+  });
+  return tell(learned, id, { from: "person", sendBack: said });
 }
 
 /**
@@ -480,7 +599,10 @@ export function setScheduleAuto(state: CompanyState, id: FixtureId, auto: boolea
   };
 }
 
-/** One step of a ticket's work: a progress line, its question, or its delivery, and what the session says. */
+/**
+ * One step of a ticket's work: a progress line, its question, its delivery, or its close, and
+ * what the session says.
+ */
 function stepTicket(
   ticket: Ticket,
 ): { ticket: Ticket; event: PassEvent; message: SessionMessage } | null {
@@ -488,6 +610,14 @@ function stepTicket(
   const step = scriptOf(ticket)[ticket.step];
   if (step === undefined) return null;
   const next = { ...ticket, step: ticket.step + 1 };
+  if (step === "close") {
+    // Nothing to review: the person's answer was the decision, and carrying it out ends the ticket.
+    return {
+      ticket: { ...next, status: "done" },
+      event: { kind: "closed", id: ticket.id },
+      message: { from: "agent", step },
+    };
+  }
   if (step === "progress") {
     return {
       ticket: { ...next, progress: ticket.progress + 1 },
@@ -567,7 +697,7 @@ export function inboxCounts(state: CompanyState): Record<InboxView, number> {
 export function costOf(state: CompanyState, ticket: Ticket): number {
   const sessions = sessionsOf(state, ticket.id).length;
   if (sessions === 0) return 0;
-  return ticket.fixture === null ? 0.05 * sessions : FIXTURES[ticket.fixture].cost;
+  return ticket.fixture === null ? 0.5 * sessions : FIXTURES[ticket.fixture].cost;
 }
 
 /** What the company has spent: every ticket's cost. */

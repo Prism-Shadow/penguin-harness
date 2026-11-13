@@ -5,8 +5,9 @@
  * taken, and what never reaches the reader.
  *
  * What it changes in the shipped sidebar: the inbox, the lead, the board and the team (in the org
- * chart's place, team-page.tsx) are the pinned rows; the three pages the spec leaves alone sit in
- * the nav's fold, which starts folded; the channel
+ * chart's place, team-page.tsx) and the handbook (handbook-page.tsx) are the rows, with no fold:
+ * the calendar's schedules are on the inbox and the finance page's figures on the inbox, the
+ * team and each ticket, so neither keeps a page; the channel
  * list and the desks give way to one list of the work sessions that are not over, each opening
  * the conversation itself (session-page.tsx), with a link back to its ticket.
  *
@@ -27,7 +28,6 @@ import {
   SidebarFrame,
   SidebarListHeader,
   SidebarNavArea,
-  SidebarNavGroup,
   toastInfo,
   UserAvatar,
 } from "@prismshadow/penguin-ui";
@@ -57,7 +57,8 @@ import {
   weekState,
 } from "./model";
 import type { CompanyState } from "./model";
-import { BoardPage, InboxPage, KeptPage, LeadPage, SetupPage } from "./pages";
+import { entryWords, HandbookPage } from "./handbook-page";
+import { BoardPage, InboxPage, LeadPage, SetupPage } from "./pages";
 import { PersonAvatar, whoOf } from "./people";
 import { SessionPage } from "./session-page";
 import { TeamPage } from "./team-page";
@@ -66,9 +67,7 @@ import { TicketDialog } from "./ticket-dialog";
 import type { TicketActions } from "./ticket-dialog";
 import { useWords } from "./use-words";
 
-/** The pages the spec leaves as they are, in the shipped nav's order. */
-const KEPT = ["calendar", "handbook", "finance"] as const;
-type Page = "inbox" | "lead" | "tickets" | "team" | "session" | (typeof KEPT)[number];
+type Page = "inbox" | "lead" | "tickets" | "team" | "handbook" | "session";
 
 export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const W = useWords();
@@ -78,7 +77,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const [page, setPage] = useState<Page>("inbox");
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [folded, setFolded] = useState(true);
+  const [handbookPath, setHandbookPath] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const open = state.tickets.find((ticket) => ticket.id === openId);
@@ -94,6 +93,11 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     setOpenId(null);
     setSessionId(id);
     go("session");
+  };
+  const openHandbook = (path: string) => {
+    setOpenId(null);
+    setHandbookPath(path);
+    go("handbook");
   };
   const actions: TicketActions = {
     accept: (id) => setState((current) => acceptTicket(current, id)),
@@ -112,7 +116,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     }
     for (const event of passed.events) {
       // A progress line reaches nobody: only what waits on the reader, or what a patrol files, is said.
-      if (event.kind === "progress") continue;
+      if (event.kind === "progress" || event.kind === "closed") continue;
       const ticket = passed.state.tickets.find((candidate) => candidate.id === event.id);
       if (ticket !== undefined) toastInfo(W.pass.events[event.kind](titleOf(ticket, W)));
     }
@@ -164,6 +168,16 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
             disabled={!running}
             onClick={() => go("team")}
           />
+          <NavRow
+            label={W.nav.handbook}
+            glyph={ICONS[COMPANY_NAV_ICONS.handbook]}
+            active={page === "handbook"}
+            disabled={!running}
+            onClick={() => {
+              setHandbookPath(null);
+              go("handbook");
+            }}
+          />
         </SidebarNavArea>
       }
       account={
@@ -173,23 +187,6 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         </div>
       }
     >
-      <SidebarNavGroup
-        collapsed={folded}
-        onToggle={() => setFolded((value) => !value)}
-        expandLabel={W.nav.more}
-        collapseLabel={W.nav.less}
-      >
-        {KEPT.map((key) => (
-          <NavRow
-            key={key}
-            label={S.nav.org[key]}
-            glyph={ICONS[COMPANY_NAV_ICONS[key]]}
-            active={page === key}
-            disabled={!running}
-            onClick={() => go(key)}
-          />
-        ))}
-      </SidebarNavGroup>
       {running && (
         <>
           <SidebarListHeader label={W.nav.sessions}>
@@ -267,7 +264,14 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
         />
       );
   } else {
-    body = <KeptPage title={S.nav.org[page]} />;
+    body = (
+      <HandbookPage
+        state={state}
+        selected={handbookPath}
+        onSelect={setHandbookPath}
+        onOpenTicket={openTicket}
+      />
+    );
   }
 
   return (
@@ -284,8 +288,12 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
               sessions={sessionsOf(state, open.id)}
               statusOf={(session) => sessionStatus(state, session)}
               cost={costOf(state, open)}
+              filed={state.handbook
+                .filter((entry) => entry.ticket === open.id)
+                .map((entry) => ({ path: entry.path, title: entryWords(entry, state, W).title }))}
               actions={actions}
               onOpenSession={openSession}
+              onOpenHandbook={openHandbook}
               onClose={() => setOpenId(null)}
             />
           )}

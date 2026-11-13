@@ -99,7 +99,7 @@ function Member({
           <span className={`text-sm ${QUIET}`}>{person.title}</span>
           {employee.reportsTo === null && <Pill>{W.team.standing}</Pill>}
           <span className={`ml-auto text-xs tabular-nums ${QUIET}`}>
-            {W.team.spend(money(spent), money(employee.budget))}
+            {W.team.spend(money(spent), money(state.budgets[byline]))}
           </span>
         </div>
         <p className={`mt-0.5 flex flex-wrap gap-x-3 text-xs ${QUIET}`}>

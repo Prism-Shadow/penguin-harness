@@ -31,6 +31,10 @@ export function progressOf(ticket: Ticket, W: Words): string[] {
   return Array.from({ length: ticket.progress }, (_, i) => own[i] ?? W.ticket.reworkProgress);
 }
 
+/** A send-back note: the reader's own, or for a staged one, the sample's. */
+export const returnOf = (ticket: Ticket, note: string, W: Words): string =>
+  note !== "" ? note : (sample(ticket, W)?.returned ?? "");
+
 /** The one line the inbox shows under a title: what it asks, what it delivered, or what it is. */
 export function lineOf(ticket: Ticket, W: Words): string {
   if (ticket.asked) return questionOf(ticket, W);
