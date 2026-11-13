@@ -1,13 +1,13 @@
-export { dropsEmployeeGroup } from "../../lib/agent-employment";
+export { dropsEmployeeGroup } from "@prismshadow/penguin-web/internal";
 
-export { employmentsOf } from "../../lib/agent-employment";
+export { employmentsOf } from "@prismshadow/penguin-web/internal";
 
 export { downloadArchive } from "./archive-download";
 
 export { classifyImportSource } from "./skill-import-source";
 
-export { employeesLast } from "../../lib/agent-employment";
+export { employeesLast } from "@prismshadow/penguin-web/internal";
 
-export { isEmployee } from "../../lib/agent-employment";
+export { isEmployee } from "@prismshadow/penguin-web/internal";
 
 export { AgentSelect } from "./agent-select";

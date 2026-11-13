@@ -10,7 +10,7 @@
  */
 import * as api from "@prismshadow/penguin-web/internal";
 import { AgentAvatar, CHANNEL_RUN_AVATAR_PX } from "@prismshadow/penguin-ui";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 
 /**

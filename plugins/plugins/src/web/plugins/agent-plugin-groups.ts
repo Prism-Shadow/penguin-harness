@@ -32,7 +32,8 @@ import type {
   SkillMetadataItem,
   WorkbenchInfo,
 } from "@prismshadow/penguin-server/api";
-import { installsOf } from "./agent-installs";
+import { installsOf } from "@prismshadow/penguin-web/internal";
+
 import { pluginComplete } from "./plugin-status";
 
 /** What a plugin on the Agent is, beside the list: whole, behind the library, partial, or gone from it. */

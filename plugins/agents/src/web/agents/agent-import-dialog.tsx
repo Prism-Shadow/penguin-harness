@@ -20,14 +20,10 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { toneInk } from "../../lib/tone";
-import { toastApiError } from "../../lib/toast-api-error";
-import { agentDisplayName, useProject } from "../../state/project";
-import { PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError, S, SEMANTIC_ID_PATTERN, agentDisplayName, toastApiError, toneInk, useProject } from "@prismshadow/penguin-web/internal";
+import { PromptFold, pickDefaultAgent, useAiBridge } from "@prismshadow/penguin-web/internal";
+
 import { ARCHIVE_ACCEPT, ARCHIVE_BUTTON_CLASS, agentIdFromArchiveName } from "./archive-file";
 import {
   MIGRATION_SOURCES,

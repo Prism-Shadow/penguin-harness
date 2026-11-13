@@ -28,11 +28,8 @@ import {
   languageForFileName,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, formatBytes } from "@prismshadow/penguin-web/internal";
 import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { formatBytes, formatRelativeDate } from "../../lib/format";
 import {
   type MemoryChangeRow,
   type MemoryLocateTarget,
@@ -41,8 +38,7 @@ import {
 } from "@prismshadow/penguin-web/internal";
 
 import { useLocale } from "@prismshadow/penguin-web/internal";
-} from "../../lib/amsp/memory-changes";
-import { useLocale } from "../../state/locale";
+} from "@prismshadow/penguin-web/internal";
 import {
   buildMemoryList,
   memoryNavBack,

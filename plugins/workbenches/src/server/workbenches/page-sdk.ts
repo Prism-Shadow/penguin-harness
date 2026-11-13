@@ -36,7 +36,8 @@ export interface PageSdkFile {
 export const WORKBENCH_MODULE = `// The page SDK of a PenguinHarness workbench: AMSP's browser build, and the signed-in
 // reader's door of the server this page came from. Import it from a page in the workbench's
 // ui/ folder as "../sdk/workbench.js".
-import { HttpTransport, SessionReader } from "./amsp.js";
+import { HttpTransport, SessionReader } from "@prismshadow/penguin-web/internal";
+
 
 export * from "./amsp.js";
 

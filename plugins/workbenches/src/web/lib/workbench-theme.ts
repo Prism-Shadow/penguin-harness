@@ -33,7 +33,8 @@
  * A contributed page uses the same frame contract (web-app/frame-page.tsx).
  */
 import { INITIAL_THEME_ID, TOKEN_NAMES, isThemeId, resolveAccent } from "@prismshadow/penguin-ui";
-import { THEME_PACK_ATTR } from "./theme-pack-links";
+import { THEME_PACK_ATTR } from "@prismshadow/penguin-web/internal";
+
 
 /**
  * What a framed page may do. Same-origin on purpose — it is what lets the theme and the key

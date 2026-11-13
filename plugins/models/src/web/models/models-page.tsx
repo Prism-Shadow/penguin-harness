@@ -1,6 +1,6 @@
 
-import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
-import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
+import { ApiError, S, USD_TO_CNY, apiErrorText, cardBodyClick, clearDraftModelRef, type Currency, useAuth, useDocumentTitle, useLocale, useProject, useTheme } from "@prismshadow/penguin-web/internal";
+import { TAG_TONE, dismissTodo, formatDateTime, humanizeTokens, modelTags, refreshProjectTodos, useUpdateBadges } from "@prismshadow/penguin-web/internal";
 import type {
   CredentialInfo,
   DefaultModelOffer,
@@ -53,18 +53,9 @@ import type {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { formatDateTime, humanizeTokens } from "../../lib/format";
+import * as api from "@prismshadow/penguin-web/internal";
+import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
+
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
@@ -86,12 +77,11 @@ import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "../../lib/model-grouping";
+} from "@prismshadow/penguin-web/internal";
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
+} from "@prismshadow/penguin-web/internal";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
   DEFAULT_CUSTOM_CLIENT_TYPE,
@@ -166,7 +156,6 @@ import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that

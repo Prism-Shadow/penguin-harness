@@ -9,8 +9,6 @@
  */
 import type { FileRenderer, FileRendererRule } from "@prismshadow/penguin-web/internal";
 import { resolveReplyLink } from "@prismshadow/penguin-web/internal";
-import type { FileRenderer, FileRendererRule } from "../../lib/file-renderers";
-import { resolveReplyLink } from "../../lib/reply-link";
 
 export interface ReplyFile {
   /** Workspace-relative. */

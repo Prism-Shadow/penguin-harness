@@ -20,7 +20,6 @@ import { BOOK_ICON } from "@prismshadow/penguin-web/internal";
 import { sanitizeSkillIcon } from "./skill-icon";
 import { GlyphIcon, ImageIcon } from "@prismshadow/penguin-ui";
 import type { IconRef } from "@prismshadow/penguin-server/api";
-import { BOOK_ICON } from "../../lib/skill-use";
 
 /**
  * Per-name tile colors (soft tinted tile + colored line-art stroke, light/dark pairs).

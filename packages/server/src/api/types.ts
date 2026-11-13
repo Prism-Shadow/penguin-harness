@@ -2400,6 +2400,13 @@ export interface SessionBatchPageRequest {
   withCounts?: boolean;
   /** The user's own rows only: leave an organization's own sessions out of page and totals. */
   excludeOrg?: boolean;
+  /**
+   * Only rows whose session id starts this string — compared lowercased, so the caller's
+   * case is not the row's. The command palette's completion asks for the sessions a typed
+   * prefix names; the prefix must itself start a session id (`session-`). Applied before the
+   * category and the paging, so a page of it is a page of the filtered stream.
+   */
+  sessionIdPrefix?: string;
 }
 
 /**

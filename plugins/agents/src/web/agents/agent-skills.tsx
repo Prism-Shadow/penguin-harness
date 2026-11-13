@@ -1,5 +1,5 @@
 <import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
+import { ApiError, useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
@@ -40,21 +40,15 @@ import {
   ICON_SIZE,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
 import { SkillTile } from "../skills";
-import { localizedShortText } from "../../lib/skill-use";
-import { useAiBridge } from "../ai-create";
+
 >
 import { downloadArchive } from "./archive-download";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildImportPrompt } from "./skill-import-source";
 <import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
-|import { toastApiError } from "../../lib/toast-api-error";
+|import {  toastApiError  } from "@prismshadow/penguin-web/internal";
 >
 
 /**

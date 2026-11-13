@@ -1,4 +1,4 @@
-import { sectionsIn, currentModeIndex } from "@prismshadow/penguin-web/internal";
+import { currentModeIndex, sectionsIn, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { useLocation, useMatch, useNavigate } from "react-router";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
@@ -7,14 +7,7 @@ import { useSessions } from "@prismshadow/penguin-web/internal";
 import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
 import { useCompany } from "@penguinharness/plugin-company/web";
 import { parseOrgKey } from "@penguinharness/plugin-company/web";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { useSessions } from "../../state/sessions";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { useCompany } from "../../lib/company-context";
-import { parseOrgKey } from "../company";
+
 import type {
   MainSidebarProps,
   SidebarBindingReader,

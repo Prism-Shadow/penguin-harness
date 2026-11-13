@@ -1,15 +1,11 @@
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { pillClass } from "@prismshadow/penguin-web/internal";
 import { employeesLast, isEmployee } from "./agent-employment";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { agentDisplayName } from "../../state/project";
-import { pillClass } from "../workspace";
-import { employeesLast, isEmployee } from "../../lib/agent-employment";
+
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({

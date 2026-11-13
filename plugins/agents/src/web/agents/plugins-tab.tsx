@@ -61,31 +61,12 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useInstantSetting } from "../../lib/instant-setting";
-import {
-  publishMachineAgentsChanged,
-  readMachineAgents,
-  useAgentsOn,
-} from "../../lib/machine-agent-lists";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
-import { WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { BOOK_ICON, localizedText } from "../../lib/skill-use";
-import {
-  StdioDisclosure,
-  agentInstalls,
-  agentPluginGroups,
-  hasParts,
-  installsKey,
-  type AgentPluginGroup,
-  type AgentPluginStatus,
-} from "../plugins";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError, BOOK_ICON, S, WORKBENCH_UPDATED_EVENT, agentDisplayName, apiErrorText, localizedText, toastApiError, useAgentLocation, useInstantSetting, useLocale, useProject } from "@prismshadow/penguin-web/internal";
+import { publishMachineAgentsChanged, readMachineAgents, useAgentsOn } from "@prismshadow/penguin-web/internal";
+
+import { StdioDisclosure, agentInstalls, agentPluginGroups, hasParts, installsKey, type AgentPluginGroup, type AgentPluginStatus } from "@prismshadow/penguin-web/internal";
+
 import { SkillTile } from "../skills";
 import { HookImportDialog, useHookRows } from "./agent-hooks";
 import { SkillImportDialog, useSkillRows } from "./agent-skills";

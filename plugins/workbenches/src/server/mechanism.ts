@@ -19,17 +19,7 @@
  * history every successful load commits to the Agent State repository — which is what makes an
  * Agent's own edits to its workbench reversible.
  */
-import type { IconImage } from "@prismshadow/penguin-core";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type {
-  WorkbenchInfo,
-  WorkbenchRequest,
-  WorkbenchResponse,
-  WorkbenchTab,
-  WorkbenchTabRenderer,
-} from "@prismshadow/penguin-server/api";
-export type { WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchTabRenderer } from "@prismshadow/penguin-server/api";
-import type { IconRef } from "../api/types.js";
+import { IconImage, WorkbenchInfo, WorkbenchRequest, WorkbenchResponse, WorkbenchTab, WorkbenchTabRenderer } from "@prismshadow/penguin-server/api";
 
 /** A version of a workbench: a commit of the Agent State repository that changed its folder. */
 export interface WorkbenchVersion {

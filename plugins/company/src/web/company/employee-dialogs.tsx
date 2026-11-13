@@ -47,7 +47,7 @@ import {
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
+import { ApiError, AvatarPicker } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import {
@@ -59,19 +59,10 @@ import {
 
 import { SEMANTIC_ID_PATTERN } from "@prismshadow/penguin-web/internal";
 import { formatMoney } from "@prismshadow/penguin-web/internal";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
-import { formatMoney } from "../../lib/format";
 import { useCompany } from "./company-state";
 import { agentDisplayName, useProject } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { AvatarCropDialog } from "@prismshadow/penguin-web/internal";
-import { agentDisplayName, useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import { AvatarPicker } from "../../components/ui/avatar-picker";
 import {
   SkillPickList,
   addSkillNames,

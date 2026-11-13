@@ -19,66 +19,10 @@
  * write name/description/author into system_config.yaml (parseDocument preserves the
  * template's comments).
  */
-import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import path from "node:path";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { AgentDeletionInfo } from "@prismshadow/penguin-server/api";
-import { PluginLibrary } from "@prismshadow/penguin-server/internal";
-import { countEntries, FsLimiter, purgeTree } from "@prismshadow/penguin-server/internal";
-import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
-import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server/workbenches/migrate.js";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import {
-  agentDir,
-  agentsDir,
-  agentsMdPath,
-  BUILTIN_AGENT_IDS,
-  createAgent as coreCreateAgent,
-  installPlugin,
-  installSkill,
-  McpServerNameTakenError,
-  listInstalledHooks,
-  isValidId,
-  loadAgentVault,
-  memoryDir,
-  scheduleDir,
-  skillsDir,
-  systemConfigPath,
-  comparePluginVersions,
-  libraryPlugin,
-  loadLibraryPlugins,
-  parseSkillFrontmatter,
-  pluginContentVersion,
-  listInstalledWorkbenches,
-} from "@prismshadow/penguin-core";
-import type { LibraryPlugin } from "@prismshadow/penguin-core";
-import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "@prismshadow/penguin-server/internal";
-
-import { isTopicFileName } from "@prismshadow/penguin-server/internal";
-import type { PluginUpdateRef } from "@prismshadow/penguin-server/api";
-import { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
+import { BUILTIN_AGENT_IDS, McpServerNameTakenError, agentDir, agentsDir, agentsMdPath, comparePluginVersions, installPlugin, installSkill, isValidId, libraryPlugin, listInstalledHooks, listInstalledWorkbenches, loadAgentVault, loadLibraryPlugins, memoryDir, parseSkillFrontmatter, pluginContentVersion, scheduleDir, skillsDir, systemConfigPath } from "@prismshadow/penguin-server/internal";
 import { resolveDirectorySkills } from "@prismshadow/penguin-server/internal";
-
-import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex } from "@prismshadow/penguin-server/internal";
-
-import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
-import { migrateWorkbenches } from "../workbenches/migrate.js";
-import { agentAvatarRev } from "./agent-avatar.js";
-import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { isTopicFileName } from "./memory-service.js";
-import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
-import type { PluginLibrary } from "../plugin/library-module.js";
-import { resolveDirectorySkills } from "./directory-skills.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "@prismshadow/penguin-server/internal";
+import { AgentIndex } from "@prismshadow/penguin-server/internal";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).

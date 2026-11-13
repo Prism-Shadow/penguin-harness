@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppWindow, Skeleton, WallpaperSurface, WindowStack } from "@prismshadow/penguin-ui";
-import { setDockRevealer } from "../dock";
+import { setDockRevealer } from "@prismshadow/penguin-web/internal";
+
 import { useChatController } from "./session/use-chat-controller";
 import { createMainChatView } from "./body/main-chat-view";
 import { renderMainChatToolbar } from "./toolbar/main-chat-toolbar";

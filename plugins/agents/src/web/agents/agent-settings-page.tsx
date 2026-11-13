@@ -1,6 +1,6 @@
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { ApiError, scopeKey, scoped, scopedValue, type Scoped } from "@prismshadow/penguin-web/internal";
+import { AgentLocationContext, S, machineInSearch, machineLink, publishMachineAgentsChanged, readMachineAgents, remoteAgentsEmpty, toastApiError, useAgentAvatarSrc, useAgentLocation, useLeaveOnProjectSwitch, useMachines } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
@@ -83,18 +83,6 @@ import {
 
 
 import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useDocumentTitle } from "../../lib/use-document-title";
-import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
-import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
-import { useProject } from "../../state/project";
-import { useMachines } from "../../state/machines";
-import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
-import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
-import { publishMachineAgentsChanged, readMachineAgents } from "../../lib/machine-agent-lists";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
@@ -118,8 +106,7 @@ import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
-import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
-import { toastApiError } from "../../lib/toast-api-error";
+
 
 type TabKey =
   | "overview"

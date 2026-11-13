@@ -128,19 +128,12 @@ import {
   type TagInputChip,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { formatBytes, humanizeTokens } from "@prismshadow/penguin-web/internal";
 import { fitTextarea } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
-import { S } from "../../lib/strings";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { formatBytes, humanizeTokens } from "../../lib/format";
-import { fitTextarea } from "../../lib/textarea-fit";
-import { useLocale } from "../../state/locale";
-import { useAuth } from "../../state/auth";
-import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "@prismshadow/penguin-web/internal";
 import { SkillIcon, SkillPickList, toggleSkillName } from "@prismshadow/penguin-web/internal";

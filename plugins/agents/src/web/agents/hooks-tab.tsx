@@ -1,5 +1,5 @@
 <import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
+import { ApiError, useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
@@ -49,16 +49,8 @@ import type { HookItem } from "@prismshadow/penguin-server/api";
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../../lib/skill-use";
 import { SkillTile } from "../skills";
-import { useAiBridge } from "../ai-create";
+
 >
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
@@ -66,7 +58,6 @@ import { buildHookImportPrompt } from "./hook-import";
 import { UPLOAD_LABEL_CLASS } from "./skills-tab";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
 |import { UPLOAD_LABEL_CLASS } from "./agent-skills";
-import { toastApiError } from "../../lib/toast-api-error";
 >
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */

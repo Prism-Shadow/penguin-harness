@@ -27,139 +27,19 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
-import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import path from "node:path";
-import { parse as parseToml } from "smol-toml";
-import {
-  CHAT_APPROVAL_MODES,
-  atomicWriteFile,
-  DEFAULT_CHAT_THINKING_LEVELS,
-  DEFAULT_COMMAND_POLICY_RULES,
-  commandPolicyPatternError,
-  effectiveCommandPolicyRules,
-  parseCommandPolicy,
-  parsePluginTables,
-  pluginTablesToToml,
-  GenerativeModel,
-  canonicalClientType,
-  listEndpointModels as coreListEndpointModels,
-  defaultProjectConfig,
-  effectiveConnection,
-  groupKeyReaches,
-  imageUrlMessage,
-  metaMaxTokens,
-  migrateProjectConfigTable,
-  parseProviderTable,
-  projectConfigFromTable,
-  projectConfigPath,
-  providerConnectionShape,
-  renderProjectConfigToml,
-  resolveEntryCredential,
-  sameClientType,
-  sameEndpoint,
-  userText,
-} from "@prismshadow/penguin-core";
-import {
-  MODELSCOPE_PROVIDER_ID,
-  PENGUIN_GO_PROVIDER_ID,
-  catalogEntryFor,
-  fixedClientType,
-  fixedClientTypeRefuses,
-  providerInfo,
-  retainedCatalogPricing,
-  unaddableModel,
-  unroutableVendorModel,
-  vendorClientType,
-  modelEnvPreviewKey,
-} from "@prismshadow/penguin-server/internal";
-import {
-  catalogGroupConnection,
-  clientEnvKey,
-  detectModelProtocol,
-  presetModelEntries,
-  presetPromotions,
-} from "@prismshadow/penguin-server/internal";
-import { migratePenguinGoRoutes } from "@prismshadow/penguin-server/internal";
-import { presetProjectConfig } from "@prismshadow/penguin-server/internal";
-import type {
-  PluginTables,
-  CommandPolicyRule,
-  GenerativeModelConfig,
-  LLMOutcome,
-  ModelRequestContext,
-  ModelRef,
-  AmspRecord,
-  ModelEntry,
-  ProjectConfig,
-  ProviderConnection,
-  ProviderConnectionShape,
-  ProviderTable,
-} from "@prismshadow/penguin-core";
-import type {
-  ChatDefaultsDto,
-  CommandPolicyDto,
-  DefaultModelOffer,
-  CommandPolicyRuleDto,
-  EndpointModelListRequest,
-  EndpointModelListResponse,
-  ModelEffectiveConnection,
-  ModelInfo,
-  ModelPricingDto,
-  ModelProtocolDetectRequest,
-  ModelProtocolDetectResponse,
-  ModelRefDto,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelTestResponse,
-  ModelVisionDetectRequest,
-  ModelVisionDetectResponse,
-  PresetSyncMode,
-  PresetSyncResponse,
-  ProviderConnectionDto,
-  ProviderConnectionResponse,
-  ProviderConnectionUpdate,
-} from "@prismshadow/penguin-server/api";
+import { AmspRecord, CHAT_APPROVAL_MODES, ChatDefaultsDto, CommandPolicyDto, CommandPolicyRule, CommandPolicyRuleDto, DEFAULT_CHAT_THINKING_LEVELS, DEFAULT_COMMAND_POLICY_RULES, DefaultModelOffer, EndpointModelListRequest, EndpointModelListResponse, GenerativeModel, GenerativeModelConfig, LLMOutcome, MODELSCOPE_PROVIDER_ID, ModelEffectiveConnection, ModelEntry, ModelInfo, ModelPricingDto, ModelProtocolDetectRequest, ModelProtocolDetectResponse, ModelRef, ModelRefDto, ModelRequestContext, ModelTestRequest, ModelTestResponse, ModelVisionDetectRequest, ModelVisionDetectResponse, ModelsResponse, ModelsUpdateRequest, PENGUIN_GO_PROVIDER_ID, PluginTables, PresetSyncMode, PresetSyncResponse, ProjectConfig, ProviderConnection, ProviderConnectionDto, ProviderConnectionResponse, ProviderConnectionShape, ProviderConnectionUpdate, ProviderTable, atomicWriteFile, canonicalClientType, catalogEntryFor, catalogGroupConnection, clientEnvKey, commandPolicyPatternError, defaultProjectConfig, detectModelProtocol, effectiveCommandPolicyRules, fixedClientType, fixedClientTypeRefuses, groupKeyReaches, imageUrlMessage, metaMaxTokens, migrateProjectConfigTable, modelEnvPreviewKey, parseCommandPolicy, parsePluginTables, parseProviderTable, pluginTablesToToml, presetModelEntries, presetPromotions, projectConfigFromTable, projectConfigPath, providerConnectionShape, providerInfo, renderProjectConfigToml, resolveEntryCredential, retainedCatalogPricing, sameClientType, sameEndpoint, unaddableModel, unroutableVendorModel, userText, vendorClientType } from "@prismshadow/penguin-server/api";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import { cacheable } from "@prismshadow/penguin-server/internal";
-import type { PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog } from "@prismshadow/penguin-server/internal";
+import { cacheable } from "@prismshadow/penguin-web/internal";
 
-import { VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError } from "@prismshadow/penguin-server/internal";
-
-import type { PricingRates, TieredRates } from "@penguinharness/plugin-usage/server";
-} from "../api/types.js";
-import { badRequest } from "../http/validate.js";
-import { HttpError } from "../http/errors.js";
-import { cacheable } from "../internal/mtime-gate.js";
-import { connectDefaultOffer } from "./connect-default-offer.js";
-  PlatformCatalogPricing,
-  PlatformModelApplyResult,
-  PlatformModelCatalog,
-} from "./platform-auth-types.js";
-import { detectModelProtocol } from "./protocol-detect.js";
-import { migratePenguinGoRoutes } from "./project-config-migrations.js";
-import { presetProjectConfig } from "./project-config-seed.js";
-  VISION_PROBE_IMAGE,
-  VISION_PROBE_MAX_TOKENS,
-  VISION_PROBE_PROMPT,
-  VISION_PROBE_TIMEOUT_MS,
-  classifyVisionProbe,
-  classifyVisionProbeError,
-} from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "./usage-service.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type { ModelPromotion, ModelProviderAuthToken, ModelProviderAuthTokens, ModelPromotions, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
-import type { Config, Paths } from "../hmr/capabilities.js";
+import { PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog, VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError, connectDefaultOffer } from "@prismshadow/penguin-server/internal";
   GroupKeyApplied,
   ModelPromotion,
   ModelProviderAuthToken,
   ModelProviderAuthTokens,
   ModelPromotions,
   ProjectConfigStore,
-} from "../mechanisms/projects.js";
+} from "@penguinharness/plugin-projects/server";
 
 export type RawTable = Record<string, unknown>;
 

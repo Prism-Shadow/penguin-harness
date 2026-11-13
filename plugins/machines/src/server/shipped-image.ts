@@ -21,7 +21,7 @@
  * old one is never read again — it is removed when the new one is laid down.
  */
 import { layCarriedStore } from "@prismshadow/penguin-server/internal";
-import { layCarriedStore } from "../carried-store.js";
+
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";

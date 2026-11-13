@@ -1,5 +1,5 @@
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { ApiError, S, toastApiError } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useInstantSetting } from "@prismshadow/penguin-web/internal";
 
@@ -22,12 +22,6 @@ import type {
   useFormDraft,
   useSaving,
 } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../../api/client";
-import * as api from "../../../api/endpoints";
-import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
-import { toastApiError } from "../../../lib/toast-api-error";
-import { useInstantSetting } from "../../../lib/instant-setting";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
 import { RuleTable, pageCountOf, pageOf, type RejectedRule } from "./command-policy-table";
 

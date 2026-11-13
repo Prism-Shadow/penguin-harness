@@ -32,16 +32,8 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { downloadArchive } from "../../lib/archive-download";
-import { acceptThemePacks, useThemePacks } from "../../lib/account-sync/theme-packs";
-import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useTheme } from "../../state/theme";
-import { themeEntries, themeName, type ThemeEntry } from "../../state/theme-entries";
+import * as api from "@prismshadow/penguin-web/internal";
+import { ApiError, S, acceptThemePacks, downloadArchive, themeEntries, themeName, toastApiError, type ThemeEntry, useAuth, useLocale, useTheme, useThemePacks } from "@prismshadow/penguin-web/internal";
 
 /** The server's own cap on an uploaded pack (PRFC-0026): a bigger file is refused before it goes. */
 const MAX_PACK_BYTES = 16 * 1024 * 1024;

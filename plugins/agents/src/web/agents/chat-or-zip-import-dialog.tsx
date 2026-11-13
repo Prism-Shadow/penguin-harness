@@ -34,12 +34,9 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { useAgentLocation } from "../../lib/agent-location";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { useAiBridge } from "../ai-create";
+import { ApiError, S, apiErrorText, toneInk, useAgentLocation } from "@prismshadow/penguin-web/internal";
+import { useAiBridge } from "@prismshadow/penguin-web/internal";
+
 
 /** The Button look on the upload `<label>`. */
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");

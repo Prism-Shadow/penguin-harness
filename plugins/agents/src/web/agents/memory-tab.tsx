@@ -1,5 +1,5 @@
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, agentKey, downloadArchive, formatBytes, useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatRelativeDate } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
@@ -79,15 +79,7 @@ import {
   useFormDraft,
   type SheetSnap,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatBytes, formatRelativeDate } from "../../lib/format";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
-import { agentKey, useAgentLocation } from "../../lib/agent-location";
-import { useAiBridge } from "../ai-create";
+
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
@@ -97,8 +89,6 @@ import {
   type MemoryUpload,
 } from "./memory-transfer";
 import { toastApiError } from "@prismshadow/penguin-web/internal";
-import { toastApiError } from "../../lib/toast-api-error";
-import { downloadArchive } from "../../lib/archive-download";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";

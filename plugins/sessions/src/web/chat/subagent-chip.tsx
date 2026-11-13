@@ -1,13 +1,9 @@
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, machineForSession, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { hasPendingWithinOrigin, type StreamModel } from "@prismshadow/penguin-web/internal";
 
 
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { machineForSession } from "../../lib/session-machines";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";
 import type { StreamRenderContext } from "./message-stream";
 

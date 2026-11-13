@@ -29,35 +29,13 @@
  * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
  * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
-import fs from "node:fs";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { bootModules, Component, parseManifest, Use } from "@prismshadow/penguin-core/kernel";
-import type {
-  ClassCtx,
-  IfaceDecl,
-  IfaceTable,
-  Manifest,
-  ModuleDef,
-  ModuleTree,
-} from "@prismshadow/penguin-core/kernel";
-import { agentDir, userText } from "@prismshadow/penguin-core";
-import table from "@prismshadow/penguin-server/ifaces.json" with { type: "json" };
-import type { ServerEvent } from "@prismshadow/penguin-server/api";
+import { ClassCtx, IfaceDecl, IfaceTable, Manifest, ModuleDef, ModuleTree } from "@prismshadow/penguin-server/api";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import type { Channels, Clock, Config, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
+import { Channels, Clock, Config, Hmr, Log, Paths } from "@prismshadow/penguin-server/internal";
 import { userChannelKey } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex, Members, Projects } from "@prismshadow/penguin-server/internal";
-import type { Traces } from "@prismshadow/penguin-server/internal";
-import type { IconImage } from "@prismshadow/penguin-core";
-import table from "../ifaces.json" with { type: "json" };
-import type { ServerEvent } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
-import { userChannelKey } from "../http/routes/events.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
-import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
-import type { Traces } from "../mechanisms/traces.js";
+import { AgentConfig } from "@prismshadow/penguin-server/internal";
+import { AgentIndex, Members, Projects } from "@prismshadow/penguin-server/internal";
+import { Traces } from "@prismshadow/penguin-server/internal";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-server/internal";
 import type {
@@ -74,9 +52,8 @@ import type {
   WorkbenchVersion,
   Workbenches,
 } from "../mechanism.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
-} from "../mechanisms/workbenches.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "@prismshadow/penguin-server/internal";
+
   agentShortcuts,
   appCenterIconRef,
   AppCenterManifestInvalid,

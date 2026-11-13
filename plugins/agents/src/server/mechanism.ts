@@ -1,34 +1,8 @@
 /**
  * The agents mechanisms: what a node may require, declared apart from what implements it.
  */
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AgentConfigView } from "@penguinharness/plugin-agents/server";
-import type {
-  AgentAuthor,
-  AgentConfigUpdateRequest,
-  AgentDeletionInfo,
-  AgentKernelUpdateResponse,
-  BenchmarkCasesResponse,
-  BenchmarksResponse,
-  BenchmarkSummary,
-  CaseMaterial,
-  MemoryFileResponse,
-  MemoryFilesResponse,
-  MemoryImportMode,
-  MemoryImportResponse,
-  MemoryOverviewResponse,
-  MemoryScopeInfo,
-  VaultResponse,
-  VaultUpdateRequest,
-  WorkspaceFilesResponse,
-} from "@prismshadow/penguin-server/api";
-import type {
-  WorkspaceFileContent,
-  WorkspaceFileReadOptions,
-} from "@penguinharness/plugin-projects/server";
-import type { AgentListItem } from "@penguinharness/plugin-agents/server";
-} from "../services/workspace-files-service.js";
-import type { AgentCreation, AgentListItem } from "../services/agent-service.js";
+import { AgentAuthor, AgentConfigUpdateRequest, AgentDeletionInfo, AgentKernelUpdateResponse, BenchmarkCasesResponse, BenchmarkSummary, BenchmarksResponse, CaseMaterial, Interface, MemoryFileResponse, MemoryFilesResponse, MemoryImportMode, MemoryImportResponse, MemoryOverviewResponse, MemoryScopeInfo, VaultResponse, VaultUpdateRequest, WorkspaceFileContent, WorkspaceFileReadOptions, WorkspaceFilesResponse } from "@prismshadow/penguin-server/internal";
+import { AgentCreation, AgentListItem } from "@prismshadow/penguin-server/internal";
 import type {
   BenchmarkArchive,
   BenchmarkCreateInput,

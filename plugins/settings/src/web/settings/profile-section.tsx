@@ -44,7 +44,7 @@ import {
   useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { AvatarPicker, S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import {
   avatarDataUrlFromImage,
@@ -52,18 +52,11 @@ import {
   releaseAvatarImage,
   type AvatarCrop,
 } from "@prismshadow/penguin-web/internal";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 
 import { AvatarCropDialog } from "@prismshadow/penguin-web/internal";
 import { profileControls } from "@prismshadow/penguin-web/internal";
 import { SETTINGS_SCOPE } from "@prismshadow/penguin-web/internal";
 import { useAuth } from "@prismshadow/penguin-web/internal";
-import { AvatarPicker } from "../../components/ui/avatar-picker";
-import { profileControls } from "../../lib/profile-form";
-import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
-import { useAuth } from "../../state/auth";
 
 /** Which row is mid-write. One at a time, so the busy mark always names the row being used. */
 type PendingWrite = "avatar" | "nickname";

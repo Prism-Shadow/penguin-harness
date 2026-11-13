@@ -17,40 +17,15 @@
  * compaction. Rebuilding the runtime re-reads them on the next Task instead — which is what
  * lets a package installed from this page start a goal in the conversation already open.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { unzipSync, strFromU8, zipSync } from "fflate";
-import { Hono } from "hono";
-import {
-  PLUGIN_NAME_PATTERN,
-  hooksDir,
-  listInstalledHooks,
-  parsePluginVersion,
-  readInstalledIcon,
-  removeHook,
-  replaceSkillDirectory,
-} from "@prismshadow/penguin-core";
-import type { HookCommand, HookManifest } from "@prismshadow/penguin-core";
-import type { AgentHooksResponse, HookItem } from "@prismshadow/penguin-server/api";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import type { PluginsRouteDeps } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import { toHookItem } from "@prismshadow/penguin-server/internal";
-import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath } from "@prismshadow/penguin-server/internal";
-import type { AgentHooksResponse, HookItem } from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { PluginsRouteDeps } from "./plugins.js";
-import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import { iconResponse } from "../icon-response.js";
-import { agentHookIconRoute, toHookItem } from "../../services/plugin-library.js";
-  MAX_ARCHIVE_BYTES,
-  MAX_ARCHIVE_FILES,
-  MAX_FILE_BYTES,
-  MAX_TOTAL_BYTES,
-  assertSafeEntryPath,
-} from "../../services/skill-import-limits.js";
+import { PLUGIN_NAME_PATTERN, hooksDir, listInstalledHooks, parsePluginVersion, readInstalledIcon, removeHook, replaceSkillDirectory } from "@prismshadow/penguin-server/api";
+import { AppEnv } from "@prismshadow/penguin-server/internal";
+import { PluginsRouteDeps } from "@prismshadow/penguin-web/internal";
+
+import { HttpError } from "@prismshadow/penguin-web/internal";
+
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-web/internal";
+
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath, iconResponse } from "@prismshadow/penguin-server/internal";
 
 /** The hook points a manifest lists commands for. */
 const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"] as const;

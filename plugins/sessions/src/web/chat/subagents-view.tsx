@@ -1,4 +1,4 @@
-import { ApiError } from "@prismshadow/penguin-web/internal";
+import { ApiError, machineForSession, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
@@ -9,12 +9,6 @@ import { noteSessionSeen } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useSessions } from "@prismshadow/penguin-web/internal";
 
-import type { PermissionPick } from "../../lib/permission-level";
-import { noteSessionSeen } from "../../lib/session-seen";
-import { machineForSession } from "../../lib/session-machines";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
 import {
   extractTopology,
   extractTopologyForChild,

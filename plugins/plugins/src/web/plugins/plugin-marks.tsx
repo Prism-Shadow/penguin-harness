@@ -18,9 +18,6 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk, type Tone } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
 import type { IconRef } from "@prismshadow/penguin-server/api";
-import { S } from "../../lib/strings";
-import { toneInk, type Tone } from "../../lib/tone";
-import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
 import type { LibraryUsage, PluginStatus } from "./plugin-status";
 

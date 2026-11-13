@@ -17,11 +17,10 @@ import { type MemoryChangeRow, memoryRowKey } from "@prismshadow/penguin-web/int
  * the whole card hides when nothing survives.
  */
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
   type MemoryChangeRow,
   memoryRowKey,
   orderUnderTopics,
-} from "../../lib/amsp/memory-changes";
+} from "@prismshadow/penguin-web/internal";
 
 import { scopeGlyph } from "./memory-view";
 

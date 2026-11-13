@@ -13,7 +13,7 @@ import {
 } from "@prismshadow/penguin-server/model-catalog";
 import type { ModelEnvironment } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
-import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "../../lib/protocol-client-types";
+import { PROTOCOL_CLIENT_TYPES, type ProtocolClientType } from "@prismshadow/penguin-web/internal";
 
 export { PROTOCOL_CLIENT_TYPES, type ProtocolClientType };
 

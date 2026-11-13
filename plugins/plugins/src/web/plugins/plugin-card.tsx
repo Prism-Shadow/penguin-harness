@@ -50,21 +50,15 @@ import {
   toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { cardBodyClick } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "@penguinharness/plugin-agents/web";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { agentDisplayName } from "@prismshadow/penguin-web/internal";
 import { SkillTile } from "@prismshadow/penguin-web/internal";
-import * as api from "../../api/endpoints";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { cardBodyClick } from "../../lib/card-open";
-import { downloadArchive } from "../agents/archive-download";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills";
+
+
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";

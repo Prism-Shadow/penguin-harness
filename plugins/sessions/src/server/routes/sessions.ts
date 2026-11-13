@@ -483,6 +483,12 @@ export function sessionDeletionDeps(
 /** How many page requests one batch may carry — the sidebar's whole reload, with room. */
 const MAX_BATCH_REQUESTS = 256;
 
+/**
+ * How long a session-id prefix a completion may ask with: a session id runs well under this,
+ * so a longer query names nothing and is refused rather than read.
+ */
+const SESSION_ID_PREFIX_MAX_LENGTH = 100;
+
 /** One batch entry, parsed: the Agent it asks about and the list options it asks with. */
 interface BatchPage {
   agentId: string;
@@ -492,6 +498,7 @@ interface BatchPage {
   workspaceGroup?: string;
   withCounts?: true;
   excludeOrg?: true;
+  sessionIdPrefix?: string;
 }
 
 /**
@@ -558,6 +565,7 @@ function batchPage(entry: unknown, i: number): BatchPage {
       throw badRequest(`${at}.${flag} must be a boolean.`);
     }
   }
+  const sessionIdPrefix = sessionIdPrefixQuery(item.sessionIdPrefix, `${at}.sessionIdPrefix`);
   return {
     agentId: item.agentId,
     paging,
@@ -566,7 +574,26 @@ function batchPage(entry: unknown, i: number): BatchPage {
     ...(item.workspaceGroup !== undefined ? { workspaceGroup: item.workspaceGroup as string } : {}),
     ...(item.withCounts === true ? { withCounts: true as const } : {}),
     ...(item.excludeOrg === true ? { excludeOrg: true as const } : {}),
+    ...(sessionIdPrefix !== undefined ? { sessionIdPrefix } : {}),
   };
+}
+
+/**
+ * The session-id prefix a completion asks with, as the Agent-level list's `sessionIdPrefix`
+ * param and the batch entry's field spell it: a string that itself starts a session id
+ * (`session-`), bounded — the prefix rides the query and is matched against ids, never placed
+ * on a path. The comparison is case-insensitive on both sides; the caller's casing passes.
+ */
+function sessionIdPrefixQuery(value: unknown, at: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw badRequest(`${at} must be a string.`);
+  if (value.length > SESSION_ID_PREFIX_MAX_LENGTH) {
+    throw badRequest(`${at} must hold at most ${SESSION_ID_PREFIX_MAX_LENGTH} characters.`);
+  }
+  if (!value.toLowerCase().startsWith("session-")) {
+    throw badRequest(`${at} must start with session-.`);
+  }
+  return value;
 }
 
 /**

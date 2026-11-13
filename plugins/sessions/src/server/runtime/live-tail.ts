@@ -35,7 +35,8 @@ import type {
   AmspRecord,
   PartialModelPayload,
 } from "@prismshadow/penguin-core";
-import type { ChannelEvent } from "./channel.js";
+import { ChannelEvent } from "@prismshadow/penguin-web/internal";
+
 
 type PartialKind = PartialModelPayload["type"];
 

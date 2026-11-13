@@ -8,9 +8,9 @@
  * files, and the Web App drops what it is not shown. The bounds keep one account's row small;
  * a layout that breaks one is refused whole, and one stored that no longer holds up reads as none.
  */
-import type { AppCenterLayout, AppCenterLayoutItem, UiPrefs } from "../api/types.js";
-import { badRequest } from "../http/errors.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
+import { AppCenterLayout, AppCenterLayoutItem, UiPrefs } from "@prismshadow/penguin-server/api";
+import { badRequest } from "@prismshadow/penguin-server/internal";
+import { UiPrefsStore } from "@prismshadow/penguin-server/internal";
 
 const MAX_ITEMS = 500;
 const MAX_FOLDER_APPS = 500;

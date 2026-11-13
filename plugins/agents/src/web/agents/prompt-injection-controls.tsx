@@ -1,5 +1,5 @@
 import * as api from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { S, toastApiError, useAgentLocation } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 /**
@@ -47,11 +47,6 @@ import {
   useFormDraft,
 } from "@prismshadow/penguin-ui";
 import type { ToggleRowVariant } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { useProject } from "../../state/project";
-import { useAgentLocation } from "../../lib/agent-location";
-import { toastApiError } from "../../lib/toast-api-error";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 

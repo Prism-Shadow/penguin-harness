@@ -22,29 +22,15 @@
  * file a topic keeps — and MemoryService re-checks that the resolved path stayed inside the
  * Agent's Memory directory.
  */
-import { Hono } from "hono";
-import type { Context } from "hono";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-
-/** What this route group reaches — bound by its module (src/modules). */
-export interface MemoryRouteDeps {
-  memoryService: Memory;
-  access: Access;
-}
-import type { MemoryImportMode } from "@prismshadow/penguin-server/api";
-import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
-import type { Memory } from "@prismshadow/penguin-server/internal";
-import type { Access } from "@prismshadow/penguin-server/internal";
-import type { MemoryImportMode } from "../../api/types.js";
+import { Hono } from "@prismshadow/penguin-server/api";
   badRequest,
   optionalBoolean,
   optionalEnum,
   pathParam,
   readJson,
   requireValidId,
-} from "../validate.js";
-import type { Memory } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+} from "@prismshadow/penguin-server/internal";
+import { Access } from "@prismshadow/penguin-server/internal";
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
 

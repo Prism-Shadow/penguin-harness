@@ -51,24 +51,13 @@
  * never interleave, and undone when the new tree fails to boot — the previous App is
  * restored on the previous list, and the answer is "did not take".
  */
-import { Hono } from "hono";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import type {
-  InstalledPlugin,
-  InstalledPluginsResponse,
-  PluginInstallOutcome,
-  UnsatisfiedPlugin,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-} from "../../api/types.js";
-import { HttpError } from "../errors.js";
-import { eventStream } from "../event-stream.js";
-import { readJson, requireString, requireValidId } from "../validate.js";
+import { Hono, InstalledPlugin, InstalledPluginsResponse, PluginInstallOutcome, SkillMetadataItem, UnsatisfiedPlugin } from "@prismshadow/penguin-server/api";
+import { HttpError } from "@prismshadow/penguin-web/internal";
+
+import { eventStream } from "@prismshadow/penguin-web/internal";
+
+import { readJson, requireString, requireValidId } from "@prismshadow/penguin-web/internal";
+
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
@@ -86,7 +75,7 @@ import {
   pluginBases,
   readPluginClosure,
   readPluginDeclaration,
-} from "../plugin/loader.js";
+} from "@prismshadow/penguin-server/internal";
 import type { PluginPackages } from "../mechanism.js";
 import {
   installedPackageDir,
@@ -95,23 +84,21 @@ import {
   pluginsPrefix,
   readInstalledVersion,
   type InstalledPackage,
-} from "../plugin/install.js";
-import { parsePluginSource, type PluginSource } from "../plugin/source.js";
-import { parsePluginArchive } from "../services/plugin-archive.js";
-import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../plugin/host.js";
-import type { PluginSkills } from "../plugin/skills.js";
+} from "@prismshadow/penguin-server/internal";
+import { parsePluginSource, type PluginSource } from "@prismshadow/penguin-server/internal";
+import { parsePluginArchive } from "@prismshadow/penguin-server/internal";
+import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "@prismshadow/penguin-server/internal";
+import type { PluginSkills } from "@prismshadow/penguin-server/internal";
 import { toSkillItem } from "@prismshadow/penguin-server/internal";
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "@prismshadow/penguin-server/internal";
-} from "../../plugin/install.js";
-import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
-import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
-import { parsePluginArchive } from "../../services/plugin-archive.js";
-import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
-import type { Machines } from "../../machines/service.js";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { indexChannelLookup, type IndexChannel } from "@prismshadow/penguin-web/internal";
+
+
+
+
+
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;

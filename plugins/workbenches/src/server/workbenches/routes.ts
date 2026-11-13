@@ -37,38 +37,21 @@
  *   PUT    /layout {layout}        replace the viewer's arrangement; null restores the server's
  *                                  order (see app-center-layout.ts)
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import { zipSync } from "fflate";
-import { Hono } from "hono";
-import type { Context } from "hono";
-import { agentDir } from "@prismshadow/penguin-core";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { WorkbenchArchiveInstallResponse } from "@prismshadow/penguin-server/api";
-import type { AppEnv } from "@prismshadow/penguin-server/internal";
-import type { Paths } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { mediaType } from "@prismshadow/penguin-server/internal";
-import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import type { AgentConfig } from "@prismshadow/penguin-server/internal";
-import type { Access } from "@prismshadow/penguin-server/internal";
-import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-server/internal";
-import type { WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "../api/types.js";
   AppCenterLayoutResponse,
   AppCenterResponse,
   WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallResponse,
   WorkbenchesResponse,
-import type { AppEnv } from "../auth/middleware.js";
-import type { Paths } from "../hmr/capabilities.js";
-import { HttpError } from "../http/errors.js";
-import { iconResponse } from "../http/icon-response.js";
-import { mediaType } from "../http/media-type.js";
-import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
-import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
+import { AppEnv } from "@prismshadow/penguin-server/internal";
+import { Paths } from "@prismshadow/penguin-server/internal";
+import { HttpError } from "@prismshadow/penguin-server/internal";
+import { iconResponse } from "@prismshadow/penguin-server/internal";
+import { mediaType } from "@prismshadow/penguin-server/internal";
+import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
+import { AgentConfig } from "@prismshadow/penguin-server/internal";
+import { Access, Projects } from "@prismshadow/penguin-server/internal";
+import { UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-server/internal";
 import type {
   WorkbenchRequest,
   WorkbenchResponse,

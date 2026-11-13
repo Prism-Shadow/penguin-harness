@@ -1,14 +1,5 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { APP_URL, userAgent } from "@prismshadow/penguin-core";
-import { providerInfo } from "@prismshadow/penguin-server/internal";
-import type { ModelProviderOAuth } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { badRequest } from "@prismshadow/penguin-server/internal";
-
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModelOAuth, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
-import type { DefaultModelOffer } from "../api/types.js";
-import type { GroupKeyApplied, ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
+import { createHash, randomBytes, randomUUID } from "@prismshadow/penguin-server/api";
+import { GroupKeyApplied, ModelOAuth, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";

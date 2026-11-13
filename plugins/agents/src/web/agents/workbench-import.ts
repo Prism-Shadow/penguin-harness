@@ -8,8 +8,8 @@
  * destination by Project and Agent id. Reads S at call time (live binding), so both follow
  * language switches like every other string consumer.
  */
-import { S } from "../../lib/strings";
-import { composeAiPrompt } from "../ai-create";
+import { composeAiPrompt } from "@prismshadow/penguin-web/internal";
+
 import { classifyImportSource } from "./skill-import-source";
 
 /** Lead sentence for one source: one per source kind, each embedding the trimmed source. */

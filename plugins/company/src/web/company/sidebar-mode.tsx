@@ -14,12 +14,11 @@ import { useLocation, useMatch } from "react-router";
 import { RailDivider } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import type { ModeState, SidebarMode, SidebarSection } from "@prismshadow/penguin-web/internal";
-import { S } from "../../lib/strings";
   ModeNavItem,
   ModeState,
   SidebarMode,
   SidebarSection,
-} from "../../lib/sidebar-contributions";
+} from "@prismshadow/penguin-web/internal";
 import { useCompany } from "./company-state";
 import { CompanyBetaBadge } from "./company-beta";
 import { COMPANY_NAV_ICONS } from "./company-nav-icons";

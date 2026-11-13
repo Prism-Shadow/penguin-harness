@@ -123,14 +123,12 @@ import type { LoadedOrg } from "./model.js";
 import { parseAvatarDataUrl, readAvatar, writeAvatar } from "../organization/avatars.js";
 import { employeeNameProblem, findMentions } from "../organization/names.js";
 import type { MentionHandle } from "../organization/names.js";
-import { readAvatar, readAvatarRev, writeAvatar } from "../../organization/avatars.js";
-import { parseAvatarDataUrl } from "../../services/avatar-file.js";
-import { employeeNameProblem, findMentions } from "../../organization/names.js";
-import type { MentionHandle } from "../../organization/names.js";
+import { readAvatarRev } from "@prismshadow/penguin-web/internal";
+
+
+
+
 import {
-  channelArchiveChanged,
-  channelCreated,
-  channelMemberAdded,
   channelMemberRemoved,
   employeeJoined,
   employeeLeft,

@@ -1,5 +1,5 @@
 import * as api from "@prismshadow/penguin-web/internal";
-import { ApiError } from "@prismshadow/penguin-web/internal";
+import { ApiError, PlacedAgent, agentKey, agentSettingsPath, isBuiltinAgent, mixAgents, toneInk, useAgentAvatarSrc, useMachineAgents } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { cardBodyClick } from "@prismshadow/penguin-web/internal";
@@ -90,33 +90,15 @@ import type { AgentAuthor, AgentSummary } from "@prismshadow/penguin-server/api"
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { cardBodyClick } from "../../lib/card-open";
-import { formatDateTime, formatRelativeDays } from "../../lib/format";
-import { useDocumentTitle } from "../../lib/use-document-title";
   useUpdateBadges,
   dismissTodo,
   bulkOutcome,
   failedList,
   firstFailure,
   noticeCounts,
-} from "../todos";
-import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
-import { agentDisplayName, useProject } from "../../state/project";
-import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
-import { AiCreateModal, AiCreateButtons } from "../ai-create";
-import { agentKey, agentSettingsPath } from "../../lib/agent-location";
-import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
-import type { PlacedAgent } from "../../lib/machine-agent-lists";
-import { toneInk } from "../../lib/tone";
-import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
-import { isBuiltinAgent } from "../../lib/builtin-agents";
+} from "@prismshadow/penguin-web/internal";
+
+
   AGENT_GROUP_BYS,
   groupByAuthor,
   initialAgentsGroupBy,

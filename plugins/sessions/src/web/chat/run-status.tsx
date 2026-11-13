@@ -11,8 +11,7 @@
  * glyph's own accessible name in words, so a theme never makes either the only carrier.
  */
 import { ActivityIcon } from "@prismshadow/penguin-ui";
-import { sessionActivityLabel } from "../../lib/session-activity";
-import type { SessionActivity } from "../../lib/session-activity";
+import { SessionActivity, sessionActivityLabel } from "@prismshadow/penguin-web/internal";
 
 export function RunStatus({ activity }: { activity: SessionActivity }) {
   if (activity !== "running") return null;

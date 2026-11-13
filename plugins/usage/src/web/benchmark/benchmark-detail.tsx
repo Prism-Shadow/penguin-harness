@@ -38,20 +38,12 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import type { MergedBenchmark, MergedCase } from "@prismshadow/penguin-web/internal";
-import { S } from "@prismshadow/penguin-web/internal";
+import { MergedEvaluation, S, useAgentAvatarSrc } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme, type Currency } from "@prismshadow/penguin-web/internal";
-import { useAgentAvatarSrc } from "../../lib/agent-avatar";
-import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
-import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { toneInk } from "../../lib/tone";
-import { useLocale } from "../../state/locale";
-import { useTheme, type Currency } from "../../state/theme";
 
 import { NEUTRAL_SERIES } from "@prismshadow/penguin-web/internal";
 import { AskAiModal } from "./ask-ai-modal";

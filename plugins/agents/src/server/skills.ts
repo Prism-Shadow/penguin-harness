@@ -40,18 +40,9 @@ import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { toSkillItem } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, assertSafeEntryPath, skillTooLarge, unzipBounded } from "@prismshadow/penguin-server/internal";
-import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import { iconResponse } from "../icon-response.js";
-import { agentSkillIconRoute, toSkillItem } from "../../services/plugin-library.js";
-  MAX_ARCHIVE_BYTES,
-  MAX_ARCHIVE_FILES,
-  MAX_FILE_BYTES,
-  MAX_TOTAL_BYTES,
-  assertSafeEntryPath,
-  skillTooLarge,
-  unzipBounded,
-} from "../../services/skill-import-limits.js";
+
+
+import { iconResponse } from "@prismshadow/penguin-server/internal";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "@prismshadow/penguin-server/internal";
