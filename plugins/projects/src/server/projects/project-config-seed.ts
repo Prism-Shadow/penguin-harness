@@ -11,7 +11,7 @@ import {
   PRESET_DEFAULT_MODEL,
   presetModelEntries,
   presetProviderTable,
-} from "../model-catalog/seed.js";
+} from "@prismshadow/penguin-server/model-catalog";
 
 /**
  * What a new Project's file holds, and what "Restore defaults" puts back: core's default config
