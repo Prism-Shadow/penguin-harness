@@ -147,8 +147,6 @@ export { Clock } from "./hmr/capabilities.js";
 export { adminPluginConfigRoutes } from "@penguinharness/plugin-plugins/server";
 export type { PluginsRouteDeps } from "@penguinharness/plugin-plugins/server";
 export * from "./net/proxy.js";
-export { parsePluginIndex, withoutIcon, BUILTIN_REGISTRY_SOURCE, builtinPluginRegistry, httpPluginRegistry, NIGHTLY_INDEX_URL } from "./plugin/registry.js";
-export type { PluginRegistry, PluginDisplay, HttpRegistryOptions } from "./plugin/registry.js";
 export * from "./services/attachment-limits.js";
 export * from "./services/draft-shortcuts.js";
 export * from "./services/keybindings.js";

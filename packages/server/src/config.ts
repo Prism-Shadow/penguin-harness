@@ -11,7 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
+import { NIGHTLY_INDEX_URL } from "@penguinharness/plugin-plugins/server";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "@prismshadow/penguin-core/model-catalog";

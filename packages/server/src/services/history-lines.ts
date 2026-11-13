@@ -42,7 +42,7 @@ import type {
   HistoryStub,
   HistoryWindowPart,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { HttpError } from "../http/errors.js";
 import type { EventSink } from "../http/event-stream.js";
 import { badRequest } from "../http/validate.js";

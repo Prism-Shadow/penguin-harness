@@ -25,7 +25,7 @@ import type {
   MessagesPageInfo,
   MessagesResponse,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@penguinharness/plugin-sessions/server";
 import { badRequest, parseNonNegativeInt } from "../http/validate.js";
 import type { Channels } from "../hmr/capabilities.js";
 import type { Traces } from "../mechanisms/traces.js";

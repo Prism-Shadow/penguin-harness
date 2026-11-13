@@ -91,7 +91,7 @@ import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "@penguinharness/plugin-usage/server";
 import type { UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "@penguinharness/plugin-db/server";
-import { MachinesRepo } from "../db/repos/machines.js";
+import { MachinesRepo } from "@penguinharness/plugin-machines/server";
 import type { Auth } from "@penguinharness/plugin-settings/server";
 
 /**
