@@ -8,6 +8,9 @@
  * - The initial-password nag stays quiet in any window the shell signed in.
  * - The current-password field is omitted for the shell's own window and first-login
  *   sessions, and kept for a desktop session against a server no shell spawned.
+ * - A failed password save is placed under the field its error code is about, and on the
+ *   dialog's own line when that field is not shown — where a first-login session's error
+ *   would otherwise have nowhere to appear.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -15,6 +18,7 @@ import {
   offersChangePassword,
   nagsAboutInitialPassword,
   omitsOldPassword,
+  passwordErrorPlace,
 } from "../src/lib/account-menu";
 
 describe("isDesktopShellWindow", () => {
@@ -80,5 +84,31 @@ describe("omitsOldPassword", () => {
     // request the server refuses. That account's password is recovered with `penguin server
     // reset-admin-password`, not from this form.
     expect(omitsOldPassword({ desktopMode: false, sessionVia: "desktop" })).toBe(false);
+  });
+});
+
+describe("passwordErrorPlace", () => {
+  it("puts a weak new password under the new-password field", () => {
+    expect(passwordErrorPlace("invalid_password", true)).toBe("new");
+    expect(passwordErrorPlace("invalid_password", false)).toBe("new");
+  });
+
+  it("puts a wrong current password under its field, when that field is shown", () => {
+    expect(passwordErrorPlace("password_mismatch", true)).toBe("old");
+  });
+
+  it("puts it on the dialog's own line when the old-password field is not shown", () => {
+    // A first-login session and the shell's own window set a password without the old one:
+    // an error under a field that is not rendered would be an error nobody sees.
+    expect(passwordErrorPlace("password_mismatch", false)).toBe("form");
+  });
+
+  it("puts every other failure on the dialog's own line", () => {
+    // The request refused, the network down, the server broken: none of them is about an
+    // input, and the old-password field used to swallow them all.
+    for (const code of ["bad_request", "unauthorized", "internal_error", undefined]) {
+      expect(passwordErrorPlace(code, true)).toBe("form");
+      expect(passwordErrorPlace(code, false)).toBe("form");
+    }
   });
 });
