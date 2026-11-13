@@ -10,6 +10,9 @@
  * - Unregistering drops one machine's entry, alias and all, and nothing when absent.
  * - An alias is trimmed, a blank one reverts to the basename, the input is never mutated, and
  *   an unchanged alias changes nothing; renaming one machine's entry leaves the other's alone.
+ * - Naming a Workspace that was never registered registers it with that name on its machine, and
+ *   the merged groups show one group for it carrying the name; a blank name for it, or any name
+ *   for a temporary Workspace, stores nothing.
  * - Entries round-trip per Project (alias and machine included); nothing stored or no Project
  *   is empty and reading writes nothing; the older string-only shape still loads.
  * - Malformed values, junk elements, junk aliases and empty machine ids are dropped; a storage
@@ -105,11 +108,46 @@ describe("setWorkspaceAlias", () => {
     expect(setWorkspaceAlias(named, "/a", null, "   ")).toEqual([{ path: "/a" }, { path: "/b" }]);
   });
 
-  it("same-reference fast exit: unknown path, unchanged alias, or clearing an alias that isn't set", () => {
-    expect(setWorkspaceAlias(entries, "/zzz", null, "X")).toBe(entries);
+  it("same-reference fast exit: blank name for an unknown path, unchanged alias, or clearing an alias that isn't set", () => {
+    expect(setWorkspaceAlias(entries, "/zzz", null, "   ")).toBe(entries);
     expect(setWorkspaceAlias(entries, "/a", null, "")).toBe(entries);
     const named = setWorkspaceAlias(entries, "/a", null, "X");
     expect(setWorkspaceAlias(named, "/a", null, " X ")).toBe(named);
+  });
+});
+
+describe("naming a Workspace that was never registered", () => {
+  const remote = "noeSE0FFHhNXl2J5";
+
+  it("registers it with that name on its machine, and its group carries the name, once", () => {
+    const groups = [
+      group(`${remote}\u0000/srv/app`, {
+        fullPath: "/srv/app",
+        machineId: remote,
+        label: "app",
+        sessions: [{ id: "s1" }],
+      }),
+    ];
+    const entries: readonly WorkspaceEntry[] = [{ path: "/srv/other" }];
+    const named = setWorkspaceAlias(entries, "/srv/app", remote, "  Prod  ");
+    expect(named).toEqual([
+      { path: "/srv/app", alias: "Prod", machineId: remote },
+      { path: "/srv/other" },
+    ]);
+    const merged = mergeRegisteredWorkspaces(groups, named.slice(0, 1));
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ label: "Prod", machineId: remote });
+    expect(merged[0]!.sessions).toEqual([{ id: "s1" }]);
+    // This server's own directory is registered without a machine.
+    expect(setWorkspaceAlias([], "/srv/app", null, "Here")).toEqual([
+      { path: "/srv/app", alias: "Here" },
+    ]);
+  });
+
+  it("stores nothing for a temporary Workspace, whatever the name", () => {
+    const entries: readonly WorkspaceEntry[] = [];
+    const temp = "/home/u/.penguin/agents/a/workspaces/tmp-0123abcd";
+    expect(setWorkspaceAlias(entries, temp, null, "Scratch")).toBe(entries);
   });
 });
 
