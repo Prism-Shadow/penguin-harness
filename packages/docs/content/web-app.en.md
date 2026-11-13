@@ -191,7 +191,7 @@ The id is 2–64 characters long. It starts with a lowercase letter and uses onl
 | **General** | The display name, the **Project ID**, and **Delete Project**, which removes the Project's directory recursively and cannot be undone |
 | **Members** | Who belongs to the Project, and with what role. The owner adds an existing user by username (**Add member**) and removes members (**Remove**). Not in the desktop app. |
 | **Defaults** | **New chat defaults**: the agent, working directory, approval mode, thinking level and default model that every new chat starts with |
-| **Security policy** | Command policy rules. A command matching an enabled rule is refused, whatever the approval mode. See [Command policy](/configuration#command-policy) |
+| **Security policy** | Command policy rules. A command matching an enabled rule waits for a person's go-ahead or is refused, as the rule says, whatever the approval mode. See [Command policy](/configuration#command-policy) |
 
 ### Roles
 

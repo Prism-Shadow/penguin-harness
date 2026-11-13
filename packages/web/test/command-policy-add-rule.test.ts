@@ -4,9 +4,12 @@
  *
  * - The rule editor puts the caret in its first field (the rule's name) and nowhere else, so
  *   opening the form is never silent.
- * - A rule added with "Ask" is saved with `action: "ask"`, and its row then says it asks first.
- * - A rule added as the editor opens (Deny, the default) is saved with no action, as the server
- *   stores it, and its row carries no mark.
+ * - A rule added as the editor opens (Ask, the default, as for every factory rule) is saved with
+ *   `action: "ask"`, and its row then says it asks first.
+ * - A rule switched to "Deny" is saved with no action, as the server stores a refusal, and its row
+ *   carries no mark.
+ * - Editing a stored rule that refuses (no action stored) and applying it keeps it refusing: the
+ *   new rule's default must not turn an existing refusal into a question.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -18,7 +21,7 @@ import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { AuthProvider } from "../src/state/auth";
 import { ProjectProvider } from "../src/state/project";
-import { projectSettingsServer } from "./helpers/project-settings";
+import { FACTORY_RULE, projectSettingsServer } from "./helpers/project-settings";
 import { button, click, field, hasButton, mount, type, unmountAll, waitFor } from "./helpers/dom";
 
 describe("command policy: adding a rule", () => {
@@ -59,21 +62,22 @@ describe("command policy: what a new rule does on a hit", () => {
     return server;
   }
 
-  async function addRule(name: string, pattern: string, ask: boolean) {
+  /** Adds a rule, choosing Deny when asked to and leaving the editor's default otherwise. */
+  async function addRule(name: string, pattern: string, deny: boolean) {
     await click(button(en.project.commandPolicyAddRule));
     await type(field(en.project.commandPolicyRuleName), name);
     await type(field(en.project.commandPolicyRulePattern), pattern);
-    if (ask) await click(button(en.project.commandPolicyActionAsk));
+    if (deny) await click(button(en.project.commandPolicyActionDeny));
     await click(button(en.project.commandPolicyApplyRule));
   }
 
   const dialogText = () => document.querySelector('[role="dialog"]')!.textContent!;
 
-  it("a rule added with Ask is saved asking, and its row says it asks first", async () => {
+  it("a rule added as the editor opens is saved asking, and its row says it asks first", async () => {
     const server = await openSecurityPage();
     expect(dialogText()).not.toContain(en.project.commandPolicyAskPill);
 
-    await addRule("ask-deploy", "fly deploy", true);
+    await addRule("ask-deploy", "fly deploy", false);
     expect(dialogText()).toContain(en.project.commandPolicyAskPill);
     await click(button(en.common.save));
     await waitFor(() => server.policyPuts().length === 1);
@@ -87,14 +91,27 @@ describe("command policy: what a new rule does on a hit", () => {
     });
   });
 
-  it("a rule added as the editor opens is saved refusing, with no action stored", async () => {
+  it("a rule switched to Deny is saved refusing, with no action stored", async () => {
     const server = await openSecurityPage();
-    await addRule("no-curl", "curl ", false);
+    await addRule("no-curl", "curl ", true);
     expect(dialogText()).not.toContain(en.project.commandPolicyAskPill);
     await click(button(en.common.save));
     await waitFor(() => server.policyPuts().length === 1);
 
     const body = server.policyPuts()[0] as { rules: unknown[] };
     expect(body.rules[0]).toEqual({ name: "no-curl", pattern: "curl", enabled: true });
+  });
+
+  it("editing a stored refusal keeps it refusing", async () => {
+    const server = await openSecurityPage();
+    await click(button(en.project.commandPolicyEditRuleNamed(FACTORY_RULE.name)));
+    await type(field(en.project.commandPolicyRuleDesc), "Wipes the disk");
+    await click(button(en.project.commandPolicyApplyRule));
+    expect(dialogText()).not.toContain(en.project.commandPolicyAskPill);
+    await click(button(en.common.save));
+    await waitFor(() => server.policyPuts().length === 1);
+
+    const body = server.policyPuts()[0] as { rules: unknown[] };
+    expect(body.rules[0]).toEqual({ ...FACTORY_RULE, description: "Wipes the disk" });
   });
 });
