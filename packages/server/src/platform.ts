@@ -107,7 +107,7 @@ import {
 } from "@penguinharness/plugin-projects/server";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
-import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
+import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import { AgentConfigService } from "@penguinharness/plugin-agents/server";
 import { SnapshotService } from "@penguinharness/plugin-projects/server";
 import { AgentRoutes } from "@penguinharness/plugin-agents/server";
