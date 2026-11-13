@@ -61,7 +61,7 @@ import {
   sameHistoryFile,
 } from "./history-wire.js";
 import type { HistoryLinesQuery } from "./history-wire.js";
-import { decodeCursor } from "./message-window.js";
+import { decodeCursor } from "@penguinharness/plugin-usage/server";
 import {
   MESSAGES_PAGE_LIMIT_DEFAULT,
   appendPendingInputs,
@@ -69,7 +69,7 @@ import {
   messagesPageInfo,
   pageLimit,
 } from "./session-history.js";
-import { withImagesByReference } from "./trace-images.js";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
 import type { HistoryTraceFile, HistoryWindowRead } from "./trace-service.js";
 
 /** A machine-leg stream beats this often while it waits on credit or disk. */

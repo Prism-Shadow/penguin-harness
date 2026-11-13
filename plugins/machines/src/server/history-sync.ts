@@ -55,7 +55,7 @@ import { historyLinesPath, parseHistoryFileKey } from "../services/history-wire.
 import type { HistoryLinesQuery } from "../services/history-wire.js";
 import { encodeCursor } from "../services/message-window.js";
 import { historyResponse } from "../services/session-history.js";
-import { SESSION_ROUTES_BASE } from "../services/trace-images.js";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest } from "../services/trace-service.js";
 import { CREDIT_FLOW } from "../socket/frames.js";
 import type { EventFrame } from "../socket/frames.js";

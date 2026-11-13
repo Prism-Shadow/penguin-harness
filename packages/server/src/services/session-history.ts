@@ -32,8 +32,8 @@ import type { Traces } from "../mechanisms/traces.js";
 import { envelopeDigest } from "../runtime/live-tail.js";
 import type { RunStart } from "../runtime/live-tail.js";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { decodeCursor } from "./message-window.js";
-import { withImagesByReference } from "./trace-images.js";
+import { decodeCursor } from "@penguinharness/plugin-usage/server";
+import { withImagesByReference } from "@penguinharness/plugin-usage/server";
 import type { MessagesPageRequest, MessagesPageResult } from "./trace-service.js";
 
 export interface SessionHistoryDeps {

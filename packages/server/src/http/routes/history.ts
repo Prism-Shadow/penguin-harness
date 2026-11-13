@@ -31,7 +31,7 @@ import { HeldWindows, openHistoryOut, parseHistoryQuery, resumePoint, sendError,
 import type { HistoryOut, HistoryQuery } from "../../services/history-stream.js";
 import { captureHistoryEnvelope, historyResponse, messagesPageInfo } from "../../services/session-history.js";
 import type { SessionHistoryDeps } from "../../services/session-history.js";
-import { SESSION_ROUTES_BASE } from "../../services/trace-images.js";
+import { SESSION_ROUTES_BASE } from "@penguinharness/plugin-usage/server";
 import { readableSession } from "../session-access.js";
 import { streamRevocation } from "@prismshadow/penguin-server/internal";
 

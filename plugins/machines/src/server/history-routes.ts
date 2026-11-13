@@ -46,7 +46,7 @@ import {
 } from "../services/history-stream.js";
 import type { HistoryOut } from "../services/history-stream.js";
 import { historyFileKey } from "../services/history-wire.js";
-import { traceRecordImage } from "../services/trace-images.js";
+import { traceRecordImage } from "@penguinharness/plugin-usage/server";
 import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
 import { GenerationClosed, HistorySync } from "./history-sync.js";
 import type { HistoryReader, HistorySyncDeps } from "./history-sync.js";
