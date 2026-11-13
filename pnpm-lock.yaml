@@ -407,7 +407,7 @@ importers:
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
-        version: file:packages/cli(supports-color@10.2.2)
+        version: file:packages/cli(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -653,49 +653,49 @@ importers:
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/plugin-agents':
         specifier: workspace:*
-        version: file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-browser':
         specifier: workspace:*
-        version: file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+        version: file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-company':
         specifier: workspace:*
-        version: file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-machines':
         specifier: workspace:*
-        version: file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-messaging':
         specifier: workspace:*
-        version: file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-models':
         specifier: workspace:*
-        version: file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-plugins':
         specifier: workspace:*
-        version: file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-projects':
         specifier: workspace:*
-        version: file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-sandbox':
         specifier: workspace:*
-        version: file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-schedules':
         specifier: workspace:*
-        version: file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-sessions':
         specifier: workspace:*
-        version: file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-settings':
         specifier: workspace:*
-        version: file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@penguinharness/plugin-terminal':
         specifier: workspace:*
-        version: file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+        version: file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-usage':
         specifier: workspace:*
-        version: file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+        version: file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       '@penguinharness/plugin-workbenches':
         specifier: workspace:*
-        version: file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
@@ -708,6 +708,9 @@ importers:
       '@prismshadow/penguin-theme-pack':
         specifier: workspace:*
         version: file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1048,7 +1051,7 @@ importers:
         version: link:../../plugins/settings
       '@penguinharness/plugin-terminal':
         specifier: workspace:*
-        version: file:plugins/terminal(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+        version: link:../../plugins/terminal
       '@penguinharness/plugin-usage':
         specifier: workspace:*
         version: link:../../plugins/usage
@@ -1679,7 +1682,7 @@ importers:
         version: link:../settings
       '@penguinharness/plugin-terminal':
         specifier: workspace:*
-        version: file:plugins/terminal(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+        version: link:../terminal
       '@penguinharness/plugin-workbenches':
         specifier: workspace:*
         version: link:../workbenches
@@ -1965,7 +1968,7 @@ importers:
         version: link:../settings
       '@penguinharness/plugin-terminal':
         specifier: workspace:*
-        version: file:plugins/terminal(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+        version: link:../terminal
       '@penguinharness/plugin-usage':
         specifier: workspace:*
         version: link:../usage
@@ -8250,18 +8253,18 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-agents@file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-agents@file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
       react: 19.2.7
@@ -8392,7 +8395,7 @@ snapshots:
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       fflate: 0.8.3
       hono: 4.13.13
@@ -8425,7 +8428,7 @@ snapshots:
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
@@ -8481,6 +8484,31 @@ snapshots:
       - ws
       - zod
 
+  '@penguinharness/plugin-browser@file:plugins/browser':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@prismshadow/penguin-web': file:packages/web(ws@8.21.0)
+      hono: 4.13.13
+      smol-toml: 1.9.1
+      ws: 8.21.0
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - micromark
+      - micromark-util-types
+      - react
+      - react-dom
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - zod
+
   '@penguinharness/plugin-browser@file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8506,12 +8534,12 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@penguinharness/plugin-browser@file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)':
+  '@penguinharness/plugin-browser@file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       smol-toml: 1.9.1
       ws: 8.21.0
@@ -8610,7 +8638,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       smol-toml: 1.9.1
@@ -8635,7 +8663,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       smol-toml: 1.9.1
@@ -8746,14 +8774,14 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-company@file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-company@file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -8872,7 +8900,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -8902,7 +8930,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -9034,12 +9062,12 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-machines@file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -9142,7 +9170,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -9168,7 +9196,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -9315,16 +9343,16 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-messaging@file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-messaging@file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@types/mdast': 4.0.4
       hono: 4.13.13
       react: 19.2.7
@@ -9455,7 +9483,7 @@ snapshots:
       '@penguinharness/plugin-sessions': file:plugins/sessions(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       '@types/mdast': 4.0.4
       hono: 4.13.13
@@ -9488,7 +9516,7 @@ snapshots:
       '@penguinharness/plugin-sessions': file:plugins/sessions(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@types/mdast': 4.0.4
       hono: 4.13.13
@@ -9624,13 +9652,13 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-models@file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-models@file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -9733,7 +9761,7 @@ snapshots:
       '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -9759,7 +9787,7 @@ snapshots:
       '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -9914,20 +9942,20 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-plugins@file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-plugins@file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       commander: 13.1.0
       fflate: 0.8.3
       hono: 4.13.13
@@ -10070,7 +10098,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       commander: 13.1.0
       fflate: 0.8.3
@@ -10106,7 +10134,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       commander: 13.1.0
       fflate: 0.8.3
@@ -10268,17 +10296,17 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-projects@file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-projects@file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
       react: 19.2.7
@@ -10413,7 +10441,7 @@ snapshots:
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       fflate: 0.8.3
       hono: 4.13.13
@@ -10447,7 +10475,7 @@ snapshots:
       '@penguinharness/plugin-usage': file:plugins/usage(supports-color@10.2.2)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
@@ -10523,9 +10551,9 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-sandbox@file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-sandbox@file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - '@types/react'
@@ -10723,12 +10751,12 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-schedules@file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-schedules@file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -10835,7 +10863,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -10862,7 +10890,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -11023,24 +11051,24 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-sessions@file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-sessions@file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -11187,7 +11215,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -11224,7 +11252,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -11366,15 +11394,15 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-settings@file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-settings@file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -11485,7 +11513,7 @@ snapshots:
       '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -11513,7 +11541,7 @@ snapshots:
       '@penguinharness/plugin-machines': file:plugins/machines(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -11652,12 +11680,12 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@penguinharness/plugin-terminal@file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
+  '@penguinharness/plugin-terminal@file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
       '@xterm/addon-web-links': 0.11.0(@xterm/xterm@5.5.0)
@@ -11685,7 +11713,7 @@ snapshots:
   '@penguinharness/plugin-terminal@file:plugins/terminal(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
@@ -11716,7 +11744,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
@@ -11746,7 +11774,7 @@ snapshots:
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
@@ -11865,14 +11893,14 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@penguinharness/plugin-usage@file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
+  '@penguinharness/plugin-usage@file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
       react: 19.2.7
@@ -11933,7 +11961,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       fflate: 0.8.3
       hono: 4.13.13
@@ -11964,7 +11992,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       fflate: 0.8.3
       hono: 4.13.13
@@ -12070,13 +12098,13 @@ snapshots:
       - ws
       - zod
 
-  '@penguinharness/plugin-workbenches@file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@penguinharness/plugin-workbenches@file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-server': file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-web': file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
@@ -12183,7 +12211,7 @@ snapshots:
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)
       hono: 4.13.13
       react: 19.2.7
@@ -12210,7 +12238,7 @@ snapshots:
       '@penguinharness/plugin-schedules': file:plugins/schedules(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@prismshadow/penguin-web': file:packages/web(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       hono: 4.13.13
       react: 19.2.7
@@ -12362,7 +12390,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
-      '@prismshadow/penguin-server': file:packages/server(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@prismshadow/penguin-server': file:packages/server
       commander: 13.1.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -12384,7 +12412,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
+  '@prismshadow/penguin-cli@file:packages/cli(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
@@ -12518,29 +12546,30 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
+  '@prismshadow/penguin-server@file:packages/server':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
-      '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-sandbox': file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
-      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@larksuiteoapi/node-sdk': 1.73.0
+      '@penguinharness/plugin-agents': file:plugins/agents(ws@8.21.0)
+      '@penguinharness/plugin-browser': file:plugins/browser
+      '@penguinharness/plugin-company': file:plugins/company(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(ws@8.21.0)
+      '@penguinharness/plugin-messaging': file:plugins/messaging(ws@8.21.0)
+      '@penguinharness/plugin-models': file:plugins/models(ws@8.21.0)
+      '@penguinharness/plugin-plugins': file:plugins/plugins(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(ws@8.21.0)
+      '@penguinharness/plugin-sandbox': file:plugins/sandbox(ws@8.21.0)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(ws@8.21.0)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(ws@8.21.0)
+      '@penguinharness/plugin-settings': file:plugins/settings(ws@8.21.0)
+      '@penguinharness/plugin-terminal': file:plugins/terminal
+      '@penguinharness/plugin-usage': file:plugins/usage
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12571,29 +12600,84 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)':
+  '@prismshadow/penguin-server@file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-sandbox': file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-sandbox': file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@xterm/headless': 5.5.0
+      commander: 13.1.0
+      dotenv: 17.4.2
+      fflate: 0.8.3
+      hono: 4.13.13
+      node-pty: 1.1.0
+      remark-gfm: 4.0.1(supports-color@10.2.2)
+      remark-parse: 11.0.0(supports-color@10.2.2)
+      smol-toml: 1.9.1
+      tar: 7.5.22
+      typescript: 5.9.3
+      undici: 7.30.1
+      unified: 11.0.5
+      ws: 8.21.0
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@types/react'
+      - bufferutil
+      - debug
+      - immer
+      - micromark
+      - micromark-util-types
+      - react
+      - react-dom
+      - supports-color
+      - use-sync-external-store
+      - utf-8-validate
+      - zod
+
+  '@prismshadow/penguin-server@file:packages/server(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)':
+    dependencies:
+      '@hono/node-server': 2.0.12(hono@4.13.13)
+      '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-sandbox': file:plugins/sandbox(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12647,6 +12731,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12700,6 +12785,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12753,6 +12839,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12806,6 +12893,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12859,6 +12947,7 @@ snapshots:
       '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-theme-pack': file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       dotenv: 17.4.2
@@ -12977,37 +13066,6 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
       react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)
-      rehype-katex: 7.0.1
-      remark-gfm: 4.0.1(supports-color@10.2.2)
-      remark-math: 6.0.0(supports-color@10.2.2)
-      shiki: 4.3.1
-      zustand: 5.0.15(@types/react@19.2.17)(react@19.2.7)
-    transitivePeerDependencies:
-      - '@types/react'
-      - immer
-      - micromark
-      - micromark-util-types
-      - supports-color
-      - use-sync-external-store
-
-  '@prismshadow/penguin-ui@file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)':
-    dependencies:
-      '@shikijs/langs': 4.3.1
-      '@shikijs/themes': 4.3.1
-      katex: 0.16.47
-      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
-      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
-      mermaid: 11.17.2
-      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
-      micromark-extension-gfm-footnote: 2.1.0
-      micromark-extension-gfm-strikethrough: 2.1.0
-      micromark-extension-gfm-table: 2.1.1
-      micromark-extension-gfm-task-list-item: 2.1.0
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-      react-markdown: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
       rehype-katex: 7.0.1
       remark-gfm: 4.0.1(supports-color@10.2.2)
       remark-math: 6.0.0(supports-color@10.2.2)
@@ -13153,25 +13211,25 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-web@file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/penguin-web@file:packages/web(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
-      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
-      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-agents': file:plugins/agents(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-browser': file:plugins/browser(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-company': file:plugins/company(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-machines': file:plugins/machines(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-messaging': file:plugins/messaging(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-models': file:plugins/models(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-plugins': file:plugins/plugins(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-projects': file:plugins/projects(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-schedules': file:plugins/schedules(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-sessions': file:plugins/sessions(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-settings': file:plugins/settings(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@penguinharness/plugin-terminal': file:plugins/terminal(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-usage': file:plugins/usage(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
+      '@penguinharness/plugin-workbenches': file:plugins/workbenches(@types/react@19.2.17)(debug@4.4.3(supports-color@10.2.2))(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
       '@xterm/addon-web-links': 0.11.0(@xterm/xterm@5.5.0)
@@ -13347,7 +13405,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
       '@xterm/addon-web-links': 0.11.0(@xterm/xterm@5.5.0)
@@ -13391,7 +13449,7 @@ snapshots:
       '@penguinharness/plugin-workbenches': file:plugins/workbenches(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
+      '@prismshadow/penguin-ui': file:packages/ui(@types/react@19.2.17)(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(supports-color@10.2.2)
       '@xterm/addon-clipboard': 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/addon-fit': 0.10.0(@xterm/xterm@5.5.0)
       '@xterm/addon-web-links': 0.11.0(@xterm/xterm@5.5.0)
