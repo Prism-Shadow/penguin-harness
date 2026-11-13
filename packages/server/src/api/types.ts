@@ -7426,3 +7426,473 @@ export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
   event: DesktopBrowserEvent;
 }
+
+import type { AppCenterShortcut } from "@penguinharness/plugin-workbenches/server";
+export type { AppCenterShortcut };
+
+// --- Symbols the evolved base added after the merge cut (ported verbatim). ---
+
+export const AVATAR_MAX_CHARS = 131072;
+
+/** GET /api/me/background-image. */
+
+export interface AgentArchiveImportResponse {
+  agent: Pick<AgentSummary, "agentId" | "name" | "description">;
+  mode: "created" | "overwritten";
+  /** The Agent State version the package carried. */
+  version: number;
+  /** Overwrite only: the snapshot of the replaced State, a file name in the Agent's `snapshots/`. */
+  backup?: string;
+  sessions: {
+    /** Sessions whose Traces landed as Sessions of this Agent. */
+    imported: number;
+    /** The package's Sessions this install already has, by id: their Traces were not imported. */
+    skipped: string[];
+  };
+}
+
+/** PUT /api/projects/:projectId/agents/:agentId/avatar. */
+
+export interface AgentArchiveQuery {
+  skills?: "0" | "1";
+  hooks?: "0" | "1";
+  memory?: "0" | "1";
+  workbenches?: "0" | "1";
+  workbenchData?: "0" | "1";
+  schedules?: "0" | "1";
+  /**
+   * Which Sessions' Traces travel, every file of each: none (the default); the last N by
+   * activity, 1–500, a subagent Session following its parent; or those whose date directory
+   * lies in the range, both ends included.
+   */
+  traces?: "none" | `last:${number}` | `${string}..${string}`;
+}
+
+/** DELETE /api/projects/:projectId/agents/:agentId (202). */
+export interface AgentDeleteResponse {
+  deletion: AgentDeletionInfo;
+}
+
+/** GET /api/projects/:projectId/agent-deletions/:deletionId. */
+
+export interface AppCenterLayout {
+  v: 1;
+  items: AppCenterLayoutItem[];
+}
+
+export type AppCenterLayoutItem =
+  { type: "app"; app: string } | { type: "folder"; id: string; name: string; apps: string[] };
+
+/**
+ * GET /api/projects/:p/app-center: a shortcut for every workbench of the Project's Agents on this
+ * server whose manifest asks to be shown, in Agent list order and by title within an Agent. Read
+ * from the manifests, load status and the loads under way; nothing is compiled.
+ */
+
+export interface AppCenterLayoutResponse {
+  layout: AppCenterLayout | null;
+}
+
+/**
+ * GET /api/projects/:p/agents/:a/workbenches: every workbench of the Agent, disabled ones
+ * included (each says so in `enabled`).
+ */
+
+export interface AppCenterResponse {
+  shortcuts: AppCenterShortcut[];
+  /** The viewer's arrangement for this Project; null when they have none (the server's order). */
+  layout: AppCenterLayout | null;
+}
+
+/**
+ * PUT /api/projects/:p/app-center/layout: replaces the viewer's arrangement of the Project's App
+ * Center; `null` restores the server's order. 400 naming the rule a layout breaks, and nothing is
+ * stored: at most 500 items and 1000 app keys in all, each app key `<agentId>/<workbenchId>` (at
+ * most 200 characters) once, folder ids `[A-Za-z0-9_-]{1,32}` once each, folder names 1–40
+ * characters once trimmed (stored trimmed), 1–500 apps per folder.
+ */
+
+export type ApprovalReason = CoreApprovalReason;
+
+// ---------------------------------------------------------------------------
+// Vault environment variables (Agent-level: agent_state/.vault.toml)
+// ---------------------------------------------------------------------------
+
+/** Read-only vault entry display: key name + masked value; plaintext is never sent. */
+
+export type ArchivedSessionGroupServers = "here" | "machines";
+
+/** One group of the archive page: one Workspace of one Project, on this server or on one machine. */
+
+/** PUT /api/me/background-image's answer: the id the image is now known by (null once removed). */
+export interface BackgroundImagePutResponse {
+  imageId: string | null;
+}
+
+/**
+ * The kinds of draft the account keeps, as the first segment of a draft key
+ * (`<kind>:<id>`). The id names what the draft belongs to, so the server can drop it with that
+ * thing: `chat` — a Project's new-conversation draft (`chat:<projectId>`); `parked` — a
+ * Project's parked draft conversations (`parked:<projectId>`); `org` — a Project's
+ * create-organization form (`org:<projectId>`); `channel` — a company-mode channel's composer
+ * (`channel:<projectId>.<orgId>.<channelId>`); `session` — a Session's composer
+ * (`session:<sessionId>`); `a2ui` — a reply's form answers in progress
+ * (`a2ui:<sessionId>:<block>`).
+ */
+
+/** GET /api/me/background-image. */
+export interface BackgroundImageResponse {
+  /** A PNG / JPEG / WebP data URL, or null when the account holds no image. */
+  image: string | null;
+  imageId: string | null;
+}
+
+/** PUT /api/me/background-image: the image to keep, or null to remove it. */
+
+/** Draft writes one PATCH may carry. */
+export const DRAFTS_PATCH_MAX_ENTRIES = 50;
+
+/** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
+
+/** One draft's cap, in characters of its JSON text. */
+export const DRAFT_VALUE_MAX_CHARS = 256 * 1024;
+
+/** Draft writes one PATCH may carry. */
+
+export interface DefaultModelOffer {
+  /** The model offered as the default. */
+  model: ModelRefDto;
+  /** The default the Project stores now, outside the group; absent when it has none. */
+  current?: ModelRefDto;
+}
+
+/** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
+
+export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+/** One draft's cap, in characters of its JSON text. */
+
+/** GET /api/me/drafts: every draft the account keeps, by key, as the JSON each was written with. */
+export interface DraftsResponse {
+  drafts: Record<string, unknown>;
+}
+
+/**
+ * PATCH /api/me/drafts: drafts to write, by key; `null` removes one. Applied together. When the
+ * account then holds more than its bound, its least recently written drafts outside this patch
+ * are dropped.
+ */
+
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
+
+/** The web leg's `page` event: what the window holds beside its records. */
+export interface HistoryPage {
+  windowId: string;
+  /** Records the window carries. */
+  count: number;
+  /** Bytes of their lines. */
+  bytes: number;
+  page?: MessagesPageInfo;
+  live?: MessagesLiveTail;
+  serverNowMs: number | null;
+}
+
+/**
+ * The web leg's `records` event (whole lines, each one `HistoryMessage` JSON, `offset` counting
+ * the window's text so far) and `part` event (a piece of one record longer than a frame, with
+ * `last` ending it).
+ */
+
+/** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
+export interface HistoryProgress {
+  phase: "window" | "heavy" | "fill";
+  /** The machine the bytes come from; null for this server's own Session. */
+  machineId: string | null;
+  doneBytes: number;
+  totalBytes: number;
+  doneLines: number;
+  totalLines: number;
+  /**
+   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
+   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
+   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
+   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
+   * stream goes on. Null again once bytes move.
+   */
+  waiting: null | {
+    reason: "not_connected" | "retrying" | "slow";
+    attempt: number;
+    nextAt: number;
+  };
+}
+
+/** The web leg's `page` event: what the window holds beside its records. */
+
+export interface HistoryRecords {
+  windowId: string;
+  offset: number;
+  text: string;
+  last?: boolean;
+}
+
+/** The web leg's `error` event: terminal; the reader stops and shows it. */
+
+/** The web leg's `error` event: terminal; the reader stops and shows it. */
+export interface HistoryStreamError {
+  code: string;
+  message: string;
+  details?: ErrorDetails;
+}
+
+/** Event names of the web leg (`history`, `trace-body`); `ping` is the beat. */
+
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/**
+ * The ids the legacy `commands` field of `GET /api/command` may carry — the set the page
+ * that predates `offers` knows. That page looks every id up in a table of its own and
+ * throws on a miss, so this set is PINNED: an id added to {@link HOST_COMMANDS} travels
+ * only in `offers` (whose words ride along) until the old page is gone. Filtering by the
+ * build's own `HOST_COMMANDS` here would leak each new id to a page that cannot say it.
+ */
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: string;
+}
+
+/**
+ * The outcome of one self-update run (`penguin update --yes` on the server host), carried
+ * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
+ * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ */
+/**
+ * English fragments of the CLI's `penguin update` refusals (packages/cli/src/i18n.ts
+ * `update.*`), one per refusal reason: a clean exit whose output carries one is "unsupported".
+ * The CLI's own tests read this list, so a refusal reworded without its marker fails there.
+ * `needsYes` / `cancelled` are omitted: `--yes` makes the confirmation gate proceed
+ * unconditionally, so neither can occur under the server.
+ */
+
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommandOffer[];
+}
+
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
+
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
+  commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+
+export interface IconRef {
+  url: string;
+  /** A monochrome SVG (every paint `currentColor` or `none`): drawn as a mask in the text colour. Otherwise drawn as itself. */
+  tint: boolean;
+}
+
+export interface MachineSocketFact {
+  /**
+   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
+   * when the machine answered the handshake with a status (a program predating the socket),
+   * `unanswered` when its server answers HTTP and never answered the handshake, and `failed` when
+   * the dial did not complete or a socket that was up closed.
+   *
+   * `unanswered` is a server PROCESS older than the socket: an update handed to a running server
+   * swaps its platform and never the process that takes the upgrade, so the machine reports the
+   * current build and still has no socket: it is not running this server's version, which a remote
+   * machine must. A restart of its server, and failing that an update or a reinstall, brings it
+   * there; the Machines page reads the state as needing a restart. It lasts until a handshake
+   * completes: a
+   * machine dialled again keeps it while the dial is outstanding, instead of reading `dialling`.
+   */
+  state: "connected" | "dialling" | "refused" | "unanswered" | "failed";
+  /** When that state was entered (ISO). */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail?: string;
+}
+
+/**
+ * One machine's event, as the machines aggregate stream carries it
+ * (`GET /api/projects/:projectId/machines/events`): the machine's own `ServerEvent`, with the
+ * machine it came from — one stream carries many machines, and the tag is what keeps their
+ * events apart (docs: /docs/server-api § "One event stream per machine").
+ */
+
+export interface MemoryFolderFile {
+  /** Its place in the scope directory, folder first: `csv-tools/dedupe.py`, `csv-tools/lib/io.py`. The file routes address it by this path. */
+  path: string;
+  /** File size in bytes. */
+  size: number;
+  /** File mtime (ISO 8601). */
+  modifiedAt: string;
+}
+
+/** One memory topic file, as listed (frontmatter only — the body is fetched per file). */
+
+/** A server that has the asked-about bot enabled: a machine by id and alias, or this server (both null). */
+export interface MessagingAccountHolder {
+  machineId: string | null;
+  alias: string | null;
+}
+
+/**
+ * Why a machine could not be asked: no connection to it, a build without the accounts
+ * route (it answered 404), or any other failed answer.
+ */
+
+export interface MessagingAccountHoldersResponse {
+  holders: MessagingAccountHolder[];
+  unreachable: MessagingUnreachableMachine[];
+}
+
+// ---------------------------------------------------------------------------
+// SSE server events (records use the default event, only server_event here)
+// ---------------------------------------------------------------------------
+
+/** Docs: /docs/server-api § "Streaming (SSE)". */
+
+/** A machine of the Project that could not be asked whether it holds the bot. */
+export interface MessagingUnreachableMachine {
+  machineId: string;
+  alias: string;
+  reason: MessagingUnreachableReason;
+}
+
+/**
+ * GET /api/projects/:projectId/messaging/account-holders?channel=&accountId= — which servers
+ * have this bot enabled: this server, and each machine the Project uses that could be asked.
+ * Machines that could not be asked are listed apart; the caller decides what to do about
+ * them. Never names a Session. A caller who is not an admin is answered for this server
+ * only, because machines are admins' (both lists then hold no machine).
+ */
+
+export interface OrganizationDeleteResponse {
+  orgId: string;
+  /** Deleted, each with the deletion its background removal reports (`GET …/agent-deletions/:id`). */
+  deletedAgents: Array<{ agentId: string; deletion: AgentDeletionInfo }>;
+  /**
+   * Left as they are, and why: `builtin`; `employed_elsewhere` (another organization employs it
+   * too); `employment_unknown` (another organization's `org_chart.yaml` cannot be read, so it
+   * may employ it: those organizations are `unreadableCharts`); `not_confirmed` (not in
+   * `agentIds`: hired after the confirmation read the list, or shown as kept there).
+   */
+  keptAgents: Array<{
+    agentId: string;
+    reason: "employed_elsewhere" | "builtin" | "employment_unknown" | "not_confirmed";
+  }>;
+  /** The organizations whose chart could not be read, when an employee was kept for it. */
+  unreadableCharts?: UnreadableChart[];
+  /** Refused by the delete (a folder that could not be moved, a hire that raced in), with its error. */
+  failedAgents: Array<{ agentId: string; code: string; message: string }>;
+}
+
+export interface PluginUninstallResponse {
+  removed: {
+    skills: string[];
+    hooks: string[];
+    mcpServers: string[];
+    workbenches: string[];
+  };
+  failed?: Array<{
+    kind: "skill" | "hook" | "mcpServer" | "workbench";
+    name: string;
+    error: string;
+  }>;
+}
+
+/**
+ * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
+ * identity, target and what keeps it from connecting — never a header, env or oauth value.
+ */
+
+/** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
+export interface ProviderConnectionResponse extends ModelsResponse {
+  defaultOffer?: DefaultModelOffer;
+}
+
+/** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
+
+export interface ThemePackDto {
+  /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */
+  id: string;
+  names: { zh: string; en: string };
+  /** The pack's own semver. */
+  version: string;
+  /** The theme API the pack targets; a build implementing a lower one lists it and never loads it. */
+  api: number;
+  base: ThemePackBase;
+  /** The modes the pack declares; a mode it leaves out renders from the base. */
+  modes: ThemePackMode[];
+  swatches: Record<ThemePackMode, ThemePackSwatch>;
+  accent: {
+    /** The theme's own accent per mode: what `neutral` paints. */
+    own: Record<ThemePackMode, string>;
+    /** The presets, in the picker's order. */
+    presets: ThemePackAccentPreset[];
+  };
+  /** The family each stack puts first. */
+  fonts: { sans: string; ui: string; mono: string; cjk: string; display: string };
+  /** The built-in Agent-avatar variant the pack shows, when it shows its own. */
+  avatar?: string;
+  href: string;
+  /** Hex, 8–64 characters. */
+  v: string;
+}
+
+/** GET /api/themes. */
+
+/** GET /api/themes. */
+export interface ThemePacksResponse {
+  themes: ThemePackDto[];
+}
+
+/** POST /api/themes: the pack as it is now installed. */
+
+/** An organization whose `org_chart.yaml` cannot be read (missing, or does not parse). */
+export interface UnreadableChart {
+  orgId: string;
+  /** Its display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
+}
+
+export interface WorkbenchesResponse {
+  workbenches: WorkbenchInfo[];
+  /**
+   * The Agent-wide switch: false while `agent_state/workbenches/.disabled` exists, and then no
+   * workbench of the Agent runs, whatever its own switch says. Absent from a server that
+   * predates the switches.
+   */
+  enabled?: boolean;
+}
+
+/**
+ * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
+ * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
+ * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
+ * once; turning it on loads it.
+ */
