@@ -94,6 +94,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     "Select",
     "OptionMenu",
     "InfoPopover",
+    // A date or time picker's panel (2026-11-12): a popover dialog over the page.
+    "PickerPanel",
     "Tooltip",
     "TooltipLayer",
     "TooltipPanel",
@@ -191,6 +193,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     "OptionMenu",
     "SearchInput",
     "FormPickerTrigger",
+    // A date or time picker's field (2026-11-12), on the shared control look.
+    "PickerTrigger",
     "Checkbox",
     "CheckboxBox",
     "Radio",

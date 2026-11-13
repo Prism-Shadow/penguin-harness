@@ -48,6 +48,10 @@ const CONTROLS = new Set([
   "Checkbox",
   "Radio",
   "RadioGroup",
+  "DateField",
+  "TimeField",
+  "DateTimeField",
+  "DateRangeField",
 ]);
 
 /**

@@ -1551,6 +1551,27 @@ export const en: Strings = {
     documentPlaceholder: "Find in document…",
   },
 
+  datePicker: {
+    locale: "en-US",
+    pickDate: "Pick a date",
+    pickTime: "Pick a time",
+    pickDateTime: "Pick a date and time",
+    pickRange: "Pick a date range",
+    fieldName: (label: string, shown: string): string => `${label}: ${shown}`,
+    today: "Today",
+    clear: "Clear",
+    previousMonth: "Previous month",
+    nextMonth: "Next month",
+    chooseMonth: "Choose month and year",
+    month: "Month",
+    year: "Year",
+    hour: "Hour",
+    minute: "Minute",
+    dayPeriod: "AM/PM",
+    time: "Time",
+    pickEnd: "Pick the end date",
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",

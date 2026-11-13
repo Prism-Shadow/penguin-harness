@@ -1,23 +1,49 @@
 /**
  * 输入与表单: Input, Textarea and PasswordInput on the shared field scaffolding, with hint, info,
  * error and in-field affixes; the number input with its stepper, at a bound, closed and refused;
- * the native date and time inputs; the search box in its three shapes; checkboxes and radio
- * groups.
+ * the date, time, date-and-time and date-range pickers, with a range's presets, a required, a
+ * bounded, a refused and a closed date, a time on a 15-minute step and one on a 12-hour clock; the
+ * search box in its three shapes; checkboxes and radio groups.
  */
 import { useState } from "react";
+import type { DateRangeValue } from "@prismshadow/penguin-ui";
 import {
   Checkbox,
+  DateField,
+  DateRangeField,
+  DateTimeField,
   Input,
   NumberInput,
   PasswordInput,
   RadioGroup,
   SearchInput,
   Textarea,
+  TimeField,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
 type ImportMode = "skip" | "overwrite" | "replace";
+
+/** A local date as the pickers write it (`YYYY-MM-DD`), read off the reader's own calendar. */
+const localDate = (at: Date) =>
+  `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+
+/** The span of the last `days` days, today included. */
+function lastDays(days: number): DateRangeValue {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+  return { from: localDate(from), to: localDate(now) };
+}
+
+/** This month's first and last days. */
+function thisMonth(): { first: string; last: string } {
+  const now = new Date();
+  return {
+    first: localDate(new Date(now.getFullYear(), now.getMonth(), 1)),
+    last: localDate(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  };
+}
 
 export function InputsBoard() {
   const { S } = useGallery();
@@ -35,6 +61,13 @@ export function InputsBoard() {
   const [date, setDate] = useState("2026-10-20");
   const [time, setTime] = useState("09:30");
   const [runAt, setRunAt] = useState("2026-10-20T09:30");
+  const [span, setSpan] = useState<DateRangeValue>(() => lastDays(7));
+  const [due, setDue] = useState("");
+  const month = thisMonth();
+  const [bounded, setBounded] = useState("");
+  const [release, setRelease] = useState("2026-01-05");
+  const [meeting, setMeeting] = useState("14:30");
+  const [alarm, setAlarm] = useState("07:15");
   const [fieldQuery, setFieldQuery] = useState("");
   const [iconQuery, setIconQuery] = useState("");
   const [panelQuery, setPanelQuery] = useState("");
@@ -150,24 +183,53 @@ export function InputsBoard() {
       </BoardGroup>
       <BoardGroup title={t.dateTime}>
         <div className="lib-stack">
-          <Input
-            label={t.date}
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
+          <DateField label={t.date} value={date} onChange={setDate} />
+          <TimeField label={t.time} value={time} onChange={setTime} />
+          <DateTimeField label={t.dateTimeLocal} value={runAt} onChange={setRunAt} />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.dateRange}>
+        <div className="lib-stack">
+          <DateRangeField
+            label={t.rangeLabel}
+            required
+            from={span.from}
+            to={span.to}
+            onChange={setSpan}
+            presets={[
+              { id: "7d", label: t.range7d, ...lastDays(7) },
+              { id: "30d", label: t.range30d, ...lastDays(30) },
+              { id: "90d", label: t.range90d, ...lastDays(90) },
+            ]}
           />
-          <Input
-            label={t.time}
-            type="time"
-            value={time}
-            onChange={(event) => setTime(event.target.value)}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.dateStates}>
+        <div className="lib-stack">
+          <DateField label={t.dateRequired} required value={due} onChange={setDue} />
+          <DateField
+            label={t.dateBounded}
+            hint={t.dateBoundedHint}
+            min={month.first}
+            max={month.last}
+            value={bounded}
+            onChange={setBounded}
           />
-          <Input
-            label={t.dateTimeLocal}
-            type="datetime-local"
-            value={runAt}
-            onChange={(event) => setRunAt(event.target.value)}
+          <DateField
+            label={t.dateError}
+            error={t.dateErrorText}
+            value={release}
+            onChange={setRelease}
           />
+          <DateField label={t.dateDisabled} disabled value="2026-10-20" onChange={() => {}} />
+          <TimeField
+            label={t.timeStep}
+            hint={t.timeStepHint}
+            minuteStep={15}
+            value={meeting}
+            onChange={setMeeting}
+          />
+          <TimeField label={t.time12} hourCycle="h12" value={alarm} onChange={setAlarm} />
         </div>
       </BoardGroup>
       <BoardGroup title={t.textarea}>
