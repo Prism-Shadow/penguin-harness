@@ -3,24 +3,29 @@
  * by what each file is (the index, decisions, lessons, skills, documents) rather than as a bare
  * tree, so a reader sees what the company has learned: a decision is an answer the reader gave,
  * a lesson a delivery the reader sent back, a skill what the lead distilled from lessons and the
- * reader accepted, now installed for an employee. Every file names the ticket it came from, and
- * that ticket names the file.
+ * reader accepted, now installed for an employee, a retrospective the lead's look back over a
+ * batch of closed tickets. Every file names the ticket it came from, and that ticket names the
+ * file. A lesson a skill has absorbed stays listed, marked, but is out of the index employees
+ * read: the handbook grows by what is new and shrinks by what a skill now carries.
  *
  * The shipped handbook page is the Workspace Files panel over the same directory, and it stays:
  * this is the reading of it the spec adds, not a second editor.
  */
-import { PageFrame, PageHeader } from "@prismshadow/penguin-ui";
+import { PageFrame, PageHeader, Pill } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
+import { FIXTURES } from "./fixtures";
+import { metricsOf, windowOf } from "./model";
 import type { CompanyState, HandbookEntry, HandbookKind } from "./model";
 import { PersonName } from "./people";
 import { optionsOf, questionOf, returnOf, titleOf } from "./text";
+import { money } from "./ticket-dialog";
 import { useWords } from "./use-words";
 import type { Words } from "./words";
 
 const QUIET = "text-fg-muted";
 
 /** The groups, in the order the index names them. */
-const GROUPS: readonly HandbookKind[] = ["index", "decision", "lesson", "skill", "doc"];
+const GROUPS: readonly HandbookKind[] = ["index", "retro", "decision", "lesson", "skill", "doc"];
 
 /** An entry's title and its paragraphs: a fixed document's words, or written from its ticket. */
 export function entryWords(
@@ -28,6 +33,7 @@ export function entryWords(
   state: CompanyState,
   W: Words,
 ): { title: string; body: string[] } {
+  if (entry.kind === "retro") return retroWords(entry.retro ?? 0, state, W);
   if (entry.doc !== null) {
     const doc = W.handbook.docs[entry.doc];
     return { title: doc.title, body: [...doc.body] };
@@ -46,6 +52,62 @@ export function entryWords(
     title: W.handbook.lessonTitle(titleOf(ticket, W)),
     body: [returnOf(ticket, note, W), W.handbook.lessonAfter],
   };
+}
+
+/**
+ * A retrospective, written from the tickets it looked back over: what they say, against the last
+ * one; what became of the employee a skill it proposed was installed for; and what it proposes now.
+ */
+function retroWords(n: number, state: CompanyState, W: Words): { title: string; body: string[] } {
+  const H = W.handbook;
+  const retro = state.retros.find((candidate) => candidate.n === n);
+  if (retro === undefined) return { title: "", body: [] };
+  const now = metricsOf(state, windowOf(state, retro));
+  const body = [
+    H.retroLine(
+      now.closed,
+      now.accepted,
+      now.firstPass,
+      now.sendBacks,
+      now.questions,
+      money(now.costPerAccepted),
+    ),
+  ];
+  const last = state.retros.find((candidate) => candidate.n === n - 1);
+  if (last === undefined) {
+    body.push(H.retroBaseline);
+  } else {
+    const before = metricsOf(state, windowOf(state, last));
+    body.push(
+      H.retroBefore(
+        before.firstPass,
+        before.accepted,
+        before.sendBacks,
+        money(before.costPerAccepted),
+      ),
+    );
+    // What the last one's accepted skills did: the tickets their employee closed in this window.
+    for (const id of last.proposals) {
+      const ticket = state.tickets.find((candidate) => candidate.id === id);
+      const on = ticket?.fixture == null ? undefined : FIXTURES[ticket.fixture].installsOn;
+      if (ticket === undefined || ticket.status !== "done" || on === undefined) continue;
+      const theirs = metricsOf(
+        state,
+        windowOf(state, retro).filter(
+          (closed) => state.tickets.find((candidate) => candidate.id === closed)?.owner === on,
+        ),
+      );
+      body.push(
+        H.retroEffect(titleOf(ticket, W), W.people[on].name, theirs.closed, theirs.sendBacks),
+      );
+    }
+  }
+  const proposed = retro.proposals.flatMap((id) => {
+    const ticket = state.tickets.find((candidate) => candidate.id === id);
+    return ticket === undefined ? [] : [H.quote(titleOf(ticket, W))];
+  });
+  body.push(proposed.length === 0 ? H.retroNothing : H.retroProposals(proposed.join(H.join)));
+  return { title: H.retroTitle(n, now.closed), body };
 }
 
 export function HandbookPage({
@@ -86,7 +148,7 @@ export function HandbookPage({
                         <TitleButton
                           className={`block max-w-full truncate text-left text-sm ${
                             entry === shown ? "font-semibold" : ""
-                          }`}
+                          } ${entry.mergedInto !== undefined ? "text-fg-subtle" : ""}`}
                           onClick={() => onSelect(entry.path)}
                         >
                           {entryWords(entry, state, W).title}
@@ -121,7 +183,9 @@ function Entry({
     <article className="min-w-0">
       <p className={`font-mono text-xs ${QUIET}`}>handbook/{entry.path}</p>
       <h2 className="mt-1 text-lg font-semibold">{words.title}</h2>
-      {(ticket !== undefined || entry.installedOn !== undefined) && (
+      {(ticket !== undefined ||
+        entry.installedOn !== undefined ||
+        entry.mergedInto !== undefined) && (
         <p className={`mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs ${QUIET}`}>
           {ticket !== undefined && (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -133,10 +197,15 @@ function Entry({
           )}
           {entry.installedOn !== undefined && (
             <span>
-              {W.handbook.installedOn} <PersonName byline={entry.installedOn} />
+              {W.handbook.installedOn} <PersonName byline={entry.installedOn} /> ·{" "}
+              {W.handbook.version(1)}
             </span>
           )}
+          {entry.mergedInto !== undefined && <Pill>{W.handbook.merged}</Pill>}
         </p>
+      )}
+      {entry.mergedInto !== undefined && (
+        <p className={`mt-2 text-xs ${QUIET}`}>{W.handbook.mergedNote}</p>
       )}
       <div className="mt-4 space-y-2 text-sm leading-relaxed text-fg">
         {words.body.map((line, i) => (

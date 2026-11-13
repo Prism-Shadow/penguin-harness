@@ -42,6 +42,7 @@ export const en: Words = {
     patrol: "Daily patrol",
     lead: "Lead's proposal",
     budget: "Budget alert",
+    retro: "Retrospective",
   },
   waits: { accept: "To accept", answer: "To answer", review: "To review" },
   views: {
@@ -67,6 +68,9 @@ export const en: Words = {
     unread: "unread",
     schedules: "Schedule",
     schedulesEmpty: "No schedule yet. One the lead proposes appears here once you accept it.",
+    retro: (every: number) => `Retrospective: once every ${every} closed tickets`,
+    retroDefault: "The default is 10; this company set 5",
+    retroProgress: (closed: number, every: number) => `${closed} of ${every} closed`,
   },
   ticket: {
     needsYou: "Needs you",
@@ -77,7 +81,9 @@ export const en: Words = {
         "Once accepted, this schedule files what it finds each day as tickets for you to decide.",
       role: "Once accepted, this role appears in the byline of tickets.",
       skill:
-        "Once accepted, the skill is installed in the employee's own skills, and read before work of its kind starts.",
+        "Once accepted, the skill is installed in the employee's own skills and read before work of its kind starts; the lesson it came from leaves the handbook's index.",
+      change:
+        "Once accepted, the lead makes the change as written. The employees it touches are snapshotted first, so it can be undone.",
     },
     accept: "Accept",
     reject: "Reject",
@@ -141,9 +147,15 @@ export const en: Words = {
     spend: (spent: string, budget: string) => `${spent} of ${budget} this month`,
     working: "Working on",
     idle: "No ticket in progress",
-    done: (n: number) => `${n} done`,
     pending: "Proposed",
     pendingNote: "The proposal is in your inbox; it joins once you accept.",
+    metrics: (firstPass: number, accepted: number, sendBacks: number, cost: string) =>
+      `${firstPass} of ${accepted} passed first time · ${sendBacks} sent back · ${cost} per accepted ticket`,
+    noMetrics: "No finished ticket yet",
+    learnedTitle: "Learned on its own",
+    learnedInfo:
+      "When its work is sent back or you correct it, it notes that in its own notes skill, with no approval needed.",
+    learned: (version: number, title: string) => `notes, version ${version}: from “${title}”`,
   },
   session: {
     info: "This is the agent's conversation while it works on the ticket. The ticket keeps only what it writes back; come here to watch the work or to tell it something directly.",
@@ -176,6 +188,7 @@ export const en: Words = {
       delivered: (title: string) => `“${title}” is done and ready for review`,
       proposed: (title: string) => `The patrol proposes “${title}”`,
       started: (title: string) => `The patrol found and started “${title}”`,
+      retro: (n: string) => `The lead ran retrospective ${n}; its proposals are in your inbox`,
     },
   },
   tickets: {
@@ -299,12 +312,19 @@ export const en: Words = {
       ],
       progress: [],
     },
+    patrolScope: {
+      title: "Stop the patrol proposing dependency upgrades",
+      gist: "You rejected the patrol's “Bump @types/node”. From now on dependencies are upgraded only when you ask; the patrol looks at issues and CI only.",
+      acceptance: ["The patrol schedule's prompt no longer checks dependencies"],
+      progress: [],
+    },
   },
   handbook: {
     title: "Handbook",
     info: "The company's memory: handbook/ in the organization's directory. The lead writes to it at three moments: you answer a question, and it records a decision; a delivery is sent back, and it records a lesson; the same kind of work comes up often enough, and it proposes a skill, installed for the employee who does that work once you accept. Employees read it before they start.",
     groups: {
       index: "Index",
+      retro: "Retrospectives",
       decision: "Decisions",
       lesson: "Lessons",
       skill: "Skills",
@@ -316,6 +336,30 @@ export const en: Words = {
     decisionBody: (label: string) => `Chose “${label}”.`,
     lessonTitle: (title: string) => `Sent back: ${title}`,
     lessonAfter: "Before delivering work of this kind again, check this first.",
+    merged: "Merged into a skill",
+    mergedNote:
+      "This lesson is now part of a skill. It is out of the index, and employees read the skill instead.",
+    version: (n: number) => `version ${n}`,
+    retroTitle: (n: number, closed: number) => `Retrospective ${n}: ${closed} tickets`,
+    retroLine: (
+      closed: number,
+      accepted: number,
+      firstPass: number,
+      sendBacks: number,
+      questions: number,
+      cost: string,
+    ) =>
+      `${closed} closed, ${accepted} of them done and ${firstPass} passed first time; ${sendBacks} sent back; you were asked ${questions} times; ${cost} per finished ticket.`,
+    retroBaseline: "This is the first retrospective; these numbers are the baseline.",
+    retroBefore: (firstPass: number, accepted: number, sendBacks: number, cost: string) =>
+      `Last time: ${firstPass} of ${accepted} passed first time, ${sendBacks} sent back, ${cost} per ticket.`,
+    retroEffect: (title: string, name: string, closed: number, sendBacks: number) =>
+      `Since “${title}” was accepted, ${name} has closed ${closed} tickets, with ${sendBacks} sent back.`,
+    retroProposals: (titles: string) =>
+      `Proposed this time: ${titles}. They are in your inbox for you to decide.`,
+    retroNothing: "Nothing to change this time.",
+    quote: (title: string) => `“${title}”`,
+    join: ", ",
     docs: {
       readme: {
         title: "Handbook index",
@@ -325,6 +369,7 @@ export const en: Words = {
           "Lessons: deliveries that were sent back, what was missed, and how to avoid it next time.",
           "Skills: fixed ways of working distilled from lessons, installed in an employee's own skills.",
           "Documents: what tickets delivered, such as the state of the repository.",
+          "Retrospectives: after each batch of closed tickets, the lead looks back at how many passed, how many were sent back, how often you were asked and what it cost, and proposes what to change.",
         ],
       },
       state: {

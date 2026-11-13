@@ -9,7 +9,7 @@ import { Button, PageFrame, PageHeader, Pill } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
 import { EMPLOYEES } from "./fixtures";
 import type { Byline } from "./fixtures";
-import { costOf, liveSessions, sessionStatus } from "./model";
+import { costOf, employeeMetrics, liveSessions, sessionStatus } from "./model";
 import type { CompanyState } from "./model";
 import { waitOf } from "./spec";
 import { titleOf } from "./text";
@@ -85,7 +85,19 @@ function Member({
   const employee = EMPLOYEES[byline];
   const owned = state.tickets.filter((ticket) => ticket.owner === byline);
   const spent = owned.reduce((sum, ticket) => sum + costOf(state, ticket), 0);
-  const done = owned.filter((ticket) => ticket.kind === "task" && ticket.status === "done").length;
+  const metrics = employeeMetrics(state, byline);
+  // What it noted in its own skill, newest first. The skill is version 1 when the employee is
+  // hired; each note is its next version.
+  const learned = state.learned
+    .filter((note) => note.byline === byline)
+    .map((note, k) => ({
+      version: k + 2,
+      title: titleOf(
+        state.tickets.find((ticket) => ticket.id === note.ticket)!,
+        W,
+      ),
+    }))
+    .reverse();
   const sessions = liveSessions(state).flatMap((session) => {
     const ticket = owned.find((candidate) => candidate.id === session.ticket);
     return ticket === undefined ? [] : [{ session, ticket }];
@@ -106,7 +118,16 @@ function Member({
           {employee.reportsTo !== null && (
             <span>{W.team.reportsTo(W.people[employee.reportsTo].name)}</span>
           )}
-          <span>{W.team.done(done)}</span>
+          <span>
+            {metrics.accepted === 0
+              ? W.team.noMetrics
+              : W.team.metrics(
+                  metrics.firstPass,
+                  metrics.accepted,
+                  metrics.sendBacks,
+                  money(metrics.costPerAccepted),
+                )}
+          </span>
         </p>
         <p className="mt-1.5 text-sm text-fg">{person.duties}</p>
         <div className="mt-2 text-xs">
@@ -131,6 +152,18 @@ function Member({
             </>
           )}
         </div>
+        {learned.length > 0 && (
+          <div className="mt-2 text-xs">
+            <p className={QUIET} data-tooltip={W.team.learnedInfo} data-tooltip-extra>
+              {W.team.learnedTitle}
+            </p>
+            <ul className="mt-1 space-y-0.5 text-sm">
+              {learned.map(({ version, title }) => (
+                <li key={version}>{W.team.learned(version, title)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </li>
   );

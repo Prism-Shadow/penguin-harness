@@ -26,13 +26,18 @@
  * - triage never changes the work, and a ticket that waits on the person cannot be snoozed or
  *   archived.
  *
- * The handbook is how the company learns, and the lead writes to it at fixed moments only: an
- * answer becomes a decision, a delivery sent back becomes a lesson, a delivered document is filed
- * when it is accepted, and a skill distilled from lessons is installed for its employee only when
- * the person accepts it.
+ * The company gets better in two loops, and the person's own verdicts are the only measure:
+ *
+ * - every ticket: an answer becomes a decision and a delivery sent back a lesson, both in the
+ *   handbook; and the employee whose work was sent back, or who was told something in its
+ *   session, notes it in its own skill, with no one's approval;
+ * - every RETRO_EVERY closed tickets: the lead looks back over them (how many passed review the
+ *   first time, how often work was sent back, how often the person was asked, what an accepted
+ *   ticket cost), files the retrospective in the handbook, and proposes what to change as tickets.
+ *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
+ *   lesson it came from, so the handbook every employee reads stays short.
  */
-import { FIXTURES, SAID_SCRIPT } from "./fixtures";
-import { EMPLOYEES } from "./fixtures";
+import { EMPLOYEES, FIXTURES, RETRO_EVERY, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
 import type { Byline, FixtureId, HandbookDocId, ScriptStep, TicketKind } from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
@@ -44,7 +49,7 @@ export const PERSON = "user:you";
  * Where a ticket came from: something the reader said, a patrol's find, the lead's own proposal,
  * or a budget crossing its warning line.
  */
-export type Source = "person" | "patrol" | "lead" | "budget";
+export type Source = "person" | "patrol" | "lead" | "budget" | "retro";
 
 export interface Ticket extends TicketState, Triage {
   id: string;
@@ -102,8 +107,8 @@ export interface WorkSession {
 /** Where a session stands: working, waiting on the person, or over. */
 export type SessionStatus = "running" | "answer" | "review" | "ended";
 
-/** What a handbook entry is: the index, a document, a decision, a lesson, or a skill. */
-export type HandbookKind = "index" | "doc" | "decision" | "lesson" | "skill";
+/** What a handbook entry is: the index, a document, a decision, a lesson, a skill, or a retrospective. */
+export type HandbookKind = "index" | "doc" | "decision" | "lesson" | "skill" | "retro";
 
 /** A file under the organization's handbook/. */
 export interface HandbookEntry {
@@ -118,6 +123,42 @@ export interface HandbookEntry {
   returnIndex?: number;
   /** A skill's employee: it is installed in that employee's own skills. */
   installedOn?: Byline;
+  /** A lesson a skill has absorbed: that skill's path. It no longer counts in the index. */
+  mergedInto?: string;
+  /** A retrospective's number. */
+  retro?: number;
+}
+
+/** A retrospective: which closed tickets it looked back over, and what it proposed. */
+export interface Retro {
+  n: number;
+  /** Its window, as indices into `closed`: from, up to (not including). */
+  from: number;
+  upTo: number;
+  proposals: string[];
+}
+
+/**
+ * Something an employee noted in its own skill, on its own: from a ticket sent back, or from what
+ * the person told its session. Each note is the skill's next version.
+ */
+export interface Learned {
+  byline: Byline;
+  ticket: string;
+}
+
+/** What a stretch of closed tickets says about the work, all of it counted from the tickets. */
+export interface Metrics {
+  closed: number;
+  /** Tasks done. */
+  accepted: number;
+  /** Tasks done with nothing sent back. */
+  firstPass: number;
+  sendBacks: number;
+  /** Questions the person answered. */
+  questions: number;
+  /** What an accepted task cost, on average. */
+  costPerAccepted: number;
 }
 
 /** The fixed documents' paths and kinds. */
@@ -170,6 +211,10 @@ export interface CompanyState {
   budgets: Record<Byline, number>;
   /** The handbook's files, oldest first. */
   handbook: HandbookEntry[];
+  /** Ticket ids in the order they closed (done or rejected). */
+  closed: string[];
+  retros: Retro[];
+  learned: Learned[];
   chat: ChatLine[];
   /** What a patrol can still find, in the order it finds it. */
   pool: FixtureId[];
@@ -179,7 +224,7 @@ export interface CompanyState {
 
 /** What letting time pass did to a ticket, for the note the prototype raises. */
 export interface PassEvent {
-  kind: "progress" | "asked" | "delivered" | "closed" | "proposed" | "started";
+  kind: "progress" | "asked" | "delivered" | "closed" | "proposed" | "started" | "retro";
   id: string;
 }
 
@@ -254,6 +299,9 @@ export function freshState(): CompanyState {
     roles: ["engineer"],
     budgets: budgetsOf(),
     handbook: [fixedEntry("readme", null)],
+    closed: [],
+    retros: [],
+    learned: [],
     chat: [],
     pool: ["flaky", "lint"],
     said: 0,
@@ -292,7 +340,7 @@ export function weekState(): CompanyState {
       returns: [""],
       unread: false,
     }),
-    ticketOf("skill", "lead", { status: "done", unread: false }),
+    ticketOf("skill", "retro", { status: "done", unread: false }),
     ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
     ticketOf("connection", "person", {
       status: "review",
@@ -331,9 +379,14 @@ export function weekState(): CompanyState {
     handbook: [
       fixedEntry("readme", null),
       fixedEntry("state", "survey"),
-      fixedEntry("docsLesson", "docs"),
+      { ...fixedEntry("docsLesson", "docs"), mergedInto: FIXED_DOCS.bilingualSkill.path },
+      { path: "retros/1.md", kind: "retro", ticket: null, doc: null, retro: 1 },
       fixedEntry("bilingualSkill", "skill", "engineer"),
     ],
+    // The first retrospective looked back over the first five closed tickets and proposed the skill.
+    closed: ["patrol", "verifier", "survey", "docs", "types", "skill", "timeout"],
+    retros: [{ n: 1, from: 0, upTo: 5, proposals: ["skill"] }],
+    learned: [{ byline: "engineer", ticket: "docs" }],
     chat: [
       { from: "person", about: "csv" },
       { from: "lead", line: "filed", tickets: ["csv"] },
@@ -423,6 +476,16 @@ export function startCompany(state: CompanyState, mission: string): CompanyState
   };
 }
 
+/** Record that a ticket closed, once. */
+const close = (state: CompanyState, id: string): CompanyState =>
+  state.closed.includes(id) ? state : { ...state, closed: [...state.closed, id] };
+
+/** An employee notes something in its own skill. */
+const learn = (state: CompanyState, byline: Byline, ticket: string): CompanyState => ({
+  ...state,
+  learned: [...state.learned, { byline, ticket }],
+});
+
 /** Add a file to the handbook. */
 const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
   ...state,
@@ -437,14 +500,22 @@ export function acceptTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
   if (ticket.kind === "task") return openSession(withTicket(state, id, working()), id);
-  const settled = withTicket(state, id, { status: "done", unread: false });
+  const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
   const fixture = FIXTURES[ticket.fixture];
   if (ticket.kind === "schedule") {
     return { ...settled, schedules: [...state.schedules, { id: ticket.fixture, auto: false }] };
   }
   if (ticket.kind === "skill" && fixture.handbook !== undefined) {
-    return file(settled, fixedEntry(fixture.handbook, id, fixture.installsOn));
+    const skill = fixedEntry(fixture.handbook, id, fixture.installsOn);
+    // The lesson the skill was distilled from leaves the index: the skill now carries it.
+    const handbook = settled.handbook.map((entry) =>
+      fixture.merges !== undefined && entry.doc === fixture.merges
+        ? { ...entry, mergedInto: skill.path }
+        : entry,
+    );
+    return file({ ...settled, handbook }, skill);
   }
+  if (ticket.kind === "change") return settled;
   return { ...settled, roles: [...state.roles, "verifier"] };
 }
 
@@ -452,7 +523,7 @@ export function acceptTicket(state: CompanyState, id: string): CompanyState {
 export function rejectTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept") return state;
-  return withTicket(state, id, { status: "rejected", unread: false });
+  return close(withTicket(state, id, { status: "rejected", unread: false }), id);
 }
 
 /**
@@ -493,7 +564,7 @@ export function answerTicket(
 export function approveTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "review") return state;
-  const done = withTicket(state, id, { status: "done", unread: false });
+  const done = close(withTicket(state, id, { status: "done", unread: false }), id);
   // A delivered document joins the handbook once it is accepted.
   const doc = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].handbook;
   return doc === undefined ? done : file(done, fixedEntry(doc, id));
@@ -518,7 +589,8 @@ export function returnTicket(state: CompanyState, id: string, note: string): Com
     doc: null,
     returnIndex: ticket.returns.length,
   });
-  return tell(learned, id, { from: "person", sendBack: said });
+  // The employee notes it in its own skill too, with no one's approval.
+  return tell(learn(learned, ticket.owner, id), id, { from: "person", sendBack: said });
 }
 
 /**
@@ -532,7 +604,11 @@ export function sayInSession(state: CompanyState, sessionId: string, text: strin
   if (session === undefined || said === "" || sessionStatus(state, session) === "ended")
     return state;
   const ticket = find(state, session.ticket)!;
-  const noted = withTicket(state, ticket.id, { notes: [...ticket.notes, said], unread: false });
+  const noted = learn(
+    withTicket(state, ticket.id, { notes: [...ticket.notes, said], unread: false }),
+    ticket.owner,
+    ticket.id,
+  );
   return tell(noted, ticket.id, { from: "person", text: said }, { from: "agent", step: "noted" });
 }
 
@@ -641,11 +717,18 @@ function stepTicket(
 }
 
 /**
- * Time passes: every work session takes one step. When none had a step to take, a schedule that
- * is on patrols and files what it finds, proposed, or already in progress when it is automatic.
+ * Time passes. When enough tickets have closed, the lead runs a retrospective and nothing else
+ * moves; otherwise every work session takes one step, and when none had a step to take, a
+ * schedule that is on patrols and files what it finds, proposed, or already in progress when it
+ * is automatic.
  */
 export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
   if (state.stage !== "running") return { state, events: [] };
+  // A retrospective that has come due goes first: the pass is the lead's look back.
+  if (retroDue(state)) {
+    const retro = lookBack(state);
+    return { state: retro, events: [{ kind: "retro", id: String(retro.retros.length) }] };
+  }
   const events: PassEvent[] = [];
   const said: [string, SessionMessage][] = [];
   const tickets = state.tickets.map((ticket) => {
@@ -656,10 +739,13 @@ export function letTimePass(state: CompanyState): { state: CompanyState; events:
     return stepped.ticket;
   });
   if (events.length > 0) {
-    const moved = said.reduce((next, [id, message]) => tell(next, id, message), {
+    const told = said.reduce((next, [id, message]) => tell(next, id, message), {
       ...state,
       tickets,
     });
+    const moved = events
+      .filter((event) => event.kind === "closed")
+      .reduce((next, event) => close(next, event.id), told);
     return { state: moved, events };
   }
 
@@ -673,6 +759,58 @@ export function letTimePass(state: CompanyState): { state: CompanyState; events:
     events: [{ kind: schedule.auto ? "started" : "proposed", id: found }],
   };
 }
+
+/** How many tickets have closed since the last retrospective. */
+export const closedSinceRetro = (state: CompanyState): number =>
+  state.closed.length - (state.retros.at(-1)?.upTo ?? 0);
+
+/** Whether enough tickets have closed for the next retrospective. */
+export const retroDue = (state: CompanyState): boolean => closedSinceRetro(state) >= RETRO_EVERY;
+
+/**
+ * A retrospective: the lead looks back over the tickets closed since the last one, files it in
+ * the handbook, and proposes what to change, each as a ticket waiting on the person.
+ */
+function lookBack(state: CompanyState): CompanyState {
+  const n = state.retros.length + 1;
+  const from = state.retros.at(-1)?.upTo ?? 0;
+  const proposals = (RETRO_PROPOSALS[n - 1] ?? []).filter((id) => find(state, id) === undefined);
+  return {
+    ...state,
+    tickets: [...state.tickets, ...proposals.map((id) => ticketOf(id, "retro"))],
+    retros: [...state.retros, { n, from, upTo: state.closed.length, proposals }],
+    handbook: [
+      ...state.handbook,
+      { path: `retros/${n}.md`, kind: "retro", ticket: null, doc: null, retro: n },
+    ],
+  };
+}
+
+/** What the given closed tickets say about the work. */
+export function metricsOf(state: CompanyState, ids: readonly string[]): Metrics {
+  const tickets = ids.flatMap((id) => find(state, id) ?? []);
+  const accepted = tickets.filter((ticket) => ticket.kind === "task" && ticket.status === "done");
+  const cost = accepted.reduce((sum, ticket) => sum + costOf(state, ticket), 0);
+  return {
+    closed: tickets.length,
+    accepted: accepted.length,
+    firstPass: accepted.filter((ticket) => ticket.returns.length === 0).length,
+    sendBacks: tickets.reduce((sum, ticket) => sum + ticket.returns.length, 0),
+    questions: tickets.filter((ticket) => ticket.answer !== null).length,
+    costPerAccepted: accepted.length === 0 ? 0 : cost / accepted.length,
+  };
+}
+
+/** A retrospective's window: the tickets it looked back over. */
+export const windowOf = (state: CompanyState, retro: Retro): string[] =>
+  state.closed.slice(retro.from, retro.upTo);
+
+/** What an employee's closed tickets say about its work. */
+export const employeeMetrics = (state: CompanyState, byline: Byline): Metrics =>
+  metricsOf(
+    state,
+    state.closed.filter((id) => find(state, id)?.owner === byline),
+  );
 
 /**
  * A view's tickets. What waits on the reader is listed longest-waiting first, in the order it

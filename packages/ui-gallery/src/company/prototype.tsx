@@ -117,6 +117,10 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     for (const event of passed.events) {
       // A progress line reaches nobody: only what waits on the reader, or what a patrol files, is said.
       if (event.kind === "progress" || event.kind === "closed") continue;
+      if (event.kind === "retro") {
+        toastInfo(W.pass.events.retro(event.id));
+        continue;
+      }
       const ticket = passed.state.tickets.find((candidate) => candidate.id === event.id);
       if (ticket !== undefined) toastInfo(W.pass.events[event.kind](titleOf(ticket, W)));
     }

@@ -1016,6 +1016,11 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           spec: "Employees are standing roles with a name, a title, duties and a budget, and every byline shows the title. Only the lead stays up; the others work only in the sessions of the tickets they own, and work together through sub-tickets. A team page replaces the org chart and shows what each one is doing and has spent.",
         },
         {
+          topic: "Getting better",
+          now: "The CEO records the board's decisions, employees choose what to write in the handbook, and HR reviews employees weekly, all of it in prompts the server does not check. Employees have no continual learning, and what they would learn is overwritten when their plugins update.",
+          spec: "Two loops. Every ticket: answers become decisions and send-backs lessons, and employees note what was sent back or corrected in their own skill. Every N closed tickets: the lead runs a retrospective on first-pass reviews, send-backs, questions and cost, and every change it wants goes to you as a proposal.",
+        },
+        {
           topic: "Calendar",
           now: "Month, week and day views. Each employee has one recurring event that wakes its desk session to plan work.",
           spec: "Removed. With no desks there is no rota to keep; the schedules that remain only file tickets, and are listed under the inbox.",
@@ -1028,7 +1033,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Handbook",
           now: "The files in the organization's directory, viewed and edited in a file browser.",
-          spec: "Sorted by purpose into decisions, lessons, skills and documents. Your answers are recorded as decisions and your send-backs as lessons; when lessons of one kind pile up, the lead proposes a skill, installed in the employee's own skills once you accept. Every file links the ticket it came from, and a ticket lists the files it added.",
+          spec: "Sorted by purpose into decisions, lessons, skills, documents and retrospectives. Your answers are recorded as decisions and your send-backs as lessons; when lessons of one kind pile up, the lead proposes a skill, installed in the employee's own skills once you accept. Every file links the ticket it came from, and a ticket lists the files it added.",
         },
         {
           topic: "Setting up",
@@ -1046,6 +1051,71 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           spec: "A new schedule only proposes. Its tickets start on their own once you switch that on.",
         },
       ],
+    },
+
+    evolution: {
+      title: "How the company gets better",
+      subtitle:
+        "No scores and no test runs. You judge what is right: every review, send-back and answer is what the company learns from. Expect it to spend a lot at first, then less and less, with fewer mistakes.",
+      loops: [
+        {
+          title: "Every ticket",
+          when: "Automatic, with no approval needed",
+          items: [
+            "You answer a question, and the lead records it as a decision. When the question comes up again, employees follow the decision.",
+            "You send a delivery back, and the lead records your note as a lesson: what was missed and how to avoid it.",
+            "The employee whose work was sent back, or whom you corrected in its session, notes it in its own notes skill. No approval; the team page shows what it learned.",
+          ],
+        },
+        {
+          title: "Every N closed tickets",
+          when: "N is 10 by default. The lead runs a retrospective, and every change goes to you",
+          items: [
+            "It counts the batch: how many passed review the first time, how often work was sent back, how often you were asked, what a finished ticket cost; and compares with the last retrospective.",
+            "For the changes accepted last time, it says what followed: since a skill was installed, how many tickets that employee closed and how many were sent back.",
+            "It files the changes as proposals: distill or revise a skill, change a duty, narrow a patrol, remove what is out of date. One change per employee per retrospective, so the next one can tell which change did what.",
+            "Once you accept, the server snapshots the employees it touches, then writes the change. If things get worse, the lead proposes undoing it.",
+          ],
+        },
+      ],
+      curves: {
+        title: "Four curves",
+        subtitle: "All counted from the ticket files; no model scores anything.",
+        head: { expect: "What you expect", read: "What to read", trend: "Where it should go" },
+        items: [
+          {
+            expect: "Hardly any mistakes or rework",
+            read: "The share accepted at first review; the number of send-backs",
+            trend: "The share rises, send-backs fall",
+          },
+          {
+            expect: "Not being asked the same thing",
+            read: "Questions per ticket; how many the handbook already answers",
+            trend: "Falling, with repeats near zero",
+          },
+          {
+            expect: "Work in the style already set",
+            read: "Send-back notes that repeat an existing lesson or skill",
+            trend: "Falling: the same mistake is not made twice",
+          },
+          {
+            expect: "Fewer tokens later on",
+            read: "Tokens and money per finished ticket",
+            trend: "High at first, then down",
+          },
+        ],
+        note: "Tickets differ in size, so cost is compared within a kind of ticket, or by the median. A retrospective says “2 of 10 sent back”, not a bare percentage. Whether to undo a change is your call, not the numbers'.",
+      },
+      shrink: {
+        title: "Keeping the handbook short",
+        subtitle:
+          "Every employee reads the handbook before it starts. A handbook that only grows eats the tokens the company saved.",
+        items: [
+          "A lesson distilled into a skill leaves the index, marked as merged. Employees read the skill, which takes one line in their skill list until it is needed.",
+          "A decision a later answer overturns is deleted.",
+          "The index has a cap; a retrospective merges entries when it is reached.",
+        ],
+      },
     },
 
     ticket: {
@@ -1177,6 +1247,18 @@ The export page offers CSV as well as JSON.
         triage_apart: {
           rule: "Triage never changes the work, and a waiting ticket cannot be set aside or archived.",
           text: "Read, later and archive are kept per person. To get a ticket that waits on you out of your inbox, answer it or reject it.",
+        },
+        own_skill_kept: {
+          rule: "What an employee learns on its own is never overwritten.",
+          text: "When an employee is hired, the server gives it a skill of its own, notes. It belongs to no plugin, so a plugin update leaves it alone. When its work is sent back or you correct it, the employee notes the point there.",
+        },
+        retro_by_count: {
+          rule: "A retrospective comes due by the count of closed tickets.",
+          text: "Once N tickets (10 by default) have closed, done or rejected, since the last one, the server has the lead run a retrospective; it does not rely on the lead remembering.",
+        },
+        snapshot_first: {
+          rule: "A change is snapshotted before it is made.",
+          text: "A change a retrospective proposes is made by the server once you accept it: it snapshots the employees it touches first, then writes the change, so it can always be undone.",
         },
       },
     },

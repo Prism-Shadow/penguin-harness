@@ -1,5 +1,5 @@
 /**
- * The sample work the prototype is staged with: thirteen tickets' worth of facts that are not
+ * The sample work the prototype is staged with: fourteen tickets' worth of facts that are not
  * language (what kind of thing each is, who does it, the steps its work session takes when the
  * reader lets time pass). Their words are the dictionaries' `tickets`, keyed by the same ids.
  * Everything is fictional; no agent runs.
@@ -17,13 +17,15 @@ export type FixtureId =
   | "patrol"
   | "verifier"
   | "budget"
-  | "skill";
+  | "skill"
+  | "patrolScope";
 
 /**
- * What accepting a ticket sets going: work, a patrol schedule, a dedicated role, or a skill the
- * lead distilled, installed for the employee who needs it.
+ * What accepting a ticket sets going: work, a patrol schedule, a dedicated role, a skill the lead
+ * distilled, installed for the employee who needs it, or a change a retrospective proposed to how
+ * the company works (a duty, a schedule's scope), applied as written.
  */
-export type TicketKind = "task" | "schedule" | "role" | "skill";
+export type TicketKind = "task" | "schedule" | "role" | "skill" | "change";
 
 /**
  * The handbook's fixed documents, whose words are the dictionaries' `handbook.docs`. Decisions
@@ -77,6 +79,8 @@ export interface Fixture {
   handbook?: HandbookDocId;
   /** Who a skill is installed for, once accepted. */
   installsOn?: Byline;
+  /** The lesson a skill absorbs: once it is installed, the lesson leaves the handbook's index. */
+  merges?: HandbookDocId;
 }
 
 export const FIXTURES: Record<FixtureId, Fixture> = {
@@ -171,8 +175,19 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     cost: 0,
     handbook: "bilingualSkill",
     installsOn: "engineer",
+    merges: "docsLesson",
   },
+  patrolScope: { kind: "change", owner: "lead", priority: "P2", script: [], cost: 0 },
 };
+
+/**
+ * How many closed tickets a retrospective waits for in the sample. The spec's default is 10; the
+ * sample company set 5, so a reader sees one come round.
+ */
+export const RETRO_EVERY = 5;
+
+/** What the sample's retrospectives propose, by retrospective: the first, then the second. */
+export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];
 
 /** The steps of a ticket the reader asked for in their own words. */
 export const SAID_SCRIPT: readonly ScriptStep[] = ["progress", "deliver"];

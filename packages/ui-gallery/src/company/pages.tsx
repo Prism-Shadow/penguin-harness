@@ -34,7 +34,8 @@ import {
 } from "../../../web/src/features/company/shared";
 import { toneDot } from "../../../web/src/lib/tone";
 import type { FixtureId } from "./fixtures";
-import { inboxCounts, spendOf, ticketsIn } from "./model";
+import { RETRO_EVERY } from "./fixtures";
+import { closedSinceRetro, inboxCounts, spendOf, ticketsIn } from "./model";
 import type { ChatLine, CompanyState, Ticket } from "./model";
 import { INBOX_VIEWS, TICKET_STATUSES, waitOf } from "./spec";
 import type { InboxView, TicketStatus } from "./spec";
@@ -154,6 +155,14 @@ export function InboxPage({
             ))}
           </ul>
         )}
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+          <span className="min-w-0 flex-1" data-tooltip={W.inbox.retroDefault} data-tooltip-extra>
+            {W.inbox.retro(RETRO_EVERY)}
+          </span>
+          <span className={`shrink-0 text-xs tabular-nums ${QUIET}`}>
+            {W.inbox.retroProgress(closedSinceRetro(state), RETRO_EVERY)}
+          </span>
+        </p>
       </RuledSection>
     </PageFrame>
   );
