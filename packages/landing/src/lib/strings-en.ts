@@ -1021,6 +1021,11 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           spec: "A name and a title; only the lead is permanent, others launch sessions per ticket",
         },
         {
+          topic: "Working together",
+          now: "Employees hand work to each other in channels",
+          spec: "Several employees can relay one ticket: a delivery goes to verification first, and reaches you once it passes",
+        },
+        {
           topic: "Setup",
           now: "CEO posts a setup proposal in the all-hands channel",
           spec: "State a single goal, then review proposed tickets one by one",
@@ -1085,7 +1090,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       exampleFile: `---
 title: Add CSV to the export
 status: in_progress
-owner: agent:lead
+owner: agent:org-engineer
+verifier: agent:org-verifier
 source: user:alice
 notify: [user:alice]
 priority: P1
@@ -1095,11 +1101,12 @@ ask:
   question: "Large exports: stream them, or build them in one go?"
   options: [stream, one go]
   recommended: 0
-sessions: [s_c1]
+sessions:
+  - {id: s_c1, by: agent:org-engineer, as: build}
 history:
   - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
   - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
-  - {at: 2026-11-13T10:05:40+08:00, by: agent:lead, action: blocked, note: user:alice}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
 ---
 
 ## Goal
@@ -1142,7 +1149,9 @@ The export page offers CSV as well as JSON.
       fields: {
         title: "Single-line summary displayed in the inbox.",
         status: "Task progress, matching the file's parent directory.",
-        owner: "The one principal responsible for it.",
+        owner:
+          "The one principal responsible for it: it builds, and it starts every session of the ticket.",
+        verifier: "Verifies each delivery first; only what it passes reaches you.",
         source: "Ticket origin: a person, a schedule, or another ticket.",
         parent: "Parent ticket for rolling up costs.",
         notify: "Recipients notified upon ticket closure.",
@@ -1152,7 +1161,7 @@ The export page offers CSV as well as JSON.
         blocked_by: "Who can unblock it; when that is a person, the ticket waits on them.",
         ask: "Open question, choices, and recommended option; cleared once answered.",
         deliverables: "Paths or URLs to deliverables (e.g. pull requests).",
-        sessions: "Associated work sessions.",
+        sessions: "The sessions that worked on it: who, and whether to build or verify.",
         history: "Chronological audit log.",
         "## Goal": "What is to be achieved.",
         "## Acceptance criteria": "What counts as done.",
@@ -1184,6 +1193,7 @@ The export page offers CSV as well as JSON.
         triage_apart:
           "Later and archive actions do not modify tasks; a ticket waiting on you cannot be deferred or archived.",
         own_skill_kept: "An employee's own Skill survives plugin updates.",
+        verified_first: "On a ticket with a verifier, a delivery reaches you only once verified.",
         retro_by_count: "Retrospectives are triggered by the count of closed tickets.",
         snapshot_first: "The employees a change touches are snapshotted before it is applied.",
       },

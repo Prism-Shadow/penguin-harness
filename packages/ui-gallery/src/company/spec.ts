@@ -86,6 +86,7 @@ export const FRONTMATTER_FIELDS = [
   field("title", "string", ["person", "agent"], { required: true }),
   field("status", TICKET_STATUSES.join(" | "), ["person", "agent"], { required: true }),
   field("owner", "agent:<id> | user:<id>", ["person", "agent"], { required: true }),
+  field("verifier", "agent:<id>", ["person", "agent"], { isNew: true }),
   field("source", "user:<id> | schedule:<event> | agent:<id>", ["server"], {
     required: true,
     isNew: true,
@@ -98,7 +99,7 @@ export const FRONTMATTER_FIELDS = [
   field("blocked_by", "ticket id | principal", ["person", "agent"]),
   field("ask", "{ question, options[], recommended }", ["agent"], { isNew: true }),
   field("deliverables", "string[]", ["agent"], { isNew: true }),
-  field("sessions", "session id[]", ["server"], { required: true }),
+  field("sessions", "{ id, by, as: build | verify }[]", ["server"], { required: true }),
   field("history", "{ at, by, action, note? }[]", ["server"], { required: true }),
 ] as const satisfies readonly FieldDoc[];
 
@@ -136,6 +137,7 @@ export const INVARIANTS = [
   { id: "answer_recorded", refusal: null, isNew: true },
   { id: "observe_first", refusal: "409 ticket_not_accepted", isNew: true },
   { id: "triage_apart", refusal: "409 ticket_waiting", isNew: true },
+  { id: "verified_first", refusal: "409 not_verified", isNew: true },
   { id: "own_skill_kept", refusal: null, isNew: true },
   { id: "retro_by_count", refusal: null, isNew: true },
   { id: "snapshot_first", refusal: null, isNew: true },

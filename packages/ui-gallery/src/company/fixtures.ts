@@ -61,10 +61,13 @@ export const EMPLOYEES: Record<Byline, Employee> = {
 };
 
 /**
- * One step a work session takes: it notes progress, stops on its one question, or delivers for
- * review. A session never does anything else that a person sees.
+ * One step a ticket's work takes. The building session notes progress, stops on its one question,
+ * and delivers: straight to the person's review, or, on a ticket with a verifier, handed to a
+ * verifying session, which either finds something and hands it back to the building session, or
+ * passes it on to the person. A fixture's script names `deliver` only; the verifying steps are
+ * written in when the ticket has a verifier (`scriptOf`).
  */
-export type ScriptStep = "progress" | "ask" | "deliver";
+export type ScriptStep = "progress" | "ask" | "deliver" | "handoff" | "found" | "verified";
 
 export interface Fixture {
   kind: TicketKind;
@@ -84,6 +87,10 @@ export interface Fixture {
   installsOn?: Byline;
   /** The lesson a skill absorbs: once it is installed, the lesson leaves the handbook's index. */
   merges?: HandbookDocId;
+  /** Who verifies its delivery before the person sees it, while that employee is on the team. */
+  verifiedBy?: Byline;
+  /** Its first verification finds something to fix. */
+  finds?: boolean;
 }
 
 export const FIXTURES: Record<FixtureId, Fixture> = {
@@ -95,6 +102,8 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     recommended: 0,
     deliverable: "pull/128",
     cost: 4.2,
+    verifiedBy: "verifier",
+    finds: true,
   },
   connection: {
     kind: "task",
@@ -103,6 +112,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "progress", "deliver"],
     deliverable: "pull/126",
     cost: 3.1,
+    verifiedBy: "verifier",
   },
   flaky: {
     kind: "task",
@@ -111,6 +121,7 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
     script: ["progress", "deliver"],
     deliverable: "pull/129",
     cost: 1.8,
+    verifiedBy: "verifier",
   },
   jitter: {
     kind: "task",

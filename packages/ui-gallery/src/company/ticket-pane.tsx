@@ -27,6 +27,7 @@ import { SessionConversation } from "./session-page";
 import { waitOf } from "./spec";
 import {
   acceptanceOf,
+  findingOf,
   gistOf,
   money,
   optionsOf,
@@ -98,6 +99,11 @@ export function TicketPane({
           <span>
             {T.owner} <PersonName byline={ticket.owner} />
           </span>
+          {ticket.verifier !== null && (
+            <span>
+              {W.ticket.verifier} <PersonName byline={ticket.verifier} />
+            </span>
+          )}
           <span>
             {W.ticket.source} {W.sources[ticket.source]}
           </span>
@@ -110,10 +116,15 @@ export function TicketPane({
           <Tabs
             items={[
               { key: "record", label: W.nav.record },
-              ...sessions.map((session) => ({
-                key: session.id,
-                label: W.nav.sessionOf(session.n),
-              })),
+              ...sessions.map((session) => {
+                // Named by who works in it and what it does; a second round of the same is numbered.
+                const same = sessions.filter((other) => other.role === session.role);
+                const round = same.length > 1 ? same.indexOf(session) + 1 : null;
+                return {
+                  key: session.id,
+                  label: W.nav.sessionTab(W.people[session.by].name, W.roles[session.role], round),
+                };
+              }),
             ]}
             active={shown === undefined ? "record" : shown.id}
             onChange={onTab}
@@ -201,6 +212,12 @@ function Record({
                   <span className={QUIET}>{W.ticket.saidInSession}</span> {note}
                 </p>
               ))}
+            </RuledSection>
+          )}
+
+          {ticket.findings.length > 0 && (
+            <RuledSection level={3} title={W.ticket.findings}>
+              <Lines lines={ticket.findings.map((note) => findingOf(ticket, note, W))} />
             </RuledSection>
           )}
 

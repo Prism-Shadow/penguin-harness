@@ -36,6 +36,10 @@ export function progressOf(ticket: Ticket, W: Words): string[] {
 export const returnOf = (ticket: Ticket, note: string, W: Words): string =>
   note !== "" ? note : (sample(ticket, W)?.returned ?? "");
 
+/** A verifier's finding: a staged one is the sample's. */
+export const findingOf = (ticket: Ticket, note: string, W: Words): string =>
+  note !== "" ? note : (sample(ticket, W)?.found ?? W.ticket.saidFound);
+
 /** The one line the inbox shows under a title: what it asks, what it delivered, or what it is. */
 export function lineOf(ticket: Ticket, W: Words): string {
   if (ticket.asked) return questionOf(ticket, W);

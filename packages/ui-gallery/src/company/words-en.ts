@@ -15,7 +15,8 @@ export const en: Words = {
     handbook: "Handbook",
     board: "All tickets",
     record: "Record",
-    sessionOf: (n: number) => `Session ${n}`,
+    sessionTab: (name: string, role: string, round: number | null) =>
+      round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     usage: (tokens: string, cost: string) => `${tokens} Tokens · ${cost} this month`,
     pick: "Pick a ticket on the left.",
     notStarted:
@@ -49,6 +50,7 @@ export const en: Words = {
     retro: "Retrospective",
   },
   waits: { accept: "To accept", answer: "To answer", review: "To review" },
+  roles: { build: "Build", verify: "Verify" },
   views: {
     waiting: "Waiting",
     working: "In progress",
@@ -106,6 +108,9 @@ export const en: Words = {
     saidGoal: "What you told the lead.",
     saidProgress: "Code inspection complete; starting implementation.",
     saidResult: "Work complete; submitted for review.",
+    saidFound: "Did not pass verification; sent back for changes.",
+    verifier: "Verifier",
+    findings: "Sent back by the verifier",
     reworkProgress: "Changes applied per feedback.",
   },
   lead: {
@@ -156,7 +161,12 @@ export const en: Words = {
   },
   session: {
     info: "Execution log for the assigned ticket. Summary conclusions are written back to the ticket; inspect or guide progress directly here.",
-    status: { running: "Running", ended: "Ended" },
+    status: { running: "Running", verifying: "Verifying", ended: "Ended" },
+    handoff: (name: string) => `Handed to ${name} to verify.`,
+    handed: (name: string) => `Delivered by ${name}`,
+    fromVerifier: (name: string) => `${name} (verifying)`,
+    found: (finding: string) => `Did not pass: ${finding}`,
+    verified: "Checked against each acceptance criterion; all pass. Over to you for review.",
     brief: "The lead assigned this ticket to this session.",
     answered: (label: string) => `Selected “${label}”.`,
     sentBack: (note: string) => `Sent back: ${note}`,
@@ -198,7 +208,9 @@ export const en: Words = {
       progress: [
         "Analyzed export module; identified two implementation options.",
         "Implemented chosen approach; 100k rows export in 1.8s.",
+        "Fixed: the output is UTF-8 with a BOM, with a test for Chinese file names.",
       ],
+      found: "Exports with Chinese file names come out garbled in Excel: the CSV has no BOM.",
       question: "Large exports: stream them, or build them in one go?",
       options: [
         { label: "Stream output", hint: "Stable memory usage with additional buffering layer" },

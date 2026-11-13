@@ -98,9 +98,10 @@ function Member({
       ),
     }))
     .reverse();
+  // The sessions it works in: on its own tickets, and on others' where it verifies.
   const sessions = liveSessions(state).flatMap((session) => {
-    const ticket = owned.find((candidate) => candidate.id === session.ticket);
-    return ticket === undefined ? [] : [{ session, ticket }];
+    const ticket = state.tickets.find((candidate) => candidate.id === session.ticket);
+    return session.by !== byline || ticket === undefined ? [] : [{ session, ticket }];
   });
   return (
     <li className="flex gap-3 py-4">
@@ -146,6 +147,9 @@ function Member({
                     >
                       {titleOf(ticket, W)}
                     </TitleButton>
+                    {session.role === "verify" && (
+                      <span className={`shrink-0 text-xs ${QUIET}`}>{W.roles.verify}</span>
+                    )}
                   </li>
                 ))}
               </ul>

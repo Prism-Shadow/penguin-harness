@@ -16,7 +16,13 @@
  *   to the ticket and goes into the same session as the person's message, no second session opens,
  *   and that session carries on to its delivery.
  * - Given a delivery, accepting it closes the ticket and ends its session; sending it back needs a
- *   note, which goes into the session that delivered, and ends in a second delivery there.
+ *   note, which goes into the session that built it, and ends in a second delivery there.
+ * - Given a ticket with a verifier on the team, its delivery is handed to a verifying session the
+ *   verifier works in, and nothing reaches the person meanwhile; a finding is written to the
+ *   ticket, goes back into the building session as the verifier's, and the builder notes it in its
+ *   own skill; only a delivery the verifier passes waits on the person, and a send-back is verified
+ *   again in a new verifying session. With no verifier on the team, the delivery goes straight to
+ *   the person.
  * - Given a work session, the person can talk to it directly: the agent replies in the session
  *   and the words are written to the ticket; an open question still waits; a session that is over,
  *   or an empty message, takes nothing.
@@ -75,9 +81,10 @@ const get = (state: CompanyState, id: string): Ticket =>
 /** How many work sessions a ticket has. */
 const sessionCount = (state: CompanyState, id: string) => sessionsOf(state, id).length;
 
-/** What a ticket's latest session has said, by who said it. */
-const transcript = (state: CompanyState, id: string) =>
+/** What a ticket's latest session of a role has said, by who said it. */
+const transcript = (state: CompanyState, id: string, role: "build" | "verify" = "build") =>
   sessionsOf(state, id)
+    .filter((session) => session.role === role)
     .at(-1)!
     .messages.map((message) => (message.from === "agent" ? `agent:${message.step}` : message.from));
 
@@ -215,6 +222,10 @@ describe("the three things a person does", () => {
     const { state, events } = settle(answered);
     expect(events.filter((event) => event.id === "csv").map((event) => event.kind)).toEqual([
       "progress",
+      "handed",
+      "found",
+      "progress",
+      "handed",
       "delivered",
     ]);
     expect(get(state, "csv")).toMatchObject({ status: "review", answer: 1 });
@@ -224,7 +235,10 @@ describe("the three things a person does", () => {
       "agent:ask",
       "person",
       "agent:progress",
-      "agent:deliver",
+      "agent:handoff",
+      "verifier",
+      "agent:progress",
+      "agent:handoff",
     ]);
   });
 
@@ -243,7 +257,7 @@ describe("the three things a person does", () => {
       delivered: false,
       returns: ["Name the proxy case too"],
     });
-    expect(sessionCount(returned, "connection")).toBe(1);
+    expect(sessionCount(returned, "connection")).toBe(2);
     expect(sessionsOf(returned, "connection")[0]!.messages.at(-1)).toEqual({
       from: "person",
       sendBack: "Name the proxy case too",
@@ -254,6 +268,17 @@ describe("the three things a person does", () => {
       delivered: true,
       unread: true,
     });
+    // Verified again, in a verifying session of its own.
+    expect(sessionsOf(state, "connection").map((session) => session.role)).toEqual([
+      "build",
+      "verify",
+      "verify",
+    ]);
+    expect(transcript(state, "connection", "verify")).toEqual([
+      "brief",
+      "handed",
+      "agent:verified",
+    ]);
   });
 
   it("ignores an action the ticket does not wait for", () => {
@@ -336,6 +361,58 @@ describe("talking to a work session directly", () => {
     expect(sayInSession(state, "docs-1", "One more thing")).toBe(state);
     expect(sayInSession(state, "jitter-1", "   ")).toBe(state);
     expect(sayInSession(state, "nowhere", "Hello")).toBe(state);
+  });
+});
+
+describe("a ticket with a verifier", () => {
+  /** The week, with the CSV question answered and time let pass until its delivery is handed over. */
+  const handed = () => {
+    let state = answerTicket(weekState(), "csv", 0);
+    while (get(state, "csv").step < 4) state = letTimePass(state).state;
+    return state;
+  };
+
+  it("hands the delivery to a verifying session, and reaches no one meanwhile", () => {
+    const state = handed();
+    const [build, verify] = sessionsOf(state, "csv");
+    expect(verify).toMatchObject({ by: "verifier", role: "verify" });
+    expect(sessionStatus(state, verify!)).toBe("running");
+    expect(sessionStatus(state, build!)).toBe("verifying");
+    expect(get(state, "csv")).toMatchObject({ status: "in_progress", unread: false });
+    expect(waitOf(get(state, "csv"))).toBeNull();
+  });
+
+  it("writes a finding to the ticket and hands it back to the builder, who notes it", () => {
+    const before = handed();
+    const { state, events } = letTimePass(before);
+    expect(events.filter((event) => event.id === "csv")).toEqual([{ kind: "found", id: "csv" }]);
+    expect(get(state, "csv")).toMatchObject({ findings: [""], unread: false });
+    expect(transcript(state, "csv").at(-1)).toBe("verifier");
+    expect(transcript(state, "csv", "verify").at(-1)).toBe("agent:found");
+    expect(state.learned.at(-1)).toEqual({ byline: "engineer", ticket: "csv" });
+    const [build, verify] = sessionsOf(state, "csv");
+    expect(sessionStatus(state, verify!)).toBe("ended");
+    expect(sessionStatus(state, build!)).toBe("running");
+  });
+
+  it("brings only a verified delivery to the person, waiting in the building session", () => {
+    const { state } = settle(handed());
+    expect(get(state, "csv")).toMatchObject({ status: "review", unread: true });
+    expect(transcript(state, "csv", "verify").at(-1)).toBe("agent:verified");
+    const build = sessionsOf(state, "csv")[0]!;
+    expect(sessionStatus(state, build)).toBe("review");
+    expect(
+      sessionsOf(state, "csv").filter((session) => sessionStatus(state, session) !== "ended"),
+    ).toEqual([build]);
+  });
+
+  it("goes straight to the person when no verifier is on the team", () => {
+    const started = startCompany(freshState(), "Look after the repo");
+    const said = sayToLead(started, "Add a dark mode");
+    const { state } = settle(said);
+    const ticket = state.tickets.at(-1)!;
+    expect(ticket).toMatchObject({ verifier: null, status: "review" });
+    expect(sessionsOf(state, ticket.id).map((session) => session.role)).toEqual(["build"]);
   });
 });
 

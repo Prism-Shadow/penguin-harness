@@ -39,6 +39,7 @@ export function SessionStatusPill({ status }: { status: SessionStatus }) {
   const W = useWords();
   if (status === "running") return <Pill tone="success">{W.session.status.running}</Pill>;
   if (status === "ended") return <Pill>{W.session.status.ended}</Pill>;
+  if (status === "verifying") return <Pill>{W.session.status.verifying}</Pill>;
   return <Pill tone="attention">{W.waits[status]}</Pill>;
 }
 

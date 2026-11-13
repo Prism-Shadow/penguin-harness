@@ -158,7 +158,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     }
     for (const event of passed.events) {
       // A progress line reaches nobody: only what waits on the reader, or what a patrol files, is said.
-      if (event.kind === "progress") continue;
+      // Nor does the hand-over between a ticket's sessions, or what its verifier hands back.
+      if (event.kind === "progress" || event.kind === "handed" || event.kind === "found") continue;
       if (event.kind === "retro") {
         toastInfo(W.pass.events.retro(event.id));
         continue;

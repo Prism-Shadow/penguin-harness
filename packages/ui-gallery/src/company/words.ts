@@ -13,6 +13,8 @@ export interface TicketWords {
   acceptance: readonly string[];
   progress: readonly string[];
   question?: string;
+  /** What its verifier finds, for a sample staged to come back from verification once. */
+  found?: string;
   options?: readonly { label: string; hint: string }[];
   result?: string;
   /** The note it was sent back with, for a sample staged as sent back once. */
@@ -32,7 +34,8 @@ export const zh = {
     handbook: "手册",
     board: "全部工单",
     record: "记录",
-    sessionOf: (n: number) => `会话 ${n}`,
+    sessionTab: (name: string, role: string, round: number | null) =>
+      round === null ? `${name} · ${role}` : `${name} · ${role} ${round}`,
     usage: (tokens: string, cost: string) => `本月 ${tokens} Token · ${cost}`,
     pick: "在左栏选一张工单。",
     notStarted: "公司还没开始。说一句你关心的事，主理会提几张工单。",
@@ -66,6 +69,8 @@ export const zh = {
     retro: "复盘提议",
   },
   waits: { accept: "待接受", answer: "待回答", review: "待验收" },
+  /** What a work session does on its ticket. */
+  roles: { build: "开发", verify: "验证" },
   views: { waiting: "等你", working: "进行中", later: "稍后", handled: "已处理", archived: "归档" },
   inbox: {
     empty: {
@@ -115,6 +120,9 @@ export const zh = {
     saidGoal: "你对主理说的原话。",
     saidProgress: "完成代码分析，开始实现。",
     saidResult: "任务完成，提交验收。",
+    saidFound: "验证没通过，退回修改。",
+    verifier: "验证",
+    findings: "验证退回",
     reworkProgress: "已按打回意见完成修改。",
   },
   lead: {
@@ -161,7 +169,12 @@ export const zh = {
   },
   session: {
     info: "工作会话的执行记录。工单仅保留最终结论，可在会话中查看过程或直接交代。",
-    status: { running: "运行中", ended: "已结束" },
+    status: { running: "运行中", verifying: "验证中", ended: "已结束" },
+    handoff: (name: string) => `交给${name}验证。`,
+    handed: (name: string) => `${name}交来的交付`,
+    fromVerifier: (name: string) => `${name}（验证）`,
+    found: (finding: string) => `没通过：${finding}`,
+    verified: "按验收标准逐条验证，全部通过，交给你验收。",
     brief: "主理已将该工单分配至本会话。",
     answered: (label: string) => `选「${label}」。`,
     sentBack: (note: string) => `打回：${note}`,
@@ -200,7 +213,9 @@ export const zh = {
       progress: [
         "完成导出模块分析，梳理出两种方案。",
         "按照选定方案完成实现，十万行导出耗时 1.8 秒。",
+        "已修复：输出改为带 BOM 的 UTF-8，补了中文文件名的测试。",
       ],
+      found: "中文文件名的导出在 Excel 里乱码：CSV 没有带 BOM。",
       question: "大文件导出：流式写出，还是一次生成？",
       options: [
         { label: "流式写出", hint: "内存占用稳定，逻辑多一层封装" },

@@ -58,7 +58,10 @@ export interface Ticket extends TicketState, Triage {
   /** The reader's own words, when there is no fixture. */
   title: string | null;
   kind: TicketKind;
+  /** The one responsible: it builds, and it starts every session of the ticket. */
   owner: Byline;
+  /** Who verifies a delivery before it reaches the person; null when no one does. */
+  verifier: Byline | null;
   priority: "P0" | "P1" | "P2";
   source: Source;
   /** How many steps of its script its sessions have taken. */
@@ -74,6 +77,8 @@ export interface Ticket extends TicketState, Triage {
   delivered: boolean;
   /** The notes it was sent back with, oldest first; an empty note is the sample's own, in the dictionary. */
   returns: string[];
+  /** What its verifier found and handed back, oldest first; an empty one is the sample's own. */
+  findings: string[];
   /** What the person said to its work session, oldest first. */
   notes: string[];
   unread: boolean;
@@ -87,23 +92,41 @@ export type SessionMessage =
   | { from: "agent"; step: "progress"; line: number }
   | { from: "agent"; step: "ask" }
   | { from: "agent"; step: "deliver" }
+  /** The building session hands its delivery to the verifier. */
+  | { from: "agent"; step: "handoff" }
+  /** The verifying session, opened: the delivery it was handed. */
+  | { from: "handed" }
+  /** The verifying session's finding, of that index; it goes back to the building session too. */
+  | { from: "agent"; step: "found"; finding: number }
+  /** The verifier's finding, as the building session receives it. */
+  | { from: "verifier"; finding: number }
+  /** The verifying session passes the delivery on to the person. */
+  | { from: "agent"; step: "verified" }
   /** The agent's reply to something the person said in the session. */
   | { from: "agent"; step: "noted" }
   | { from: "person"; answer: number; note: string }
   | { from: "person"; sendBack: string }
   | { from: "person"; text: string };
 
-/** A work session: one agent's conversation while it works on one ticket. */
+/** What a session does on its ticket: build the delivery, or verify it. */
+export type SessionRole = "build" | "verify";
+
+/** A work session: one employee's conversation while it works on one ticket. */
 export interface WorkSession {
   id: string;
   ticket: string;
   /** Its place among its ticket's sessions, from 1. */
   n: number;
+  by: Byline;
+  role: SessionRole;
   messages: SessionMessage[];
 }
 
-/** Where a session stands: working, waiting on the person, or over. */
-export type SessionStatus = "running" | "answer" | "review" | "ended";
+/**
+ * Where a session stands: working, waiting on the person, waiting while its delivery is verified,
+ * or over.
+ */
+export type SessionStatus = "running" | "answer" | "review" | "verifying" | "ended";
 
 /** What a handbook entry is: the index, a document, a decision, a lesson, a skill, or a retrospective. */
 export type HandbookKind = "index" | "doc" | "decision" | "lesson" | "skill" | "retro";
@@ -220,7 +243,7 @@ export interface CompanyState {
 
 /** What letting time pass did to a ticket, for the note the prototype raises. */
 export interface PassEvent {
-  kind: "progress" | "asked" | "delivered" | "proposed" | "started" | "retro";
+  kind: "progress" | "handed" | "found" | "asked" | "delivered" | "proposed" | "started" | "retro";
   id: string;
 }
 
@@ -232,6 +255,7 @@ function ticketOf(id: FixtureId, source: Source, patch: Partial<Ticket> = {}): T
     title: null,
     kind: fixture.kind,
     owner: fixture.owner,
+    verifier: fixture.verifiedBy ?? null,
     priority: fixture.priority,
     source,
     status: "proposed",
@@ -242,6 +266,7 @@ function ticketOf(id: FixtureId, source: Source, patch: Partial<Ticket> = {}): T
     answerNote: "",
     delivered: false,
     returns: [],
+    findings: [],
     notes: [],
     unread: true,
     snoozed: false,
@@ -256,24 +281,44 @@ const working = (patch: Partial<Ticket> = {}): Partial<Ticket> => ({
   ...patch,
 });
 
-/** A session's conversation so far, as the steps a ticket has taken would have written it. */
-function replay(ticket: Ticket): SessionMessage[] {
-  const messages: SessionMessage[] = [{ from: "brief" }];
-  let line = 0;
-  let delivered = 0;
-  for (const step of scriptOf(ticket).slice(0, ticket.step)) {
-    messages.push(
-      step === "progress" ? { from: "agent", step, line: line++ } : { from: "agent", step },
-    );
-    if (step === "ask" && ticket.answer !== null) {
-      messages.push({ from: "person", answer: ticket.answer, note: ticket.answerNote });
-    }
-    if (step === "deliver") {
-      const note = ticket.returns[delivered++];
-      if (note !== undefined) messages.push({ from: "person", sendBack: note });
+/**
+ * A staged ticket's sessions, as its work so far would have written them: the ticket is worked
+ * from its start, step by step, through the same rules the prototype runs, with the person's
+ * recorded answer and send-backs given where the work waited for them.
+ */
+function replay(target: Ticket, roles: Byline[]): WorkSession[] {
+  const start: Ticket = {
+    ...target,
+    status: "in_progress",
+    step: 0,
+    progress: 0,
+    asked: false,
+    answer: null,
+    answerNote: "",
+    delivered: false,
+    returns: [],
+    findings: [],
+    blockedBy: undefined,
+  };
+  let state = openSession(
+    { ...freshState(), stage: "running", roles, tickets: [start] },
+    target.id,
+    "build",
+  );
+  let returned = 0;
+  for (;;) {
+    const ticket = find(state, target.id)!;
+    if (ticket.step >= target.step) break;
+    const wait = waitOf(ticket);
+    if (wait === "answer") {
+      state = answerTicket(state, target.id, target.answer ?? 0, target.answerNote);
+    } else if (wait === "review") {
+      state = sendBack(state, target.id, target.returns[returned++] ?? "");
+    } else {
+      state = stepOne(state, target.id)?.state ?? state;
     }
   }
-  return messages;
+  return state.sessions;
 }
 
 /** Before anything: the person has not said what the company should look after. */
@@ -332,7 +377,7 @@ export function weekState(): CompanyState {
     ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
     ticketOf("connection", "person", {
       status: "review",
-      step: 3,
+      step: 4,
       progress: 2,
       delivered: true,
     }),
@@ -343,21 +388,17 @@ export function weekState(): CompanyState {
     ),
     ticketOf("flaky", "patrol"),
   ];
+  const roles: Byline[] = ["engineer", "verifier"];
   return {
     stage: "running",
     mission: null,
     tickets,
-    // One session for every ticket whose work has started, its conversation as far as the work.
+    // The sessions of every ticket whose work has started, their conversations as far as the work.
     sessions: tickets
       .filter((ticket) => ticket.step > 0)
-      .map((ticket) => ({
-        id: `${ticket.id}-1`,
-        ticket: ticket.id,
-        n: 1,
-        messages: replay(ticket),
-      })),
+      .flatMap((ticket) => replay(ticket, roles)),
     schedules: [{ id: "patrol", auto: false }],
-    roles: ["engineer", "verifier"],
+    roles,
     handbook: [
       fixedEntry("readme", null),
       fixedEntry("state", "survey"),
@@ -389,54 +430,104 @@ const withTicket = (state: CompanyState, id: string, patch: Partial<Ticket>): Co
 export const sessionsOf = (state: CompanyState, ticketId: string): WorkSession[] =>
   state.sessions.filter((session) => session.ticket === ticketId);
 
+/** Whose turn a ticket's work is: the verifier's while it checks a delivery, else the builder's. */
+function turnOf(ticket: Ticket): SessionRole {
+  const next = scriptOf(ticket)[ticket.step];
+  return waitOf(ticket) === null && (next === "found" || next === "verified") ? "verify" : "build";
+}
+
 /**
- * Where a session stands. Only a ticket's latest session is live, and only while its ticket is in
- * progress or in review; a live session waits when its ticket waits on the person.
+ * Where a session stands, while its ticket is in progress or in review; otherwise it is over. Of
+ * each role, only the ticket's latest session is live. The building session carries the ticket
+ * through: it waits when the ticket waits on the person, and while its delivery is verified. A
+ * verifying session is live only while it checks; each delivery handed over opens a new one.
  */
 export function sessionStatus(state: CompanyState, session: WorkSession): SessionStatus {
   const ticket = find(state, session.ticket);
-  const latest = sessionsOf(state, session.ticket).at(-1);
-  if (ticket === undefined || latest?.id !== session.id) return "ended";
-  if (ticket.status !== "in_progress" && ticket.status !== "review") return "ended";
+  if (ticket === undefined || (ticket.status !== "in_progress" && ticket.status !== "review"))
+    return "ended";
+  const latest = sessionsOf(state, session.ticket)
+    .filter((candidate) => candidate.role === session.role)
+    .at(-1);
+  if (latest?.id !== session.id) return "ended";
+  const turn = turnOf(ticket);
+  if (session.role === "verify") return turn === "verify" ? "running" : "ended";
   const wait = waitOf(ticket);
-  return wait === "answer" || wait === "review" ? wait : "running";
+  if (wait === "answer" || wait === "review") return wait;
+  return turn === "verify" ? "verifying" : "running";
 }
 
 /** The sessions that are not over, oldest first. */
 export const liveSessions = (state: CompanyState): WorkSession[] =>
   state.sessions.filter((session) => sessionStatus(state, session) !== "ended");
 
-/** Open a ticket's next work session, handed the ticket. */
-function openSession(state: CompanyState, ticketId: string): CompanyState {
+/**
+ * Open a ticket's next work session, for its builder or its verifier; the owner starts both. A
+ * building session is handed the ticket; a verifying one, the ticket and the delivery.
+ */
+function openSession(state: CompanyState, ticketId: string, role: SessionRole): CompanyState {
+  const ticket = find(state, ticketId);
+  const by = role === "build" ? ticket?.owner : ticket?.verifier;
+  if (by === undefined || by === null) return state;
   const n = sessionsOf(state, ticketId).length + 1;
+  const messages: SessionMessage[] =
+    role === "build" ? [{ from: "brief" }] : [{ from: "brief" }, { from: "handed" }];
   return {
     ...state,
     sessions: [
       ...state.sessions,
-      { id: `${ticketId}-${n}`, ticket: ticketId, n, messages: [{ from: "brief" }] },
+      { id: `${ticketId}-${n}`, ticket: ticketId, n, by, role, messages },
     ],
   };
 }
 
-/** Add lines to a ticket's latest session. */
-function tell(state: CompanyState, ticketId: string, ...messages: SessionMessage[]): CompanyState {
-  const latest = sessionsOf(state, ticketId).at(-1);
-  if (latest === undefined) return state;
+/** Add lines to one session. */
+function tellSession(state: CompanyState, id: string, ...messages: SessionMessage[]): CompanyState {
   return {
     ...state,
     sessions: state.sessions.map((session) =>
-      session.id === latest.id
-        ? { ...session, messages: [...session.messages, ...messages] }
-        : session,
+      session.id === id ? { ...session, messages: [...session.messages, ...messages] } : session,
     ),
   };
 }
 
-/** The steps a ticket's sessions take: its own, then one round of rework for every time it was sent back. */
+/** Add lines to a ticket's latest session of a role. */
+function tell(
+  state: CompanyState,
+  ticketId: string,
+  role: SessionRole,
+  ...messages: SessionMessage[]
+): CompanyState {
+  const latest = sessionsOf(state, ticketId)
+    .filter((session) => session.role === role)
+    .at(-1);
+  return latest === undefined ? state : tellSession(state, latest.id, ...messages);
+}
+
+/**
+ * The steps a ticket's work takes: its own, then one round of rework for every time it was sent
+ * back. On a ticket with a verifier, every delivery is handed over and verified first, and the
+ * first comes back once when its fixture says the verifier finds something.
+ */
 export function scriptOf(ticket: Ticket): readonly ScriptStep[] {
   const base = ticket.fixture === null ? SAID_SCRIPT : FIXTURES[ticket.fixture].script;
-  return [...base, ...ticket.returns.flatMap((): ScriptStep[] => ["progress", "deliver"])];
+  const finds = ticket.fixture !== null && FIXTURES[ticket.fixture].finds === true;
+  const steps = [...base, ...ticket.returns.flatMap((): ScriptStep[] => ["progress", "deliver"])];
+  if (ticket.verifier === null) return steps;
+  let first = true;
+  return steps.flatMap((step): ScriptStep[] => {
+    if (step !== "deliver") return [step];
+    const found: ScriptStep[] = first && finds ? ["handoff", "found", "progress"] : [];
+    first = false;
+    return [...found, "handoff", "verified"];
+  });
 }
+
+/** A ticket as its work starts: its verifier stays only while that employee is on the team. */
+const staffed = (state: CompanyState, ticket: Ticket): Ticket =>
+  ticket.verifier !== null && !state.roles.includes(ticket.verifier)
+    ? { ...ticket, verifier: null }
+    : ticket;
 
 /**
  * The first sentence. The lead answers with proposals, one thing each: a patrol schedule, a first
@@ -481,7 +572,10 @@ const file = (state: CompanyState, entry: HandbookEntry): CompanyState => ({
 export function acceptTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
-  if (ticket.kind === "task") return openSession(withTicket(state, id, working()), id);
+  if (ticket.kind === "task") {
+    const started = withTicket(state, id, working({ verifier: staffed(state, ticket).verifier }));
+    return openSession(started, id, "build");
+  }
   const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
   const fixture = FIXTURES[ticket.fixture];
   if (ticket.kind === "schedule") {
@@ -534,7 +628,7 @@ export function answerTicket(
     ticket: id,
     doc: null,
   });
-  return tell(recorded, id, { from: "person", answer: option, note: said });
+  return tell(recorded, id, "build", { from: "person", answer: option, note: said });
 }
 
 /** Accept a delivery: the ticket is done and its session is over. */
@@ -547,11 +641,20 @@ export function approveTicket(state: CompanyState, id: string): CompanyState {
   return doc === undefined ? done : file(done, fixedEntry(doc, id));
 }
 
-/** Send a delivery back with what to change: the note goes into the session that delivered it. */
+/**
+ * Send a delivery back with what to change: the note goes into the session that built it, which
+ * carries on.
+ */
 export function returnTicket(state: CompanyState, id: string, note: string): CompanyState {
   const ticket = find(state, id);
   const said = note.trim();
   if (ticket === undefined || waitOf(ticket) !== "review" || said === "") return state;
+  return sendBack(state, id, said);
+}
+
+/** A send-back, once allowed; an empty note stands for a staged ticket's own, in the dictionary. */
+function sendBack(state: CompanyState, id: string, said: string): CompanyState {
+  const ticket = find(state, id)!;
   const returned = withTicket(state, id, {
     status: "in_progress",
     delivered: false,
@@ -567,7 +670,7 @@ export function returnTicket(state: CompanyState, id: string, note: string): Com
     returnIndex: ticket.returns.length,
   });
   // The employee notes it in its own skill too, with no one's approval.
-  return tell(learn(learned, ticket.owner, id), id, { from: "person", sendBack: said });
+  return tell(learn(learned, ticket.owner, id), id, "build", { from: "person", sendBack: said });
 }
 
 /**
@@ -583,10 +686,15 @@ export function sayInSession(state: CompanyState, sessionId: string, text: strin
   const ticket = find(state, session.ticket)!;
   const noted = learn(
     withTicket(state, ticket.id, { notes: [...ticket.notes, said], unread: false }),
-    ticket.owner,
+    session.by,
     ticket.id,
   );
-  return tell(noted, ticket.id, { from: "person", text: said }, { from: "agent", step: "noted" });
+  return tellSession(
+    noted,
+    session.id,
+    { from: "person", text: said },
+    { from: "agent", step: "noted" },
+  );
 }
 
 /** Opening a ticket reads it. */
@@ -625,6 +733,7 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
     fixture: null,
     title: said,
     owner: "engineer",
+    verifier: state.roles.includes("verifier") ? "verifier" : null,
     priority: "P2",
   };
   return openSession(
@@ -639,6 +748,7 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
       ],
     },
     id,
+    "build",
   );
 }
 
@@ -653,36 +763,99 @@ export function setScheduleAuto(state: CompanyState, id: FixtureId, auto: boolea
 }
 
 /**
- * One step of a ticket's work: a progress line, its question, or its delivery, and
- * what the session says.
+ * One step of a ticket's work, in the session whose turn it is: a progress line, the question, a
+ * delivery to the person; or, with a verifier, the hand-over that opens a verifying session, a
+ * finding written to the ticket and handed back to the building session, or a pass that brings
+ * the delivery to the person. Null when the ticket has no step to take.
  */
-function stepTicket(
-  ticket: Ticket,
-): { ticket: Ticket; event: PassEvent; message: SessionMessage } | null {
-  if (ticket.status !== "in_progress" || waitOf(ticket) !== null) return null;
+function stepOne(
+  state: CompanyState,
+  id: string,
+): { state: CompanyState; event: PassEvent } | null {
+  const ticket = find(state, id);
+  if (ticket === undefined || ticket.status !== "in_progress" || waitOf(ticket) !== null)
+    return null;
   const step = scriptOf(ticket)[ticket.step];
   if (step === undefined) return null;
-  const next = { ...ticket, step: ticket.step + 1 };
-  if (step === "progress") {
-    return {
-      ticket: { ...next, progress: ticket.progress + 1 },
-      event: { kind: "progress", id: ticket.id },
-      message: { from: "agent", step, line: ticket.progress },
-    };
-  }
-  // The two steps that leave the ticket waiting: it turns unread, and comes back from "later".
+  const next = { step: ticket.step + 1 };
+  // The steps that leave the ticket waiting on the person: it turns unread, and comes back from "later".
   const waiting = { ...next, unread: true, snoozed: false, archived: false };
-  return step === "ask"
-    ? {
-        ticket: { ...waiting, asked: true, blockedBy: PERSON },
-        event: { kind: "asked", id: ticket.id },
-        message: { from: "agent", step },
-      }
-    : {
-        ticket: { ...waiting, status: "review", delivered: true },
-        event: { kind: "delivered", id: ticket.id },
-        message: { from: "agent", step },
+  switch (step) {
+    case "progress":
+      return {
+        state: tell(
+          withTicket(state, id, { ...next, progress: ticket.progress + 1 }),
+          id,
+          "build",
+          { from: "agent", step, line: ticket.progress },
+        ),
+        event: { kind: "progress", id },
       };
+    case "ask":
+      return {
+        state: tell(
+          withTicket(state, id, { ...waiting, asked: true, blockedBy: PERSON }),
+          id,
+          "build",
+          {
+            from: "agent",
+            step,
+          },
+        ),
+        event: { kind: "asked", id },
+      };
+    case "deliver":
+      return {
+        state: tell(
+          withTicket(state, id, { ...waiting, status: "review", delivered: true }),
+          id,
+          "build",
+          {
+            from: "agent",
+            step,
+          },
+        ),
+        event: { kind: "delivered", id },
+      };
+    case "handoff":
+      return {
+        state: openSession(
+          tell(withTicket(state, id, next), id, "build", { from: "agent", step }),
+          id,
+          "verify",
+        ),
+        event: { kind: "handed", id },
+      };
+    case "found": {
+      const finding = ticket.findings.length;
+      // What the verifier found corrects the builder: it notes it in its own skill too.
+      const found = learn(
+        withTicket(state, id, { ...next, findings: [...ticket.findings, ""] }),
+        ticket.owner,
+        id,
+      );
+      return {
+        state: tell(tell(found, id, "verify", { from: "agent", step, finding }), id, "build", {
+          from: "verifier",
+          finding,
+        }),
+        event: { kind: "found", id },
+      };
+    }
+    case "verified":
+      return {
+        state: tell(
+          withTicket(state, id, { ...waiting, status: "review", delivered: true }),
+          id,
+          "verify",
+          {
+            from: "agent",
+            step,
+          },
+        ),
+        event: { kind: "delivered", id },
+      };
+  }
 }
 
 /**
@@ -699,29 +872,23 @@ export function letTimePass(state: CompanyState): { state: CompanyState; events:
     return { state: retro, events: [{ kind: "retro", id: String(retro.retros.length) }] };
   }
   const events: PassEvent[] = [];
-  const said: [string, SessionMessage][] = [];
-  const tickets = state.tickets.map((ticket) => {
-    const stepped = stepTicket(ticket);
-    if (stepped === null) return ticket;
+  let moved = state;
+  for (const ticket of state.tickets) {
+    const stepped = stepOne(moved, ticket.id);
+    if (stepped === null) continue;
     events.push(stepped.event);
-    said.push([ticket.id, stepped.message]);
-    return stepped.ticket;
-  });
-  if (events.length > 0) {
-    const told = said.reduce((next, [id, message]) => tell(next, id, message), {
-      ...state,
-      tickets,
-    });
-    return { state: told, events };
+    moved = stepped.state;
   }
+  if (events.length > 0) return { state: moved, events };
 
   const schedule = state.schedules[0];
   const found = state.pool[0];
   if (schedule === undefined || found === undefined) return { state, events };
-  const filed = schedule.auto ? ticketOf(found, "patrol", working()) : ticketOf(found, "patrol");
+  const proposed = ticketOf(found, "patrol");
+  const filed = schedule.auto ? { ...staffed(state, proposed), ...working() } : proposed;
   const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
   return {
-    state: schedule.auto ? openSession(next, found) : next,
+    state: schedule.auto ? openSession(next, found, "build") : next,
     events: [{ kind: schedule.auto ? "started" : "proposed", id: found }],
   };
 }

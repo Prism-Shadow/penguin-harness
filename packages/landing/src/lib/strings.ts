@@ -1020,6 +1020,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           spec: "有名字和职位；仅主理常驻，其余员工按工单启动工作会话",
         },
         {
+          topic: "多人协作",
+          now: "员工在频道里互相交接",
+          spec: "一张工单可由几名员工接力：开发交付后交给验证，验证通过才到你",
+        },
+        {
           topic: "初始配置",
           now: "CEO 在全员频道发布初始化提案",
           spec: "输入一句话目标，逐项确认主理提议的工单",
@@ -1080,7 +1085,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       exampleFile: `---
 title: 给导出加上 CSV
 status: in_progress
-owner: agent:lead
+owner: agent:org-engineer
+verifier: agent:org-verifier
 source: user:alice
 notify: [user:alice]
 priority: P1
@@ -1090,11 +1096,12 @@ ask:
   question: 大文件导出：流式写出，还是一次生成？
   options: [流式写出, 一次生成]
   recommended: 0
-sessions: [s_c1]
+sessions:
+  - {id: s_c1, by: agent:org-engineer, as: build}
 history:
   - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
   - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
-  - {at: 2026-11-13T10:05:40+08:00, by: agent:lead, action: blocked, note: user:alice}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:org-engineer, action: blocked, note: user:alice}
 ---
 
 ## Goal
@@ -1134,7 +1141,8 @@ history:
       fields: {
         title: "单行标题，显示在收件箱中。",
         status: "任务进度，对应文件所在目录。",
-        owner: "唯一的任务负责方。",
+        owner: "唯一的负责方，负责开发，也由它发起工单的每个会话。",
+        verifier: "交付先由它验证，通过了才到你这里。",
         source: "工单来源：人、日程或另一张工单。",
         parent: "父工单，用于向上汇总成本。",
         notify: "工单关闭时的通知对象。",
@@ -1144,7 +1152,7 @@ history:
         blocked_by: "谁能解除阻塞；是人时，工单在等这个人。",
         ask: "未决问题、选项与推荐项，回答后移除。",
         deliverables: "交付物路径或链接（如 PR 地址）。",
-        sessions: "关联的工作会话列表。",
+        sessions: "为它工作过的会话：谁，开发还是验证。",
         history: "按时间正序记录的操作日志。",
         "## Goal": "要达成什么。",
         "## Acceptance criteria": "怎样算做完。",
@@ -1175,6 +1183,7 @@ history:
         observe_first: "日程生成的提议工单在接受前不创建会话。",
         triage_apart: "稍后与归档不影响任务；等你的工单不能稍后或归档。",
         own_skill_kept: "员工自己的 Skill 不会被插件更新覆盖。",
+        verified_first: "有验证人的工单，交付要验证通过才到你这里。",
         retro_by_count: "复盘由累计关闭的工单数量触发。",
         snapshot_first: "改动员工前先存快照。",
       } satisfies Record<InvariantId, string>,

@@ -18,6 +18,7 @@ import { Deliverable, NeedsYou, SessionStatusPill } from "./needs-you";
 import type { TicketActions } from "./needs-you";
 import {
   acceptanceOf,
+  findingOf,
   gistOf,
   optionsOf,
   progressOf,
@@ -71,7 +72,9 @@ export function SessionConversation({
               key={i}
               message={message}
               ticket={ticket}
-              sentBack={session.messages.slice(i + 1).some((later) => "sendBack" in later)}
+              superseded={session.messages
+                .slice(i + 1)
+                .some((later) => "sendBack" in later || later.from === "verifier")}
             />
           ))}
           {status !== "running" && (
@@ -116,19 +119,28 @@ export function SessionConversation({
 }
 
 /**
- * One line of the conversation. `sentBack` marks a delivery the person later sent back: the
- * ticket's result describes the last delivery, so an earlier one says only that it was done.
+ * One line of the conversation. `superseded` marks a delivery that came back, from the person or
+ * the verifier: the ticket's result describes the last delivery, so an earlier one says only that
+ * it was done.
  */
 function Message({
   message,
   ticket,
-  sentBack,
+  superseded,
 }: {
   message: SessionMessage;
   ticket: Ticket;
-  sentBack: boolean;
+  superseded: boolean;
 }) {
   const W = useWords();
+  const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
+  const verifier = ticket.verifier === null ? "" : W.people[ticket.verifier].name;
+  const delivery = (
+    <>
+      <p>{superseded ? W.ticket.saidResult : resultOf(ticket, W)}</p>
+      {deliverable !== undefined && <Deliverable path={deliverable} />}
+    </>
+  );
   if (message.from === "brief") {
     const acceptance = acceptanceOf(ticket, W);
     return (
@@ -143,6 +155,24 @@ function Message({
             ))}
           </ul>
         )}
+      </div>
+    );
+  }
+  if (message.from === "handed") {
+    // What the verifying session is handed: the delivery, from the employee who built it.
+    return (
+      <div className={`border-l-2 border-line pl-3 ${BODY}`}>
+        <p className={`text-xs ${QUIET}`}>{W.session.handed(W.people[ticket.owner].name)}</p>
+        {delivery}
+      </div>
+    );
+  }
+  if (message.from === "verifier") {
+    // The verifier's finding, as the building session receives it.
+    return (
+      <div className={`border-l-2 border-line pl-3 ${BODY}`}>
+        <p className={`text-xs ${QUIET}`}>{W.session.fromVerifier(verifier)}</p>
+        <p>{findingOf(ticket, ticket.findings[message.finding] ?? "", W)}</p>
       </div>
     );
   }
@@ -162,23 +192,33 @@ function Message({
       </div>
     );
   }
-  if (message.step === "progress") {
-    // The line the session wrote to the ticket's progress is what it says here.
-    const lines = progressOf({ ...ticket, progress: message.line + 1 }, W);
-    return <p className={BODY}>{lines[message.line]}</p>;
+  switch (message.step) {
+    case "progress": {
+      // The line the session wrote to the ticket's progress is what it says here.
+      const lines = progressOf({ ...ticket, progress: message.line + 1 }, W);
+      return <p className={BODY}>{lines[message.line]}</p>;
+    }
+    case "ask":
+      // The options are the block that takes the answer, and the answer names the one chosen.
+      return <p className={BODY}>{questionOf(ticket, W)}</p>;
+    case "deliver":
+      return <div className={BODY}>{delivery}</div>;
+    case "handoff":
+      return (
+        <div className={BODY}>
+          {delivery}
+          <p className={`mt-1 text-xs ${QUIET}`}>{W.session.handoff(verifier)}</p>
+        </div>
+      );
+    case "found":
+      return (
+        <p className={BODY}>
+          {W.session.found(findingOf(ticket, ticket.findings[message.finding] ?? "", W))}
+        </p>
+      );
+    case "verified":
+      return <p className={BODY}>{W.session.verified}</p>;
+    case "noted":
+      return <p className={BODY}>{W.session.noted}</p>;
   }
-  if (message.step === "ask") {
-    // The options are the block that takes the answer, and the answer names the one chosen.
-    return <p className={BODY}>{questionOf(ticket, W)}</p>;
-  }
-  if (message.step === "deliver") {
-    const deliverable = ticket.fixture === null ? undefined : FIXTURES[ticket.fixture].deliverable;
-    return (
-      <div className={BODY}>
-        <p>{sentBack ? W.ticket.saidResult : resultOf(ticket, W)}</p>
-        {deliverable !== undefined && <Deliverable path={deliverable} />}
-      </div>
-    );
-  }
-  return <p className={BODY}>{W.session.noted}</p>;
 }
