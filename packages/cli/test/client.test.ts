@@ -19,8 +19,9 @@ import {
   resolveSessionRef,
   ServerClient,
   shortSessionId,
+  getMessages,
 } from "@prismshadow/penguin-server/cli";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");

@@ -14,11 +14,12 @@
  * returns to it. While idle, records are not shown (a background subagent's output, say):
  * the prompt owns the screen then.
  */
-import { isPartialPayload } from "@prismshadow/penguin-core";
 import type { AmspRecord, ApprovalDecision, ToolCallPayload } from "@prismshadow/penguin-core";
+import { isPartialPayload } from "@prismshadow/penguin-core";
+
 import type { MessagesResponse, SessionStatus } from "@prismshadow/penguin-server/api";
-import type { ServerClient } from "@prismshadow/penguin-server/cli";
-import type { Messages } from "@prismshadow/penguin-server/cli";
+import type { ServerClient, Messages } from "@prismshadow/penguin-server/cli";
+
 import type { StreamRenderer } from "./render.js";
 import { SessionStream, watchTask } from "./server-task.js";
 

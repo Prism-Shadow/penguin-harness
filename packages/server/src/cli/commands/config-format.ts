@@ -3,17 +3,16 @@
  * effective values, as column-aligned lines. Read from the file alone; shared by the command
  * and its unit tests.
  */
-import type {
-  ConnectionSource,
-  EffectiveConnection,
-  ModelEntry,
-  ProjectConfig,
-} from "@prismshadow/penguin-core";
 import {
   effectiveConnection,
   providerConnectionShape,
   type ProviderConnection,
+  type ConnectionSource,
+  type EffectiveConnection,
+  type ModelEntry,
+  type ProjectConfig,
 } from "@prismshadow/penguin-core";
+
 import { modelEnvPreviewKey } from "../../model-catalog/env-keys.js";
 import { maskApiKey } from "../i18n.js";
 

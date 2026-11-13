@@ -24,8 +24,8 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
+  Messages,
 } from "@prismshadow/penguin-server/cli";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 import { renderTable } from "@prismshadow/penguin-server/cli";
 
 /** `return:` shows at most this many characters; `--save` keeps everything. */

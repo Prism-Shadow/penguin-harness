@@ -41,14 +41,27 @@
  */
 import { clearLine, createInterface, cursorTo, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { buildInfo } from "@prismshadow/penguin-core";
 import type {
   ApprovalDecision,
   AmspRecord,
   ThinkingLevelName,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionInfo } from "@prismshadow/penguin-server/cli";
+import { buildInfo } from "@prismshadow/penguin-core";
+
+import type { SessionInfo, Messages } from "@prismshadow/penguin-server/cli";
+import {
+  parseApprovalAnswer,
+  resolveApprovalMode,
+  ApiError,
+  connectionLabel,
+  resolveAgentId,
+  resolveConnection,
+  resolveProjectId,
+  resolveSessionRef,
+  ServerClient,
+  listAgentSessions,
+} from "@prismshadow/penguin-server/cli";
 import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
@@ -59,17 +72,9 @@ import {
   switchModelRefusal,
   type ModelTarget,
 } from "../switch-model-command.js";
-import { parseApprovalAnswer, resolveApprovalMode } from "@prismshadow/penguin-server/cli";
+
 import { LineComposer, PasteFilter } from "../input.js";
-import {
-  ApiError,
-  connectionLabel,
-  resolveAgentId,
-  resolveConnection,
-  resolveProjectId,
-  resolveSessionRef,
-  ServerClient,
-} from "@prismshadow/penguin-server/cli";
+
 import {
   callerSessionContext,
   createServerSession,
@@ -79,8 +84,6 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionView, type SessionViewOptions } from "../session-view.js";
-import { listAgentSessions } from "@prismshadow/penguin-server/cli";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
 

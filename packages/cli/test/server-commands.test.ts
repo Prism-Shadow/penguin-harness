@@ -20,9 +20,9 @@ import {
   userText,
   type AmspRecord,
 } from "@prismshadow/penguin-core";
-import { apiTokenPath } from "@prismshadow/penguin-server/cli";
+import { apiTokenPath, getMessages } from "@prismshadow/penguin-server/cli";
 import { cli } from "../src/index.js";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+
 import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 

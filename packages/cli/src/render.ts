@@ -46,13 +46,6 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import {
-  isEventMessage,
-  isHarnessInput,
-  isModelMessage,
-  parseInPlaceModelSwitch,
-  parseUserSteeringText,
-} from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -76,14 +69,21 @@ import type {
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHarnessInput,
+  isModelMessage,
+  parseInPlaceModelSwitch,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
+
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
-import { defaultMessages } from "@prismshadow/penguin-server/cli";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { defaultMessages, humanizeTokens } from "@prismshadow/penguin-server/cli";
 
-import { humanizeTokens } from "@prismshadow/penguin-server/cli";
 /** The ANSI codes the renderer uses; the plain palette maps every code to "" so all writes degrade to uncolored text with no further branching. */
 export interface Palette {
   readonly dim: string;

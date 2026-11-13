@@ -12,15 +12,16 @@ import type {
   SessionInfo,
   SessionResponse,
   SessionsResponse,
+  Messages,
 } from "@prismshadow/penguin-server/cli";
-import type { AmspRecord } from "@prismshadow/penguin-core";
 import {
   listAgentSessions,
   resolveSessionRef,
   ServerClient,
 } from "@prismshadow/penguin-server/cli";
+import type { AmspRecord } from "@prismshadow/penguin-core";
+
 import { dim } from "./render.js";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 
 const enc = encodeURIComponent;
 

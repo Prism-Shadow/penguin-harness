@@ -31,19 +31,19 @@
  *   the stream wind down (the abort event maps to exit code 1).
  * Docs: /docs/cli § "penguin run".
  */
-import { Option } from "commander";
 import type { Command } from "commander";
+import { Option } from "commander";
+
 import { buildInfo } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
   denyActivePrompt,
   promptApproval,
   resolveApprovalMode,
-} from "@prismshadow/penguin-server/cli";
-import {
   connectionLabel,
   resolveAgentId,
   resolveConnection,
@@ -52,6 +52,7 @@ import {
   ServerClient,
   shortSessionId,
 } from "@prismshadow/penguin-server/cli";
+
 import {
   callerSessionContext,
   checkSessionTitle,
@@ -62,7 +63,6 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 
 export function registerRunCommand(run: Command, t: Messages): void {
   run

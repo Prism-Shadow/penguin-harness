@@ -32,6 +32,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Command } from "commander";
+import type { PluginMcpServer } from "@prismshadow/penguin-core";
 import {
   libraryParts,
   readLibraryPackage,
@@ -39,21 +40,21 @@ import {
   readPluginTable,
   resolveMCPServer,
 } from "@prismshadow/penguin-core";
-import type { PluginMcpServer } from "@prismshadow/penguin-core";
+
 import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginLibraryResponse,
+  Messages,
 } from "@prismshadow/penguin-server/cli";
 import {
   ApiError,
   resolveConnection,
   resolveProjectId,
   ServerClient,
+  renderTable,
+  zipFolder,
 } from "@prismshadow/penguin-server/cli";
-import { renderTable } from "@prismshadow/penguin-server/cli";
-import { zipFolder } from "@prismshadow/penguin-server/cli";
-import type { Messages } from "@prismshadow/penguin-server/cli";
 
 const installedPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;

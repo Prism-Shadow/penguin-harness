@@ -19,10 +19,10 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 const node = (command: CliCommandProgram): Command => command as Command;
 
 import type { UsageResponse } from "../../api/types.js";
-import { humanizeTokens } from "../table.js";
+import { humanizeTokens, renderTable } from "../table.js";
 import { resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
-import { renderTable } from "../table.js";
+
 import type { Messages } from "../i18n.js";
 
 const GROUP_BYS = ["date", "agent", "model", "session"] as const;

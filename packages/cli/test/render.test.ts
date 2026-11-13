@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
+import type { MessageOrigin } from "@prismshadow/penguin-core";
 import {
   approvalDecision,
   abortEvent,
@@ -22,10 +23,9 @@ import {
   partialToolCallOutput,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { MessageOrigin } from "@prismshadow/penguin-core";
+
 import { StreamRenderer, formatAbort, renderHistory, supportsColor } from "../src/render.js";
-import { humanizeTokens } from "@prismshadow/penguin-server/cli";
-import { getMessages } from "@prismshadow/penguin-server/cli";
+import { humanizeTokens, getMessages } from "@prismshadow/penguin-server/cli";
 
 const t = getMessages("en");
 
