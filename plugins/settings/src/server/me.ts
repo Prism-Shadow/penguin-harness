@@ -24,7 +24,7 @@ import type { BackgroundImagePutResponse, BackgroundImageResponse, DraftsRespons
 import type { MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "@prismshadow/penguin-server/api";
 import { toUserInfo } from "@prismshadow/penguin-server/internal";
 import { cookieOptions } from "@prismshadow/penguin-server/internal";
-import { sessionCookieName } from "../../auth/middleware.js";
+import { sessionCookieName } from "./auth/middleware.js";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";

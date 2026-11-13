@@ -113,7 +113,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "@prismshadow/penguin-server/internal";
 import { Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
-import { SessionServiceIface } from "../../runtime/session-manager.js";
+import { SessionServiceIface } from "../runtime/session-manager.js";
 import { Messaging } from "@penguinharness/plugin-messaging/server";
 
 import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
