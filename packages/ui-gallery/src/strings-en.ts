@@ -1191,7 +1191,7 @@ export const en: GalleryStrings = {
       footer: "Footer",
       footerHint:
         "The landing page's brand and link columns; the docs' single line of copyright and links.",
-      tagline: "Unified and Stable RSI Framework.",
+      tagline: "Out-of-the-Box RSI Framework.",
       columns: [
         { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
         { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
