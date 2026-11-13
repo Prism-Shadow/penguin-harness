@@ -6,8 +6,8 @@
  *
  * What it changes in the shipped sidebar: the inbox, the lead and the board are the pinned rows;
  * the four pages the spec leaves alone sit in the nav's fold, which starts folded; the channel
- * list and the desks give way to one list of the work sessions that are running, each opening
- * its ticket.
+ * list and the desks give way to one list of the work sessions that are not over, each opening
+ * the conversation itself (session-page.tsx), with a link back to its ticket.
  *
  * No agent runs here. The bar under the page moves every work session one step when the reader
  * asks, so they see a ticket come to the inbox and nothing else change.
@@ -39,13 +39,18 @@ import {
   acceptTicket,
   answerTicket,
   approveTicket,
+  costOf,
   freshState,
   inboxCounts,
   letTimePass,
+  liveSessions,
   readTicket,
   rejectTicket,
   returnTicket,
+  sayInSession,
   sayToLead,
+  sessionsOf,
+  sessionStatus,
   setScheduleAuto,
   startCompany,
   triageTicket,
@@ -53,7 +58,7 @@ import {
 } from "./model";
 import type { CompanyState } from "./model";
 import { BoardPage, InboxPage, KeptPage, LeadPage, SetupPage } from "./pages";
-import { waitOf } from "./spec";
+import { SessionPage } from "./session-page";
 import { titleOf } from "./text";
 import { TicketDialog } from "./ticket-dialog";
 import type { TicketActions } from "./ticket-dialog";
@@ -61,7 +66,7 @@ import { useWords } from "./use-words";
 
 /** The pages the spec leaves as they are, in the shipped nav's order. */
 const KEPT = ["calendar", "handbook", "chart", "finance"] as const;
-type Page = "inbox" | "lead" | "tickets" | (typeof KEPT)[number];
+type Page = "inbox" | "lead" | "tickets" | "session" | (typeof KEPT)[number];
 
 export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const W = useWords();
@@ -70,6 +75,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   );
   const [page, setPage] = useState<Page>("inbox");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [folded, setFolded] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -81,6 +87,11 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const go = (next: Page) => {
     setPage(next);
     setMenuOpen(false);
+  };
+  const openSession = (id: string) => {
+    setOpenId(null);
+    setSessionId(id);
+    go("session");
   };
   const actions: TicketActions = {
     accept: (id) => setState((current) => acceptTicket(current, id)),
@@ -107,9 +118,10 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
 
   const running = state.stage === "running";
   const waiting = inboxCounts(state).waiting;
-  const sessions = state.tickets.filter(
-    (ticket) => ticket.status === "in_progress" && waitOf(ticket) === null,
-  );
+  const sessions = liveSessions(state);
+  const shown = state.sessions.find((session) => session.id === sessionId);
+  const ticketOfSession = (ticketId: string) =>
+    state.tickets.find((ticket) => ticket.id === ticketId);
   const orgName = W.org.name;
 
   const sidebar = (
@@ -178,18 +190,24 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
             {sessions.length === 0 ? (
               <p className="px-2 py-1 text-xs text-fg-subtle">{W.nav.sessionsEmpty}</p>
             ) : (
-              sessions.map((ticket) => (
-                <NavRow
-                  key={ticket.id}
-                  density="sm"
-                  label={titleOf(ticket, W)}
-                  glyph={<AgentAvatar id={ticket.owner} size={ICON_SIZE.rowLead} />}
-                  onClick={() => {
-                    openTicket(ticket.id);
-                    setMenuOpen(false);
-                  }}
-                />
-              ))
+              sessions.flatMap((session) => {
+                const ticket = ticketOfSession(session.ticket);
+                if (ticket === undefined) return [];
+                const status = sessionStatus(state, session);
+                return [
+                  <NavRow
+                    key={session.id}
+                    density="sm"
+                    label={titleOf(ticket, W)}
+                    glyph={<AgentAvatar id={ticket.owner} size={ICON_SIZE.rowLead} />}
+                    active={page === "session" && sessionId === session.id}
+                    onClick={() => openSession(session.id)}
+                    {...(status === "answer" || status === "review"
+                      ? { badge: <Pill tone="attention">{W.waits[status]}</Pill> }
+                      : {})}
+                  />,
+                ];
+              })
             )}
           </div>
         </>
@@ -221,6 +239,20 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     );
   } else if (page === "tickets") {
     body = <BoardPage state={state} onOpen={openTicket} />;
+  } else if (page === "session") {
+    const ticket = shown === undefined ? undefined : ticketOfSession(shown.ticket);
+    body =
+      shown === undefined || ticket === undefined ? null : (
+        <SessionPage
+          key={shown.id}
+          session={shown}
+          ticket={ticket}
+          status={sessionStatus(state, shown)}
+          actions={actions}
+          onSay={(text) => setState((current) => sayInSession(current, shown.id, text))}
+          onOpenTicket={() => openTicket(ticket.id)}
+        />
+      );
   } else {
     body = <KeptPage title={S.nav.org[page]} />;
   }
@@ -234,7 +266,15 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
             {sidebar}
           </Drawer>
           {open !== undefined && (
-            <TicketDialog ticket={open} actions={actions} onClose={() => setOpenId(null)} />
+            <TicketDialog
+              ticket={open}
+              sessions={sessionsOf(state, open.id)}
+              statusOf={(session) => sessionStatus(state, session)}
+              cost={costOf(state, open)}
+              actions={actions}
+              onOpenSession={openSession}
+              onClose={() => setOpenId(null)}
+            />
           )}
         </>
       }

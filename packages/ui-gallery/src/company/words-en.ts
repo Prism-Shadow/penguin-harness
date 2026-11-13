@@ -67,8 +67,10 @@ export const en: Words = {
     source: "Source",
     decisions: "Decisions",
     returned: "Sent back",
-    sessionLine: (n: number) => `Work session ${n}`,
-    sessionsEmpty: "No work session yet",
+    sessionsEmpty: "No work session yet. Accepting opens one.",
+    sessionRow: (n: number, owner: string, messages: number) =>
+      `Session ${n} · ${owner} · ${messages} ${messages === 1 ? "message" : "messages"}`,
+    saidInSession: "You said in the session:",
     later: "Later",
     archive: "Archive",
     restore: "Back to the inbox",
@@ -80,7 +82,7 @@ export const en: Words = {
   },
   lead: {
     title: "Lead",
-    info: "The one agent that stays up and the only one that talks to you. It files what you say as tickets and does none of the work itself.",
+    info: "The agent that stays up. It files what you say as tickets and hands them to work sessions; it does none of the work itself.",
     placeholder: "Tell the lead what to do, Enter to send",
     send: "Send",
     empty: "No conversation yet. Tell the lead what to do and it files a ticket.",
@@ -88,9 +90,7 @@ export const en: Words = {
       proposals:
         "Here are three things to start with, all in your inbox. Accept or reject each one; only what you accept starts.",
       filed:
-        "Filed as a ticket and already in progress. It comes to your inbox with a question, or when it is done.",
-      recorded:
-        "I recorded that decision in the handbook; a question of the same kind checks it first.",
+        "Filed as a ticket, and its work session is open. It comes to your inbox with a question, or when it is done.",
     },
   },
   setup: {
@@ -104,6 +104,20 @@ export const en: Words = {
       "Get new users through first-time setup",
     ],
     examplesLabel: "Examples",
+  },
+  session: {
+    info: "This is the agent's conversation while it works on the ticket. The ticket keeps only what it writes back; come here to watch the work or to tell it something directly.",
+    ticket: "Ticket",
+    status: { running: "Running", ended: "Ended" },
+    brief: "The lead handed this ticket to this session.",
+    answered: (label: string) => `${label}.`,
+    sentBack: (note: string) => `Sent back: ${note}`,
+    noted: "Got it. I've written that on the ticket too.",
+    waitingAnswer: "This session is stopped on its question until you answer.",
+    waitingReview: "Done, and waiting for your review.",
+    ended: "This session is over. What it concluded is on the ticket.",
+    placeholder: "Talk to this session directly, Enter to send",
+    send: "Send",
   },
   schedule: {
     info: "A schedule is one source of tickets. A new one only proposes; once you trust it, its tickets can start work directly.",

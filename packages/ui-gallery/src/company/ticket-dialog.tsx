@@ -7,6 +7,9 @@
  * waits for and takes the answer where it is read: accept or reject a proposal, pick an option of
  * its one question, accept a delivery or send it back with a note. The answer then stays on the
  * ticket, under Decisions.
+ *
+ * The ticket is the record; its work sessions are the conversations behind it. The Sessions
+ * section lists them, and each opens the conversation itself.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -20,10 +23,13 @@ import {
   Textarea,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../../web/src/lib/strings";
-import { PriorityBadge, TicketStatusBadge } from "../../../web/src/features/company/shared";
+import {
+  PriorityBadge,
+  TicketStatusBadge,
+  TitleButton,
+} from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
-import { costOf } from "./model";
-import type { Ticket } from "./model";
+import type { SessionStatus, Ticket, WorkSession } from "./model";
 import { waitOf } from "./spec";
 import type { Wait } from "./spec";
 import { acceptanceOf, gistOf, optionsOf, progressOf, questionOf, resultOf, titleOf } from "./text";
@@ -45,11 +51,20 @@ const BODY = "text-sm leading-relaxed text-fg";
 
 export function TicketDialog({
   ticket,
+  sessions,
+  statusOf,
+  cost,
   actions,
+  onOpenSession,
   onClose,
 }: {
   ticket: Ticket;
+  /** Its work sessions, oldest first. */
+  sessions: readonly WorkSession[];
+  statusOf: (session: WorkSession) => SessionStatus;
+  cost: number;
   actions: TicketActions;
+  onOpenSession: (id: string) => void;
   onClose: () => void;
 }) {
   const W = useWords();
@@ -88,7 +103,7 @@ export function TicketDialog({
               {T.owner} {W.bylines[ticket.owner]}
             </span>
             <span className="ml-auto tabular-nums">
-              {T.cost} <span className="font-medium text-fg">{money(costOf(ticket))}</span>
+              {T.cost} <span className="font-medium text-fg">{money(cost)}</span>
             </span>
           </div>
 
@@ -115,13 +130,26 @@ export function TicketDialog({
             )}
           </RuledSection>
 
-          {ticket.answer !== null && (
+          {(ticket.answer !== null || ticket.notes.length > 0) && (
             <RuledSection level={3} title={W.ticket.decisions}>
-              <p className={BODY}>
-                <span className={QUIET}>{questionOf(ticket, W)}</span>{" "}
-                <span className="font-medium">{optionsOf(ticket, W)[ticket.answer]?.label}</span>
-              </p>
-              {ticket.answerNote !== "" && <p className={`mt-1 ${BODY}`}>{ticket.answerNote}</p>}
+              {ticket.answer !== null && (
+                <>
+                  <p className={BODY}>
+                    <span className={QUIET}>{questionOf(ticket, W)}</span>{" "}
+                    <span className="font-medium">
+                      {optionsOf(ticket, W)[ticket.answer]?.label}
+                    </span>
+                  </p>
+                  {ticket.answerNote !== "" && (
+                    <p className={`mt-1 ${BODY}`}>{ticket.answerNote}</p>
+                  )}
+                </>
+              )}
+              {ticket.notes.map((note, i) => (
+                <p key={i} className={`mt-1 ${BODY}`}>
+                  <span className={QUIET}>{W.ticket.saidInSession}</span> {note}
+                </p>
+              ))}
             </RuledSection>
           )}
 
@@ -138,15 +166,27 @@ export function TicketDialog({
             </RuledSection>
           )}
 
-          <RuledSection level={3} title={T.sessions} count={ticket.sessions}>
-            {ticket.sessions === 0 ? (
+          <RuledSection level={3} title={T.sessions} count={sessions.length}>
+            {sessions.length === 0 ? (
               <p className={`text-xs ${QUIET}`}>{W.ticket.sessionsEmpty}</p>
             ) : (
-              <Lines
-                lines={Array.from({ length: ticket.sessions }, (_, i) =>
-                  W.ticket.sessionLine(i + 1),
-                )}
-              />
+              <ul className="space-y-1.5">
+                {sessions.map((session) => (
+                  <li key={session.id} className="flex items-center gap-2 text-sm">
+                    <SessionStatusPill status={statusOf(session)} />
+                    <TitleButton
+                      className="min-w-0 truncate"
+                      onClick={() => onOpenSession(session.id)}
+                    >
+                      {W.ticket.sessionRow(
+                        session.n,
+                        W.bylines[ticket.owner],
+                        session.messages.length,
+                      )}
+                    </TitleButton>
+                  </li>
+                ))}
+              </ul>
             )}
           </RuledSection>
         </div>
@@ -208,8 +248,16 @@ function Deliverable({ path }: { path: string }) {
   );
 }
 
+/** Where a session stands, as one pill: running, waiting on the reader for what, or over. */
+export function SessionStatusPill({ status }: { status: SessionStatus }) {
+  const W = useWords();
+  if (status === "running") return <Pill tone="success">{W.session.status.running}</Pill>;
+  if (status === "ended") return <Pill>{W.session.status.ended}</Pill>;
+  return <Pill tone="attention">{W.waits[status]}</Pill>;
+}
+
 /** The block that says what the ticket waits for and takes the reader's answer. */
-function NeedsYou({
+export function NeedsYou({
   ticket,
   wait,
   actions,

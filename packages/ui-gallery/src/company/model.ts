@@ -3,6 +3,12 @@
  * calls a server or runs an agent: an action returns the next state, and `letTimePass` stands in
  * for the agents, moving every work session one step of its script (fixtures.ts).
  *
+ * A ticket and a work session are two things. The ticket is the record of one piece of work: its
+ * goal, where it stands, the decisions and the result; the reader reads it. A work session is
+ * the conversation an agent has while it does the work; the reader opens it to watch, or to talk
+ * to that agent directly. A ticket has its sessions, each a conversation the ticket links to, and
+ * what a session concludes is written back to the ticket.
+ *
  * The functions hold the proposal's rules (spec.ts `INVARIANTS`), so the prototype cannot show a
  * state the spec would refuse:
  *
@@ -10,8 +16,11 @@
  *   else returns the state it was given;
  * - a ticket turns unread only when an agent's step leaves it waiting on the person, and that
  *   step also takes it out of "later"; a person's own action reads it;
- * - a work session stops on its one question until the person answers, and the answer is on the
- *   ticket before the next session opens;
+ * - a work session stops on its one question until the person answers; the answer is written to
+ *   the ticket, then goes into that same session as the person's message, and it carries on;
+ * - a delivery sent back goes into the session that delivered it, as the person's message;
+ * - what the person says in a session is written to the ticket too, so the ticket alone still
+ *   tells the whole story;
  * - a schedule's ticket gets no session before a person accepts it, unless the person has
  *   switched that schedule to automatic;
  * - triage never changes the work, and a ticket that waits on the person cannot be snoozed or
@@ -51,10 +60,36 @@ export interface Ticket extends TicketState, Triage {
   delivered: boolean;
   /** The notes it was sent back with, oldest first. */
   returns: string[];
-  /** How many work sessions have opened on it. */
-  sessions: number;
+  /** What the person said to its work session, oldest first. */
+  notes: string[];
   unread: boolean;
 }
+
+/** A line of a work session's conversation. */
+export type SessionMessage =
+  /** The ticket, handed to the session when it opens. */
+  | { from: "brief" }
+  /** A progress line: the ticket's progress line of that index. */
+  | { from: "agent"; step: "progress"; line: number }
+  | { from: "agent"; step: "ask" }
+  | { from: "agent"; step: "deliver" }
+  /** The agent's reply to something the person said in the session. */
+  | { from: "agent"; step: "noted" }
+  | { from: "person"; answer: number; note: string }
+  | { from: "person"; sendBack: string }
+  | { from: "person"; text: string };
+
+/** A work session: one agent's conversation while it works on one ticket. */
+export interface WorkSession {
+  id: string;
+  ticket: string;
+  /** Its place among its ticket's sessions, from 1. */
+  n: number;
+  messages: SessionMessage[];
+}
+
+/** Where a session stands: working, waiting on the person, or over. */
+export type SessionStatus = "running" | "answer" | "review" | "ended";
 
 export interface Schedule {
   id: FixtureId;
@@ -63,7 +98,7 @@ export interface Schedule {
 }
 
 /** What the lead says in its conversation: a line of the dictionary, about some tickets. */
-export type LeadLine = "proposals" | "filed" | "recorded";
+export type LeadLine = "proposals" | "filed";
 
 /** A line of the conversation: the person's own words (or, staged, a ticket's request), or the lead's. */
 export type ChatLine =
@@ -78,6 +113,8 @@ export interface CompanyState {
   mission: string | null;
   /** Oldest first. */
   tickets: Ticket[];
+  /** Every work session, oldest first. */
+  sessions: WorkSession[];
   schedules: Schedule[];
   /** The bylines besides the lead's. */
   roles: Byline[];
@@ -112,7 +149,7 @@ function ticketOf(id: FixtureId, source: Source, patch: Partial<Ticket> = {}): T
     answerNote: "",
     delivered: false,
     returns: [],
-    sessions: 0,
+    notes: [],
     unread: true,
     snoozed: false,
     archived: false,
@@ -122,10 +159,24 @@ function ticketOf(id: FixtureId, source: Source, patch: Partial<Ticket> = {}): T
 
 const working = (patch: Partial<Ticket> = {}): Partial<Ticket> => ({
   status: "in_progress",
-  sessions: 1,
   unread: false,
   ...patch,
 });
+
+/** A session's conversation so far, as the steps a ticket has taken would have written it. */
+function replay(ticket: Ticket): SessionMessage[] {
+  const messages: SessionMessage[] = [{ from: "brief" }];
+  let line = 0;
+  for (const step of scriptOf(ticket).slice(0, ticket.step)) {
+    messages.push(
+      step === "progress" ? { from: "agent", step, line: line++ } : { from: "agent", step },
+    );
+    if (step === "ask" && ticket.answer !== null) {
+      messages.push({ from: "person", answer: ticket.answer, note: ticket.answerNote });
+    }
+  }
+  return messages;
+}
 
 /** Before anything: the person has not said what the company should look after. */
 export function freshState(): CompanyState {
@@ -133,6 +184,7 @@ export function freshState(): CompanyState {
     stage: "setup",
     mission: null,
     tickets: [],
+    sessions: [],
     schedules: [],
     roles: [],
     chat: [],
@@ -143,53 +195,59 @@ export function freshState(): CompanyState {
 
 /** A week in: a question and a delivery wait, a patrol has proposed one thing, the rest is quiet. */
 export function weekState(): CompanyState {
+  const tickets: Ticket[] = [
+    ticketOf("patrol", "lead", { status: "done", unread: false }),
+    ticketOf("verifier", "lead", { status: "done", unread: false }),
+    ticketOf("survey", "lead", {
+      status: "done",
+      step: 3,
+      progress: 2,
+      delivered: true,
+      unread: false,
+    }),
+    ticketOf("types", "patrol", { status: "rejected", unread: false }),
+    ticketOf("timeout", "patrol", {
+      status: "done",
+      step: 2,
+      progress: 1,
+      delivered: true,
+      unread: false,
+      snoozed: true,
+    }),
+    ticketOf("docs", "person", {
+      status: "done",
+      step: 2,
+      progress: 1,
+      delivered: true,
+      unread: false,
+    }),
+    ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
+    ticketOf("connection", "person", {
+      status: "review",
+      step: 3,
+      progress: 2,
+      delivered: true,
+    }),
+    ticketOf(
+      "csv",
+      "person",
+      working({ step: 2, progress: 1, asked: true, blockedBy: PERSON, unread: true }),
+    ),
+    ticketOf("flaky", "patrol"),
+  ];
   return {
     stage: "running",
     mission: null,
-    tickets: [
-      ticketOf("patrol", "lead", { status: "done", unread: false }),
-      ticketOf("verifier", "lead", { status: "done", unread: false }),
-      ticketOf("survey", "lead", {
-        status: "done",
-        step: 3,
-        progress: 2,
-        delivered: true,
-        sessions: 1,
-        unread: false,
-      }),
-      ticketOf("types", "patrol", { status: "rejected", unread: false }),
-      ticketOf("timeout", "patrol", {
-        status: "done",
-        step: 2,
-        progress: 1,
-        delivered: true,
-        sessions: 1,
-        unread: false,
-        snoozed: true,
-      }),
-      ticketOf("docs", "person", {
-        status: "done",
-        step: 2,
-        progress: 1,
-        delivered: true,
-        sessions: 1,
-        unread: false,
-      }),
-      ticketOf("jitter", "person", working({ step: 1, progress: 1 })),
-      ticketOf("connection", "person", {
-        status: "review",
-        step: 3,
-        progress: 2,
-        delivered: true,
-        sessions: 1,
-      }),
-      ticketOf(
-        "csv",
-        "person",
-        working({ step: 2, progress: 1, asked: true, blockedBy: PERSON, unread: true }),
-      ),
-      ticketOf("flaky", "patrol"),
-    ],
+    tickets,
+    // One session for every ticket whose work has started, its conversation as far as the work.
+    sessions: tickets
+      .filter((ticket) => ticket.step > 0)
+      .map((ticket) => ({
+        id: `${ticket.id}-1`,
+        ticket: ticket.id,
+        n: 1,
+        messages: replay(ticket),
+      })),
     schedules: [{ id: "patrol", auto: false }],
     roles: ["engineer", "verifier"],
     chat: [
@@ -207,6 +265,53 @@ const withTicket = (state: CompanyState, id: string, patch: Partial<Ticket>): Co
   ...state,
   tickets: state.tickets.map((ticket) => (ticket.id === id ? { ...ticket, ...patch } : ticket)),
 });
+
+/** A ticket's work sessions, oldest first. */
+export const sessionsOf = (state: CompanyState, ticketId: string): WorkSession[] =>
+  state.sessions.filter((session) => session.ticket === ticketId);
+
+/**
+ * Where a session stands. Only a ticket's latest session is live, and only while its ticket is in
+ * progress or in review; a live session waits when its ticket waits on the person.
+ */
+export function sessionStatus(state: CompanyState, session: WorkSession): SessionStatus {
+  const ticket = find(state, session.ticket);
+  const latest = sessionsOf(state, session.ticket).at(-1);
+  if (ticket === undefined || latest?.id !== session.id) return "ended";
+  if (ticket.status !== "in_progress" && ticket.status !== "review") return "ended";
+  const wait = waitOf(ticket);
+  return wait === "answer" || wait === "review" ? wait : "running";
+}
+
+/** The sessions that are not over, oldest first. */
+export const liveSessions = (state: CompanyState): WorkSession[] =>
+  state.sessions.filter((session) => sessionStatus(state, session) !== "ended");
+
+/** Open a ticket's next work session, handed the ticket. */
+function openSession(state: CompanyState, ticketId: string): CompanyState {
+  const n = sessionsOf(state, ticketId).length + 1;
+  return {
+    ...state,
+    sessions: [
+      ...state.sessions,
+      { id: `${ticketId}-${n}`, ticket: ticketId, n, messages: [{ from: "brief" }] },
+    ],
+  };
+}
+
+/** Add lines to a ticket's latest session. */
+function tell(state: CompanyState, ticketId: string, ...messages: SessionMessage[]): CompanyState {
+  const latest = sessionsOf(state, ticketId).at(-1);
+  if (latest === undefined) return state;
+  return {
+    ...state,
+    sessions: state.sessions.map((session) =>
+      session.id === latest.id
+        ? { ...session, messages: [...session.messages, ...messages] }
+        : session,
+    ),
+  };
+}
 
 /** The steps a ticket's sessions take: its own, then one round of rework for every time it was sent back. */
 export function scriptOf(ticket: Ticket): readonly ScriptStep[] {
@@ -234,11 +339,11 @@ export function startCompany(state: CompanyState, mission: string): CompanyState
   };
 }
 
-/** Accept a proposal: work starts, a schedule is switched on, or a role joins. */
+/** Accept a proposal: a task's work session opens, a schedule is switched on, or a role joins. */
 export function acceptTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "accept" || ticket.fixture === null) return state;
-  if (ticket.kind === "task") return withTicket(state, id, working());
+  if (ticket.kind === "task") return openSession(withTicket(state, id, working()), id);
   const settled = withTicket(state, id, { status: "done", unread: false });
   return ticket.kind === "schedule"
     ? { ...settled, schedules: [...state.schedules, { id: ticket.fixture, auto: false }] }
@@ -253,8 +358,8 @@ export function rejectTicket(state: CompanyState, id: string): CompanyState {
 }
 
 /**
- * Answer a ticket's question. The answer is written to the ticket first; then the ticket is
- * unblocked, a new work session opens, and the lead records the decision.
+ * Answer a ticket's question. The answer is written to the ticket first; then it goes into the
+ * session that asked, as the person's message, and that session carries on.
  */
 export function answerTicket(
   state: CompanyState,
@@ -264,36 +369,51 @@ export function answerTicket(
 ): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "answer" || !ticket.asked) return state;
+  const said = note.trim();
   const answered = withTicket(state, id, {
     asked: false,
     answer: option,
-    answerNote: note.trim(),
+    answerNote: said,
     blockedBy: undefined,
-    sessions: ticket.sessions + 1,
     unread: false,
   });
-  return { ...answered, chat: [...state.chat, { from: "lead", line: "recorded", tickets: [id] }] };
+  return tell(answered, id, { from: "person", answer: option, note: said });
 }
 
-/** Accept a delivery. */
+/** Accept a delivery: the ticket is done and its session is over. */
 export function approveTicket(state: CompanyState, id: string): CompanyState {
   const ticket = find(state, id);
   if (ticket === undefined || waitOf(ticket) !== "review") return state;
   return withTicket(state, id, { status: "done", unread: false });
 }
 
-/** Send a delivery back with what to change: a new work session takes it up. */
+/** Send a delivery back with what to change: the note goes into the session that delivered it. */
 export function returnTicket(state: CompanyState, id: string, note: string): CompanyState {
   const ticket = find(state, id);
   const said = note.trim();
   if (ticket === undefined || waitOf(ticket) !== "review" || said === "") return state;
-  return withTicket(state, id, {
+  const returned = withTicket(state, id, {
     status: "in_progress",
     delivered: false,
     returns: [...ticket.returns, said],
-    sessions: ticket.sessions + 1,
     unread: false,
   });
+  return tell(returned, id, { from: "person", sendBack: said });
+}
+
+/**
+ * Something the person says to a live work session, without the lead. The agent answers in the
+ * session, and the words are written to the ticket, so what was settled there is on record. A
+ * question the session asked still waits for its answer.
+ */
+export function sayInSession(state: CompanyState, sessionId: string, text: string): CompanyState {
+  const said = text.trim();
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (session === undefined || said === "" || sessionStatus(state, session) === "ended")
+    return state;
+  const ticket = find(state, session.ticket)!;
+  const noted = withTicket(state, ticket.id, { notes: [...ticket.notes, said], unread: false });
+  return tell(noted, ticket.id, { from: "person", text: said }, { from: "agent", step: "noted" });
 }
 
 /** Opening a ticket reads it. */
@@ -321,7 +441,7 @@ export function triageTicket(
     : withTicket(state, id, { archived: true, snoozed: false, unread: false });
 }
 
-/** Something said to the lead: it files a ticket, already in progress, and says so. */
+/** Something said to the lead: it files a ticket, opens its work session, and says so. */
 export function sayToLead(state: CompanyState, text: string): CompanyState {
   const said = text.trim();
   if (state.stage !== "running" || said === "") return state;
@@ -334,16 +454,19 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
     owner: "engineer",
     priority: "P2",
   };
-  return {
-    ...state,
-    said: state.said + 1,
-    tickets: [...state.tickets, ticket],
-    chat: [
-      ...state.chat,
-      { from: "person", text: said },
-      { from: "lead", line: "filed", tickets: [id] },
-    ],
-  };
+  return openSession(
+    {
+      ...state,
+      said: state.said + 1,
+      tickets: [...state.tickets, ticket],
+      chat: [
+        ...state.chat,
+        { from: "person", text: said },
+        { from: "lead", line: "filed", tickets: [id] },
+      ],
+    },
+    id,
+  );
 }
 
 /** Whether a schedule's tickets start work directly. */
@@ -356,8 +479,10 @@ export function setScheduleAuto(state: CompanyState, id: FixtureId, auto: boolea
   };
 }
 
-/** One step of a ticket's work session: a progress line, its question, or its delivery. */
-function stepTicket(ticket: Ticket): { ticket: Ticket; event: PassEvent } | null {
+/** One step of a ticket's work: a progress line, its question, or its delivery, and what the session says. */
+function stepTicket(
+  ticket: Ticket,
+): { ticket: Ticket; event: PassEvent; message: SessionMessage } | null {
   if (ticket.status !== "in_progress" || waitOf(ticket) !== null) return null;
   const step = scriptOf(ticket)[ticket.step];
   if (step === undefined) return null;
@@ -366,6 +491,7 @@ function stepTicket(ticket: Ticket): { ticket: Ticket; event: PassEvent } | null
     return {
       ticket: { ...next, progress: ticket.progress + 1 },
       event: { kind: "progress", id: ticket.id },
+      message: { from: "agent", step, line: ticket.progress },
     };
   }
   // The two steps that leave the ticket waiting: it turns unread, and comes back from "later".
@@ -374,10 +500,12 @@ function stepTicket(ticket: Ticket): { ticket: Ticket; event: PassEvent } | null
     ? {
         ticket: { ...waiting, asked: true, blockedBy: PERSON },
         event: { kind: "asked", id: ticket.id },
+        message: { from: "agent", step },
       }
     : {
         ticket: { ...waiting, status: "review", delivered: true },
         event: { kind: "delivered", id: ticket.id },
+        message: { from: "agent", step },
       };
 }
 
@@ -388,20 +516,29 @@ function stepTicket(ticket: Ticket): { ticket: Ticket; event: PassEvent } | null
 export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
   if (state.stage !== "running") return { state, events: [] };
   const events: PassEvent[] = [];
+  const said: [string, SessionMessage][] = [];
   const tickets = state.tickets.map((ticket) => {
     const stepped = stepTicket(ticket);
     if (stepped === null) return ticket;
     events.push(stepped.event);
+    said.push([ticket.id, stepped.message]);
     return stepped.ticket;
   });
-  if (events.length > 0) return { state: { ...state, tickets }, events };
+  if (events.length > 0) {
+    const moved = said.reduce((next, [id, message]) => tell(next, id, message), {
+      ...state,
+      tickets,
+    });
+    return { state: moved, events };
+  }
 
   const schedule = state.schedules[0];
   const found = state.pool[0];
   if (schedule === undefined || found === undefined) return { state, events };
   const filed = schedule.auto ? ticketOf(found, "patrol", working()) : ticketOf(found, "patrol");
+  const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
   return {
-    state: { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) },
+    state: schedule.auto ? openSession(next, found) : next,
     events: [{ kind: schedule.auto ? "started" : "proposed", id: found }],
   };
 }
@@ -426,11 +563,12 @@ export function inboxCounts(state: CompanyState): Record<InboxView, number> {
 }
 
 /** What a ticket's sessions have cost so far: its sample's figure once work has started. */
-export function costOf(ticket: Ticket): number {
-  if (ticket.sessions === 0) return 0;
-  return ticket.fixture === null ? 0.05 * ticket.sessions : FIXTURES[ticket.fixture].cost;
+export function costOf(state: CompanyState, ticket: Ticket): number {
+  const sessions = sessionsOf(state, ticket.id).length;
+  if (sessions === 0) return 0;
+  return ticket.fixture === null ? 0.05 * sessions : FIXTURES[ticket.fixture].cost;
 }
 
 /** What the company has spent: every ticket's cost. */
 export const spendOf = (state: CompanyState): number =>
-  state.tickets.reduce((sum, ticket) => sum + costOf(ticket), 0);
+  state.tickets.reduce((sum, ticket) => sum + costOf(state, ticket), 0);

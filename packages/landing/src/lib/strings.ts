@@ -967,7 +967,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     draft: "规格草案",
     headline: "只读工单，不读对话",
     subline:
-      "你只和一个主理 Agent 说话。它把工作记成工单，交给各自独立的工作会话去做，只在三个时刻找你：接受、回答、验收。",
+      "你对主理 Agent 说一句话，它把工作记成工单，交给工单自己的工作会话去做。工单只在三个时刻找你：接受、回答、验收。想看过程，或者直接交代，打开那个会话。",
     /** The sentence before the link to the shipped mode's docs page, and the full stop after it. */
     specNote: "这一页是下一版公司模式的规格，实现以它为准。已发布的版本见",
     currentDocs: "公司模式文档",
@@ -1003,12 +1003,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         {
           topic: "和谁说话",
           now: "全员频道、各条工作线的频道，以及每名员工的工位。",
-          spec: "只和主理说。你说的话变成一张工单。",
+          spec: "新的事对主理说，它记成一张工单。某张工单要细谈，直接在它的工作会话里说，说的话也记进工单。",
         },
         {
           topic: "侧栏",
           now: "六个页面、频道列表，每名员工一个工位。",
-          spec: "收件箱、主理、工单；其余四页收起，下面只列正在运行的工作会话。",
+          spec: "收件箱、主理、工单；其余四页收起，下面列还没结束的工作会话，点开是对话本身。",
         },
         {
           topic: "初始化",
@@ -1131,8 +1131,8 @@ history:
           text: "数据库只存能从文件重建的缓存，以及每个人的已读和处置。手工改一个工单文件，下一轮就生效。",
         },
         one_front: {
-          rule: "工作会话不能给人发消息。",
-          text: "它对人的输出只有三处：工单的 ask、Result 和 deliverables。和你对话的只有主理。",
+          rule: "工作会话不主动找人。",
+          text: "它要人做的事只写进工单：ask、Result 和 deliverables，收件箱读的就是这些。你打开会话和它说话时，它在会话里回你。",
         },
         three_points: {
           rule: "只有三种事件把工单标为未读。",
@@ -1144,7 +1144,7 @@ history:
         },
         answer_recorded: {
           rule: "答案先落盘，工作再继续。",
-          text: "回答先写进工单的 Decisions 和 history，然后才解除阻塞、开新的工作会话。",
+          text: "回答先写进工单的 Decisions 和 history，再作为你的消息送进提问的那个工作会话，它在同一段上下文里接着做。",
         },
         observe_first: {
           rule: "日程提出的工单，接受之前不开会话。",

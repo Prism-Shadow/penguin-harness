@@ -11,10 +11,16 @@
  *   accepting a role adds its byline; rejecting it starts nothing and keeps it on record.
  * - Given time passing, a ticket turns unread only on the step that leaves it waiting on the
  *   person, and that step brings it back from "later".
- * - Given a ticket stopped on its question, time passing does not move it; the answer is on the
- *   ticket when work resumes in a new session, and the lead says it recorded the decision.
- * - Given a delivery, accepting it closes the ticket; sending it back needs a note, opens a new
- *   session and ends in a second delivery.
+ * - Given a ticket stopped on its question, time passing does not move it; the answer is written
+ *   to the ticket and goes into the same session as the person's message, no second session opens,
+ *   and that session carries on to its delivery.
+ * - Given a delivery, accepting it closes the ticket and ends its session; sending it back needs a
+ *   note, which goes into the session that delivered, and ends in a second delivery there.
+ * - Given a work session, the person can talk to it directly: the agent replies in the session
+ *   and the words are written to the ticket; an open question still waits; a session that is over,
+ *   or an empty message, takes nothing.
+ * - Given a session of a ticket, it is live only while it is the ticket's latest and the ticket is
+ *   in progress or in review, and it waits when its ticket waits on the person.
  * - Given an action the ticket does not wait for, nothing changes.
  * - Given a ticket that waits on the person, it cannot be snoozed or archived; one that does not
  *   can, and restoring it puts it back where its work is.
@@ -31,9 +37,13 @@ import {
   freshState,
   inboxCounts,
   letTimePass,
+  liveSessions,
   rejectTicket,
   returnTicket,
+  sayInSession,
   sayToLead,
+  sessionsOf,
+  sessionStatus,
   setScheduleAuto,
   startCompany,
   ticketsIn,
@@ -45,6 +55,15 @@ import { inboxViewOf, waitOf } from "../src/company/spec";
 
 const get = (state: CompanyState, id: string): Ticket =>
   state.tickets.find((ticket) => ticket.id === id)!;
+
+/** How many work sessions a ticket has. */
+const sessionCount = (state: CompanyState, id: string) => sessionsOf(state, id).length;
+
+/** What a ticket's latest session has said, by who said it. */
+const transcript = (state: CompanyState, id: string) =>
+  sessionsOf(state, id)
+    .at(-1)!
+    .messages.map((message) => (message.from === "agent" ? `agent:${message.step}` : message.from));
 
 /** Let time pass until nothing moves, collecting what happened. */
 function settle(state: CompanyState) {
@@ -106,7 +125,7 @@ describe("setting a company up", () => {
     expect(state.tickets.every((ticket) => waitOf(ticket) === "accept" && ticket.unread)).toBe(
       true,
     );
-    expect(state.tickets.every((ticket) => ticket.sessions === 0)).toBe(true);
+    expect(state.sessions).toEqual([]);
     expect(state.schedules).toEqual([]);
     expect(state.roles).toEqual([]);
     expect(letTimePass(state).events).toEqual([]);
@@ -115,13 +134,11 @@ describe("setting a company up", () => {
   it("starts work, switches a schedule on, or adds a role, by what was accepted", () => {
     let state = startCompany(freshState(), "Look after the repository");
     state = acceptTicket(state, "survey");
-    expect(get(state, "survey")).toMatchObject({
-      status: "in_progress",
-      sessions: 1,
-      unread: false,
-    });
+    expect(get(state, "survey")).toMatchObject({ status: "in_progress", unread: false });
+    expect(transcript(state, "survey")).toEqual(["brief"]);
     state = acceptTicket(state, "patrol");
     expect(get(state, "patrol").status).toBe("done");
+    expect(sessionCount(state, "patrol")).toBe(0);
     expect(state.schedules).toEqual([{ id: "patrol", auto: false }]);
     state = acceptTicket(state, "verifier");
     expect(state.roles).toEqual(["verifier"]);
@@ -129,7 +146,8 @@ describe("setting a company up", () => {
 
   it("keeps a rejected proposal on record with nothing started", () => {
     const state = rejectTicket(startCompany(freshState(), "Look after the repository"), "patrol");
-    expect(get(state, "patrol")).toMatchObject({ status: "rejected", sessions: 0, unread: false });
+    expect(get(state, "patrol")).toMatchObject({ status: "rejected", unread: false });
+    expect(sessionCount(state, "patrol")).toBe(0);
     expect(state.schedules).toEqual([]);
     expect(inboxViewOf(get(state, "patrol"))).toBe("handled");
   });
@@ -154,45 +172,65 @@ describe("time passing", () => {
 
   it("does not move a ticket that is stopped on its question", () => {
     const { state } = settle(weekState());
-    expect(get(state, "csv")).toMatchObject({ asked: true, step: 2, progress: 1, sessions: 1 });
+    expect(get(state, "csv")).toMatchObject({ asked: true, step: 2, progress: 1 });
     expect(waitOf(get(state, "csv"))).toBe("answer");
+    expect(transcript(state, "csv")).toEqual(["brief", "agent:progress", "agent:ask"]);
   });
 });
 
 describe("the three things a person does", () => {
-  it("records the answer, then resumes in a new session, and the lead says so", () => {
-    const answered = answerTicket(weekState(), "csv", 1, " keep memory flat ");
+  it("records the answer on the ticket and sends it into the session that asked", () => {
+    const before = weekState();
+    const answered = answerTicket(before, "csv", 1, " keep memory flat ");
     expect(get(answered, "csv")).toMatchObject({
       asked: false,
       answer: 1,
       answerNote: "keep memory flat",
-      sessions: 2,
       unread: false,
     });
     expect(waitOf(get(answered, "csv"))).toBeNull();
-    expect(answered.chat.at(-1)).toEqual({ from: "lead", line: "recorded", tickets: ["csv"] });
+    expect(sessionCount(answered, "csv")).toBe(1);
+    expect(sessionsOf(answered, "csv")[0]!.messages.at(-1)).toEqual({
+      from: "person",
+      answer: 1,
+      note: "keep memory flat",
+    });
+    expect(answered.chat).toEqual(before.chat);
     const { state, events } = settle(answered);
     expect(events.filter((event) => event.id === "csv").map((event) => event.kind)).toEqual([
       "progress",
       "delivered",
     ]);
     expect(get(state, "csv")).toMatchObject({ status: "review", answer: 1 });
+    expect(transcript(state, "csv")).toEqual([
+      "brief",
+      "agent:progress",
+      "agent:ask",
+      "person",
+      "agent:progress",
+      "agent:deliver",
+    ]);
   });
 
   it("closes a delivery the person accepts", () => {
     const state = approveTicket(weekState(), "connection");
     expect(get(state, "connection")).toMatchObject({ status: "done", unread: false });
     expect(inboxViewOf(get(state, "connection"))).toBe("handled");
+    expect(sessionStatus(state, sessionsOf(state, "connection")[0]!)).toBe("ended");
   });
 
-  it("sends a delivery back only with a note, to a new session that delivers again", () => {
+  it("sends a delivery back only with a note, into the session that delivers again", () => {
     expect(returnTicket(weekState(), "connection", "  ")).toEqual(weekState());
     const returned = returnTicket(weekState(), "connection", "Name the proxy case too");
     expect(get(returned, "connection")).toMatchObject({
       status: "in_progress",
       delivered: false,
       returns: ["Name the proxy case too"],
-      sessions: 2,
+    });
+    expect(sessionCount(returned, "connection")).toBe(1);
+    expect(sessionsOf(returned, "connection")[0]!.messages.at(-1)).toEqual({
+      from: "person",
+      sendBack: "Name the proxy case too",
     });
     const { state } = settle(returned);
     expect(get(state, "connection")).toMatchObject({
@@ -241,9 +279,9 @@ describe("talking to the lead", () => {
       title: "Add a dark-mode screenshot to the README",
       source: "person",
       status: "in_progress",
-      sessions: 1,
       unread: false,
     });
+    expect(transcript(state, filed.id)).toEqual(["brief"]);
     expect(state.chat.slice(-2)).toEqual([
       { from: "person", text: "Add a dark-mode screenshot to the README" },
       { from: "lead", line: "filed", tickets: [filed.id] },
@@ -254,6 +292,47 @@ describe("talking to the lead", () => {
   it("files nothing for an empty message, or before the company is set up", () => {
     expect(sayToLead(weekState(), " ")).toEqual(weekState());
     expect(sayToLead(freshState(), "Fix it")).toEqual(freshState());
+  });
+});
+
+describe("talking to a work session directly", () => {
+  it("answers in the session and writes the words to the ticket", () => {
+    const state = sayInSession(weekState(), "jitter-1", "  Try 1366 wide as well ");
+    expect(transcript(state, "jitter")).toEqual([
+      "brief",
+      "agent:progress",
+      "person",
+      "agent:noted",
+    ]);
+    expect(get(state, "jitter").notes).toEqual(["Try 1366 wide as well"]);
+    expect(state.chat).toEqual(weekState().chat);
+  });
+
+  it("leaves an open question waiting for its answer", () => {
+    const state = sayInSession(weekState(), "csv-1", "Which one is faster?");
+    expect(waitOf(get(state, "csv"))).toBe("answer");
+    expect(sessionStatus(state, sessionsOf(state, "csv")[0]!)).toBe("answer");
+  });
+
+  it("takes nothing in a session that is over, or an empty message", () => {
+    const state = weekState();
+    expect(sessionStatus(state, sessionsOf(state, "docs")[0]!)).toBe("ended");
+    expect(sayInSession(state, "docs-1", "One more thing")).toBe(state);
+    expect(sayInSession(state, "jitter-1", "   ")).toBe(state);
+    expect(sayInSession(state, "nowhere", "Hello")).toBe(state);
+  });
+});
+
+describe("which sessions are live", () => {
+  it("lists the sessions of tickets at work or in review, with what they wait for", () => {
+    const state = weekState();
+    expect(
+      liveSessions(state).map((session) => [session.ticket, sessionStatus(state, session)]),
+    ).toEqual([
+      ["jitter", "running"],
+      ["connection", "review"],
+      ["csv", "answer"],
+    ]);
   });
 });
 
@@ -273,14 +352,16 @@ describe("a patrol", () => {
   it("proposes what it finds, with no session, while it only proposes", () => {
     const { state, events } = letTimePass(quiet());
     expect(events).toEqual([{ kind: "proposed", id: "lint" }]);
-    expect(get(state, "lint")).toMatchObject({ status: "proposed", sessions: 0, unread: true });
+    expect(get(state, "lint")).toMatchObject({ status: "proposed", unread: true });
+    expect(sessionCount(state, "lint")).toBe(0);
     expect(letTimePass(state).events).toEqual([]);
   });
 
   it("starts work directly once it is automatic, and reaches the person at the delivery", () => {
     const { state, events } = letTimePass(setScheduleAuto(quiet(), "patrol", true));
     expect(events).toEqual([{ kind: "started", id: "lint" }]);
-    expect(get(state, "lint")).toMatchObject({ status: "in_progress", sessions: 1, unread: false });
+    expect(get(state, "lint")).toMatchObject({ status: "in_progress", unread: false });
+    expect(sessionCount(state, "lint")).toBe(1);
     const done = settle(state);
     expect(done.events.map((event) => event.kind)).toEqual(["progress", "delivered"]);
     expect(get(done.state, "lint")).toMatchObject({ status: "review", unread: true });

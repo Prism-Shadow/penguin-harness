@@ -76,8 +76,11 @@ export const zh = {
     source: "来源",
     decisions: "决定",
     returned: "打回",
-    sessionLine: (n: number) => `工作会话 ${n}`,
-    sessionsEmpty: "还没有工作会话",
+    sessionsEmpty: "还没有工作会话。接受后开一个。",
+    /** A session's row on the ticket: who works in it and how long it is. */
+    sessionRow: (n: number, owner: string, messages: number) =>
+      `会话 ${n} · ${owner} · ${messages} 条消息`,
+    saidInSession: "你在会话里说：",
     later: "稍后",
     archive: "归档",
     restore: "移回收件箱",
@@ -89,14 +92,13 @@ export const zh = {
   },
   lead: {
     title: "主理",
-    info: "唯一常驻、唯一和你对话的 Agent。它把你的话记成工单，不亲自干活。",
+    info: "常驻的 Agent。你说的事它记成工单，交给工作会话去做，自己不干活。",
     placeholder: "告诉主理要做什么，Enter 发送",
     send: "发送",
     empty: "还没有对话。告诉主理要做什么，它会记成工单。",
     lines: {
       proposals: "我先提三件事，都在收件箱里。你逐张接受或驳回，接受的才会开始。",
-      filed: "记成工单了，已经开工。有问题或做完时，它会出现在收件箱里。",
-      recorded: "这个决定我记进手册了，以后同类的问题先查它。",
+      filed: "记成工单了，已经开了工作会话。有问题或做完时，它会出现在收件箱里。",
     },
   },
   setup: {
@@ -110,6 +112,20 @@ export const zh = {
       "让新用户顺利完成首次配置",
     ],
     examplesLabel: "示例",
+  },
+  session: {
+    info: "这是 Agent 干这张工单时的对话。工单上只记它写回来的结论；想看过程或者直接交代，在这里说。",
+    ticket: "工单",
+    status: { running: "运行中", ended: "已结束" },
+    brief: "主理把这张工单交给了这个会话。",
+    answered: (label: string) => `选「${label}」。`,
+    sentBack: (note: string) => `打回：${note}`,
+    noted: "收到，这句话我也记进工单了。",
+    waitingAnswer: "这个会话停在问题上，等你回答。",
+    waitingReview: "做完了，等你验收。",
+    ended: "这个会话已经结束。工单的结论在工单里。",
+    placeholder: "直接和这个会话说，Enter 发送",
+    send: "发送",
   },
   schedule: {
     info: "日程是工单的来源之一。新日程只提议；你信得过它之后，可以让它提出的工单直接开工。",

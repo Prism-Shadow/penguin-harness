@@ -970,7 +970,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     draft: "Draft spec",
     headline: "Read tickets, not transcripts",
     subline:
-      "You talk to one lead agent. It files work as tickets, hands each to a work session of its own, and comes to you at three moments only: to accept, to answer, to review.",
+      "You tell the lead agent what you want. It files the work as a ticket and hands it to the ticket's own work session. A ticket comes to you at three moments only: to accept, to answer, to review. To watch the work, or to say something directly, open that session.",
     specNote:
       "This page specifies the next company mode, and the implementation follows it. For what ships today, see ",
     currentDocs: "the company mode docs",
@@ -1003,12 +1003,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Who you talk to",
           now: "The all-hands channel, a channel per line of work, and every employee's desk.",
-          spec: "The lead only. What you say becomes a ticket.",
+          spec: "Something new goes to the lead, which files it as a ticket. To discuss one ticket, talk in its work session; what you say there is written on the ticket too.",
         },
         {
           topic: "The sidebar",
           now: "Six pages, the channel list, and a desk per employee.",
-          spec: "Inbox, Lead, Tickets; the other four pages fold away, and only the running work sessions are listed below.",
+          spec: "Inbox, Lead, Tickets; the other four pages fold away, and below them the work sessions that are not over, each opening the conversation itself.",
         },
         {
           topic: "Setting up",
@@ -1135,8 +1135,8 @@ The export page offers CSV as well as JSON.
           text: "The database holds caches it can rebuild from the files, plus each person's read state and triage. Edit a ticket file by hand and the next pass takes it.",
         },
         one_front: {
-          rule: "A work session cannot message a person.",
-          text: "It reaches people in three places only: the ticket's ask, its Result and its deliverables. Only the lead talks to you.",
+          rule: "A work session does not reach out to a person.",
+          text: "What it needs from people goes on the ticket only: the ask, the Result and the deliverables, which is what the inbox reads. When you open a session and talk to it, it answers you there.",
         },
         three_points: {
           rule: "Only three events mark a ticket unread.",
@@ -1148,7 +1148,7 @@ The export page offers CSV as well as JSON.
         },
         answer_recorded: {
           rule: "The answer is on disk before work resumes.",
-          text: "It goes into the ticket's Decisions and history first; only then is the ticket unblocked and a new work session opened.",
+          text: "It goes into the ticket's Decisions and history first, then into the work session that asked, as your message; that session carries on in the same context.",
         },
         observe_first: {
           rule: "A schedule's ticket gets no session before it is accepted.",
