@@ -69,10 +69,6 @@ export const en: Words = {
     schedules: "Schedules",
     schedulesEmpty:
       "No schedules configured. Schedules proposed by the lead appear here once accepted.",
-    retroTitle: "Retrospective",
-    retro: (every: number) => `Retrospective: every ${every} closed tickets`,
-    retroDefault: "Default is 10; set to 5 for this organization",
-    retroProgress: (closed: number, every: number) => `${closed} of ${every} closed`,
   },
   ticket: {
     needsYou: "Waiting on you",
@@ -179,7 +175,11 @@ export const en: Words = {
   },
   schedule: {
     info: "Schedules trigger tickets on a recurring timer. Defaults to proposal mode; auto-start can be turned on once you trust it.",
-    daily: "Daily at 09:00",
+    names: {
+      patrol: "Daily patrol: new issues and CI",
+      retro: "Weekly retrospective: last week's closed tickets",
+    },
+    when: { patrol: "Daily at 09:00", retro: "Mondays at 09:00" },
     auto: "Auto-start generated tickets",
     autoOn: "Auto-start",
     autoOff: "Proposal only",
@@ -365,7 +365,7 @@ export const en: Words = {
           "Lessons: deliveries that were sent back, what was missed, and how to avoid it next time.",
           "Skills: fixed ways of working distilled from lessons, installed in an employee's own skills.",
           "Documents: what tickets delivered, such as the state of the repository.",
-          "Retrospectives: after each batch of closed tickets, the lead looks back at how many passed on first review, how many were sent back, how often you were asked and what it cost, and proposes what to change.",
+          "Retrospectives: every Monday the lead looks back at the tickets closed the week before: how many passed on first review, how many were sent back, how often you were asked and what it cost, and proposes what to change.",
         ],
       },
       state: {

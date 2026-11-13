@@ -1053,8 +1053,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           ],
         },
         {
-          title: "Every N closed tickets",
-          when: "N defaults to 10; retrospective run by lead",
+          title: "Every week",
+          when: "A schedule of the lead's own, Mondays by default",
           items: [
             "Compares the share accepted at first review, send-backs, questions and cost against the last one.",
             "Records observed outcomes from previously accepted changes.",
@@ -1194,7 +1194,6 @@ The export page offers CSV as well as JSON.
           "Later and archive actions do not modify tasks; a ticket waiting on you cannot be deferred or archived.",
         own_skill_kept: "An employee's own Skill survives plugin updates.",
         verified_first: "On a ticket with a verifier, a delivery reaches you only once verified.",
-        retro_by_count: "Retrospectives are triggered by the count of closed tickets.",
         snapshot_first: "The employees a change touches are snapshotted before it is applied.",
       },
     },

@@ -1,7 +1,8 @@
 /**
  * The left column: the inbox as the company's whole navigation. At its head, the line to the lead,
  * for anything new (⌘K or Ctrl+K from anywhere). Under it, the tickets in three runs: what waits
- * on the reader, what is in progress, and the schedules that file tickets on their own. Each
+ * on the reader, what is in progress, and the schedules: the daily patrol and the weekly
+ * retrospective, each of which files tickets on its own. Each
  * ticket row reads like a mail: its title, and under it what it asks, what it delivered, or its
  * last progress line. The reader's own piles (later, handled, archived) are one line at the foot,
  * and each opens in the column's place, with the way back.
@@ -18,8 +19,7 @@ import {
   SidebarNavArea,
 } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
-import { RETRO_EVERY } from "./fixtures";
-import { closedSinceRetro, inboxCounts, ticketsIn } from "./model";
+import { inboxCounts, ticketsIn } from "./model";
 import type { CompanyState, Ticket } from "./model";
 import { PersonAvatar } from "./people";
 import { waitOf } from "./spec";
@@ -190,17 +190,12 @@ export function InboxList({
                 active={schedulesOpen}
                 onClick={onSchedules}
                 leading={<PersonAvatar byline="lead" size={16} />}
-                title={W.tickets[schedule.id].title}
-                line={schedule.auto ? W.schedule.autoOn : W.schedule.autoOff}
+                title={W.schedule.names[schedule.id]}
+                line={`${W.schedule.when[schedule.id]} · ${
+                  schedule.auto ? W.schedule.autoOn : W.schedule.autoOff
+                }`}
               />
             ))}
-            <Row
-              active={schedulesOpen}
-              onClick={onSchedules}
-              leading={<PersonAvatar byline="lead" size={16} />}
-              title={W.inbox.retroTitle}
-              line={W.inbox.retroProgress(closedSinceRetro(state), RETRO_EVERY)}
-            />
           </div>
         </section>
       )}

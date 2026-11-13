@@ -5,8 +5,8 @@
  * - Given a ticket, it waits on a person only while proposed, in review, or blocked by a person,
  *   and the inbox lists it in exactly one view: the reader's triage first, then what waits, what
  *   an agent has, and what is settled.
- * - Given the first sentence, the lead answers with proposals only: nothing has a session, no
- *   schedule runs, and the team is the lead and one engineer until a proposed role is accepted;
+ * - Given the first sentence, the lead answers with proposals only: nothing has a session, the
+ *   only schedule is the weekly retrospective, with nothing to look back on yet, and the team is the lead and one engineer until a proposed role is accepted;
  *   an empty sentence starts nothing.
  * - Given a proposal, accepting a task starts its work, accepting a schedule switches it on, and
  *   accepting a role adds its byline; rejecting it starts nothing and keeps it on record.
@@ -34,9 +34,11 @@
  *   nothing.
  * - Given work sent back, or something said in a session, the employee notes it in its own skill
  *   with no approval; accepting a delivery notes nothing.
- * - Given tickets closing, a retrospective comes due once enough have closed since the last one:
- *   it is the whole of that pass, it counts what its window says, files itself in the handbook,
- *   and its proposals wait on the person; a proposal already on the board is not filed twice.
+ * - Given the work quiet, time runs on to the next schedule, the weekly retrospective and the
+ *   patrol taking turns: a retrospective looks back over what closed since the last one, files
+ *   itself in the handbook, and its proposals wait on the person; a run with nothing to do is
+ *   skipped, a proposal already on the board is not filed twice, and the retrospective cannot be
+ *   made automatic.
  * - Given a skill accepted, the lesson it came from leaves the index; a change accepted is done
  *   and changes nothing else.
  * - Given an action the ticket does not wait for, nothing changes.
@@ -52,9 +54,7 @@ import {
   acceptTicket,
   answerTicket,
   approveTicket,
-  closedSinceRetro,
   metricsOf,
-  retroDue,
   windowOf,
   freshState,
   inboxCounts,
@@ -149,7 +149,7 @@ describe("setting a company up", () => {
       true,
     );
     expect(state.sessions).toEqual([]);
-    expect(state.schedules).toEqual([]);
+    expect(state.schedules).toEqual([{ id: "retro", auto: false }]);
     expect(state.roles).toEqual(["engineer"]);
     expect(letTimePass(state).events).toEqual([]);
   });
@@ -162,7 +162,10 @@ describe("setting a company up", () => {
     state = acceptTicket(state, "patrol");
     expect(get(state, "patrol").status).toBe("done");
     expect(sessionCount(state, "patrol")).toBe(0);
-    expect(state.schedules).toEqual([{ id: "patrol", auto: false }]);
+    expect(state.schedules).toEqual([
+      { id: "retro", auto: false },
+      { id: "patrol", auto: false },
+    ]);
     state = acceptTicket(state, "verifier");
     expect(state.roles).toEqual(["engineer", "verifier"]);
   });
@@ -171,7 +174,7 @@ describe("setting a company up", () => {
     const state = rejectTicket(startCompany(freshState(), "Look after the repository"), "patrol");
     expect(get(state, "patrol")).toMatchObject({ status: "rejected", unread: false });
     expect(sessionCount(state, "patrol")).toBe(0);
-    expect(state.schedules).toEqual([]);
+    expect(state.schedules).toEqual([{ id: "retro", auto: false }]);
     expect(inboxViewOf(get(state, "patrol"))).toBe("handled");
   });
 });
@@ -503,19 +506,21 @@ describe("an employee learning on its own", () => {
   });
 });
 
-describe("retrospectives", () => {
-  /** The week, with three more tickets closed: enough for the next retrospective. */
-  const due = () => {
-    let state = approveTicket(weekState(), "connection");
-    state = rejectTicket(state, "flaky");
-    state = answerTicket(state, "csv", 0);
-    while (get(state, "csv").status !== "review") state = letTimePass(state).state;
-    return approveTicket(state, "csv");
-  };
+/** The week with everything open settled and accepted, so the next pass runs a schedule. */
+function quiet() {
+  let state = approveTicket(weekState(), "connection");
+  state = rejectTicket(state, "flaky");
+  state = answerTicket(state, "csv", 0);
+  // Only until both deliveries are in: one more pass would run a schedule.
+  while (get(state, "csv").status !== "review" || get(state, "jitter").status !== "review") {
+    state = letTimePass(state).state;
+  }
+  return approveTicket(approveTicket(state, "csv"), "jitter");
+}
 
+describe("retrospectives", () => {
   it("counts what the first one's window says", () => {
     const state = weekState();
-    expect(closedSinceRetro(state)).toBe(2);
     expect(metricsOf(state, windowOf(state, state.retros[0]!))).toMatchObject({
       closed: 5,
       accepted: 2,
@@ -525,30 +530,33 @@ describe("retrospectives", () => {
     });
   });
 
-  it("comes due once enough tickets have closed, as the whole of that pass", () => {
-    const state = due();
-    expect(closedSinceRetro(state)).toBe(5);
+  it("runs on its schedule once the work is quiet, over what closed since the last one", () => {
+    const state = quiet();
     const { state: after, events } = letTimePass(state);
     expect(events).toEqual([{ kind: "retro", id: "2" }]);
     expect(after.sessions).toEqual(state.sessions);
-    expect(after.retros.at(-1)).toMatchObject({ n: 2, from: 5, upTo: 10 });
+    expect(after.retros.at(-1)).toMatchObject({ n: 2, from: 5, upTo: state.closed.length });
     expect(after.handbook.at(-1)).toMatchObject({ path: "retros/2.md", kind: "retro" });
     expect(get(after, "patrolScope")).toMatchObject({ status: "proposed", source: "retro" });
-    expect(closedSinceRetro(after)).toBe(0);
-    expect(retroDue(after)).toBe(false);
+  });
+
+  it("takes turns with the patrol, and skips a run with nothing closed to look back on", () => {
+    const retro = letTimePass(quiet()).state;
+    const patrol = letTimePass(retro);
+    expect(patrol.events).toEqual([{ kind: "proposed", id: "lint" }]);
+    expect(letTimePass(patrol.state).events).toEqual([]);
   });
 
   it("does not file a proposal that is already on the board", () => {
-    const state = due();
-    const first = letTimePass(state).state;
-    const again = { ...first, retros: first.retros.slice(0, -1) };
+    const first = letTimePass(quiet()).state;
+    const again = { ...first, retros: first.retros.slice(0, -1), lastRun: "patrol" as const };
     const second = letTimePass(again).state;
     expect(second.tickets.filter((ticket) => ticket.id === "patrolScope")).toHaveLength(1);
     expect(second.retros.at(-1)!.proposals).toEqual([]);
   });
 
   it("takes a change as written, and closes it", () => {
-    const filed = letTimePass(due()).state;
+    const filed = letTimePass(quiet()).state;
     const accepted = acceptTicket(filed, "patrolScope");
     expect(get(accepted, "patrolScope").status).toBe("done");
     expect(accepted.closed.at(-1)).toBe("patrolScope");
@@ -558,37 +566,29 @@ describe("retrospectives", () => {
 });
 
 describe("a patrol", () => {
-  const quiet = () => {
-    // Settle everything the sample week has open, so the next thing to happen is a patrol.
-    let state = approveTicket(weekState(), "connection");
-    state = rejectTicket(state, "flaky");
-    state = answerTicket(state, "csv", 0);
-    // Only until both deliveries are in: one more pass would be the patrol itself.
-    while (get(state, "csv").status !== "review" || get(state, "jitter").status !== "review") {
-      state = letTimePass(state).state;
-    }
-    state = approveTicket(approveTicket(state, "csv"), "jitter");
-    // The closures bring a retrospective round first; let it run.
-    while (retroDue(state)) state = letTimePass(state).state;
-    return state;
-  };
+  /** Quiet, with the week's retrospective run: the patrol's turn is next. */
+  const patrolNext = () => letTimePass(quiet()).state;
 
   it("proposes what it finds, with no session, while it only proposes", () => {
-    const { state, events } = letTimePass(quiet());
+    const { state, events } = letTimePass(patrolNext());
     expect(events).toEqual([{ kind: "proposed", id: "lint" }]);
     expect(get(state, "lint")).toMatchObject({ status: "proposed", unread: true });
     expect(sessionCount(state, "lint")).toBe(0);
-    expect(letTimePass(state).events).toEqual([]);
   });
 
   it("starts work directly once it is automatic, and reaches the person at the delivery", () => {
-    const { state, events } = letTimePass(setScheduleAuto(quiet(), "patrol", true));
+    const { state, events } = letTimePass(setScheduleAuto(patrolNext(), "patrol", true));
     expect(events).toEqual([{ kind: "started", id: "lint" }]);
     expect(get(state, "lint")).toMatchObject({ status: "in_progress", unread: false });
     expect(sessionCount(state, "lint")).toBe(1);
     const done = settle(state);
     expect(done.events.map((event) => event.kind)).toEqual(["progress", "delivered"]);
     expect(get(done.state, "lint")).toMatchObject({ status: "review", unread: true });
+  });
+
+  it("leaves the retrospective's proposals waiting: it cannot be made automatic", () => {
+    const state = weekState();
+    expect(setScheduleAuto(state, "retro", true)).toBe(state);
   });
 });
 

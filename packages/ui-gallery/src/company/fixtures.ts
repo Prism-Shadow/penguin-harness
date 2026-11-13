@@ -186,12 +186,6 @@ export const FIXTURES: Record<FixtureId, Fixture> = {
   patrolScope: { kind: "change", owner: "lead", priority: "P2", script: [], cost: 0 },
 };
 
-/**
- * How many closed tickets a retrospective waits for in the sample. The spec's default is 10; the
- * sample company set 5, so a reader sees one come round.
- */
-export const RETRO_EVERY = 5;
-
 /** What the sample's retrospectives propose, by retrospective: the first, then the second. */
 export const RETRO_PROPOSALS: readonly (readonly FixtureId[])[] = [["skill"], ["patrolScope"]];
 

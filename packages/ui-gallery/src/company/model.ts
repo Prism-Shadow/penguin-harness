@@ -31,13 +31,14 @@
  * - every ticket: an answer becomes a decision and a delivery sent back a lesson, both in the
  *   handbook; and the employee whose work was sent back, or who was told something in its
  *   session, notes it in its own skill, with no one's approval;
- * - every RETRO_EVERY closed tickets: the lead looks back over them (how many passed review the
- *   first time, how often work was sent back, how often the person was asked, what an accepted
- *   ticket cost), files the retrospective in the handbook, and proposes what to change as tickets.
+ * - every week, on the lead's own schedule: the lead looks back over the tickets closed since the
+ *   last retrospective (how many passed review the first time, how often work was sent back, how
+ *   often the person was asked, what an accepted ticket cost), files the retrospective in the
+ *   handbook, and proposes what to change as tickets.
  *   Nothing about the company changes until the person accepts it; a skill accepted absorbs the
  *   lesson it came from, so the handbook every employee reads stays short.
  */
-import { EMPLOYEES, FIXTURES, RETRO_EVERY, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
+import { EMPLOYEES, FIXTURES, RETRO_PROPOSALS, SAID_SCRIPT } from "./fixtures";
 import type { Byline, FixtureId, HandbookDocId, ScriptStep, TicketKind } from "./fixtures";
 import { inboxViewOf, INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView, TicketState, Triage } from "./spec";
@@ -201,9 +202,18 @@ const fixedEntry = (
   ...(installedOn !== undefined ? { installedOn } : {}),
 });
 
+/**
+ * A schedule: the daily patrol, once its proposal is accepted, or the lead's weekly retrospective,
+ * which every company has from the start.
+ */
+export type ScheduleId = "patrol" | "retro";
+
 export interface Schedule {
-  id: FixtureId;
-  /** Its tickets start work directly; off, they are proposed and wait for the person. */
+  id: ScheduleId;
+  /**
+   * Its tickets start work directly; off, they are proposed and wait for the person. A
+   * retrospective's proposals always wait.
+   */
   auto: boolean;
 }
 
@@ -230,6 +240,8 @@ export interface CompanyState {
   roles: Byline[];
   /** The handbook's files, oldest first. */
   handbook: HandbookEntry[];
+  /** The schedule that ran last, so the next quiet pass runs the one after it. */
+  lastRun: ScheduleId | null;
   /** Ticket ids in the order they closed (done or rejected). */
   closed: string[];
   retros: Retro[];
@@ -328,7 +340,8 @@ export function freshState(): CompanyState {
     mission: null,
     tickets: [],
     sessions: [],
-    schedules: [],
+    schedules: [{ id: "retro", auto: false }],
+    lastRun: null,
     // A company starts with the lead and one engineer; anyone else joins by an accepted proposal.
     roles: ["engineer"],
     handbook: [fixedEntry("readme", null)],
@@ -397,7 +410,12 @@ export function weekState(): CompanyState {
     sessions: tickets
       .filter((ticket) => ticket.step > 0)
       .flatMap((ticket) => replay(ticket, roles)),
-    schedules: [{ id: "patrol", auto: false }],
+    schedules: [
+      { id: "retro", auto: false },
+      { id: "patrol", auto: false },
+    ],
+    // The patrol ran last; the next quiet pass is the week's retrospective.
+    lastRun: "patrol",
     roles,
     handbook: [
       fixedEntry("readme", null),
@@ -579,7 +597,7 @@ export function acceptTicket(state: CompanyState, id: string): CompanyState {
   const settled = close(withTicket(state, id, { status: "done", unread: false }), id);
   const fixture = FIXTURES[ticket.fixture];
   if (ticket.kind === "schedule") {
-    return { ...settled, schedules: [...state.schedules, { id: ticket.fixture, auto: false }] };
+    return { ...settled, schedules: [...state.schedules, { id: "patrol", auto: false }] };
   }
   if (ticket.kind === "skill" && fixture.handbook !== undefined) {
     const skill = fixedEntry(fixture.handbook, id, fixture.installsOn);
@@ -753,7 +771,8 @@ export function sayToLead(state: CompanyState, text: string): CompanyState {
 }
 
 /** Whether a schedule's tickets start work directly. */
-export function setScheduleAuto(state: CompanyState, id: FixtureId, auto: boolean): CompanyState {
+export function setScheduleAuto(state: CompanyState, id: ScheduleId, auto: boolean): CompanyState {
+  if (id === "retro") return state;
   return {
     ...state,
     schedules: state.schedules.map((schedule) =>
@@ -859,18 +878,13 @@ function stepOne(
 }
 
 /**
- * Time passes. When enough tickets have closed, the lead runs a retrospective and nothing else
- * moves; otherwise every work session takes one step, and when none had a step to take, a
- * schedule that is on patrols and files what it finds, proposed, or already in progress when it
- * is automatic.
+ * Time passes: every work session takes one step. When none had a step to take, time runs on to
+ * the next schedule's run, the schedules taking turns: the patrol files what it finds, proposed,
+ * or already in progress when it is automatic; the retrospective looks back over what closed
+ * since the last one. A run with nothing to do is skipped.
  */
 export function letTimePass(state: CompanyState): { state: CompanyState; events: PassEvent[] } {
   if (state.stage !== "running") return { state, events: [] };
-  // A retrospective that has come due goes first: the pass is the lead's look back.
-  if (retroDue(state)) {
-    const retro = lookBack(state);
-    return { state: retro, events: [{ kind: "retro", id: String(retro.retros.length) }] };
-  }
   const events: PassEvent[] = [];
   let moved = state;
   for (const ticket of state.tickets) {
@@ -881,24 +895,36 @@ export function letTimePass(state: CompanyState): { state: CompanyState; events:
   }
   if (events.length > 0) return { state: moved, events };
 
-  const schedule = state.schedules[0];
+  const last = state.schedules.findIndex((schedule) => schedule.id === state.lastRun);
+  const turns = [...state.schedules.slice(last + 1), ...state.schedules.slice(0, last + 1)];
+  for (const schedule of turns) {
+    const ran = runSchedule(state, schedule);
+    if (ran !== null) return { state: { ...ran.state, lastRun: schedule.id }, events: [ran.event] };
+  }
+  return { state, events };
+}
+
+/** One schedule's run, or null when it has nothing to do. */
+function runSchedule(
+  state: CompanyState,
+  schedule: Schedule,
+): { state: CompanyState; event: PassEvent } | null {
+  if (schedule.id === "retro") {
+    const from = state.retros.at(-1)?.upTo ?? 0;
+    if (state.closed.length === from) return null;
+    const retro = lookBack(state);
+    return { state: retro, event: { kind: "retro", id: String(retro.retros.length) } };
+  }
   const found = state.pool[0];
-  if (schedule === undefined || found === undefined) return { state, events };
+  if (found === undefined) return null;
   const proposed = ticketOf(found, "patrol");
   const filed = schedule.auto ? { ...staffed(state, proposed), ...working() } : proposed;
   const next = { ...state, tickets: [...state.tickets, filed], pool: state.pool.slice(1) };
   return {
     state: schedule.auto ? openSession(next, found, "build") : next,
-    events: [{ kind: schedule.auto ? "started" : "proposed", id: found }],
+    event: { kind: schedule.auto ? "started" : "proposed", id: found },
   };
 }
-
-/** How many tickets have closed since the last retrospective. */
-export const closedSinceRetro = (state: CompanyState): number =>
-  state.closed.length - (state.retros.at(-1)?.upTo ?? 0);
-
-/** Whether enough tickets have closed for the next retrospective. */
-export const retroDue = (state: CompanyState): boolean => closedSinceRetro(state) >= RETRO_EVERY;
 
 /**
  * A retrospective: the lead looks back over the tickets closed since the last one, files it in

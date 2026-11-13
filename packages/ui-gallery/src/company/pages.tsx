@@ -1,7 +1,7 @@
 /**
  * The prototype's pages, in the shipped company mode's page frame and with its controls.
  *
- * - The schedules: what files tickets on its own, and when a retrospective comes due.
+ * - The schedules: the daily patrol and the weekly retrospective, each filing tickets on its own.
  * - The lead is the one conversation: what the reader says becomes a ticket, and the lead's
  *   lines name tickets, never the work.
  * - The board is the shipped five columns, unchanged; a card that waits says what for.
@@ -25,10 +25,7 @@ import {
 import { S } from "../../../web/src/lib/strings";
 import { PriorityBadge, TitleButton } from "../../../web/src/features/company/shared";
 import { toneDot } from "../../../web/src/lib/tone";
-import type { FixtureId } from "./fixtures";
-import { RETRO_EVERY } from "./fixtures";
-import { closedSinceRetro } from "./model";
-import type { ChatLine, CompanyState } from "./model";
+import type { ChatLine, CompanyState, ScheduleId } from "./model";
 import { TICKET_STATUSES, waitOf } from "./spec";
 import type { TicketStatus } from "./spec";
 import { PersonAvatar, PersonName } from "./people";
@@ -39,51 +36,41 @@ import { useWords } from "./use-words";
 const QUIET = "text-fg-muted";
 
 /**
- * The schedules, where the inbox column's schedule rows open: each with whether its tickets start
- * work directly, and the retrospective that comes due by the count of closed tickets.
+ * The schedules, where the inbox column's schedule rows open: when each runs, and for the patrol,
+ * whether its tickets start work directly. A retrospective's proposals always wait for the reader.
  */
 export function SchedulesPage({
   state,
   onAuto,
 }: {
   state: CompanyState;
-  onAuto: (id: FixtureId, auto: boolean) => void;
+  onAuto: (id: ScheduleId, auto: boolean) => void;
 }) {
   const W = useWords();
   return (
     <PageFrame width="lg">
       <PageHeader title={W.inbox.schedules} info={W.schedule.info} />
-      {state.schedules.length === 0 ? (
-        <p className={`py-1 text-xs ${QUIET}`}>{W.inbox.schedulesEmpty}</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {state.schedules.map((schedule) => (
-            <li
-              key={schedule.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">{W.tickets[schedule.id].title}</span>
-                <span className={`block text-xs ${QUIET}`}>{W.schedule.daily}</span>
-              </span>
+      <ul className="divide-y divide-line">
+        {state.schedules.map((schedule) => (
+          <li
+            key={schedule.id}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{W.schedule.names[schedule.id]}</span>
+              <span className={`block text-xs ${QUIET}`}>{W.schedule.when[schedule.id]}</span>
+            </span>
+            {schedule.id === "retro" ? (
+              <span className={`shrink-0 text-xs ${QUIET}`}>{W.schedule.autoOff}</span>
+            ) : (
               <label className="flex shrink-0 items-center gap-2 text-xs text-fg-muted">
                 {W.schedule.auto}
                 <Switch checked={schedule.auto} onChange={(auto) => onAuto(schedule.id, auto)} />
               </label>
-            </li>
-          ))}
-        </ul>
-      )}
-      <RuledSection title={W.inbox.retroTitle} className="mt-10">
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
-          <span className="min-w-0 flex-1" data-tooltip={W.inbox.retroDefault} data-tooltip-extra>
-            {W.inbox.retro(RETRO_EVERY)}
-          </span>
-          <span className={`shrink-0 text-xs tabular-nums ${QUIET}`}>
-            {W.inbox.retroProgress(closedSinceRetro(state), RETRO_EVERY)}
-          </span>
-        </p>
-      </RuledSection>
+            )}
+          </li>
+        ))}
+      </ul>
     </PageFrame>
   );
 }

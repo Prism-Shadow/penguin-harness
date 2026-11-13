@@ -1052,8 +1052,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           ],
         },
         {
-          title: "每关闭 N 张工单",
-          when: "默认 N 为 10，由主理复盘",
+          title: "每周复盘",
+          when: "主理的定时日程，默认每周一",
           items: [
             "统计一次就验收通过的比例、打回数、提问数与费用，和上次对比。",
             "记录上次采纳改动后的实际运行效果。",
@@ -1184,7 +1184,6 @@ history:
         triage_apart: "稍后与归档不影响任务；等你的工单不能稍后或归档。",
         own_skill_kept: "员工自己的 Skill 不会被插件更新覆盖。",
         verified_first: "有验证人的工单，交付要验证通过才到你这里。",
-        retro_by_count: "复盘由累计关闭的工单数量触发。",
         snapshot_first: "改动员工前先存快照。",
       } satisfies Record<InvariantId, string>,
     },

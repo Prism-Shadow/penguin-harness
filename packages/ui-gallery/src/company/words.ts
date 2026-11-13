@@ -82,10 +82,6 @@ export const zh = {
     },
     schedules: "日程",
     schedulesEmpty: "暂无日程。主理提议的日程接受后在此显示。",
-    retroTitle: "复盘",
-    retro: (every: number) => `复盘：每关闭 ${every} 张工单一次`,
-    retroDefault: "默认每 10 张，当前设置为 5 张",
-    retroProgress: (closed: number, every: number) => `已关闭 ${closed} / ${every}`,
   },
   ticket: {
     needsYou: "等你处理",
@@ -187,7 +183,8 @@ export const zh = {
   },
   schedule: {
     info: "日程定期生成工单。初始为提议模式，开启自动开工后生成的工单将直接执行。",
-    daily: "每天 09:00",
+    names: { patrol: "每日巡检：看新 issue 和 CI", retro: "每周复盘：回看上周关闭的工单" },
+    when: { patrol: "每天 09:00", retro: "每周一 09:00" },
     auto: "生成工单后直接开工",
     autoOn: "直接开工",
     autoOff: "仅提议",
@@ -362,7 +359,7 @@ export const zh = {
           "教训：打回交付物的原因记录及后续规避措施。",
           "技能：从教训里提炼的固定做法，你接受后装进员工自己的技能目录。",
           "文档：工单交付的技术说明与分析报告。",
-          "复盘：每关闭一批工单，统计一次就通过的数量、打回数、提问数与花费，并提出要改什么。",
+          "复盘：主理每周一回看上周关闭的工单，统计一次就通过的数量、打回数、提问数与花费，并提出要改什么。",
         ],
       },
       state: {

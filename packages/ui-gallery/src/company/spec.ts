@@ -139,7 +139,6 @@ export const INVARIANTS = [
   { id: "triage_apart", refusal: "409 ticket_waiting", isNew: true },
   { id: "verified_first", refusal: "409 not_verified", isNew: true },
   { id: "own_skill_kept", refusal: null, isNew: true },
-  { id: "retro_by_count", refusal: null, isNew: true },
   { id: "snapshot_first", refusal: null, isNew: true },
 ] as const;
 export type InvariantId = (typeof INVARIANTS)[number]["id"];
