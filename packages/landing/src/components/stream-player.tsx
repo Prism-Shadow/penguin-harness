@@ -12,166 +12,63 @@
  * on its family's light tint, a `partial_*` fragment, live only, has none.
  *
  * Paced by the run's own timestamps (lib/amsp-replay.ts `stepDelays`: records sent together arrive
- * a readable beat apart, long waits are capped), one timer at a time, only while the player is on
- * screen and not paused; after the last event it rests, then plays again. Under reduced motion it
- * shows each run finished and never plays.
+ * a readable beat apart, long waits are capped); the frame (replay-frame.tsx) owns the tabs, the
+ * timer, the pause control and what reduced motion shows.
  *
  * Nothing scrolls: the stream pane lists every step of the run, one 20-pixel line each (a preview
- * is shortened to its column), and the tab panel holds the height of the tallest finished run
- * (every one is rendered invisibly in the same grid cell, its code and both panes), so nothing
- * below moves during a replay or on a tab change. At 1440 × 900 the whole player, every row of
- * every run, fits one screen beside the hero's copy.
+ * is shortened to its column), and the frame holds the height of the tallest finished run, its
+ * code and both panes. At 1440 × 900 the whole player, every row of every run, fits one screen
+ * beside the hero's copy.
  */
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
-import {
-  highlightSiteCode,
-  SiteCodeBlock,
-  SitePill,
-  SitePlaybackButton,
-} from "@prismshadow/penguin-ui/site";
+import { useMemo } from "react";
+import type { CSSProperties } from "react";
+import { highlightSiteCode, SiteCodeBlock, SitePill } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { SCENARIOS } from "../lib/amsp-demo";
 import { AMSP_DEMO_AGENT, playerCode } from "../lib/amsp-quickstart";
 import { foldRun, stepDelays, stepLine } from "../lib/amsp-replay";
 import type { ReplayItem, ReplayState, StepLine } from "../lib/amsp-replay";
 import type { TokenCounts } from "../lib/amsp-protocol";
-import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { lineFamily, TONES } from "../lib/amsp-tones";
-
-/** The finished run stays on screen this long before it plays again. */
-const REST_MS = 3000;
+import { ReplayFrame } from "./replay-frame";
 
 const LINES = SCENARIOS.map((scenario) => scenario.steps.map(stepLine));
 const FINISHED = SCENARIOS.map((scenario) => foldRun(scenario.steps, scenario.steps.length));
 const DELAYS = SCENARIOS.map((scenario) => stepDelays(scenario.steps));
 const CODE = SCENARIOS.map(playerCode);
+const delayOf = (run: number, shown: number) => DELAYS[run]![shown]!;
 
 const PANE_LABEL = "text-xs font-semibold text-gray-500 dark:text-gray-400";
 
 export function StreamPlayer() {
-  const still = usePrefersReducedMotion();
-  const [index, setIndex] = useState(0);
-  const scenario = SCENARIOS[index]!;
-  const total = scenario.steps.length;
-  // The finished run until the player first comes on screen.
-  const [count, setCount] = useState(total);
-  const [playing, setPlaying] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const tabsId = useId();
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    if (!("IntersectionObserver" in window)) {
-      setVisible(true);
-      return;
-    }
-    const seen = new IntersectionObserver(
-      (entries) => setVisible(entries.some((entry) => entry.isIntersecting)),
-      { threshold: 0.4 },
-    );
-    seen.observe(root);
-    return () => seen.disconnect();
-  }, []);
-
-  // The first time it is seen, the run starts from its first event.
-  useEffect(() => {
-    if (visible && !playing && !still) {
-      setPlaying(true);
-      setCount(0);
-    }
-  }, [visible, playing, still]);
-
-  // One step at a time; after the last, a rest, then from the start again.
-  useEffect(() => {
-    if (!playing || still || paused || !visible) return;
-    const timer = window.setTimeout(
-      () => setCount((shown) => (shown < total ? shown + 1 : 0)),
-      count < total ? DELAYS[index]![count]! : REST_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [playing, still, paused, visible, count, total, index]);
-
-  const choose = (next: number) => {
-    setIndex(next);
-    // Paused or still, a new tab shows its run finished; otherwise it plays from the start.
-    setCount(still || paused ? SCENARIOS[next]!.steps.length : 0);
-    setPlaying(!still);
-  };
-
-  const onTabKey = (event: KeyboardEvent) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = (index + step + SCENARIOS.length) % SCENARIOS.length;
-    choose(next);
-    tabsRef.current?.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
-  };
-
-  const lines = LINES[index]!.slice(0, count);
-  const state = useMemo(() => foldRun(scenario.steps, count), [scenario, count]);
   const P = S.amsp.player;
-
   return (
-    <div ref={rootRef}>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 pt-1.5 dark:border-gray-800">
-          <div
-            ref={tabsRef}
-            role="tablist"
-            aria-label={P.label}
-            className="flex flex-wrap gap-1"
-            onKeyDown={onTabKey}
-          >
-            {SCENARIOS.map((candidate, i) => (
-              <button
-                key={candidate.id}
-                type="button"
-                role="tab"
-                id={`${tabsId}-tab-${candidate.id}`}
-                aria-controls={`${tabsId}-panel`}
-                aria-selected={i === index}
-                tabIndex={i === index ? 0 : -1}
-                onClick={() => choose(i)}
-                className="rounded-t-md border-b-2 border-transparent px-2.5 py-1 text-sm text-gray-500 transition-colors hover:text-gray-900 aria-selected:border-brand-600 aria-selected:font-medium aria-selected:text-brand-700 dark:text-gray-400 dark:hover:text-gray-100 dark:aria-selected:border-brand-400 dark:aria-selected:text-brand-300"
-              >
-                {P.scenarios[candidate.id]}
-              </button>
-            ))}
-          </div>
-          {!still && (
-            <SitePlaybackButton
-              paused={paused}
-              onPausedChange={setPaused}
-              labels={P}
-              className="mb-1 ml-auto"
-            />
-          )}
-        </div>
-
-        <div
-          role="tabpanel"
-          id={`${tabsId}-panel`}
-          aria-labelledby={`${tabsId}-tab-${scenario.id}`}
-          className="grid"
-        >
-          {/* Every run, finished and invisible, in the cell: it takes the tallest one's height. */}
-          {SCENARIOS.map((_, i) => (
-            <div key={i} aria-hidden="true" className="invisible col-start-1 row-start-1">
-              <Panel index={i} lines={LINES[i]!} state={FINISHED[i]!} />
-            </div>
-          ))}
-          <div className="col-start-1 row-start-1">
-            <Panel index={index} lines={lines} state={state} live />
-          </div>
-        </div>
-      </div>
-    </div>
+    <ReplayFrame
+      label={P.label}
+      runs={SCENARIOS.map((scenario) => ({
+        id: scenario.id,
+        label: P.scenarios[scenario.id],
+        total: scenario.steps.length,
+      }))}
+      delayOf={delayOf}
+      labels={P}
+    >
+      {(run, shown, live) =>
+        live ? (
+          <LivePanel index={run} shown={shown} />
+        ) : (
+          <Panel index={run} lines={LINES[run]!} state={FINISHED[run]!} />
+        )
+      }
+    </ReplayFrame>
   );
+}
+
+/** The chosen run after its first `shown` steps. */
+function LivePanel({ index, shown }: { index: number; shown: number }) {
+  const steps = SCENARIOS[index]!.steps;
+  const state = useMemo(() => foldRun(steps, shown), [steps, shown]);
+  return <Panel index={index} lines={LINES[index]!.slice(0, shown)} state={state} live />;
 }
 
 /** The call that starts a run, then its stream as it arrives beside the run assembled. */

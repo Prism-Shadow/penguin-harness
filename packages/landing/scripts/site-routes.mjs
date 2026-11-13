@@ -76,11 +76,28 @@ const AMSP_META = {
 };
 
 /**
- * Non-blog landing SPA pages: the desktop download page and the AMSP page. A page with `meta`
- * gets its own title, description and share card in its shell (route-shell.mjs).
+ * The company-mode spec page's name for crawlers and link unfurlers, in English like the rest of
+ * the static shell. It has no share card of its own yet: the image is the site's.
+ */
+const COMPANY_META = {
+  title: "Company mode: read tickets, not transcripts",
+  description:
+    "The spec for the next company mode: you talk to one lead agent, work is kept as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+  image: "/og-cover.png",
+  imageAlt: "PenguinHarness",
+};
+
+/**
+ * Non-blog landing SPA pages: the desktop download page, the AMSP page and the company-mode spec.
+ * A page with `meta` gets its own title, description and share card in its shell
+ * (route-shell.mjs).
  */
 export function pageRoutes() {
-  return [{ route: "/download/" }, { route: "/amsp/", meta: AMSP_META }];
+  return [
+    { route: "/download/" },
+    { route: "/amsp/", meta: AMSP_META },
+    { route: "/company/", meta: COMPANY_META },
+  ];
 }
 
 /**

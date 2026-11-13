@@ -6,6 +6,9 @@
  * the tree keyed by locale — keep `S.x` reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
+import type { StepId, TicketId, TicketWords } from "./company-demo";
+import type { FieldPath, InvariantId } from "./company-spec";
+
 export const zh = {
   siteName: "PenguinHarness",
   backToTop: "回到顶部",
@@ -948,6 +951,311 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         guide: { name: "Agent API 使用指南", text: "密钥、审批模式、路由与错误" },
         npm: { name: "@prismshadow/amsp", text: "npm 上的 SDK，适用于 Node 24 与浏览器" },
         source: { name: "源码", text: "packages/amsp，Apache-2.0" },
+      },
+    },
+  },
+  /**
+   * The company-mode spec (pages/company.tsx). It specifies the next company mode, not the shipped
+   * one; `steps`, `tickets`, `fields` and `items` are keyed by lib/company-demo.ts and
+   * lib/company-spec.ts, so a step, a field or a rule with no words fails to typecheck.
+   */
+  company: {
+    /** The tab title and description while the page is open; the static shell carries the English pair (scripts/site-routes.mjs). */
+    title: "公司模式：只读工单，不读对话",
+    description:
+      "下一版公司模式的规格：你只和一个主理 Agent 说话，工作记成工单，工单只在等你接受、回答或验收时找你。",
+    name: "公司模式",
+    draft: "规格草案",
+    headline: "只读工单，不读对话",
+    subline:
+      "你只和一个主理 Agent 说话。它把工作记成工单，交给各自独立的工作会话去做，只在三个时刻找你：接受、回答、验收。",
+    /** The sentence before the link to the shipped mode's docs page, and the full stop after it. */
+    specNote: "这一页是下一版公司模式的规格，实现以它为准。已发布的版本见",
+    currentDocs: "公司模式文档",
+    specEnd: "。",
+    toTicket: "工单字段",
+    toInvariants: "服务端规则",
+
+    player: {
+      label: "示例的一天",
+      scenarios: { patrol: "一次巡检", decide: "一次拍板", deliver: "一次交付" },
+      pause: "暂停",
+      play: "播放",
+      events: "事件",
+      /** The legend of the amber ground: an event that left a ticket waiting on the person. */
+      reachesYou: "到达你的事件",
+      inbox: "你的收件箱",
+      inboxEmpty: "收件箱是空的",
+      file: "工单文件",
+      noFile: "这张工单还没有建立",
+      /** Read out after an unread ticket's title. */
+      unread: "未读",
+      actors: { schedule: "日程", lead: "主理", session: "会话", person: "你", server: "服务端" },
+      waits: { accept: "等你接受", answer: "等你回答", review: "等你验收" },
+      statuses: {
+        proposed: "提议",
+        in_progress: "进行中",
+        review: "待验收",
+        done: "已完成",
+        rejected: "已驳回",
+      },
+      /** What each event did, after the name of who did it. */
+      steps: {
+        patrol_due: "每日巡检到点，唤起主理",
+        propose_flaky: "提议：修复偶发失败的导出测试",
+        propose_bump: "提议：升级 @types/node",
+        accept_flaky: "接受「修复偶发失败的导出测试」",
+        reject_bump: "驳回「升级 @types/node」",
+        session_flaky: "为接受的工单开工作会话 s_f1",
+        say_csv: "对主理说：给导出加上 CSV",
+        file_csv: "记成工单，直接开工",
+        session_csv: "开工作会话 s_c1",
+        progress_read: "写进展：读完导出模块，有两种做法",
+        ask_stream: "提问后停下：大文件流式写出，还是一次生成",
+        answer_stream: "回答：流式写出",
+        session_resume: "开工作会话 s_c2，带着这条决定继续",
+        progress_done: "写进展：CSV 导出完成，测试通过",
+        hand_over: "交付 pull/128，移入待验收",
+        accept_result: "验收通过",
+        record_rule: "把「大文件导出一律流式写出」记进手册",
+      } satisfies Record<StepId, string>,
+      tickets: {
+        flaky_export: { title: "修复偶发失败的导出测试", progress: [] },
+        bump_types: { title: "升级 @types/node", progress: [] },
+        export_csv: {
+          title: "给导出加上 CSV",
+          progress: ["读完导出模块，有两种做法", "CSV 导出完成，测试通过"],
+          question: "大文件导出：流式写出，还是一次生成？",
+          options: ["流式写出", "一次生成"],
+          decision: "大文件导出：流式写出",
+        },
+      } satisfies Record<TicketId, TicketWords>,
+    },
+
+    roles: {
+      title: "三个角色，一条线",
+      subtitle: "你对一个 Agent 说话，读一种东西。其余的都在工单背后。",
+      does: "做什么",
+      never: "不做什么",
+      items: {
+        person: {
+          name: "你",
+          text: "提出要求，在工单上做决定。",
+          does: ["对主理说要做什么", "接受或驳回提议", "回答工单上的问题", "验收结果"],
+          neverText: "不读 Agent 之间的对话。想看的时候，每张工单都能点进它的会话。",
+        },
+        lead: {
+          name: "主理 Agent",
+          text: "唯一常驻、唯一和你对话的 Agent。",
+          does: ["把你说的话和巡检的发现记成工单", "为工单开工作会话", "把你的决定记进手册"],
+          neverText: "不亲自干活。它的上下文里只有每张工单的标题和状态，没有干活的过程。",
+        },
+        session: {
+          name: "工作会话",
+          text: "一张工单一个会话，在自己的工作区里运行。",
+          does: ["读工单，干活", "把进展和结果写回工单", "拿不准时提一个问题，然后停下"],
+          neverText: "不给你发消息。它能对你说的只有工单上的问题和结果。",
+        },
+      },
+      behindTitle: "退到工单背后的",
+      behind: [
+        {
+          name: "员工",
+          text: "变成工单上的署名。需要专职角色时，由主理开一张工单请你决定",
+        },
+        { name: "频道", text: "变成 Agent 之间的对话记录，默认不显示" },
+        { name: "手册", text: "变成主理的记忆：你的决定记在这里，后面的工单先查它" },
+        {
+          name: "组织图、HR 与财务",
+          text: "不再是起步的一部分。成本按工单统计，预算的规则不变",
+        },
+      ],
+    },
+
+    /** One ticket's life as one bar chart (sections/company/lifecycle.tsx). */
+    lifecycle: {
+      title: "工单的一生",
+      subtitle:
+        "一张巡检提出的工单，从提议到完成。它只在三个地方停下来等你，其余时间不占你的注意力。",
+      figureLabel:
+        "一张工单的一生画在同一条时间轴上，从 09:00 到 14:00。工单一行：提议后等你接受 20 分钟，进行中 45 分钟，提问后等你回答 85 分钟，继续进行 70 分钟，待验收 80 分钟。工作会话一行：两个会话，各在 Agent 进行的一段之内。你一行：三次操作，接受、回答、验收，各结束一段等待。",
+      /** The chart's row names, top to bottom. */
+      levels: { ticket: "工单", session: "工作会话", person: "你" },
+      phases: { accept: "等你接受", answer: "等你回答", review: "等你验收", working: "进行中" },
+      session: (n: number) => `会话 ${n}`,
+      acts: { accept: "接受", answer: "回答", review: "验收" },
+      legend: {
+        waiting: "等你：工单停在这里，直到你操作",
+        working: "Agent 在做：工作会话在自己的工作区里运行",
+        act: "你的操作：结束一段等待",
+      },
+      steps: [
+        "巡检把工单记为 proposed。它等你接受，在那之前不开工作会话。",
+        "你接受后，服务端开一个工作会话。它写进展，不来找你。",
+        "会话拿不准时，在工单上提一个问题，带选项和推荐项，然后停下。工单阻塞在你身上。",
+        "你回答后，答案记进工单的 Decisions，新的工作会话带着它继续。",
+        "会话交付结果，工单进入 review。你验收后，工单变为 done。",
+      ],
+    },
+
+    /** The ticket file field by field (sections/company/ticket.tsx), keyed by lib/company-spec.ts. */
+    ticket: {
+      title: "工单文件，逐个字段",
+      subtitle:
+        "工单是 Project 目录里的一个 Markdown 文件，它所在的目录就是它的状态。已发布的格式保持不变，这份规格新增的字段在最后一列标出。",
+      example: "示例：问题开着的时候",
+      exampleFile: `---
+title: 给导出加上 CSV
+status: in_progress
+owner: agent:lead
+source: user:alice
+notify: [user:alice]
+priority: P1
+blocked: 等一个决定
+blocked_by: user:alice
+ask:
+  question: 大文件导出：流式写出，还是一次生成？
+  options: [流式写出, 一次生成]
+  recommended: 0
+sessions: [s_c1]
+history:
+  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:lead, action: blocked, note: user:alice}
+---
+
+## Goal
+导出页除了 JSON，还能导出 CSV。
+
+## Acceptance criteria
+- 十万行的导出不超时
+- 现有的 JSON 导出不变
+
+## Progress
+- 读完导出模块，有两种做法
+
+## Result
+`,
+      groups: {
+        frontmatter: "Frontmatter",
+        sections: "正文各节",
+        triage: "你的处置（按人保存，不写进文件）",
+      },
+      head: { field: "字段", required: "必填", writers: "谁写", meaning: "含义", state: "现状" },
+      required: "必填",
+      optional: "可选",
+      shipped: "已有",
+      added: "新增",
+      writers: { person: "人", agent: "Agent", server: "服务端" },
+      /** Between two writers, and between a field's facts on a phone. */
+      join: "、",
+      waitTitle: "「等你」不是一种状态",
+      waitText: "它从工单已有的三种情形里读出来，所以不需要第六个状态：",
+      waits: { accept: "等你接受", answer: "等你回答", review: "等你验收" },
+      fields: {
+        title: "一行标题，收件箱里显示的就是它。",
+        status: "工作进度。文件所在的目录与它一致。",
+        owner: "唯一的负责方。这张工单的活由它的工作会话来干。",
+        source: "工单从哪来：一个人说的话、一个日程项，或另一张工单的工作会话。",
+        parent: "父工单。成本沿它上卷。",
+        notify: "工单关闭时通知谁。",
+        priority: "优先级。",
+        due: "截止日期。",
+        blocked: "阻塞的原因，一句话。",
+        blocked_by: "谁能解开：另一张工单，或一个负责方。是人的时候，工单在等这个人。",
+        ask: "唯一开着的问题：问题、选项和推荐项。回答后由服务端移除。",
+        deliverables: "交付物的路径或链接，比如一个 PR。",
+        sessions: "为它工作过的会话，按挂接的先后排列。",
+        history: "操作记录，最早的在前。回答问题记为 answered。",
+        "## Goal": "要达成什么。",
+        "## Acceptance criteria": "怎样算做完。",
+        "## Progress": "进展，一句大白话一行。",
+        "## Decisions": "已经回答的问题和答案，一条一行。",
+        "## Result": "结果，以及东西在哪。",
+        unread: "工单开始等你时变为未读；你打开它或对它操作后变为已读。",
+        snoozed_until: "稍后处理：到这个时间之前，工单不出现在你的收件箱里。",
+        archived: "归档。只把工单移出你的收件箱，工单本身不变。",
+      } satisfies Record<FieldPath, string>,
+    },
+
+    /** What the server enforces (sections/company/invariants.tsx), keyed by lib/company-spec.ts. */
+    invariants: {
+      title: "服务端强制的规则",
+      subtitle:
+        "写在 Skill 和手册里的是指引，Agent 可能不照做。下面几条由服务端检查，违反的写入会被拒绝。",
+      /** Before the answer a refused write gets. */
+      refusal: "拒绝时返回 ",
+      shipped: "已有",
+      added: "新增",
+      items: {
+        owner_starts: {
+          rule: "工单的会话只能由负责方或人发起。",
+          text: "别的 Agent 要接手，先改派工单。",
+        },
+        budget_pauses: {
+          rule: "预算用完，日程暂停。",
+          text: "到 100% 时不再触发巡检，直到下个月或预算调高。你说的话照常送达。",
+        },
+        files_are_truth: {
+          rule: "文件是唯一事实来源。",
+          text: "数据库只存能从文件重建的缓存，以及每个人的已读和处置。手工改一个工单文件，下一轮就生效。",
+        },
+        one_front: {
+          rule: "工作会话不能给人发消息。",
+          text: "它对人的输出只有三处：工单的 ask、Result 和 deliverables。和你对话的只有主理。",
+        },
+        three_points: {
+          rule: "只有三种事件把工单标为未读。",
+          text: "工单被提议、提出问题、进入 review。写进展、会话开始或结束，都不改变未读数。",
+        },
+        one_ask: {
+          rule: "一张工单同时只有一个开着的问题。",
+          text: "写入 ask 的同时，工单阻塞在被问的人身上，这个会话的本轮结束。",
+        },
+        answer_recorded: {
+          rule: "答案先落盘，工作再继续。",
+          text: "回答先写进工单的 Decisions 和 history，然后才解除阻塞、开新的工作会话。",
+        },
+        observe_first: {
+          rule: "日程提出的工单，接受之前不开会话。",
+          text: "新的日程项只提议。你把它改为自动之后，它提出的工单才直接开工。",
+        },
+        triage_apart: {
+          rule: "处置不改变工作，等你的工单不能归档。",
+          text: "已读、稍后和归档按人保存。要让一张等你的工单离开收件箱，回答它或驳回它。",
+        },
+      } satisfies Record<InvariantId, { rule: string; text: string }>,
+    },
+
+    start: {
+      title: "从一句话到第一个收件箱",
+      subtitle: "初始化就是第一次清收件箱：没有长提案，也没有群聊。",
+      steps: [
+        {
+          title: "说你关心什么",
+          text: "告诉主理要照看哪个代码库、你在意哪些事。一句话就够。",
+        },
+        {
+          title: "主理回几张提议工单",
+          text: "每张一件事：它建议的巡检日程、首批任务、要不要加一个专职角色。",
+        },
+        {
+          title: "逐张接受或驳回",
+          text: "接受的日程开始巡检，接受的任务开工作会话。驳回的留在记录里。",
+        },
+        {
+          title: "之后只看收件箱",
+          text: "巡检发现的事和你说的事都变成工单。工单只在等你时排到最前面。",
+        },
+      ],
+    },
+
+    links: {
+      title: "继续阅读",
+      items: {
+        current: { name: "公司模式", text: "已发布的版本：组织、日历、工单看板与频道" },
+        schedules: { name: "定时任务", text: "巡检的日程项所用的格式" },
+        traces: { name: "Session 与 Trace", text: "每张工单的工作会话都能在这里打开" },
       },
     },
   },

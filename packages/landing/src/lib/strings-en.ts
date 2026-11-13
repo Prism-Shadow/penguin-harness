@@ -962,4 +962,342 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
     },
   },
+  company: {
+    title: "Company mode: read tickets, not transcripts",
+    description:
+      "The spec for the next company mode: you talk to one lead agent, work is kept as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+    name: "Company mode",
+    draft: "Draft spec",
+    headline: "Read tickets, not transcripts",
+    subline:
+      "You talk to one lead agent. It files work as tickets, hands each to a work session of its own, and comes to you at three moments only: to accept, to answer, to review.",
+    specNote:
+      "This page specifies the next company mode, and the implementation follows it. For what ships today, see ",
+    currentDocs: "the company mode docs",
+    specEnd: ".",
+    toTicket: "Ticket fields",
+    toInvariants: "Server rules",
+
+    player: {
+      label: "A sample day",
+      scenarios: { patrol: "A patrol", decide: "A decision", deliver: "A delivery" },
+      pause: "Pause",
+      play: "Play",
+      events: "Events",
+      reachesYou: "Reaches you",
+      inbox: "Your inbox",
+      inboxEmpty: "The inbox is empty",
+      file: "Ticket file",
+      noFile: "This ticket is not filed yet",
+      unread: "unread",
+      actors: {
+        schedule: "schedule",
+        lead: "lead",
+        session: "session",
+        person: "you",
+        server: "server",
+      },
+      waits: { accept: "awaiting accept", answer: "awaiting answer", review: "awaiting review" },
+      statuses: {
+        proposed: "proposed",
+        in_progress: "in progress",
+        review: "in review",
+        done: "done",
+        rejected: "rejected",
+      },
+      steps: {
+        patrol_due: "the daily patrol came due and woke the lead",
+        propose_flaky: "proposed: fix the flaky export test",
+        propose_bump: "proposed: bump @types/node",
+        accept_flaky: "accepted “Fix the flaky export test”",
+        reject_bump: "rejected “Bump @types/node”",
+        session_flaky: "opened work session s_f1 for the accepted ticket",
+        say_csv: "told the lead: add CSV to the export",
+        file_csv: "filed it as a ticket, already in progress",
+        session_csv: "opened work session s_c1",
+        progress_read: "noted progress: read the export module, two ways to do it",
+        ask_stream: "asked and stopped: stream large files, or build them in one go",
+        answer_stream: "answered: stream them",
+        session_resume: "opened work session s_c2, which continues with that decision",
+        progress_done: "noted progress: CSV export done, tests pass",
+        hand_over: "delivered pull/128 and moved the ticket to review",
+        accept_result: "accepted the result",
+        record_rule: "recorded “large exports always stream” in the handbook",
+      },
+      tickets: {
+        flaky_export: { title: "Fix the flaky export test", progress: [] },
+        bump_types: { title: "Bump @types/node", progress: [] },
+        export_csv: {
+          title: "Add CSV to the export",
+          progress: [
+            "Read the export module; there are two ways to do it",
+            "CSV export done, tests pass",
+          ],
+          question: "Large exports: stream them, or build them in one go?",
+          options: ["stream", "one go"],
+          decision: "Large exports: stream them",
+        },
+      },
+    },
+
+    roles: {
+      title: "Three roles, one line",
+      subtitle:
+        "You talk to one agent and read one kind of thing. Everything else sits behind the ticket.",
+      does: "Does",
+      never: "Never",
+      items: {
+        person: {
+          name: "You",
+          text: "You say what you want, and you decide on tickets.",
+          does: [
+            "Tell the lead what to do",
+            "Accept or reject a proposal",
+            "Answer the question on a ticket",
+            "Review a result",
+          ],
+          neverText:
+            "Read what agents say to each other. When you want to look, every ticket opens onto its sessions.",
+        },
+        lead: {
+          name: "Lead agent",
+          text: "The one agent that stays up, and the only one that talks to you.",
+          does: [
+            "Files what you say and what a patrol finds as tickets",
+            "Opens a work session for a ticket",
+            "Records your decisions in the handbook",
+          ],
+          neverText:
+            "Does the work itself. Its context holds each ticket's title and status, not how the work went.",
+        },
+        session: {
+          name: "Work session",
+          text: "One session per ticket, in a workspace of its own.",
+          does: [
+            "Reads the ticket and does the work",
+            "Writes progress and the result back to the ticket",
+            "When unsure, asks one question and stops",
+          ],
+          neverText:
+            "Messages you. All it can say to you is the question and the result on its ticket.",
+        },
+      },
+      behindTitle: "What moves behind the ticket",
+      behind: [
+        {
+          name: "Employees",
+          text: "Become the byline on a ticket. When a dedicated role is needed, the lead files a ticket for you to decide",
+        },
+        {
+          name: "Channels",
+          text: "Become the record of what agents said to each other, hidden by default",
+        },
+        {
+          name: "The handbook",
+          text: "Becomes the lead's memory: your decisions are recorded here, and later tickets check it first",
+        },
+        {
+          name: "Org chart, HR and finance",
+          text: "No longer part of getting started. Cost is counted per ticket, and budgets keep their rules",
+        },
+      ],
+    },
+
+    lifecycle: {
+      title: "The life of a ticket",
+      subtitle:
+        "One ticket a patrol proposed, from proposal to done. It stops for you in three places and takes none of your attention anywhere else.",
+      figureLabel:
+        "One ticket's life on one time axis, from 09:00 to 14:00. The ticket row: proposed and awaiting your accept for 20 minutes, in progress for 45, stopped on its question and awaiting your answer for 85, in progress again for 70, in review for 80. The work session row: two sessions, each inside a stretch the agent has. Your row: three acts, accept, answer and review, each ending a wait.",
+      levels: { ticket: "Ticket", session: "Work session", person: "You" },
+      phases: {
+        accept: "awaiting accept",
+        answer: "awaiting answer",
+        review: "awaiting review",
+        working: "in progress",
+      },
+      session: (n: number) => `Session ${n}`,
+      acts: { accept: "accept", answer: "answer", review: "review" },
+      legend: {
+        waiting: "Waiting on you: the ticket stays here until you act",
+        working: "The agent has it: a work session runs in a workspace of its own",
+        act: "Your act: it ends a wait",
+      },
+      steps: [
+        "A patrol files the ticket as proposed. It waits for your accept, and no work session opens before that.",
+        "Once you accept, the server opens a work session. It writes progress and does not come to you.",
+        "When the session is unsure, it puts one question on the ticket, with options and a recommendation, and stops. The ticket is blocked on you.",
+        "Once you answer, the answer goes into the ticket's Decisions, and a new work session continues with it.",
+        "The session delivers its result and the ticket moves to review. Once you accept it, the ticket is done.",
+      ],
+    },
+
+    ticket: {
+      title: "The ticket file, field by field",
+      subtitle:
+        "A ticket is a Markdown file in the Project directory, and the directory it sits in is its status. The shipped format stays as it is; the last column marks the fields this spec adds.",
+      example: "Example: while its question is open",
+      exampleFile: `---
+title: Add CSV to the export
+status: in_progress
+owner: agent:lead
+source: user:alice
+notify: [user:alice]
+priority: P1
+blocked: Waiting on a decision
+blocked_by: user:alice
+ask:
+  question: "Large exports: stream them, or build them in one go?"
+  options: [stream, one go]
+  recommended: 0
+sessions: [s_c1]
+history:
+  - {at: 2026-11-13T10:00:12+08:00, by: agent:lead, action: created}
+  - {at: 2026-11-13T10:01:03+08:00, by: system, action: session_started, note: s_c1}
+  - {at: 2026-11-13T10:05:40+08:00, by: agent:lead, action: blocked, note: user:alice}
+---
+
+## Goal
+The export page offers CSV as well as JSON.
+
+## Acceptance criteria
+- An export of a hundred thousand rows does not time out
+- The JSON export is unchanged
+
+## Progress
+- Read the export module; there are two ways to do it
+
+## Result
+`,
+      groups: {
+        frontmatter: "Frontmatter",
+        sections: "Sections",
+        triage: "Your triage (kept per person, never written to the file)",
+      },
+      head: {
+        field: "Field",
+        required: "Required",
+        writers: "Written by",
+        meaning: "Meaning",
+        state: "State",
+      },
+      required: "required",
+      optional: "optional",
+      shipped: "shipped",
+      added: "new",
+      writers: { person: "a person", agent: "an agent", server: "the server" },
+      join: ", ",
+      waitTitle: "“Waiting on you” is not a status",
+      waitText: "It is read from three states a ticket already has, so no sixth status is needed:",
+      waits: { accept: "Awaiting accept", answer: "Awaiting answer", review: "Awaiting review" },
+      fields: {
+        title: "One line, the one the inbox shows.",
+        status: "How far the work is. The directory the file sits in matches it.",
+        owner: "The one responsible principal. Its work sessions do this ticket's work.",
+        source:
+          "Where the ticket came from: something a person said, a schedule entry, or another ticket's work session.",
+        parent: "The parent ticket. Cost rolls up along it.",
+        notify: "Who is told when the ticket closes.",
+        priority: "Its priority.",
+        due: "Its due date.",
+        blocked: "Why it is blocked, in a sentence.",
+        blocked_by:
+          "Who can unblock it: another ticket, or a principal. When that is a person, the ticket waits on them.",
+        ask: "The one open question: the question, its options and the recommended one. The server removes it once it is answered.",
+        deliverables: "Paths or links to what was delivered, a pull request for one.",
+        sessions: "The sessions that worked on it, in the order they were attached.",
+        history: "The operation log, oldest first. An answer is recorded as answered.",
+        "## Goal": "What is to be achieved.",
+        "## Acceptance criteria": "What counts as done.",
+        "## Progress": "Progress, one plain sentence a line.",
+        "## Decisions": "The questions already answered, each with its answer, one a line.",
+        "## Result": "The result, and where it is.",
+        unread: "Set when the ticket starts waiting on you; cleared when you open it or act on it.",
+        snoozed_until: "Later: the ticket stays out of your inbox until this time.",
+        archived: "Archived. It leaves your inbox only; the ticket itself does not change.",
+      },
+    },
+
+    invariants: {
+      title: "What the server enforces",
+      subtitle:
+        "What Skills and the handbook say is guidance, and an agent may not follow it. The server checks the rules below and refuses a write that breaks one.",
+      refusal: "Refused with ",
+      shipped: "shipped",
+      added: "new",
+      items: {
+        owner_starts: {
+          rule: "Only a ticket's owner or a person starts a session on it.",
+          text: "For another agent to take the work, reassign the ticket first.",
+        },
+        budget_pauses: {
+          rule: "A spent budget pauses the schedule.",
+          text: "At 100% no patrol fires until next month or a higher budget. What you say still gets through.",
+        },
+        files_are_truth: {
+          rule: "Files are the only source of truth.",
+          text: "The database holds caches it can rebuild from the files, plus each person's read state and triage. Edit a ticket file by hand and the next pass takes it.",
+        },
+        one_front: {
+          rule: "A work session cannot message a person.",
+          text: "It reaches people in three places only: the ticket's ask, its Result and its deliverables. Only the lead talks to you.",
+        },
+        three_points: {
+          rule: "Only three events mark a ticket unread.",
+          text: "The ticket is proposed, asks its question, or enters review. Progress notes, and sessions starting or ending, leave the unread count alone.",
+        },
+        one_ask: {
+          rule: "A ticket has one open question at a time.",
+          text: "Writing ask blocks the ticket on the person asked and ends that session's turn.",
+        },
+        answer_recorded: {
+          rule: "The answer is on disk before work resumes.",
+          text: "It goes into the ticket's Decisions and history first; only then is the ticket unblocked and a new work session opened.",
+        },
+        observe_first: {
+          rule: "A schedule's ticket gets no session before it is accepted.",
+          text: "A new schedule entry only proposes. Once you switch it to automatic, its tickets start work directly.",
+        },
+        triage_apart: {
+          rule: "Triage never changes the work, and a waiting ticket cannot be archived.",
+          text: "Read, later and archive are kept per person. To get a ticket that waits on you out of your inbox, answer it or reject it.",
+        },
+      },
+    },
+
+    start: {
+      title: "From one sentence to the first inbox",
+      subtitle: "Setting up is your first pass through the inbox: no long proposal, no group chat.",
+      steps: [
+        {
+          title: "Say what you care about",
+          text: "Tell the lead which repository to look after and what matters to you. One sentence is enough.",
+        },
+        {
+          title: "The lead answers with proposed tickets",
+          text: "One thing each: a patrol schedule it suggests, the first tasks, whether to add a dedicated role.",
+        },
+        {
+          title: "Accept or reject each one",
+          text: "An accepted schedule starts patrolling, and an accepted task gets a work session. A rejected one stays on record.",
+        },
+        {
+          title: "After that, read the inbox",
+          text: "What a patrol finds and what you say both become tickets. A ticket comes to the top only while it waits on you.",
+        },
+      ],
+    },
+
+    links: {
+      title: "Read on",
+      items: {
+        current: {
+          name: "Company mode",
+          text: "The shipped version: the organization, calendar, ticket board and channels",
+        },
+        schedules: { name: "Schedules", text: "The format a patrol's schedule entry uses" },
+        traces: { name: "Sessions and Traces", text: "Where every ticket's work sessions open" },
+      },
+    },
+  },
 };
