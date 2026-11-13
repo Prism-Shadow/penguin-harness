@@ -18,6 +18,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescriptionZh: "InfraRSI RSI 工具包：验证过的训练提速。",
         category: "rsi",
         icon: "icon.svg",
+        preinstall: false,
         quickStart: {
           prompt:
             "Read infrarsi-rsi-toolkit and make the training job in this Workspace faster with InfraRSI: agree the contract with me before the search, and change no code until I say so.",

@@ -58,8 +58,8 @@ Make these substitutions for PenguinHarness:
 Upstream's answerer may only read and write files. Before `infrarsi agent start`, give it the same limits here with a separate Agent in this Project, created once and reused:
 
 1. `penguin agent create --agent-id infrarsi_answerer --name "InfraRSI answerer" --json`, unless that Agent already exists.
-2. In its `agent_state/system_config.yaml`, keep only the `read_file` and `write_file` entries under `tools.builtin`.
-3. Replace its `AGENTS.md` with the rules block in [answerer.md](references/answerer.md).
+2. In `<app_data_dir>/agents/infrarsi_answerer/agent_state/system_config.yaml`, keep only the `read_file` and `write_file` entries under `tools.builtin`.
+3. Replace the `AGENTS.md` beside it with the rules block in [answerer.md](references/answerer.md).
 
 Check the three steps before the first request. If the Agent cannot be created, use your own identity instead and append the rules block to every answering prompt; say so in the report.
 
