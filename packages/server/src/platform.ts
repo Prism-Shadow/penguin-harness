@@ -47,8 +47,8 @@ import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
-import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
-import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
+import { PluginConfigAdmin, PluginConfigPage } from "@penguinharness/plugin-plugins/server";
+import { PluginCliCommandsProvider } from "@penguinharness/plugin-plugins/server";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -56,7 +56,7 @@ import {
   SessionEnv,
   Sessions,
   SessionServiceIface,
-} from "./runtime/session-manager.js";
+} from "@penguinharness/plugin-sessions/server";
 import {
   GlobalFetch,
   UpdateCheckService,
@@ -115,19 +115,20 @@ import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
-import { SandboxModule } from "./sandbox/service.js";
-import { SandboxSettings } from "./sandbox/settings-store.js";
-import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
+import { SandboxModule } from "@penguinharness/plugin-sandbox/server";
+import { SandboxSettings } from "@penguinharness/plugin-sandbox/server";
+import { SandboxSettingsStatus } from "@penguinharness/plugin-sandbox/server";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
-import { Machines, MachinesModule } from "./machines/service.js";
-import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
-import { OrgRoutes } from "./http/routes/organizations.js";
-import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
-import { TerminalRelay } from "./machines/terminal-relay.js";
-import { SessionForwardRoutes } from "./machines/session-forward.js";
+import { Machines } from "@penguinharness/plugin-machines/server";
+import { MachinesModule } from "@penguinharness/plugin-machines/server";
+import { OrganizationModule, OrgScheduler, OrgService } from "@penguinharness/plugin-company/server";
+import { OrgRoutes } from "@penguinharness/plugin-company/server";
+import { OrgRuns, OrgSessions } from "@penguinharness/plugin-company/server";
+import { TerminalRelay } from "@penguinharness/plugin-terminal/server";
+import { SessionForwardRoutes } from "@penguinharness/plugin-machines/server";
 import { HistoryLinesRoutes } from "./http/routes/history-lines.js";
 import { HistoryRoutes } from "./http/routes/history.js";
-import { ProjectAdminRoutes } from "./http/routes/projects.js";
+import { ProjectAdminRoutes } from "@penguinharness/plugin-projects/server";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
@@ -153,7 +154,7 @@ import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
+import { Admin, Auth, AuthSessions, Users } from "@penguinharness/plugin-settings/server";
 import {
   Access,
   AgentIndex,
@@ -164,18 +165,17 @@ import {
   ProjectEvents,
   ProjectLifecycle,
   Projects,
-} from "./mechanisms/projects.js";
+} from "@penguinharness/plugin-projects/server";
 import {
   AgentState,
   Schedules,
-  Scheduling,
   SessionDrivers,
   SessionIndex,
   SessionOrigins,
-} from "./mechanisms/sessions.js";
-import { Workbenches } from "./mechanisms/workbenches.js";
-import { WorkbenchService } from "./workbenches/service.js";
-import { WorkbenchRoutes } from "./workbenches/routes.js";
+} from "@penguinharness/plugin-sessions/server";
+import { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
+import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
 import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
@@ -183,22 +183,22 @@ import {
   UsageQueries,
   UsageRecording,
   UsageStore,
-} from "./mechanisms/observability.js";
-import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
-import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
-import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
-import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+} from "@penguinharness/plugin-usage/server";
+import { TraceIndex, TraceIndexStore, Traces } from "@penguinharness/plugin-usage/server";
+import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "@penguinharness/plugin-agents/server";
+import { FileReveal, WorkspaceFiles } from "@penguinharness/plugin-projects/server";
+import { Settings, UiPrefsStore } from "@penguinharness/plugin-settings/server";
 import { BackgroundImageStore, UserDraftsStore } from "./mechanisms/account-data.js";
-import { MessagingBindings } from "./mechanisms/messaging.js";
-import { OrgCache } from "./mechanisms/organization.js";
+import { MessagingBindings } from "@penguinharness/plugin-messaging/server";
+import { OrgCache } from "@penguinharness/plugin-company/server";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 import { CompanyModule } from "@penguinharness/plugin-company/server";
-import { Scheduling } from "@prismshadow/penguin-server/internal";
 import { OrgScheduler } from "@penguinharness/plugin-company/server";
+import { Scheduling } from "@penguinharness/plugin-sessions/server";
 import { Machines } from "@penguinharness/plugin-machines/server";
 
 
