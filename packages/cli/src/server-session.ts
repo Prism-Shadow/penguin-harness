@@ -15,6 +15,7 @@ import type {
   Messages,
 } from "@prismshadow/penguin-server/cli";
 import {
+  getSessionInfo,
   listAgentSessions,
   resolveSessionRef,
   ServerClient,
@@ -148,8 +149,6 @@ export async function renameSession(
   });
   return res.session;
 }
-
-import { getSessionInfo } from "@prismshadow/penguin-server/cli";
 
 export { getSessionInfo };
 

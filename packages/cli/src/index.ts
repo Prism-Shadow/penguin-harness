@@ -16,10 +16,9 @@ import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
 import type { CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "./cli-commands.js";
-import { bootCompanyCommands } from "@prismshadow/penguin-server/cli";
+import { bootCompanyCommands, getMessages, resolveLanguage } from "@prismshadow/penguin-server/cli";
 import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";
-import { getMessages, resolveLanguage } from "@prismshadow/penguin-server/cli";
 
 /** The node for a dotted key under `program`, found or built one segment at a time. */
 function commandAt(program: Command, key: string): Command {
