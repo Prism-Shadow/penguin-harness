@@ -18,6 +18,10 @@
  * - A code card mutes `#` comment lines only, and its copy button names the action.
  * - The site bar lists every page once, in the shared order, under the host's words, and marks
  *   the landing page's download page current when it is opened with a trailing slash.
+ * - The data pages' controls: a back link renders through the host's router and names where it
+ *   goes back to; a view switch marks only the current view (selected as tabs, checked as a
+ *   setting); a menu button the view has no use for stays mounted, greyed out and closed, and
+ *   its hint says where it applies.
  */
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
@@ -32,6 +36,9 @@ import { highlightSiteCode } from "../src/components/site/site-highlight";
 import { extractToc } from "../src/components/site/markdown-text";
 import { SITE_DOC_REMARK_PLUGINS, SiteMarkdown } from "../src/components/site/site-markdown";
 import type { SiteMarkdownComponents } from "../src/components/site/site-markdown";
+import { SiteBackLink } from "../src/components/site/site-back-link";
+import { SiteMenuButton, SiteMenuCheck } from "../src/components/site/site-menu-button";
+import { SiteSegmented } from "../src/components/site/site-segmented";
 import { SiteSidebarNav } from "../src/components/site/site-sidebar";
 import { SiteToc } from "../src/components/site/site-toc";
 import { renderStatic } from "../src/testing";
@@ -271,5 +278,67 @@ describe("the site bar", () => {
     expect(currentAt("/plugins/goal/")).toEqual(["Plugins"]);
     expect(currentAt("/leaderboards")).toEqual(["Leaderboards"]);
     expect(currentAt("/benchmarks-old")).toEqual([]);
+  });
+});
+
+describe("the data pages' controls", () => {
+  it("renders a back link through the host's router, named as going back", () => {
+    const html = renderStatic(
+      h(SiteBackLink, {
+        href: "/plugins?q=x",
+        label: "Back to Plugins",
+        render: routed,
+        children: "Plugins",
+      }),
+    );
+    expect(html).toContain('href="/base/plugins?q=x"');
+    expect(html).toContain("data-routed");
+    expect(html).toContain('aria-label="Back to Plugins"');
+    expect(html).toMatch(/>Plugins<\/a>$/);
+  });
+
+  it.each([
+    ["tablist", "aria-selected"],
+    ["radiogroup", "aria-checked"],
+  ] as const)("marks only the current option of a %s switch", (role, state) => {
+    const html = renderStatic(
+      h(SiteSegmented, {
+        role,
+        label: "Views",
+        options: [
+          { id: "table", label: "Table" },
+          { id: "pareto", label: "Pareto" },
+          { id: "waffle", label: "Waffle" },
+        ],
+        value: "pareto",
+        onChange: () => undefined,
+      }),
+    );
+    expect(html.match(new RegExp(`${state}="true"`, "g"))).toHaveLength(1);
+    expect(html.match(new RegExp(`${state}="false"`, "g"))).toHaveLength(2);
+    expect(html).toMatch(new RegExp(`${state}="true"[^>]*>Pareto<`));
+  });
+
+  it("keeps a menu button the view does not use in place, greyed out and closed, saying why", () => {
+    const html = renderStatic(
+      h(SiteMenuButton, {
+        label: "Columns",
+        icon: h("svg"),
+        disabled: true,
+        hint: "Columns apply to the table",
+        count: 2,
+        children: h(SiteMenuCheck, {
+          checked: true,
+          onChange: () => undefined,
+          children: "Cost",
+        }),
+      }),
+    );
+    expect(html).toContain('aria-label="Columns"');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('title="Columns apply to the table"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("Cost");
+    expect(html).not.toContain(">2<");
   });
 });

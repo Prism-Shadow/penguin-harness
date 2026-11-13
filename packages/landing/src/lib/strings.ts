@@ -415,6 +415,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     pageTitle: (name: string) => `${name} | PenguinHarness`,
     notFound: "找不到这个条目，它可能已改名或移除。",
     backToList: "回到列表",
+    /** The detail page's back control, for assistive technology: its visible text is the list's name. */
+    backTo: (list: string) => `返回${list}`,
     meta: {
       author: "作者",
       version: "版本",
@@ -500,7 +502,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       facetAuthor: "作者",
       entryCount: (n: number) => `${n} 个条目`,
       benchmarkCount: (n: number) => `${n} 个评估集`,
-      charts: { table: "排行", pareto: "得分与开销", waffle: "逐题得分" },
+      charts: { table: "表格", pareto: "帕累托", waffle: "华夫饼" },
       chartsLabel: "视图",
       results: "结果",
       entries: "条目",
@@ -516,6 +518,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         cost: "成本",
       } as Record<"harness" | "algorithm" | "released" | "cost", string>,
       columns: "列",
+      /** The columns button's hint in the views that have no table. */
+      columnsTableOnly: "列只用于表格",
+      /** Under the table: what the ± and the score bar's whiskers are. */
+      tableNote: "± 与误差棒均为 1 个标准差。",
+      /** A thinking level after the model's name, in the muted ink. */
+      thinkingNote: (level: string) => `（${level}）`,
       filter: "筛选",
       sortBy: (name: string) => `按${name}排序`,
       filters: {

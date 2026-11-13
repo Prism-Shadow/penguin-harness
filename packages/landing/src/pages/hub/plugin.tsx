@@ -28,8 +28,8 @@ const TONE = KIND_TONE.plugin;
 export function PluginPage() {
   const { id = "" } = useParams();
   const plugin = useHubDetail("plugin", id);
-  if (plugin === undefined) return <HubPending />;
-  if (plugin === null) return <HubMissing listHref="/plugins" />;
+  if (plugin === undefined) return <HubPending kind="plugin" />;
+  if (plugin === null) return <HubMissing kind="plugin" />;
   return <PluginView plugin={plugin} />;
 }
 
@@ -43,6 +43,7 @@ function PluginView({ plugin }: { plugin: PluginDetail }) {
   const t = S.hub.plugins;
   return (
     <HubDetail
+      kind="plugin"
       lead={
         <HubTile tone={categoryTone(plugin.category)} icon={plugin.icon} glyph="puzzle" size="lg" />
       }

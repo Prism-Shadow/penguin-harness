@@ -417,6 +417,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     pageTitle: (name: string) => `${name} | PenguinHarness`,
     notFound: "Nothing here. It may have been renamed or removed.",
     backToList: "Back to the list",
+    /** The detail page's back control, for assistive technology: its visible text is the list's name. */
+    backTo: (list: string) => `Back to ${list}`,
     meta: {
       author: "Author",
       version: "Version",
@@ -505,7 +507,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       facetAuthor: "Author",
       entryCount: (n: number) => (n === 1 ? "1 entry" : `${n} entries`),
       benchmarkCount: (n: number) => (n === 1 ? "1 benchmark" : `${n} benchmarks`),
-      charts: { table: "Ranking", pareto: "Score and cost", waffle: "Per task" },
+      charts: { table: "Table", pareto: "Pareto", waffle: "Waffle" },
       chartsLabel: "Views",
       results: "Results",
       entries: "Entries",
@@ -521,6 +523,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         cost: "Cost",
       } as Record<"harness" | "algorithm" | "released" | "cost", string>,
       columns: "Columns",
+      /** The columns button's hint in the views that have no table. */
+      columnsTableOnly: "Columns apply to the table",
+      /** Under the table: what the ± and the score bar's whiskers are. */
+      tableNote: "± and the whiskers are one standard deviation.",
+      /** A thinking level after the model's name, in the muted ink. */
+      thinkingNote: (level: string) => ` (${level})`,
       filter: "Filter",
       sortBy: (name: string) => `Sort by ${name.toLowerCase()}`,
       filters: {

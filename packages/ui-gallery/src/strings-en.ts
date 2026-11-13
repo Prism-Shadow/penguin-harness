@@ -536,7 +536,7 @@ export const en: GalleryStrings = {
       site: {
         title: "Public site",
         description:
-          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+          "What the landing page and the docs share: the footer, the code card and copy button, pills, the data pages' controls, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
       },
       files: {
         title: "Files",
@@ -1213,6 +1213,22 @@ export const en: GalleryStrings = {
         teal: "Perspectives",
         neutral: "Release notes",
       },
+      dataPage: "Data pages",
+      dataPageHint:
+        "Shared by the Plugins, Benchmarks and Leaderboards pages: the link back to the list, the segmented view switch, the toolbar's menu buttons and the data table. A menu button the current view has no use for greys out in place, so the toolbar holds still when the view changes.",
+      dataBack: "Plugins",
+      dataBackLabel: "Back to Plugins",
+      dataViews: "Views",
+      dataViewOptions: { table: "Table", pareto: "Pareto", waffle: "Waffle" },
+      dataFilter: "Filter",
+      dataColumns: "Columns",
+      dataColumnsHint: "Columns apply to the table",
+      dataHead: { rank: "Rank", name: "Algorithm", score: "Score", cost: "Cost" },
+      dataRows: [
+        ["SkillOpt RSI toolkit", "70.3", "$1.86"],
+        ["SkillAdam RSI toolkit", "69.0", "$1.96"],
+        ["Baseline", "56.3", "$2.38"],
+      ],
       article: "Article",
       articleHint:
         "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",

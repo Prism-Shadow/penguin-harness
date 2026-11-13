@@ -215,6 +215,20 @@
   backdrop-filter: none;
   animation: none;
 }
+.site-ui-menu-panel {
+  width: 16rem;
+  padding: 6px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-surface);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+  font-size: 14px;
+  line-height: 20px;
+  backdrop-filter: none;
+  animation: none;
+}
 .site-ui-language-option {
   color: var(--site-ink);
   background: transparent;

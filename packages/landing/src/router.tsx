@@ -2,7 +2,8 @@
  * Router: home, blog list, blog post, download, the hub's Plugins, Benchmarks and Leaderboards
  * (each a list and a detail page) and the AMSP page inside a shared Nav/Footer layout. basename comes from Vite's BASE_URL so the site works under the GitHub Pages
  * project subpath; a route change scrolls to the top or to its hash target
- * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry).
+ * (useRouteScroll — e.g. /#quickstart after leaving the blog, or a blog TOC entry), except that
+ * Back to a hub list returns to where the list was left (useListReturn, lib/hub/back.ts).
  *
  * Routes that load on demand: the post page carries the Markdown renderer, the AMSP page its
  * player, scripted runs and code samples, and the hub pages the build's plugin, benchmark and
@@ -17,11 +18,13 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigationType,
   useParams,
 } from "react-router";
 import { useRouteScroll, useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { DOCS_URL, GALLERY_URL } from "./lib/links";
 import { getPost, loadPostBody } from "./lib/blog";
+import { useListReturn } from "./lib/hub/back";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
@@ -86,7 +89,10 @@ function SiblingRedirect({ url }: { url: string }) {
 
 function Layout() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   useRouteScroll(location);
+  // After the route scroll: Back to a hub list puts it where the visitor left it.
+  useListReturn(location, navigationType);
 
   return (
     <div className="relative flex min-h-full flex-col">

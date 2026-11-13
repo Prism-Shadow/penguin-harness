@@ -7,6 +7,7 @@
  */
 import { useLayoutEffect, useState } from "react";
 import type { FocusEvent, KeyboardEvent, PointerEvent } from "react";
+import { SiteSegmented } from "@prismshadow/penguin-ui/site";
 import type { LeaderboardEntry } from "../../../lib/hub/types";
 import { formatCompact, formatScore, formatUsd } from "../../../lib/hub/text";
 import { S } from "../../../lib/strings";
@@ -276,28 +277,13 @@ export function ParetoChart({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div
+        <SiteSegmented
           role="radiogroup"
-          aria-label={t.axisLabel}
-          className="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-gray-800"
-        >
-          {AXES.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              role="radio"
-              aria-checked={candidate === axis}
-              onClick={() => setAxis(candidate)}
-              className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-                candidate === axis
-                  ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-              }`}
-            >
-              {axisName(candidate)}
-            </button>
-          ))}
-        </div>
+          label={t.axisLabel}
+          options={AXES.map((id) => ({ id, label: axisName(id) }))}
+          value={axis}
+          onChange={setAxis}
+        />
         <div
           aria-hidden
           className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600 dark:text-gray-400"

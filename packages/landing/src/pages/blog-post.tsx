@@ -14,9 +14,9 @@ import type { ExtraProps } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import { Link, useLocation, useParams } from "react-router";
 import {
-  ArrowRightIcon,
   extractToc,
   highlightSiteCode,
+  SiteBackLink,
   SiteCopyButton,
   SiteMarkdown,
   SITE_REMARK_PLUGINS,
@@ -39,6 +39,7 @@ import imageSizes from "../lib/blog-image-sizes.json";
 import { formatAuthors, formatPostDate, getPost, loadPostBody, loadedPostBody } from "../lib/blog";
 import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
+import { routeLink } from "../components/route-link";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { PostPending } from "../components/post-pending";
 import { MdFigure } from "../blog-widgets/figure";
@@ -352,13 +353,9 @@ export function BlogPostPage() {
       }`}
     >
       <article className={showToc ? "mx-auto w-full max-w-3xl xl:mx-0" : ""}>
-        <Link
-          to="/blog"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-        >
-          <ArrowRightIcon className="h-3.5 w-3.5 rotate-180" />
+        <SiteBackLink href="/blog" render={routeLink}>
           {S.blog.back}
-        </Link>
+        </SiteBackLink>
         <header className="mt-6">
           <h1 className="text-3xl font-semibold tracking-tight text-balance">{post.title}</h1>
           <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">

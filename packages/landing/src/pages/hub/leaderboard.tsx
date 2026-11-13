@@ -9,8 +9,14 @@
  * colour across the views.
  */
 import { useState } from "react";
-import { useParams, useSearchParams } from "react-router";
-import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import { useLocation, useParams, useSearchParams } from "react-router";
+import {
+  SiteGlyph,
+  SiteMenuButton,
+  SiteMenuCheck,
+  SiteSegmented,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
 import {
   AuthorName,
   CountTitle,
@@ -34,7 +40,6 @@ import {
   initialHidden,
 } from "../../components/hub/charts/score-table";
 import type { Column, NameColumn } from "../../components/hub/charts/score-table";
-import { MenuCheck, ToolbarMenu } from "../../components/hub/charts/toolbar-menu";
 import { WaffleChart } from "../../components/hub/charts/waffle-chart";
 import { useDocumentMeta } from "../../lib/document-meta";
 import { benchmarks, plugins } from "../../lib/hub/data";
@@ -55,8 +60,8 @@ const listed = new Set(benchmarks.map((benchmark) => benchmark.id));
 export function LeaderboardPage() {
   const { id = "" } = useParams();
   const board = useHubDetail("leaderboard", id);
-  if (board === undefined) return <HubPending />;
-  if (board === null) return <HubMissing listHref="/leaderboards" />;
+  if (board === undefined) return <HubPending kind="leaderboard" />;
+  if (board === null) return <HubMissing kind="leaderboard" />;
   return <LeaderboardView board={board} />;
 }
 
@@ -74,6 +79,7 @@ function LeaderboardView({ board }: { board: LeaderboardDetail }) {
   const t = S.hub.leaderboards;
   const { locale } = useSiteLocale();
   const [params, setParams] = useSearchParams();
+  const { state } = useLocation();
   const title = titleOf(locale, board);
   useDocumentMeta(S.hub.pageTitle(title), t.description);
   const kind = KINDS.find((candidate) => candidate === params.get("chart")) ?? KINDS[0]!;
@@ -140,93 +146,89 @@ function LeaderboardView({ board }: { board: LeaderboardDetail }) {
       return next;
     });
 
-  const tabs = (
-    <div
-      role="tablist"
-      aria-label={t.chartsLabel}
-      className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-800 dark:bg-gray-900"
-    >
-      {KINDS.map((candidate, index) => (
-        <button
-          key={candidate}
-          type="button"
-          role="tab"
-          aria-selected={candidate === kind}
-          onClick={() =>
-            setParams(
-              (current) => {
-                const next = new URLSearchParams(current);
-                if (index === 0) next.delete("chart");
-                else next.set("chart", candidate);
-                return next;
-              },
-              { replace: true, preventScrollReset: true },
-            )
-          }
-          className={`rounded-md px-2.5 py-1 text-sm whitespace-nowrap transition-colors ${
-            candidate === kind
-              ? "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-100"
-              : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-          }`}
-        >
-          {t.charts[candidate]}
-        </button>
-      ))}
-    </div>
-  );
+  const showChart = (chart: ChartKind) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (chart === KINDS[0]) next.delete("chart");
+        else next.set("chart", chart);
+        return next;
+      },
+      // The history state stays: it is what the back control returns to the list by.
+      { replace: true, preventScrollReset: true, state },
+    );
 
+  // Every control stays mounted in every view, the columns greyed out where there is no table:
+  // the toolbar keeps one width, so switching views moves nothing on it. On a phone it takes its
+  // own row under the title, the views at its start and the buttons at its end.
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
-      {tabs}
-      {filters.length > 0 && (
-        <ToolbarMenu label={t.filter} glyph="slidersHorizontal" count={active}>
-          <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-            {filters.map(({ key, values }) => (
-              <div key={key} role="group" aria-label={t.filterLabel(t.filters[key])}>
-                <p className="px-2 pt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {t.filters[key]}
-                </p>
-                {values.map((value) => (
-                  <MenuCheck
-                    key={value}
-                    checked={(chosen[key] ?? []).includes(value)}
-                    onChange={() => toggleChoice(key, value)}
-                  >
-                    <span title={value}>{value}</span>
-                  </MenuCheck>
-                ))}
-              </div>
-            ))}
-          </div>
-          {active > 0 && (
-            <button
-              type="button"
-              onClick={() => setChosen({})}
-              className="mt-1 w-full rounded-md border-t border-gray-100 px-2 py-1.5 text-left text-brand-700 hover:bg-gray-100 dark:border-gray-800 dark:text-brand-300 dark:hover:bg-gray-800"
-            >
-              {S.hub.clearFilters}
-            </button>
-          )}
-        </ToolbarMenu>
-      )}
-      {kind === "table" && (
-        <ToolbarMenu label={t.columns} glyph="tiles">
+    <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+      <SiteSegmented
+        role="tablist"
+        label={t.chartsLabel}
+        options={KINDS.map((id) => ({ id, label: t.charts[id] }))}
+        value={kind}
+        onChange={showChart}
+      />
+      <div className="flex items-center gap-1">
+        {filters.length > 0 && (
+          <SiteMenuButton
+            label={t.filter}
+            icon={<SiteGlyph name="slidersHorizontal" />}
+            count={active}
+          >
+            <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
+              {filters.map(({ key, values }) => (
+                <div key={key} role="group" aria-label={t.filterLabel(t.filters[key])}>
+                  <p className="px-2 pt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {t.filters[key]}
+                  </p>
+                  {values.map((value) => (
+                    <SiteMenuCheck
+                      key={value}
+                      checked={(chosen[key] ?? []).includes(value)}
+                      onChange={() => toggleChoice(key, value)}
+                    >
+                      <span title={value}>{value}</span>
+                    </SiteMenuCheck>
+                  ))}
+                </div>
+              ))}
+            </div>
+            {active > 0 && (
+              <button
+                type="button"
+                onClick={() => setChosen({})}
+                className="mt-1 w-full rounded-md border-t border-gray-100 px-2 py-1.5 text-left text-brand-700 hover:bg-gray-100 dark:border-gray-800 dark:text-brand-300 dark:hover:bg-gray-800"
+              >
+                {S.hub.clearFilters}
+              </button>
+            )}
+          </SiteMenuButton>
+        )}
+        <SiteMenuButton
+          label={t.columns}
+          icon={<SiteGlyph name="tiles" />}
+          disabled={kind !== "table"}
+          hint={t.columnsTableOnly}
+        >
           {OPTIONAL.map((column) => (
-            <MenuCheck
+            <SiteMenuCheck
               key={column}
               checked={!hidden.has(column)}
               onChange={() => toggleColumn(column)}
             >
               {column === "model" ? t.model : t.columnNames[column]}
-            </MenuCheck>
+            </SiteMenuCheck>
           ))}
-        </ToolbarMenu>
-      )}
+        </SiteMenuButton>
+      </div>
     </div>
   );
 
   return (
     <HubDetail
+      kind="leaderboard"
       layout="stacked"
       lead={<HubTile tone={TONE} glyph="trophy" size="lg" />}
       title={title}
@@ -281,6 +283,9 @@ function LeaderboardView({ board }: { board: LeaderboardDetail }) {
             filtered={active > 0}
             onClearFilters={() => setChosen({})}
           />
+        )}
+        {kind === "table" && shown.length > 0 && (
+          <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">{t.tableNote}</p>
         )}
         {kind === "pareto" && (
           <ParetoChart

@@ -1,5 +1,6 @@
-/* Public-site content: the footer, the copy button, code cards, pills, the article's table of
-   contents, the docs sidebar, the search and external-link dialogs, and article prose.
+/* Public-site content: the footer, the copy button, code cards, pills, the back link, the
+   segmented switch, toolbar menu buttons, data tables, the article's table of contents, the docs
+   sidebar, the search and external-link dialogs, and article prose.
 
    Plain CSS on the sites' own palette — Tailwind's values, with the landing page's neutral dark
    ramp — so a component looks the same on the landing page, on the docs and in the gallery,
@@ -310,6 +311,180 @@
   :root.dark .site-pill[data-tone="neutral"] {
     background: var(--site-gray-800);
     color: var(--site-gray-300);
+  }
+
+  /* ---------- Back link: a page's way to its parent, above the title ---------- */
+  .site-back {
+    color: var(--site-gray-500);
+    transition: color 150ms var(--site-ease);
+  }
+  .site-back:hover {
+    color: var(--site-gray-900);
+  }
+  :root.dark .site-back {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-back:hover {
+    color: var(--site-gray-100);
+  }
+
+  /* ---------- Segmented switch ----------
+     The current segment is filled; the weight never changes, so no segment changes width. */
+  .site-segmented {
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--site-gray-200);
+    border-radius: 0.5rem;
+    background: #fff;
+  }
+  .site-segment {
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.375rem;
+    color: var(--site-gray-600);
+    font-size: var(--site-text-sm);
+    line-height: var(--site-text-sm-lh);
+    white-space: nowrap;
+    transition:
+      color 150ms var(--site-ease),
+      background-color 150ms var(--site-ease);
+  }
+  .site-segment:hover {
+    color: var(--site-gray-900);
+  }
+  .site-segment:is([aria-selected="true"], [aria-checked="true"]) {
+    background: var(--site-gray-100);
+    color: var(--site-gray-900);
+  }
+  :root.dark .site-segmented {
+    border-color: var(--site-gray-800);
+    background: var(--site-gray-900);
+  }
+  :root.dark .site-segment {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-segment:hover {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-segment:is([aria-selected="true"], [aria-checked="true"]) {
+    background: var(--site-gray-800);
+    color: var(--site-gray-100);
+  }
+
+  /* ---------- Toolbar menu button ----------
+     Flat: no fill or line at rest or on hover, the glyph deepens. On (something in its panel is
+     chosen) it takes the accent and a count; greyed out while the view does not use it. */
+  .site-toolbar-button {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    color: var(--site-gray-500);
+    transition: color 150ms var(--site-ease);
+  }
+  .site-toolbar-button svg {
+    width: 1rem;
+    height: 1rem;
+  }
+  .site-toolbar-button:hover,
+  .site-toolbar-button[aria-expanded="true"] {
+    color: var(--site-gray-900);
+  }
+  .site-toolbar-button[data-active] {
+    color: var(--site-brand-700);
+  }
+  .site-toolbar-button[aria-disabled="true"] {
+    color: var(--site-gray-300);
+    cursor: default;
+  }
+  .site-toolbar-count {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    display: flex;
+    min-width: 1rem;
+    height: 1rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.25rem;
+    border-radius: 9999px;
+    background: var(--site-brand-600);
+    color: #fff;
+    font-size: var(--site-text-xs);
+    line-height: 1;
+  }
+  .site-menu-check {
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.375rem;
+  }
+  .site-menu-check:hover {
+    background: var(--site-gray-100);
+  }
+  .site-menu-check input {
+    accent-color: var(--site-brand-600);
+  }
+  :root.dark .site-toolbar-button {
+    color: var(--site-gray-400);
+  }
+  :root.dark .site-toolbar-button:hover,
+  :root.dark .site-toolbar-button[aria-expanded="true"] {
+    color: var(--site-gray-100);
+  }
+  :root.dark .site-toolbar-button[data-active] {
+    color: var(--site-brand-300);
+  }
+  :root.dark .site-toolbar-button[aria-disabled="true"] {
+    color: var(--site-gray-700);
+  }
+  :root.dark .site-toolbar-count {
+    background: var(--site-brand-400);
+    color: var(--site-gray-950);
+  }
+  :root.dark .site-menu-check:hover {
+    background: var(--site-gray-800);
+  }
+
+  /* ---------- Data table ----------
+     Small muted headings over a hairline, a lighter hairline between rows, one line per cell,
+     numbers right-aligned in tabular figures (`data-num` on the cell). */
+  .site-table {
+    width: 100%;
+    font-size: var(--site-text-sm);
+    line-height: var(--site-text-sm-lh);
+  }
+  .site-table > thead > tr {
+    border-bottom: 1px solid var(--site-gray-200);
+  }
+  .site-table > tbody > tr + tr {
+    border-top: 1px solid var(--site-gray-100);
+  }
+  .site-table th {
+    padding: 0.5rem 0.75rem 0.5rem 0;
+    color: var(--site-gray-500);
+    font-size: var(--site-text-xs);
+    line-height: var(--site-text-xs-lh);
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .site-table td {
+    padding: 0.625rem 0.75rem 0.625rem 0;
+    white-space: nowrap;
+  }
+  .site-table :is(th, td):last-child {
+    padding-right: 0;
+  }
+  .site-table :is(th, td)[data-num] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  :root.dark .site-table > thead > tr,
+  :root.dark .site-table > tbody > tr + tr {
+    border-color: var(--site-gray-800);
+  }
+  :root.dark .site-table th {
+    color: var(--site-gray-400);
   }
 
   /* ---------- Rails: the article's table of contents and the docs sidebar ---------- */

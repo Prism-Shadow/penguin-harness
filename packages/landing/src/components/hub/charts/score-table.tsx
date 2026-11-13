@@ -63,9 +63,6 @@ const WIDTH: Record<NameColumn, string> = {
   algorithm: "max-w-24 min-[380px]:max-w-28 sm:max-w-40 lg:max-w-52",
 };
 
-const TH = "py-2 pr-3 text-left font-medium whitespace-nowrap last:pr-0";
-const TD = "py-2.5 pr-3 whitespace-nowrap last:pr-0";
-
 const distinct = (values: readonly string[]): string[] => [...new Set(values)];
 
 /** One run's time: minutes under an hour, else hours to one decimal. */
@@ -181,7 +178,7 @@ export function ScoreTable({
       <th
         scope="col"
         aria-sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
-        className={`${TH} ${align === "right" ? "text-right" : ""}`}
+        data-num={align === "right" || undefined}
       >
         <button
           type="button"
@@ -204,21 +201,21 @@ export function ScoreTable({
   return (
     // Positioned, so the screen-reader-only labels inside stay within its clip.
     <div className="relative overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="site-table">
         <thead>
-          <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            <th scope="col" className={`${TH} w-px`}>
+          <tr>
+            <th scope="col" className="w-px">
               {t.rank}
             </th>
             {has("model") && header("model", t.model)}
             {has("harness") && header("harness", t.columnNames.harness)}
             {has("algorithm") && header("algorithm", t.columnNames.algorithm)}
             {header("score", t.score)}
-            {has("released") && header("released", t.columnNames.released)}
+            {has("released") && header("released", t.columnNames.released, "right")}
             {has("cost") && header("cost", t.columnNames.cost, "right")}
           </tr>
         </thead>
-        <tbody className="[&>tr:last-child>td]:border-b-0 [&>tr:nth-last-child(2)]:border-b-0">
+        <tbody>
           {rows.length === 0 && (
             <tr>
               <td colSpan={span} className="py-10 text-center text-gray-600 dark:text-gray-400">
@@ -255,8 +252,8 @@ export function ScoreTable({
             );
             return (
               <Fragment key={entry.key}>
-                <tr className="border-b border-gray-100 dark:border-gray-800">
-                  <td className={TD}>
+                <tr>
+                  <td>
                     <span
                       className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1 text-xs font-semibold tabular-nums ${
                         medal ?? "text-gray-500 dark:text-gray-400"
@@ -265,9 +262,24 @@ export function ScoreTable({
                       {rank}
                     </span>
                   </td>
-                  {has("model") && <td className={TD}>{named("model", modelText(entry))}</td>}
+                  {has("model") && (
+                    <td>
+                      {named(
+                        "model",
+                        modelText(entry),
+                        entry.thinking ? (
+                          <>
+                            {entry.model}
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {t.thinkingNote(entry.thinking)}
+                            </span>
+                          </>
+                        ) : undefined,
+                      )}
+                    </td>
+                  )}
                   {has("harness") && (
-                    <td className={`${TD} text-gray-700 dark:text-gray-300`}>
+                    <td className="text-gray-700 dark:text-gray-300">
                       {named(
                         "harness",
                         harnessText(entry),
@@ -282,10 +294,8 @@ export function ScoreTable({
                       )}
                     </td>
                   )}
-                  {has("algorithm") && (
-                    <td className={TD}>{named("algorithm", algorithmOf(entry))}</td>
-                  )}
-                  <td className={`${TD} py-1.5`}>
+                  {has("algorithm") && <td>{named("algorithm", algorithmOf(entry))}</td>}
+                  <td className="py-1.5">
                     <button
                       type="button"
                       aria-expanded={isOpen}
@@ -308,18 +318,16 @@ export function ScoreTable({
                     </button>
                   </td>
                   {has("released") && (
-                    <td className={`${TD} text-gray-700 tabular-nums dark:text-gray-300`}>
+                    <td data-num className="text-gray-700 dark:text-gray-300">
                       {formatDay(entry.submitted, locale)}
                     </td>
                   )}
-                  {has("cost") && (
-                    <td className={`${TD} text-right tabular-nums`}>{formatUsd(entry.cost)}</td>
-                  )}
+                  {has("cost") && <td data-num>{formatUsd(entry.cost)}</td>}
                 </tr>
                 <tr id={rowId} hidden={!isOpen}>
                   <td
                     colSpan={span}
-                    className="border-b border-gray-100 bg-gray-50 px-3 py-4 sm:px-4 dark:border-gray-800 dark:bg-gray-950"
+                    className="bg-gray-50 px-3 py-4 whitespace-normal sm:px-4 dark:bg-gray-950"
                   >
                     {isOpen && (
                       // Fills the row without widening the table: the experiments scroll inside.
@@ -445,30 +453,26 @@ function RawData({
       <div>
         <h3 className="text-xs text-gray-500 dark:text-gray-400">{t.experiments}</h3>
         <div className="relative mt-1.5 overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="site-table">
             <thead>
-              <tr className="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th scope="col" className={TH}>
-                  {t.benchmark}
-                </th>
-                <th scope="col" className={`${TH} text-right`}>
+              <tr>
+                <th scope="col">{t.benchmark}</th>
+                <th scope="col" data-num>
                   {t.value}
                 </th>
-                <th scope="col" className={`${TH} text-right`}>
+                <th scope="col" data-num>
                   {t.attempts}
                 </th>
-                <th scope="col" className={`${TH} text-right`}>
+                <th scope="col" data-num>
                   {S.hub.leaderboards.cost}
                 </th>
-                <th scope="col" className={`${TH} text-right`}>
+                <th scope="col" data-num>
                   {S.hub.leaderboards.duration}
                 </th>
-                <th scope="col" className={`${TH} text-right`}>
+                <th scope="col" data-num>
                   {t.tokens}
                 </th>
-                <th scope="col" className={TH}>
-                  {t.finished}
-                </th>
+                <th scope="col">{t.finished}</th>
               </tr>
             </thead>
             <tbody>
@@ -562,8 +566,8 @@ function PartRow({
 }) {
   const t = S.hub.leaderboards.raw;
   return (
-    <tr className="border-b border-gray-100 last:border-0 dark:border-gray-800">
-      <td className={TD}>
+    <tr>
+      <td>
         {part.benchmarks.map((id) => (
           <BenchmarkName
             key={id}
@@ -587,7 +591,7 @@ function PartRow({
           </div>
         )}
       </td>
-      <td className={`${TD} text-right tabular-nums`}>
+      <td data-num>
         {formatScore(part.value)}
         {part.scoreStd !== null && (
           <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
@@ -595,13 +599,13 @@ function PartRow({
           </span>
         )}
       </td>
-      <td className={`${TD} text-right tabular-nums`}>{part.attempts}</td>
-      <td className={`${TD} text-right tabular-nums`}>{formatUsd(part.cost)}</td>
-      <td className={`${TD} text-right tabular-nums`}>{formatDuration(part.durationMs)}</td>
-      <td className={`${TD} text-right tabular-nums`}>
+      <td data-num>{part.attempts}</td>
+      <td data-num>{formatUsd(part.cost)}</td>
+      <td data-num>{formatDuration(part.durationMs)}</td>
+      <td data-num>
         {[part.inputTokens, part.cacheTokens, part.outputTokens].map(formatCompact).join(" / ")}
       </td>
-      <td className={TD}>{formatDay(part.finished, locale)}</td>
+      <td>{formatDay(part.finished, locale)}</td>
     </tr>
   );
 }
