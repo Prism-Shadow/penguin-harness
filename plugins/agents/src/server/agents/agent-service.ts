@@ -46,14 +46,13 @@ import { agentAvatarRev } from "./agent-avatar.js";
 import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
 import { isTopicFileName } from "./memory-topic.js";
 import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "@prismshadow/penguin-server/api";
-import { resolveLibraryPlugins } from "@penguinharness/plugin-plugins/server";
-import type { PluginLibrary } from "@penguinharness/plugin-plugins/server";
+import { resolveLibraryPlugins } from "@prismshadow/penguin-server/internal";
+import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
-import type { AgentIndex } from "@prismshadow/penguin-server/internal";
-||||||| /tmp/_a
+import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "./mechanism.js";
 import type { AgentIndex } from "@penguinharness/plugin-projects/server";

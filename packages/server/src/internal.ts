@@ -155,6 +155,7 @@ export * from "./services/draft-shortcuts.js";
 export * from "./services/keybindings.js";
 export * from "./services/memory-service.js";
 export * from "./services/plugin-library.js";
+export type { PluginLibrary } from "./plugin/library-module.js";
 export * from "./services/preview-token.js";
 export * from "./services/cli-shim.js";
 export * from "./http/routes/vault.js";

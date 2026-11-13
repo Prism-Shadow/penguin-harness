@@ -8,3 +8,4 @@ export * from "./workbenches/service.js";
 export { workbenchRoutes, WorkbenchRoutes } from "./workbenches/routes.js";
 export type { WorkbenchRouteDeps } from "./workbenches/routes.js";
 export * from "./workbenches/store.js";
+export { migrateWorkbenches } from "./workbenches/migrate.js";
