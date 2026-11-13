@@ -928,6 +928,102 @@ describe("isFatalProviderRejection (the fatal allowlist; everything it misses st
     expect(isFatalProviderRejection({ statusCode: 503 })).toBe(false);
   });
 
+  // The gateway shapes below are verbatim from real Traces (Console Go / OpenCode Zen in
+  // front of an OpenAI-compatible upstream): the status is the gateway's, not a statement
+  // about the request, so these must ride the retry ladder instead of killing the run.
+  it("keeps its retries when the 4xx body itself declares a server-side failure", () => {
+    expect(
+      isFatalProviderRejection(
+        Object.assign(
+          new Error(
+            "403 Upstream request failed: [server_error] Upstream response was not valid JSON",
+          ),
+          { status: 403 },
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      isFatalProviderRejection(
+        Object.assign(
+          new Error(
+            "413 Error from provider (Console Go): Upstream request failed: [server_error] Upstream response was not valid JSON",
+          ),
+          { status: 413 },
+        ),
+      ),
+    ).toBe(false);
+    // Structured body shape: the code rides on the parsed body, the status stays a 4xx.
+    expect(
+      isFatalProviderRejection(
+        Object.assign(new Error("Upstream request failed: Model is unavailable."), {
+          status: 400,
+          error: { type: "api_error", message: "Upstream request failed: Model is unavailable." },
+        }),
+      ),
+    ).toBe(false);
+    expect(isFatalProviderRejection({ status: 403, code: "server_error" })).toBe(false);
+    // Server-side evidence on ANY level outweighs a 4xx status on another (SDKs wrap the
+    // response error, so the two need not sit on the same level).
+    expect(
+      isFatalProviderRejection(
+        new Error("request failed", {
+          cause: Object.assign(new Error("[server_error] Upstream response was not valid JSON"), {
+            status: 403,
+          }),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps its retries when the 4xx carried no body at all", () => {
+    // The OpenAI-compatible SDK wording for an empty response body.
+    expect(
+      isFatalProviderRejection(
+        Object.assign(new Error("400 status code (no body)"), { status: 400 }),
+      ),
+    ).toBe(false);
+    expect(
+      isFatalProviderRejection(
+        Object.assign(new Error("403 status code (no body)"), { status: 403 }),
+      ),
+    ).toBe(false);
+    // A body that is merely unknown is still not a rejection the payload confirms... but a
+    // bare status object stays fatal (see the allowlist test above): only the SDK's explicit
+    // "no body" wording is treated as an unjudgeable response.
+    expect(isFatalProviderRejection({ status: 400 })).toBe(true);
+  });
+
+  it("still stops on the client-side rejections the same gateway wraps in a 4xx", () => {
+    expect(
+      isFatalProviderRejection(
+        Object.assign(
+          new Error(
+            "413 Error from provider (Console Go): Upstream request failed: [invalid_request_error] Request body exceeds the 4.5 MiB limit.",
+          ),
+          { status: 413 },
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isFatalProviderRejection(
+        Object.assign(
+          new Error(
+            "400 Error from provider (Console Go): Upstream request failed: [invalid_request_error] No function call found for function call output with call_id 'call_01a08e448a977380926250004b464e70'",
+          ),
+          { status: 400 },
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isFatalProviderRejection(
+        Object.assign(new Error("You have insufficient credits to make this request."), {
+          status: 400,
+        }),
+      ),
+    ).toBe(true);
+    expect(isFatalProviderRejection({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+  });
+
   it("finds the status down the cause chain (SDKs wrap the response error)", () => {
     expect(
       isFatalProviderRejection(
