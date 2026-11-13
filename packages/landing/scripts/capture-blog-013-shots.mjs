@@ -23,9 +23,9 @@
  *
  * Output is a two-step flow, because blog images are not committed to this repo:
  *   1. this script writes into the gitignored staging dir packages/landing/.blog-assets/;
- *   2. upload the files it produced to the `blog-assets/` directory of the sibling
+ *   2. upload the files it produced to the `assets/blog-assets/` directory of the sibling
  *      `Prism-Shadow/penguin-harness-community` repo, which is what the posts load from
- *      (the renderer resolves /blog-assets/<name> there — see src/lib/links.ts).
+ *      (the renderer resolves /blog-assets/<name> there — see src/lib/community-assets.ts).
  *
  * Prereqs: `pnpm --filter @prismshadow/penguin-{skills,core,server,web} build` and
  * Playwright's chromium. Run: `node scripts/capture-blog-013-shots.mjs` (or
