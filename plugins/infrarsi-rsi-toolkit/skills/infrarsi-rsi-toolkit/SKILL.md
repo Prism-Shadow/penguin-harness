@@ -84,4 +84,4 @@ Report from `infrarsi report <run_dir>` and `infrarsi agent status` only: the or
 
 ## Trying the setup
 
-Upstream's `examples/toy_cpu` is a simulated job that needs neither a GPU nor PyTorch. To check the whole loop end to end, copy it from `$SRC` to a scratch directory and run the workflow there with a small budget, for example `--screens 4`. Its speed-ups are simulated; a real result needs a real training job.
+Upstream's `examples/toy_cpu` is a simulated job that needs neither a GPU nor PyTorch. To check the whole loop end to end, copy it from `$SRC` to a scratch directory and run the workflow there with a small budget, for example `--screens 4 --wall-hours 2h`. Each request waits at most what is left of the wall-clock budget, and the example's own half hour leaves too little for answering subagents that each take a full turn. Its speed-ups are simulated; a real result needs a real training job.
