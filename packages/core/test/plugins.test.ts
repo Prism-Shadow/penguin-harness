@@ -1,78 +1,78 @@
 /**
- * The plugin library's file source of truth and core's loader: one npm package per plugin under the repo's `plugins/`
- * (its package.json is the manifest: npm's fields and a `penguin` block; the skills and hook
- * packages it ships), the version scheme, the category grouping, the preinstall filter, the name
- * lookups, and the doc conventions every shipped skill follows.
+ * Core's plugin library reader, on fixture libraries: a package's npm fields, the contributions its
+ * generated table declares (ifaces.json), and the files they name. The shipped library itself is
+ * the server's suite (its package is the library's host); see packages/server/test/plugin-library.test.ts.
  *
- * The shipped library, as it is in the repo:
- * - Every shipped package.json reads with no warning: a description, both short descriptions, a
- *   known category, a safe icon — and no plugin.json is shipped or left on disk.
- * - Each shipped skill's source frontmatter parses as YAML and carries a dated version.
- *
- * Versions, on a fixture library a temp host package carries (usePushedPluginLibrary):
- * - A plugin's version is the npm version of its package.json.
- * - Each skill keeps its own dated version through the loader's stamp, and the hook package
- *   carries `penguin.hooks.version`.
- * - A shipped skill without a dated version, or shipped `hooks/` without
- *   `penguin.hooks.version`, fails the load naming the file, rather than reading as a version
- *   every install is behind; so does any other warning-level fault in a shipped package, an MCP
- *   server entry the resolver refuses among them.
+ * Shipped packages, on a fixture library a temp host package carries (usePushedPluginLibrary):
+ * - A plugin's version is its npm version; each skill keeps its own dated version through the
+ *   loader's stamp; the hook package's manifest carries the contribution's version and commands,
+ *   the npm description and the card's Chinese one.
+ * - Only what is declared is read: a skill directory nothing names, a `hooks/` without a hooks
+ *   contribution, and the contributions of a module the default export does not list install
+ *   nothing — and for a shipped package each is a fault.
+ * - A shipped skill without a dated version, a shipped package that was never built (no
+ *   ifaces.json), and any other warning-level fault (a card field of the wrong type, an MCP server
+ *   the resolver refuses) fail the load naming the package, rather than a smaller library.
  *
  * What the operator installed on the server, on a fixture prefix (useInstalledPluginPrefix):
  * - A package of Skills the prefix depends on joins the library as installed, under its name
  *   without the scope, and is never preinstalled.
- * - A package of server modules alone, a name the build ships, and what npm installed beside the
- *   prefix's own packages stay out.
- * - An installed package that will not read is left out with a warning; the library still
- *   loads.
- * - Missing is missing: a package.json with only a name and a version lists its skills with no
- *   description, no category (Other), no icon and no quick start.
+ * - A package of server modules alone (a card and a code entry), a name the build ships, a
+ *   package whose table contributes nothing, and what npm installed beside the prefix's own
+ *   packages stay out.
+ * - A package still written with the retired `penguin` block, and no ifaces.json, stays out with
+ *   one warning saying so; one whose table will not read stays out with a warning; neither stops
+ *   the library from loading.
+ * - Missing is missing: a package with only a name, a version and a skill lists it with no
+ *   description, no category (Other), no icon and no quick start, and nothing is warned.
  * - What a shipped package fails on, an installed one lists through, with the field missing and
- *   one warning: a malformed field, `hooks/` without a hook version (the skills still list), a
- *   skill without a version (unversioned, never flagged behind), an unsafe or oversized icon, a
- *   skill directory whose name is not a skill name (left out), a binary file in a skill (left
- *   out; the text beside it installs byte for byte). A safe icon is kept from its `<svg>` root on.
- * - An old package that still carries a plugin.json lists by its directories; nothing is read
- *   from the plugin.json.
- * - A package of MCP servers alone (`penguin.mcp_servers`, no skills/ or hooks/) is a library
- *   plugin: it lists its servers, each with every vault key its config references — declared
- *   ones with their labels first — and whether it offers OAuth sign-in. An empty server list
- *   makes no plugin.
- * - A server entry the resolver refuses (an unknown transport, a vault reference in the host), a
- *   bad or repeated server name and a setup key nothing references are dropped, one warning
- *   each; the valid servers still list.
+ *   one warning: a malformed card field, a quick start naming skills it does not ship, a hook
+ *   package without a dated version (the skills still list), a skill without a version
+ *   (unversioned, never flagged behind), an unsafe or oversized icon, a skill entry whose name is
+ *   not a skill name or not its directory's, a binary file in a skill (left out; the text beside it
+ *   installs byte for byte). A safe icon is kept from its `<svg>` root on.
+ * - A package of MCP servers alone is a library plugin: it lists its servers, each with every
+ *   vault key its config references — declared ones with their labels first — and whether it
+ *   offers OAuth sign-in. A server the resolver refuses, a bad or repeated name and a setup key
+ *   nothing references are dropped, one warning each.
+ * - readLibraryPackage reads a local directory the way the library will, refusing one without a
+ *   release version, or one never built.
+ *
+ * What kind a package is (libraryParts), by its table: a content package carries Skills, hooks,
+ * MCP servers or workbenches and no server modules; a package whose table lists modules is a
+ * server module only with a code entry; a card alone is neither; an unbuilt package is neither.
  */
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
-  PLUGIN_CATEGORIES,
-  PLUGIN_VERSION_PATTERN,
   comparePluginVersions,
   groupPlugins,
   isSafeIconSvg,
   libraryParts,
   libraryPlugin,
-  librarySkill,
+  libraryPluginPackage,
   loadLibraryPlugins,
   loadPluginGroups,
-  libraryPluginPackage,
   loadPreinstalledPlugins,
-  parsePluginPackage,
   parseSkillFrontmatter,
   readLibraryPackage,
-  readPluginIcon,
   useInstalledPluginPrefix,
   usePushedPluginLibrary,
   workspacePluginRoot,
   type LibraryPlugin,
-} from "../src/plugins/index.js";
-import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
-
-const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
+} from "../src/index.js";
+import { formatFrontmatter } from "@prismshadow/skills";
+import {
+  libraryHost,
+  pluginPackage,
+  pluginTable,
+  skillFile,
+  writeFiles,
+  type PluginContent,
+} from "./helpers/plugin-packages.js";
 
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
@@ -84,223 +84,6 @@ const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   skills: [],
   mcpServers: [],
   ...(category !== undefined ? { category } : {}),
-});
-
-describe("loadLibraryPlugins", () => {
-  it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
-    const plugins = loadLibraryPlugins();
-    expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    const { dependencies } = JSON.parse(
-      await fs.readFile(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
-    ) as { dependencies: Record<string, string> };
-    expect(plugins.map((plugin) => plugin.packageName).sort()).toEqual(
-      Object.keys(dependencies)
-        .filter((name) => name.startsWith("@penguinharness/"))
-        .sort(),
-    );
-    for (const plugin of plugins) {
-      const pkg = JSON.parse(
-        await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
-      ) as { version: string };
-      expect(plugin.version, plugin.name).toBe(pkg.version);
-      for (const skill of plugin.skills) {
-        expect(skill.version, `${plugin.name}/${skill.name}`).toMatch(PLUGIN_VERSION_PATTERN);
-      }
-      if (plugin.hooks !== undefined) {
-        expect(plugin.hooks.manifest.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
-      }
-      expect(
-        PLUGIN_CATEGORIES.map((c) => c.id),
-        plugin.name,
-      ).toContain(plugin.category);
-      expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.skills.length > 0 || plugin.hooks !== undefined, plugin.name).toBe(true);
-    }
-  });
-
-  it("every shipped package.json reads clean: described for the card in both languages, a known category, a safe icon, and no plugin.json anywhere", async () => {
-    const dirs = (await fs.readdir(pluginsRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-    // The four sandbox backends are packages of server modules: their cards read the same block.
-    expect(dirs.length).toBeGreaterThan(0);
-    for (const dir of dirs) {
-      const file = path.join(pluginsRoot, dir, "package.json");
-      const text = await fs.readFile(file, "utf8");
-      // Chinese in a manifest is written as real characters, not \uXXXX escapes.
-      expect(text, `${dir} package.json escapes`).not.toMatch(/\\u[0-9a-fA-F]{4}/);
-      const raw = JSON.parse(text) as { files?: string[] };
-      const { manifest, warnings } = parsePluginPackage(raw, file);
-      expect(warnings, dir).toEqual([]);
-      expect(manifest.pluginName, dir).toBe(dir);
-      expect(manifest.description, dir).not.toBe("");
-      expect(manifest.penguin.shortDescription, dir).toBeDefined();
-      expect(manifest.penguin.shortDescriptionZh, dir).toBeDefined();
-      expect(
-        PLUGIN_CATEGORIES.map((c) => c.id),
-        dir,
-      ).toContain(manifest.penguin.category);
-      const icon = readPluginIcon(path.join(pluginsRoot, dir), manifest.penguin.icon);
-      expect(icon.warnings, dir).toEqual([]);
-      expect(icon.icon, `${dir} icon`).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
-      expect(raw.files ?? [], dir).not.toContain("plugin.json");
-      expect(existsSync(path.join(pluginsRoot, dir, "plugin.json")), dir).toBe(false);
-    }
-  });
-
-  it("every library plugin declares a quick start: a demo prompt in both languages, naming only its own skills", () => {
-    for (const plugin of loadLibraryPlugins()) {
-      const quickStart = plugin.quickStart;
-      expect(quickStart, plugin.name).toBeDefined();
-      expect(quickStart!.prompt.length, plugin.name).toBeGreaterThan(0);
-      expect(quickStart!.promptZh?.length ?? 0, plugin.name).toBeGreaterThan(0);
-      for (const skill of quickStart!.skills ?? []) {
-        expect(
-          plugin.skills.map((s) => s.name),
-          plugin.name,
-        ).toContain(skill);
-      }
-    }
-    // The goal plugin's demo is a goal: its hooks only run for one.
-    expect(libraryPlugin("goal")?.quickStart?.goal).toBe(true);
-  });
-
-  it("stamps the plugin's metadata into each skill: its own version in the file, full installable frontmatter", async () => {
-    for (const plugin of loadLibraryPlugins()) {
-      // Every built-in plugin ships an icon.
-      expect(plugin.icon, `${plugin.name} icon`).toBeDefined();
-      for (const skill of plugin.skills) {
-        const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
-        const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
-        // The library file carries name, description and the skill's own dated version; the
-        // short descriptions are the package's, stamped in by the loader.
-        const fileFront = /^---\n([\s\S]*?)\n---/.exec(file)![1]!;
-        expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
-          /^(short_description|short_description_zh):/m,
-        );
-        expect(parseFrontmatter(file).data.version, `${plugin.name}/${skill.name}`).toMatch(
-          PLUGIN_VERSION_PATTERN,
-        );
-        // The installable content regenerates the frontmatter with the plugin's fields, keeps
-        // the skill's own version, and keeps the body verbatim.
-        const meta = parseSkillFrontmatter(skill.content)!;
-        expect(meta.version, `${plugin.name}/${skill.name} version`).toBe(
-          parseSkillFrontmatter(file)!.version,
-        );
-        expect(skill.version).toBe(meta.version);
-        expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
-        expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
-        // A skill's icon is its plugin's, stamped by the loader — no skill directory ships
-        // an icon.svg of its own.
-        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(plugin.icon);
-        await expect(fs.access(path.join(dir, "icon.svg"))).rejects.toThrow();
-        // Every shipped skill asks before starting when the message only names it.
-        expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
-          /^## Before you start$/m,
-        );
-      }
-    }
-  });
-
-  // Plugins' own tests validate complete SKILL.md files through @prismshadow/skills.
-  // This one is the library's: it installs into one flat skills/
-  // directory, so a second skill of the same name would silently overwrite the first.
-  it("ships no skill name from two plugins", () => {
-    const owner = new Map<string, string>();
-    for (const plugin of loadLibraryPlugins()) {
-      for (const skill of plugin.skills) {
-        expect(owner.get(skill.name), `${plugin.name}/${skill.name}`).toBeUndefined();
-        owner.set(skill.name, plugin.name);
-      }
-    }
-    expect(owner.size).toBeGreaterThan(0);
-  });
-
-  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", () => {
-    const humanizer = librarySkill("humanizer");
-    expect(humanizer).toBeDefined();
-    const files = humanizer!.skill.files ?? {};
-    expect(Object.keys(files).length).toBeGreaterThan(0);
-    expect(Object.keys(files).every((rel) => rel !== "SKILL.md" && rel !== "icon.svg")).toBe(true);
-    expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
-  });
-
-  it("ACE, APE, AWM and OPRO ship the same evaluation reference", () => {
-    // These four methods share one evaluation protocol. Continuous-training methods have
-    // their own worker instructions; keep this check on the copies that must stay identical.
-    const toolkits = [
-      "ace-rsi-toolkit",
-      "ape-rsi-toolkit",
-      "awm-rsi-toolkit",
-      "opro-rsi-toolkit",
-    ].map((name) => libraryPlugin(name)!);
-    expect(toolkits.length).toBeGreaterThan(1);
-    const references = toolkits.map((plugin) => {
-      // One Skill per algorithm toolkit, named like the plugin.
-      expect(
-        plugin.skills.map((s) => s.name),
-        plugin.name,
-      ).toEqual([plugin.name]);
-      return plugin.skills[0]!.files?.["references/evaluation.md"] ?? "";
-    });
-    for (const [i, reference] of references.entries()) {
-      expect(reference.length, toolkits[i]!.name).toBeGreaterThan(0);
-      expect(reference, `${toolkits[i]!.name} vs ${toolkits[0]!.name}`).toBe(references[0]);
-    }
-  });
-
-  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", async () => {
-    const goal = libraryPlugin("goal");
-    const pkg = JSON.parse(
-      await fs.readFile(path.join(pluginsRoot, "goal", "package.json"), "utf8"),
-    ) as { penguin: { hooks: { version: string } } };
-    expect(goal?.hooks?.manifest).toMatchObject({
-      name: "goal",
-      version: pkg.penguin.hooks.version,
-      stop: [{ command: "stop.mjs", timeout: 60 }],
-      pre_tool_use: [],
-      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
-    });
-    expect(goal!.hooks!.manifest.description_zh).toBeDefined();
-    expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
-    expect(goal!.skills).toEqual([]);
-    const learning = libraryPlugin("continual-learning");
-    expect(learning?.hooks?.manifest.stop).toEqual([{ command: "stop.mjs", timeout: 60 }]);
-    expect(Object.keys(learning!.hooks!.files)).toEqual(["stop.mjs"]);
-  });
-
-  it("a single-skill plugin reads as its own; a merged plugin's skills each resolve to it", () => {
-    const plugin = libraryPlugin("data-analysis")!;
-    expect(plugin.description.length).toBeGreaterThan(0);
-    expect(plugin.skills).toHaveLength(1);
-    // Merged plugins carry several skills, each still resolvable by its own name.
-    expect(librarySkill("web-design")?.plugin.name).toBe("software-development");
-    expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("plugin-porting")?.plugin.name).toBe("skill-porting");
-    // The default loop's steps sit with their audience: setting up an agent is agent
-    // development, measuring one is Agent Evaluation, and the toolkit keeps only the loop.
-    expect(librarySkill("agent-initialization")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("penguin-plugin")?.plugin.name).toBe("agent-development");
-    expect(librarySkill("agent-evaluation")?.plugin.name).toBe("agent-evaluation");
-    expect(librarySkill("benchmark-design")?.plugin.name).toBe("agent-evaluation");
-    expect(libraryPlugin("default-rsi-toolkit")?.skills.map((s) => s.name)).toEqual([
-      "agent-optimization",
-    ]);
-  });
-});
-
-describe("loadPreinstalledPlugins", () => {
-  it("excludes plugins whose manifest sets preinstall: false and keeps everything else", () => {
-    const all = loadLibraryPlugins().map((p) => p.name);
-    const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
-    expect(preinstalled).toContain("goal");
-    expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
-      expect(all).toContain(manual);
-      expect(preinstalled).not.toContain(manual);
-    }
-  });
 });
 
 describe("comparePluginVersions", () => {
@@ -321,7 +104,7 @@ describe("comparePluginVersions", () => {
   });
 });
 
-describe("groupPlugins / loadPluginGroups", () => {
+describe("groupPlugins", () => {
   it("groups by category in manifest order, members sorted, empty categories omitted, unknown ones in Other", () => {
     const groups = groupPlugins([
       fakePlugin("b", "ai-app-development"),
@@ -337,65 +120,9 @@ describe("groupPlugins / loadPluginGroups", () => {
     ]);
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
-
-  it("the library itself fills every category but Agent Sandbox and leaves no Other group; hook packages sit with their audience", () => {
-    const groups = loadPluginGroups();
-    // The sandbox backends are server modules the registry lists, not library content.
-    expect(groups.map((g) => g.id)).toEqual(
-      PLUGIN_CATEGORIES.map((c) => c.id).filter((id) => id !== "sandbox"),
-    );
-    const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
-    expect(names("rsi")).toEqual([
-      "ace-rsi-toolkit",
-      "ape-rsi-toolkit",
-      "awm-rsi-toolkit",
-      "default-rsi-toolkit",
-      "openskill-rsi-toolkit",
-      "opro-rsi-toolkit",
-      "skilladam-rsi-toolkit",
-      "skillopt-rsi-toolkit",
-      "trace-rsi-toolkit",
-    ]);
-    expect(names("office-productivity")).toEqual([
-      "a2ui",
-      "agent-company",
-      "browser-automation",
-      "continual-learning",
-      "data-analysis",
-      "goal",
-      "humanizer",
-      "penguin-support",
-      "use-bento-slides",
-      "use-firecrawl",
-    ]);
-    expect(names("ai-app-development")).toEqual([
-      "agent-development",
-      "agent-evaluation",
-      "model-development",
-      "skill-porting",
-    ]);
-  });
 });
 
-describe("lookups", () => {
-  it("libraryPlugin and librarySkill find by name; illegal names never touch the filesystem", () => {
-    expect(libraryPlugin("goal")?.name).toBe("goal");
-    expect(libraryPlugin("does-not-exist")).toBeUndefined();
-    expect(libraryPlugin("../etc")).toBeUndefined();
-    expect(librarySkill("goal")).toBeUndefined();
-    expect(librarySkill("..")).toBeUndefined();
-  });
-});
-
-/** Writes `files` under `dir` (paths relative to it; a Uint8Array is written as bytes). */
-async function write(dir: string, files: Record<string, string | Uint8Array>): Promise<void> {
-  for (const [rel, data] of Object.entries(files)) {
-    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
-    await fs.writeFile(path.join(dir, rel), data);
-  }
-}
-
-describe("plugin versions, on a fixture library", () => {
+describe("shipped packages, on a fixture library", () => {
   let root: string | null = null;
 
   afterEach(async () => {
@@ -404,31 +131,30 @@ describe("plugin versions, on a fixture library", () => {
     root = null;
   });
 
-  /** A host package holding one plugin, `@penguinharness/sample`, made of `files` (paths relative to the plugin directory); the library is pointed at it. */
+  /** A host package holding one plugin, `@penguinharness/sample`, made of `files`; the library is pointed at it. */
   async function library(files: Record<string, string>): Promise<void> {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-versions-"));
-    await fs.writeFile(
-      path.join(root, "package.json"),
-      JSON.stringify({ name: "fixture-host", dependencies: { "@penguinharness/sample": "*" } }),
-    );
-    await write(path.join(root, "node_modules", "@penguinharness", "sample"), files);
+    await libraryHost(root, { "@penguinharness/sample": files });
     usePushedPluginLibrary(root);
   }
 
-  const skillFile = (name: string, version?: string) =>
-    `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\n## Before you start\n`;
-  /** The sample package's package.json: its npm fields and a `penguin` block. */
-  const pkg = (penguin: Record<string, unknown> = {}) =>
-    JSON.stringify({
-      name: "@penguinharness/sample",
-      version: "3.1.4",
-      description: "Sample.",
-      penguin: { short_description: "Short.", short_description_zh: "短。", ...penguin },
-    });
+  /** The sample package: its npm fields, a card with the short descriptions, and `content`. */
+  const sample = (content: PluginContent = {}) =>
+    pluginPackage(
+      { name: "@penguinharness/sample", version: "3.1.4", description: "Sample." },
+      {
+        ...content,
+        card: { shortDescription: "Short.", shortDescriptionZh: "短。", ...content.card },
+      },
+    );
 
-  it("keeps each skill's own dated version through the stamp, gives the hook package penguin.hooks.version, and the plugin its npm version", async () => {
+  it("keeps each skill's own dated version through the stamp, gives the hook package its contribution's version and commands, and the plugin its npm version", async () => {
     await library({
-      "package.json": pkg({ hooks: { version: "2026.09.02.3", stop: [{ command: "stop.mjs" }] } }),
+      ...sample({
+        card: { descriptionZh: "示例。" },
+        skills: ["one", "two"],
+        hooks: { version: "2026.09.02.3", stop: [{ command: "stop.mjs", timeout: 30 }] },
+      }),
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
       "skills/two/SKILL.md": skillFile("two", "2026.08.15.1"),
       "hooks/stop.mjs": "export {};\n",
@@ -446,37 +172,77 @@ describe("plugin versions, on a fixture library", () => {
         shortDescription: "Short.",
       });
     }
-    expect(plugin.hooks?.manifest.version).toBe("2026.09.02.3");
+    // The hooks.json an install writes, field for field.
+    expect(plugin.hooks).toEqual({
+      manifest: {
+        name: "sample",
+        description: "Sample.",
+        description_zh: "示例。",
+        version: "2026.09.02.3",
+        stop: [{ command: "stop.mjs", timeout: 30 }],
+        pre_tool_use: [],
+        user_prompt: [],
+      },
+      files: { "stop.mjs": "export {};\n" },
+    });
   });
 
-  it("refuses a shipped skill without a dated version, and shipped hooks/ without penguin.hooks.version, naming the file", async () => {
+  it("reads only what is declared: an undeclared skill, an undeclared hooks/ and an unlisted module's contributions fail a shipped package", async () => {
     await library({
-      "package.json": pkg(),
-      "skills/one/SKILL.md": skillFile("one"),
+      ...sample({ skills: ["one"] }),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+      "skills/stray/SKILL.md": skillFile("stray", "2026.09.01.2"),
     });
+    expect(() => libraryPlugin("sample")).toThrow(
+      /skills\/stray is not declared by a skills contribution/,
+    );
+    await fs.rm(root!, { recursive: true, force: true });
+
+    await library({ ...sample({ skills: [] }), "hooks/stop.mjs": "export {};\n" });
+    expect(() => libraryPlugin("sample")).toThrow(
+      /hooks\/ is not declared by a hooks contribution/,
+    );
+    await fs.rm(root!, { recursive: true, force: true });
+
+    // A module the default export does not list is not booted, so it is not the package's either.
+    const table = pluginTable("@penguinharness/sample", { skills: ["one"] });
+    (table.plugin as { modules: string[] }).modules = [];
+    await library({
+      ...sample(),
+      "ifaces.json": JSON.stringify(table),
+      "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
+    });
+    expect(() => libraryPlugin("sample")).toThrow(/skills\/one is not declared/);
+  });
+
+  it("refuses a shipped skill without a dated version, and a shipped package that was never built, naming the file", async () => {
+    await library({ ...sample({ skills: ["one"] }), "skills/one/SKILL.md": skillFile("one") });
     expect(() => libraryPlugin("sample")).toThrow(/skills[/\\]one[/\\]SKILL\.md: version/);
     await fs.rm(root!, { recursive: true, force: true });
 
-    await library({
-      "package.json": pkg({ hooks: { stop: [] } }),
-      "hooks/stop.mjs": "export {};\n",
-    });
-    expect(() => libraryPlugin("sample")).toThrow(/package\.json: .*penguin\.hooks\.version/);
+    const { "ifaces.json": _table, ...unbuilt } = sample({ skills: ["one"] });
+    await library({ ...unbuilt, "skills/one/SKILL.md": skillFile("one", "2026.09.01.2") });
+    expect(() => loadLibraryPlugins()).toThrow(/has no ifaces\.json: build the package/);
   });
 
-  it("fails the library for a shipped package with any warning-level fault, naming the key", async () => {
+  it("fails the library for a shipped package with any warning-level fault, naming the entry", async () => {
     await library({
-      "package.json": pkg({ category: 7 }),
+      ...sample({ card: { category: 7 }, skills: ["one"] }),
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
-    expect(() => loadLibraryPlugins()).toThrow(/package\.json: penguin\.category must be a string/);
+    expect(() => loadLibraryPlugins()).toThrow(
+      /FixturePlugin\.contributes\["PluginLibraryModule\.cards"\]\[0\]\.category must be a string/,
+    );
     await fs.rm(root!, { recursive: true, force: true });
 
     await library({
-      "package.json": pkg({ mcp_servers: [{ name: "nowhere", config: { transport: "ws" } }] }),
+      ...sample({
+        skills: ["one"],
+        mcpServers: [{ name: "nowhere", config: { transport: "ws" } }],
+      }),
       "skills/one/SKILL.md": skillFile("one", "2026.09.01.2"),
     });
-    expect(() => loadLibraryPlugins()).toThrow(/penguin\.mcp_servers: server "nowhere"/);
+    expect(() => loadLibraryPlugins()).toThrow(/the MCP server "nowhere"/);
   });
 });
 
@@ -491,9 +257,6 @@ describe("packages the operator installed on the server", () => {
     root = null;
   });
 
-  const skillFile = (name: string, version?: string) =>
-    `---\nname: ${name}\ndescription: Do ${name}.\n${version === undefined ? "" : `version: ${version}\n`}---\n\nBody.\n`;
-
   /**
    * A shipped library of one plugin (`@penguinharness/sample`) and a server prefix whose
    * package.json depends on `installed`; every package is written under node_modules.
@@ -503,24 +266,17 @@ describe("packages the operator installed on the server", () => {
     packages: Record<string, Record<string, string | Uint8Array>>,
   ): Promise<void> {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-installed-plugins-"));
-    const host = path.join(root, "host");
-    await write(host, {
-      "package.json": JSON.stringify({
-        name: "host",
-        dependencies: { "@penguinharness/sample": "*" },
-      }),
-      "node_modules/@penguinharness/sample/package.json": JSON.stringify({
-        name: "@penguinharness/sample",
-        version: "1.0.0",
-        description: "Sample.",
-      }),
-      "node_modules/@penguinharness/sample/skills/sample/SKILL.md": skillFile(
-        "sample",
-        "2026.09.01.1",
-      ),
+    const host = await libraryHost(path.join(root, "host"), {
+      "@penguinharness/sample": {
+        ...pluginPackage(
+          { name: "@penguinharness/sample", description: "Sample." },
+          { skills: ["sample"] },
+        ),
+        "skills/sample/SKILL.md": skillFile("sample", "2026.09.01.1", "Body.\n"),
+      },
     });
     const prefix = path.join(root, "prefix");
-    await write(prefix, {
+    await writeFiles(prefix, {
       "package.json": JSON.stringify({
         name: "penguin-plugins",
         private: true,
@@ -528,20 +284,19 @@ describe("packages the operator installed on the server", () => {
       }),
     });
     for (const [name, files] of Object.entries(packages)) {
-      await write(path.join(prefix, "node_modules", ...name.split("/")), files);
+      await writeFiles(path.join(prefix, "node_modules", ...name.split("/")), files);
     }
     usePushedPluginLibrary(host);
     useInstalledPluginPrefix(prefix);
   }
 
-  const notes = (name: string, penguin: Record<string, unknown> = {}) => ({
-    "package.json": JSON.stringify({
-      name,
-      version: "2.0.0",
-      description: "Notes.",
-      penguin: { preinstall: true, ...penguin },
-    }),
-    "skills/notes/SKILL.md": skillFile("notes", "2026.10.01.1"),
+  /** An operator's package of one skill, `notes`, with `content` declared beside it. */
+  const notes = (name: string, content: PluginContent = {}): Record<string, string> => ({
+    ...pluginPackage(
+      { name, version: "2.0.0", description: "Notes." },
+      { skills: ["notes"], ...content, card: { preinstall: true, ...content.card } },
+    ),
+    "skills/notes/SKILL.md": skillFile("notes", "2026.10.01.1", "Body.\n"),
   });
 
   /** The warnings the loader logged, as one string. */
@@ -562,26 +317,19 @@ describe("packages the operator installed on the server", () => {
     });
   });
 
-  it("leaves out a package of server modules alone, a name the build ships, and npm's own dependencies", async () => {
+  it("leaves out a package of server modules alone, a name the build ships, a table that contributes nothing, and npm's own dependencies", async () => {
     await setUp(["@acme/sandbox-x", "@other/sample", "@acme/nothing"], {
-      // A server module's card: a penguin block, with nothing to install into an Agent.
+      // A server module's card, beside its code: nothing to install into an Agent.
       "@acme/sandbox-x": {
-        "package.json": JSON.stringify({
-          name: "@acme/sandbox-x",
-          version: "1.0.0",
-          penguin: { category: "sandbox" },
-        }),
-        "ifaces.json": "{}",
+        ...pluginPackage(
+          { name: "@acme/sandbox-x", main: "./index.js" },
+          { card: { category: "sandbox" } },
+        ),
+        "index.js": "export default {};\n",
       },
       "@other/sample": notes("@other/sample"),
       // An empty server list is no content.
-      "@acme/nothing": {
-        "package.json": JSON.stringify({
-          name: "@acme/nothing",
-          version: "1.0.0",
-          penguin: { mcp_servers: [] },
-        }),
-      },
+      "@acme/nothing": pluginPackage({ name: "@acme/nothing" }, { mcpServers: [] }),
       // Installed by npm beside the packages the prefix asked for, not by the operator.
       "left-pad": notes("left-pad"),
     });
@@ -590,13 +338,37 @@ describe("packages the operator installed on the server", () => {
     ]);
   });
 
+  it("leaves out a package still written with the retired penguin block, and one whose table will not read, each with a warning, and still loads the library", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await setUp(["@ported/cloudflare", "@acme/garbled", "@acme/notes"], {
+      // The shape every package had before its content became contributions: no ifaces.json.
+      "@ported/cloudflare": {
+        "package.json": JSON.stringify({
+          name: "@ported/cloudflare",
+          version: "0.1.2",
+          penguin: { mcp_servers: [{ name: "cf", config: { url: "https://cf.example.com" } }] },
+        }),
+        "skills/cf/SKILL.md": skillFile("cf", "2026.10.01.1"),
+      },
+      "@acme/garbled": { ...notes("@acme/garbled"), "ifaces.json": "{ not json" },
+      "@acme/notes": notes("@acme/notes"),
+    });
+    expect(loadLibraryPlugins().map((p) => p.name)).toEqual(["notes", "sample"]);
+    expect(libraryPlugin("cloudflare")).toBeUndefined();
+    const said = logged(warn);
+    expect(said).toContain(
+      "@ported/cloudflare uses the retired `penguin` manifest and is not listed: port it again with the plugin-porting Skill",
+    );
+    expect(said).toContain("@acme/garbled is installed but not listed");
+  });
+
   it("leaves an installed package that will not read out, with a warning, and still loads the library", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/broken", "@acme/notes"], {
       // No release version: nothing can say which version of it is installed.
       "@acme/broken": {
+        ...notes("@acme/broken"),
         "package.json": JSON.stringify({ name: "@acme/broken", description: "Broken." }),
-        "skills/broken/SKILL.md": skillFile("broken", "2026.10.01.1"),
       },
       "@acme/notes": notes("@acme/notes"),
     });
@@ -605,11 +377,11 @@ describe("packages the operator installed on the server", () => {
     expect(logged(warn)).toContain("@acme/broken is installed but not listed");
   });
 
-  it("reads a package whose package.json carries only a name and a version: its skills, and nothing invented", async () => {
+  it("reads a package that carries only a name, a version and a skill: its skill, and nothing invented", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["bare"], {
       bare: {
-        "package.json": JSON.stringify({ name: "bare", version: "0.1.0" }),
+        ...pluginPackage({ name: "bare", version: "0.1.0" }, { skills: ["bare"] }),
         "skills/bare/SKILL.md": skillFile("bare", "2026.10.01.1"),
       },
     });
@@ -632,36 +404,38 @@ describe("packages the operator installed on the server", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/notes"], {
       "@acme/notes": notes("@acme/notes", {
-        category: ["office-productivity"],
-        title: "Notes",
-        quick_start: { prompt: "Take a note.", skills: ["notes", "elsewhere"] },
+        card: {
+          category: ["office-productivity"],
+          title: "Notes",
+          quickStart: { prompt: "Take a note.", skills: ["notes", "elsewhere"] },
+        },
       }),
     });
     const plugin = libraryPlugin("notes")!;
     expect(plugin.title).toBe("Notes");
     expect(plugin).not.toHaveProperty("category");
     expect(plugin.quickStart).toEqual({ prompt: "Take a note.", skills: ["notes"] });
-    expect(logged(warn)).toContain("penguin.category must be a string; ignored");
+    expect(logged(warn)).toContain(".category must be a string; ignored");
     expect(logged(warn)).toContain("names skills the package does not ship (elsewhere)");
   });
 
-  it("lists the skills of a package whose hooks/ has no penguin.hooks.version, and no hook package", async () => {
+  it("lists the skills of a package whose hook package has no dated version, and no hook package", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/notes"], {
-      "@acme/notes": { ...notes("@acme/notes"), "hooks/stop.mjs": "export {};\n" },
+      "@acme/notes": {
+        ...notes("@acme/notes", { hooks: { version: "soon", stop: [{ command: "stop.mjs" }] } }),
+        "hooks/stop.mjs": "export {};\n",
+      },
     });
     const plugin = libraryPlugin("notes")!;
     expect(plugin.skills.map((s) => s.name)).toEqual(["notes"]);
     expect(plugin.hooks).toBeUndefined();
-    expect(logged(warn)).toContain("hooks/ is present but package.json declares no penguin.hooks");
+    expect(logged(warn)).toContain('.version must be YYYY.MM.DD.N, got "soon"');
   });
 
   it("reads a skill without a version as unversioned, which its installed copy is never behind", async () => {
     await setUp(["@acme/notes"], {
-      "@acme/notes": {
-        ...notes("@acme/notes"),
-        "skills/notes/SKILL.md": skillFile("notes"),
-      },
+      "@acme/notes": { ...notes("@acme/notes"), "skills/notes/SKILL.md": skillFile("notes") },
     });
     const [skill] = libraryPlugin("notes")!.skills;
     expect(skill!.version).toBe("");
@@ -686,7 +460,7 @@ describe("packages the operator installed on the server", () => {
         ["@acme/plain", { ...notes("@acme/plain"), "icon.svg": plain }],
         ...Object.entries(unsafe).map(([k, svg]) => [
           `@acme/${k}`,
-          { ...notes(`@acme/${k}`, { icon: "art/logo.svg" }), "art/logo.svg": svg },
+          { ...notes(`@acme/${k}`, { card: { icon: "art/logo.svg" } }), "art/logo.svg": svg },
         ]),
       ]),
     );
@@ -720,45 +494,24 @@ describe("packages the operator installed on the server", () => {
     expect(logged(warn)).toContain("skills/notes/assets/logo.png is not a text file");
   });
 
-  it("leaves out a skill directory whose name is not a skill name, with a warning, and lists the rest", async () => {
+  it("leaves out a skill entry whose name is not a skill name, or not its directory's, with a warning, and lists the rest", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/notes"], {
       "@acme/notes": {
-        ...notes("@acme/notes"),
+        ...notes("@acme/notes", {
+          skills: ["notes", "pdf.tools", { name: "elsewhere", path: "skills/other" }],
+        }),
         "skills/pdf.tools/SKILL.md": skillFile("pdf.tools", "2026.10.01.1"),
+        "skills/other/SKILL.md": skillFile("other", "2026.10.01.1"),
       },
     });
     // What the library lists is what an install writes: nothing an Agent's skills folder refuses.
     expect(libraryPlugin("notes")!.skills.map((s) => s.name)).toEqual(["notes"]);
-    expect(logged(warn)).toContain("skills/pdf.tools is not a skill name");
-  });
-
-  it("lists an old package that still carries a plugin.json by its directories, reading nothing from it", async () => {
-    await setUp(["@penguinharness/old"], {
-      "@penguinharness/old": {
-        "package.json": JSON.stringify({
-          name: "@penguinharness/old",
-          version: "0.2.13",
-          description: "Old.",
-        }),
-        "plugin.json": JSON.stringify({
-          description: "Old, described by plugin.json.",
-          description_zh: "旧插件。",
-          category: "office-productivity",
-          hooks: { version: "2026.10.04.1", stop: [{ command: "stop.mjs" }] },
-        }),
-        "icon.svg": `<svg xmlns="http://www.w3.org/2000/svg"></svg>\n`,
-        "skills/old/SKILL.md": skillFile("old", "2026.10.01.1"),
-        "hooks/stop.mjs": "export {};\n",
-      },
-    });
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const old = libraryPlugin("old")!;
-    expect(old).toMatchObject({ description: "Old.", version: "0.2.13" });
-    expect(old.icon).toBeDefined();
-    expect(old.skills.map((s) => s.name)).toEqual(["old"]);
-    for (const key of ["descriptionZh", "category", "hooks"])
-      expect(old, key).not.toHaveProperty(key);
+    const said = logged(warn);
+    expect(said).toContain('[1].name is not a skill name (letters, digits, "_" and "-")');
+    expect(said).toContain(
+      'the skill name "elsewhere" is not the name of its directory skills/other',
+    );
   });
 
   it("lists a package of MCP servers alone, each server with every vault key it references", async () => {
@@ -772,37 +525,19 @@ describe("packages the operator installed on the server", () => {
         client_secret: "${MAIL_CLIENT_SECRET}",
       },
     };
-    await setUp(["@acme/mail"], {
-      "@acme/mail": {
-        "package.json": JSON.stringify({
-          name: "@acme/mail",
-          version: "0.1.9",
-          description: "Mail.",
-          penguin: {
-            mcp_servers: [
-              {
-                name: "mail",
-                config,
-                setup: [
-                  {
-                    key: "MAIL_CLIENT_ID",
-                    label: "OAuth client ID",
-                    label_zh: "OAuth 客户端 ID",
-                    help: "https://console.example.com/credentials",
-                  },
-                ],
-              },
-            ],
-          },
-        }),
+    const setup = [
+      {
+        key: "MAIL_CLIENT_ID",
+        label: "OAuth client ID",
+        labelZh: "OAuth 客户端 ID",
+        help: "https://console.example.com/credentials",
       },
-    });
-    const dir = path.join(root!, "prefix", "node_modules", "@acme", "mail");
-    expect(libraryParts(dir)).toEqual({
-      skills: false,
-      hooks: false,
-      mcp: true,
-      workbenches: false,
+    ];
+    await setUp(["@acme/mail"], {
+      "@acme/mail": pluginPackage(
+        { name: "@acme/mail", version: "0.1.9", description: "Mail." },
+        { mcpServers: [{ name: "mail", config, setup }] },
+      ),
     });
     const mail = libraryPlugin("mail")!;
     expect(mail).toMatchObject({ source: "installed", version: "0.1.9", skills: [] });
@@ -812,16 +547,7 @@ describe("packages the operator installed on the server", () => {
         name: "mail",
         config,
         oauth: true,
-        setup: [
-          {
-            key: "MAIL_CLIENT_ID",
-            label: "OAuth client ID",
-            labelZh: "OAuth 客户端 ID",
-            help: "https://console.example.com/credentials",
-          },
-          { key: "MAIL_TEAM" },
-          { key: "MAIL_CLIENT_SECRET" },
-        ],
+        setup: [...setup, { key: "MAIL_TEAM" }, { key: "MAIL_CLIENT_SECRET" }],
       },
     ]);
   });
@@ -829,41 +555,40 @@ describe("packages the operator installed on the server", () => {
   it("drops a server entry the resolver refuses, a bad or repeated server name and an unreferenced setup key, one warning each", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await setUp(["@acme/tools"], {
-      "@acme/tools": {
-        "package.json": JSON.stringify({
-          name: "@acme/tools",
-          version: "1.0.0",
-          penguin: {
-            mcp_servers: [
-              { name: "local", config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] } },
-              { name: "nowhere", config: { transport: "ws", url: "wss://tools.example.com" } },
-              { name: "moving", config: { url: "https://${TOOLS_HOST}/mcp" } },
-              { name: "bad name", config: { command: "x" } },
-              { name: "local", config: { command: "again" } },
-              { name: "extra", config: { command: "x" }, setup: [{ key: "UNUSED" }] },
-            ],
-          },
-        }),
-      },
+      "@acme/tools": pluginPackage(
+        { name: "@acme/tools" },
+        {
+          mcpServers: [
+            { name: "local", config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] } },
+            { name: "nowhere", config: { transport: "ws", url: "wss://tools.example.com" } },
+            { name: "moving", config: { url: "https://${TOOLS_HOST}/mcp" } },
+            { name: "bad name", config: { command: "x" } },
+            { name: "local", config: { command: "again" } },
+            { name: "extra", config: { command: "x" }, setup: [{ key: "UNUSED" }] },
+          ],
+        },
+      ),
     });
     expect(libraryPlugin("tools")!.mcpServers.map((s) => [s.name, s.setup])).toEqual([
       ["local", []],
       ["extra", []],
     ]);
     const said = logged(warn);
-    expect(said).toContain('server "nowhere": unknown transport');
-    expect(said).toContain('server "moving"');
-    expect(said).toContain("penguin.mcp_servers[3].name must be a server name");
+    expect(said).toContain('the MCP server "nowhere": unknown transport');
+    expect(said).toContain('the MCP server "moving"');
+    expect(said).toContain('["PluginLibraryModule.mcpServers"][3].name must be a server name');
     expect(said).toContain('the server name "local" is used twice');
     expect(said).toContain("setup key UNUSED, which its config never references");
   });
 
-  it("reads a local package directory the way the library will (readLibraryPackage), refusing one without a release version", async () => {
+  it("reads a local package directory the way the library will (readLibraryPackage), refusing one without a release version or never built", async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-library-package-"));
-    await write(path.join(root, "ok"), notes("@acme/notes"));
-    await write(path.join(root, "bad"), {
+    await writeFiles(path.join(root, "ok"), notes("@acme/notes"));
+    const { "ifaces.json": _table, ...unbuilt } = notes("@acme/unbuilt");
+    await writeFiles(path.join(root, "unbuilt"), unbuilt);
+    await writeFiles(path.join(root, "bad"), {
+      ...notes("@acme/bad"),
       "package.json": JSON.stringify({ name: "@acme/bad", version: "next" }),
-      "skills/bad/SKILL.md": skillFile("bad", "2026.10.01.1"),
     });
     expect(readLibraryPackage(path.join(root, "ok"))).toMatchObject({
       name: "notes",
@@ -873,6 +598,65 @@ describe("packages the operator installed on the server", () => {
     expect(() => readLibraryPackage(path.join(root!, "bad"))).toThrow(
       /package\.json: the package carries no release version/,
     );
+    expect(() => readLibraryPackage(path.join(root!, "unbuilt"))).toThrow(/has no ifaces\.json/);
+  });
+});
+
+describe("libraryParts: what kind a package is, by its table", () => {
+  let root: string | null = null;
+  afterEach(async () => {
+    if (root !== null) await fs.rm(root, { recursive: true, force: true });
+    root = null;
+  });
+
+  async function parts(files: Record<string, string>) {
+    root ??= await fs.mkdtemp(path.join(os.tmpdir(), "penguin-library-parts-"));
+    const dir = await fs.mkdtemp(path.join(root, "pkg-"));
+    await writeFiles(dir, files);
+    return libraryParts(dir);
+  }
+
+  it("reads a content package's parts, and no server modules without a code entry", async () => {
+    expect(
+      await parts(
+        pluginPackage(
+          { name: "@acme/notes" },
+          {
+            skills: ["notes"],
+            hooks: { version: "2026.10.01.1" },
+            mcpServers: [{ name: "m", config: { command: "x" } }],
+          },
+        ),
+      ),
+    ).toEqual({ skills: true, hooks: true, mcp: true, workbenches: false, modules: false });
+  });
+
+  it("reads server modules from a table that lists them beside a code entry, and a card alone as nothing an Agent installs", async () => {
+    expect(
+      await parts({
+        ...pluginPackage(
+          { name: "@acme/box", main: "./dist/index.js" },
+          { card: { title: "Box" } },
+        ),
+        "dist/index.js": "export default {};\n",
+      }),
+    ).toEqual({ skills: false, hooks: false, mcp: false, workbenches: false, modules: true });
+    expect(
+      await parts(pluginPackage({ name: "@acme/box", main: "./dist/index.js" }, { card: {} })),
+    ).toEqual({ skills: false, hooks: false, mcp: false, workbenches: false, modules: false });
+  });
+
+  it("reads an unbuilt package, or one whose table will not read, as carrying nothing", async () => {
+    const none = { skills: false, hooks: false, mcp: false, workbenches: false, modules: false };
+    expect(
+      await parts({ "package.json": JSON.stringify({ name: "x", version: "1.0.0" }) }),
+    ).toEqual(none);
+    expect(
+      await parts({
+        "package.json": JSON.stringify({ name: "x", version: "1.0.0" }),
+        "ifaces.json": "[]",
+      }),
+    ).toEqual(none);
   });
 });
 
@@ -981,16 +765,6 @@ describe("parseSkillFrontmatter", () => {
     expect(formatFrontmatter({ name: "x", description: "d", short_description: undefined })).toBe(
       "---\nname: x\ndescription: d\n---",
     );
-    // Every built-in skill's installable content carries a valid YAML block that reads back
-    // to the stamped metadata.
-    for (const plugin of loadLibraryPlugins()) {
-      for (const skill of plugin.skills) {
-        const block = /^---\n([\s\S]*?)\n---/.exec(skill.content)![1]!;
-        const parsed = parseYaml(block, { schema: "failsafe" }) as Record<string, string>;
-        expect(parsed["description"], `${skill.name} description`).toBe(skill.description);
-        expect(parsed["version"] ?? "").toBe(skill.version);
-      }
-    }
   });
 });
 
@@ -1011,19 +785,16 @@ describe("workspacePluginRoot (a checkout reads plugins from the repo's plugins/
       "node_modules/.pnpm/@penguinharness+sample@file+plugins+sample/node_modules/@penguinharness/sample",
     );
     await fs.mkdir(injected, { recursive: true });
-    // Where core itself sits in that checkout: its own injected copy, deep under .pnpm.
-    const core = path.join(
-      root,
-      "node_modules/.pnpm/@prismshadow+penguin-core@file+packages+core/node_modules/@prismshadow/penguin-core",
-    );
-    await fs.mkdir(core, { recursive: true });
-    return { root, source, injected, core };
+    // Where the host package sits in that checkout.
+    const host = path.join(root, "packages", "server");
+    await fs.mkdir(host, { recursive: true });
+    return { root, source, injected, host };
   }
 
   it("prefers the repo's plugins/<name>/ over pnpm's injected copy inside a workspace checkout", async () => {
     const c = await checkout({ workspaceFile: true, packageName: "@penguinharness/sample" });
     try {
-      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.source);
+      expect(workspacePluginRoot("sample", c.injected, c.host)).toBe(c.source);
     } finally {
       await fs.rm(c.root, { recursive: true, force: true });
     }
@@ -1032,7 +803,7 @@ describe("workspacePluginRoot (a checkout reads plugins from the repo's plugins/
   it("keeps the resolved copy outside a workspace: an npm install and the packed app have no workspace file", async () => {
     const c = await checkout({ workspaceFile: false, packageName: "@penguinharness/sample" });
     try {
-      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.injected);
+      expect(workspacePluginRoot("sample", c.injected, c.host)).toBe(c.injected);
     } finally {
       await fs.rm(c.root, { recursive: true, force: true });
     }
@@ -1041,16 +812,9 @@ describe("workspacePluginRoot (a checkout reads plugins from the repo's plugins/
   it("keeps the resolved copy when the workspace directory is not that package", async () => {
     const c = await checkout({ workspaceFile: true, packageName: "@penguinharness/other" });
     try {
-      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.injected);
+      expect(workspacePluginRoot("sample", c.injected, c.host)).toBe(c.injected);
     } finally {
       await fs.rm(c.root, { recursive: true, force: true });
-    }
-  });
-
-  it("the live loader reads this checkout's plugins/ directories, not copies under node_modules", () => {
-    // The whole point, on the real tree: every library plugin's files come from the repo.
-    for (const plugin of loadLibraryPlugins()) {
-      expect(libraryPluginPackage(plugin.name)?.dir).toBe(path.join(pluginsRoot, plugin.name));
     }
   });
 });

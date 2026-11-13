@@ -28,7 +28,7 @@ See [Agents](/agents).
 
 ### Agent State
 
-Agent State is an agent's persistent directory, `agent_state/`. It holds the agent's configuration (`system_config.yaml`), its editable prompt file `AGENTS.md`, tool and MCP server settings, Skills, hook packages, memory, Vault and scheduled tasks. An agent's behavior lives entirely in these files: you can change it by editing them, and so can another agent.
+Agent State is an agent's persistent directory, `agent_state/`. It holds the agent's configuration (`system_config.yaml`), its editable prompt file `AGENTS.md`, tool and MCP server settings, Skills, hook packages, workbenches, memory, Vault and scheduled tasks. An agent's behavior lives entirely in these files: you can change it by editing them, and so can another agent.
 
 See [Configuration Reference](/configuration).
 

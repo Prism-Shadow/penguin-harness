@@ -50,11 +50,11 @@ describe("a2uiDrafts", () => {
 describe("the chat page", () => {
   it("hands the store, scoped by Session, to the open question's blocks", () => {
     const page = readFileSync(
-      new URL("../src/features/chat/chat-page.tsx", import.meta.url),
+      new URL("../src/features/chat/session/use-session-controls.ts", import.meta.url),
       "utf8",
     );
     const actions = /const a2uiActions = useMemo<A2uiActions>\(([\s\S]*?)\n {2}\);/.exec(page);
     expect(actions?.[1]).toContain("drafts: a2uiDrafts");
-    expect(actions?.[1]).toContain("draftScope: selectedSessionId");
+    expect(actions?.[1]).toContain("draftScope: selected?.sessionId");
   });
 });

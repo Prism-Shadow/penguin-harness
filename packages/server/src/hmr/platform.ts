@@ -83,11 +83,13 @@ import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import {
   useInstalledPluginPrefix,
+  useLibraryHost,
   usePushedPluginLibrary,
   usePushedBenchmarkDirectory,
   userText,
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
+import { serverPackageDir } from "../plugin/library-host.js";
 import { pushedLibraryDir, pushedBenchmarksDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
@@ -423,7 +425,10 @@ async function createInner(
   // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
+  // Otherwise it is the one the server package was installed with: its own dependencies name
+  // the plugin packages (core no longer does), so it names itself the library's host.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
+  useLibraryHost(serverPackageDir());
   if (caps !== null) usePushedBenchmarkDirectory(pushedBenchmarksDir(caps.hmr.assetsDir()));
   // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
   // servers in the data root's plugin prefix, beside the ones the build ships.

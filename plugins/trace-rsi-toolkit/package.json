@@ -20,28 +20,16 @@
   "files": [
     "icon.svg",
     "skills",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "description_zh": "TRACE RSI 工具包：组织容器内训练与独立评测，对比轨迹修订技能库，按训练分数选择版本后测试。",
-    "short_description": "TRACE RSI Toolkit: evolve skills from contrasting trajectories.",
-    "short_description_zh": "TRACE RSI 工具包：对比轨迹，进化技能库。",
-    "category": "rsi",
-    "icon": "icon.svg",
-    "quick_start": {
-      "prompt": "Use TRACE on the selected Project Benchmarks with the requested model and budget.",
-      "prompt_zh": "使用 TRACE，按指定模型和预算完成选定 Project Benchmark 的实验。",
-      "skills": [
-        "trace-rsi-toolkit"
-      ]
-    },
-    "title": "TRACE RSI Toolkit",
-    "title_zh": "TRACE 自进化工具包",
-    "references": [
-      "https://arxiv.org/abs/2608.22793"
-    ]
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }

@@ -23,8 +23,9 @@ import {
   findSourceFile,
   scanSourceRoots,
   unscannedRoots,
+  type SourceFile,
+  type SourceScan,
 } from "../../../ui/src/testing/source-roots";
-import type { SourceFile, SourceScan } from "../../../ui/src/testing/source-roots";
 
 export type { SourceFile, SourceScan };
 

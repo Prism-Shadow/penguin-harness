@@ -61,11 +61,14 @@ describe("trayMenuTemplate", () => {
     // `/chat` with no session in the path redirects to the most recent conversation, so the
     // entry has to name the Web App's draft sentinel. This package cannot import it — it does
     // not depend on the Web App — so the literal is checked against the source that owns it.
-    const chatPage = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "../../web/src/features/chat/chat-page.tsx"),
+    const draftSessions = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../web/src/features/chat/draft-sessions.ts",
+      ),
       "utf8",
     );
-    const draftId = /export const DRAFT_SESSION_ID = "([^"]+)"/.exec(chatPage)?.[1];
+    const draftId = /export const DRAFT_SESSION_ID = "([^"]+)"/.exec(draftSessions)?.[1];
     expect(draftId, "DRAFT_SESSION_ID moved or was renamed in the Web App").toBeDefined();
     expect(TRAY_NAV_PATHS["new-session"]).toBe(`/chat/${draftId}`);
   });

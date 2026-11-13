@@ -20,7 +20,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement as h } from "react";
 import { AuthProvider } from "../src/state/auth";
-import { WorkspaceBrowser } from "../src/features/chat/workspace-browser";
+import { WorkspaceBrowser } from "../src/features/workspace/workspace-browser";
 import { S } from "../src/lib/strings";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { button, click, dialogs, mount, run, type, unmountAll, waitFor } from "./helpers/dom";

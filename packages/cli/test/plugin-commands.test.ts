@@ -10,8 +10,9 @@
  *   top-level directory without node_modules or .git, and posted to the zip route.
  * - A package of MCP servers alone is a plugin too: it is posted, and the summary names each
  *   server with its transport and target — the URL it reaches, or the command it runs.
- * - A directory the library would refuse, one that is no plugin at all, or one past the server's
- *   caps is reported and nothing is posted.
+ * - A directory the library would refuse, one never built (no ifaces.json), one whose table
+ *   declares nothing a plugin carries, or one past the server's caps is reported and nothing is
+ *   posted.
  * - Another version on the server answers 409: the CLI says how to replace it, and
  *   `--overwrite` sends the same package again with `overwrite`.
  */
@@ -25,6 +26,24 @@ import { getMessages } from "../src/i18n.js";
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");
+
+/** The ifaces.json gen-ifaces writes for a package of content: one empty component contributing `contributes`. */
+const table = (packageName: string, contributes: Record<string, unknown[]>) =>
+  JSON.stringify({
+    ifaces: { [`${packageName}#Content`]: { name: "Content", methods: {}, slots: {} } },
+    types: {},
+    modules: {
+      Content: {
+        name: "Content",
+        kind: "component",
+        requires: {},
+        provides: { Content: `${packageName}#Content` },
+        contributes,
+        children: [],
+      },
+    },
+    plugin: { modules: ["Content"], replaces: [] },
+  });
 
 let server: FakeServer;
 let uninstall: () => void;
@@ -126,7 +145,14 @@ describe("penguin plugin install <directory>", () => {
       name: "@acme/notes",
       version: "1.0.0",
       description: "Take notes.",
-      penguin: { short_description: "Notes.", category: "office-productivity" },
+    }),
+    "ifaces.json": table("@acme/notes", {
+      "PluginLibraryModule.cards": [
+        { id: "notes.card", shortDescription: "Notes.", category: "office-productivity" },
+      ],
+      "PluginLibraryModule.skills": [
+        { id: "notes.skill.notes", name: "notes", path: "skills/notes" },
+      ],
     }),
     "skills/notes/SKILL.md":
       "---\nname: notes\ndescription: Take notes.\nversion: 2026.10.10.1\n---\n\nBody.\n",
@@ -147,7 +173,11 @@ describe("penguin plugin install <directory>", () => {
     const post = server.requests.find((r) => r.method === "POST");
     expect(post?.path).toBe("/api/projects/proj-1/plugins/installed/archive");
     expect(post?.body).not.toHaveProperty("overwrite");
-    expect(uploaded()).toEqual(["notes/package.json", "notes/skills/notes/SKILL.md"]);
+    expect(uploaded()).toEqual([
+      "notes/ifaces.json",
+      "notes/package.json",
+      "notes/skills/notes/SKILL.md",
+    ]);
     const zip = unzipSync(new Uint8Array(Buffer.from(String(post?.body?.dataBase64), "base64")));
     expect(JSON.parse(strFromU8(zip["notes/package.json"]!))).toMatchObject({
       name: "@acme/notes",
@@ -158,30 +188,29 @@ describe("penguin plugin install <directory>", () => {
 
   it("posts a package of MCP servers alone, and names each server with its transport and target", async () => {
     const dir = await packageDir({
-      "package.json": JSON.stringify({
-        name: "@ported/mail",
-        version: "0.1.9",
-        penguin: {
-          mcp_servers: [
-            {
-              name: "gmail",
-              config: {
-                transport: "http",
-                url: "https://gmailmcp.googleapis.com/mcp/v1",
-                oauth: { client_id: "${GMAIL_CLIENT_ID}" },
-              },
+      "package.json": JSON.stringify({ name: "@ported/mail", version: "0.1.9" }),
+      "ifaces.json": table("@ported/mail", {
+        "PluginLibraryModule.mcpServers": [
+          {
+            id: "mail.mcp.gmail",
+            name: "gmail",
+            config: {
+              transport: "http",
+              url: "https://gmailmcp.googleapis.com/mcp/v1",
+              oauth: { client_id: "${GMAIL_CLIENT_ID}" },
             },
-            {
-              name: "mail-local",
-              config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs", "--stdio"] },
-            },
-          ],
-        },
+          },
+          {
+            id: "mail.mcp.mail-local",
+            name: "mail-local",
+            config: { command: "node", args: ["${PLUGIN_ROOT}/server.mjs", "--stdio"] },
+          },
+        ],
       }),
       "server.mjs": "export {};\n",
     });
     expect(await cli(["plugin", "install", dir, "--project-id", "proj-1"])).toBe(0);
-    expect(uploaded()).toEqual(["mail/package.json", "mail/server.mjs"]);
+    expect(uploaded()).toEqual(["mail/ifaces.json", "mail/package.json", "mail/server.mjs"]);
     expect(out()).toContain(
       t.plugin.mcpServerLine("gmail", "http", "https://gmailmcp.googleapis.com/mcp/v1"),
     );
@@ -190,7 +219,7 @@ describe("penguin plugin install <directory>", () => {
     );
   });
 
-  it("reports a directory the library would refuse, or one that is no plugin, and posts nothing", async () => {
+  it("reports a directory the library would refuse, one never built, or one that is no plugin, and posts nothing", async () => {
     const noVersion = await packageDir({
       ...NOTES,
       "package.json": JSON.stringify({ name: "@acme/notes", description: "Take notes." }),
@@ -199,8 +228,17 @@ describe("penguin plugin install <directory>", () => {
     expect(stderr.join("")).toContain("no release version");
     await fs.rm(work!, { recursive: true, force: true });
 
+    const unbuilt = await packageDir({
+      "package.json": JSON.stringify({ name: "x", version: "1.0.0" }),
+      "skills/x/SKILL.md": "---\nname: x\ndescription: X.\n---\n",
+    });
+    expect(await cli(["plugin", "install", unbuilt])).not.toBe(0);
+    expect(stderr.join("")).toContain(t.plugin.dirNotBuilt(unbuilt));
+    await fs.rm(work!, { recursive: true, force: true });
+
     const empty = await packageDir({
       "package.json": JSON.stringify({ name: "x", version: "1.0.0" }),
+      "ifaces.json": table("x", {}),
     });
     expect(await cli(["plugin", "install", empty])).not.toBe(0);
     expect(stderr.join("")).toContain(t.plugin.dirNotPlugin(empty));

@@ -7,8 +7,8 @@
  *   listed twice — the one guard on the data file, which the type system cannot hold.
  */
 import { describe, expect, it } from "vitest";
-import { noteLines, releaseNotesNewestFirst } from "../src/lib/release-notes";
-import type { ReleaseNote } from "../src/lib/release-notes";
+import { noteLines, releaseNotesNewestFirst, type ReleaseNote } from "../src/lib/release-notes";
+
 import { RELEASE_NOTES } from "../src/lib/release-notes-data";
 
 const note = (version: string): ReleaseNote => ({

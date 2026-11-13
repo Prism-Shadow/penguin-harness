@@ -5,13 +5,13 @@
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
- *   versioned, titled, described and licensed as the package names itself, described in both languages
- *   and drawn with the icon of its own package.json `penguin` block and icon.svg (which it
- *   publishes), and serves each one's own shipped README.md; a listed package not on this
+ *   versioned, titled, described and licensed as the package names itself, described in both
+ *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
+ *   it publishes), and serves each one's own shipped README.md; a listed package not on this
  *   machine, a name it does not list and a remote registry have no readme.
- * - A package on this machine describes itself in the listing over what its row says; one
- *   without a penguin block or an icon, and a row whose package is not here, stay as the index
- *   wrote them; an icon that is not a plain SVG is never sent.
+ * - A package on this machine describes itself in the listing over what its row says (its card
+ *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
+ *   them; an icon that is not a plain SVG is never sent.
  * - The HTTP registry fetches its index URL and runs the document through the same validator;
  *   an HTTP error, non-JSON and a malformed document fail it; a failed connection is tried
  *   again, an answer is not. No network: fetch is the suite's fetch fake.
@@ -28,11 +28,15 @@
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
  *   name the deployment does not list and needs the name.
  */
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { libraryContributions, readPluginTable } from "@prismshadow/penguin-core";
+import type { LibraryContributions } from "@prismshadow/penguin-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginIndexEntry, PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
@@ -51,6 +55,7 @@ import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
 import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { contentTable } from "./plugin-fixtures.js";
 
 const VALID_ENTRY: PluginIndexEntry = {
   name: "@example/penguin-plugin-demo",
@@ -174,15 +179,6 @@ interface PackageManifest {
   description?: string;
   license?: string;
   files?: string[];
-  /** The product's own fields: what the package says of itself for its card. */
-  penguin?: {
-    title?: string;
-    title_zh?: string;
-    description_zh?: string;
-    short_description?: string;
-    short_description_zh?: string;
-    category?: string;
-  };
 }
 
 const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
@@ -193,6 +189,55 @@ for (const dir of readdirSync(PLUGINS_DIR)) {
     readFileSync(`${PLUGINS_DIR}${dir}/package.json`, "utf8"),
   ) as PackageManifest;
   packages.set(manifest.name, { dir, manifest });
+}
+
+const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", import.meta.url));
+type Card = NonNullable<LibraryContributions["card"]>;
+
+/**
+ * The sandbox backends' cards as their builds write them: the generator each `build` runs, over
+ * the package's own compiler options with its entry alone as the root (its tests are not part of
+ * its table), into a temp table read by core's reader. Generated here rather than read from the
+ * packages — they are no dependency of the server, so nothing before this suite built them — and
+ * from the source as it is, so a stale table cannot pass. Two at a time: each is a TypeScript
+ * program of its own, beside the suite's other workers.
+ */
+async function sandboxCards(dirs: readonly string[]): Promise<Map<string, Card>> {
+  const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-tables-"));
+  const cards = new Map<string, Card>();
+  const generate = async (dir: string) => {
+    const at = path.join(out, dir);
+    await mkdir(at, { recursive: true });
+    const tsconfig = path.join(at, "tsconfig.json");
+    await writeFile(
+      tsconfig,
+      JSON.stringify({
+        extends: path.join(PLUGINS_DIR, dir, "tsconfig.json"),
+        include: [],
+        files: [path.join(PLUGINS_DIR, dir, "src", "index.ts")],
+      }),
+    );
+    await promisify(execFile)(process.execPath, [
+      GENERATOR,
+      "--project",
+      tsconfig,
+      "--out",
+      path.join(at, "ifaces.json"),
+    ]);
+    const warnings: string[] = [];
+    cards.set(dir, libraryContributions(readPluginTable(at)!, warnings).card ?? {});
+    expect(warnings, dir).toEqual([]);
+  };
+  try {
+    const queue = [...dirs];
+    const worker = async () => {
+      for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) await generate(dir);
+    };
+    await Promise.all([worker(), worker()]);
+    return cards;
+  } finally {
+    await rm(out, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -271,6 +316,12 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
+  let cards: Map<string, Card>;
+  beforeAll(async () => {
+    const index = await builtinPluginRegistry().index();
+    cards = await sandboxCards(index.map((entry) => packages.get(entry.name)!.dir));
+  });
+
   it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
     const index = await builtinPluginRegistry().index();
     // Valid under the format every registry is held to.
@@ -289,23 +340,25 @@ describe("the builtin catalogue and the packages it lists", () => {
 
   /**
    * The row is the card on a server the package is not installed on, so it repeats what the
-   * package says of itself — its package.json's `penguin` block and its icon.svg — and the
-   * package publishes both, for the card of a server it is installed on.
+   * package says of itself — its card contribution, in the ifaces.json its build writes, and its
+   * icon.svg — and the package publishes both, for the card of a server it is installed on.
    */
-  it("describes each backend in both languages with the package's own penguin block and icon.svg", async () => {
+  it("describes each backend in both languages with the package's own card and icon.svg", async () => {
     for (const entry of await builtinPluginRegistry().index()) {
       const { dir, manifest } = packages.get(entry.name)!;
+      const card = cards.get(dir)!;
       expect(entry, entry.name).toMatchObject({
-        title: manifest.penguin?.title,
-        titleZh: manifest.penguin?.title_zh,
+        title: card.title,
+        titleZh: card.titleZh,
         description: manifest.description,
-        descriptionZh: manifest.penguin?.description_zh,
-        shortDescription: manifest.penguin?.short_description,
-        shortDescriptionZh: manifest.penguin?.short_description_zh,
+        descriptionZh: card.descriptionZh,
+        shortDescription: card.shortDescription,
+        shortDescriptionZh: card.shortDescriptionZh,
         icon: readFileSync(`${PLUGINS_DIR}${dir}/icon.svg`, "utf8"),
-        categories: [manifest.penguin?.category],
+        categories: [card.category],
       });
       expect(manifest.files, entry.name).toContain("icon.svg");
+      expect(manifest.files, entry.name).toContain("ifaces.json");
     }
   });
 
@@ -649,8 +702,8 @@ describe("the route's own merge", () => {
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {
     // A published row that carries only English and no icon, for a package an admin installed
-    // into the data root's prefix with its own penguin block and icon.svg; and one installed
-    // with neither, which keeps its row's text and the puzzle piece.
+    // into the data root's prefix with its own card and icon.svg; and one installed with
+    // neither, which keeps its row's text and the puzzle piece.
     const installedHere: PluginIndexEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
@@ -670,12 +723,17 @@ describe("the route's own merge", () => {
           name: installedHere.name,
           version: "1.0.0",
           description: "A demo plugin.",
-          penguin: {
+        }),
+      );
+      await writeFile(
+        path.join(dir, "ifaces.json"),
+        contentTable(installedHere.name, {
+          card: {
             title: "Local demo",
-            title_zh: "本地示例",
-            description_zh: "一个示例插件。",
-            short_description: "Demo.",
-            short_description_zh: "示例。",
+            titleZh: "本地示例",
+            descriptionZh: "一个示例插件。",
+            shortDescription: "Demo.",
+            shortDescriptionZh: "示例。",
           },
         }),
       );
@@ -718,11 +776,11 @@ describe("the route's own merge", () => {
       await mkdir(dir, { recursive: true });
       await writeFile(
         path.join(dir, "package.json"),
-        JSON.stringify({
-          name: entry.name,
-          version: "1.0.0",
-          penguin: { short_description: "Risky." },
-        }),
+        JSON.stringify({ name: entry.name, version: "1.0.0" }),
+      );
+      await writeFile(
+        path.join(dir, "ifaces.json"),
+        contentTable(entry.name, { card: { shortDescription: "Risky." } }),
       );
       await writeFile(
         path.join(dir, "icon.svg"),

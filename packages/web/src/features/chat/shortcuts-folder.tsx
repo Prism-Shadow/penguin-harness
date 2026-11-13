@@ -55,8 +55,9 @@ import {
   removeShortcut,
   shortcutDraftError,
   upsertShortcut,
+  type ShortcutDraft,
+  type UserShortcut,
 } from "./user-shortcuts";
-import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /**

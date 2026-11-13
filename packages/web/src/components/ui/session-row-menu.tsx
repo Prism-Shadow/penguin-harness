@@ -20,8 +20,14 @@
  * The surfaces themselves are the UI package's (`SessionRow`, `RowHoverActions`, the `MenuItem`
  * rows); this module says which actions they carry and in what words.
  */
-import { ICONS, MenuItem, RowHoverActions } from "@prismshadow/penguin-ui";
-import type { AnchorRect, RowActionItem } from "@prismshadow/penguin-ui";
+import {
+  ICONS,
+  MenuItem,
+  RowHoverActions,
+  type AnchorRect,
+  type RowActionItem,
+} from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 
 /** One thing a Session row can do to its Session. */

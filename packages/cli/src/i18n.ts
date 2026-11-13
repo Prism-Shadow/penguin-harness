@@ -283,7 +283,9 @@ export interface Messages {
     unchanged(name: string, version: string | null): string;
     /** A package directory the plugin library would refuse, with the reader's reason; nothing was sent. */
     dirRefused(dir: string, reason: string): string;
-    /** A package directory with neither skills/, hooks/, MCP servers nor ifaces.json; nothing was sent. */
+    /** A package directory without an ifaces.json: it was never built; nothing was sent. */
+    dirNotBuilt(dir: string): string;
+    /** A built package directory whose ifaces.json contributes nothing for an Agent and lists no server modules; nothing was sent. */
     dirNotPlugin(dir: string): string;
     /** A package directory past the server's upload caps; nothing was sent. */
     dirTooLarge(dir: string): string;
@@ -1446,8 +1448,10 @@ const en: Messages = {
       `${name}${version === null ? "" : ` ${version}`} is already installed on the server; nothing changed.`,
     dirRefused: (dir, reason) =>
       `${dir} is not a package the plugin library can read, so nothing was sent: ${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} has no ifaces.json, so it is not a built plugin package: build it first (npm install, then npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json). Nothing was sent.`,
     dirNotPlugin: (dir) =>
-      `${dir} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (penguin.mcp_servers) nor the ifaces.json of server modules. Nothing was sent.`,
+      `${dir} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry. Nothing was sent.`,
     dirTooLarge: (dir) =>
       `${dir} exceeds what a plugin package may hold (2000 files, 5MB per file, 50MB in all, a 14MB zip). Nothing was sent.`,
     uploading: (name, version, files) => `Uploading ${name} ${version} (${files} files)…`,
@@ -2579,8 +2583,10 @@ const zh: Messages = {
     unchanged: (name, version) =>
       `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，没有任何改动。`,
     dirRefused: (dir, reason) => `插件库无法读取 ${dir} 中的包，未发送任何内容：${reason}`,
+    dirNotBuilt: (dir) =>
+      `${dir} 没有 ifaces.json，不是构建过的插件包：请先构建（npm install，然后 npx penguin-gen-ifaces --project tsconfig.json --out ifaces.json）。未发送任何内容。`,
     dirNotPlugin: (dir) =>
-      `${dir} 不是 PenguinHarness 插件：既没有 skills/、hooks/ 与 MCP Server（penguin.mcp_servers），也没有服务端模块的 ifaces.json。未发送任何内容。`,
+      `${dir} 不是 PenguinHarness 插件：它的 ifaces.json 既没有贡献 Skill、钩子包、MCP Server 或 Workbench，也没有列出带代码入口的服务端模块。未发送任何内容。`,
     dirTooLarge: (dir) =>
       `${dir} 超出插件包的上限（2000 个文件、单个文件 5MB、合计 50MB、zip 14MB）。未发送任何内容。`,
     uploading: (name, version, files) => `正在上传 ${name} ${version}（${files} 个文件）…`,

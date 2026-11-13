@@ -28,8 +28,16 @@
  * view themselves; from then on it is theirs, and only the percent button gives it back.
  * The arithmetic is in canvas-view.ts.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import {
@@ -51,11 +59,11 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneInk } from "../../lib/tone";
-import { useCompany } from "../../state/company";
+import { useCompany } from "./company-state";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-import { orgKey } from "./company-nav";
+import { orgKey } from "../../lib/company-nav";
 import { liveEmployeeStates } from "./org-sessions";
 import { DESK_ICON } from "./channel-header";
 import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
@@ -69,16 +77,18 @@ import {
   viewTransform,
   wheelZoomFactor,
   zoomAt,
+  type CanvasSize,
+  type CanvasView,
 } from "./canvas-view";
-import type { CanvasSize, CanvasView } from "./canvas-view";
+
 import { ChartCard, ChartLegend } from "./chart-card";
 import {
   DeskRenewDialog,
   EmployeeEditDialog,
   EmployeeProfileDialog,
   HireDialog,
+  type EmployeeEdit,
 } from "./employee-dialogs";
-import type { EmployeeEdit } from "./employee-dialogs";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */

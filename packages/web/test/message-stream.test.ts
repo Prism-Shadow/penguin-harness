@@ -49,6 +49,7 @@ import type {
   OlderHistoryControls,
   StreamRenderContext,
 } from "../src/features/chat/message-stream";
+
 import type { ChatItem } from "../src/lib/amsp/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S, setActiveStrings, zh } from "../src/lib/strings";

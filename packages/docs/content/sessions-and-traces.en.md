@@ -33,8 +33,10 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, hooks/, schedule/
-        │   └── memory/               # Memory: user/ plus one directory per Workspace,
-        │                             # each with its own MEMORY.md index
+        │   ├── memory/               # Memory: user/ plus one directory per Workspace,
+        │   │                         # each with its own MEMORY.md index
+        │   └── workbenches/          # one folder per workbench: source, ui/, state.json
+        ├── agent_state.git/          # bare git repository the server writes: workbench versions
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)

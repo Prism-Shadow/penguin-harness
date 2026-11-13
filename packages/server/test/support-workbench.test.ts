@@ -58,7 +58,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
   beforeAll(async () => {
     t = await createTestApp({
       beforeSeed: async (root) => {
-        const dir = path.join(root, "default_project/agents/penguin_support/workbenches/support");
+        const dir = path.join(
+          root,
+          "default_project/agents/penguin_support/agent_state/workbenches/support",
+        );
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(
           path.join(dir, "state.json"),
@@ -186,7 +189,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     expect(await list.json()).toMatchObject({
       workbenches: [{ error: null, tabs: [{ key: "support" }] }],
     });
-    const disk = path.join(t.root, "default_project/agents/plugin_support/workbenches/support");
+    const disk = path.join(
+      t.root,
+      "default_project/agents/plugin_support/agent_state/workbenches/support",
+    );
     const state = JSON.stringify({
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
     });
@@ -217,7 +223,10 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
   it("refuses a conflicting workbench without installing the support Skill", async () => {
     const agent = "/api/projects/default_project/agents/conflict_support";
     await admin.post("/api/projects/default_project/agents", { agentId: "conflict_support" });
-    const dir = path.join(t.root, "default_project/agents/conflict_support/workbenches/support");
+    const dir = path.join(
+      t.root,
+      "default_project/agents/conflict_support/agent_state/workbenches/support",
+    );
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), "{}");
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(409);
@@ -230,7 +239,8 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
   /** When set, the model holds its next answer until this settles. */
   let hold: Promise<void> | undefined;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const dir = () => path.join(t.root, "default_project/agents/penguin_support/workbenches/support");
+  const dir = () =>
+    path.join(t.root, "default_project/agents/penguin_support/agent_state/workbenches/support");
   /** The ticket as saved on disk, never read through GET. */
   const saved = async (id: string) =>
     (

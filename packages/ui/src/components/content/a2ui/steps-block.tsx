@@ -11,7 +11,7 @@
  * in Safari), and the disc's number is hidden from assistive tech: the list already says which
  * item of how many a step is.
  */
-import type { A2uiStep, A2uiSteps } from "@prismshadow/penguin-core/a2ui";
+import type { A2uiStep, A2uiSteps } from "@prismshadow/a2ui";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";
 import { CodeBlock } from "../code-block/code-block";

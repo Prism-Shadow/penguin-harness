@@ -21,25 +21,16 @@
     "icon.svg",
     "skills",
     "hooks",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "description_zh": "Agent 评估：为智能体设计并校准能力 Benchmark（或导入已发布的 Benchmark 包），并逐题隔离执行、私下评分——默认 RSI 工具包的优化循环就以这些测量为准。",
-    "short_description": "Design Benchmarks, run and score agent evaluations.",
-    "short_description_zh": "设计 Benchmark，执行并评分智能体评测。",
-    "category": "ai-app-development",
-    "icon": "icon.svg",
-    "quick_start": {
-      "prompt": "List the Benchmark packages in Prism-Shadow/penguin-harness-benchmark and tell me in one line each what they measure. Import nothing until I pick one.",
-      "prompt_zh": "列出 Prism-Shadow/penguin-harness-benchmark 里的 Benchmark 包，每个用一句话说明它测什么。我选定之前不要导入任何一个。",
-      "skills": [
-        "benchmark-design"
-      ]
-    },
-    "title": "Agent Evaluation",
-    "title_zh": "智能体评测"
+  "scripts": {
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
   }
 }

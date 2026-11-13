@@ -21,31 +21,18 @@
     "icon.svg",
     "skills",
     "hooks",
+    "ifaces.json",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
-  "penguin": {
-    "short_description": "Run Claude Code on remote hosts over SSH.",
-    "short_description_zh": "在远程主机上通过 SSH 运行 Claude Code（持久会话 / headless / tmux 交互 / 多轮续接）。",
-    "category": "software-development",
-    "icon": "icon.svg",
-    "preinstall": false,
-    "quick_start": {
-      "prompt": "Check whether ssh and the claude CLI are available on this machine, then show the exact commands you would use to run a headless Claude Code task on a remote host.",
-      "prompt_zh": "检查这台机器上 ssh 和 claude CLI 是否可用，然后给出在远程主机上以无界面方式运行一次 Claude Code 任务的具体命令。",
-      "skills": [
-        "remote-claude-code"
-      ]
-    },
-    "title": "Remote Claude Code",
-    "title_zh": "远程操控 Claude Code"
-  },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
   },
   "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "vitest": "^4.1.12"
   }

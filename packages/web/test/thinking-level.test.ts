@@ -1,5 +1,5 @@
 /**
- * The thinking-level pickers (features/chat/thinking-level.ts) and the tier names in both
+ * The thinking-level pickers (features/model-picker/thinking-level.ts) and the tier names in both
  * dictionaries.
  *
  * - The pickers offer exactly the tiers core accepts as a chat default; every stored level,
@@ -34,8 +34,8 @@ import {
   prefixCacheAtRisk,
   sessionThinkingLevel,
   thinkingLevelLabel,
-} from "../src/features/chat/thinking-level";
-import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
+} from "../src/features/model-picker/thinking-level";
+import type { ThinkingSwitchItem } from "../src/features/model-picker/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {

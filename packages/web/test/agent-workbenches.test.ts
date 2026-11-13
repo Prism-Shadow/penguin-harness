@@ -40,11 +40,8 @@ async function open(tabs: WorkbenchInfo["tabs"] = []) {
     workbenchVersions: [
       {
         revision: "previous",
-        name: "Support",
-        version: "0",
-        uiRev: "ui0",
+        commit: "0123456789ab",
         savedAt: "2026-10-13T00:00:00Z",
-        files: ["index.ts"],
       },
     ],
   });

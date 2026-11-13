@@ -10,8 +10,8 @@
  * repository or a tarball (`https://github.com/o/r`, `github:o/r#tag`) — the server checks it and
  * installs it into its data root with npm — or a local package directory: a directory holding a
  * package.json (it wins over a name of the same spelling). A directory is read here first with the
- * plugin library's own reader (a package the library would refuse is reported and nothing is
- * sent), zipped without `node_modules`, `.git`, `.npmrc` or symlinks under one top-level
+ * plugin library's own reader (a package that was never built — it has no ifaces.json — or that
+ * the library would refuse is reported and nothing is sent), zipped without `node_modules`, `.git`, `.npmrc` or symlinks under one top-level
  * directory, and uploaded through the zip route the Plugins page's upload uses; another version of
  * the package on the server is replaced only with `--overwrite`. This is how an Agent installs a
  * package it built — a foreign plugin ported by the `plugin-porting` skill — since the server
@@ -36,7 +36,8 @@ import { zipSync } from "fflate";
 import {
   libraryParts,
   readLibraryPackage,
-  readPluginPackage,
+  readPackageJson,
+  readPluginTable,
   resolveMCPServer,
 } from "@prismshadow/penguin-core";
 import type { PluginMcpServer } from "@prismshadow/penguin-core";
@@ -148,16 +149,21 @@ async function uploadDirectory(
   let pluginName: string;
   let version: string;
   let mcpServers: PluginMcpServer[] = [];
-  const parts = libraryParts(dir);
-  const library = parts.skills || parts.hooks || parts.mcp;
+  let built: boolean;
   try {
-    ({ name, pluginName, version } = readPluginPackage(dir).manifest);
-    if (library) mcpServers = readLibraryPackage(dir).mcpServers;
+    ({ name, pluginName, version } = readPackageJson(dir).manifest);
+    built = readPluginTable(dir) !== null;
   } catch (err) {
     throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
   }
-  if (!library && !fs.existsSync(path.join(dir, "ifaces.json"))) {
-    throw new Error(t.plugin.dirNotPlugin(dir));
+  if (!built) throw new Error(t.plugin.dirNotBuilt(dir));
+  const parts = libraryParts(dir);
+  const library = parts.skills || parts.hooks || parts.mcp || parts.workbenches;
+  if (!library && !parts.modules) throw new Error(t.plugin.dirNotPlugin(dir));
+  try {
+    if (library) mcpServers = readLibraryPackage(dir).mcpServers;
+  } catch (err) {
+    throw new Error(t.plugin.dirRefused(dir, err instanceof Error ? err.message : String(err)));
   }
   const packed = zipPackage(dir, pluginName);
   if (packed === null) throw new Error(t.plugin.dirTooLarge(dir));

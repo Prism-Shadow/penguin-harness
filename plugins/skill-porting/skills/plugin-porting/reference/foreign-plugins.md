@@ -47,25 +47,28 @@ plugins with a `source` (a path in the same repository, or a git URL with a pinn
 
 ## The mapping
 
+"card" is the card entry `write-module.mjs` writes from `card.json` into `src/index.ts`; the other
+targets are `package.json` fields or files of the package.
+
 | Upstream | Codex | Claude Code | → package |
 | --- | --- | --- | --- |
 | name | `name` | `name` | `name: "@ported/<name>"` (lower case, `[a-z0-9-]`) |
 | version | `version` | `version` (optional) | `version` when semver, else `0.1.0` |
 | description | `description` | `description` | `description` |
-| display name | `interface.displayName` | — | `penguin.title` |
-| short description | `interface.shortDescription` | — | `penguin.short_description` |
+| display name | `interface.displayName` | — | card `title` |
+| short description | `interface.shortDescription` | — | card `shortDescription` |
 | long description | `interface.longDescription` | — | first paragraph under the README header |
 | developer | `interface.developerName`, `author` | `author` | `author` (a name) |
 | links | `homepage`, `repository`, `interface.websiteURL` | `homepage`, `repository` | `homepage`; `repository: {type: "git", url, directory}` — the upstream folder is the provenance; privacy and terms URLs go to the README |
 | license, keywords | same | same | same, plus `penguin-plugin` and `ported` |
-| category | `interface.category` | marketplace `category` | Developer Tools / Developer / DevOps / Cloud → `software-development`; Productivity / Office / Communication / Project Management / Writing → `office-productivity`; AI / Machine Learning / Data / Agents → `ai-app-development`; else omitted (Other) |
-| default prompt | `interface.defaultPrompt[0]` | — | `penguin.quick_start.prompt` |
-| icon | `interface.composerIcon` (SVG) | — | `icon.svg` + `penguin.icon`; a PNG `logo` is not used |
-| skills | `skills` (default `./skills/`) | `skills`, default `skills/`, else a root `SKILL.md` | `skills/<dir>/` normalised by `scripts/normalize-skills.mjs` |
+| category | `interface.category` | marketplace `category` | card `category`: Developer Tools / Developer / DevOps / Cloud → `software-development`; Productivity / Office / Communication / Project Management / Writing → `office-productivity`; AI / Machine Learning / Data / Agents → `ai-app-development`; else omitted (Other) |
+| default prompt | `interface.defaultPrompt[0]` | — | card `quickStart.prompt` |
+| icon | `interface.composerIcon` (SVG) | — | `icon.svg` + card `icon`; a PNG `logo` is not used |
+| skills | `skills` (default `./skills/`) | `skills`, default `skills/`, else a root `SKILL.md` | `skills/<dir>/` normalised by `scripts/normalize-skills.mjs`, each declared by `scripts/write-module.mjs` |
 | commands | `commands/*.md` | `commands/*.md` | dropped when the body only routes to a skill; otherwise a skill of its own |
 | agents | — | `agents/*.md` | dropped (a procedural one may be folded into a skill's body) |
 | hooks | — | `hooks/` | dropped: not the PenguinHarness hook protocol |
-| MCP servers | `.mcp.json` | `mcpServers` (inline, or `.mcp.json`) | `penguin.mcp_servers`, by `scripts/port-mcp.mjs` (rules below); listed in the README header with what each needs |
+| MCP servers | `.mcp.json` | `mcpServers` (inline, or `.mcp.json`) | the module's MCP server entries, by `scripts/port-mcp.mjs` (rules below) and `scripts/write-module.mjs`; listed in the README header with what each needs |
 | apps, LSP | `.app.json` | `lspServers` | dropped, named in the README: `.app.json` holds ChatGPT hosted-app connector ids (`connector_…`), which resolve only inside ChatGPT's app runtime — there is nothing to connect to from outside |
 | root assets | `assets/` | — | only the SVG icon is taken |
 | README | `README.md` | `README.md` | kept, under the generated header |
@@ -103,9 +106,9 @@ Claude Code: the same map, with or without the `mcpServers` wrapper; `type: "htt
 What `scripts/port-mcp.mjs` makes of them (`<NAME>` is the server name upper-cased, `_` between
 words):
 
-| Upstream | → `penguin.mcp_servers[]` |
+| Upstream | → `mcpServers[]` entry |
 | --- | --- |
-| the map key | `name`: lower case, `[^a-z0-9_-]` → `-`; a name taken twice gets `-2` and a note |
+| the map key | `name`: lower case, `[^a-z0-9_-]` → `-`; a name taken twice gets `-2` and a note; `id` `<plugin>.mcp.<name>` |
 | `type: "http"` / `"sse"` + `url`; `command` | `config.transport` `http` / `sse` / `stdio`; a URL must be http(s) and its host fixed, else the server is not carried |
 | `command`, `./` arguments, `cwd` | a file of the plugin becomes `${PLUGIN_ROOT}/<path>`, and a note names the file to carry into the package; a server whose command or argument leaves the plugin (`../x`, `./../x`, `bin/../../x` alike) is not carried, and a `cwd` leaving it is dropped |
 | Codex `env_vars` | `env: { NAME: "${NAME}" }` + a setup key each — keep only what the server needs |

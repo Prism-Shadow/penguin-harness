@@ -75,7 +75,7 @@ export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
   /**
-   * Provenance: the plugin whose install wrote this entry (its `penguin.mcp_servers`). Absent
+   * Provenance: the plugin whose install wrote this entry (its `mcpServers` contribution). Absent
    * on an entry the user added. Uninstalling or reinstalling that plugin touches exactly the
    * entries carrying its name.
    */

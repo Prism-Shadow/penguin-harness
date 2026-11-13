@@ -21,7 +21,7 @@ import {
   parseSkillsMessage,
 } from "@prismshadow/amsp/markers";
 import { catalogEntryFor } from "../../server/dist/model-catalog.js";
-import { catalogDelta } from "../../web/src/features/models/catalog-sync";
+import { catalogDelta } from "../../web/src/lib/model-catalog-sync";
 import { splitAttachments } from "../../web/src/lib/attachments";
 import {
   createStreamModel,

@@ -105,12 +105,13 @@ To open an agent's settings, select **Settings** on its card, select one of its 
 | **Tools** | Built-in tool settings and MCP servers |
 | **Skills** | Installed Skills and the Skills prompt |
 | **Hooks** | Installed hook packages and the switch for running them |
+| **Workbenches** | The agent's workbenches: their versions, zip import and export, and removal |
 | **Memory** | The agent's memories and the memory prompts |
 | **Vault** | Environment variables for the agent's commands |
 | **Schedules** | Scheduled tasks |
 | **API** | Whether programs may call the agent over the Agent API, the approval mode of their conversations, and the keys |
 
-Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `memory`, `vault`, `schedules` or `api`.
+Each tab has its own address, `/agents/<agentId>?tab=<tab>`, where `<tab>` is `overview`, `prompt`, `runtime`, `tools`, `skills`, `hooks`, `workbenches`, `memory`, `vault`, `schedules` or `api`.
 
 ### Save changes
 
@@ -144,7 +145,7 @@ Change **Name** or **Description**, then select **Save**.
 The **Agent State** section shows the agent's **Agent State version** and its **State path**, the folder that holds the Agent State on the server. Select the copy button to copy the path.
 
 - **Export snapshot** downloads the Agent State as a `.tar.gz` package. The package leaves out the vault, so secrets never travel in a snapshot.
-- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. A snapshot of the current version is taken first. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
+- **Import snapshot** replaces the whole Agent State with a package and adopts the version inside it, but keeps the agent's current vault. The workbench version history sits beside the Agent State, so an import leaves it as it is. First, the current Agent State is packed into a backup of its own in the agent's folder, `snapshots/import-backup-v<version>-<time>-<random>.tar.gz`. It is made afresh for every import and never replaces an existing file; it is not one of the `v<version>.tar.gz` snapshots, so an older snapshot of the same version is neither reused nor overwritten. Only the Project owner can import. If the package's version is not newer than the current one, a **Version conflict** dialog asks you to confirm the overwrite.
 
 For how versions and snapshots work, see [Self-Improvement](/self-improvement#snapshots-and-versions).
 
@@ -277,6 +278,17 @@ The **Skills** tab lists the Skills installed on the agent. You can export or un
 
 The **Hooks** tab lists the hook packages installed on the agent. You can export and uninstall hook packages, import one with **Import hook**, and turn hooks on or off for the agent with **Enable hooks**. Installing from the library happens on the **Plugins** page. See [Hook packages](/skills#hook-packages).
 
+## Workbenches tab
+
+The **Workbenches** tab lists the agent's workbenches, including those that failed to load. For each one you can open it, **Reload** it, **Restore** an earlier version from its **History**, **Export** its source as a zip, or **Remove** it.
+
+- **History** lists up to 50 versions, newest first. **Restore** makes the workbench's source exactly that version and reloads it at once; its data (`state.json`) stays.
+- **Remove** deletes the workbench and its data. Its earlier versions are no longer listed, even if a workbench with the same id is made again. A folder deleted by hand instead keeps its versions listed for the next workbench with that id.
+- **Export** downloads the source as a zip with one top-level folder named after the workbench id. It never carries `state.json`, hidden files or `node_modules`, and imports back unchanged.
+- **Import zip** adds a workbench from a zip with `package.json` at its root, or inside exactly one top-level folder whose name is the workbench id. A zip that holds `state.json` at the top of the workbench, hidden files, `node_modules`, links, names git refuses or names Windows cannot use is refused before anything is written. If the agent already has a workbench with that id, you are asked before its source is overwritten; its data stays, versions that loaded can still be restored from **History**, and local edits that never loaded are lost. The workbench loads at once: a load that fails is reported with its error instead of the success message.
+
+Any Project member can use the tab. A workbench tab beside the chat offers **History** and **Remove** too. See [Workbench plugins](/skills#workbench-plugins).
+
 ## Memory tab
 
 Memory lets an agent keep what it learns across Sessions. The agent saves what is worth keeping as it works, and you can ask it to remember something. **User memory** applies to all of the agent's Sessions; Workspace memory is kept separately for each Workspace.
@@ -397,8 +409,9 @@ The **API** tab lets programs outside PenguinHarness talk to the agent over HTTP
 
 ## How it works
 
-An agent's configuration and data live in its Agent State, the `agent_state/` folder that the Overview tab shows as **State path**. It holds `system_config.yaml`, `AGENTS.md`, the vault, tools, Skills, hook packages, scheduled tasks and memories. The agent's Traces are stored next to it, in the agent's own folder; see [Data layout](/sessions-and-traces#data-layout).
+An agent's configuration and data live in its Agent State, the `agent_state/` folder that the Overview tab shows as **State path**. It holds `system_config.yaml`, `AGENTS.md`, the vault, tools, Skills, hook packages, workbenches, scheduled tasks and memories. The agent's Traces are stored next to it, in the agent's own folder; see [Data layout](/sessions-and-traces#data-layout).
 
 - Memories are files under `agent_state/memory/`, with a `MEMORY.md` index for each group. For how memory is stored, see [Memory](/configuration#memory).
 - Vault variables are stored in `agent_state/.vault.toml`. For the file format, see [Vault](/configuration#vault).
 - Scheduled tasks are stored as TOML files under `agent_state/schedule/`, which you can also edit by hand. For the file format, see [Schedules](/configuration#schedules).
+- Workbenches are folders under `agent_state/workbenches/<id>/`. Their versions are commits in `agent_state.git/`, a bare git repository the server keeps beside `agent_state/`. See [Workbench plugins](/skills#workbench-plugins).

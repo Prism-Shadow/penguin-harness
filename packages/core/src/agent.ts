@@ -68,7 +68,7 @@ import { ModelSwitchRefusedError, Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
-import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
+import { predatesEveryPromptHooks, userPromptTrigger } from "./plugin/versions.js";
 import type {
   ModelSwitchSupport,
   SessionConfig,
