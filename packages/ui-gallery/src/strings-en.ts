@@ -472,7 +472,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
+          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -625,6 +625,14 @@ export const en: GalleryStrings = {
       external: "All releases",
       keys: "Keyboard hints",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
+      ball: "Floating ball",
+      ballHint:
+        "Drag it to the left or right edge and let go to dock it there; push it past the edge or press × to tuck it away, and the handle on the edge brings it back. The caller stores where it rests.",
+      ballLabel: "Exit full screen",
+      ballTuck: "Tuck to the edge",
+      ballShow: "Show the exit button",
+      ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
+        `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
     },
     inputs: {
       basics: "Inputs",

@@ -1129,6 +1129,8 @@ export const en: Strings = {
         : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to workbench)",
     exitFullPageButton: "Exit full screen",
+    exitBallTuck: "Tuck to the edge",
+    exitBallShow: "Show the exit button",
     retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null

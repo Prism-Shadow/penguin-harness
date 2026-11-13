@@ -302,6 +302,9 @@ export * from "./components/shell/dock-frame/dock-frame";
 export * from "./components/shell/dock-picker/dock-picker";
 export * from "./components/shell/panels-toolbar/panels-toolbar";
 export * from "./components/shell/launcher/launcher";
+// The floating ball built on the launcher's ball: drags to an edge and tucks away there.
+export * from "./components/shell/floating-ball/floating-ball";
+export * from "./components/shell/floating-ball/floating-ball-geometry";
 
 // W7-B — the shell: the app window and its columns, the folded rail, the phone's top bar, the
 // pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
