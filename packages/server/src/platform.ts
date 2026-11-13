@@ -64,7 +64,7 @@ import {
   UpdateCheck,
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
-import { HarnessHistoryStore } from "./services/harness-history.js";
+import { HarnessHistoryStore } from "@penguinharness/plugin-usage/server";
 import { UsersRepo } from "@penguinharness/plugin-settings/server";
 import { AuthSessionsRepo } from "@penguinharness/plugin-settings/server";
 import { ServerSettingsRepo } from "@penguinharness/plugin-settings/server";
