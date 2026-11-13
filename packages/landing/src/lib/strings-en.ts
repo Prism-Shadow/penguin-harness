@@ -1028,7 +1028,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Calendar and finance",
           now: "Standalone pages for calendar and finances",
-          spec: "Removed. Schedules live in the inbox; Token use and cost are a record only, on the top bar, the team page and each ticket",
+          spec: "Removed. Schedules live in the inbox; Token use and cost show on the top bar, the team page and each ticket",
         },
       ],
     },
@@ -1173,7 +1173,6 @@ The export page offers CSV as well as JSON.
       added: "new",
       items: {
         owner_starts: "Work sessions can only be initiated by the assigned owner or a person.",
-        budget_pauses: "Exhausted budgets pause schedules; what you say still gets through.",
         files_are_truth:
           "Files are the source of truth; the database only stores rebuildable caches and each person's triage.",
         one_front: "A work session reaches you only through its ticket's question and delivery.",

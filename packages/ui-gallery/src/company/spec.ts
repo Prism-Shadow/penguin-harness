@@ -129,7 +129,6 @@ export type FieldPath =
  */
 export const INVARIANTS = [
   { id: "owner_starts", refusal: "403 not_ticket_owner", isNew: false },
-  { id: "budget_pauses", refusal: null, isNew: false },
   { id: "files_are_truth", refusal: null, isNew: false },
   { id: "one_front", refusal: "403 session_cannot_message", isNew: true },
   { id: "three_points", refusal: null, isNew: true },
