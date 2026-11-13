@@ -41,5 +41,6 @@ export * from "./mechanism.js";
 export type { PluginRoutesOptions } from "./routes/plugins.js";
 export { pluginUiRoutes, PluginUiRoutes } from "./routes/plugin-ui.js";
 export { installedPluginRoutes, InstalledPluginRoutes } from "./routes/plugins-installed.js";
+export { NpmPluginPackages } from "./plugin/install.js";
 export { adminPluginConfigRoutes } from "./routes/admin-plugin-config.js";
 export { MAX_PLUGIN_ARCHIVE_BYTES, MAX_PLUGIN_ARCHIVE_FILES, MAX_PLUGIN_FILE_BYTES } from "./services/plugin-archive.js";
