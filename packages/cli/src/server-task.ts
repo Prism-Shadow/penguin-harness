@@ -14,19 +14,19 @@
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
  * notice — the messages endpoint still holds the full history for `penguin session log`.
  */
+import type { ApprovalDecision, AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
 import {
   isEventMessage,
   isHookContinue,
   isHookInput,
   isModelMessage,
 } from "@prismshadow/penguin-core";
-import type { ApprovalDecision, AmspRecord, ToolCallPayload } from "@prismshadow/penguin-core";
-import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
-import { ServerClient } from "./client.js";
-import type { SseFrame } from "./client.js";
-import { dim, humanizeTokens } from "./render.js";
+
+import type { GoalServerEvent, SseFrame, Messages } from "@prismshadow/penguin-server/cli";
+import { ServerClient, humanizeTokens } from "@prismshadow/penguin-server/cli";
+
 import type { StreamRenderer } from "./render.js";
-import type { Messages } from "./i18n.js";
+import { dim } from "./render.js";
 
 /** Server events the watcher understands (structural subset of the server's ServerEvent union). */
 interface ServerEventFrame {

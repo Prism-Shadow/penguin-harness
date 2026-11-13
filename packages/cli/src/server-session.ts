@@ -1,12 +1,10 @@
 /**
- * Session/agent API helpers shared by the server-backed commands (run / chat / the
- * `session` group / schedule). DTO shapes come from `@prismshadow/penguin-server/api`
+ * Session API helpers shared by the server-backed commands (run / chat / the `session`
+ * group / schedule). DTO shapes come from `@prismshadow/penguin-server/cli`
  * (type-only — nothing of the server is loaded at runtime).
  */
 import path from "node:path";
 import type {
-  AgentsResponse,
-  AgentSummary,
   MessagesResponse,
   ModelRefDto,
   ModelsResponse,
@@ -14,11 +12,16 @@ import type {
   SessionInfo,
   SessionResponse,
   SessionsResponse,
-} from "@prismshadow/penguin-server/api";
+  Messages,
+} from "@prismshadow/penguin-server/cli";
+import {
+  listAgentSessions,
+  resolveSessionRef,
+  ServerClient,
+} from "@prismshadow/penguin-server/cli";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { resolveSessionRef, ServerClient } from "./client.js";
+
 import { dim } from "./render.js";
-import type { Messages } from "./i18n.js";
 
 const enc = encodeURIComponent;
 
@@ -152,23 +155,6 @@ export async function getSessionInfo(
 ): Promise<SessionInfo> {
   const res = await client.request<SessionResponse>("GET", `/api/sessions/${enc(sessionId)}`);
   return res.session;
-}
-
-export async function listAgents(client: ServerClient, projectId: string): Promise<AgentSummary[]> {
-  const res = await client.request<AgentsResponse>("GET", `/api/projects/${enc(projectId)}/agents`);
-  return res.agents;
-}
-
-export async function listAgentSessions(
-  client: ServerClient,
-  projectId: string,
-  agentId: string,
-): Promise<SessionInfo[]> {
-  const res = await client.request<SessionsResponse>(
-    "GET",
-    `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/sessions`,
-  );
-  return res.sessions;
 }
 
 /**

@@ -26,9 +26,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeSession } from "../src/auth-session.js";
+import { writeSession, getMessages } from "@prismshadow/penguin-server/cli";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+
 import { FakeServer } from "./fake-server.js";
 
 const t = getMessages("en");

@@ -23,7 +23,8 @@ import type {
   AgentArchiveImportResponse,
   AgentArchiveQuery,
 } from "@prismshadow/penguin-server/api";
-import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
+import { ApiError, resolveProjectId, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
 import { zipFolder } from "../zip-folder.js";
 import type { Messages } from "../i18n.js";
 

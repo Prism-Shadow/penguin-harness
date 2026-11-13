@@ -14,8 +14,8 @@
  */
 import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveRootOption } from "@prismshadow/penguin-server/cli";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;

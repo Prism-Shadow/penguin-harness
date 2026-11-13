@@ -36,18 +36,26 @@ import type {
   CliCommandSummary,
 } from "@prismshadow/penguin-core/cli";
 import type { Command } from "commander";
-import type { Messages } from "./i18n.js";
+/**
+ * Five resource commands (agent/project/schedule/cost/config) are contributions from the
+ * server package (they are that package's resource-API clients): their `@Component` classes
+ * count into this module's slot through the CLI's generated table, and the classes come in
+ * through the server's `cli` subpath.
+ */
+import {
+  AgentCommand,
+  ConfigCommand,
+  CostCommand,
+  ProjectCommand,
+  ScheduleCommand,
+} from "@prismshadow/penguin-server/cli";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import table from "./ifaces.json" with { type: "json" };
 import { registerAuthCommand } from "./commands/auth.js";
-import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
 import { registerSessionCommand } from "./commands/session.js";
-import { registerAgentCommand } from "./commands/agent.js";
-import { registerProjectCommand } from "./commands/project.js";
 import { registerPluginCommand } from "./commands/plugin.js";
-import { registerCostCommand } from "./commands/cost.js";
-import { registerScheduleCommand } from "./commands/schedule.js";
 import { registerOrgCommand } from "./commands/org.js";
 import { registerBrowserCommand } from "./commands/browser.js";
 import { registerServerCommand, registerWebCommand } from "./commands/serve.js";
@@ -82,32 +90,6 @@ export class AuthCommand {
     this.command = {
       register: (command, ctx) => {
         registerAuthCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
-/** `penguin config`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.config",
-        key: "config",
-        summary: {
-          en: "Manage Project configuration",
-          zh: "管理 Project 配置",
-        },
-      },
-    ],
-  },
-})
-export class ConfigCommand {
-  @Bind("cli.config") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerConfigCommand(node(command), ctx.messages);
       },
     };
   }
@@ -191,58 +173,6 @@ export class SessionCommand {
   }
 }
 
-/** `penguin agent`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.agent",
-        key: "agent",
-        summary: {
-          en: "Manage the project's agents",
-          zh: "管理 Project 的 Agent",
-        },
-      },
-    ],
-  },
-})
-export class AgentCommand {
-  @Bind("cli.agent") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerAgentCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
-/** `penguin project`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.project",
-        key: "project",
-        summary: {
-          en: "Manage projects",
-          zh: "管理 Project",
-        },
-      },
-    ],
-  },
-})
-export class ProjectCommand {
-  @Bind("cli.project") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerProjectCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
 /** `penguin plugin`. */
 @Component({
   contributes: {
@@ -264,58 +194,6 @@ export class PluginCommand {
     this.command = {
       register: (command, ctx) => {
         registerPluginCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
-/** `penguin cost`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.cost",
-        key: "cost",
-        summary: {
-          en: "Show token usage and cost (summary card by default; --by prints a grouped table)",
-          zh: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
-        },
-      },
-    ],
-  },
-})
-export class CostCommand {
-  @Bind("cli.cost") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerCostCommand(node(command), ctx.messages);
-      },
-    };
-  }
-}
-
-/** `penguin schedule`. */
-@Component({
-  contributes: {
-    "CliCommandsModule.commands": [
-      {
-        id: "cli.schedule",
-        key: "schedule",
-        summary: {
-          en: "Manage scheduled tasks",
-          zh: "管理定时任务",
-        },
-      },
-    ],
-  },
-})
-export class ScheduleCommand {
-  @Bind("cli.schedule") command!: CliCommandCode<Messages>;
-  setup() {
-    this.command = {
-      register: (command, ctx) => {
-        registerScheduleCommand(node(command), ctx.messages);
       },
     };
   }

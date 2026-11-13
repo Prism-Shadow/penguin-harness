@@ -271,17 +271,15 @@ async function compileEntry(entry, outfile) {
   // are current.
   const { execFileSync } = await import("node:child_process");
   for (const pkg of ["server", "cli"]) {
-    execFileSync(
-      process.execPath,
-      [
-        path.join(ROOT, "scripts/gen-ifaces.mjs"),
-        "--project",
-        path.join(ROOT, "packages", pkg, "tsconfig.json"),
-        "--out",
-        path.join(ROOT, "packages", pkg, "src", "ifaces.json"),
-      ],
-      { stdio: "inherit" },
-    );
+    // The CLI's generated table also names the server's command classes (its children come
+    // in through the server's `cli` subpath), so the CLI scan covers the server project too —
+    // the same projects the CLI's own `gen:ifaces` build line scans.
+    const projects = pkg === "cli" ? ["cli", "server"] : [pkg];
+    const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
+    for (const p of projects)
+      args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
+    args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
+    execFileSync(process.execPath, args, { stdio: "inherit" });
   }
   await compilePushBundle(pushBundleOptions(entry, outfile));
 }

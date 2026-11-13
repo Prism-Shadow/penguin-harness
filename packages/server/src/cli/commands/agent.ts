@@ -38,6 +38,12 @@
  * Docs: /docs/cli § "penguin agent".
  */
 import type { Command } from "commander";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
 import type {
   AgentApiKeyCreateResponse,
   AgentAuthor,
@@ -47,10 +53,11 @@ import type {
   AgentCreateResponse,
   AgentSummary,
   ServerSettingsResponse,
-} from "@prismshadow/penguin-server/api";
+} from "../../api/types.js";
 import { resolveApprovalMode } from "../approval.js";
-import { ApiError, resolveConnection, resolveProjectId, ServerClient } from "../client.js";
-import { listAgents } from "../server-session.js";
+import { ApiError, resolveProjectId, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
+import { listAgents } from "../agents.js";
 import { registerAgentArchiveCommands } from "./agent-archive.js";
 import { displayWidth, renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -394,4 +401,34 @@ export function registerAgentCommand(agent: Command, t: Messages): void {
 
   registerAgentArchiveCommands(agent, t);
   registerApiCommands(agent, t);
+}
+
+/**
+ * `penguin agent`, as a contribution to the CLI's `CliCommandsModule.commands`: the data
+ * half is the entry below, the code half the register this class binds. The command lives in
+ * the server package (it is the server resource API's client); the CLI's boot collects it.
+ */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.agent",
+        key: "agent",
+        summary: {
+          en: "Manage the project's agents",
+          zh: "管理 Project 的 Agent",
+        },
+      },
+    ],
+  },
+})
+export class AgentCommand {
+  @Bind("cli.agent") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerAgentCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

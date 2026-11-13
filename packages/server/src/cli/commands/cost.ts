@@ -12,10 +12,17 @@
  * Docs: /docs/cli § "penguin cost".
  */
 import type { Command } from "commander";
-import type { UsageResponse } from "@prismshadow/penguin-server/api";
-import { humanizeTokens } from "../render.js";
-import { resolveConnection, resolveProjectId, ServerClient } from "../client.js";
-import { renderTable } from "../table.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
+
+/** The node the host located for a key, typed with this package's commander. */
+const node = (command: CliCommandProgram): Command => command as Command;
+
+import type { UsageResponse } from "../../api/types.js";
+import { humanizeTokens, renderTable } from "../table.js";
+import { resolveProjectId, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
+
 import type { Messages } from "../i18n.js";
 
 const GROUP_BYS = ["date", "agent", "model", "session"] as const;
@@ -127,4 +134,33 @@ export function registerCostCommand(cost: Command, t: Messages): void {
         ),
       );
     });
+}
+
+/**
+ * `penguin cost`, as a contribution to the CLI's `CliCommandsModule.commands` from this
+ * package (the server resource API's client); the CLI's boot collects it.
+ */
+@Component({
+  contributes: {
+    "CliCommandsModule.commands": [
+      {
+        id: "cli.cost",
+        key: "cost",
+        summary: {
+          en: "Show token usage and cost (summary card by default; --by prints a grouped table)",
+          zh: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
+        },
+      },
+    ],
+  },
+})
+export class CostCommand {
+  @Bind("cli.cost") command!: CliCommandCode<Messages>;
+  setup() {
+    this.command = {
+      register: (command, ctx) => {
+        registerCostCommand(node(command), ctx.messages);
+      },
+    };
+  }
 }

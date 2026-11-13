@@ -12,7 +12,7 @@
  */
 import { UPDATE_REFUSAL_MARKERS } from "@prismshadow/penguin-server/api";
 import { describe, expect, it } from "vitest";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 
 const en = getMessages("en").update;
 

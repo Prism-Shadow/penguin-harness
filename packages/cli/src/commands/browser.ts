@@ -42,7 +42,9 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
-} from "@prismshadow/penguin-server/api";
+  Messages,
+} from "@prismshadow/penguin-server/cli";
+import { ApiError, resolveConnection, ServerClient } from "@prismshadow/penguin-server/cli";
 import {
   renderCdpResult,
   renderExec,
@@ -54,9 +56,8 @@ import {
   renderTabs,
   tabHead,
 } from "../browser-output.js";
-import { ApiError, resolveConnection, ServerClient } from "../client.js";
+
 import { parseDurationMs } from "../duration.js";
-import type { Messages } from "../i18n.js";
 
 const BASE = "/api/builtin-browser";
 const enc = encodeURIComponent;
