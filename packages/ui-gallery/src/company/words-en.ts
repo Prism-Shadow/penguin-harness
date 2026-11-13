@@ -1,0 +1,231 @@
+/** The company-mode prototype's own words, in English, in the shape of the Chinese dictionary. */
+import type { Words } from "./words";
+
+export const en: Words = {
+  org: {
+    name: "Harness Care",
+    mission:
+      "Look after the penguin-harness repository: find problems, fix defects, and get new users through first-time setup.",
+  },
+  nav: {
+    inbox: "Inbox",
+    lead: "Lead",
+    more: "More pages",
+    less: "Fold",
+    sessions: "Work sessions",
+    sessionsEmpty: "No work session is running",
+    sessionOf: (n: number) => `Session ${n}`,
+    you: "You",
+    openMenu: "Open navigation",
+  },
+  bylines: { lead: "Lead", engineer: "Mara Lind", verifier: "Theo Park" },
+  titles: { lead: "Lead", engineer: "Engineer", verifier: "Verifier" },
+  sources: { person: "You asked", patrol: "Daily patrol", lead: "Lead's proposal" },
+  waits: { accept: "To accept", answer: "To answer", review: "To review" },
+  views: {
+    waiting: "Waiting",
+    working: "In progress",
+    later: "Later",
+    handled: "Handled",
+    archived: "Archived",
+  },
+  inbox: {
+    title: "Inbox",
+    info: "A ticket is under Waiting at three moments only: to be accepted, to have its question answered, to be reviewed. The rest of the time it is In progress, and needs no look.",
+    talk: "Tell the lead",
+    summary: (working: number, spent: string, budget: string) =>
+      `${working} in progress, ${spent} of ${budget} spent this cycle`,
+    empty: {
+      waiting: "Nothing is waiting on you",
+      working: "Nothing is in progress",
+      later: "Nothing is set aside for later",
+      handled: "Nothing is handled yet",
+      archived: "Nothing is archived",
+    },
+    unread: "unread",
+    schedules: "Schedule",
+    schedulesEmpty: "No schedule yet. One the lead proposes appears here once you accept it.",
+  },
+  ticket: {
+    needsYou: "Needs you",
+    asks: { accept: "Should this be done?", review: "Is the result what you expected?" },
+    kindNotes: {
+      task: "Accepting opens a work session. It writes progress and comes to you only with a question.",
+      schedule:
+        "Once accepted, this schedule files what it finds each day as tickets for you to decide.",
+      role: "Once accepted, this role appears in the byline of tickets.",
+    },
+    accept: "Accept",
+    reject: "Reject",
+    answer: "Answer",
+    recommended: (label: string) => `${label} (recommended)`,
+    notePlaceholder: "Add anything you want it to know, or leave this empty",
+    approve: "Accept the result",
+    sendBack: "Send back",
+    sendBackPlaceholder: "Say what to change, then send it back",
+    deliverable: "Delivered",
+    source: "Source",
+    decisions: "Decisions",
+    returned: "Sent back",
+    sessionLine: (n: number) => `Work session ${n}`,
+    sessionsEmpty: "No work session yet",
+    later: "Later",
+    archive: "Archive",
+    restore: "Back to the inbox",
+    waitingFirst: "This ticket waits on you: act on it before setting it aside or archiving it.",
+    saidGoal: "What you told the lead, in your words.",
+    saidProgress: "Read the code around it and started.",
+    saidResult: "Done, and ready for your review.",
+    reworkProgress: "Changed as the note asked.",
+  },
+  lead: {
+    title: "Lead",
+    info: "The one agent that stays up and the only one that talks to you. It files what you say as tickets and does none of the work itself.",
+    placeholder: "Tell the lead what to do, Enter to send",
+    send: "Send",
+    empty: "No conversation yet. Tell the lead what to do and it files a ticket.",
+    lines: {
+      proposals:
+        "Here are three things to start with, all in your inbox. Accept or reject each one; only what you accept starts.",
+      filed:
+        "Filed as a ticket and already in progress. It comes to your inbox with a question, or when it is done.",
+      recorded:
+        "I recorded that decision in the handbook; a question of the same kind checks it first.",
+    },
+  },
+  setup: {
+    title: "What should it look after?",
+    body: "Say one thing you care about. The lead answers with a few proposed tickets for you to decide one by one: no long proposal, no group chat.",
+    placeholder: "For example: look after the penguin-harness repository and fix what breaks",
+    start: "Start",
+    examples: [
+      "Look after the penguin-harness repository: find problems, fix defects",
+      "Triage new issues every day and fix what can be fixed",
+      "Get new users through first-time setup",
+    ],
+    examplesLabel: "Examples",
+  },
+  schedule: {
+    info: "A schedule is one source of tickets. A new one only proposes; once you trust it, its tickets can start work directly.",
+    daily: "Daily at 09:00",
+    auto: "Its tickets start work directly",
+    autoOn: "starts directly",
+    autoOff: "proposes only",
+  },
+  pass: {
+    button: "Let time pass",
+    hint: "No agent runs in the prototype. Each click moves every work session one step.",
+    nothing: "Nothing moved: every ticket waits on you, or is done.",
+    events: {
+      progress: (title: string) => `“${title}” has new progress`,
+      asked: (title: string) => `“${title}” has a question for you`,
+      delivered: (title: string) => `“${title}” is done and ready for review`,
+      proposed: (title: string) => `The patrol proposes “${title}”`,
+      started: (title: string) => `The patrol found and started “${title}”`,
+    },
+  },
+  kept: {
+    title: "This page keeps its current design",
+    body: "The spec leaves it as it is, so the prototype does not redraw it.",
+  },
+  tickets: {
+    csv: {
+      title: "Add CSV to the export",
+      gist: "The export page offers CSV as well as JSON.",
+      acceptance: [
+        "An export of a hundred thousand rows does not time out",
+        "The JSON export is unchanged",
+      ],
+      progress: [
+        "Read the export module; there are two ways to do it.",
+        "Built it the way you decided: a hundred thousand rows take 1.8 seconds.",
+      ],
+      question: "Large exports: stream them, or build them in one go?",
+      options: [
+        { label: "Stream them", hint: "Flat memory use, one more layer to build" },
+        { label: "Build in one go", hint: "Simple, but may time out past a hundred thousand rows" },
+      ],
+      result: "CSV export is in, with a regression test.",
+    },
+    connection: {
+      title: "Add a connection test to first-time setup",
+      gist: "After entering an API key, one click tests the connection.",
+      acceptance: [
+        "A bad key, no network and a missing model each get their own line",
+        "It can test without saving",
+      ],
+      progress: [
+        "Added a “Test connection” button to the model dialog.",
+        "Each of the three failures has its own line, with tests.",
+      ],
+      result: "The connection test is in, with a line for each of the three failures.",
+    },
+    flaky: {
+      title: "Fix the flaky export test",
+      gist: "The export test times out now and then on CI: 3 of the last 20 runs.",
+      acceptance: ["Fifty runs in a row pass"],
+      progress: ["Reproduced it: the test waits too briefly when the export is large."],
+      result: "The wait now scales with the file size; fifty runs in a row passed.",
+    },
+    jitter: {
+      title: "Reproduce the sidebar jitter on resize",
+      gist: "Dragging the window near 1024 wide folds and unfolds the sidebar.",
+      acceptance: ["Steps that reproduce it every time", "Which breakpoint is at fault"],
+      progress: [
+        "It reproduces every time between 1020 and 1028.",
+        "Two breakpoints round differently; that is the cause.",
+      ],
+      result: "The steps and the cause are in the report; the fix is a ticket of its own.",
+    },
+    types: {
+      title: "Bump @types/node",
+      gist: "Catch up with Node 24's types.",
+      acceptance: ["The type check passes"],
+      progress: ["Bumped it and changed four types."],
+      result: "Bumped; the type check passes.",
+    },
+    docs: {
+      title: "Correct the port in the quickstart",
+      gist: "The docs say 7364; dev mode serves on 7365.",
+      acceptance: ["Both languages are corrected"],
+      progress: ["Corrected the English and the Chinese page."],
+      result: "Both pages are corrected.",
+    },
+    timeout: {
+      title: "Say so when a model request times out",
+      gist: "A request with no answer after 60 seconds leaves the screen silent.",
+      acceptance: ["A line and a retry button appear after the timeout"],
+      progress: ["Added the line and the retry button."],
+      result: "The timeout line is in.",
+    },
+    lint: {
+      title: "Remove 12 unused imports",
+      gist: "The patrol found 12 lint warnings for unused imports.",
+      acceptance: ["Lint reports no warning"],
+      progress: ["Removed all twelve."],
+      result: "Lint reports no warning.",
+    },
+    survey: {
+      title: "Take stock of the repository",
+      gist: "Read the code, the recent issues and CI, and write one page on where it stands.",
+      acceptance: ["One page at most", "The three things most worth doing first"],
+      progress: [
+        "Read the issues and CI runs of the last 30 days.",
+        "Wrote the page, with the three things most worth doing first.",
+      ],
+      result: "One page on where the repository stands, in the handbook.",
+    },
+    patrol: {
+      title: "Daily patrol: new issues and CI at 09:00",
+      gist: "Each day it reads the new issues and CI results and files what it finds as tickets.",
+      acceptance: ["It only proposes at first; whether to do each is yours to decide"],
+      progress: [],
+    },
+    verifier: {
+      title: "Add a dedicated verifier",
+      gist: "Another agent tries every delivery by hand before it comes to you for review.",
+      acceptance: ["The agent that writes the code is not the one that verifies it"],
+      progress: [],
+    },
+  },
+};

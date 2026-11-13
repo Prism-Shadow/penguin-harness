@@ -1,31 +1,25 @@
 /**
- * The company-mode spec on one page (/company): the hero with the inbox player, the three roles,
- * one ticket's life as a bar chart, the ticket file field by field, what the server enforces, how
- * a company is set up, and where to read on. It specifies the next company mode; the shipped one
- * is the docs' company-mode page. Its own chunk (see router.tsx). The tab title and description
- * follow the reader's language while it is open.
+ * The company-mode spec on one page (/company): the prototype first, live, then what the spec
+ * changes against the shipped mode, what the server enforces, and the ticket file field by field.
+ * It specifies the next company mode; the shipped one is the docs' company-mode page. Its own
+ * chunk (see router.tsx). The tab title and description follow the reader's language while it is
+ * open.
  */
 import { S } from "../lib/strings";
 import { useDocumentMeta } from "../lib/document-meta";
-import { CompanyHero } from "../sections/company/hero";
-import { CompanyRoles } from "../sections/company/roles";
-import { CompanyLifecycle } from "../sections/company/lifecycle";
-import { CompanyTicket } from "../sections/company/ticket";
+import { CompanyPrototypeSection } from "../sections/company/prototype";
+import { CompanyChanges } from "../sections/company/changes";
 import { CompanyInvariants } from "../sections/company/invariants";
-import { CompanyStart } from "../sections/company/start";
-import { CompanyLinks } from "../sections/company/links";
+import { CompanyTicket } from "../sections/company/ticket";
 
 export function CompanyPage() {
   useDocumentMeta(S.company.title, S.company.description);
   return (
     <>
-      <CompanyHero />
-      <CompanyRoles />
-      <CompanyLifecycle />
-      <CompanyTicket />
+      <CompanyPrototypeSection />
+      <CompanyChanges />
       <CompanyInvariants />
-      <CompanyStart />
-      <CompanyLinks />
+      <CompanyTicket />
     </>
   );
 }

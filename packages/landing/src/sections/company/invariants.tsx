@@ -1,12 +1,12 @@
 /**
- * What the server enforces, as numbered ruled rows (lib/company-spec.ts `INVARIANTS`): the rule in
+ * What the server enforces, as numbered ruled rows (the gallery's company/spec.ts `INVARIANTS`): the rule in
  * one sentence, what it means for a caller, the answer a refused write gets, and whether the
  * shipped company mode already enforces it. Everything else a company does is guidance in Skills
  * and the handbook, which an agent may not follow; these are the lines an implementation is tested
  * against.
  */
 import { S } from "../../lib/strings";
-import { INVARIANTS } from "../../lib/company-spec";
+import { INVARIANTS } from "../../../../ui-gallery/src/company/spec";
 import { Section } from "../../components/section";
 
 export function CompanyInvariants() {

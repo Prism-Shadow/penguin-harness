@@ -82,7 +82,7 @@ const AMSP_META = {
 const COMPANY_META = {
   title: "Company mode: read tickets, not transcripts",
   description:
-    "The spec for the next company mode: you talk to one lead agent, work is kept as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
+    "The spec for the next company mode, with a prototype to click through: you talk to one lead agent, work is kept as tickets, and a ticket comes to you only to be accepted, answered or reviewed.",
   image: "/og-cover.png",
   imageAlt: "PenguinHarness",
 };

@@ -1,12 +1,13 @@
 /**
- * The vocabulary of the company-mode spec on /company, in one place so the player, the lifecycle
- * chart, the field reference and the invariants read alike. It is a proposal: `isNew` marks what
- * the shipped company mode does not have yet. The words for each entry are the dictionaries'
- * `company`; nothing here is language.
+ * The vocabulary of the proposed company mode, in one place: the prototype (this directory) acts
+ * on it, and the landing's /company page tables it under the prototype. It is a proposal: `isNew`
+ * marks what the shipped company mode does not have yet. Nothing here is language; the words are
+ * in the dictionaries of whoever shows an entry.
  *
  * A ticket keeps the shipped file (`tickets/<yyyy-mm>/<status>/<yyyy-mm-dd>-<slug>.md`) and its
  * five statuses. "Waiting on a person" is not a sixth status: it is read from the three states in
- * which a ticket already cannot move without one (`waitOf`).
+ * which a ticket already cannot move without one (`waitOf`). A person's own handling of a ticket
+ * (read, later, archived) is kept apart from the file and decides only where the inbox lists it.
  */
 
 export const TICKET_STATUSES = ["proposed", "in_progress", "review", "done", "rejected"] as const;
@@ -32,18 +33,26 @@ export function waitOf(ticket: TicketState): Wait | null {
   return null;
 }
 
+/** The inbox's views, in the order its filter shows them. */
+export const INBOX_VIEWS = ["waiting", "working", "later", "handled", "archived"] as const;
+export type InboxView = (typeof INBOX_VIEWS)[number];
+
+/** The part of a ticket the inbox reads besides its state: the reader's own triage. */
+export interface Triage {
+  snoozed: boolean;
+  archived: boolean;
+}
+
 /**
- * The inbox's order: what waits on the reader first, then what they have not read, then the rest;
- * within a group, the order the tickets came in.
+ * The one view a ticket is listed in. Triage comes first, since it is the reader's own word on
+ * the ticket: an archived ticket is nowhere else, a snoozed one only under "later". Then what
+ * waits on the reader, what an agent has, and what is settled.
  */
-export function inboxOrder<T extends TicketState & { unread: boolean }>(
-  tickets: readonly T[],
-): T[] {
-  const rank = (ticket: T) => (waitOf(ticket) !== null ? 0 : ticket.unread ? 1 : 2);
-  return tickets
-    .map((ticket, i) => ({ ticket, i }))
-    .sort((a, b) => rank(a.ticket) - rank(b.ticket) || a.i - b.i)
-    .map(({ ticket }) => ticket);
+export function inboxViewOf(ticket: TicketState & Triage): InboxView {
+  if (ticket.archived) return "archived";
+  if (ticket.snoozed) return "later";
+  if (waitOf(ticket) !== null) return "waiting";
+  return ticket.status === "in_progress" ? "working" : "handled";
 }
 
 /** Who writes a field: a person, an agent through `penguin org`, or the server as a fact. */

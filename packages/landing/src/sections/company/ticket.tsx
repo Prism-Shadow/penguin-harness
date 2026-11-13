@@ -3,13 +3,17 @@
  * of it (the frontmatter, the prose sections, and the person's own triage, which is kept per
  * person and never written to the file), each row a field's name and type, whether it is required,
  * who writes it, what it means, and whether the shipped company mode has it. Under them, the rule
- * that reads "waiting on you" from the fields. The catalogue is lib/company-spec.ts, the words the
+ * that reads "waiting on you" from the fields. The catalogue is the gallery's company/spec.ts, the words the
  * dictionaries' `company.ticket`. A table from `md` up; on a phone each field stacks.
  */
 import { highlightSiteCode, SiteCodeBlock } from "@prismshadow/penguin-ui/site";
 import { S } from "../../lib/strings";
-import { FRONTMATTER_FIELDS, SECTION_FIELDS, TRIAGE_FIELDS } from "../../lib/company-spec";
-import type { FieldDoc, FieldPath, Wait } from "../../lib/company-spec";
+import {
+  FRONTMATTER_FIELDS,
+  SECTION_FIELDS,
+  TRIAGE_FIELDS,
+} from "../../../../ui-gallery/src/company/spec";
+import type { FieldDoc, FieldPath, Wait } from "../../../../ui-gallery/src/company/spec";
 import { Section } from "../../components/section";
 
 const GROUPS = [
