@@ -41,22 +41,22 @@ import {
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
-import { migrateWorkbenches } from "../workbenches/migrate.js";
+import { migrateWorkbenches } from "@penguinharness/plugin-workbenches/server";
 import { agentAvatarRev } from "./agent-avatar.js";
-import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
-import { isTopicFileName } from "./memory-service.js";
-import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/types.js";
-import { resolveLibraryPlugins } from "./plugin-library.js";
-import type { PluginLibrary } from "../plugin/library-module.js";
+import { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
+import { isTopicFileName } from "./memory-topic.js";
+import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "@prismshadow/penguin-server/api";
+import { resolveLibraryPlugins } from "@penguinharness/plugin-plugins/server";
+import type { PluginLibrary } from "@penguinharness/plugin-plugins/server";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
 import type { AgentIndex } from "@prismshadow/penguin-server/internal";
 ||||||| /tmp/_a
-import type { Config, Paths } from "../hmr/capabilities.js";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
-import type { AgentIndex } from "../mechanisms/projects.js";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, AgentLifecycle, Snapshots } from "./mechanism.js";
+import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 /**
