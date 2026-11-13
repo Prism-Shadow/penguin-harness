@@ -94,6 +94,7 @@ import type { RecordSource } from "./history-layout.js";
 import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Paths, TraceIndex, TraceIndexStore, Traces, SessionIndex, SessionOrigins } from "@prismshadow/penguin-server/internal";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 

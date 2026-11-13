@@ -1,6 +1,11 @@
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import type { Hono } from "hono";
+import { Clock, AgentApi, AgentConfig, Benchmarks, Memory, Snapshots, Access, ProjectConfigStore, Settings, Traces } from "@prismshadow/penguin-server/internal";
+import { memoryRoutes } from "../memory.js";
+import { benchmarksRoutes, agentTracesRoutes } from "@penguinharness/plugin-usage/server";
+import { agentSkillsRoutes } from "../skills.js";
+import { agentApiRoutes } from "../agent-api.js";
 
 /**
  * The Agent-scoped route groups: memory, skills, the API tab's settings and keys, the Agent's

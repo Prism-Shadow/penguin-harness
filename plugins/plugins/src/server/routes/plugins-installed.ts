@@ -77,6 +77,9 @@ import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/ho
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { type Machines } from "@penguinharness/plugin-machines/server";
 import { MachinesRepo } from "@prismshadow/penguin-server/internal";
+import { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import { PluginSkills } from "../plugin/skills.js";
+import { toSkillItem } from "@prismshadow/penguin-server/internal";
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;
