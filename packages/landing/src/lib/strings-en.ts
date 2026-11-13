@@ -1013,7 +1013,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "Sidebar",
           now: "Six standalone pages, channels, and employee desks",
-          spec: "The left column is the inbox: tell the lead, waiting on you, in progress, schedules; team, handbook and all tickets sit on the top bar",
+          spec: "The left column is the inbox: tell the lead, then a folding group per state, and the schedules; team, handbook and all tickets sit on the top bar",
         },
         {
           topic: "Employees",

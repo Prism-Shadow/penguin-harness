@@ -1,35 +1,34 @@
 /**
  * The left column: the inbox as the company's whole navigation. At its head, the line to the lead,
- * for anything new (⌘K or Ctrl+K from anywhere). Under it, the tickets in three runs: what waits
- * on the reader, what is in progress, and the schedules: the daily patrol and the weekly
- * retrospective, each of which files tickets on its own. Each
- * ticket row reads like a mail: its title, and under it what it asks, what it delivered, or its
- * last progress line. The reader's own piles (later, handled, archived) are one line at the foot,
- * and each opens in the column's place, with the way back.
+ * for anything new (⌘K or Ctrl+K from anywhere). Under it, one folding group per view of the
+ * tickets, side by side at one level: what waits on the reader, what is in progress, what they
+ * set aside for later, what is handled, what is archived; then the schedules, the daily patrol
+ * and the weekly retrospective. What needs the reader or is moving starts open; the piles start
+ * folded. Each ticket row reads like a mail: its title, and under it what it asks, what it
+ * delivered, or its last progress line.
  *
  * The shipped sidebar's pages and the list of running sessions are gone from here: a session is a
  * tab of its ticket, and the team, the handbook and the board are on the main column's bar.
  */
+import { useState } from "react";
+import type { ReactNode } from "react";
 import {
+  Fold,
+  GroupHeader,
+  ICONS,
   Kbd,
   NAV_FILL,
   NavRow,
   Pill,
-  SidebarListHeader,
   SidebarNavArea,
 } from "@prismshadow/penguin-ui";
-import type { ReactNode } from "react";
-import { inboxCounts, ticketsIn } from "./model";
+import { ticketsIn } from "./model";
 import type { CompanyState, Ticket } from "./model";
 import { PersonAvatar } from "./people";
-import { waitOf } from "./spec";
+import { INBOX_VIEWS, waitOf } from "./spec";
 import type { InboxView } from "./spec";
 import { lineOf, progressOf, titleOf } from "./text";
 import { useWords } from "./use-words";
-
-/** The reader's own piles, kept apart from the work: one line at the column's foot. */
-export const ASIDE_VIEWS = ["later", "handled", "archived"] as const;
-export type AsideView = (typeof ASIDE_VIEWS)[number];
 
 /** The shortcut to the lead, as this platform writes it. */
 export const TALK_KEYS: readonly string[] =
@@ -117,104 +116,100 @@ function TicketRows({
   );
 }
 
+/** Each group's glyph, by what it holds. */
+const GROUP_GLYPH: Record<InboxView | "schedules", string> = {
+  waiting: ICONS.bell,
+  working: ICONS.play,
+  later: ICONS.clock,
+  handled: ICONS.checkCircle,
+  archived: ICONS.archive,
+  schedules: ICONS.calendar,
+};
+
+/** Open until the reader folds them: what needs them, what is moving, and the schedules. */
+const OPEN_AT_FIRST: Record<InboxView | "schedules", boolean> = {
+  waiting: true,
+  working: true,
+  later: false,
+  handled: false,
+  archived: false,
+  schedules: true,
+};
+
 export function InboxList({
   state,
   selected,
-  aside,
   schedulesOpen,
   onOpen,
-  onAside,
   onSchedules,
 }: {
   state: CompanyState;
   /** The ticket on show in the main column, if one is. */
   selected: string | null;
-  /** One of the reader's piles in the column's place, or null for the inbox. */
-  aside: AsideView | null;
   /** The schedules are on show in the main column. */
   schedulesOpen: boolean;
   onOpen: (id: string) => void;
-  onAside: (view: AsideView | null) => void;
   onSchedules: () => void;
 }) {
   const W = useWords();
-  const running = state.stage === "running";
-  const counts = inboxCounts(state);
-  const group = (view: InboxView, empty: string): ReactNode => {
-    const tickets = ticketsIn(state, view);
-    return (
-      <section aria-label={W.views[view]}>
-        <SidebarListHeader label={W.views[view]}>
-          <span className="px-1 text-xs tabular-nums text-fg-subtle">{tickets.length}</span>
-        </SidebarListHeader>
-        {tickets.length === 0 ? (
-          <p className="px-4 pb-3 pt-1 text-xs text-fg-subtle">{empty}</p>
-        ) : (
-          <TicketRows tickets={tickets} selected={selected} onOpen={onOpen} />
-        )}
-      </section>
-    );
-  };
-
-  if (aside !== null) {
-    return (
-      <div className="flex flex-col">
-        <div className="px-2 pt-1">
-          <NavRow
-            label={`‹ ${W.nav.inbox}`}
-            density="sm"
-            surface="muted"
-            onClick={() => onAside(null)}
-          />
-        </div>
-        {group(aside, W.inbox.empty[aside])}
-      </div>
-    );
+  const [open, setOpen] = useState(OPEN_AT_FIRST);
+  const toggle = (group: InboxView | "schedules") =>
+    setOpen((current) => ({ ...current, [group]: !current[group] }));
+  if (state.stage !== "running") {
+    return <p className="px-4 py-2 text-xs text-fg-subtle">{W.nav.notStarted}</p>;
   }
-
   return (
-    <div className="flex flex-col">
-      {group("waiting", running ? W.inbox.empty.waiting : W.nav.notStarted)}
-      {running && group("working", W.inbox.empty.working)}
-      {running && (
-        <section aria-label={W.inbox.schedules}>
-          <SidebarListHeader label={W.inbox.schedules}>
-            <span className="px-1 text-xs tabular-nums text-fg-subtle">
-              {state.schedules.length}
-            </span>
-          </SidebarListHeader>
-          <div className="flex flex-col gap-px px-2 pb-2">
-            {state.schedules.map((schedule) => (
-              <Row
-                key={schedule.id}
-                active={schedulesOpen}
-                onClick={onSchedules}
-                leading={<PersonAvatar byline="lead" size={16} />}
-                title={W.schedule.names[schedule.id]}
-                line={`${W.schedule.when[schedule.id]} · ${
-                  schedule.auto ? W.schedule.autoOn : W.schedule.autoOff
-                }`}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-      {running && (
-        <p className="flex flex-wrap gap-x-1 px-4 pb-3 pt-2 text-xs text-fg-muted">
-          {ASIDE_VIEWS.map((view, i) => (
-            <span key={view} className="flex items-center gap-x-1">
-              {i > 0 && <span aria-hidden="true">·</span>}
-              <button
-                type="button"
-                className="rounded-sm hover:text-fg"
-                onClick={() => onAside(view)}
-              >
-                {W.views[view]} <span className="tabular-nums">{counts[view]}</span>
-              </button>
-            </span>
-          ))}
-        </p>
-      )}
+    <div className="flex flex-col gap-1 px-2 pb-3">
+      {INBOX_VIEWS.map((view) => {
+        const tickets = ticketsIn(state, view);
+        return (
+          <section key={view} aria-label={W.views[view]}>
+            <GroupHeader
+              open={open[view]}
+              onToggle={() => toggle(view)}
+              glyph={GROUP_GLYPH[view]}
+              label={W.views[view]}
+              count={tickets.length}
+            />
+            <Fold open={open[view]}>
+              {() =>
+                tickets.length === 0 ? (
+                  <p className="px-7 pb-2 pt-0.5 text-xs text-fg-subtle">{W.inbox.empty[view]}</p>
+                ) : (
+                  <TicketRows tickets={tickets} selected={selected} onOpen={onOpen} />
+                )
+              }
+            </Fold>
+          </section>
+        );
+      })}
+      <section aria-label={W.inbox.schedules}>
+        <GroupHeader
+          open={open.schedules}
+          onToggle={() => toggle("schedules")}
+          glyph={GROUP_GLYPH.schedules}
+          label={W.inbox.schedules}
+          count={state.schedules.length}
+        />
+        <Fold open={open.schedules}>
+          {() => (
+            <div className="flex flex-col gap-px pb-2">
+              {state.schedules.map((schedule) => (
+                <Row
+                  key={schedule.id}
+                  active={schedulesOpen}
+                  onClick={onSchedules}
+                  leading={<PersonAvatar byline="lead" size={16} />}
+                  title={W.schedule.names[schedule.id]}
+                  line={`${W.schedule.when[schedule.id]} · ${
+                    schedule.auto ? W.schedule.autoOn : W.schedule.autoOff
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </Fold>
+      </section>
     </div>
   );
 }

@@ -27,7 +27,6 @@ export const zh = {
     mission: "维护 penguin-harness 代码库：排查问题、修复缺陷，让新用户顺利完成首次配置。",
   },
   nav: {
-    inbox: "收件箱",
     talk: "对主理说…",
     talkHint: "新的事都找主理，它会记成工单",
     team: "团队",

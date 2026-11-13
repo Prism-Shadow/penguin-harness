@@ -8,7 +8,6 @@ export const en: Words = {
       "Maintain the penguin-harness repository: identify issues, fix defects, and guide new users through setup.",
   },
   nav: {
-    inbox: "Inbox",
     talk: "Tell the lead…",
     talkHint: "Anything new goes to the lead; it files a ticket",
     team: "Team",

@@ -53,7 +53,6 @@ import {
 import type { CompanyState } from "./model";
 import { entryWords, HandbookPage } from "./handbook-page";
 import { InboxList, TalkRow } from "./inbox-list";
-import type { AsideView } from "./inbox-list";
 import type { TicketActions } from "./needs-you";
 import { BoardPage, LeadPage, SchedulesPage, SetupPage } from "./pages";
 import { TeamPage } from "./team-page";
@@ -98,7 +97,6 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const [pane, setPane] = useState<Pane>(first.pane);
   const [selected, setSelected] = useState<string | null>(first.selected);
   const [tab, setTab] = useState<TicketTab>("record");
-  const [aside, setAside] = useState<AsideView | null>(null);
   const [handbookPath, setHandbookPath] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // Bumped each time the reader asks for the lead, so its box takes the focus again.
@@ -193,10 +191,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
       <InboxList
         state={state}
         selected={open?.id ?? null}
-        aside={aside}
         schedulesOpen={pane === "schedules"}
         onOpen={(id) => openTicket(id)}
-        onAside={setAside}
         onSchedules={() => show("schedules")}
       />
     </SidebarFrame>
