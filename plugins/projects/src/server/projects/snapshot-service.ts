@@ -32,6 +32,8 @@ import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Snapshots } from "@prismshadow/penguin-server/internal";
+import type { Log, Paths, Clock } from "@prismshadow/penguin-server/internal";
+import type { agentStateVersion, agentDir, systemConfigPath, agentStateDir, snapshotsDir, agentVaultPath } from "@prismshadow/penguin-core";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";

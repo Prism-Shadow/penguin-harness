@@ -151,6 +151,9 @@ import type { type Auth } from "@prismshadow/penguin-server/internal";
 import type { type AgentApi } from "@prismshadow/penguin-server/internal";
 import type { type Workbenches } from "../../mechanisms/workbenches.js";
 import type { type OrgService } from "@penguinharness/plugin-company/server";
+import type { ActivityCursor, INLINE_IMAGE_MAX_BYTES, readJson, paginationQuery, parseAttachmentPart, requireString, readRecalledFiles, optionalSessionListPagingQuery, optionalEnum, badRequest, cacheable, SessionListOrder, requireValidId, ProjectEvents, Access, optionalString, attachFilesToInput, positiveIntParam, SessionListPaging, ModelOAuth, Users, toAttachmentLimits, pathParam, Projects, assertAttachmentBudget, SessionService, APPROVAL_MODES, removeAttachments, INLINE_IMAGE_MAX_MB, listingViewOfRequest, requireEnum, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { isValidId, imageUrlMessage, stripLeadingMarkerBlocks, sessionScratchpadDir, THINKING_LEVEL_NAMES, userText, scratchpadDir } from "@prismshadow/penguin-core";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;

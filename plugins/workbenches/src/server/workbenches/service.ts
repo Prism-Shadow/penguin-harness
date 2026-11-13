@@ -81,6 +81,10 @@ import { checkIfaces, ifaceQuestions } from "@prismshadow/penguin-server/interna
 import { loadTypeScript } from "@prismshadow/penguin-server/internal";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
+import type { IfaceDecl, IfaceTable, Manifest, ModuleTree, ClassCtx, ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type { isWorkbenchId, workbenchesDir } from "@penguinharness/plugin-workbenches/server";
+import type { Agents } from "@penguinharness/plugin-agents/server";
+import type { Users } from "@prismshadow/penguin-server/internal";
 import {
   isSafeRelPath,
   isSwitchedOff,

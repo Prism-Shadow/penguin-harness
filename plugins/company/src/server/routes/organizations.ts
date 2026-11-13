@@ -48,6 +48,10 @@ import { TICKET_ID_PATTERN } from "../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../organization/paths.js";
 import { parsePrincipal } from "../organization/principal.js";
 import { Actor, OrgService } from "../runtime/service.js";
+import type { OrganizationsResponse, OrgTicketPriority, OrgTicketStatus, OrgApprovalMode, OrgLanguage, OrgStatus } from "@prismshadow/penguin-server/api";
+import type { UserDraftsStore, Schedules, readJson, SessionIndex, requireString, ErrorLog, optionalEnum, badRequest, optionalBoolean, requireValidId, TraceIndex, optionalString, AgentConfig, optionalStringArray, optionalNumber, AgentLifecycle, APPROVAL_MODES, requireEnum, AgentApi } from "@prismshadow/penguin-server/internal";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import type { Agents } from "@penguinharness/plugin-agents/server";
 import {
   badRequest,
   optionalBoolean,

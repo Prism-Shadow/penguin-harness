@@ -55,6 +55,7 @@ import { Config, Desktop } from "@prismshadow/penguin-server/internal";
 import type { type Auth, type Users } from "@prismshadow/penguin-server/internal";
 import type { type Settings, type UiPrefsStore } from "@prismshadow/penguin-server/internal";
 import type { type BackgroundImageStore, type UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Projects } from "@prismshadow/penguin-server/internal";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;

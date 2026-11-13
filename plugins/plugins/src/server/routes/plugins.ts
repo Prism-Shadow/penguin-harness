@@ -91,6 +91,9 @@ import { errorBody } from "../errors.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { iconRef, iconResponse } from "../icon-response.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "@prismshadow/penguin-server/internal";
+import type { McpServerNameTakenError, installPlugin, uninstallMcpServer, assertPluginMcpServersInstallable, listInstalledSkills, assertPluginWorkbenchesInstallable, agentDir, listInstalledHooks, listInstalledWorkbenches, listInstalledMcpServers, installSkill, WorkbenchNameTakenError } from "@prismshadow/penguin-core";
+import type { toAgentMcpServerItem, toPluginItem, resolveLibraryPlugins, PluginsRouteDeps, pluginFiles, toSkillItem, toHookItem } from "@prismshadow/penguin-server/internal";
+import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import {
   agentHookIconRoute,
   agentSkillIconRoute,

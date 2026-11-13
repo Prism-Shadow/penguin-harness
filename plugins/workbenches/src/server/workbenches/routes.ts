@@ -76,6 +76,7 @@ import { WorkbenchDisabled, WorkbenchNotFound } from "./service.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
 import { WorkbenchNotFound } from "./service.js";
+import type { Agents } from "@penguinharness/plugin-agents/server";
 
 /** The largest request body a workbench handler is handed. */
 const MAX_BODY_BYTES = 50 * 1024 * 1024;

@@ -197,6 +197,11 @@ import { WebModule, WebShell } from "./http/routes/contributions.js";
 import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 import { CompanyModule } from "@penguinharness/plugin-company/server";
+import type { Paths, Schedules, Reassembly, SessionIndex, UsageRecording, HmrControl, UsageStore, ErrorLog, Db, ProjectEvents, Desktop, Access, ResourceGroups, AuthState, AgentState, SessionOrigins, Channels, ModelOAuth, Hmr, SessionDrivers, Members, Projects, ModelProviderAuthTokens, Log, AgentIndex, Proxy, Errors, SessionEnv, UsageQueries, Config, ProjectLifecycle, Scheduling, Clock, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { Plugin } from "@prismshadow/penguin-core/plugin";
+import type { Sandbox } from "@penguinharness/plugin-sandbox/server";
+import type { Messaging } from "@penguinharness/plugin-messaging/server";
+import type { Agents } from "@penguinharness/plugin-agents/server";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
