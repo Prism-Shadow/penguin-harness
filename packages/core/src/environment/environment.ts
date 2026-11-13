@@ -331,16 +331,17 @@ export class Environment implements EnvironmentInterface {
   }
 
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent), closes MCP clients (stdio server processes included) and stops the file tools' sandboxed helper. Idempotent. */
-  dispose(): void {
+  dispose(): Promise<void> {
     // Suppress completion reports first: dispose kills the remaining background sessions, and
     // their exits must not masquerade as task completions after the Session has ended.
     this.bgDisposed = true;
     this.bgBuffer = [];
     this.bgFwdBuffer = [];
     this.commandSessions.dispose();
-    this.subagentSessions.dispose();
+    const settled = this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
     this.fsHost.dispose();
+    return settled;
   }
 
   // Background completion reports: a single listener (the owning Session), with events fired
