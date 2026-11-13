@@ -50,9 +50,6 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
     timeout: 20000,
   });
 
-  // Retry hint line: set to "retry attempt 1 started" once request_begin arrives.
-  await expect(page.getByText(/已发起第 1 次重试/)).toBeVisible();
-
   // Trace: the broken call is recorded whole with the arguments that arrived, and the Request
   // holding it ended retryable, coded malformed. It never ran, so no output is paired with it;
   // every other recorded call ran and has its output.
@@ -73,13 +70,12 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   expect(itsEnd?.payload.status, "its Request ended retryable").toBe("retryable");
   expect(itsEnd?.payload.error_code, "coded malformed").toBe("malformed");
 
-  // UI: after expanding the group, the broken tool card shows aborted and is **settled**
-  // (no more running timer).
-  await page
-    .getByRole("button", { name: /运行完毕/ })
-    .first()
-    .click();
+  // UI: the retry stays inside the single work group rather than splitting it; after expanding
+  // the group, the retry line and the settled broken tool card are both inside it.
+  await expect(page.getByRole("button", { name: /运行完毕/ })).toHaveCount(1);
+  await page.getByRole("button", { name: /运行完毕/ }).click();
   const group = page.locator(".anim-msg.my-2").first();
+  await expect(group.getByText(/已发起第 2\/10 次请求/)).toBeVisible();
   // The broken call never ran and gets no result: its status icon names it aborted (the icon's
   // aria-label and tooltip), the only explanation a touch user can reach.
   await expect(
@@ -87,5 +83,5 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
     "the broken tool card is settled as aborted",
   ).toHaveCount(1);
   // A running spinner has role=status; none should remain after the turn ends.
-  await expect(page.locator('[role="status"]')).toHaveCount(0);
+  await expect(page.locator('[role="status"]:not([data-retry-phase])')).toHaveCount(0);
 });
