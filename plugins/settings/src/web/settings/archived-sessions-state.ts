@@ -4,16 +4,20 @@
  * archive — unarchive, which returns them to the sidebar, and delete.
  *
  * - The groups come first (one request, with their counts); then each shown group's first page.
- *   Groups show twenty at a time, and a group shows ten rows at a time: "more" reveals ten more
- *   (fetching the next page below the last row held when the reveal runs past what is loaded),
- *   "less" folds back to ten.
+ *   Groups show twenty at a time, and a group shows one page of ten rows at a time
+ *   (archived-sessions-paging.ts): a page not held yet is read below the last row held while
+ *   the page shown stays, and a page already held turns at once.
  * - The selection: rows chosen one by one, and groups chosen whole with Select all — every
  *   Session the group's count saw, loaded or not, but the rows unticked since and those a row's
  *   own button has acted on. A whole group is pinned to the time its count was read at, so
- *   acting on it touches no Session archived, created or run after that.
- * - A new query or filter starts over: no rows, no reveal, no selection.
+ *   acting on it touches no Session archived, created or run after that. Turning a page keeps
+ *   it: it names Sessions, not places.
+ * - A new query or filter starts over: no rows, every group on its first page, no selection.
  * - An action takes its rows off the page at once, then reads the counts and every shown group
- *   again (as far as each was revealed), so what is left is the server's word.
+ *   again (as far as each was read, so each keeps its page), so what is left is the server's
+ *   word. A page left with no rows falls back to the last page that has some.
+ * - One group's reads go one after another: a page turned while the group reads itself again
+ *   continues below what that read brings, and a read again after a turn reaches the new page.
  * - The page follows the user channel: a Session archived, unarchived, deleted or opened by a
  *   program elsewhere refreshes it the same way, debounced; a run starting or settling redraws
  *   its row's busy glyph in place, with nothing read again.
@@ -21,6 +25,7 @@
  *   machine's group is read from that machine, acted on there — its rows by id, the whole group
  *   pinned to the machine's own count time — and its events reach the page through this
  *   server's channel, wrapped as `machine_event`. Machines that could not be asked are named.
+ *   The machines' groups are asked apart from this server's and join them when they answer.
  *
  * A vanilla store with its async actions, so the page's whole behaviour is exercised in Node
  * against the fetch fake (the component only renders it and asks before a delete).
@@ -28,6 +33,7 @@
 import { createStore } from "zustand/vanilla";
 import type {
   ArchivedSessionGroup,
+  ArchivedSessionGroupsResponse,
   ArchivedSessionSource,
   ArchivedSessionsBatch,
   ArchivedSessionsQuery,
@@ -35,15 +41,9 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import * as api from "@prismshadow/penguin-web/internal";
-import { apiErrorText } from "@prismshadow/penguin-web/internal";
-import { SIDEBAR_PAGE_SIZE, activityKeyOf } from "@prismshadow/penguin-web/internal";
 
 /** Groups shown before "more groups". */
 export const ARCHIVE_GROUP_PAGE = 20;
-
-/** Rows a group shows, and loads, per step. */
-export const ARCHIVE_ROW_PAGE = SIDEBAR_PAGE_SIZE;
 
 /** The largest page one request may ask for (the route's own cap). */
 const ROWS_MAX = 100;
@@ -61,15 +61,27 @@ export interface ArchiveFilters {
   projectId: string | null;
 }
 
-/** One group's loaded rows: the rows held, whether the server has more below them, and how many show. */
-export interface GroupRows {
-  sessions: SessionInfo[];
-  hasMore: boolean;
-  /** Rows shown (a multiple of ARCHIVE_ROW_PAGE). */
-  cap: number;
-  /** A page for this group is on its way. */
+/**
+ * One group's rows: those held from its top through the furthest page read, whether the server
+ * has more below them, and the page shown.
+ */
+export interface GroupRows extends HeldRows {
+  /** The page shown, 0-based. */
+  page: number;
+  /** The group is being read from its top (its first read, or the page reading itself again). */
   loading: boolean;
+  /** A turn to a page not held yet is on its way: the page shown stays, and the pager waits. */
+  turning: boolean;
 }
+
+/** A group with nothing read yet. */
+const NO_ROWS: GroupRows = {
+  sessions: [],
+  hasMore: false,
+  page: 0,
+  loading: false,
+  turning: false,
+};
 
 /**
  * What an action acts on: some rows by id (a row's own buttons, with the machine of the group
@@ -134,14 +146,24 @@ export const groupKey = (
   group: Pick<ArchivedSessionGroup, "projectId" | "workspace" | "machineId">,
 ): string => `${group.machineId ?? ""}\0${group.projectId}\0${group.workspace}`;
 
+/** Newest activity first, then Project, machine and Workspace: the order the server lists groups in. */
+function groupOrder(a: ArchivedSessionGroup, b: ArchivedSessionGroup): number {
+  if (a.latest !== b.latest) return a.latest > b.latest ? -1 : 1;
+  if (a.projectId !== b.projectId) return a.projectId < b.projectId ? -1 : 1;
+  const am = a.machineId ?? "";
+  const bm = b.machineId ?? "";
+  if (am !== bm) return am < bm ? -1 : 1;
+  return a.workspace < b.workspace ? -1 : a.workspace > b.workspace ? 1 : 0;
+}
+
 /** The groups on screen: the first `groupLimit`. */
 export function shownGroups(state: ArchiveState): ArchivedSessionGroup[] {
   return (state.groups ?? []).slice(0, state.groupLimit);
 }
 
-/** The rows of one group on screen: the first `cap` of those held. */
+/** The rows of one group on screen: its page's, out of those held. */
 export function shownRows(rows: GroupRows | undefined): SessionInfo[] {
-  return rows === undefined ? [] : rows.sessions.slice(0, rows.cap);
+  return rows === undefined ? [] : pageRows(rows.sessions, rows.page);
 }
 
 /** How many Sessions the selection names: the rows picked, and each whole group's count but its unticked rows. */
@@ -193,11 +215,14 @@ const query = (filters: ArchiveFilters): ArchivedSessionsQuery => ({
 export interface ArchiveStoreState extends ArchiveState {
   /** Reads everything again under `filters` (a new query or filter starts over). */
   load: (filters: ArchiveFilters) => Promise<void>;
-  /** Reads the counts and every shown group again, keeping each group's reveal. */
+  /** Reads the counts and every shown group again, keeping each group's page. */
   refresh: () => Promise<void>;
   showMoreGroups: () => Promise<void>;
-  showMoreRows: (key: string) => Promise<void>;
-  showLessRows: (key: string) => void;
+  /**
+   * Shows `page` of the group `key` (the pager steps one at a time): at once when its rows are
+   * held, else once they are read, the page shown staying until then.
+   */
+  turnPage: (key: string, page: number) => Promise<void>;
   /** Ticks or unticks one row of the group `key`. */
   toggle: (key: string, sessionId: string) => void;
   /** Select all on the group `key`, or Deselect all once all of it is chosen. */
@@ -232,9 +257,20 @@ export function touchesArchive(ev: ServerEvent): boolean {
 }
 
 export function createArchiveStore(onError: (message: string) => void = () => undefined) {
-  /** Invalidates the answers of a load that a newer one replaced. */
+  /** Invalidates the answers of a read (a load or a refresh) that a newer one replaced. */
   let gen = 0;
+  /** Invalidates a page turn's answer: only a new query or filter, or the page closing, does. */
+  let epoch = 0;
+  /** Each group's reads, chained one after another by groupKey. */
+  const turns = new Map<string, Promise<void>>();
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Runs `task` once the group's reads before it have settled. Tasks report their own failures. */
+  const inTurn = (key: string, task: () => Promise<void>): Promise<void> => {
+    const next = (turns.get(key) ?? Promise.resolve()).then(task);
+    turns.set(key, next);
+    return next;
+  };
 
   return createStore<ArchiveStoreState>((set, get) => {
     /** One group's rows, `limit` of them below `before` (from the top when absent), from its machine. */
@@ -268,62 +304,63 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       if (next !== null) set({ rows: next });
     };
 
-    /** Loads the top of each group (as far as `capOf` says) that has no rows yet or is asked to reload. */
-    const fillGroups = async (
-      g: number,
-      groups: ArchivedSessionGroup[],
-      capOf: (key: string) => number,
-    ) => {
+    /**
+     * Reads each of `groups` from its top: a group not read yet its first page, one held as far
+     * as it was read (its page, and the pages before it and those turned past, whose picked rows
+     * stay held and chosen). The rows shown stay until the answer lands; the page then stands
+     * where the rows let it.
+     */
+    const fillGroups = async (g: number, groups: ArchivedSessionGroup[]) => {
       await Promise.all(
-        groups.map(async (group) => {
+        groups.map((group) => {
           const key = groupKey(group);
-          const cap = capOf(key);
-          const held = get().rows.get(key);
-          setRows(key, {
-            sessions: held?.sessions ?? [],
-            hasMore: held?.hasMore ?? false,
-            cap,
-            loading: true,
+          return inTurn(key, async () => {
+            if (g !== gen) return;
+            const held = get().rows.get(key);
+            const need =
+              held === undefined
+                ? ARCHIVE_ROW_PAGE
+                : Math.max(held.sessions.length, rowsThrough(held.page));
+            setRows(key, { ...(held ?? NO_ROWS), loading: true });
+            try {
+              const read = await readThrough(
+                (limit, before) => fetchRows(group, limit, before),
+                need,
+                ROWS_MAX,
+              );
+              if (g !== gen) return;
+              const now = get().rows.get(key) ?? NO_ROWS;
+              setRows(key, { ...now, ...read, page: settlePage(now.page, read), loading: false });
+            } catch (err) {
+              if (g !== gen) return;
+              const now = get().rows.get(key);
+              if (now !== undefined) setRows(key, { ...now, loading: false });
+              set({ error: apiErrorText(err) });
+            }
           });
-          try {
-            const page = await fetchRows(group, Math.min(cap, ROWS_MAX));
-            if (g !== gen) return;
-            setRows(key, { sessions: page.sessions, hasMore: page.hasMore, cap, loading: false });
-          } catch (err) {
-            if (g !== gen) return;
-            const now = get().rows.get(key);
-            if (now !== undefined) setRows(key, { ...now, loading: false });
-            set({ error: apiErrorText(err) });
-          }
         }),
       );
     };
 
-    /** Reads the groups, then their rows; `keep` carries each shown group's reveal over. */
-    const read = async (keep: boolean) => {
-      const g = ++gen;
-      const caps = new Map([...get().rows].map(([key, rows]) => [key, rows.cap]));
-      let groups: ArchivedSessionGroup[];
-      let total: number;
-      let asOf: string;
-      let unreachable: string[];
-      try {
-        const answer = await api.listArchivedSessionGroups(query(get().filters));
-        ({ groups, total, asOf } = answer);
-        unreachable = (answer.unreachable ?? []).map((machine) => machine.alias);
-      } catch (err) {
-        if (g !== gen) return;
-        set({ error: apiErrorText(err) });
-        if (get().groups === null) set({ groups: [], total: 0 });
-        return;
-      }
-      if (g !== gen) return;
-      // Rows of groups that are gone go with them.
+    /**
+     * Puts `groups` on the page in the server's order — rows of groups that are gone go with
+     * them — then loads the shown ones among `fill`, and unchooses what the page no longer holds.
+     */
+    const place = async (
+      g: number,
+      next: ArchivedSessionGroup[],
+      fields: { asOf: string; unreachable: string[] },
+      fill: readonly ArchivedSessionGroup[],
+    ) => {
+      const groups = [...next].sort(groupOrder);
       const present = new Set(groups.map(groupKey));
       const rows = new Map([...get().rows].filter(([key]) => present.has(key)));
-      set({ groups, total, asOf, rows, error: null, unreachable });
-      await fillGroups(g, groups.slice(0, get().groupLimit), (key) =>
-        keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE,
+      const total = groups.reduce((n, group) => n + group.count, 0);
+      set({ groups, total, rows, error: null, ...fields });
+      const filling = new Set(fill.map(groupKey));
+      await fillGroups(
+        g,
+        groups.slice(0, get().groupLimit).filter((group) => filling.has(groupKey(group))),
       );
       if (g !== gen) return;
       // A row picked that the page no longer holds (unarchived or deleted elsewhere) is
@@ -340,13 +377,64 @@ export function createArchiveStore(onError: (message: string) => void = () => un
     };
 
     /**
-     * Takes these Sessions off the page at once (an action's own result). A group chosen whole
-     * counts the ones it held out, so the bar and the delete confirm count what is left of it.
+     * Reads the groups, then their rows; a group already held is read as far as it was, so it
+     * keeps its page.
+     *
+     * This server's groups and the machines' are asked apart: this server's first, on the page
+     * the moment they come, the machines' after that. A machine that holds its connection but
+     * answers nothing must not keep the archive this server holds off the page for as long as
+     * its read takes to time out. Until the machines' answer lands, a refresh keeps the machine
+     * groups it showed.
+     */
+    const read = async () => {
+      const g = ++gen;
+      const filters = query(get().filters);
+      let local: ArchivedSessionGroupsResponse;
+      try {
+        local = await api.listArchivedSessionGroups(filters, "here");
+      } catch (err) {
+        if (g !== gen) return;
+        set({ error: apiErrorText(err) });
+        if (get().groups === null) set({ groups: [], total: 0 });
+        return;
+      }
+      if (g !== gen) return;
+      const shownMachines = (get().groups ?? []).filter((group) => group.machineId !== undefined);
+      await place(
+        g,
+        [...local.groups, ...shownMachines],
+        { asOf: local.asOf, unreachable: get().unreachable },
+        local.groups,
+      );
+      if (g !== gen) return;
+      const remote = await api.listArchivedSessionGroups(filters, "machines").catch(() => null);
+      if (g !== gen || remote === null) return;
+      await place(
+        g,
+        [...local.groups, ...remote.groups],
+        {
+          asOf: local.asOf,
+          unreachable: (remote.unreachable ?? []).map((machine) => machine.alias),
+        },
+        remote.groups,
+      );
+    };
+
+    /**
+     * Takes these Sessions off the page at once (an action's own result): the rows below close
+     * up, and a page left with none falls back to the last page that has some. A group chosen
+     * whole counts the ones it held out, so the bar and the delete confirm count what is left
+     * of it.
      */
     const dropRows = (ids: ReadonlySet<string>) => {
       const rows = new Map<string, GroupRows>();
       for (const [key, held] of get().rows) {
-        rows.set(key, { ...held, sessions: held.sessions.filter((s) => !ids.has(s.sessionId)) });
+        const sessions = held.sessions.filter((s) => !ids.has(s.sessionId));
+        rows.set(key, {
+          ...held,
+          sessions,
+          page: settlePage(held.page, { sessions, hasMore: held.hasMore }),
+        });
       }
       const { picked, wholes } = get().selection;
       const keptWholes = new Map<string, WholeGroup>();
@@ -461,6 +549,8 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       unreachable: [],
 
       load: async (filters) => {
+        epoch += 1;
+        turns.clear();
         set({
           filters,
           groups: null,
@@ -472,11 +562,11 @@ export function createArchiveStore(onError: (message: string) => void = () => un
           error: null,
           unreachable: [],
         });
-        await read(false);
+        await read();
       },
 
       refresh: async () => {
-        await read(true);
+        await read();
       },
 
       showMoreGroups: async () => {
@@ -484,46 +574,50 @@ export function createArchiveStore(onError: (message: string) => void = () => un
         const groupLimit = before + ARCHIVE_GROUP_PAGE;
         set({ groupLimit });
         const fresh = (get().groups ?? []).slice(before, groupLimit);
-        await fillGroups(gen, fresh, () => ARCHIVE_ROW_PAGE);
+        await fillGroups(gen, fresh);
       },
 
-      showMoreRows: async (key) => {
+      turnPage: async (key, page) => {
         const held = get().rows.get(key);
         const group = get().groups?.find((g) => groupKey(g) === key);
-        if (held === undefined || group === undefined || held.loading) return;
-        const cap = held.cap + ARCHIVE_ROW_PAGE;
-        // A page already in memory spends no request.
-        if (held.sessions.length >= cap || !held.hasMore) {
-          setRows(key, { ...held, cap });
+        if (held === undefined || group === undefined || held.turning || page === held.page) return;
+        // Held, or past the group's last row: nothing to read.
+        if (held.sessions.length >= rowsThrough(page) || !held.hasMore) {
+          setRows(key, { ...held, page: settlePage(page, held) });
           return;
         }
-        setRows(key, { ...held, cap, loading: true });
-        const g = gen;
-        try {
-          const page = await fetchRows(
-            group,
-            Math.min(cap - held.sessions.length, ROWS_MAX),
-            held.sessions.at(-1),
-          );
-          if (g !== gen) return;
-          const now = get().rows.get(key) ?? held;
-          const seen = new Set(now.sessions.map((s) => s.sessionId));
-          setRows(key, {
-            sessions: [...now.sessions, ...page.sessions.filter((s) => !seen.has(s.sessionId))],
-            hasMore: page.hasMore,
-            cap,
-            loading: false,
-          });
-        } catch (err) {
-          if (g !== gen) return;
-          setRows(key, { ...(get().rows.get(key) ?? held), loading: false });
-          onError(apiErrorText(err));
-        }
-      },
-
-      showLessRows: (key) => {
-        const held = get().rows.get(key);
-        if (held !== undefined) setRows(key, { ...held, cap: ARCHIVE_ROW_PAGE });
+        // The step, not the page: a read of the group landing first may have moved the page.
+        const step = page - held.page;
+        const e = epoch;
+        setRows(key, { ...held, turning: true });
+        // A new query, the page closing, or the group gone from the page: nothing to land on.
+        const current = () => (e === epoch ? get().rows.get(key) : undefined);
+        await inTurn(key, async () => {
+          const from = current();
+          if (from === undefined) return;
+          const target = Math.max(0, from.page + step);
+          try {
+            const read = await readThrough(
+              (limit, before) => fetchRows(group, limit, before),
+              rowsThrough(target),
+              ROWS_MAX,
+              from,
+            );
+            const now = current();
+            if (now === undefined) return;
+            // What changed meanwhile (rows acted on, a run state) stands; the rows read go below it.
+            const landed = {
+              sessions: joinBelow(now.sessions, read.sessions.slice(from.sessions.length)),
+              hasMore: read.hasMore,
+            };
+            setRows(key, { ...now, ...landed, page: settlePage(target, landed), turning: false });
+          } catch (err) {
+            const now = current();
+            if (now === undefined) return;
+            setRows(key, { ...now, turning: false });
+            onError(apiErrorText(err));
+          }
+        });
       },
 
       toggle: (key, sessionId) => {
@@ -593,6 +687,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
 
       dispose: () => {
         gen += 1;
+        epoch += 1;
         if (refreshTimer !== null) clearTimeout(refreshTimer);
         refreshTimer = null;
       },

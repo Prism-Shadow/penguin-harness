@@ -37,10 +37,10 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-  toastError,
   toastSuccess,
   type BadgeStyle,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
@@ -49,7 +49,32 @@ import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
+||||||| /tmp/_a
+import type { BadgeStyle } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
+import { useProject } from "../../state/project";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { ScheduleFormModal } from "../schedules/schedule-form-modal";
+import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
+import { toggleBody } from "../schedules/schedule-upsert";
+=======
+
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
+import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
+>>>>>>> /tmp/_t
 import { usePromptInjection } from "./prompt-injection-controls";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -69,9 +94,12 @@ export function SchedulesTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const { currentProject, agents, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
@@ -99,15 +127,15 @@ export function SchedulesTab({
     try {
       // The injection controls' state loads in parallel with the tab's own table.
       const [schedules, configView] = await Promise.all([
-        api.listSchedules(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.listSchedules(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setData(schedules);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -116,7 +144,7 @@ export function SchedulesTab({
   /** After a create, update or delete: the table, and the agent card's schedule count. */
   const changed = () => {
     void load();
-    void reloadAgents();
+    if (machineId === null) void reloadAgents();
   };
 
   /** Toggle: whole-file-replace semantics — resend original fields, only flip enabled. */
@@ -124,11 +152,17 @@ export function SchedulesTab({
     if (!projectId) return;
     setBusy(true);
     try {
-      await api.updateSchedule(projectId, agentId, item.name, toggleBody(item, !item.enabled));
+      await api.updateSchedule(
+        projectId,
+        agentId,
+        item.name,
+        toggleBody(item, !item.enabled),
+        machineId,
+      );
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -139,11 +173,11 @@ export function SchedulesTab({
     if (!projectId || deleting === null) return;
     setBusy(true);
     try {
-      await api.deleteSchedule(projectId, agentId, deleting);
+      await api.deleteSchedule(projectId, agentId, deleting, machineId);
       if (form?.editing?.name === deleting) setForm(null);
       changed();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setDeleting(null);
@@ -316,6 +350,7 @@ export function SchedulesTab({
         examples={scheduleExamples("agent")}
         tail={S.schedule.aiCreateTail(agentId)}
         agents={agents}
+        machineId={machineId}
       />
 
       {/* Delete confirmation (shared ConfirmModal, same pattern as Vault / Agent deletion). */}

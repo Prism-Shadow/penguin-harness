@@ -32,8 +32,6 @@ export interface ModelOauthRouteDeps extends ModelsRouteDeps {
   modelOAuth: ModelOAuth;
   access: Access;
 }
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
 import type { Access, ModelOAuth } from "@prismshadow/penguin-server/internal";
@@ -47,30 +45,6 @@ const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
  * control sequence reaches the exchange body or the page below.
  */
 const CODE_RE = /^[A-Za-z0-9._~-]{1,512}$/;
-
-/**
- * Origin the browser reached this server on, which is the origin the provider must redirect
- * back to. Taken from the request's own URL, so loopback, a LAN address and a custom port
- * all work without configuration.
- *
- * `x-forwarded-proto` / `x-forwarded-host` are caller-supplied and are honoured only when
- * the deployment says a reverse proxy sets them (PENGUIN_TRUST_PROXY=1) — the same opt-in
- * the hot-update network gate requires, and for the same reason: without it anyone who can
- * reach the bind could choose where the authorization lands.
- */
-export function requestOrigin(
-  url: string,
-  headers: { proto?: string; host?: string },
-  trustProxy: boolean,
-): string {
-  const own = new URL(url);
-  if (!trustProxy) return own.origin;
-  // A chain of proxies appends to these headers; the client-facing hop is the first value.
-  const proto = headers.proto?.split(",")[0]?.trim();
-  const host = headers.host?.split(",")[0]?.trim();
-  const scheme = proto === "http" || proto === "https" ? proto : own.protocol.replace(":", "");
-  return `${scheme}://${host !== undefined && host !== "" ? host : own.host}`;
-}
 
 /** Validates the optional `mode` field of a start request. */
 function parseMode(value: unknown): ModelOAuthMode {
@@ -211,7 +185,9 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
-  // such flow and what keeps the authorize/exchange endpoints out of client control.
+  // such flow and what keeps the authorize/exchange endpoints out of client control. The
+  // answer carries the mode the flow actually opened in, since a redirect this origin cannot
+  // receive opens as manual.
   app.post("/start", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
@@ -223,18 +199,10 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       userId: c.var.user.userId,
       provider,
       mode,
-      callbackOrigin: requestOrigin(
-        c.req.url,
-        {
-          ...(c.req.header("x-forwarded-proto") !== undefined
-            ? { proto: c.req.header("x-forwarded-proto")! }
-            : {}),
-          ...(c.req.header("x-forwarded-host") !== undefined
-            ? { host: c.req.header("x-forwarded-host")! }
-            : {}),
-        },
-        deps.config.trustProxy,
-      ),
+      // The provider must send the browser back to the address it is on: the public origin.
+      // It redirects only to HTTPS or loopback HTTP, so an origin like a LAN address over
+      // plain HTTP gets a manual flow instead (the service's `openedMode`).
+      callbackOrigin: publicOriginOf(c, deps.config.trustProxy),
     });
     return c.json(started satisfies ModelOAuthStartResponse);
   });
@@ -266,7 +234,11 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       return c.json({ ok: false, error: result.error } satisfies ModelOAuthCodeResponse);
     }
     credentialsChanged(deps, projectId);
-    return c.json({ ok: true, applied: result.applied } satisfies ModelOAuthCodeResponse);
+    return c.json({
+      ok: true,
+      applied: result.applied,
+      ...(result.defaultOffer !== undefined ? { defaultOffer: result.defaultOffer } : {}),
+    } satisfies ModelOAuthCodeResponse);
   });
 
   // Poll target while the user is authorizing in the other tab, and where a redirect flow's
@@ -291,6 +263,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
       status: state.status,
       provider: state.provider,
       ...(state.applied !== undefined ? { applied: state.applied } : {}),
+      ...(state.defaultOffer !== undefined ? { defaultOffer: state.defaultOffer } : {}),
       ...(state.error !== undefined ? { error: state.error } : {}),
     } satisfies ModelOAuthStatusResponse);
   });

@@ -9,8 +9,11 @@
  *   pill's hover; this server's own entry is simply running;
  * - the stats: how this server reaches the machine, the build it carries, the port its server
  *   answers on, and when it was last checked;
- * - the middle: the job's stepper while a job for the machine is queued or running, else why Use
- *   waits (a hint would never open on the button, which shows its word);
+ * - the middle: the job's stepper while a job for the machine is queued or running, else the retry
+ *   row while the server brings the machine back or stopped trying (the attempt of how many and
+ *   the countdown to it with Retry now and Stop retrying, or where it stopped with Retry; the last
+ *   failure after its sentence), else why Use waits (a hint would never open on the button, which
+ *   shows its word);
  * - the buttons: Use starts a new conversation in the machine's temporary workspace, Settings
  *   opens the Machine dialog, Delete takes the machine off this Project after a confirmation, and
  *   Sync config hands a connected machine on this server's build this Project's config now. A
@@ -29,6 +32,7 @@ import type {
   MachineStatusPillProps,
   MachineStepState,
   MachineStepperProps,
+  RetryStatusProps,
   ToneName,
 } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
@@ -42,9 +46,16 @@ import {
   outOfDate,
   readMachine,
   readingTone,
+  retryReading,
   stepLabel,
   useWaitsBecause,
+<<<<<<< /tmp/_o
   type MachineReading,
+||||||| /tmp/_a
+=======
+  type MachineReading,
+  type RetryReading,
+>>>>>>> /tmp/_t
 } from "./machines-view";
 
 /**
@@ -60,7 +71,14 @@ export function reasonText(reading: MachineReading): string | null {
     case "working":
       return reading.step;
     case "reconnecting":
-      return reading.attempts === 0 ? null : S.machines.detail.reconnect.attempt(reading.attempts);
+      return reading.attempts === 0
+        ? null
+        : S.machines.retry.failed(reading.attempts, reading.maxAttempts);
+    case "reconnectFailed":
+    case "reconnectStopped":
+      return reading.message;
+    case "restartNeeded":
+      return S.machines.restartNeededReason;
     default:
       return null;
   }
@@ -162,6 +180,48 @@ export function jobProgress(job: MachineJob): MachineStepperProps {
   return { steps: job.steps.map((_, index) => stateOf(index)), caption, running: job.running };
 }
 
+/**
+ * The shared retry row for a machine's retry reading: its sentence and countdown in the reader's
+ * words, and the presses on offer — "Retry now" and "Stop retrying" while the streak runs, "Retry"
+ * after it stopped. `reason` replaces the reading's own (the dialog says the last failure in full
+ * under the row, so its row says none).
+ */
+export function retryStatus(
+  view: RetryReading,
+  {
+    onRetry,
+    onStop,
+    held,
+    size = "xs",
+    reason = view.reason,
+  }: {
+    /** Retries now; a promise that rejects says the server refused, so the press can be made again. */
+    onRetry: () => unknown;
+    /** Stops retrying; a promise that rejects lets the press be made again. */
+    onStop: () => unknown;
+    /** Something else is in flight or moving on the machine: the presses are not taken. */
+    held: boolean;
+    size?: "xs" | "sm";
+    reason?: string | null;
+  },
+): RetryStatusProps {
+  const r = S.machines.retry;
+  const { offers } = view;
+  return {
+    phase: view.phase,
+    label: view.label,
+    ...(view.countdown === null ? {} : { countdown: view.countdown }),
+    reason,
+    nextAt: view.nextAtMs,
+    retry:
+      offers.retryNow || offers.retry
+        ? { label: offers.retryNow ? r.retryNow : r.retry, onClick: onRetry, disabled: held }
+        : null,
+    secondary: offers.stop ? { label: r.stop, onClick: onStop, disabled: held } : null,
+    size,
+  };
+}
+
 /** The job's stepper. */
 export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
   return <MachineStepper {...jobProgress(job)} className={className} />;
@@ -183,6 +243,13 @@ export interface MachineCardProps {
   onSyncConfig: () => void;
   /** Asks to take the machine off this Project (the page confirms first). */
   onDelete: () => void;
+  /**
+   * Retries bringing the machine back now. Rejects when the server refused (the page says why),
+   * which lets the press be made again.
+   */
+  onRetry: () => Promise<void>;
+  /** Stops the server bringing the machine back. Rejects when the request did not go through. */
+  onStopRetry: () => Promise<void>;
 }
 
 /** The card's stats: how the machine is reached, its build, its server's port, the last check. */
@@ -215,9 +282,12 @@ export function MachineCard({
   onUse,
   onSyncConfig,
   onDelete,
+  onRetry,
+  onStopRetry,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const moving = !machine.local && jobMoving(job);
+  const retry = reading === null || moving ? null : retryReading(reading, machine.alias);
   const card = S.machines.card;
   return (
     <MachineCardView
@@ -237,7 +307,10 @@ export function MachineCard({
       root={machine.root}
       facts={cardFacts(machine, locale)}
       progress={moving && job !== null ? jobProgress(job) : null}
-      waits={useWaitsBecause(machine, job, reading, locale, Date.now())}
+      retry={
+        retry === null ? null : retryStatus(retry, { onRetry, onStop: onStopRetry, held: busy })
+      }
+      waits={useWaitsBecause(machine, job, reading)}
       onOpen={onOpen}
       onBodyClick={cardBodyClick(onOpen)}
       use={{ label: card.use, disabled: busy || !canUse(machine, job), onClick: onUse }}

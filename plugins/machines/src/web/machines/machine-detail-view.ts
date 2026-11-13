@@ -29,11 +29,15 @@ import {
   canSyncConfig,
   failureText,
   isPhase,
+  needsRestart,
   outOfDate,
+  readMachine,
   readingTone,
+  retryReading,
   sshWords,
   stepLabel,
   type MachineReading,
+  type RetryReading,
 } from "./machines-view";
 
 /** The machine's state as one pill: one plain word in the state's tone. */
@@ -298,6 +302,7 @@ export type JobView =
       message: string;
       /** ssh's own words under a refusal it caused; null otherwise. */
       detail: string | null;
+      /** Installing again may mend it: the section points at the toolbar's Reinstall. */
       canReplaceProgram: boolean;
       /** The connection check the server ran after the failure; null when it ran none. */
       check: JobCheck | null;
@@ -331,7 +336,15 @@ export function jobView(job: MachineJob): JobView {
 
 /** The toolbar's verbs, by what each one does. */
 export type ToolbarVerb =
-  "enable" | "update" | "stop" | "start" | "restart" | "syncConfig" | "configure" | "uninstall";
+  | "enable"
+  | "update"
+  | "stop"
+  | "start"
+  | "restart"
+  | "syncConfig"
+  | "configure"
+  | "reinstall"
+  | "uninstall";
 
 /** Why a toolbar verb waits: a job on its way, a machine out of reach, a stopped server, no build. */
 export type HoldReason = "moving" | "unreachable" | "stopped" | "noImage";
@@ -355,6 +368,7 @@ const GLYPH: Record<ToolbarVerb, string> = {
   // The config leaving this server for that machine.
   syncConfig: ICONS.upload,
   configure: ICONS.slidersHorizontal,
+  reinstall: ICONS.download,
   uninstall: ICONS.trash,
 };
 
@@ -367,8 +381,12 @@ const REASONS: readonly HoldReason[] = ["moving", "unreachable", "stopped", "noI
  * whole pipeline); one on another build than this server's is updated — the same pipeline,
  * offered only while it would change something; then its server stopped or started (whichever
  * it is not), restarted, its config synced (only while it is connected and on this server's
- * build), its ssh host configured, and the program uninstalled. This server's own entry takes
- * none.
+ * build), its ssh host configured, the program installed again whatever version it carries, and
+ * uninstalled. This server's own entry takes none.
+ *
+ * A streak holds what needs the machine only while it is under way, or waits for a password no
+ * verb would get past: once it stopped — at its limit, at an ssh refusal, or at a person's Stop
+ * retrying — every verb can be pressed, and each one reaches the machine on its own.
  */
 export function machineToolbar(
   machine: MachineInfo,
@@ -379,7 +397,7 @@ export function machineToolbar(
   if (machine.local) return { items: [], sentence: null };
   const t = S.machines.detail.toolbar;
   const moving = job !== null && (job.queued || job.running);
-  const reconnecting = machine.reconnect !== undefined;
+  const reconnecting = machine.reconnect !== undefined && machine.reconnect.gaveUp === undefined;
   const kept = machine.keepConnected === true || machine.connection !== null;
   const item = (
     verb: ToolbarVerb,
@@ -398,11 +416,15 @@ export function machineToolbar(
     items.push(
       kept ? item("stop", t.stop, reachHeld) : item("start", t.start, moving ? "moving" : null),
     );
-    items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped")));
+    // The primary when the machine's server is older than its build: the one verb that mends it,
+    // unless an update is on offer, which restarts the server along the way.
+    const restartFirst = needsRestart(machine) && !outOfDate(machine, imageVersion);
+    items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped"), restartFirst));
     if (canSyncConfig(machine, imageVersion)) {
       items.push(item("syncConfig", t.syncConfig, moving ? "moving" : null));
     }
     items.push(item("configure", t.configure, null));
+    items.push(item("reinstall", t.reinstall, pipelineHeld));
     items.push(item("uninstall", t.uninstall, reachHeld));
   }
   const held = S.machines.detail.held;
@@ -425,7 +447,8 @@ export interface ConfigSyncView {
 /**
  * What the dialog says of the machine's last config sync; null before the first one since the
  * server started. A skipped model's reason is the far side's code in the reader's language where
- * the app knows it, its own words otherwise.
+ * the app knows it, its own words otherwise — except for one of this server's built-in models,
+ * whose refusal means the machine's build does not list it yet, and says so.
  */
 export function configSyncView(
   machine: MachineInfo,
@@ -443,7 +466,10 @@ export function configSyncView(
       : c.failed(sync.detail ?? ""),
     envOnly: sync.envOnly.length > 0,
     skipped: sync.skipped.map((one) =>
-      c.skippedModel(`${one.provider}/${one.modelId}`, byCode[one.code] ?? one.reason),
+      c.skippedModel(
+        `${one.provider}/${one.modelId}`,
+        one.builtInHere === true ? c.notInMachineBuild : (byCode[one.code] ?? one.reason),
+      ),
     ),
   };
 }
@@ -459,22 +485,35 @@ export function envOnlyItems(machine: MachineInfo): string[] {
   );
 }
 
-/** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */
+/**
+ * What the "models not synced to this machine" notice is about, one item per refused entry and
+ * why (`projectId/provider/modelId:code`, then `:built-in` for one of this server's built-in
+ * models): the set its dismissal is kept against, so another model refused, or the same one
+ * refused for another reason, brings it back. The sync's time is not in it: a sync runs on its
+ * own after every config edit and every reconnect, and the same refusal again is not news.
+ */
+export function skippedItems(machine: MachineInfo): string[] {
+  return (machine.configSync?.skipped ?? []).map(
+    (one) =>
+      `${one.projectId}/${one.provider}/${one.modelId}:${one.code}${one.builtInHere === true ? ":built-in" : ""}`,
+  );
+}
+
+/**
+ * The Reconnecting section: where the streak stands — the attempt, the countdown to the next, or
+ * where it stopped, with its Retry — how long it has lasted, and why the last attempt failed.
+ */
 export interface ReconnectView {
+  /** Where the streak stands, as the shared retry status says it (the card's middle says the same). */
+  status: RetryReading;
   /** How long the streak has lasted, in words. */
   lasting: string;
-  /** The attempt running or next to run (one past the failures so far). */
-  attempt: number;
-  /** When the next attempt runs, in words; null while one runs. */
-  next: string | null;
   /** The last attempt's failure — ssh's refusal in the reader's language; null before one. */
   lastError: string | null;
   /** ssh's own words under a refusal it caused; null otherwise. */
   detail: string | null;
   /** What the connection check found after failures in a row; null until it ran. */
   check: CheckLine[] | null;
-  /** The stored password was refused: no attempt runs until the machine's SSH settings change. */
-  stopped: boolean;
 }
 
 export function reconnectView(
@@ -484,6 +523,9 @@ export function reconnectView(
 ): ReconnectView | null {
   const r = machine.reconnect;
   if (r === undefined) return null;
+  // The reading the card gives with no job in the way: a streak is always one of these.
+  const status = retryReading(readMachine(machine, null, null), machine.alias);
+  if (status === null) return null;
   const failure =
     r.lastError === null
       ? null
@@ -495,14 +537,12 @@ export function reconnectView(
           machine.alias,
         );
   return {
+    status,
     lasting: formatSpan(now - Date.parse(r.since), locale),
-    attempt: r.attempts + 1,
-    next: r.nextAt === null ? null : formatSpan(Date.parse(r.nextAt) - now, locale),
     lastError: failure?.message ?? null,
     detail: failure?.detail ?? null,
     check:
       r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
-    stopped: r.waitsForPassword === true,
   };
 }
 

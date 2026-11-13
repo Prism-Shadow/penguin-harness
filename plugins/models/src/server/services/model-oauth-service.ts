@@ -24,13 +24,14 @@
  * minutes anyway, and no key exists until the exchange runs).
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { userAgent } from "@prismshadow/penguin-core";
-import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
-import { HttpError } from "@prismshadow/penguin-server/internal";
-import { badRequest } from "@prismshadow/penguin-server/internal";
+import { APP_URL, userAgent } from "@prismshadow/penguin-core";
+import { providerInfo } from "../model-catalog/catalog.js";
+import type { ModelProviderOAuth } from "../model-catalog/catalog.js";
+import { HttpError } from "../http/errors.js";
+import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModelOAuth, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { DefaultModelOffer } from "../api/types.js";
+import type { GroupKeyApplied, ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";
@@ -74,6 +75,12 @@ interface Flow {
   status: ModelOAuthStatus;
   /** Machine-readable failure reason, mirrored to the Web App so it can localize. */
   errorCode?: ModelOAuthErrorCode;
+  /**
+   * The default the minted key offers, kept for every `done` answer rather than the redeeming
+   * one alone: two overlapping polls can answer out of order, and the page asks about it only if
+   * one of them carries it.
+   */
+  defaultOffer?: DefaultModelOffer;
 }
 
 /**
@@ -93,10 +100,44 @@ export type ModelOAuthErrorCode =
   /** A key was minted but could not be written into the Project's models. */
   | "apply_failed";
 
-/** What `start` hands back to the Web App: an opaque id plus the page to send the user to. */
+/**
+ * What `start` hands back to the Web App: an opaque id, the page to send the user to, and the
+ * mode the flow was actually opened in, which is `manual` whenever the redirect could not be.
+ */
 export interface ModelOAuthStartResult {
   flowId: string;
   authorizeUrl: string;
+  mode: ModelOAuthMode;
+}
+
+/**
+ * The mode a flow opens in, given the one asked for and the origin the redirect would return
+ * to.
+ *
+ * The authorization page refuses the whole request as invalid when its `callback_url` is
+ * anything but HTTPS or plain HTTP to a loopback host — `localhost`, `[::1]` or a `127.x.x.x`
+ * address, the set it accepts. A Web App reached over plain HTTP on a LAN address, a hostname
+ * or `0.0.0.0` therefore cannot be redirected back to, and offering the redirect there only
+ * strands the user on an error page. Such a request opens a manual flow instead: no callback
+ * URL, the same S256 challenge, the one-time code carried back by hand.
+ */
+export function openedMode(asked: ModelOAuthMode, callbackOrigin: string): ModelOAuthMode {
+  if (asked === "manual") return "manual";
+  let origin: URL;
+  try {
+    origin = new URL(callbackOrigin);
+  } catch {
+    // A forwarded host that does not parse names nowhere a browser can be sent.
+    return "manual";
+  }
+  if (origin.protocol === "https:") return "callback";
+  // The URL parser has already lowercased the host and normalized IPv4 shorthand (`127.1`)
+  // and IPv6 (`[0:0:0:0:0:0:0:1]`) to the forms the page compares against.
+  const loopback =
+    origin.hostname === "localhost" ||
+    origin.hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(origin.hostname);
+  return origin.protocol === "http:" && loopback ? "callback" : "manual";
 }
 
 /**
@@ -197,12 +238,12 @@ export async function exchangeCode(input: {
   return { ok: true, key };
 }
 
-/** Writes a minted key as one provider group's key; returns how many of its rows use it. */
+/** Writes a minted key as one provider group's key; returns how many of its rows use it, and the default it offers. */
 export type ApplyGroupKey = (
   projectId: string,
   provider: string,
   apiKey: string,
-) => Promise<number>;
+) => Promise<GroupKeyApplied>;
 
 @Component()
 export class ModelOAuthService implements ModelOAuth {
@@ -221,13 +262,17 @@ export class ModelOAuthService implements ModelOAuth {
    * that declares no `oauth` cannot be talked into one, and the authorize/exchange
    * endpoints are always the catalog's, so client input never chooses who receives the
    * challenge or who is asked for a key.
+   *
+   * A redirect that the authorization page would refuse is not asked for: the flow opens in
+   * manual mode instead (see {@link openedMode}) and the result says so.
    */
   start(input: {
     projectId: string;
     userId: string;
     provider: string;
+    /** The mode asked for; `callback` can still open as `manual`. */
     mode: ModelOAuthMode;
-    /** Where the provider should send the browser back to; ignored in manual mode. */
+    /** Where the provider should send the browser back to; unused by a manual flow. */
     callbackOrigin: string;
   }): ModelOAuthStartResult {
     const oauth = providerInfo(input.provider)?.oauth;
@@ -240,10 +285,11 @@ export class ModelOAuthService implements ModelOAuth {
     const flowId = randomBytes(32).toString("base64url");
     const verifier = createVerifier();
     const createdAt = this.now();
+    const mode = openedMode(input.mode, input.callbackOrigin);
     // The callback keeps its own query string: the provider appends `code=` to whatever
     // path and parameters it was given, so the flow id rides back with the code.
     const callbackUrl =
-      input.mode === "callback"
+      mode === "callback"
         ? `${input.callbackOrigin}/api/projects/${encodeURIComponent(input.projectId)}/model-oauth/callback?flow=${encodeURIComponent(flowId)}`
         : undefined;
     this.flows.set(flowId, {
@@ -251,7 +297,7 @@ export class ModelOAuthService implements ModelOAuth {
       projectId: input.projectId,
       userId: input.userId,
       provider: input.provider,
-      mode: input.mode,
+      mode,
       exchangeUrl: oauth.exchangeUrl,
       verifier,
       code: null,
@@ -266,6 +312,7 @@ export class ModelOAuthService implements ModelOAuth {
         challenge: codeChallenge(verifier),
         ...(callbackUrl !== undefined ? { callbackUrl } : {}),
       }),
+      mode,
     };
   }
 
@@ -322,6 +369,7 @@ export class ModelOAuthService implements ModelOAuth {
     provider: string;
     error?: ModelOAuthErrorCode;
     applied?: number;
+    defaultOffer?: DefaultModelOffer;
   }> {
     const flow = this.require(input);
     // Reading the code and claiming it inside `redeem` is one synchronous stretch, so two
@@ -333,6 +381,7 @@ export class ModelOAuthService implements ModelOAuth {
       provider: flow.provider,
       ...(flow.errorCode !== undefined ? { error: flow.errorCode } : {}),
       ...(result?.ok === true ? { applied: result.applied } : {}),
+      ...(flow.defaultOffer !== undefined ? { defaultOffer: flow.defaultOffer } : {}),
     };
   }
 
@@ -346,7 +395,7 @@ export class ModelOAuthService implements ModelOAuth {
     userId: string;
     projectId: string;
     code: string;
-  }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
+  }): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }> {
     return this.redeem(this.require(input), input.code);
   }
 
@@ -363,7 +412,7 @@ export class ModelOAuthService implements ModelOAuth {
   private async redeem(
     flow: Flow,
     code: string,
-  ): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
+  ): Promise<({ ok: true } & GroupKeyApplied) | { ok: false; error: ModelOAuthErrorCode }> {
     const verifier = flow.verifier;
     if (flow.status !== "pending" || verifier === null) {
       throw new HttpError(
@@ -385,16 +434,17 @@ export class ModelOAuthService implements ModelOAuth {
       flow.errorCode = result.error;
       return { ok: false, error: result.error };
     }
-    let applied: number;
+    let written: GroupKeyApplied;
     try {
-      applied = await this.applyGroupKey(flow.projectId, flow.provider, result.key);
+      written = await this.applyGroupKey(flow.projectId, flow.provider, result.key);
     } catch {
       flow.status = "error";
       flow.errorCode = "apply_failed";
       return { ok: false, error: "apply_failed" };
     }
     flow.status = "done";
-    return { ok: true, applied };
+    flow.defaultOffer = written.defaultOffer;
+    return { ok: true, ...written };
   }
 
   /**

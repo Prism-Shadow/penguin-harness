@@ -22,8 +22,8 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
-  toastError,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import type { MergedBenchmark } from "@prismshadow/penguin-web/internal";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
@@ -33,10 +33,33 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useDocumentTitle } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import * as api from "../../api/endpoints";
+import type { MergedBenchmark } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useSessions } from "../../state/sessions";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
+import { downloadArchive } from "../agents/archive-download";
+=======
+import * as api from "../../api/endpoints";
+import type { MergedBenchmark } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useSessions } from "../../state/sessions";
+import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
+import { downloadArchive } from "../agents";
+>>>>>>> /tmp/_t
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
-import { fetchBenchmarks } from "./benchmark-sources";
+import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -170,47 +193,33 @@ export function BenchmarkDetailPage() {
   const { machineIds, machineLabels } = useSessions();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  // The route's Benchmark is one of the Project the page was opened in: a Project switch leaves
+  // for the new Project's Benchmarks rather than asking that Project about this id.
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/benchmark");
 
-  const [benchmark, setBenchmark] = useState<MergedBenchmark | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
-  const [missing, setMissing] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [using, setUsing] = useState(false);
 
-  useDocumentTitle(benchmark?.title ?? S.benchmark.title);
-
   // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
-  // it whole — merged over this server and the machines it holds — and picks its own out of it.
-  const machinesKey = machineIds.join(",");
-  useEffect(() => {
-    if (!projectId || benchmarkId === "") return;
-    let cancelled = false;
-    setBenchmark(null);
-    setError(null);
-    setMissing(false);
-    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
-      .then((merged) => {
-        if (cancelled) return;
-        const found = merged.find((b) => b.id === benchmarkId) ?? null;
-        setBenchmark(found);
-        setMissing(found === null);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, benchmarkId, machinesKey]);
+  // it whole — merged over this server and the machines it holds, each joining as it answers —
+  // and picks its own out of it. Not in the answers so far is only "missing" once no machine is
+  // still out: it may be a Benchmark a machine alone holds.
+  const listed = useBenchmarksAcross(switchedAway ? null : projectId, machineIds);
+  const benchmark: MergedBenchmark | null =
+    benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
+  /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
+  const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
+  const error = listed.error === null ? null : apiErrorText(listed.error);
+
+  useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || switchedAway) return;
     let cancelled = false;
     api
-      .getModels(projectId)
+      .getModels(projectId, null)
       .then((res) => {
         if (!cancelled) setModels(res);
       })
@@ -218,9 +227,11 @@ export function BenchmarkDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, switchedAway]);
 
-  if (!projectId) return null;
+  // Switched away: nothing of the Benchmark renders (its cases would be asked of the new
+  // Project) while the navigation above takes the page to the list.
+  if (!projectId || switchedAway) return null;
 
   /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
   const machineNameOf = (machineId: string | null): string | null =>
@@ -239,7 +250,7 @@ export function BenchmarkDetailPage() {
 
   /**
    * Export: the package of the copy this page describes — this server's when it holds one, else
-   * the first machine's — through the Skills tab's download, so a refusal is a toast rather than
+   * the first machine's — through a Skill row's download, so a refusal is a toast rather than
    * a saved error file.
    */
   const exportBenchmark = async () => {
@@ -250,7 +261,7 @@ export function BenchmarkDetailPage() {
         benchmark.id,
       );
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 

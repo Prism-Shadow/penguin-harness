@@ -8,19 +8,22 @@
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
  *   its commands, set apart by spacing alone — Update while the machine carries another build
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
- *   is connected on this server's build, Configure SSH, Uninstall. A verb that cannot run now
- *   stays in place, greyed, and ONE muted sentence under the row says why and names them.
- * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
- *   attention notice listing what it could not carry: models keyed from this server's
- *   environment, and models the machine would not take.
- * - Reconnecting, while the server brings a machine it keeps connected back: for how long, which
- *   attempt and when the next, the last failure — and what the connection check found, once the
- *   server ran it after failures in a row.
+ *   is connected on this server's build, Configure SSH, Reinstall, Uninstall. A verb that cannot
+ *   run now stays in place, greyed, and ONE muted sentence under the row says why.
+ * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and
+ *   attention notices, each of which the person may close, saying what it could not carry:
+ *   models keyed from this server's environment, and models the machine would not take.
+ * - Reconnecting, while the server brings a machine it keeps connected back or has stopped trying:
+ *   the shared retry row (the attempt of how many and the countdown to it with Retry now and Stop
+ *   retrying, where it stopped with Retry — none for a refused password), for how long, the last
+ *   failure in full — and what the connection check found, once the server ran it after failures
+ *   in a row.
  * - Progress, while a job is queued or running and after one: its own steps one per line, each
  *   marked done, current, failed or still to come; a job that finished well is a single quiet
  *   line. The log is folded underneath, open while the job runs, with a copy button for the whole
  *   of it. A failed job says at which step and why, what the connection check the server ran
- *   afterwards found, and offers Retry — and Force install when the failure offers it.
+ *   afterwards found, and offers Retry — and, when installing again may mend it, points at the
+ *   toolbar's Reinstall in one muted line: one way to reinstall, not a second button.
  * - Details: the facts, each label led by its glyph — how the machine is reached, the address its
  *   ssh alias names, the data directory; the server over there (with ssh's own words under it
  *   when it is out of reach), the last check, the build it carries — and last, quiet, the
@@ -56,13 +59,32 @@ import {
   Notice,
   NoticeStrip,
   Pill,
+  RetryStatus,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import * as api from "../../api/endpoints";
+import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+=======
+import * as api from "../../api/endpoints";
+import {
+  dismissNotice,
+  envOnlyNoticeId,
+  skippedNoticeId,
+  useNoticeDismissed,
+} from "../../lib/notice-dismissals";
+import { formatDateTime, formatRelativeShort } from "../../lib/format";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+>>>>>>> /tmp/_t
 import {
   configSyncView,
   envOnlyItems,
@@ -71,6 +93,7 @@ import {
   machineFacts,
   machineToolbar,
   reconnectView,
+<<<<<<< /tmp/_o
   type CheckLine,
   type ConfigSyncView,
   type Fact,
@@ -79,15 +102,48 @@ import {
   type StepState,
   type ToolbarItem,
   type ToolbarVerb,
+||||||| /tmp/_a
+=======
+  skippedItems,
+  type CheckLine,
+  type ConfigSyncView,
+  type Fact,
+  type JobStep,
+  type MachineChip,
+  type StepState,
+  type ToolbarItem,
+  type ToolbarVerb,
+>>>>>>> /tmp/_t
 } from "./machine-detail-view";
+<<<<<<< /tmp/_o
 
 import { outOfDate, readMachine } from "./machines-view";
+||||||| /tmp/_a
+import type {
+  CheckLine,
+  ConfigSyncView,
+  Fact,
+  JobStep,
+  MachineChip,
+  StepState,
+  ToolbarItem,
+  ToolbarVerb,
+} from "./machine-detail-view";
+import { outOfDate, readMachine } from "./machines-view";
+=======
+
+import { outOfDate, readMachine, socketReading } from "./machines-view";
+import { retryStatus } from "./machine-card";
+>>>>>>> /tmp/_t
 
 /**
  * Everything the dialog can ask its page to do for the machine. `use` is the whole pipeline —
- * what Enable, Update and Retry each run; `replaceProgram` the forced install a failure offers.
+ * what Enable, Update and a failed job's Retry each run; `reinstall` the same pipeline with the
+ * program installed whatever version it carries; `reconnect` the Retry while the server brings
+ * the machine back, and `stopReconnecting` its Stop retrying.
  */
-export type MachineVerb = Exclude<ToolbarVerb, "enable" | "update"> | "use" | "replaceProgram";
+export type MachineVerb =
+  Exclude<ToolbarVerb, "enable" | "update"> | "use" | "reconnect" | "stopReconnecting";
 
 /** The page verb a toolbar button asks for. */
 const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
@@ -98,6 +154,7 @@ const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
   restart: "restart",
   syncConfig: "syncConfig",
   configure: "configure",
+  reinstall: "reinstall",
   uninstall: "uninstall",
 };
 
@@ -125,7 +182,15 @@ export interface MachineDetailBodyProps {
   envOnlyDismissed?: boolean | null;
   /** Closes that notice; without it the notice has no close cross. */
   onDismissEnvOnly?: () => void;
-  onAct: (verb: MachineVerb) => void;
+  /** The same for the "models not synced to this machine" notice, over the refusals it lists. */
+  skippedDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissSkipped?: () => void;
+  /**
+   * Asks the page for a verb. The page may answer with the request's promise (the reconnect's
+   * Retry does), which rejects when the server refused it.
+   */
+  onAct: (verb: MachineVerb) => void | Promise<void>;
 }
 
 /** The header tile's box and glyph, in px: the plugin dialog's header tile, so the two match. */
@@ -410,19 +475,23 @@ export function MachineToolbar({
 
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
- * words — and, when the sync left anything behind, attention notices saying what and why: the
- * shared notice for the model keys only this server's environment holds, which the person may
- * close (as the initial-password banner can be) and which comes back when another such key
- * appears, and the models the machine would not take.
+ * words — and, when the sync left anything behind, attention notices saying what and why, both
+ * the shared notice the person may close (as the initial-password banner can be): the model keys
+ * only this server's environment holds, back when another such key appears, and the models the
+ * machine would not take, back when another model is refused or one is refused for another reason.
  */
 function ConfigSync({
   view,
   envOnlyDismissed = false,
   onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
 }: {
   view: ConfigSyncView;
   envOnlyDismissed?: boolean | null;
   onDismissEnvOnly?: () => void;
+  skippedDismissed?: boolean | null;
+  onDismissSkipped?: () => void;
 }) {
   const c = S.machines.detail.configSync;
   return (
@@ -447,21 +516,19 @@ function ConfigSync({
           <span data-env-only="">{c.envOnly}</span>
         </Notice>
       )}
-      {view.skipped.length > 0 && (
-        <NoticeStrip
+      {view.skipped.length > 0 && skippedDismissed === false && (
+        <Notice
           tone="attention"
-          data-config-sync-notice=""
-          className="mt-3 rounded-md border px-3 py-2 text-sm"
+          className="mt-3"
+          title={c.skippedTitle}
+          {...(onDismissSkipped !== undefined ? { dismiss: { onClick: onDismissSkipped } } : {})}
         >
-          <div data-skipped="">
-            <p>{c.skippedTitle}</p>
-            <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
-              {view.skipped.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        </NoticeStrip>
+          <ul data-skipped="" className="mt-1 list-disc space-y-1 pl-5 break-words">
+            {view.skipped.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Notice>
       )}
     </>
   );
@@ -479,6 +546,8 @@ export function MachineDetailBody({
   now = Date.now(),
   envOnlyDismissed = false,
   onDismissEnvOnly,
+  skippedDismissed = false,
+  onDismissSkipped,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -531,6 +600,8 @@ export function MachineDetailBody({
                 view={configSync}
                 envOnlyDismissed={envOnlyDismissed}
                 {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
+                skippedDismissed={skippedDismissed}
+                {...(onDismissSkipped !== undefined ? { onDismissSkipped } : {})}
               />
             )}
           </div>
@@ -539,37 +610,25 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          {/* A refused password stops the retries: the line says so instead of counting down. */}
-          {reconnect.stopped ? (
-            <p
-              data-reconnect="stopped"
-              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
-            >
-              <GlyphIcon
-                d={ICONS.xCircle}
-                size={ICON_SIZE.inlineGlyph}
-                className={toneInk.danger}
-              />
-              <span className="font-semibold">{d.reconnect.stopped}</span>
-              <span className="text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</span>
-            </p>
-          ) : (
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-              <Spinner size="xs" tone="success" label={d.reconnect.trying} />
-              <span className="font-semibold">{d.reconnect.trying}</span>
-              <span className="text-fg-muted">
-                {[
-                  d.reconnect.lasting(reconnect.lasting),
-                  d.reconnect.attempt(reconnect.attempt),
-                  reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
-                ].join(" · ")}
-              </span>
-            </p>
-          )}
+          {/* The card's retry row, at the dialog's size, with no reason: the last failure is said in
+              full under it. A job moving on the machine decides first, so the presses wait for it. */}
+          <RetryStatus
+            {...retryStatus(reconnect.status, {
+              onRetry: () => onAct("reconnect"),
+              onStop: () => onAct("stopReconnecting"),
+              held: busy || (job !== null && (job.queued || job.running)),
+              size: "sm",
+              reason: null,
+            })}
+          />
+          <p className="mt-1 text-xs text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</p>
+          {/* Its label on a line of its own: a failure that holds a colon of its own would read as
+              two labels in a row after "Last failure:". */}
           {reconnect.lastError !== null && (
-            <p className="mt-2 text-sm break-words whitespace-pre-line">
-              <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}
-            </p>
+            <div className="mt-2">
+              <p className="mb-1 text-xs text-fg-muted">{d.reconnect.lastError}</p>
+              <p className="text-sm break-words whitespace-pre-line">{reconnect.lastError}</p>
+            </div>
           )}
           {reconnect.detail !== null && (
             <p data-said="ssh" className="mt-1 text-xs break-words text-fg-muted">
@@ -629,9 +688,10 @@ export function MachineDetailBody({
               )}
             </div>
           )}
-          {/* A failed job's way out sits under what went wrong, and only here. */}
+          {/* A failed job's way out sits under what went wrong, and only here. Reinstall stays
+              the toolbar's: where installing again may mend it, one line points there. */}
           {view.kind === "failed" && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3">
               <Button
                 size="sm"
                 variant="primary"
@@ -643,16 +703,9 @@ export function MachineDetailBody({
                 {d.retry}
               </Button>
               {view.canReplaceProgram && (
-                // Secondary: the confirmation that follows carries the danger tone.
-                <Button
-                  size="sm"
-                  data-verb="replaceProgram"
-                  disabled={busy}
-                  onClick={() => onAct("replaceProgram")}
-                >
-                  <GlyphIcon d={ICONS.download} size={ICON_SIZE.inlineGlyph} />
-                  {m.replaceProgram}
-                </Button>
+                <p data-reinstall-hint="" className="mt-1.5 text-xs text-fg-muted">
+                  {d.reinstallHint}
+                </p>
               )}
             </div>
           )}
@@ -678,6 +731,8 @@ export function MachineDetailBody({
         </div>
         {/* The machine's own id is a detail you go looking for: it closes the section, quiet,
             with its copy button. */}
+        <MachineSocketDetails machine={machine} locale={locale} />
+
         {facts.id !== null && (
           <KeyValue size="sm" className="mt-2">
             <FactRow
@@ -710,10 +765,14 @@ export function MachineDetailDialog({
   const { alias, local } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
   // The "keys from this server's environment" notice, closed per account and per machine over
-  // the keys it names (lib/notice-dismissals.ts).
+  // the keys it names, and the "models not synced" one, per account, machine and Project over
+  // the refusals it lists (lib/notice-dismissals.ts).
   const envOnly = envOnlyItems(body.machine);
   const envOnlyId = envOnlyNoticeId(body.machine.id);
   const envOnlyDismissed = useNoticeDismissed(envOnlyId, envOnly);
+  const skipped = skippedItems(body.machine);
+  const skippedId = skippedNoticeId(body.machine.id, projectId);
+  const skippedDismissed = useNoticeDismissed(skippedId, skipped);
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -745,7 +804,33 @@ export function MachineDetailDialog({
         now={Date.now()}
         envOnlyDismissed={envOnlyDismissed}
         onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
+        skippedDismissed={skippedDismissed}
+        onDismissSkipped={() => dismissNotice(skippedId, skipped)}
       />
     </Modal>
+  );
+}
+
+/** The socket held to this machine, independent of its server/process status. */
+export function MachineSocketDetails({
+  machine,
+  locale,
+}: {
+  machine: MachineInfo;
+  locale: "zh" | "en";
+}) {
+  const socket = socketReading(machine);
+  if (socket === null) return null;
+  const ink =
+    socket.tone === "attention" || socket.tone === "danger" ? toneInk[socket.tone] : undefined;
+  return (
+    <KeyValue size="sm" className="mt-2">
+      <KeyValueRow label={S.machines.detailSocket}>
+        <span className={ink} data-tooltip={formatDateTime(socket.since)}>
+          {`${socket.label} · ${formatRelativeShort(socket.since, locale)}`}
+          {socket.detail === null ? null : ` · ${socket.detail}`}
+        </span>
+      </KeyValueRow>
+    </KeyValue>
   );
 }

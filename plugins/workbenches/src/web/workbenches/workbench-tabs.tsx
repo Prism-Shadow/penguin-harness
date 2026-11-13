@@ -25,6 +25,7 @@ import {
 } from "@prismshadow/penguin-web/internal";
 import {
   FILL_APP_MESSAGE,
+  runningWorkbenches,
   settleActiveTab,
   WORKBENCH_UPDATED_EVENT,
   workbenchAppPath,
@@ -34,10 +35,23 @@ import {
   type WorkbenchNotice,
   type WorkbenchTab,
   type WorkbenchUpdatedDetail,
+<<<<<<< /tmp/_o
 } from "@prismshadow/penguin-web/internal";
 import { useLocale } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { localizedText } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+} from "../../lib/workbench-tabs";
+import { useLocale } from "../../state/locale";
+import { useTheme } from "../../state/theme";
+import { localizedText } from "../chat/skill-use";
+=======
+} from "../../lib/workbench-tabs";
+import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
+import { useLocale } from "../../state/locale";
+import { useTheme } from "../../state/theme";
+import { localizedText } from "../chat";
+>>>>>>> /tmp/_t
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -47,6 +61,7 @@ export function useWorkbenchTabs(
   selectionKey = "",
   initialTab: string | null = null,
 ) {
+  const safe = useSafeMode();
   const scope = JSON.stringify([projectId, agentId, machineId]);
   const selectionScope = JSON.stringify([scope, selectionKey]);
   const [loaded, setLoaded] = useState<{
@@ -69,22 +84,24 @@ export function useWorkbenchTabs(
   const asked = useRef(0);
   const refresh = useCallback(async () => {
     const mine = ++asked.current;
-    if (projectId === null || agentId === null) {
+    if (safe || projectId === null || agentId === null) {
       setLoaded({ scope, tabs: [], notices: [] });
       return;
     }
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
-      if (asked.current !== mine) return;
+      if (asked.current !== mine || isSafeMode()) return;
+      // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
+      const running = runningWorkbenches(res);
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(res.workbenches, machineId),
-        notices: workbenchNoticesOf(res.workbenches),
+        tabs: workbenchTabsOf(running, machineId),
+        notices: workbenchNoticesOf(running),
       });
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
-  }, [projectId, agentId, machineId, scope]);
+  }, [safe, projectId, agentId, machineId, scope]);
 
   useEffect(() => {
     void refresh();
@@ -102,7 +119,9 @@ export function useWorkbenchTabs(
     return () => window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
   }, [projectId, agentId, refresh]);
 
-  const settled = settleActiveTab(active, tabs);
+  const visibleTabs = safe ? [] : tabs;
+  const visibleNotices = safe ? [] : notices;
+  const settled = settleActiveTab(active, visibleTabs);
   // A tab that is gone is forgotten, not merely filtered: kept, the raw id would pull the
   // frame back over the chat the moment a workbench of the same id reappears — which is what
   // an Agent rewriting its folder (delete, then write) looks like from here.
@@ -110,7 +129,14 @@ export function useWorkbenchTabs(
     if (loaded?.scope === scope && active !== null && settled === null) setActiveRaw(null);
   }, [active, settled, loaded, scope, setActiveRaw]);
   const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
-  return { tabs, notices, active: settled, activeTab, setActive: setActiveRaw, refresh };
+  return {
+    tabs: visibleTabs,
+    notices: visibleNotices,
+    active: settled,
+    activeTab,
+    setActive: setActiveRaw,
+    refresh,
+  };
 }
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
@@ -209,7 +235,7 @@ export function WorkbenchFrame({
   /** The workbench and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
+  const { dark, appliedTheme, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -277,7 +303,7 @@ export function WorkbenchFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
+  }, [applyTheme, dark, appliedTheme, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
@@ -347,7 +373,9 @@ export function WorkbenchFrame({
 
   const historyId = `workbench-history-${tab.workbenchId}`;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+    // No fill of its own: the bar and the page sit on the surface the window shows through (the
+    // chat column's canvas, a wallpaper), as the chat does.
+    <div className="flex h-full min-h-0 flex-col">
       <div
         hidden={bare}
         className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400"
@@ -443,14 +471,13 @@ export function WorkbenchFrame({
           <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.noHistory}</p>
         ) : (
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {versions.map((v) => {
-              const current = v.revision === tab.revision;
+            {versions.map((v, i) => {
+              // A restore records an old revision again: only its newest entry is the current one.
+              const current = i === versions.findIndex((w) => w.revision === tab.revision);
               return (
-                <li key={v.revision} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                <li key={v.commit} className="flex items-center gap-3 px-3 py-1.5 text-xs">
                   <span className="font-mono">{v.revision}</span>
                   <span className="text-gray-500">{formatDateTime(v.savedAt)}</span>
-                  {v.version !== null && <span className="text-gray-500">v{v.version}</span>}
-                  <span className="text-gray-400">{S.workbenches.fileCount(v.files.length)}</span>
                   <span className="flex-1" />
                   {current ? (
                     <span className={toneInk.success}>{S.workbenches.current}</span>

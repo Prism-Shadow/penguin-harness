@@ -1,6 +1,6 @@
 /**
- * Shared enable-switch (and, where the feature has one, prompt) controls for the Skills /
- * Vault / Schedules / Hooks tabs, mirroring the Memory tab's layout: an enable-switch card
+ * Shared enable-switch (and, where the feature has one, prompt) controls for the skills and
+ * hooks switches of the Plugins tab and for the Vault / Schedules tabs, mirroring the Memory tab's layout: an enable-switch card
  * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
  * never drags an unfinished prompt edit along), an amber alert when the template lacks the
  * feature's section placeholder — with one-click insert, or one-click migration when the
@@ -16,8 +16,8 @@
  * Exposed as a hook returning render slots because the pieces straddle the host tab's own
  * content: the switch and alert sit above it, the prompt editor below. The hook owns the config
  * state; the tab seeds it via `applyConfig` from the getAgentConfig response it loads in
- * parallel with its own data. `canEdit` carries the host tab's permission model (member-level on
- * Skills, owner-only on Vault / Schedules / Hooks).
+ * parallel with its own data. `canEdit` carries the host tab's permission model (owner-only on
+ * every tab that uses it).
  *
  * The prompt is a typed form (the settings commit model): a draft against the stored prompt
  * that only Save writes, Save live only while the two differ, Reset to put the stored text back,
@@ -41,14 +41,27 @@ import {
   Notice,
   Textarea,
   ToggleRow,
-  toastError,
   toastSuccess,
   useFormDraft,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useProject } from "../../state/project";
+=======
+import type { ToggleRowVariant } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { toastApiError } from "../../lib/toast-api-error";
+>>>>>>> /tmp/_t
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -110,6 +123,7 @@ export function usePromptInjection({
   feature,
   strings,
   canEdit,
+  toggleVariant = "card",
   onConfigChanged,
 }: {
   agentId: string;
@@ -117,6 +131,8 @@ export function usePromptInjection({
   strings: ToggleStrings | PromptInjectionStrings;
   /** The host tab's permission model: false renders everything read-only (switch disabled, buttons hidden, prompt not saveable). */
   canEdit: boolean;
+  /** The switch's frame: a card of its own (the default), or a row in the host's ruled list of switches. */
+  toggleVariant?: ToggleRowVariant;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: (() => void) | undefined;
 }): {
@@ -127,6 +143,8 @@ export function usePromptInjection({
 } {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, where its config is written; null for this server. */
+  const machineId = useAgentLocation();
 
   // null until the host tab's load delivers the config (the slots render nothing until then).
   const [state, setState] = useState<SectionConfigState | null>(null);
@@ -168,12 +186,17 @@ export function usePromptInjection({
     if (!projectId) return;
     setSwitchBusy(true);
     try {
-      const res = await api.putAgentConfig(projectId, agentId, featurePatch({ enabled: next }));
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        featurePatch({ enabled: next }),
+        machineId,
+      );
       applyConfig(res.config);
       toastSuccess(strings.savedToast ?? S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSwitchBusy(false);
     }
@@ -193,12 +216,12 @@ export function usePromptInjection({
     // Only the alert strip calls this, and a switch-only feature has no alert strip.
     if (insert === null) return;
     try {
-      const dto = await insert(projectId, agentId);
+      const dto = await insert(projectId, agentId, machineId);
       setState(dto);
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     }
   };
 
@@ -211,6 +234,7 @@ export function usePromptInjection({
         projectId,
         agentId,
         featurePatch({ prompt: prompt.draft }),
+        machineId,
       );
       applyConfig(res.config);
       const dto = res.config[feature];
@@ -218,7 +242,7 @@ export function usePromptInjection({
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSaving(false);
     }
@@ -226,7 +250,7 @@ export function usePromptInjection({
 
   const toggleCard = state !== null && (
     <ToggleRow
-      variant="card"
+      variant={toggleVariant}
       label={strings.enable}
       info={strings.enableHint}
       checked={state.enabled}

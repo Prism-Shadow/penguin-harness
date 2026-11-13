@@ -10,9 +10,16 @@
  * understate this step's cost. While waiting on approval, the already-settled generation
  * segment is shown; the wait itself is marked by the hourglass icon alone, since the approval
  * block below the row is always on screen and names the tool and its arguments.
+ *
+ * A call from a history window may carry its output, a long argument or a child's inline image
+ * folded: the card shows the preview (head, an ellipsis line, tail — inside the argument's own
+ * string when an argument was folded) and fetches the whole when it is opened (elided-body.tsx),
+ * then shows that instead. An approval never shows a folded value: its block reads the call the
+ * pending approval carries, which the server always sends whole.
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
+<<<<<<< /tmp/_o
 import {
   ToolCallCard,
   useElapsedPast,
@@ -27,7 +34,35 @@ import { routedUrl } from "@prismshadow/penguin-web/internal";
 import { approvalKey, type ToolCallItem } from "@prismshadow/penguin-web/internal";
 
 import { useTheme } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
+import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
+import { S } from "../../lib/strings";
+import { toolDisplayName } from "../../lib/tool-alias";
+import { stripAnsi } from "../../lib/strip-ansi";
+import { routedUrl } from "../../lib/session-machines";
+import { approvalKey } from "../../lib/omni/stream-model";
+import type { ToolCallItem } from "../../lib/omni/stream-model";
+import { useTheme } from "../../state/theme";
+=======
+import {
+  ToolCallCard,
+  useElapsedPast,
+  type RunState,
+  type ToolCallDuration,
+} from "@prismshadow/penguin-ui";
+
+import { S } from "../../lib/strings";
+import { toolDisplayName } from "../../lib/tool-alias";
+import { stripAnsi } from "../../lib/strip-ansi";
+import { elidedArgumentsPreview, elidedPreview } from "../../lib/history/elided-preview";
+import { routedUrl } from "../../lib/session-machines";
+import { approvalKey, type ToolCallItem } from "../../lib/amsp/stream-model";
+
+import { useTheme } from "../../state/theme";
+>>>>>>> /tmp/_t
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
+import { ElidedBodyNote, hasElidedNote } from "./elided-body";
 import { SessionSubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
@@ -309,11 +344,19 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   // the app (the tools config table, permission rules, the Trace viewer) keeps reading
   // `item.name`, so an alias can never change what a call means.
   const displayName = toolDisplayName(item.name, toolAliases);
+  // What is approved is what the approval itself carries: the whole call, never a history
+  // window's folded copy of it.
+  const approvalArguments = pending?.toolCall.payload.arguments ?? item.argumentsText;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
   // grows on every streamed delta.
-  const output = useMemo(() => stripAnsi(item.output), [item.output]);
+  const output = useMemo(
+    () => stripAnsi(elidedPreview(item.output, item.elidedOutput, "payload.output", "\n…\n")),
+    [item.output, item.elidedOutput],
+  );
+  // A child's inline image that came folded has no picture to draw until it is fetched.
+  const images = item.images?.filter((src) => src !== "") ?? [];
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Whether the execution segment has run long enough for the "move to background" action (one
@@ -332,9 +375,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
     item.argStartedAtMs !== undefined && item.callStartedAtMs !== undefined
       ? Math.max(0, item.callStartedAtMs - item.argStartedAtMs)
       : 0;
-  const failed =
-    (item.callStopReason !== undefined && item.callStopReason !== "completed") ||
-    (item.outputStopReason !== undefined && item.outputStopReason !== "completed");
+  const failed = item.outputStatus !== undefined && item.outputStatus !== "completed";
   const state: RunState = pending
     ? "waiting"
     : executing || item.callStreaming
@@ -354,14 +395,13 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
             : S.chat.decisionAuto
       }`
     : null;
-  // A denial reports stop_reason "aborted" on the output it feeds back — a person's "deny"
-  // and the command policy's "forbidden" alike; that abort IS the decision, so the icon
-  // reads "Denied · …" (the label's second half names the decider) rather than falling
-  // through to the raw stop reason. A user-abort of a RUNNING tool carries no deny
-  // decision, so the label falls through to its stop reason below.
+  // A denial reports status "aborted" on the output it feeds back — a person's "deny" and the
+  // command policy's "forbidden" alike; that abort IS the decision, so the icon reads
+  // "Denied · …" (the label's second half names the decider) rather than falling through to
+  // the raw status. A call interrupted while running (or cut short while streaming) carries no
+  // deny decision, so the label falls through to its status below.
   const denied =
-    (item.decision === "deny" || item.decision === "forbidden") &&
-    item.outputStopReason === "aborted";
+    (item.decision === "deny" || item.decision === "forbidden") && item.outputStatus === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
@@ -370,7 +410,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
         ? (decisionText ?? S.chat.workDone)
         : denied
           ? (decisionText ?? undefined)
-          : (item.outputStopReason ?? item.callStopReason);
+          : item.outputStatus;
   // Total duration = argument generation + execution, excluding the approval wait: settled once
   // known; while executing, a live segment from the approval grant (or from call completion when
   // no approval was needed) on top of the generation baseline; while waiting on approval, frozen
@@ -433,23 +473,32 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       pending={
         pending
           ? {
-              preview: previewArguments(item.name, item.argumentsText),
-              payload: pendingFilePayload(item.name, item.argumentsText),
+              preview: previewArguments(item.name, approvalArguments),
+              payload: pendingFilePayload(item.name, approvalArguments),
+              // A command-policy rule asked, not the approval mode: the block says which one,
+              // or a person who allowed everything would not know why this call stopped.
+              ...(pending.reason?.kind === "policy"
+                ? {
+                    reason: {
+                      text: S.chat.approvalPolicyReason(pending.reason.rule),
+                      hint: S.chat.approvalPolicyReasonHint,
+                    },
+                  }
+                : {}),
               onDecide: (decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin),
               labels: { allow: S.chat.approve, deny: S.chat.deny },
             }
           : undefined
       }
-      argumentsText={item.argumentsText}
+      argumentsText={elidedArgumentsPreview(item.argumentsText, item.elidedCall, "\n…\n")}
       output={output}
       outputStreaming={item.outputStreaming}
       images={
         // Inline bytes live, or a windowed history page's Trace references, which the browser
         // must fetch from the machine the Session lives on.
-        item.images && item.images.length > 0
-          ? { srcs: item.images.map(routedUrl), alt: S.chat.toolImageAlt }
-          : undefined
+        images.length > 0 ? { srcs: images.map(routedUrl), alt: S.chat.toolImageAlt } : undefined
       }
+      bodyNote={hasElidedNote(item) ? <ElidedBodyNote item={item} /> : undefined}
       // A bound subagent: a shortcut row into the subagents panel, shown whatever the card's
       // collapsed state (the nested conversation itself no longer renders inline).
       footer={

@@ -47,9 +47,9 @@ import {
   Select,
   SkeletonList,
   ToggleRow,
-  toastError,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
@@ -57,8 +57,28 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { APPROVAL_MODES } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+import { useProject } from "../../state/project";
+import { APPROVAL_MODES } from "../chat/approval-mode";
+=======
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useMachineInfo } from "../../lib/machine-agent-lists";
+import { APPROVAL_MODES } from "../chat";
+>>>>>>> /tmp/_t
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
+import { toastApiError } from "../../lib/toast-api-error";
 
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
 
@@ -113,19 +133,30 @@ export function agentApiExamples(baseUrl: string, agentRef: string): { curl: str
     `  apiKey: process.env.PENGUIN_AGENT_KEY,`,
     `});`,
     ``,
-    `const result = await client.run({ input: "Hello" });`,
-    `console.log(result.text);`,
+    `// The Session's records as they stream; run() returns the result alone.`,
+    `const run = client.stream({ input: "Hello" });`,
+    `for await (const record of run) {`,
+    `  const p = record.payload;`,
+    `  if ("type" in p && p.type === "partial_text") process.stdout.write(p.text);`,
+    `}`,
+    `const { text, sessionId } = await run.result();`,
   ].join("\n");
   return { curl, sdk };
 }
 
 /** Writes the Agent's API off. Reached only through the confirm. */
-const switchOffAgentApi = (projectId: string, agentId: string): Promise<AgentApiResponse> =>
-  api.putAgentApi(projectId, agentId, { enabled: false });
+const switchOffAgentApi = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null,
+): Promise<AgentApiResponse> => api.putAgentApi(projectId, agentId, { enabled: false }, machineId);
 
 /** Opens the Agent to callers without a key. Reached only through the confirm. */
-const switchOnKeyless = (projectId: string, agentId: string): Promise<AgentApiResponse> =>
-  api.putAgentApi(projectId, agentId, { open: true });
+const switchOnKeyless = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null,
+): Promise<AgentApiResponse> => api.putAgentApi(projectId, agentId, { open: true }, machineId);
 
 /**
  * The warning before keyless access goes on, in the danger tone: once it is on, anything that
@@ -137,6 +168,7 @@ export function KeylessOnConfirm({
   open,
   projectId,
   agentId,
+  machineId = null,
   onClose,
   onWriting,
   onSettled,
@@ -144,6 +176,8 @@ export function KeylessOnConfirm({
   open: boolean;
   projectId: string;
   agentId: string;
+  /** The machine the Agent lives on, where the switch is written; null for this server. */
+  machineId?: string | null;
   onClose: () => void;
   onWriting: () => void;
   onSettled: (outcome: AgentApiResponse | { error: unknown }) => void;
@@ -156,7 +190,7 @@ export function KeylessOnConfirm({
       onConfirm={() => {
         onClose();
         onWriting();
-        switchOnKeyless(projectId, agentId).then(
+        switchOnKeyless(projectId, agentId, machineId).then(
           (res) => onSettled(res),
           (error: unknown) => onSettled({ error }),
         );
@@ -170,8 +204,12 @@ export function KeylessOnConfirm({
 }
 
 /** Deletes one key. Reached only through the confirm. */
-const deleteKey = (projectId: string, agentId: string, keyId: string): Promise<void> =>
-  api.deleteAgentApiKey(projectId, agentId, keyId);
+const deleteKey = (
+  projectId: string,
+  agentId: string,
+  keyId: string,
+  machineId: string | null,
+): Promise<void> => api.deleteAgentApiKey(projectId, agentId, keyId, machineId);
 
 /**
  * The question before the Agent's API goes off, in the danger tone. Answered yes, it says the
@@ -182,6 +220,7 @@ export function AgentApiOffConfirm({
   open,
   projectId,
   agentId,
+  machineId = null,
   onClose,
   onWriting,
   onSettled,
@@ -189,6 +228,8 @@ export function AgentApiOffConfirm({
   open: boolean;
   projectId: string;
   agentId: string;
+  /** The machine the Agent lives on, where the switch is written; null for this server. */
+  machineId?: string | null;
   onClose: () => void;
   onWriting: () => void;
   onSettled: (outcome: AgentApiResponse | { error: unknown }) => void;
@@ -201,7 +242,7 @@ export function AgentApiOffConfirm({
       onConfirm={() => {
         onClose();
         onWriting();
-        switchOffAgentApi(projectId, agentId).then(
+        switchOffAgentApi(projectId, agentId, machineId).then(
           (res) => onSettled(res),
           (error: unknown) => onSettled({ error }),
         );
@@ -222,6 +263,7 @@ export function DeleteKeyConfirm({
   record,
   projectId,
   agentId,
+  machineId = null,
   onClose,
   onDeleted,
 }: {
@@ -229,6 +271,8 @@ export function DeleteKeyConfirm({
   record: AgentApiKeyInfo | null;
   projectId: string;
   agentId: string;
+  /** The machine the Agent lives on, where the key is deleted; null for this server. */
+  machineId?: string | null;
   onClose: () => void;
   onDeleted: (keyId: string) => void;
 }) {
@@ -240,9 +284,9 @@ export function DeleteKeyConfirm({
       onConfirm={() => {
         if (record === null) return;
         onClose();
-        deleteKey(projectId, agentId, record.keyId).then(
+        deleteKey(projectId, agentId, record.keyId, machineId).then(
           () => onDeleted(record.keyId),
-          (error: unknown) => toastError(apiErrorText(error)),
+          (error: unknown) => toastApiError(error),
         );
       }}
       confirmLabel={S.common.delete}
@@ -340,6 +384,8 @@ export interface ApiTabViewProps {
   isOwner: boolean;
   busy: boolean;
   baseUrl: string;
+  /** What the Base URL is called: by default plain; for a machine's Agent, where the URL is. */
+  baseUrlLabel?: string;
   agentRef: string;
   /** The name typed for a new key; null while no key is being made. */
   draftName: string | null;
@@ -413,7 +459,7 @@ export function ApiTabView(p: ApiTabViewProps) {
 
           <RuledSection title={S.agent.apiConnection}>
             <div className="space-y-3">
-              <ConnectionRow label={S.agent.apiBaseUrl} value={p.baseUrl} />
+              <ConnectionRow label={p.baseUrlLabel ?? S.agent.apiBaseUrl} value={p.baseUrl} />
               <ConnectionRow label={S.agent.apiAgentId} value={p.agentRef} />
             </div>
           </RuledSection>
@@ -515,7 +561,17 @@ export function ApiTab({
   agentId: string;
   isOwner: boolean;
 }) {
-  const { reloadAgents } = useProject();
+  const { reloadAgents: reloadHere } = useProject();
+  /**
+   * The machine the Agent lives on (null: this server). Its API is served by that machine's
+   * server, on the port it listens on over there.
+   */
+  const machineId = useAgentLocation();
+  const machine = useMachineInfo(machineId);
+  const reloadAgents = useCallback(
+    () => (machineId === null ? reloadHere() : Promise.resolve()),
+    [machineId, reloadHere],
+  );
   const [settings, setSettings] = useState<AgentApiSettings | null>(null);
   // Only the initial load failure renders inline; writes report via toast.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -540,7 +596,7 @@ export function ApiTab({
     let cancelled = false;
     setSettings(null);
     setLoadError(null);
-    api.getAgentApi(projectId, agentId).then(
+    api.getAgentApi(projectId, agentId, machineId).then(
       (res) => {
         if (cancelled) return;
         setSettings(res.api);
@@ -553,25 +609,25 @@ export function ApiTab({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
 
   /** One settings write: the stored answer replaces the view, a failure says why. */
   const write = useCallback(
     async (patch: AgentApiUpdateRequest) => {
       setBusy(true);
       try {
-        const res = await api.putAgentApi(projectId, agentId, patch);
+        const res = await api.putAgentApi(projectId, agentId, patch, machineId);
         setSettings(res.api);
         setServerEnabled(res.serverEnabled);
         // The Agents list marks an Agent whose API is on.
         if (patch.enabled !== undefined) void reloadAgents();
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
       } finally {
         setBusy(false);
       }
     },
-    [projectId, agentId, reloadAgents],
+    [projectId, agentId, machineId, reloadAgents],
   );
 
   const createKey = async () => {
@@ -579,7 +635,7 @@ export function ApiTab({
     if (name === "" || busy) return;
     setBusy(true);
     try {
-      const res = await api.createAgentApiKey(projectId, agentId, { name });
+      const res = await api.createAgentApiKey(projectId, agentId, { name }, machineId);
       setSettings((prev) => (prev === null ? prev : { ...prev, keys: [...prev.keys, res.key] }));
       setSecret(res.secret);
       setDraftName(null);
@@ -603,7 +659,12 @@ export function ApiTab({
         serverEnabled={serverEnabled}
         isOwner={isOwner}
         busy={busy}
-        baseUrl={agentApiBaseUrl(window.location.origin)}
+        baseUrl={agentApiBaseUrl(
+          machineId === null
+            ? window.location.origin
+            : `http://localhost:${machine?.port ?? "<port>"}`,
+        )}
+        {...(machine !== null ? { baseUrlLabel: S.agent.apiBaseUrlOnMachine(machine.label) } : {})}
         agentRef={agentApiRef(projectId, agentId)}
         draftName={draftName}
         {...(draftError !== undefined ? { draftError } : {})}
@@ -662,6 +723,7 @@ export function ApiTab({
         open={confirmOff}
         projectId={projectId}
         agentId={agentId}
+        machineId={machineId}
         onClose={() => setConfirmOff(false)}
         onWriting={() => setBusy(true)}
         onSettled={(outcome) => {
@@ -669,7 +731,7 @@ export function ApiTab({
             setSettings(outcome.api);
             setServerEnabled(outcome.serverEnabled);
             void reloadAgents();
-          } else toastError(apiErrorText(outcome.error));
+          } else toastApiError(outcome.error);
           setBusy(false);
         }}
       />
@@ -677,13 +739,14 @@ export function ApiTab({
         open={confirmKeyless}
         projectId={projectId}
         agentId={agentId}
+        machineId={machineId}
         onClose={() => setConfirmKeyless(false)}
         onWriting={() => setBusy(true)}
         onSettled={(outcome) => {
           if ("api" in outcome) {
             setSettings(outcome.api);
             setServerEnabled(outcome.serverEnabled);
-          } else toastError(apiErrorText(outcome.error));
+          } else toastApiError(outcome.error);
           setBusy(false);
         }}
       />
@@ -691,6 +754,7 @@ export function ApiTab({
         record={deleting}
         projectId={projectId}
         agentId={agentId}
+        machineId={machineId}
         onClose={() => setDeleting(null)}
         onDeleted={(keyId) =>
           setSettings((prev) =>

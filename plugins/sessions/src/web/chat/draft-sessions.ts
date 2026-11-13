@@ -16,11 +16,15 @@
  *
  * The in-memory copy is a module-level store so the sidebar list
  * and the draft page react to every mutation in this tab; parseDraft validates each
- * entry's content field-by-field on load, exactly like the caches it mirrors.
+ * entry's content field-by-field on load, exactly like the caches it mirrors. Like the active
+ * draft, the list follows the account (lib/account-sync): writes go through the synced storage,
+ * and the in-memory copy is dropped whenever the account's drafts are written into the cache.
  */
+import { DRAFT_SESSION_ID } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
-import { randomHex } from "@prismshadow/penguin-web/internal";
+import { randomHex } from "../../lib/random-id";
+import { subscribeAccountApplied, syncedStorage } from "../../lib/account-sync/cache";
 import {
   clearDraft,
   draftFromUnknown,
@@ -44,13 +48,12 @@ export const draftSessionsKey = (userId: string, projectId: string): string =>
   `penguin.chatDrafts.${userId}.${projectId}`;
 
 /**
- * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
- * still want to change the model or configure a key first. The actual Session is only created
- * once **the first message is sent** (once created, the model is locked into its meta).
- * Real session ids always start with `session-`, so there's no collision with this constant —
- * nor with parked draft conversations, whose route ids start with `draft-`.
+ * Route id for a draft chat (`/chat/new`), declared in the server's API contract so the desktop
+ * tray opens the same route: the Session is only created once **the first message is sent**
+ * (once created, the model is locked into its meta). Parked draft conversations' route ids start
+ * with `draft-`.
  */
-export const DRAFT_SESSION_ID = "new";
+export { DRAFT_SESSION_ID };
 
 /** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
 export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
@@ -98,13 +101,15 @@ const draftsStore = createStore<{ cache: Map<string, DraftSessionEntry[]> }>(() 
 }));
 const EMPTY: DraftSessionEntry[] = [];
 
-function storageOf(injected?: DraftStorage): DraftStorage | null {
-  if (injected) return injected;
-  try {
-    return localStorage;
-  } catch {
-    return null; // No storage at all (privacy mode edge): drafts silently disabled.
-  }
+// The account's drafts were written into the cache: every list is read from it again.
+subscribeAccountApplied(() => draftsStore.setState({ cache: new Map() }));
+
+/**
+ * The injected storage (tests), or the synced one. A store with no storage at all (privacy mode
+ * edge) throws on each call, which readEntries and writeEntries already treat as "no drafts".
+ */
+function storageOf(injected?: DraftStorage): DraftStorage {
+  return injected ?? syncedStorage;
 }
 
 function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
@@ -113,12 +118,10 @@ function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
   if (hit) return hit;
   const s = storageOf(storage);
   let entries: DraftSessionEntry[] = EMPTY;
-  if (s) {
-    try {
-      entries = parseEntries(s.getItem(key));
-    } catch {
-      entries = EMPTY;
-    }
+  try {
+    entries = parseEntries(s.getItem(key));
+  } catch {
+    entries = EMPTY;
   }
   cache.set(key, entries);
   return entries;
@@ -126,13 +129,11 @@ function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
 
 function writeEntries(key: string, entries: DraftSessionEntry[], storage?: DraftStorage): void {
   const s = storageOf(storage);
-  if (s) {
-    try {
-      if (entries.length === 0) s.removeItem(key);
-      else s.setItem(key, JSON.stringify(entries));
-    } catch {
-      // Quota/private mode: the in-memory copy still serves this tab.
-    }
+  try {
+    if (entries.length === 0) s.removeItem(key);
+    else s.setItem(key, JSON.stringify(entries));
+  } catch {
+    // Quota/private mode: the in-memory copy still serves this tab.
   }
   draftsStore.setState((prev) => ({ cache: new Map(prev.cache).set(key, entries) }));
 }

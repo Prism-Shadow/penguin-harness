@@ -1,13 +1,14 @@
 /**
- * Agent settings page: eleven tabs —
- * Overview (name/description form + two ruled sections in the skills import modal's
- * family: Agent State — State version, snapshot export-import and the copyable State
+ * Agent settings page: nine tabs —
+ * Overview (avatar field, name/description form + two ruled sections in the skills import modal's
+ * family: Agent State — State version, export / replace from file and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
- * Hooks (hooks-tab.tsx), Workbenches (workbenches-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: the
+ * Agent's plugins with their Skills, hook packages, MCP servers and workbenches, and its own),
+ * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
+ * the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  *
@@ -16,12 +17,29 @@
  * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
  * switch, Back, a sidebar link and the browser's back button are all navigations that the
  * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
- * tools table's `call_description` included. A snapshot import asks before it replaces the
+ * tools table's `call_description` included. A replace from file asks before it replaces the
  * Agent State.
+ *
+ * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
+ * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
+ * While the machine cannot be asked, the page says why instead of showing anything stale.
+ *
+ * The header leads with the Agent's avatar — its own picture, or the default — and only shows it:
+ * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
+ * a crop is confirmed rather than with the tab's Save.
  */
+<<<<<<< /tmp/_o
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+||||||| /tmp/_a
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
+=======
+import { useCallback, useEffect, useRef, useState } from "react";
+
+>>>>>>> /tmp/_t
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
+  AgentAuthor,
   AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -29,6 +47,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
+  AgentAvatar,
   Button,
   Card,
   ConfirmModal,
@@ -36,13 +55,13 @@ import {
   GlyphIcon,
   FieldLabel,
   ICON_SIZE,
-  HiddenFileInput,
   ICONS,
   InfoPopover,
   Input,
   OptionMenu,
   PageFrame,
   PageHeader,
+  Select,
   Skeleton,
   Switch,
   Table,
@@ -54,11 +73,11 @@ import {
   Tabs,
   Textarea,
   UpdateDot,
-  toastError,
   toastSuccess,
   useFormDraft,
   type OptionMenuChoice,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
@@ -75,6 +94,34 @@ import {
   type RuntimeNumberField,
 } from "./runtime-form";
 
+||||||| /tmp/_a
+import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
+import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
+import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
+=======
+
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
+import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
+import { useProject } from "../../state/project";
+import { useMachines } from "../../state/machines";
+import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
+import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
+import { publishMachineAgentsChanged, readMachineAgents } from "../../lib/machine-agent-lists";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
+import { AGENT_AVATAR_PREVIEW_PX, AgentAvatarField } from "./agent-avatar-field";
+import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
+import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
+>>>>>>> /tmp/_t
 import {
   hasDescriptionProperty,
   normalizeTools,
@@ -85,27 +132,47 @@ import {
   type ToolNumberField,
   type ToolRowDraft,
 } from "./tools-form";
+<<<<<<< /tmp/_o
 
 import { SkillsTab } from "./skills-tab";
 import { WorkbenchesTab } from "./workbenches-tab";
 import { HooksTab } from "./hooks-tab";
+||||||| /tmp/_a
+import type { ToolNumberField, ToolRowDraft } from "./tools-form";
+import { SkillsTab } from "./skills-tab";
+import { WorkbenchesTab } from "./workbenches-tab";
+import { HooksTab } from "./hooks-tab";
+=======
+
+import { PluginsTab } from "./plugins-tab";
+>>>>>>> /tmp/_t
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
+import { AGENT_AUTHORS } from "./agent-groups";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
+<<<<<<< /tmp/_o
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { effectiveThinkingLevel, ThinkingLevelSelect } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
+import { effectiveThinkingLevel } from "../chat/thinking-level";
+import { ThinkingLevelSelect } from "../chat/thinking-level-select";
+=======
+import { AgentExportDialog } from "./agent-export-dialog";
+import { AgentImportDialog } from "./agent-import-dialog";
+import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
+import { toastApiError } from "../../lib/toast-api-error";
+>>>>>>> /tmp/_t
 
 type TabKey =
   | "overview"
   | "prompt"
   | "runtime"
   | "tools"
-  | "skills"
-  | "hooks"
-  | "workbenches"
+  | "plugins"
   | "memory"
   | "vault"
   | "schedules"
@@ -115,14 +182,27 @@ type TabKey =
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
  * validated against the live TABS keys — not a hardcoded list — so newly added tabs
  * deep-link without touching this helper; missing/unknown values fall back to the default.
+ * An alias names the tab that took a retired one's place.
  */
 export function resolveTabKey<K extends string>(
   raw: string | null,
   tabs: ReadonlyArray<{ key: K }>,
   fallback: K,
+  aliases: Readonly<Record<string, K>> = {},
 ): K {
-  return tabs.some((t) => t.key === raw) ? (raw as K) : fallback;
+  const key = raw !== null && Object.hasOwn(aliases, raw) ? aliases[raw] : raw;
+  return tabs.some((t) => t.key === key) ? (key as K) : fallback;
 }
+
+/**
+ * The tabs the Plugins tab replaced. Bookmarks and the docs still link to them, so they stay
+ * aliases for good rather than for a while.
+ */
+const RETIRED_TABS: Readonly<Record<string, TabKey>> = {
+  skills: "plugins",
+  hooks: "plugins",
+  workbenches: "plugins",
+};
 
 export function AgentSettingsPage() {
   // Read inside the component: after a language switch remount, this picks up the current dictionary.
@@ -131,9 +211,7 @@ export function AgentSettingsPage() {
     { key: "prompt", label: S.agent.tabPrompt },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
-    { key: "skills", label: S.agent.tabSkills },
-    { key: "hooks", label: S.agent.tabHooks },
-    { key: "workbenches", label: S.agent.tabWorkbenches },
+    { key: "plugins", label: S.agent.tabPlugins },
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
@@ -143,16 +221,63 @@ export function AgentSettingsPage() {
   const params = useParams<{ agentId: string }>();
   const agentId = params.agentId ?? "";
   useDocumentTitle(S.agent.settings);
-  const { currentProject, reloadAgents } = useProject();
+  const { currentProject, reloadAgents: reloadHere } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // The route's Agent is one of the Project the page was opened in: a Project switch leaves for
+  // the new Project's Agents, where every tab would otherwise answer "This agent no longer exists."
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
 
-  const [data, setData] = useState<AgentConfigResponse | null>(null);
   // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
-  // missing or unknown values fall back to "overview"). A switch only writes the address, so
+  // missing or unknown values fall back to "overview", a retired tab opens the one that took
+  // its place). A switch only writes the address, so
   // it is a navigation: while the open tab holds unsaved edits the app's leave guard asks
   // before it happens, and the tab on screen never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview");
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", RETIRED_TABS);
+  /** The machine the Agent lives on (`?machine=`); null for this server. */
+  const machineId = machineInSearch(searchParams);
+  /**
+   * The config and its load failure, each tagged with the Agent it was read for — on the machine
+   * it was read from, since the same id on another server is another Agent.
+   */
+  const pageScope = scopeKey(projectId, agentId, machineId);
+  const [dataRead, setDataRead] = useState<Scoped<AgentConfigResponse> | null>(null);
+  const data = scopedValue(dataRead, pageScope);
+  const machines = useMachines();
+  /** Whether that machine can be asked right now; null for this server, which always can. */
+  const link = machineId === null ? null : machineLink(machines.state, machines.settled, machineId);
+  /** The machine's ssh alias, for the header; its id until the list has named it. */
+  const machineLabel =
+    machineId === null
+      ? null
+      : (machines.state?.machines.find((m) => !m.local && m.machineId === machineId)?.alias ??
+        machineId);
+  /** The page can read the Agent: on this server, or on a connected machine. */
+  const reachable = link === null || link === "connected";
+  /** This server's Agent list moves with a write here; a machine's is read when its page is next shown. */
+  const reloadAgents = useCallback(
+    () => (machineId === null ? reloadHere() : Promise.resolve()),
+    [machineId, reloadHere],
+  );
+  const avatarSrc = useAgentAvatarSrc();
+  /** The Agent's own picture, from the list that names it; undefined draws the default. */
+  const picture = avatarSrc(agentId, machineId);
+  // A machine's list is what the header's picture is looked up in: read it as the page opens,
+  // once the machine can be asked (it is answered from the store when it answered moments ago).
+  useEffect(() => {
+    if (projectId === null || machineId === null || !reachable) return;
+    readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reachable]);
+  /** After the picture changed: the list it is looked up in is read again, here or on the machine. */
+  const avatarChanged = useCallback(async () => {
+    if (projectId === null) return;
+    if (machineId === null) {
+      await reloadHere();
+      return;
+    }
+    publishMachineAgentsChanged(machineId);
+    await readMachineAgents(projectId, machineId).catch(() => undefined);
+  }, [projectId, machineId, reloadHere]);
   /** Writes the tab into `?tab=` (replacing the history entry, keeping the other params). */
   const switchTab = useCallback(
     (next: TabKey) => {
@@ -168,40 +293,37 @@ export function AgentSettingsPage() {
     [setSearchParams],
   );
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [errorRead, setErrorRead] = useState<Scoped<string> | null>(null);
+  const error = scopedValue(errorRead, pageScope);
 
   const load = useCallback(
     (opts?: { keepStale?: boolean }) => {
-      if (!projectId || !agentId) return;
+      const scope = scopeKey(projectId, agentId, machineId);
+      if (!projectId || !agentId || scope === null || !reachable) return;
       // keepStale refreshes in place: dropping data would skeleton the page, unmount the tab
       // tree and lose unsaved editor state. Identity changes and whole-state replacements
-      // (import / config reset) still clear, so no stale agent's config ever shows.
-      if (!opts?.keepStale) setData(null);
-      setError(null);
+      // (import / config reset) still clear, so no stale agent's config ever shows — and an
+      // answer is tagged with the Agent it was asked about, so a late one for the Agent just
+      // left is never read as this one's.
+      if (!opts?.keepStale) setDataRead(null);
+      setErrorRead(null);
       api
-        .getAgentConfig(projectId, agentId)
-        .then(setData)
-        .catch((e: unknown) => setError(apiErrorText(e)));
+        .getAgentConfig(projectId, agentId, machineId)
+        .then((res) => setDataRead(scoped(scope, res)))
+        .catch((e: unknown) => setErrorRead(scoped(scope, apiErrorText(e))));
     },
-    [projectId, agentId],
+    [projectId, agentId, machineId, reachable],
   );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!switchedAway) load();
+  }, [load, switchedAway]);
 
   /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
   const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
 
-  /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
-  const onImported = useCallback(
-    (version: number) => {
-      toastSuccess(S.agent.importDone(version));
-      load();
-      void reloadAgents();
-    },
-    [load, reloadAgents],
-  );
+  /** A replace from file landed (the dialog said so): it overwrote the entire Agent State, so every tab's data needs a refresh. */
+  const onImported = useCallback(() => load(), [load]);
 
   /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
   const onConfigReset = useCallback(() => {
@@ -228,10 +350,11 @@ export function AgentSettingsPage() {
    */
   const save = useCallback(
     async (update: AgentConfigUpdateRequest): Promise<AgentConfigResponse | null> => {
-      if (!projectId || !agentId) return null;
+      const scope = scopeKey(projectId, agentId, machineId);
+      if (!projectId || !agentId || scope === null) return null;
       try {
-        const res = await api.putAgentConfig(projectId, agentId, update);
-        setData(res);
+        const res = await api.putAgentConfig(projectId, agentId, update, machineId);
+        setDataRead(scoped(scope, res));
         // Compaction is the one section core re-reads at every compaction checkpoint, so a save
         // that changed nothing else lands on a running conversation right away; everything else
         // still waits for that conversation's next context. The test is "only compaction", not
@@ -242,25 +365,48 @@ export function AgentSettingsPage() {
           Object.keys(changed).length === 1 &&
           changed.compaction !== undefined;
         toastSuccess(compactionOnly ? S.agent.savedTakesEffectNow : S.agent.savedTakesEffect);
-        // Name/description changes affect the breadcrumb and list display; a builtin-tools
-        // change moves the card's tool count.
+        // Name/description changes affect the breadcrumb and list display, an author change
+        // moves the card to another group, and a builtin-tools change moves its tool count.
         if (
           update.config?.name !== undefined ||
           update.config?.description !== undefined ||
+          update.config?.author !== undefined ||
           update.config?.toolsBuiltin !== undefined
         ) {
           void reloadAgents();
         }
         return res;
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
-    [projectId, agentId, reloadAgents],
+    [projectId, agentId, machineId, reloadAgents],
   );
 
-  if (!projectId) return null;
+  // Switched away: nothing of the Agent renders, so no tab asks the new Project about it while
+  // the navigation above takes the page to the Agents list.
+  if (!projectId || switchedAway) return null;
+  // A machine that cannot be asked: say why, under the page's own header, rather than show a
+  // copy of the Agent that may no longer be what that machine holds.
+  if (link !== null && link !== "connected" && link !== "unknown") {
+    return (
+      <PageFrame width="sm">
+        <PageHeader
+          title={agentId}
+          back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
+          description={
+            <span className="block font-mono text-xs text-gray-400">
+              {agentId} {S.chat.machineTag(machineLabel ?? "")}
+            </span>
+          }
+        />
+        <p className="py-4 text-sm text-gray-500 dark:text-gray-400">
+          {remoteAgentsEmpty(link, null)}
+        </p>
+      </PageFrame>
+    );
+  }
   if (error && !data) {
     return <p className="p-6 text-sm text-red-600 dark:text-red-400">{error}</p>;
   }
@@ -279,10 +425,17 @@ export function AgentSettingsPage() {
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
         title={data.config.name ?? agentId}
+        media={<AgentAvatar id={agentId} size={AGENT_AVATAR_PREVIEW_PX} src={picture} />}
         back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
-        // 16px rather than the description line's body height.
-        description={<span className="block font-mono text-xs text-gray-400">{agentId}</span>}
+        // 16px rather than the description line's body height. A machine's Agent names the
+        // machine after it, the way a machine's Workspace group does.
+        description={
+          <span className="block font-mono text-xs text-gray-400">
+            {agentId}
+            {machineLabel !== null && ` ${S.chat.machineTag(machineLabel)}`}
+          </span>
+        }
       />
       {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
           from the Agents list has to cross the tab strip to reach it. */}
@@ -297,43 +450,51 @@ export function AgentSettingsPage() {
           if (next !== tab) switchTab(next);
         }}
       />
-      <div className="py-4">
-        {tab === "overview" && (
-          <OverviewTab
-            data={data}
-            agentId={agentId}
-            onSave={save}
-            onImported={onImported}
-            onConfigReset={onConfigReset}
-            onKernelUpdated={onKernelUpdated}
-          />
-        )}
-        {tab === "prompt" && <PromptTab data={data} onSave={save} />}
-        {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "runtime" && <RuntimeTab data={data} onSave={save} projectId={projectId} />}
-        {tab === "tools" && (
-          <div className="space-y-6">
-            <ToolsTab data={data} onSave={save} />
-            {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+      <AgentLocationContext.Provider value={machineId}>
+        <div className="py-4">
+          {tab === "overview" && (
+            <OverviewTab
+              data={data}
+              agentId={agentId}
+              picture={picture}
+              onAvatarChanged={avatarChanged}
+              onSave={save}
+              onImported={onImported}
+              onConfigReset={onConfigReset}
+              onKernelUpdated={onKernelUpdated}
+            />
+          )}
+          {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "runtime" && <RuntimeTab data={data} onSave={save} projectId={projectId} />}
+          {tab === "tools" && (
+            <div className="space-y-6">
+              <ToolsTab data={data} onSave={save} />
+              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
                 builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
-            <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
-          </div>
-        )}
-        {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "workbenches" && (
-          <WorkbenchesTab key={`${projectId}:${agentId}`} agentId={agentId} />
-        )}
-        {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "schedules" && <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "api" && (
-          <ApiTab
-            projectId={projectId}
-            agentId={agentId}
-            isOwner={currentProject?.role === "owner"}
-          />
-        )}
-      </div>
+              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+            </div>
+          )}
+          {tab === "plugins" && (
+            <PluginsTab
+              key={`${projectId}:${machineId ?? ""}:${agentId}`}
+              agentId={agentId}
+              onConfigChanged={refreshConfig}
+            />
+          )}
+          {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "schedules" && (
+            <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />
+          )}
+          {tab === "api" && (
+            <ApiTab
+              projectId={projectId}
+              agentId={agentId}
+              isOwner={currentProject?.role === "owner"}
+            />
+          )}
+        </div>
+      </AgentLocationContext.Provider>
     </PageFrame>
   );
 }
@@ -389,15 +550,19 @@ async function saveWith(
 interface OverviewDraft {
   name: string;
   description: string;
+  author: AgentAuthor;
 }
 
 const overviewDraftOf = (config: AgentConfigDto): OverviewDraft => ({
   name: config.name ?? "",
   description: config.description ?? "",
+  // An older server reports no author; its Agents read as made by a person.
+  author: config.author ?? "user",
 });
 
-/** What Save sends: both fields trimmed. */
+/** What Save sends: the two text fields trimmed. */
 const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
+  ...draft,
   name: draft.name.trim(),
   description: draft.description.trim(),
 });
@@ -405,6 +570,8 @@ const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
 function OverviewTab({
   data,
   agentId,
+  picture,
+  onAvatarChanged,
   onSave,
   onImported,
   onConfigReset,
@@ -412,24 +579,23 @@ function OverviewTab({
 }: {
   data: AgentConfigResponse;
   agentId: string;
+  /** The Agent's own picture; undefined draws the default. */
+  picture: string | undefined;
+  /** The picture was written: the list it is looked up in is read again. */
+  onAvatarChanged: () => Promise<void>;
   onSave: SaveFn;
-  onImported: (version: number) => void;
+  onImported: () => void;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const machineId = useAgentLocation();
   const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  /** A picked snapshot package awaiting the overwrite confirmation: an import replaces the whole Agent State. */
-  const [pendingImport, setPendingImport] = useState<{ name: string; dataBase64: string } | null>(
-    null,
-  );
-  // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
-  const [conflict, setConflict] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [kernelOpen, setKernelOpen] = useState(false);
@@ -441,11 +607,11 @@ function OverviewTab({
     if (!projectId) return;
     setResetting(true);
     try {
-      await api.resetAgentConfig(projectId, agentId);
+      await api.resetAgentConfig(projectId, agentId, machineId);
       setResetOpen(false);
       onConfigReset();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setResetting(false);
     }
@@ -455,13 +621,13 @@ function OverviewTab({
     if (!projectId) return;
     setKernelUpdating(true);
     try {
-      const res = await api.kernelUpdateAgentConfig(projectId, agentId);
+      const res = await api.kernelUpdateAgentConfig(projectId, agentId, machineId);
       setKernelOpen(false);
       setKernelResult(res);
       toastSuccess(S.agent.kernelUpdateDone(res.kernelVersion, res.advanced.length));
       onKernelUpdated();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setKernelUpdating(false);
     }
@@ -474,6 +640,7 @@ function OverviewTab({
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
     if (draft.name !== stored.name) config.name = draft.name;
     if (draft.description !== stored.description) config.description = draft.description;
+    if (draft.author !== stored.author) config.author = draft.author;
     void saveWith(
       setSaving,
       () => onSave({ config }),
@@ -481,42 +648,19 @@ function OverviewTab({
     );
   };
 
-  const runImport = async (dataBase64: string, confirm: boolean) => {
-    if (!projectId) return;
-    setImporting(true);
-    setImportError(null);
-    try {
-      const res = await api.importAgent(projectId, agentId, {
-        dataBase64,
-        ...(confirm ? { confirm: true } : {}),
-      });
-      setConflict(null);
-      onImported(res.version);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "version_conflict") {
-        setConflict(dataBase64); // resend with confirm: true after confirming
-      } else {
-        setConflict(null);
-        setImportError(apiErrorText(e));
-      }
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setImportError(null);
-    fileToBase64(file).then(
-      (dataBase64) => setPendingImport({ name: file.name, dataBase64 }),
-      () => setImportError(S.common.unknownError),
-    );
-  };
-
   return (
     <div className="space-y-4">
+      {/* The avatar is outside the draft below: it saves on crop confirm, and the Save row
+          answers only for the name and the description. */}
+      {projectId && (
+        <AgentAvatarField
+          projectId={projectId}
+          agentId={agentId}
+          machineId={machineId}
+          picture={picture}
+          onChanged={onAvatarChanged}
+        />
+      )}
       <Input
         size="sm"
         label={S.common.name}
@@ -530,13 +674,27 @@ function OverviewTab({
         value={form.draft.description}
         onChange={(e) => form.patch({ description: e.target.value })}
       />
+      {/* A field of the overview form like the two above: Save writes it, Reset puts it back. */}
+      <Select
+        size="sm"
+        label={S.agent.authorLabel}
+        info={S.agent.authorInfo}
+        value={form.draft.author}
+        onChange={(e) => form.patch({ author: e.target.value as AgentAuthor })}
+      >
+        {AGENT_AUTHORS.map((author) => (
+          <option key={author} value={author}>
+            {S.agent.authors[author]}
+          </option>
+        ))}
+      </Select>
       <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
           boxes; per user feedback the sections separate with a top rule and the values
-          carry the visual weight): title row with the snapshot transfer actions on the
-          right (export is available to any member; import overwrites the entire Agent
-          State, so it is visible only to owners), labeled value rows below — light
+          carry the visual weight): title row with the transfer actions on the right (export
+          is available to any member; a replace overwrites the entire Agent State, so it is
+          visible only to owners), labeled value rows below — light
           text-xs labels over dark font-semibold values. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -545,26 +703,13 @@ function OverviewTab({
             <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            {projectId && (
-              <a
-                href={api.agentExportUrl(projectId, agentId)}
-                download
-                className={SNAPSHOT_BUTTON_CLASS}
-              >
-                {S.agent.exportSnapshot}
-              </a>
-            )}
+            <Button size="sm" onClick={() => setExportOpen(true)}>
+              {S.agent.exportOpen}
+            </Button>
             {isOwner && (
-              <label
-                className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput
-                  accept={SNAPSHOT_ACCEPT}
-                  disabled={importing}
-                  onChange={onPickFile}
-                />
-                {importing ? S.agent.importing : S.agent.importSnapshot}
-              </label>
+              <Button size="sm" onClick={() => setReplaceOpen(true)}>
+                {S.agent.replaceOpen}
+              </Button>
             )}
           </div>
         </div>
@@ -595,9 +740,6 @@ function OverviewTab({
             </div>
           </div>
         </div>
-        {importError && (
-          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
-        )}
       </section>
 
       {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
@@ -684,41 +826,24 @@ function OverviewTab({
         )}
       </section>
 
-      {/* Overwrite confirmation, before every import: the package replaces the whole Agent
-          State. An overwrite, not a deletion, so it takes the primary (pencil) tone. A package
-          that is not newer still meets the version-conflict prompt below. */}
-      <ConfirmModal
-        open={pendingImport !== null}
-        title={S.agent.importSnapshot}
-        tone="primary"
-        onClose={() => setPendingImport(null)}
-        onConfirm={() => {
-          if (pendingImport !== null) void runImport(pendingImport.dataBase64, false);
-          setPendingImport(null);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {pendingImport !== null ? S.agent.importConfirmBody(pendingImport.name) : ""}
-        </p>
-      </ConfirmModal>
-
-      {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
-      <ConfirmModal
-        open={conflict !== null}
-        title={S.agent.importConflictTitle}
-        busy={importing}
-        tone="primary"
-        onClose={() => setConflict(null)}
-        onConfirm={() => {
-          if (conflict !== null) void runImport(conflict, true);
-        }}
-        confirmLabel={S.agent.importSnapshot}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
-      </ConfirmModal>
+      {projectId && exportOpen && (
+        <AgentExportDialog
+          projectId={projectId}
+          agentId={agentId}
+          agentName={data.config.name || agentId}
+          machineId={machineId}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {projectId && replaceOpen && (
+        <AgentImportDialog
+          projectId={projectId}
+          replace={{ agentId, name: data.config.name || agentId }}
+          machineId={machineId}
+          onClose={() => setReplaceOpen(false)}
+          onImported={onImported}
+        />
+      )}
 
       {/* Kernel update confirmation: lossless by design, but it still rewrites config fields —
           confirm-first like the sibling reset, with the primary (overwrite) tone rather than
@@ -859,22 +984,23 @@ function PromptTab({ data, onSave }: FormTabProps) {
 }
 
 function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
+  const machineId = useAgentLocation();
   const [projectThinking, setProjectThinking] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setProjectThinking(null);
-    void api.getChatDefaults(projectId).then(
+    void api.getChatDefaults(projectId, machineId).then(
       (res) => {
         if (!cancelled) setProjectThinking(effectiveThinkingLevel("", res.thinkingLevel));
       },
       (error: unknown) => {
-        if (!cancelled) toastError(apiErrorText(error));
+        if (!cancelled) toastApiError(error);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, machineId]);
   const cfg = data.config;
   // The five numbers, the two menus and the prompt are one form: the menus sit inside it, so
   // they save with it (a menu that stood alone in its row would write at once instead).

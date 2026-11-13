@@ -1,3 +1,4 @@
+<<<<<<< /tmp/_o
 import {
   Fragment,
   useCallback,
@@ -9,8 +10,135 @@ import {
   type ReactNode,
 } from "react";
 
+||||||| /tmp/_a
+/**
+ * Model config page.
+ *
+ * Model entries are persisted as two independent fields, `provider` and `model_id`;
+ * the (provider, model_id) pair is the entry's unique key — **zero
+ * concatenation** anywhere in the pipeline, `model_id` is sent to MMSP verbatim as the
+ * upstream request id. The dialog's identity section = (group dropdown, upstream id input);
+ * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
+ * to migrate the credential and pointers).
+ *
+ * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
+ * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
+ * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
+ * user-defined), the speed test, and the gear last on every group: a menu with the group's sort
+ * and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ *
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
+ * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * in this browser, applies to search results too, and leaves the group order and the chat model
+ * picker alone.
+ *
+ * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
+ * rest under one full-width bar that folds them away (folded by default). A star on each header,
+ * shown on hover or focus, moves a group across; searching shows both areas, unfolded.
+ *
+ * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
+ * written by Connect and the group settings — and a model stores only what it overrides: every
+ * field it leaves blank follows the group (connection.ts), and a field the group leaves blank
+ * too is the client's default; the catalog is never a fallback. The dialogs say a blank field
+ * follows the group without repeating the group's value, and a card prints the key the model is
+ * actually used with. The "get model id / API key" external links sit next to the
+ * corresponding input's label in the dialogs, never in the header. A TokenDance banner above
+ * the groups offers its connect flow until the group holds a key. The group list ends with an
+ * "add group" action (user-defined groups share custom's semantics; the group appears once the
+ * first model saves successfully — groups are carried by the model entry's provider field).
+ *
+ * The page header holds two owner-only catalog actions next to the search box, both run by the
+ * server: "Add new models" adds the presets the table lacks (shown only while there are some,
+ * see catalog-sync.ts) and touches nothing else; "Restore defaults", behind a danger
+ * confirmation, puts every built-in model back to the catalog while keeping keys and the
+ * user's own models. Nothing else ever rewrites an existing row's catalog facts.
+ *
+ * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
+ * means keep the existing value); only the owner can edit. The config dialog's Save (Add, for a
+ * new model) is live once something changed and nothing is wrong; the dialog waits for the
+ * write and closes only once it landed — a refused one leaves the table as it was and the draft
+ * in the dialog — and closing it with unsaved edits asks first.
+ */
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+=======
+/**
+ * Model config page.
+ *
+ * Model entries are persisted as two independent fields, `provider` and `model_id`;
+ * the (provider, model_id) pair is the entry's unique key — **zero
+ * concatenation** anywhere in the pipeline, `model_id` is sent to MMSP verbatim as the
+ * upstream request id. The dialog's identity section = (group dropdown, upstream id input);
+ * changing either one is a rename, submitted as a paired `renamedFrom` (the server uses it
+ * to migrate the credential and pointers).
+ *
+ * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
+ * name + count + the collapse chevron), with one card per model within a group — the card
+ * shows only the display name + status badges (default / vision / fast / free / discount), while
+ * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
+ * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
+ * delete). The group header's right side holds the group's actions in a fixed order
+ * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
+ * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
+ * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
+ * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
+ * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
+ * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ *
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
+ * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * in this browser, applies to search results too, and leaves the group order and the chat model
+ * picker alone.
+ *
+ * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
+ * rest under one full-width bar that folds them away (folded by default). A star on each header,
+ * shown on hover or focus, moves a group across; searching shows both areas, unfolded.
+ *
+ * A group holds its connection once — base URL, key and protocol in `[providers.<id>]`,
+ * written by Connect and the group settings — and a model stores only what it overrides: every
+ * field it leaves blank follows the group (connection.ts), and a field the group leaves blank
+ * too is the client's default; the catalog is never a fallback. The dialogs say a blank field
+ * follows the group without repeating the group's value, and a card prints the key the model is
+ * actually used with. The "get model id / API key" external links sit next to the
+ * corresponding input's label in the dialogs, never in the header. A TokenDance banner above
+ * the groups offers its connect flow until the group holds a key. The group list ends with an
+ * "add group" action (user-defined groups share custom's semantics; the group appears once the
+ * first model saves successfully — groups are carried by the model entry's provider field).
+ *
+ * The page header holds two owner-only catalog actions next to the search box, both run by the
+ * server: "Add new models" adds the presets the table lacks (shown only while there are some,
+ * see catalog-sync.ts) and touches nothing else; "Restore defaults", behind a danger
+ * confirmation, puts every built-in model back to the catalog while keeping keys and the
+ * user's own models. Nothing else ever rewrites an existing row's catalog facts.
+ *
+ * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
+ * means keep the existing value); only the owner can edit. The config dialog's Save (Add, for a
+ * new model) is live once something changed and nothing is wrong; the dialog waits for the
+ * write and closes only once it landed — a refused one leaves the table as it was and the draft
+ * in the dialog — and closing it with unsaved edits asks first.
+ */
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from "react";
+
+>>>>>>> /tmp/_t
 import type {
   CredentialInfo,
+  DefaultModelOffer,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -61,6 +189,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import * as api from "@prismshadow/penguin-web/internal";
 import { ApiError } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
@@ -74,22 +203,67 @@ import { USD_TO_CNY, useTheme, type Currency } from "@prismshadow/penguin-web/in
 
 import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/internal";
 import { formatDateTime, humanizeTokens } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { cardBodyClick } from "../../lib/card-open";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
+import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { USD_TO_CNY, useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { formatDateTime, humanizeTokens } from "../../lib/format";
+=======
+import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { cardBodyClick } from "../../lib/card-open";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
+import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
+
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { formatDateTime, humanizeTokens } from "../../lib/format";
+>>>>>>> /tmp/_t
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
-  canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  groupKeyReaches,
   isAddableGroup,
+  isVendorGroup,
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
+<<<<<<< /tmp/_o
   type FastModeProtocol,
   type ModelProviderBridgeAuth,
   type ModelProviderInfo,
 } from "@prismshadow/penguin-core/model-catalog";
 
+||||||| /tmp/_a
+} from "@prismshadow/penguin-core/model-catalog";
+import type {
+  FastModeProtocol,
+  ModelProviderBridgeAuth,
+  ModelProviderInfo,
+} from "@prismshadow/penguin-core/model-catalog";
+=======
+  type FastModeProtocol,
+  type ModelProviderBridgeAuth,
+  type ModelProviderInfo,
+} from "@prismshadow/penguin-server/model-catalog";
+
+import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
+>>>>>>> /tmp/_t
 import {
   allGroupKeys,
   discountedPrice,
@@ -98,20 +272,21 @@ import {
   isFreeModel,
   sameModelRef,
   userProviderInfo,
-} from "./model-grouping";
+} from "../../lib/model-grouping";
 import {
   commitModelGroupOrder,
   loadModelGroupOrder,
   saveModelGroupOrder,
-} from "./model-group-order";
-import { TAG_TONE, modelTags } from "./model-tags";
+} from "../../lib/model-group-order";
+import { TAG_TONE, modelTags } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
   DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
-  envHintKeyFor,
+  envHintFor,
+  keylessFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -138,6 +313,7 @@ import {
   withModelGroupPinned,
   type ModelGroupPins,
 } from "./model-group-pins";
+<<<<<<< /tmp/_o
 
 import { clearDraftModelRef } from "@prismshadow/penguin-web/internal";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "@prismshadow/penguin-web/internal";
@@ -150,6 +326,23 @@ import {
 } from "./preset-sync";
 
 import { buildImportedRows, groupImportConnection } from "./group-import";
+||||||| /tmp/_a
+import type { ModelGroupPins } from "./model-group-pins";
+import { clearDraftModelRef } from "../chat/draft-cache";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
+import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
+import type { PresetSyncHost } from "./preset-sync";
+import { buildImportedRows, groupImportConnection } from "./group-import";
+=======
+import { clearDraftModelRef } from "../chat/draft-cache";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
+import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
+import type { PresetSyncHost } from "./preset-sync";
+import { buildImportedRows, groupImportConnection, pickableModelIds } from "./group-import";
+import { ImportPickList } from "./group-import-picker";
+>>>>>>> /tmp/_t
 import {
   applyProviderUpdate,
   groupKeyMissesRow,
@@ -169,12 +362,28 @@ import {
   withModelGroupSort,
   type ModelGroupSort,
 } from "./model-sort";
+<<<<<<< /tmp/_o
 
 import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
+||||||| /tmp/_a
+import type { ModelGroupSort } from "./model-sort";
+import { tpsTone, ttftTone } from "./speed-test";
+import type { SpeedResult, SpeedTone } from "./speed-test";
+import { toneInk } from "../../lib/tone";
+import { KeyAuthDialog } from "./key-auth-dialog";
+import type { KeyAuthTexts } from "./key-auth-dialog";
+=======
+
+import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
+
+import { toneInk } from "../../lib/tone";
+import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
+
+>>>>>>> /tmp/_t
 import {
   HEADER_BUTTON,
   HEADER_LABEL,
@@ -197,6 +406,8 @@ import {
 
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
+import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -379,7 +590,7 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  /** Masked preview of the env-fallback value (only for a keyless row with no base URL anywhere; the plaintext never leaves the server). */
   envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
@@ -678,9 +889,9 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  *
  * The client type and base URL are the ones the entry will actually be USED with — its own,
  * else what it inherits from its group (`inherited`, none by default) — and for a custom-like
- * entry that resolves to none, the compatible client it will be saved on, for the same reason
- * envHintClientType exists: a custom-like group leaves the protocol empty until detection or a
- * manual pick fills it in, and fastModeProtocol would then
+ * entry that resolves to none, the compatible client it will be saved on: a custom-like group
+ * leaves the protocol empty until detection or a manual pick fills it in, and fastModeProtocol
+ * would then
  * fall back to routing by model id. Typing an id that routes to a client with no fast tier
  * (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a switch that the persisted
  * `openai-chat` entry can in fact serve. An empty result keeps the id-based routing the preset
@@ -733,15 +944,22 @@ export function capabilityRow(present: { vision: boolean; fastMode: boolean }): 
  *   reaches the model (connection.ts) means it follows the group; a variable the environment
  *   holds (`envKey`, only where nothing else covers the model) means the environment answers; a
  *   group key that does NOT reach the model — its own base URL is on another origin — is said
- *   outright, since the card will read "not configured"; otherwise nothing truthful can be said.
- * - Base URL: the group's setting where it has one; else the shape a required one takes; else
- *   what an empty one means — the client's default endpoint.
+ *   outright, since the card will read "not configured"; a model its client calls without a key
+ *   (`keyless`: an open MMSP or vLLM server) says a blank sends none; otherwise the field asks
+ *   for a key.
+ * - Base URL: the group's setting where it has one; else, where the field is required (it
+ *   cannot be saved blank), a request to enter one; else that a blank one uses the default,
+ *   without naming it.
  */
 export function connectionPlaceholders(
   draft: Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">,
   group: ProviderConnectionDto | undefined,
-  { envKey, baseUrlRequired }: { envKey?: string | undefined; baseUrlRequired: boolean },
-): { apiKey: string | undefined; baseUrl: string } {
+  {
+    envKey,
+    keyless = false,
+    baseUrlRequired,
+  }: { envKey?: string | undefined; keyless?: boolean; baseUrlRequired: boolean },
+): { apiKey: string; baseUrl: string } {
   const inherited = inheritedConnection(draft.provider, draft.modelId, group, draft.baseUrl);
   const apiKey = draft.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
@@ -751,13 +969,15 @@ export function connectionPlaceholders(
         ? S.models.apiKeyEnvHint(envKey)
         : groupKeyMissesRow(draft.baseUrl, group)
           ? S.models.keyNotReachedNote
-          : undefined;
+          : keyless
+            ? S.models.apiKeyKeylessHint
+            : S.models.apiKeyEnterHint;
   const baseUrl =
     inherited.baseUrl !== undefined
       ? S.models.inheritFromGroup
       : baseUrlRequired
-        ? "https://…"
-        : S.models.baseUrlNone;
+        ? S.models.baseUrlEnterHint
+        : S.models.baseUrlDefault;
   return { apiKey, baseUrl };
 }
 
@@ -958,6 +1178,13 @@ export function ModelsPage() {
   const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
   const keyLanded = useRef(false);
+  /**
+   * The default model the key it wrote offers, asked about once the dialog is dismissed: the
+   * dialog reports the outcome first, and a question on top of it would hide that.
+   */
+  const landedOffer = useRef<DefaultModelOffer | undefined>(undefined);
+  /** A connect's offer of its group's model as the default, while the question is open. */
+  const [defaultOffer, setDefaultOffer] = useState<DefaultModelOffer | null>(null);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -996,7 +1223,7 @@ export function ModelsPage() {
     // drop them along with the rows they annotate whenever the active Project changes.
     setSpeedResults(new Map());
     try {
-      adopt(await api.getModels(projectId));
+      adopt(await api.getModels(projectId, null));
     } catch (e) {
       setLoadError(apiErrorText(e));
     }
@@ -1060,7 +1287,7 @@ export function ModelsPage() {
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
       return false;
     } finally {
       setBusy(false);
@@ -1089,6 +1316,13 @@ export function ModelsPage() {
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
 
+  /** The end of a connect dialog's dismissal: the question its key's offer asks, then a clean slate. */
+  const endConnect = () => {
+    if (landedOffer.current !== undefined) setDefaultOffer(landedOffer.current);
+    keyLanded.current = false;
+    landedOffer.current = undefined;
+  };
+
   /**
    * What the two catalog actions (preset-sync.tsx) run against: this Project's saved table, the
    * page's busy flag, and the Models badge re-probe. Null until a Project is open.
@@ -1108,16 +1342,14 @@ export function ModelsPage() {
     try {
       const res = await api.syncPlatformModels(projectId);
       adopt(res);
-      // The platform's sync only adds the models it newly offers; the ones already here keep
-      // their prices, protocols and promotions.
-      if (res.added === 0) toastInfo(S.models.platformUpToDate);
-      else toastSuccess(S.models.platformSyncAdded(res.added));
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.platformUpToDate);
+      else toastSuccess(S.models.platformSyncResult(res.added, res.updated));
     } catch (error) {
       if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
         keyLanded.current = false;
         setOauthFor(PENGUIN_GO_PROVIDER_ID);
       } else {
-        toastError(apiErrorText(error));
+        toastApiError(error);
       }
     } finally {
       setBusy(false);
@@ -1489,12 +1721,16 @@ export function ModelsPage() {
         {drag.dropEdge !== null && (
           <div
             aria-hidden
-            className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
+            className={`pointer-events-none absolute inset-x-0 z-raised h-0.5 rounded-full bg-accent ${
               drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
             }`}
           />
         )}
-        <WallpaperSurface className="overflow-hidden rounded-md border border-line bg-surface">
+        <WallpaperSurface
+          data-slot="group"
+          data-pinned={pinned || undefined}
+          className="overflow-hidden rounded-md border border-line bg-surface"
+        >
           {/* Group header: collapse button (logo + vendor name + count + chevron) +
               the group's actions on the right, in group-header.ts's order. Actions are
               separate elements because buttons can't nest. The row is a size
@@ -1511,6 +1747,7 @@ export function ModelsPage() {
               shows on. */}
           <div
             {...drag.header}
+            data-slot="head"
             className={`group @container flex flex-wrap items-center gap-x-2 bg-control-well pr-1.5 transition-colors duration-150 hover:bg-control-hover${canDrag && !searching ? " cursor-grab" : ""}`}
           >
             {/* The left cluster: the collapse button, sized to what it shows, the star right
@@ -1529,13 +1766,14 @@ export function ModelsPage() {
                 />
                 {/* The vendor name is the only thing in this button allowed to take
                     the remaining space, and the only one that truncates. */}
-                <span className="min-w-0 truncate text-sm font-semibold">
+                <span data-slot="name" className="min-w-0 truncate text-sm font-semibold">
                   {group.provider.label}
                 </span>
                 {/* The count as the model picker's rail writes it: a bare number, with
                     the words kept for assistive tech. */}
                 <span
                   aria-hidden
+                  data-slot="count"
                   className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500"
                 >
                   {group.rows.length}
@@ -1624,6 +1862,7 @@ export function ModelsPage() {
             {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
             <div className="min-h-0" inert={!open}>
               <div
+                data-slot="cards"
                 className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-3 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
               >
                 {group.rows.length === 0 ? (
@@ -1773,7 +2012,9 @@ export function ModelsPage() {
       ) : groups.length === 0 ? (
         <EmptyState title={S.models.noSearchResults} />
       ) : (
-        <div className="space-y-3">
+        // ui-library: the model library as a whole — its groups, their heads and their cards, the
+        // bar folding the rest of the groups away and Add group.
+        <div className="ui-library space-y-3">
           {layout.shown.map(renderGroup)}
           {layout.fold !== null && (
             <>
@@ -1783,6 +2024,7 @@ export function ModelsPage() {
               <button
                 ref={foldBarRef}
                 type="button"
+                data-slot="fold"
                 aria-expanded={!layout.fold.folded}
                 aria-controls="models-collapsible-groups"
                 onClick={toggleGroupsFolded}
@@ -1814,6 +2056,7 @@ export function ModelsPage() {
             // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
             <button
               type="button"
+              data-slot="add"
               onClick={() => setAddGroupOpen(true)}
               className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
             >
@@ -1845,6 +2088,7 @@ export function ModelsPage() {
           onSaved={(res) => {
             adopt(res);
             setSettingsFor(null);
+            if (res.defaultOffer !== undefined) setDefaultOffer(res.defaultOffer);
           }}
         />
       )}
@@ -1869,10 +2113,11 @@ export function ModelsPage() {
             onClose={() => {
               setOauthFor(null);
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, offer) => {
               keyLanded.current = true;
+              landedOffer.current = offer;
             }}
           />
         ) : (
@@ -1888,17 +2133,35 @@ export function ModelsPage() {
               // `load` also drops this Project's speed results — measurements that cost real API
               // quota and live only in page memory — and a cancelled flow changed nothing.
               if (keyLanded.current) void load();
-              keyLanded.current = false;
+              endConnect();
             }}
-            onApplied={() => {
+            onApplied={(_applied, offer) => {
               // The dialog stays open and reports the outcome itself (its `done` phase), because
               // the authorization ran in another tab and a toast would be announced to a window
-              // nobody is looking at. All this seam does is record that the dismissal has a
-              // reload to do.
+              // nobody is looking at. All this seam does is record what the dismissal has to do:
+              // a reload, and the question of the default the key offers.
               keyLanded.current = true;
+              landedOffer.current = offer;
             }}
           />
         ))}
+
+      {/* Waits for `rows`: a connect flow's dismissal reloads the table, and the question names
+          its models from it. */}
+      {projectId && rows && defaultOffer !== null && (
+        <ConnectDefaultOfferConfirm
+          projectId={projectId}
+          offer={defaultOffer}
+          rows={rows}
+          onClose={() => setDefaultOffer(null)}
+          onAccepted={(ref) => {
+            setDefaultModel(ref);
+            // As after any default change here: the draft chat drops its stored model pick and
+            // follows the new default.
+            if (userId) clearDraftModelRef(userId, projectId);
+          }}
+        />
+      )}
 
       {rows && deleteGroupFor !== null && (
         <ConfirmModal
@@ -2077,10 +2340,15 @@ export function ModelsPage() {
  *   dialog's field rhythm: API key first, then the base URL with the detect action at its
  *   top-right and the in-field protocol picker as manual override (ProtocolSuffixMenu —
  *   the same one-to-one path menu). Only once a protocol is determined (detected or
- *   picked) does the "import all models" action appear; it lists the endpoint
- *   (POST models/list) and hands the group's connection and the appended rows to the page
- *   for one table PUT: the base URL, protocol and key are written once, as the group's, and
- *   the rows store nothing of them.
+ *   picked) does the "fetch model list" action appear; it lists the endpoint
+ *   (POST models/list) into a pick list (ImportPickList), every model ticked, and the
+ *   action becomes "import N models", held while nothing is ticked. That one hands the
+ *   group's connection and the rows of the ticked models to the page for one table PUT: the
+ *   base URL, protocol and key are written once, as the group's, and the rows store nothing
+ *   of them. The list answers for the key, base URL and protocol it was fetched with: it is
+ *   hidden, and the fetch action is back, while any of them differs from those, and it returns
+ *   with its ticks once all three match again. The three are locked while a fetch or the save
+ *   runs, so a request never answers for values that changed under it.
  *
  * Detection failure turns the suffix amber and keeps both ways out usable — pick the
  * protocol by hand, or switch back to create-only. Errors render inside the dialog;
@@ -2126,6 +2394,17 @@ function AddGroupDialog({
   const [detectFailed, setDetectFailed] = useState(false);
   /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
   const [importing, setImporting] = useState<string | null>(null);
+  /**
+   * The fetched listing: the endpoint it answers for, the ids on offer, how many listing entries
+   * offered nothing (for the toast), and the ticked ids. The ticks are part of the dialog's form
+   * and commit with Import; null until a listing landed.
+   */
+  const [listing, setListing] = useState<{
+    endpoint: string;
+    ids: string[];
+    dropped: number;
+    picked: Set<string>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
@@ -2198,9 +2477,19 @@ function AddGroupDialog({
     form.patch({ clientType: t });
   };
 
-  const runImport = async () => {
+  /** The endpoint a listing answers for: the key, base URL and protocol as they would be sent. */
+  const endpointOf = (url: string, protocol: string, key: string) =>
+    JSON.stringify([url, protocol, key]);
+  /** The listing on screen: only while the fields still name the endpoint it came from. */
+  const list =
+    listing !== null &&
+    clientType !== null &&
+    listing.endpoint === endpointOf(baseUrl.trim(), clientType, apiKey.trim())
+      ? listing
+      : null;
+
+  const fetchList = async () => {
     if (!nameValid || clientType === null) return;
-    const n = trimmed;
     const url = baseUrl.trim();
     if (!detectableBaseUrl(url)) {
       setError(S.models.groupImportNeedUrl);
@@ -2223,18 +2512,38 @@ function AddGroupDialog({
         );
         return;
       }
-      const built = buildImportedRows(rows, n, listed.models);
-      if (built.added === 0) {
+      const { ids, dropped } = pickableModelIds(listed.models);
+      if (ids.length === 0) {
         setError(S.models.groupImportEmpty);
         return;
       }
-      setImporting(S.models.groupImportSaving(built.added));
+      setListing({
+        endpoint: endpointOf(url, clientType, key),
+        ids,
+        dropped,
+        picked: new Set(ids),
+      });
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const runImport = async () => {
+    if (!nameValid || clientType === null || list === null || list.picked.size === 0) return;
+    const n = trimmed;
+    const chosen = list.ids.filter((id) => list.picked.has(id));
+    const built = buildImportedRows(rows, n, chosen);
+    setError(null);
+    setImporting(S.models.groupImportSaving(built.added));
+    try {
       await onImport(
         [...rows, ...built.rows],
         n,
-        groupImportConnection({ baseUrl: url, clientType, apiKey: key }),
+        groupImportConnection({ baseUrl: baseUrl.trim(), clientType, apiKey: apiKey.trim() }),
         built.added,
-        built.skipped,
+        list.dropped + built.skipped,
       );
     } catch (e) {
       setError(apiErrorText(e));
@@ -2244,6 +2553,12 @@ function AddGroupDialog({
   };
 
   const busy = importing !== null;
+  /**
+   * An import needs an endpoint: a blank base URL holds Import and Detect, and is said under the
+   * field once something is typed (the other required base URL fields' rule).
+   */
+  const baseUrlMissing = baseUrl.trim() === "";
+  const baseUrlError = form.dirty && baseUrlMissing ? S.models.baseUrlRequired : null;
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const suffixLabel =
     clientType === null ? S.models.protocolUnset : protocolPathForModel(trimmed, clientType);
@@ -2265,18 +2580,34 @@ function AddGroupDialog({
               {S.common.confirm}
             </Button>
           ) : (
-            // The import action exists only once the protocol is determined (detected or
-            // hand-picked): before that there is nothing meaningful to run.
-            clientType !== null && (
+            // The import actions exist only once the protocol is determined (detected or
+            // hand-picked): before that there is nothing meaningful to run. Fetch the list
+            // first; once it is on screen, import what is ticked.
+            clientType !== null &&
+            (list === null ? (
               <Button
                 size="sm"
                 variant="primary"
-                disabled={busy || !nameValid}
-                onClick={() => void runImport()}
+                disabled={busy || !nameValid || baseUrlMissing}
+                onClick={() => void fetchList()}
               >
-                {S.models.groupImportAll}
+                {S.models.groupImportFetch}
               </Button>
-            )
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy || !nameValid || list.picked.size === 0}
+                // Fetch and Import are one button in one place, and the list lands within a
+                // double-click: the second click of a double-click on Fetch must not import.
+                // A keyboard press reports detail 0 and a single click 1.
+                onClick={(e) => {
+                  if (e.detail <= 1) void runImport();
+                }}
+              >
+                {S.models.groupImportPicked(list.picked.size)}
+              </Button>
+            ))
           )}
         </>
       }
@@ -2316,6 +2647,9 @@ function AddGroupDialog({
               size="sm"
               label={S.models.apiKey}
               value={apiKey}
+              // Locked while a fetch or save runs, like the base URL: the request speaks with
+              // this key, and the list it brings back answers for it.
+              disabled={busy}
               onChange={(e) => {
                 form.patch({ apiKey: e.target.value });
                 setError(null);
@@ -2335,9 +2669,9 @@ function AddGroupDialog({
                   variant="link"
                   size="sm"
                   loading={detecting}
-                  disabled={busy}
+                  disabled={busy || baseUrlMissing}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
+                  title={baseUrlMissing ? S.models.detectNeedsBaseUrl : S.models.detectProtocolHint}
                   data-tooltip-extra
                   className="shrink-0"
                 >
@@ -2351,6 +2685,7 @@ function AddGroupDialog({
                   required
                   value={baseUrl}
                   disabled={busy}
+                  invalid={baseUrlError !== null}
                   onChange={(e) => {
                     // An edited URL retires the previous verdict: protocol and failure tone
                     // both described the old endpoint.
@@ -2363,7 +2698,7 @@ function AddGroupDialog({
                   className="font-mono"
                   style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
                   title={S.models.baseUrlSuffixTitle}
-                  placeholder="https://…"
+                  placeholder={S.models.baseUrlEnterHint}
                 />
                 <div className="absolute inset-y-0 right-1 flex items-center">
                   <ProtocolSuffixMenu
@@ -2371,11 +2706,21 @@ function AddGroupDialog({
                     path={suffixLabel}
                     detecting={detecting}
                     tone={detectFailed ? "warn" : null}
+                    disabled={busy}
                     onPick={pickProtocol}
                   />
                 </div>
               </div>
+              {baseUrlError && <FieldError>{baseUrlError}</FieldError>}
             </div>
+            {list !== null && (
+              <ImportPickList
+                ids={list.ids}
+                picked={list.picked}
+                disabled={busy}
+                onChange={(picked) => setListing({ ...list, picked })}
+              />
+            )}
             {importing !== null && (
               <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
             )}
@@ -2488,16 +2833,20 @@ export function ModelCard({
     // answers no question a reader of this list is asking, and spending the meta line's width
     // on it pushes out the figures that do.
     priced ? (
-      <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
+      <span data-slot="price">
+        {priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}
+      </span>
     ) : null,
     // Key status (see keyStatusText): the mask of the key the model is used with — its own, its
     // group's or a detected env fallback's — a plain "configured" for a key typed but not yet
     // saved, or "not configured". An inherited key says where it comes from on hover only: the
     // line reads the same whatever the source, and the source is a detail.
     keyNote !== undefined ? (
-      <span data-tooltip={keyNote}>{keyStatusText(row, group)}</span>
+      <span data-slot="state" data-tooltip={keyNote}>
+        {keyStatusText(row, group)}
+      </span>
     ) : (
-      keyStatusText(row, group)
+      <span data-slot="state">{keyStatusText(row, group)}</span>
     ),
   ].filter((v) => v !== null);
 
@@ -2542,6 +2891,7 @@ export function ModelCard({
     // problem the same way). A click on the rest of the box opens the dialog too
     // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
     <Card
+      data-slot="card"
       padding="none"
       interactive
       onClick={cardBodyClick(onOpen)}
@@ -2556,7 +2906,7 @@ export function ModelCard({
             but it is a detail you go looking for rather than one you scan by, and it is a click
             away in the config dialog; the width it was taking now belongs to the name. */}
         <span className="flex w-full min-w-0 items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
@@ -2579,7 +2929,7 @@ export function ModelCard({
             absent line shows up as uneven padding rather than as a shorter card. Its height is
             the tags' own — an empty row holds one invisible tag, which is that height in every
             theme — so a card with marks and a card without are exactly as tall. */}
-        <span className="flex w-full flex-wrap items-center gap-1">
+        <span data-slot="tags" className="flex w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
             <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
               {tag.label}
@@ -2898,7 +3248,7 @@ function ModelDialog({
    *
    * Outcomes are announced with a toast, like the connectivity test in this same dialog:
    * transient and non-blocking, nothing to dismiss before carrying on. The Toaster portals
-   * to document.body at z-[100] against the Modal's z-50, so a toast raised from inside
+   * to document.body on the `toast` layer, above a Modal's `modal`, so a toast raised from inside
    * this dialog renders above it rather than behind or clipped by it.
    *
    * Every failure — unreachable, timeout, gateway junk, nothing matched, an invalid URL
@@ -3027,10 +3377,10 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectFailedBody);
+          toastError(S.models.detectVisionFailed);
         }
       } catch {
-        toastError(S.models.detectFailedBody);
+        toastError(S.models.detectVisionFailed);
       } finally {
         setVisionDetecting(false);
       }
@@ -3260,19 +3610,21 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (core's
-  // modelEnvPreviewKey, which the server's masked preview reads too) on its EFFECTIVE shape:
-  // undefined for every row whose endpoint — its own or the one it follows — is not the
-  // vendor's own (a gateway's endpoint, a custom or vLLM server, a vendor group pointed at a
-  // proxy) and for a keyless vLLM / custom row with no base URL anywhere. The hint and the
+  // The variables a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvironment, which the server's masked preview reads too): what MMSP's routed
+  // client reads, which is nothing for a base URL other than its own default endpoint (a
+  // gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
+  // as its Session would, and the note below says where its requests go. The hint and the
   // stored-mask block below follow this.
-  const liveEnvKey = envHintKeyFor(
+  const liveEnv = envHintFor(
     form.provider,
     form.modelId,
     form.clientType,
     form.baseUrl,
     groupShape(group),
   );
+  const liveEnvKey = liveEnv.apiKeyEnv;
   // An id this entry's group cannot place (see unroutableFix). The save is refused by the
   // server for a new or rekeyed entry, so the warning and its way out are shown before the
   // attempt; a row that was already stored keeps saving and carries the same warning on its
@@ -3371,10 +3723,10 @@ function ModelDialog({
           }}
         >
           {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
-              TokenDance, SiliconFlow, Atlas Cloud), and the group the row was loaded in — a row
-              already in another gateway or a vendor group may stay there, but no other row may
-              be moved into one (the server refuses that as an addition, model_not_addable). The
-              current value stays listed so it is valid. */}
+              TokenDance, SiliconFlow, Atlas Cloud, Runcrate), and the group the row was loaded
+              in — a row already in another gateway or a vendor group may stay there, but no
+              other row may be moved into one (the server refuses that as an addition,
+              model_not_addable). The current value stays listed so it is valid. */}
           {MODEL_PROVIDERS.filter(
             (p) =>
               isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,
@@ -3415,17 +3767,34 @@ function ModelDialog({
       : undefined;
   const { apiKey: apiKeyHint, baseUrl: baseUrlHint } = connectionPlaceholders(form, group, {
     envKey: envHintKey,
+    // A blank key sent as none (an open MMSP or vLLM server); the variable, where set, wins.
+    keyless: keylessFor(
+      form.provider,
+      form.modelId,
+      form.clientType,
+      form.baseUrl,
+      groupShape(group),
+    ),
     baseUrlRequired,
   });
-  // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
-  // envHintKey) and this entry actually goes through the provider's own client (the
-  // resolved envKey matches the provider) — entries going through the OpenAI
-  // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
+  // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
+  // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
+  // moonshot) says how to reach the other one, when this entry goes through the provider's
+  // own client (the resolved envKey matches the provider). Any other group's row on a protocol
+  // client with no base URL anywhere — custom, vLLM, a user group — names the endpoint its
+  // requests go to, the client's default as MMSP records it (https://api.openai.com/v1 for the
+  // OpenAI protocols), unless the matching `*_BASE_URL` is set, so a self-hosted id is never
+  // sent there unannounced.
   const envNote =
-    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
-      ? S.models.providerEnvNotes[form.provider]
-      : undefined;
+    envHintKey === undefined
+      ? undefined
+      : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
+        ? S.models.providerEnvNotes[form.provider]
+        : !isVendorGroup(form.provider) &&
+            liveEnv.baseUrlEnv !== undefined &&
+            liveEnv.defaultBaseUrl !== undefined
+          ? S.models.envBaseUrlNote(liveEnv.defaultBaseUrl, liveEnv.baseUrlEnv)
+          : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's
   // own endpoint where it does not), or — a custom / user-defined group with nothing to follow —
@@ -3576,7 +3945,7 @@ function ModelDialog({
               {S.models.baseUrl}
             </FieldLabel>
             {/* Always live: no API key is needed (the server falls back to the stored key
-                and then to the protocol's env var), and anything that does go wrong is
+                and then probes anonymously), and anything that does go wrong is
                 explained in a popup. `detecting` only guards re-entrancy. */}
             <Button
               variant="link"
@@ -3719,6 +4088,7 @@ function ModelDialog({
               onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
               className="text-right font-mono"
               affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+              placeholder={S.models.priceBlankHint}
             />
           ))}
         </div>
@@ -4038,7 +4408,9 @@ const OAUTH_POLL_MS = 2000;
  * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
  * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
  * routes back — the provider redirects to the server (polled here), or, when that redirect
- * cannot reach the harness, the user carries a one-time code across by hand.
+ * cannot reach the harness, the user carries a one-time code across by hand. The server has
+ * the last word on which: it opens a manual flow when the provider would refuse to redirect to
+ * the address this page is served from, and the dialog follows the flow it was given.
  */
 function ModelOAuthDialog({
   projectId,
@@ -4052,9 +4424,19 @@ function ModelOAuthDialog({
   /** Models in the group with no key of their own: the ones that will use the new group key. */
   count: number;
   onClose: () => void;
-  onApplied: (applied: number) => void;
+  /** The key landed: how many models use it, and the default model it offers, if any. */
+  onApplied: (applied: number, defaultOffer: DefaultModelOffer | undefined) => void;
 }) {
+  /** The route back the user picked. */
   const [manual, setManual] = useState(false);
+  /**
+   * Set once a redirect was asked for and the server opened a manual flow: the provider does not
+   * redirect to this address (plain HTTP to anything but loopback), so the code is the only way
+   * back for as long as the dialog is open, and the switch to the redirect is withdrawn.
+   */
+  const [redirectRefused, setRedirectRefused] = useState(false);
+  /** Whether the flow in hand takes the code by hand rather than through the redirect. */
+  const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4084,6 +4466,7 @@ function ModelOAuthDialog({
           mode: manual ? "manual" : "callback",
         });
         if (cancelled) return;
+        if (!manual && res.mode === "manual") setRedirectRefused(true);
         setFlow(res);
         setPhase("ready");
       } catch (e) {
@@ -4100,7 +4483,7 @@ function ModelOAuthDialog({
   // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
   // A flow that has expired answers 404, which reads the same as never coming back.
   useEffect(() => {
-    if (phase !== "waiting" || manual || flow === null) return;
+    if (phase !== "waiting" || byHand || flow === null) return;
     let stopped = false;
     const tick = async (): Promise<void> => {
       try {
@@ -4112,7 +4495,7 @@ function ModelOAuthDialog({
           const n = res.applied ?? count;
           setApplied(n);
           setPhase("done");
-          onAppliedRef.current(n);
+          onAppliedRef.current(n, res.defaultOffer);
           return;
         }
         if (res.status === "error") {
@@ -4130,12 +4513,12 @@ function ModelOAuthDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [phase, manual, flow, projectId, count]);
+  }, [phase, byHand, flow, projectId, count]);
 
   const openAuthorizePage = (): void => {
     if (flow === null) return;
     window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
-    if (!manual) setPhase("waiting");
+    if (!byHand) setPhase("waiting");
   };
 
   const submitCode = async (): Promise<void> => {
@@ -4148,7 +4531,7 @@ function ModelOAuthDialog({
         const n = res.applied ?? count;
         setApplied(n);
         setPhase("done");
-        onAppliedRef.current(n);
+        onAppliedRef.current(n, res.defaultOffer);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
@@ -4164,7 +4547,7 @@ function ModelOAuthDialog({
       <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
-    ) : manual ? (
+    ) : byHand ? (
       <Button
         size="sm"
         variant="primary"
@@ -4211,7 +4594,7 @@ function ModelOAuthDialog({
             {S.models.oauthIntro(provider.label, count)}
           </p>
         )}
-        {phase !== "done" && manual && (
+        {phase !== "done" && byHand && (
           <>
             {/* In the dialog body, directly above the code Input: it takes the same rung the
                 field does, not the page-level md. */}
@@ -4230,14 +4613,14 @@ function ModelOAuthDialog({
             />
           </>
         )}
-        {phase === "waiting" && !manual && (
+        {phase === "waiting" && !byHand && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
             <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {phase !== "done" && (
+        {phase !== "done" && !redirectRefused && (
           <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
           </Button>

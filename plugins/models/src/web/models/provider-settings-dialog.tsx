@@ -32,7 +32,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   ModelProtocolDetectRequest,
-  ModelsResponse,
+  ProviderConnectionResponse,
   ProviderConnectionDto,
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
@@ -52,6 +52,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
+<<<<<<< /tmp/_o
 import {
   fixedClientType,
   providerEnvFallbackKey,
@@ -62,6 +63,25 @@ import * as api from "@prismshadow/penguin-web/internal";
 import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import { formatDateTime } from "@prismshadow/penguin-web/internal";
 import { S } from "@prismshadow/penguin-web/internal";
+||||||| /tmp/_a
+import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
+import { S } from "../../lib/strings";
+=======
+import {
+  fixedClientType,
+  providerCalledKeyless,
+  providerEnvFallbackKey,
+  type ModelProviderInfo,
+} from "@prismshadow/penguin-server/model-catalog";
+
+import * as api from "../../api/endpoints";
+import { formatDateTime } from "../../lib/format";
+import { S } from "../../lib/strings";
+>>>>>>> /tmp/_t
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -75,6 +95,7 @@ import {
 } from "./protocol-types";
 
 import type { RowState } from "./models-page";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
 type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;
@@ -244,7 +265,7 @@ export type GroupSaveResult =
   | { kind: "invalid"; baseUrlError: string }
   | { kind: "unchanged" }
   | { kind: "dismissed" }
-  | { kind: "saved"; res: ModelsResponse };
+  | { kind: "saved"; res: ProviderConnectionResponse };
 
 /**
  * One Save of the group settings: the base URL checked (providerBaseUrlError, nothing sent on a
@@ -280,11 +301,12 @@ export async function saveGroupSettings(
 }
 
 /**
- * The environment variable a blank group key would be covered by, or undefined: core's
- * providerEnvFallbackKey on the group as drafted (a first-party vendor group left on the
- * vendor's own endpoint and client, or a provider-scoped variable on the group's endpoint —
- * never a gateway, custom, vLLM or user-defined group), and a variable the server reported a
- * value for. Knowing a variable's name is not knowing it is set, so `detected` is what decides.
+ * The environment variable a blank group key would be covered by, or undefined: the catalog's
+ * providerEnvFallbackKey on the group as drafted — what MMSP's client for the group reads when
+ * handed no key (PRN-021: only with no base URL or the client's own default endpoint), on its
+ * protocol's client or, for a first-party vendor group with none, the vendor's — and a variable
+ * the server reported a value for. Knowing a variable's name is not knowing it is set, so
+ * `detected` is what decides.
  */
 export function groupEnvKey(
   providerId: string,
@@ -292,7 +314,7 @@ export function groupEnvKey(
   detected: ReadonlySet<string>,
 ): string | undefined {
   const envKey = providerEnvFallbackKey(providerId, {
-    baseUrl: draft.baseUrl,
+    baseUrl: draft.baseUrl.trim() || undefined,
     clientType: draft.clientType ?? undefined,
   });
   return envKey !== undefined && detected.has(envKey) ? envKey : undefined;
@@ -317,8 +339,8 @@ export function ProviderSettingsDialog({
   /** Env-fallback variables the server reported a value for (see the page's detectedEnvKeys). */
   detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
-  /** The table the server answered with, once the group's connection is written. */
-  onSaved: (res: ModelsResponse) => void;
+  /** The table the server answered with, once the group's connection is written, and the default model a first key offers, if any. */
+  onSaved: (res: ProviderConnectionResponse) => void;
 }) {
   // Dirty means a Save would send something: the draft is compared as the update it makes.
   const form = useFormDraft(initialDraft(group), {
@@ -349,7 +371,12 @@ export function ProviderSettingsDialog({
     ? S.models.apiKeyKeepHint
     : envKey !== undefined
       ? S.models.apiKeyEnvHint(envKey)
-      : undefined;
+      : providerCalledKeyless(id, {
+            baseUrl: draft.baseUrl.trim() || undefined,
+            clientType: draft.clientType ?? undefined,
+          })
+        ? S.models.apiKeyKeylessHint
+        : S.models.apiKeyEnterHint;
   const required = providerBaseUrlRequired(id, rows);
   /** Why the base URL as typed cannot be saved, or null; said under the field once something changed. */
   const urlProblem = providerBaseUrlError(id, rows, draft);
@@ -436,7 +463,7 @@ export function ProviderSettingsDialog({
         if (!dismissed.current) onSaved(result.res);
       }
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setSaving(false);
     }
@@ -566,7 +593,8 @@ export function ProviderSettingsDialog({
                 paddingRight: `calc(${displayWidthCh(suffix)}ch + ${fixed === undefined ? "2.25rem" : "1.25rem"})`,
               }}
               title={S.models.baseUrlSuffixTitle}
-              placeholder={S.models.baseUrlNone}
+              // A required field cannot be saved blank: empty, it asks for a URL instead.
+              placeholder={required ? S.models.baseUrlEnterHint : S.models.baseUrlDefault}
             />
             {fixed === undefined ? (
               <div className="absolute inset-y-0 right-1 flex items-center">
