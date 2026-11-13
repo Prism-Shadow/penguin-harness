@@ -1,0 +1,172 @@
+/* The entrances and exits the components name by class: menus and popovers pop in, overlays fade
+   in, drawers slide in, toasts slide in and out, a message rises in, and the dock launcher's fan
+   springs out of its ball and back. 120-280ms, a short ease and a slight offset or scale.
+
+   Unlayered, so the class beats the utilities on the same element; `theme.css` imports it, so
+   every page that renders the components carries it, the Web App included. */
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drawer-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes drawer-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Dropdown menu / popover entrance. */
+.anim-pop {
+  animation: pop-in 120ms ease-out both;
+}
+/* Top toast overlay: slides in from above / slides up while fading out. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+.anim-toast-in {
+  animation: toast-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-toast-out {
+  animation: toast-out 160ms ease-in both;
+}
+
+/* Overlay fade-in. */
+.anim-fade {
+  animation: fade-in 120ms ease-out both;
+}
+
+/* The dock launcher's fan (components/shell/launcher): entries spring out of the ball onto their
+   places on the arc with a slight overshoot, and fold back into it without one. Every entry's box
+   sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from there, set per entry,
+   and that translate is also the entry's resting inline transform — so reduced motion, which drops
+   the animation outright (below), leaves each entry standing on the arc instead of collapsed onto
+   the ball or hidden. */
+@keyframes launcher-fan-in {
+  from {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
+  }
+}
+@keyframes launcher-fan-out {
+  from {
+    opacity: 1;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
+  }
+  to {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+}
+.launcher-fan-in {
+  animation: launcher-fan-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.launcher-fan-out {
+  animation: launcher-fan-out 140ms ease-in both;
+}
+/* Message item entrance. It fills backwards only, as the theme's own entrances do: an entrance
+   held at its end would keep a transform on every message, and a transformed box turns the fixed
+   backgrounds inside it into scrolling ones (a stuck work-group row's copy of the wallpaper). */
+.anim-msg {
+  animation: msg-in 180ms ease-out backwards;
+}
+
+/* Drawer slide-in. */
+.anim-drawer-left {
+  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-drawer-right {
+  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* No motion, under the gallery's switch on the root or the user's system preference, as for the
+   attributes in `theme.css`: each element shows its end state at once. (The Web App stops every
+   animation under the preference anyway.) */
+:root[data-motion="reduced"]
+  :is(
+    .anim-pop,
+    .anim-fade,
+    .anim-msg,
+    .anim-toast-in,
+    .anim-toast-out,
+    .anim-drawer-left,
+    .anim-drawer-right,
+    .launcher-fan-in,
+    .launcher-fan-out
+  ) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .anim-pop,
+    .anim-fade,
+    .anim-msg,
+    .anim-toast-in,
+    .anim-toast-out,
+    .anim-drawer-left,
+    .anim-drawer-right,
+    .launcher-fan-in,
+    .launcher-fan-out
+  ) {
+    animation: none;
+  }
+}

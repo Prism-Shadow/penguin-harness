@@ -18,13 +18,21 @@
  * Versions: a file that only grew (same inode, larger size, mtime not earlier) is scanned
  * from where the last scan stopped; anything else (truncation, replacement, an in-place
  * rewrite of the same size) is scanned again from the start. The newest
- * `TRACE_LINE_INDEX_MAX_FILES` files are kept.
+ * `TRACE_LINE_INDEX_MAX_FILES` files are kept, and a file a caller retains is never dropped
+ * while it is retained.
+ *
+ * The scan also keeps the file's `subagent` pointers (the records naming a child Session), so
+ * finding a Session's children costs no read of its Trace once it is indexed.
  */
 import fs from "node:fs/promises";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 
-/** How many files keep their index (least recently used is dropped first). */
-export const TRACE_LINE_INDEX_MAX_FILES = 32;
+/**
+ * How many files keep their index (least recently used is dropped first). Enough for a Session
+ * with dozens of subagents to stay indexed between two reads of it: a working set larger than
+ * this misses on every pass, since the least recently used file is always the next one asked.
+ */
+export const TRACE_LINE_INDEX_MAX_FILES = 256;
 
 const NEWLINE = 0x0a;
 
@@ -41,6 +49,8 @@ export interface TraceLineIndexEntry {
   scanned: number;
   /** The last record is an unterminated tail, re-read on the next growth. */
   provisionalTail: boolean;
+  /** The `subagent` records, in file order: the ordinal, the child Session and when it was written. */
+  pointers: Array<{ ordinal: number; sessionId: string; timestamp: string }>;
 }
 
 export interface TraceLineIndexOptions {
@@ -49,16 +59,25 @@ export interface TraceLineIndexOptions {
   observeRead?: (path: string, start: number, end: number) => void;
 }
 
-/** Whether bytes [from, to) of `buf` hold one Trace record (the tolerant reader's rule). */
-function isRecord(buf: Buffer, from: number, to: number): boolean {
+/** The record bytes [from, to) of `buf` hold (the tolerant reader's rule), or undefined for none. */
+function recordAt(buf: Buffer, from: number, to: number): unknown {
   const text = buf.toString("utf8", from, to).trim();
-  if (text === "") return false;
+  if (text === "") return undefined;
   try {
-    JSON.parse(text);
-    return true;
+    return JSON.parse(text) as unknown;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** The child Session a `subagent` pointer record names, or null for any other record. */
+function pointerOf(record: unknown): { sessionId: string; timestamp: string } | null {
+  const r = record as { type?: unknown; timestamp?: unknown; payload?: unknown } | null;
+  if (r === null || typeof r !== "object" || r.type !== "event_msg") return null;
+  const p = r.payload as { type?: unknown; session_id?: unknown } | null;
+  if (p === null || typeof p !== "object" || p.type !== "subagent") return null;
+  if (typeof p.session_id !== "string" || p.session_id === "") return null;
+  return { sessionId: p.session_id, timestamp: typeof r.timestamp === "string" ? r.timestamp : "" };
 }
 
 export class TraceLineIndex {
@@ -68,10 +87,25 @@ export class TraceLineIndex {
   private readonly entries = new Map<string, TraceLineIndexEntry>();
   /** Per-path refresh chain, so concurrent callers share one scan of a version. */
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** Files callers hold on to (`retain`), with how many hold each: never dropped meanwhile. */
+  private readonly retained = new Map<string, number>();
 
   constructor(opts: TraceLineIndexOptions = {}) {
     this.maxFiles = Math.max(1, opts.maxFiles ?? TRACE_LINE_INDEX_MAX_FILES);
     this.observeRead = opts.observeRead;
+  }
+
+  /** Keeps `path`'s index from being dropped until the returned release is called. */
+  retain(path: string): () => void {
+    this.retained.set(path, (this.retained.get(path) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const n = (this.retained.get(path) ?? 1) - 1;
+      if (n > 0) this.retained.set(path, n);
+      else this.retained.delete(path);
+    };
   }
 
   /** The index for the file as it is now: built on first sight, extended over appended bytes only. */
@@ -141,6 +175,7 @@ export class TraceLineIndex {
         ends: [],
         scanned: 0,
         provisionalTail: false,
+        pointers: [],
       };
       await this.scan(path, entry, stat.size);
     } else if (stat.size > entry.size) {
@@ -154,6 +189,7 @@ export class TraceLineIndex {
           ends: [],
           scanned: 0,
           provisionalTail: false,
+          pointers: [],
         };
         await this.scan(path, entry, stat.size);
       }
@@ -161,8 +197,12 @@ export class TraceLineIndex {
     entry.mtimeMs = stat.mtimeMs;
     this.entries.delete(path);
     this.entries.set(path, entry);
-    while (this.entries.size > this.maxFiles) {
-      this.entries.delete(this.entries.keys().next().value!);
+    if (this.entries.size > this.maxFiles) {
+      // Least recently used first, passing over what a caller retains.
+      for (const key of this.entries.keys()) {
+        if (this.entries.size <= this.maxFiles) break;
+        if (!this.retained.has(key)) this.entries.delete(key);
+      }
     }
     return entry;
   }
@@ -181,21 +221,26 @@ export class TraceLineIndex {
     if (entry.provisionalTail) {
       entry.starts.pop();
       entry.ends.pop();
+      if (entry.pointers.at(-1)?.ordinal === entry.starts.length) entry.pointers.pop();
       entry.provisionalTail = false;
     }
+    const add = (record: unknown, start: number, end: number): void => {
+      const pointer = pointerOf(record);
+      if (pointer !== null) entry.pointers.push({ ordinal: entry.starts.length, ...pointer });
+      entry.starts.push(start);
+      entry.ends.push(end);
+    };
     for (;;) {
       const nl = buf.indexOf(NEWLINE, pos);
       if (nl < 0) break;
-      if (isRecord(buf, pos, nl)) {
-        entry.starts.push(readFrom + pos);
-        entry.ends.push(readFrom + nl + 1);
-      }
+      const record = recordAt(buf, pos, nl);
+      if (record !== undefined) add(record, readFrom + pos, readFrom + nl + 1);
       pos = nl + 1;
     }
     entry.scanned = readFrom + pos;
-    if (pos < buf.length && isRecord(buf, pos, buf.length)) {
-      entry.starts.push(readFrom + pos);
-      entry.ends.push(readFrom + buf.length);
+    const tail = pos < buf.length ? recordAt(buf, pos, buf.length) : undefined;
+    if (tail !== undefined) {
+      add(tail, readFrom + pos, readFrom + buf.length);
       entry.provisionalTail = true;
     }
     entry.size = readFrom + buf.length;

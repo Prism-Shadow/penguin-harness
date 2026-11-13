@@ -19,6 +19,11 @@
  * without executing the package, and the package's default export names the classes to
  * boot. A package without one ships no modules.
  *
+ * What a plugin carries for an Agent — Skills, a hook package, MCP servers, Workbench apps —
+ * and its card are declared the same way, as contributions to the five data-only slots of the
+ * plugin library (./library.ts). The library reads them from the table without booting the
+ * module, so a plugin that carries only content has an empty class and no entry at all.
+ *
  *   // package.json
  *   "files": ["dist", "ifaces.json"],
  *   "scripts": { "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup" }
@@ -56,6 +61,7 @@ export { sessionShell } from "../environment/tools/command/shell.js";
 
 export type * from "./sandbox.js";
 export type * from "./languages.js";
+export type * from "./library.js";
 
 /**
  * What a plugin package's default export is.

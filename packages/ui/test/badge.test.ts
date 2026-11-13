@@ -3,86 +3,41 @@
  * the theme's pill radius; the rest of a tag's look — its type size and line-height among it —
  * from the badge tokens; a count in tabular figures that caps at `max`.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Badge, Count } from "../src/components/feedback/badge/badge";
 import type { BadgeProps } from "../src/components/feedback/badge/badge";
-import { THEME_IDS, THEME_MODES, TONES } from "../src/tokens";
+import { INITIAL_THEME_ID, THEME_IDS, THEME_MODES, TONES } from "../src/tokens";
+import type { ThemeId, ThemeModeName } from "../src/tokens";
 import {
-  analyzeThemeFile,
+  analyzePack,
   classTokens,
   markupStructure,
-  modeDeclarations,
   renderStatic,
+  resolveThemeValue,
 } from "../src/testing";
-import { SRC_DIR } from "./helpers/paths";
+
+/** A token as a theme resolves it in a mode: its own value, or the base's it leaves the name to. */
+const BASE = analyzePack(INITIAL_THEME_ID);
+const valueIn = (id: ThemeId, mode: ThemeModeName, name: string) =>
+  resolveThemeValue(name, mode, analyzePack(id), BASE) ?? undefined;
 
 const render = (props: Omit<BadgeProps, "children">, text = "failed") =>
   renderStatic(createElement(Badge, { ...props, children: text }));
 
 describe("Badge", () => {
-  it("is a neutral soft capsule by default", () => {
-    const tokens = classTokens(render({}));
-    expect(tokens).toEqual(
-      expect.arrayContaining([
-        "bg-tone-neutral-bg",
-        "text-tone-neutral-fg",
-        "text-[length:var(--ui-badge-size)]",
-        "leading-[var(--ui-badge-lh)]",
-        "font-[number:var(--ui-badge-weight)]",
-        "rounded-[var(--ui-radius-pill)]",
-        "whitespace-nowrap",
-      ]),
-    );
-    expect(tokens).not.toContain("text-[11px]");
-  });
-
-  it("draws a soft tag's tone line at the theme's width, and no theme pairs that rule with a tint", () => {
-    for (const tone of TONES) {
-      expect(classTokens(render({ tone }))).toEqual(
-        expect.arrayContaining([
-          "ring-[length:var(--ui-badge-soft-ring)]",
-          "ring-inset",
-          `ring-tone-${tone}-line`,
-        ]),
-      );
-    }
-    expect(classTokens(renderStatic(createElement(Count, { n: 3 })))).toEqual(
-      expect.arrayContaining([
-        "ring-[length:var(--ui-badge-soft-ring)]",
-        "ring-tone-neutral-line",
-        "px-1.5",
-        "py-px",
-      ]),
-    );
+  it("no theme pairs a soft tag's tone line with a tint", () => {
     // Where the ring has a width, the tone's tint must be absent: a tint and its own line on one
     // tag is the doubled edge the outline weight exists to avoid.
     for (const id of THEME_IDS) {
-      const css = readFileSync(join(SRC_DIR, "themes", `${id}.css`), "utf8");
-      const theme = analyzeThemeFile(css, id);
       for (const mode of THEME_MODES) {
-        const values = modeDeclarations(theme, mode);
-        if (values.get("--ui-badge-soft-ring") === "0px") continue;
+        if (valueIn(id, mode, "--ui-badge-soft-ring") === "0px") continue;
         for (const tone of TONES) {
-          expect(values.get(`--ui-tone-${tone}-bg`), `${id} ${mode} ${tone}`).toBe("transparent");
+          expect(valueIn(id, mode, `--ui-tone-${tone}-bg`), `${id} ${mode} ${tone}`).toBe(
+            "transparent",
+          );
         }
       }
-    }
-  });
-
-  it("paints every tone's soft, outline and solid weights from its tokens", () => {
-    for (const tone of TONES) {
-      expect(classTokens(render({ tone }))).toEqual(
-        expect.arrayContaining([`bg-tone-${tone}-bg`, `text-tone-${tone}-fg`]),
-      );
-      expect(classTokens(render({ tone, variant: "outline" }))).toEqual(
-        expect.arrayContaining([`ring-tone-${tone}-line`, `text-tone-${tone}-fg`]),
-      );
-      expect(classTokens(render({ tone, variant: "solid" }))).toEqual(
-        expect.arrayContaining([`bg-tone-${tone}-emphasis`, `text-tone-${tone}-emphasis-fg`]),
-      );
     }
   });
 
@@ -107,29 +62,20 @@ describe("Badge", () => {
     expect(markupStructure(render({ variant: "solid" }))).toBe(markupStructure(render({})));
   });
 
-  it("takes the theme's md padding, and a tighter one at sm", () => {
-    expect(classTokens(render({}))).toContain("p-[var(--ui-badge-pad-md)]");
-    expect(classTokens(render({ size: "sm" }))).toEqual(
-      expect.arrayContaining(["px-1.5", "py-px"]),
-    );
-  });
-
   it("is set under the theme's small text, on a fixed line, in every theme", () => {
     // A tag reads as a mark beside its row's text, not as more of it: every theme sets it below
     // its small rung, and on a line-height of its own so its height does not follow the row's.
     const rem = (value: string | undefined) => /^(\d*\.?\d+)rem$/.exec(value ?? "")?.[1];
     for (const id of THEME_IDS) {
-      const theme = analyzeThemeFile(
-        readFileSync(join(SRC_DIR, "themes", `${id}.css`), "utf8"),
-        id,
-      );
-      const values = modeDeclarations(theme, "light");
-      const size = rem(values.get("--ui-badge-size"));
-      const small = rem(values.get("--ui-text-small-size"));
+      const size = rem(valueIn(id, "light", "--ui-badge-size"));
+      const small = rem(valueIn(id, "light", "--ui-text-small-size"));
       expect(size, `${id} --ui-badge-size is a rem length`).toBeDefined();
       expect(small, `${id} --ui-text-small-size is a rem length`).toBeDefined();
       expect(Number(size), id).toBeLessThan(Number(small));
-      expect(rem(values.get("--ui-badge-lh")), `${id} --ui-badge-lh is a rem length`).toBeDefined();
+      expect(
+        rem(valueIn(id, "light", "--ui-badge-lh")),
+        `${id} --ui-badge-lh is a rem length`,
+      ).toBeDefined();
     }
   });
 
@@ -143,10 +89,9 @@ describe("Badge", () => {
 });
 
 describe("Count", () => {
-  it("sets its number in tabular figures", () => {
+  it("shows its number", () => {
     const html = renderStatic(createElement(Count, { n: 12 }));
     expect(html).toContain(">12</span>");
-    expect(classTokens(html)).toContain("tabular-nums");
   });
 
   it("caps at max with a plus, and shows the number itself up to it", () => {

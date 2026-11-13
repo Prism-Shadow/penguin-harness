@@ -81,8 +81,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+
 import type {
   AgentSummary,
   ApprovalMode,
@@ -121,9 +126,12 @@ import {
   noAutofill,
   toastError,
   toastInfo,
+  type MenuSelectOption,
+  type TagInputChip,
 } from "@prismshadow/penguin-ui";
-import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
@@ -131,18 +139,26 @@ import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { PermissionSelect } from "./permission-select";
 import type { PermissionPick } from "../../lib/permission-level";
-import { SkillIcon } from "../skills/skill-icon-view";
-import { SkillPickList } from "../skills/skill-pick-list";
-import { toggleSkillName } from "../skills/skill-selection";
-import { sameModelRef } from "../models/model-grouping";
+import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
+import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { employeesLast, isEmployee } from "../agents/agent-employment";
-import { ModelCatalogSelect, modelLabel } from "./model-select";
-import { ModelPickerModal } from "./model-picker-modal";
+import { employeesLast, isEmployee } from "../agents";
+import {
+  ModelCatalogSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  ThinkingLevelSelect,
+  modelLabel,
+  thinkingLevelLabel,
+} from "../model-picker";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { ThinkingLevelSelect } from "./thinking-level-select";
-import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
+import {
+  BOOK_ICON,
+  buildSkillsMessage,
+  localizedShortText,
+  skillSlashItems,
+} from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
@@ -153,8 +169,9 @@ import {
   caretOnLastLine,
   historyStepBack,
   historyStepForward,
+  type HistoryStep,
 } from "./input-history";
-import type { HistoryStep } from "./input-history";
+
 import { isStopAction, midRunAction } from "./composer-send";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
@@ -180,8 +197,11 @@ function AgentMenuList({
   agents,
   currentAgentId,
   onPick,
+  avatarSrc,
 }: {
   agents: AgentSummary[];
+  /** Each Agent's own picture (lib/agent-avatar.ts), on the machine the list lives on. */
+  avatarSrc: (agentId: string) => string | undefined;
   /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
   currentAgentId?: string;
   onPick: (agent: AgentSummary) => void;
@@ -203,9 +223,9 @@ function AgentMenuList({
         <>
           <AgentAvatar
             id={a.agentId}
-            name={agentDisplayName(a)}
             size={16}
             className="shrink-0 rounded"
+            src={avatarSrc(a.agentId)}
           />
           <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
           {a.name && a.name !== a.agentId && (
@@ -221,8 +241,8 @@ function AgentMenuList({
 
 /**
  * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
- * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
- * "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * Queue as a follow-up / Interrupt, the full explanation hover-only via each pill's title (the
+ * toolbar's "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
  * the control where an item's description sits — so the menu reads as one list. Clicking a
  * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
  * the preference is settable before and during a run.
@@ -266,6 +286,7 @@ function SteerModeRow({
       >
         {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
         {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        {modeButton("interrupt", S.chat.steerModeInterrupt, S.chat.steerModeInterruptHint)}
       </div>
     </div>
   );
@@ -435,19 +456,37 @@ function steeringSummary(p: { text: string; images: number; files: number }): st
  * `shrink-0` next to the truncating label so it survives narrow widths. It carries the icon
  * set's gray (a step darker than the hint text it sits beside), not the label's: gray-400 on
  * white is under the 3:1 an interactive control owes, and this one is interactive.
+ *
+ * Before the recall button, when the line can be sent now, an "Interrupt" text link: it stops
+ * the run and sends the message right after the turn it cut. Text rather than an icon, because
+ * what it does is a sentence of its own and the line already carries one icon control; the
+ * link wears the hint text's size and the recall icon's gray, so it reads as part of the line.
  */
 function QueuedMessageLine({
   label,
   onRecall,
+  onInterrupt,
   disabled,
 }: {
   label: string;
   onRecall?: () => void;
+  onInterrupt?: () => void;
   disabled: boolean;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-1">
       <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onInterrupt && (
+        <button
+          type="button"
+          data-tooltip={S.chat.interruptQueuedTitle}
+          disabled={disabled}
+          onClick={onInterrupt}
+          className="shrink-0 whitespace-nowrap px-0.5 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-800 hover:underline disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          {S.chat.interruptQueued}
+        </button>
+      )}
       {onRecall && (
         <button
           type="button"
@@ -541,6 +580,9 @@ export function ChatInput({
   queuedFollowUps = 0,
   pendingFollowUps = [],
   onRecallFollowUp,
+  onInterruptSend,
+  onInterruptFollowUp,
+  onInterruptSteering,
   onStop,
   onCompact,
   modelRef,
@@ -568,6 +610,7 @@ export function ChatInput({
   modeSaving,
   autoFocus,
   agents,
+  agentsMachineId = null,
   currentAgentId,
   skills,
   initialSkills,
@@ -649,6 +692,17 @@ export function ChatInput({
   pendingFollowUps?: PendingFollowUpInfo[];
   /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
   onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
+  /**
+   * Interrupt, then send (session state only): posts the full input with `interrupt` — a busy
+   * session stops its run and sends this right after the turn it cut; undelivered steering
+   * comes back to the draft as it does on Stop. Offered as the "interrupt" choice of the
+   * mid-run mode switch.
+   */
+  onInterruptSend?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Turns one queued follow-up into an interrupt (the Interrupt link on its line); false when it failed. */
+  onInterruptFollowUp?: (followUpId: string) => Promise<boolean>;
+  /** Turns one undelivered steering message into an interrupt (the Interrupt link on its line). */
+  onInterruptSteering?: (steerId: string) => Promise<boolean>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -754,6 +808,8 @@ export function ChatInput({
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
+  /** The machine `agents` lives on, for their pictures; null (the default) for this server. */
+  agentsMachineId?: string | null;
   /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
   currentAgentId?: string;
   /**
@@ -830,6 +886,7 @@ export function ChatInput({
   controlRef?: RefObject<ComposerControl | null>;
 }) {
   const { locale } = useLocale();
+  const avatarSrc = useAgentAvatarSrc();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
   const { uploadLimits } = useAuth();
@@ -1033,6 +1090,7 @@ export function ChatInput({
     writeSteerMode(mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  const interruptMode = steerMode === "interrupt" && onInterruptSend !== undefined;
   // Which of the two channels this draft can use, or Stop when neither will take it — the whole
   // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
   // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
@@ -1043,7 +1101,9 @@ export function ChatInput({
     goalOn,
     canSteerChannel: onSteer !== undefined,
     canQueueChannel: onQueueFollowUp !== undefined,
+    canInterruptChannel: onInterruptSend !== undefined,
     followUpMode,
+    interruptMode,
     stagedRoute,
     hasHandoffTarget: target !== null,
     hasPendingModel: pendingModel !== null,
@@ -1054,8 +1114,14 @@ export function ChatInput({
   });
   const steerAction = running && midRun === "steer";
   const queueAction = running && midRun === "queue";
-  const canMidRunSend = steerAction || queueAction;
-  const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
+  const interruptAction = running && midRun === "interrupt";
+  const canMidRunSend = steerAction || queueAction || interruptAction;
+  const midRunSendLabel =
+    midRun === "queue"
+      ? S.chat.followUpSend
+      : midRun === "interrupt"
+        ? S.chat.interruptSend
+        : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
   // Display-only model badge text (see the badge below): the catalog's display name when the
   // model is known, the raw id otherwise.
@@ -1166,6 +1232,23 @@ export function ChatInput({
         setSteerPending(false);
         applyRecalled(r);
       }
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  /**
+   * The Interrupt link on a queued line: the server stops the run and sends that message as
+   * soon as the run settles. Shares the recall's one-at-a-time flag, since both act on the
+   * same queue.
+   */
+  const interruptQueued = async (id: string, interrupt: (id: string) => Promise<boolean>) => {
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      // A steering message it took leaves the mirror without a delivery; drop the post-202
+      // bridge flag too, or the bare "steering queued" hint would come back.
+      if (await interrupt(id)) setSteerPending(false);
     } finally {
       setRecallingId(null);
     }
@@ -1704,6 +1787,12 @@ export function ChatInput({
 
   const send = async () => {
     if (running) {
+      // Interrupt branch: the whole draft goes out through the normal composition path, posted
+      // with `interrupt` — the server stops this run and sends it right after the turn it cut.
+      if (interruptAction) {
+        await sendNormal(onInterruptSend!);
+        return;
+      }
       // Queue branch: the whole draft goes out through the normal composition path, posted
       // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
       // switch still opens its new chat directly: neither the handoff target nor the model fork
@@ -1966,9 +2055,9 @@ export function ChatInput({
             glyph: (
               <AgentAvatar
                 id={target.agentId}
-                name={agentDisplayName(target)}
                 size={13}
                 className="shrink-0 rounded-sm"
+                src={avatarSrc(target.agentId, agentsMachineId)}
               />
             ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
@@ -2144,6 +2233,7 @@ export function ChatInput({
             agents={agents}
             {...(currentAgentId !== undefined ? { currentAgentId } : {})}
             onPick={pickHandoffTarget}
+            avatarSrc={(agentId) => avatarSrc(agentId, agentsMachineId)}
           />
         </SlashPicker>
       )}
@@ -2226,8 +2316,9 @@ export function ChatInput({
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
           #140) — plus a recall button that takes the message back into this input for
-          editing and resending (#287). The local steerPending flag only bridges the gap
-          between the 202 and the first task_state that carries the mirror. */}
+          editing and resending (#287), and an Interrupt link that sends it now. The local
+          steerPending flag only bridges the gap between the 202 and the first task_state
+          that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
@@ -2237,6 +2328,9 @@ export function ChatInput({
               disabled={recallingId !== null || busy}
               {...(onRecallSteering && p.id
                 ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+              {...(onInterruptSteering && p.id
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptSteering) }
                 : {})}
             />
           ))}
@@ -2250,18 +2344,26 @@ export function ChatInput({
       )}
 
       {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
-          queued message with its content and a recall button (#287) — task_state-fed, so it
-          survives reloads; the bare count stays as the fallback for a server that predates
-          the per-entry list. */}
+          queued message with its content, an Interrupt link and a recall button (#287) —
+          task_state-fed, so it survives reloads; the bare count stays as the fallback for a
+          server that predates the per-entry list. An interrupt waiting for the run it stopped
+          to settle says so and has no link: it is already going out first. */}
       {pendingFollowUps.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingFollowUps.map((p) => (
             <QueuedMessageLine
               key={p.id}
-              label={S.chat.followUpQueuedItem(steeringSummary(p))}
+              label={
+                p.interrupt
+                  ? S.chat.interruptQueuedItem(steeringSummary(p))
+                  : S.chat.followUpQueuedItem(steeringSummary(p))
+              }
               disabled={recallingId !== null || busy}
               {...(onRecallFollowUp
                 ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+              {...(onInterruptFollowUp && !p.interrupt
+                ? { onInterrupt: () => void interruptQueued(p.id, onInterruptFollowUp) }
                 : {})}
             />
           ))}
@@ -2398,17 +2500,21 @@ export function ChatInput({
           onKeyDown,
           onPaste,
           placeholder:
-            running && followUpMode
+            running && interruptMode
               ? narrow
-                ? S.chat.followUpPlaceholderShort
-                : S.chat.followUpPlaceholder
-              : running && onSteer
+                ? S.chat.interruptPlaceholderShort
+                : S.chat.interruptPlaceholder
+              : running && followUpMode
                 ? narrow
-                  ? S.chat.steerPlaceholderShort
-                  : S.chat.steerPlaceholder
-                : narrow
-                  ? S.chat.inputPlaceholderShort
-                  : S.chat.inputPlaceholder,
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder,
         }}
         tools={
           // The three icon buttons — +, permission, skills — sit as one tight cluster: the row's

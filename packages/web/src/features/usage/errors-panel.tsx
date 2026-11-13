@@ -15,13 +15,14 @@
  */
 import { useEffect, useState } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
-import { Badge, ConfirmModal, Pager, toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import { Badge, ConfirmModal, Pager, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
@@ -241,7 +242,7 @@ export function ErrorsPanel({
       // refetched rather than patched here; that also restores page 0 from the new snapshot.
       onCleared();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setClearing(false);
     }

@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { partialText, toolCall } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer, type FakeSessionState } from "./fake-server.js";
 
 const PASTE_START = "\x1b[200~";
@@ -69,7 +69,7 @@ function startChat(): Tty {
   });
   const program = new Command();
   program.exitOverride();
-  registerChatCommand(program, getMessages("en"));
+  registerChatCommand(program.command("chat"), getMessages("en"));
   const done = program.parseAsync(["node", "penguin", "chat"]).finally(() => {
     Object.defineProperty(process, "stdin", { value: realStdin, configurable: true });
   });

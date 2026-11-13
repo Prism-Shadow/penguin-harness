@@ -10,6 +10,7 @@ import { FocusBoard } from "../foundations/focus";
 import { HooksBoard } from "../foundations/hooks";
 import { IconsBoard } from "../foundations/icons";
 import { MotionBoard } from "../foundations/motion";
+import { PacksBoard } from "../foundations/packs";
 import { ShapeBoard } from "../foundations/shape";
 import { TypeBoard } from "../foundations/typography";
 import { AttachmentsBoard } from "./boards/attachments";
@@ -28,6 +29,7 @@ import { LoadingBoard } from "./boards/loading";
 import { MachinesBoard } from "./boards/machines";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
+import { ReportBoard } from "./boards/report";
 import { RetryBoard } from "./boards/retry";
 import { SiteBoard } from "./boards/site";
 import { StreamingBoard } from "./boards/streaming";
@@ -58,7 +60,9 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   data: DataBoard,
   machines: MachinesBoard,
   retry: RetryBoard,
+  report: ReportBoard,
   attachments: AttachmentsBoard,
+  packs: PacksBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

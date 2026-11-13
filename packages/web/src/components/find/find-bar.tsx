@@ -43,11 +43,11 @@
  * quiet spell, and any hit that has left the document gets one re-index to settle before the
  * bar gives up on it (`revealHit`'s "gone").
  *
- * Nothing here is portaled: the panel is `fixed` at z-40, the in-flow-overlay layer the app
- * menus use, so a dialog (z-50) opened over it still covers it.
+ * Nothing here is portaled: the panel is `fixed` on the `menu` layer, which the app's in-place
+ * menus use, so a dialog (`modal`) opened over it still covers it.
  */
-import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+
 import { FindField } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { revealCollapsedIn } from "../../lib/find-expand";
@@ -60,8 +60,10 @@ import {
   indexRegions,
   paintHits,
   revealHit,
+  type FindHit,
+  type FindRegion,
 } from "../../lib/find-dom";
-import type { FindHit, FindRegion } from "../../lib/find-dom";
+
 import { stepMatchIndex } from "../../lib/find-text";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { formatChord } from "../../lib/shortcuts/format";
@@ -475,7 +477,7 @@ export function FindBar() {
       data-presence="enter"
       data-side="top"
       onKeyDown={onPanelKeyDown}
-      className="fixed right-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-40 flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+      className="fixed right-3 top-[calc(var(--window-band-height,0px)+0.75rem)] z-menu flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
     >
       {/* The control row is the shared one the Markdown reader's find opens too; Enter and F3
           step (Shift backward) as a browser's find bar does. */}

@@ -23,7 +23,6 @@ import {
   Button,
   Input,
   SettingsSection,
-  toastError,
   toastSuccess,
   useFormDraft,
   useSaving,
@@ -34,6 +33,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The two boxes as typed. Kept as strings: a number input that clears to NaN cannot be typed into. */
 interface LimitsDraft {
@@ -82,7 +82,7 @@ export function UploadsSection() {
       })
       .catch((e: unknown) => {
         // Controls stay disabled; leaving and returning to the section retries the fetch.
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) toastApiError(e);
       });
     return () => {
       cancelled = true;
@@ -122,7 +122,7 @@ export function UploadsSection() {
       if (e instanceof ApiError && e.code === "invalid_attachment_limit") {
         setRangeError(apiErrorText(e));
       } else {
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     } finally {
       setBusy(false);

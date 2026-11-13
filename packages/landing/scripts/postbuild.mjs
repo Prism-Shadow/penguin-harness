@@ -1,8 +1,8 @@
 /**
  * Post-build step for GitHub Pages, which serves static files only:
  *
- * - A shell per page and blog route (dist/download/index.html, dist/blog/<slug>/index.html,
- *   …), the same trick the docs package uses. Without them Pages answers every such URL from
+ * - A shell per page, blog and hub route (dist/download/index.html, dist/blog/<slug>/index.html,
+ *   dist/plugins/<id>/index.html, …), the same trick the docs package uses. Without them Pages answers every such URL from
  *   404.html: the SPA still boots and the page looks right, but the response carries
  *   HTTP 404, so crawlers drop it and the posts never get indexed. Each shell also
  *   carries its own canonical/og:url, and a page with metadata of its own (site-routes.mjs)
@@ -18,12 +18,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notFoundShell, shellFor } from "./route-shell.mjs";
-import { absoluteUrl, blogRoutes, pageRoutes } from "./site-routes.mjs";
+import { absoluteUrl, blogRoutes, hubRoutes, pageRoutes } from "./site-routes.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const shell = readFileSync(join(dist, "index.html"), "utf8");
 
-const routes = [...pageRoutes(), ...blogRoutes()];
+const routes = [...pageRoutes(), ...blogRoutes(), ...hubRoutes()];
 for (const { route, meta } of routes) {
   // A page's own share card must ship with it: unfurlers fetch it by absolute URL, so a missing
   // file would only show up as a broken preview after the deploy.

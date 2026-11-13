@@ -31,15 +31,19 @@
  *   the stream wind down (the abort event maps to exit code 1).
  * Docs: /docs/cli § "penguin run".
  */
-import { Option } from "commander";
 import type { Command } from "commander";
+import { Option } from "commander";
+
 import { buildInfo } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
-import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
+import type { Messages } from "@prismshadow/penguin-server/cli";
 import {
+  denyActivePrompt,
+  promptApproval,
+  resolveApprovalMode,
   connectionLabel,
   resolveAgentId,
   resolveConnection,
@@ -47,7 +51,8 @@ import {
   resolveSessionRef,
   ServerClient,
   shortSessionId,
-} from "../client.js";
+} from "@prismshadow/penguin-server/cli";
+
 import {
   callerSessionContext,
   checkSessionTitle,
@@ -58,12 +63,9 @@ import {
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
-import type { Messages } from "../i18n.js";
 
-export function registerRunCommand(program: Command, t: Messages): void {
-  program
-    .command("run")
-    .description(t.run.desc)
+export function registerRunCommand(run: Command, t: Messages): void {
+  run
     .requiredOption("-m, --message <message>", t.run.message)
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)

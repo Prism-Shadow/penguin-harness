@@ -19,14 +19,14 @@
  */
 import { useId } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode } from "react";
-import { A2UI_LIMITS } from "@prismshadow/penguin-core/a2ui";
+import { A2UI_LIMITS } from "@prismshadow/a2ui";
 import type {
   A2uiFieldKind,
   A2uiFieldProblem,
   A2uiFormAnswer,
   A2uiFormField,
   A2uiOption,
-} from "@prismshadow/penguin-core/a2ui";
+} from "@prismshadow/a2ui";
 import type { A2uiStrings } from "../../../strings";
 import { Pill } from "../../feedback/pill/pill";
 import { Checkbox } from "../../forms/checkbox/checkbox";
@@ -55,7 +55,7 @@ export interface FieldControlProps {
   /** Read-only: the reply is no longer the open question. */
   disabled: boolean;
   strings: A2uiStrings;
-  /** What is wrong with the answer as it stands (core's `fieldProblem`), or null. */
+  /** What is wrong with the answer as it stands (A2UI's `fieldProblem`), or null. */
   problem: A2uiFieldProblem | null;
 }
 

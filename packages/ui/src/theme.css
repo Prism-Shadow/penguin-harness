@@ -1,9 +1,10 @@
 /**
- * The theme foundation every consumer imports right after `@import "tailwindcss"`:
+ * The theme foundation every consumer imports right after `@import "tailwindcss"`, before the
+ * theme packs — the base pack, Frost, first:
  *
  *   @import "tailwindcss";
  *   @import "@prismshadow/penguin-ui/theme.css";
- *   @import "@prismshadow/penguin-ui/themes/github.css";   (then modern.css, geek.css)
+ *   @import "@prismshadow/penguin-ui/themes/modern/index.css";   (then github, geek)
  *   @import "@prismshadow/penguin-ui/fonts.css";
  *
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
@@ -11,21 +12,52 @@
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
  * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
- * with, and which icon set a `ui-glyph` shows until a theme says. Token VALUES live only in
- * `themes/*.css`, and so do the user's accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
- * `ACCENT_PRESETS`).
+ * with, which icon set a `ui-glyph` (and which drawing the spinner and an empty state) shows
+ * until a theme says, the chart marks' fill from their `--_paint`, (animations.css) the entrance
+ * and exit classes the components name, and (window-band.css) the desktop window's title band
+ * and the inset card it frames the main column as. Token VALUES live only in the theme packs
+ * (`themes/<id>/`), and so do the user's accent presets: each pack lists its own, in
+ * `@layer ui-accent`, scoped to that theme (its `pack.json`, `accent.presets`).
  *
- * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
- * (absent = the theme's own accent; an id the active theme does not list paints nothing, which
- * is the same), `data-font-latin` / `data-font-cjk` (absent = the theme's own faces; the `ui-font`
- * layer at the end resolves a chosen face), `data-motion="reduced"` (the gallery's switch; the
- * app answers the media query instead). The pre-paint script in boot.ts sets all but the last
- * before the first frame, and the root font-size with them; the app's theme provider keeps them
- * in sync afterwards.
+ * Attributes on <html>: `class="dark"` (mode), `data-theme` (the pack's id, always written),
+ * `data-theme-base` (`modern` when the pack builds on Frost's recipes, absent for a pack on the
+ * foundation alone), `data-accent` (absent = the theme's own accent; an id the active theme does
+ * not list paints nothing, which is the same), `data-font-latin` / `data-font-cjk` (absent = the
+ * theme's own faces; the `ui-font` layer at the end resolves a chosen face),
+ * `data-motion="reduced"` (the gallery's switch; the app answers the media query instead). The
+ * pre-paint script in boot.ts sets all but the last before the first frame, and the root
+ * font-size with them; the app's theme provider keeps them in sync afterwards.
  */
 
+/* Appended after Tailwind's own `theme, base, components, utilities`. A cascade layer's place is
+   fixed where it is first named, and a later statement cannot move it, so this statement comes
+   before anything this file imports, and no stylesheet outside this file and the theme packs
+   opens one of these layers (a test holds both, on the built sheet).
+
+   - ui-base: the foundation defaults below (the eyebrow and display rules, the notice inks, the
+     tree's depth ladder, the glyph set, the stream veil, a tone strip on an image) and the base
+     pack, Frost: its values on the bare root and its recipes on `data-theme-base="modern"`.
+   - ui-theme: every other pack's values and recipes. A pack's declaration beats the base's by
+     layer whatever the specificity, so a pack's light rule beats Frost's dark rule for a name the
+     pack sets, and a name it leaves out shows Frost's.
+   - ui-accent: the packs' accent presets, so a preset beats its theme's `.dark` rule by layer
+     order alone — `:root[data-theme="x"].dark` would otherwise tie with
+     `:root[data-theme="x"][data-accent="blue"]` on specificity and win by coming later.
+   - ui-font: the user's font pairing, last: a chosen face must beat every theme rule, the dark
+     one included, whatever its specificity.
+
+   The token rules and the presets declare custom properties only, so sitting after `utilities`
+   never lets them override a utility's declaration. What does override utilities is the hook
+   recipes (hooks.ts), and they sit in these layers for exactly that: `.ui-live` re-times its
+   host's `animate-spin`, `.ui-glass` replaces its host's opaque fill, `.ui-shell` re-paints its
+   host's columns, `.ui-field` re-lays its host's row. */
+@layer ui-base, ui-theme, ui-accent, ui-font;
+
+@import "./layers.css";
 @import "./wallpaper.css";
+@import "./window-band.css";
 @import "./cursors.css";
+@import "./animations.css";
 
 /* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
    mask), private to the recipes (not a token) and registered as a number so a transition can
@@ -39,19 +71,6 @@
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
 @custom-variant dark (&:where(.dark, .dark *));
-
-/* Appended after Tailwind's own `theme, base, components, utilities`. A theme's blocks live in
-   ui-theme and its accent presets in ui-accent, so a preset beats the theme's `.dark` block by
-   layer order alone — `:root[data-theme="x"].dark` would otherwise tie with
-   `:root[data-theme="x"][data-accent="blue"]` on specificity and win by coming later. The token
-   blocks and the presets declare custom properties only, so sitting after `utilities` never lets
-   them override a utility's declaration. The one thing in ui-theme that does override utilities
-   is a theme's style-hook recipes (hooks.ts), and they sit there for exactly that: `.ui-live`
-   re-times its host's `animate-spin`, `.ui-glass` replaces its host's opaque fill, `.ui-shell`
-   re-paints its host's columns, `.ui-field` re-lays its host's row. The user's font pairing
-   lives in ui-font, last: a chosen face must beat every theme rule, the dark one included,
-   whatever its specificity, and a layer after the theme's does that without a selector race. */
-@layer ui-theme, ui-accent, ui-font;
 
 /*
  * The bridge. `inline` makes each utility reference `var(--ui-*)` directly instead of the
@@ -266,6 +285,32 @@
     scrollbar-width: var(--ui-scrollbar-w);
     scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
   }
+  /* Hide the native scrollbar: a strip that scrolls sideways without one (the composer's toolbar,
+     a timeline lane), or a view whose own controls replace it. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* A filled chart mark (a bar, the fill under a line, a point) carries its paint as `--_paint`,
+     the colour the chart primitive resolved or `currentColor` for an ink, and takes its fill from
+     it here. It sits in the base layer, the step a presentation attribute had, so any theme recipe
+     or utility that fills a mark wins without `!important`, while the mark keeps its own colour
+     to outline it in. `--_paint` is private to the primitives and the recipes (not a token). */
+  :is(rect, path)[data-part="bar"],
+  path[data-part="area"],
+  rect[data-part="point"] {
+    fill: var(--_paint);
+  }
+  /* The HTML marks — a timeline bar, a legend's or a bubble's swatch — take their background from
+     their `--_paint` the same way; an ink's mark is painted by its own background class, which
+     sits above this layer. */
+  span:is([data-part="bar"], [data-part="swatch"]) {
+    background-color: var(--_paint);
+  }
 
   /*
    * Motion. A component never writes a duration, an easing, a keyframe or a transform for these:
@@ -475,7 +520,8 @@
    none`, the element shows its end state at once, and that is what the presence owner checks
    before unmounting an exit without waiting. These rules sit in no layer on purpose: an unlayered
    declaration beats every layer, so they also silence a theme's own `.ui-live` recipes in
-   `ui-theme`, which would otherwise out-rank a rule in `base` whatever its specificity. */
+   `ui-base` or `ui-theme`, which would otherwise out-rank a rule in `base` whatever its
+   specificity. */
 :root[data-motion="reduced"] :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
   animation: none;
 }
@@ -538,16 +584,18 @@
    the eighth. This sets no length: a host indents its own rows by
    `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, and a theme's recipe draws its
    rules on the columns that formula gives. `--_depth` is private to the recipes (not a token). It
-   sits in ui-theme so a theme's own `.ui-tree` rules, which come later in the layer, may read or
-   override it; Primer, with no tree recipe, is untouched by it.
+   sits in ui-base, under every pack, so a pack's own `.ui-tree` rules may read or override it —
+   Frost's come later in the same layer, every other pack's in ui-theme above it; Primer, with no
+   tree recipe, is untouched by it.
 
    Two recipes are the same in every theme and so live here once, reading tokens: the eyebrow is
    the h6 rung (a theme says what the rung is — Primer's small tracked capitals, Frost's
    sentence case, Console's tracked capitals — and may add its ink in its own rule), and
    the display title takes the emphasis ink, the near-white a dark theme keeps for its headings
-   over a calmer body ink. A theme file's own `.ui-eyebrow` / `.ui-display` rules come later in
-   the layer and add to these. */
-@layer ui-theme {
+   over a calmer body ink. A pack's own `.ui-eyebrow` / `.ui-display` rules come later in the
+   layer, or in a later one, and add to these. Nothing in this block names a theme: it is the
+   foundation every pack starts from, whatever its base. */
+@layer ui-base {
   .ui-eyebrow {
     font-family: var(--ui-h6-font);
     font-size: var(--ui-h6-size);
@@ -597,6 +645,18 @@
   }
   [data-wallpaper-surface="tone"][data-tone="neutral"] {
     --_tone-bg: var(--ui-tone-neutral-bg);
+  }
+
+  /* A tone strip (a notice, or any strip that names its tone the same way) keeps its tone on a
+     custom background at half its tint; the ink is unchanged. It sits under a theme's own notice
+     recipe — Frost's later in this layer and more specific, Console's in ui-theme: Frost lays
+     its card on the panel fill, Console paints nothing. A pressed notice is a toast, which floats
+     and keeps its surface. (wallpaper.css holds the rest of the wallpaper's rules, unlayered.) */
+  @media not (prefers-reduced-transparency: reduce) {
+    .ui-shell[data-wallpaper]
+      :where([data-wallpaper-surface="tone"]:not(button, [role="dialog"] *)) {
+      background-color: color-mix(in srgb, var(--_tone-bg) 50%, transparent);
+    }
   }
 
   /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;
@@ -650,6 +710,25 @@
   }
   .ui-glyph [data-part="duo"] {
     opacity: var(--ui-icon-duo-opacity, 0);
+  }
+
+  /* The other drawings made in every style at once: every pack starts from the spinner's arc and
+     from no empty-state art at all, and a pack that draws its own shows it in its own recipes —
+     the scribble in place of the arc, or the art slot with its own drawing in place of the line
+     one. */
+  .ui-live[data-live="spinner"] > [data-set="scribble"] {
+    display: none;
+  }
+  .ui-empty [data-slot="art"],
+  .ui-empty [data-slot="art"] > [data-set="doodle"] {
+    display: none;
+  }
+
+  /* An Agent's default avatar is drawn in every style at once too (the `ui-avatar` hook): every
+     pack starts from the flat drawing, and a pack that draws its own swaps the two in its recipes —
+     so a pack with no drawing of its own, an imported one included, shows the flat one. */
+  .ui-avatar > [data-variant]:not([data-variant="flat"]) {
+    display: none;
   }
 
   /* A stream host whose edge is live (the caret is its last child) says so as a number a theme's

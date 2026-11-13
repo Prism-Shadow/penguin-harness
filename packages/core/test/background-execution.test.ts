@@ -11,10 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment } from "../src/environment/index.js";
 import { armCommandDoneReport } from "../src/environment/tools/exec-command.js";
-import {
-  ManagedSession,
-  DEFAULT_EMPTY_POLL_YIELD_MS,
-} from "../src/environment/tools/command/index.js";
+import { ManagedSession } from "../src/environment/tools/command/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
 import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
@@ -532,12 +529,6 @@ describe("background-state listener", () => {
     const beforeDispose = pings;
     env.dispose();
     expect(pings).toBe(beforeDispose);
-  });
-});
-
-describe("input_command defaults", () => {
-  it("the default empty-poll wait is 110000ms", () => {
-    expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(110_000);
   });
 });
 

@@ -9,9 +9,9 @@
  * - Copy relative path on an origin without the async Clipboard API (plain HTTP, not
  *   localhost) writes the Workspace-relative path to the clipboard of the machine the browser
  *   is on.
- * - The editor keeps its place: Edit opens where the preview was scrolled, Save leaves it open
- *   with the caret and the scroll untouched, and a clean editor takes an Agent's rewrite in
- *   place, on the caret's line.
+ * - The editor keeps its place: Edit opens where the preview was scrolled, the save shortcut
+ *   writes at once and leaves it open with the caret and the scroll untouched, and a clean
+ *   editor takes an Agent's rewrite in place, on the caret's line.
  * - A Workspace group's "Browse files" lands on a new-chat draft for that folder with its Files
  *   panel open, and "add to conversation" there stages the reference in the draft's composer; a
  *   temporary Workspace has nothing to browse and the toggle says why.
@@ -185,7 +185,6 @@ test("the editor keeps its place through Edit, Save and an Agent's rewrite", asy
 
   await page.keyboard.type("edited ");
   await page.keyboard.press("Control+s");
-  await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
   await expect(page.getByText("已保存").first()).toBeVisible();
   await expect(textarea).toBeFocused();
   expect(await host.evaluate((el) => el.scrollTop)).toBe(3000);

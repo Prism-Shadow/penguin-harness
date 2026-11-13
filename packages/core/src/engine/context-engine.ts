@@ -191,7 +191,7 @@ export interface EngineInitialState {
   carryOver?: AmspRecord[];
   /** Summary recovered from a completed summarize compaction: used as the prefix of the next `run` input (merged with the user Prompt). */
   pendingSummary?: AmspRecord;
-  /** The summary the resumed context opened with, when it is already on the context's own file and no turn has completed since (see ResumeResult.openingSummary). */
+  /** The summary (or a model switch's handoff) the resumed context opened with, when it is already on the context's own file and no turn has completed since (see ResumeResult.openingSummary). */
   openingSummary?: AmspRecord;
   /** Carried-over Session cumulative turn count. */
   sessionTurns?: number;
@@ -510,9 +510,9 @@ export class ContextEngine {
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: AmspRecord | null = null;
   /**
-   * The summary the running context opened with, until a turn completes on it. It is the only
-   * record of the conversation before the compaction, so a model switch away from such a
-   * context writes it at the head of the next context's file (see `switchContext`).
+   * The summary (or a model switch's handoff) the running context opened with, until a turn
+   * completes on it: the only record of the conversation before the rotation, so a model switch
+   * away from such a context writes it at the head of the next context's file.
    */
   private openingSummary: AmspRecord | null = null;
   /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
@@ -1204,7 +1204,7 @@ export class ContextEngine {
    *   the summary is what the next model continues from. It is an ordinary compaction request
    *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
    *   user turn — so it extends the prefix the provider has cached. Short of `completed`, the
-   *   context stays as it was.
+   *   context stays as it was; given a `handoff`, any end but a stop hands it over instead.
    * - A context with none has nothing to summarize and is simply replaced: no request and no
    *   event pair. Its pending text rides on in memory. Nothing is written until the next
    *   context is open, so an opener that throws leaves the Trace as it was.
@@ -1214,19 +1214,53 @@ export class ContextEngine {
    * the latest file — and the summary the context opens with follows it. That meta is yielded
    * last. Returns the terminal status.
    */
-  async *switchContext(signal?: AbortSignal): AsyncGenerator<AmspRecord, StopReason> {
-    if (this.sessionTurns > 0) {
-      const status = yield* this.compact({ signal, mode: "summarize" });
-      if (status !== "completed") return status ?? "fatal";
-    } else {
-      yield* this.startNewContext();
-      // A switch carries text alone: tool outputs pair with tool calls only the context left
-      // behind holds, and images stay behind with them.
-      this.pendingCarryOver = this.pendingCarryOver.filter(
-        (m) => (m.payload as { type?: string }).type === "text",
-      );
-    }
-    // The eager open: session_meta and the opener's records head the new file, then the summary.
+  async *switchContext(
+    signal?: AbortSignal,
+    handoff?: AmspRecord,
+  ): AsyncGenerator<AmspRecord, StopReason> {
+    // Read first: the summary request consumes the pending input once an attempt commits.
+    const text = this.switchCarry();
+    if (this.sessionTurns === 0) return yield* this.replaceContext(text);
+    const status = yield* this.compact({ signal, mode: "summarize" });
+    if (status === "completed") return yield* this.openSwitchedContext();
+    if (handoff === undefined) return status ?? "fatal";
+    if (status === "aborted" || signal?.aborted) return "aborted";
+    return yield* this.replaceContext(text, handoff);
+  }
+
+  /**
+   * A model switch's rotation for a model that cannot be asked for a summary: nothing is sent and
+   * no compaction pair is written. A context with completed turns is replaced by one that opens
+   * with `handoff` in the summary's place; one with none is replaced as `switchContext` does.
+   */
+  async *handOverContext(handoff: AmspRecord): AsyncGenerator<AmspRecord, StopReason> {
+    const opening = this.sessionTurns > 0 ? handoff : undefined;
+    return yield* this.replaceContext(this.switchCarry(), opening);
+  }
+
+  /** A switch carries text alone: tool outputs and images stay with the context left behind. */
+  private switchCarry(): AmspRecord[] {
+    return this.pendingCarryOver.filter((m) => (m.payload as { type?: string }).type === "text");
+  }
+
+  /**
+   * Replaces the running context; the next opens with `text` pending, after `handoff` if given:
+   * written and sent where a summary would be, and streamed after the meta (nothing else does).
+   */
+  private async *replaceContext(
+    text: AmspRecord[],
+    handoff?: AmspRecord,
+  ): AsyncGenerator<AmspRecord, StopReason> {
+    yield* this.startNewContext();
+    this.pendingCarryOver = handoff ? [handoff, ...text] : text;
+    if (handoff) this.openingSummary = handoff;
+    yield* this.openSwitchedContext();
+    if (handoff) yield handoff;
+    return "completed";
+  }
+
+  /** The eager open (see `switchContext`); the meta is streamed without a Trace sink too. */
+  private async *openSwitchedContext(): AsyncGenerator<AmspRecord, StopReason> {
     const opened = await this.rotateIfPending();
     if (this.openingSummary) await this.write(this.openingSummary);
     if (this.pendingSummary) {
@@ -1234,8 +1268,6 @@ export class ContextEngine {
       this.pendingCarryOver = [this.pendingSummary, ...this.pendingCarryOver];
       this.pendingSummary = null;
     }
-    // The switch's last record, and its only stream of the new file's session_meta (yielded
-    // without a Trace sink too: the switch's own stream says where the Session moved).
     const meta = opened ?? this.contextMeta;
     if (meta) yield meta;
     return "completed";

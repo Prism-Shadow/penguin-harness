@@ -9,13 +9,8 @@
  * tile, a disk's bar and the plain-text line always agree. The host names the board; the head
  * says when it was read.
  */
-import {
-  formatNumber,
-  formatValue,
-  resolveResources,
-  resourcesTiles,
-} from "@prismshadow/penguin-core/a2ui";
-import type { A2uiResources, A2uiResourcesNetwork } from "@prismshadow/penguin-core/a2ui";
+import { formatNumber, formatValue, resolveResources, resourcesTiles } from "@prismshadow/a2ui";
+import type { A2uiResources, A2uiResourcesNetwork } from "@prismshadow/a2ui";
 import type { ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import type { A2uiStrings } from "../../../strings";

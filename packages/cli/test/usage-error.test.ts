@@ -5,21 +5,32 @@
  * grouped subcommand (`session ls`), in both locales. Exit codes stay commander's.
  */
 import { Command } from "commander";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { commandForArgv } from "../src/usage-error.js";
 
 let stdout: string[];
 let stderr: string[];
 let outSpy: { mockRestore(): void };
 let errSpy: { mockRestore(): void };
-let priorLang: string | undefined;
+let priorEnv: NodeJS.ProcessEnv;
+let tmpHome: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   stdout = [];
   stderr = [];
-  priorLang = process.env.PENGUIN_LANG;
+  priorEnv = process.env;
+  tmpHome = await mkdtemp(join(tmpdir(), "penguin-test-"));
+  process.env = {
+    ...priorEnv,
+    PENGUIN_HOME: tmpHome,
+  };
+  delete process.env.PENGUIN_API_URL;
+  delete process.env.PENGUIN_API_TOKEN;
   outSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
     stdout.push(String(chunk));
     return true;
@@ -29,11 +40,11 @@ beforeEach(() => {
     return true;
   });
 });
-afterEach(() => {
+afterEach(async () => {
   outSpy.mockRestore();
   errSpy.mockRestore();
-  if (priorLang === undefined) delete process.env.PENGUIN_LANG;
-  else process.env.PENGUIN_LANG = priorLang;
+  process.env = priorEnv;
+  await rm(tmpHome, { recursive: true, force: true });
 });
 
 const err = () => stderr.join("");

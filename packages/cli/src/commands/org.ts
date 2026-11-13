@@ -72,18 +72,19 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
-} from "@prismshadow/penguin-server/api";
+  Messages,
+} from "@prismshadow/penguin-server/cli";
 import {
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
   resolveSessionRef,
   ServerClient,
-} from "../client.js";
+  renderTable,
+} from "@prismshadow/penguin-server/cli";
+
 import { getSessionInfo } from "../server-session.js";
 import { dim } from "../render.js";
-import { renderTable } from "../table.js";
-import type { Messages } from "../i18n.js";
 
 const enc = encodeURIComponent;
 
@@ -118,7 +119,7 @@ interface OrgScope {
   base: string;
 }
 
-/** The server's cap on an avatar, measured on the data URL (organization/avatars.ts). */
+/** The server's cap on an avatar, measured on the data URL (services/avatar-file.ts). */
 const AVATAR_MAX_CHARS = 131072;
 
 /** The image type an avatar file holds, read from its first bytes; null for anything else. */
@@ -557,9 +558,7 @@ function renderChannelDetail(d: OrgChannelDetail, t: Messages): string {
 // Registration
 // ---------------------------------------------------------------------------
 
-export function registerOrgCommand(program: Command, t: Messages): void {
-  const org = program.command("org").description(t.org.desc);
-
+export function registerOrgCommand(org: Command, t: Messages): void {
   org
     .command("ls")
     .description(t.org.lsDesc)

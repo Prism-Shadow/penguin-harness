@@ -2,9 +2,9 @@
 
 [中文版](PRFC-0003-plugin.zh.md)
 
-> **Source**: `rfcs/PRFC-0003-plugin.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — landed (default branch `main`, commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac)).
+> **Source**: `rfcs/PRFC-0003-plugin.md` from the design repository [penguin-harness-design](https://github.com/Prism-Shadow/penguin-harness-design) — the revision of design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421) (plugin library content as module contributions), which lands on the default branch `main` before this mirror; the previous rev took the landed commit [`ac673a24`](https://github.com/Prism-Shadow/penguin-harness-design/commit/ac673a245eec78d6afca35e260dce28b2a3ab3ac).
 > **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document (the passage on enabling a local plugin directory via link; based on an older base of the design repository), not folded into this version; once it is merged or rejected, the rev is raised per the conventions and recorded in `## Changes`.
-> **Rev**: v1.0.0 (migrated into the main repository); the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
+> **Rev**: v1.1.0; the conventions for this surface are in [README.md](README.md), and per-version changes are recorded in `## Changes` at the end.
 
 - Feature Name: `plugin`
 - Start Date: 2026-09-02
@@ -52,6 +52,8 @@ Throughout all of this, a plugin's code enters the process at exactly one moment
 A plugin package writes its Modules as decorated classes: `@Component` or `@Module` classes, with `@Use`, `@Provide`, and `@Bind` fields as the code halves of its dependencies, provisions, and contributions. The default export lists the classes to start, and may also list the platform nodes it intends to replace. At build time, `gen-ifaces` runs against the package's own tsconfig, writing each class's manifest, together with the signature of every interface it mentions, into `ifaces.json`, which is published with the package. A package without `ifaces.json` carries no Modules.
 
 By reading `ifaces.json`, the platform knows what the plugin wants, what it provides, and which slots it contributes to, without executing any plugin code. The plugin's Modules enter the same tree as the platform's nodes, and before any node is created the whole tree is checked structurally at the signature level (PRFC-0001): what it can `@Use` is only what the platform publishes as interfaces, and a signature mismatch is rejected by name. After passing the check, it is created as a child node of the platform's module tree and contributes to the slots: a sandbox backend contributes to `SandboxModule.providers`, and the web UI's pages and tabs, and the settings groups, each have their own slots.
+
+Library content is contributions too (2026-11-04). The Skills, hook packages, MCP Servers, Workbenches and card metadata a plugin carries are contributed by its Modules, through `contributes`, to the five data slots of `PluginLibraryModule`, and written into the same `ifaces.json`; a plugin that carries only content has no runtime code, and so no entry. The plugin library reads these contributions statically from `ifaces.json`, without starting the contributor: they do not go through the plugin table and do not take effect with the App's creation, but are, as before, **installed per Agent** — installing copies the content into that Agent's Agent State, byte for byte as when the manifest was written in the `penguin` block of `package.json` (05 "Plugin library"). A package's kind therefore follows from its table: a table with a Skill, hook package, MCP Server or Workbench contribution makes a library plugin (a card alone does not, so the sandbox backends, which carry cards, remain server modules only), and a package with a code entry whose table lists Modules or `replaces` is a server module; a package can be both. Copies already installed into each Agent are unaffected; a package still written with the `penguin` block and without `ifaces.json` is no longer read, with no compatibility (the user's decision, following the 2026-10-10 precedent of retiring `plugin.json`).
 
 A plugin runs in the same process as the platform. Isolation stops at the interfaces: the signature checks guarantee that it gets what was agreed, and place no limit on what it does with it afterwards.
 
@@ -120,7 +122,7 @@ Loading is per-process: there is only one module tree, and if any Project lists 
 This is already so today:
 
 - A sandbox backend being on the tree does not mean commands are constrained. Whether a command is constrained, and how strictly, is decided by the policy of the Session it runs in; in one and the same process, one Session can be read-only while another has full access.
-- The plugin library's quick start only writes a demo into the current Agent's draft; that is behavior of the library's metadata and the UI, not a contribution slot of the platform's module tree.
+- The plugin library's quick start only writes a demo into the current Agent's draft; it is data in the plugin's card contribution, read statically by the plugin library, whether or not the plugin is on the tree.
 
 This road can go finer: enable a plugin's functionality for only some users, some Agents, or some Projects, with everyone else unaffected as before. Machine-level configuration has already landed; PRFC-0004's project-level configuration is still a proposal. The platform's own policies (the sandbox, for example) can go as fine as the Session.
 
@@ -169,8 +171,6 @@ Strict parity removes the plugins that are extra on a machine; plugins specific 
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-Skills, hooks, and MCP Servers from the bundled plugin library are still installed per Agent in the form of `package.json` manifests; Workbench is likewise distributed through a plugin, but after installation it is loaded by the Agent applying its own module tree (05 "Plugin library", [PRFC-0020](PRFC-0020-agent-workbench.md)). Under this proposal, a plugin's contents are Modules only, so these ought to be Modules contributed to Agents; how to migrate them over, and what to do with the copies already installed into each Agent when migrating, is not yet decided.
-
 How to roll back a failed plugin upgrade: `npm install` rewrites the files in `<root>/plugins/` before the re-assembly; when the re-assembly fails, the plugin table rolls back to the old version requirement, but what is on disk is already the new version, so the recovery start imports the new code once more. Whether a rollback should also put the package back to the old version is not yet decided.
 
 ## Future possibilities
@@ -181,6 +181,11 @@ More activation dimensions: enable a plugin's functionality per user, per Agent.
 Rebuild only the affected subtree, reducing what one plugin change must re-assemble.
 
 ## Changes
+
+### v1.1.0
+
+- Updated: § Principles gains a paragraph: library content (Skills, hook packages, MCP Servers, Workbenches and the card) is contributions of the plugin's own Modules to the five data slots of `PluginLibraryModule`, read statically from `ifaces.json` and still installed per Agent, and a package's kind follows from its table; the quick-start bullet names the plugin's card contribution (design PR [#421](https://github.com/Prism-Shadow/penguin-harness-design/pull/421)).
+- Removed: the unresolved question on how to migrate the bundled library's manifest-form content, settled by the same design PR.
 
 ### v1.0.0
 

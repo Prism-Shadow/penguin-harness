@@ -64,7 +64,7 @@ export function SiteSidebarNav({
       )}
       {sections.map((section) => (
         <div key={section.id} className="mb-6">
-          <p className="site-eyebrow ui-eyebrow mb-2">{section.title}</p>
+          <p className="site-eyebrow mb-2">{section.title}</p>
           <ul className="site-rail-list site-rail-tight">
             {section.items.map((item) => (
               <li key={item.id}>

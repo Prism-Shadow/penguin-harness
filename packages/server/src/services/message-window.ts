@@ -35,7 +35,10 @@
  * Task records (`task_begin` / `task_end`) are skipped outright, before anything else looks at
  * a message: Tasks are still derived from user prompts here, and skipping keeps every cut,
  * count and timing exactly what it is on a Trace written before the records existed — the
- * cached prefix records stay valid, so CACHE_VERSION is unchanged by them.
+ * cached prefix records stay valid, so CACHE_VERSION is unchanged by them. So is it by the
+ * in-session switch's Trace handoff, which counts like a summary: no shard written before it
+ * existed holds a `[model_switch_from]` block naming its own Session (a `/model` block names
+ * the Session it came from), so no cached record changes.
  *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
@@ -45,6 +48,7 @@ import { isTaskRecord, parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
+  parseInPlaceModelSwitch,
   parseModelSwitchMessage,
 } from "@prismshadow/amsp/markers";
 import type { AmspRecord } from "@prismshadow/penguin-core";
@@ -308,6 +312,11 @@ export async function scanMessages(
   fromOrdinal = 0,
   toOrdinal = messages.length,
 ): Promise<void> {
+  // The Session the shard belongs to, as its head names it (an in-session switch's handoff
+  // names the Session itself).
+  const sessionId = (
+    messages.find((m) => m.type === "session_meta")?.payload as { session_id?: string } | undefined
+  )?.session_id;
   for (let i = fromOrdinal; i < toOrdinal; i++) {
     const msg = messages[i]!;
     // Shards never contain origin-carrying messages (core's Writer filters them);
@@ -331,8 +340,14 @@ export async function scanMessages(
       }
       if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
         const text = p.text;
-        // Compaction-summary injection: no item, no Task, no run change.
-        if (text.startsWith("[context_summary]") || text.startsWith("<context_summary>")) {
+        // Compaction-summary injection, or the Trace handoff an in-session model switch opens
+        // the next context with in its place: no item, no Task, no run change (the Web folds the
+        // handoff into the switch's marker).
+        if (
+          text.startsWith("[context_summary]") ||
+          text.startsWith("<context_summary>") ||
+          parseInPlaceModelSwitch(text, sessionId) !== null
+        ) {
           touchTask(state, ms);
           continue;
         }

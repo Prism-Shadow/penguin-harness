@@ -31,7 +31,8 @@ import type {
 } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { blogAssetUrl, SITE_HOSTS } from "../lib/links";
+import { SITE_HOSTS } from "../lib/links";
+import { blogAssetUrl } from "../lib/community-assets";
 import { classifyPostHref, inPageHash } from "../lib/post-links";
 import { landOnHash } from "../lib/hash-arrival";
 import imageSizes from "../lib/blog-image-sizes.json";
@@ -40,6 +41,7 @@ import type { BlogPost } from "../lib/blog";
 import { CategoryBadge } from "../components/category-badge";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { PostPending } from "../components/post-pending";
+import { MdFigure } from "../blog-widgets/figure";
 
 /**
  * The host names that are this site: the production ones, and the one this page is served from
@@ -109,7 +111,7 @@ const IMAGE_SIZES: Readonly<Record<string, readonly number[] | undefined>> = ima
 
 /**
  * Image adapter: rewrites `/blog-assets/<name>` sources to the community repo that actually hosts
- * them (see blogAssetUrl in lib/links.ts). Every other src — absolute URLs, GitHub user-attachment
+ * them (see blogAssetUrl in lib/community-assets.ts). Every other src — absolute URLs, GitHub user-attachment
  * uploads, anything else a post embeds — is forwarded untouched.
  *
  * The rewrite lives here rather than in the Markdown so there is one source of truth for the
@@ -158,6 +160,7 @@ export function MdImage({
 export const MD_COMPONENTS: SiteMarkdownComponents = {
   a: MdLink,
   img: MdImage,
+  figure: MdFigure,
 };
 
 /**
@@ -362,7 +365,6 @@ export function BlogPostPage() {
             <time dateTime={post.date} className="tabular-nums">
               {formatPostDate(post.date, locale)}
             </time>
-            <span aria-hidden="true">·</span>
             <span>{formatAuthors(post.authors, locale)}</span>
             <CategoryBadge category={post.category} />
             <SiteCopyButton

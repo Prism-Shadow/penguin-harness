@@ -6,12 +6,11 @@ import { useGallery } from "../state";
 import { REPO_API_URL, REPO_URL, SITE_URL } from "./links";
 import { useLocale, useTheme } from "./prefs";
 
-/** The drawer button follows the link row or the section list's breakpoint. */
-export type MenuWidth = "links" | "list";
-const MENU_BUTTON_HIDDEN: Record<MenuWidth, string> = {
-  links: "md:hidden",
-  list: "min-[901px]:hidden",
-};
+/**
+ * The drawer button shows until the link row does (1024 px), which is also past the width where
+ * the section list leaves the drawer for the side column, so one breakpoint serves both.
+ */
+const MENU_BUTTON_HIDDEN = "lg:hidden";
 
 /** The site's pages, with the gallery as its overview in the view's language and theme. */
 function useSiteLinks() {
@@ -27,11 +26,9 @@ function useSiteLinks() {
 export function SiteNav({
   menuOpen,
   onToggleMenu,
-  menuWidth,
 }: {
   menuOpen: boolean;
   onToggleMenu: () => void;
-  menuWidth: MenuWidth;
 }) {
   const S = useGallery().S.sitebar;
   const { lang, setLang } = useLocale();
@@ -48,7 +45,7 @@ export function SiteNav({
       menu={{
         open: menuOpen,
         onToggle: onToggleMenu,
-        hiddenClass: MENU_BUTTON_HIDDEN[menuWidth],
+        hiddenClass: MENU_BUTTON_HIDDEN,
       }}
     />
   );

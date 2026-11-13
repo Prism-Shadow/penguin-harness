@@ -19,7 +19,7 @@
  */
 import { Component, useMemo } from "react";
 import type { ReactNode } from "react";
-import { parseA2ui } from "@prismshadow/penguin-core/a2ui";
+import { parseA2ui } from "@prismshadow/a2ui";
 import { A2uiBlockKey, blockHash } from "./draft";
 import { A2uiInvalid, A2uiPending, oneLine } from "./parts";
 import { useA2uiRenderer } from "./registry";

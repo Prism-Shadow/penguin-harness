@@ -60,8 +60,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
-import type { ReactNode } from "react";
+
 import type {
   ServerEvent,
   SessionBackgroundTasks,
@@ -77,14 +78,9 @@ import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { probeSession } from "../api/session-probe";
 import { openMachineEvents, openUserEvents } from "../api/sse";
-import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
 import { publishMachinesChanged, useMachines } from "./machines";
-import {
-  isBuiltinBrowserEvent,
-  publishBuiltinBrowserEvent,
-  publishBuiltinBrowserResync,
-} from "../features/builtin-browser/browser-events";
-import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
+import type { UserEventHandler } from "./user-events";
+import { WORKBENCH_BUILDING_EVENT, WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
 import { publishUserEvent } from "../lib/amsp/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
@@ -115,9 +111,9 @@ import {
   workspaceGroupKey,
   workspaceGroupMachine,
   workspaceGroupQuery,
+  type ActivityKey,
+  type StreamPosition,
 } from "../lib/session-grouping";
-import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
-import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import {
   isCurrentProject,
   ofProject,
@@ -210,11 +206,30 @@ interface SessionsContextValue {
    */
   machinesUnreachable: boolean;
   /**
-   * The Project's machines that did not answer this round, by machine id. Their rows on
-   * screen come from the cache (lib/machine-cache.ts), so a caller that has to decide whether
-   * a Session is REACHABLE — not merely whether it is listed — asks this.
+   * The Project's machines that did not answer this round, by machine id: no connection is held
+   * to them, or the list's last round asked and got no answer. Their rows on screen come from
+   * the cache (lib/machine-cache.ts), so a caller that has to decide whether a Session is
+   * REACHABLE — not merely whether it is listed — asks this.
    */
   offlineMachineIds: string[];
+  /**
+   * Among `offlineMachineIds`, the machines no connection is held to; the others are connected
+   * and gave the list's last round no answer. What a page says about a machine out of reach —
+   * not connected, or not answering — follows this.
+   */
+  disconnectedMachineIds: string[];
+  /**
+   * The machines the list is asking right now and has no answer from yet. Neither reachable nor
+   * out of reach so far: a routed id missing from the list is not settled while one of them may
+   * still name it, and is not yet a machine's to be "out of reach" either.
+   */
+  askingMachineIds: string[];
+  /**
+   * Bumped each time a list round has every machine's answer in (or its silence): what the page
+   * compares against to know that what it heard about a machine elsewhere — the hub naming one
+   * that did not answer it — has been asked again since.
+   */
+  listRound: number;
   reload: () => Promise<void>;
   /** Fetches the first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
@@ -359,6 +374,16 @@ interface SessionsStoreState {
    * from the list (features/chat/chat-page.tsx). Their rows come from the cache.
    */
   offlineMachineIds: string[];
+  /**
+   * The machines the last list round asked and got no answer from — one whose server went
+   * quiet behind a connection still held, or one resting after such a round — and the ones it
+   * is asking still. Set with each list the round puts on screen; the context reports the first
+   * as out of reach and the second as being asked.
+   */
+  silentMachineIds: string[];
+  askingMachineIds: string[];
+  /** Rounds whose machine answers are all in (see the context's `listRound`). */
+  listRound: number;
   /**
    * machineId → the Agents THAT machine runs, which are not this Project's.
    *
@@ -776,6 +801,9 @@ export function createSessionsStore() {
       agentIds: [],
       machineIds: [],
       offlineMachineIds: [],
+      silentMachineIds: [],
+      askingMachineIds: [],
+      listRound: 0,
       agentIdsByMachine: {},
 
       sessions: [],
@@ -1109,6 +1137,14 @@ export function createSessionsStore() {
           );
           set({
             sessions: [...nextSessions, ...held],
+            // Who could not say whether they hold a Session: the chat page must not take this
+            // server's "no such Session" for the answer while one of them is silent or asked.
+            // A resting machine being probed again stays silent until it answers: a page that
+            // said it is out of reach must not flip back to "still asking" on every retry.
+            silentMachineIds: machineIds.filter(
+              (m) => silent.has(m) && (!pending.has(m) || rested.has(m)),
+            ),
+            askingMachineIds: machineIds.filter((m) => pending.has(m) && !rested.has(m)),
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
@@ -1155,7 +1191,10 @@ export function createSessionsStore() {
           retries = 0;
           applyAnswers(here, new Set(machineSources.map(([source]) => source)));
           applied = true;
-          if (machineSources.length === 0) return;
+          if (machineSources.length === 0) {
+            set({ listRound: get().listRound + 1 });
+            return;
+          }
           set({ loading: false });
           const there = (
             await Promise.all(machineSources.map(([source, wanted]) => ask(source, wanted)))
@@ -1171,6 +1210,7 @@ export function createSessionsStore() {
           }
           if (!current()) return;
           applyAnswers([...here, ...there], new Set());
+          set({ listRound: get().listRound + 1 });
         } finally {
           reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
@@ -1356,9 +1396,10 @@ export function createSessionsStore() {
           try {
             fetched = (await api.getSession(sessionId, source)).session;
           } catch (err) {
-            // A 404 is an answer (the Session is gone, or was never this server's); anything
+            // A 404 is an answer (the Session is gone, or was never this server's), and so is a
+            // 403 (an admin refused it: asking again on the next flip changes nothing); anything
             // else may succeed on the next flip.
-            gone = err instanceof ApiError && err.status === 404;
+            gone = err instanceof ApiError && (err.status === 404 || err.status === 403);
           }
           const { latest } = entry;
           adopting.delete(sessionId);
@@ -1561,10 +1602,14 @@ export type SessionsStore = ReturnType<typeof createSessionsStore>;
  * Session channel. Split out from the subscription so this routing is testable without a React
  * tree or an EventSource, neither of which exists in this package's Node test environment.
  *
- * `onWebUpdated` is the escape hatch for the one event that is not a list update at all.
+ * Every event that is not the list's own goes to `handlers` (the features' contributions to
+ * `SessionsModule.userEvents`, state/user-events.ts), in order, before the list takes whatever
+ * part of it concerns the rows. `onWebUpdated` is the escape hatch for the one event that is
+ * not a list update at all.
  */
 export function applyUserEvent(
   store: SessionsStore,
+  handlers: readonly UserEventHandler[],
   ev: ServerEvent,
   onWebUpdated: () => void,
   /** The machine the event came from; null for this server. */
@@ -1671,31 +1716,22 @@ export function applyUserEvent(
   // above were lost — away long enough and a row sits on an hourglass that will never stop.
   // Refetch once, on the event that says so, rather than polling for it. The remembered
   // statuses go too: no fetch here refreshes them, and a stale entry beats every fresh snapshot
-  // company mode reads, so those surfaces re-read their snapshots and fall back to them.
+  // company mode reads, so those surfaces re-read their snapshots and fall back to them — as
+  // does every other handler that derived something from the events.
   if (ev.type === "resync_required") {
     store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
-    publishCompanyResync();
-    if (source === null) publishBuiltinBrowserResync();
+    for (const handler of handlers) handler.resync?.(source);
     return;
   }
-  // The agent browser's tabs, page requests, agent activity, backend and Chrome connection go
-  // to the browser layer in the app shell. Only this server's: the built-in pages live in the
-  // desktop shell that spawned it, the user's Chrome is paired to it, and a machine's server
-  // drives no browser on this screen.
-  if (isBuiltinBrowserEvent(ev)) {
-    if (source === null) publishBuiltinBrowserEvent(ev);
-    return;
-  }
-  // Company-mode notifications fan out to the company store and any mounted organization page
-  // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
-  // not seen, so it refreshes like a schedule firing does.
-  if (isCompanyEvent(ev)) {
-    publishCompanyEvent(ev);
-    if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
-      void store.getState().reload();
-    }
-    return;
+  // Every event past here goes to the features' handlers first — the built-in browser's tabs
+  // and activity, company mode's notifications, a schedule's state — each taking the types it
+  // claims; the list then answers for its own rows. A company work run opens a desk or ticket
+  // Session, which the list never fetches (`excludeOrg`) — and (main behavior kept) a work run
+  // also opened a Session the sidebar may list, so the list refreshes like a schedule firing.
+  for (const handler of handlers) handler.event(ev, source);
+  if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
+    void store.getState().reload();
   }
   // A workbench of some Agent was (re)loaded: the chat page's tab strip owns that list and
   // listens on window (it is mounted per page, this provider per app).
@@ -1707,17 +1743,15 @@ export function applyUserEvent(
     );
     return;
   }
-  // A scheduled task firing may have created a new Session (new-session mode); reload the list
-  // so it appears immediately. schedule_queued doesn't change the list (the target Session
-  // already exists), so it is ignored, as is every other Session-scoped event.
-  // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
-  // one-off going done — so the conversation's schedule list is stale from here. The store
-  // decides for itself whether the Project is the one on screen.
-  if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
-    // A machine's event (relayed as `machine_event`) moves that machine's list.
-    noteScheduleEvent(ev.projectId, source);
+  if (ev.type === "workbench_building") {
+    window.dispatchEvent(
+      new CustomEvent(WORKBENCH_BUILDING_EVENT, {
+        detail: { projectId: ev.projectId, agentId: ev.agentId, workbenchId: ev.workbenchId },
+      }),
+    );
+    return;
   }
-  // A scheduled task firing may also have created a new Session (new-session mode); reload the
+  // A scheduled task firing may have created a new Session (new-session mode); reload the
   // list so it appears immediately. schedule_queued doesn't change the list (the target Session
   // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
@@ -1761,7 +1795,14 @@ function sessionsListFor(
   return isCurrentProject(projectId, state.projectId) ? state : NOTHING_LISTED;
 }
 
-export function SessionsProvider({ children }: { children: ReactNode }) {
+export function SessionsProvider({
+  userEvents,
+  children,
+}: {
+  /** The features' user event handlers, in dispatch order (see applyUserEvent). */
+  userEvents: readonly UserEventHandler[];
+  children: ReactNode;
+}) {
   const { currentProject, agents, projectsLoading, agentsLoading } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** Whether this window's own content is on screen: what the machines' reads below wait for. */
@@ -1904,6 +1945,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             workspaceCountsByAgent: new Map(),
             workspaceLatestByAgent: new Map(),
             workspaceLatestActiveByAgent: new Map(),
+            silentMachineIds: [],
+            askingMachineIds: [],
             // The pages were just cleared, so the list is loading from this instant —
             // including the window where the Agent set itself is still being refetched (a
             // Project switch empties it, which makes reload() below return without fetching
@@ -1939,7 +1982,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onRecord: () => undefined,
       onServerEvent: (ev) => {
-        applyUserEvent(store, ev, () => window.location.reload());
+        applyUserEvent(store, userEvents, ev, () => window.location.reload());
         // The surfaces that list this server's Sessions apart from the sidebar (the archive
         // page) follow the same channel.
         publishUserEvent(ev);
@@ -1954,7 +1997,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       },
     });
     return () => conn.close();
-  }, [store]);
+  }, [store, userEvents]);
 
   // The machines aggregate (GET /api/projects/:projectId/machines/events): one stream for every
   // connected machine, each event routed as that machine's word — the routing the retired HTTP
@@ -1968,15 +2011,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     if (projectId === null || !shown) return;
     const conn = openMachineEvents(projectId, {
       onMachineEvent: (machineId, event) => {
-        applyUserEvent(store, event, () => window.location.reload(), machineId);
+        applyUserEvent(store, userEvents, event, () => window.location.reload(), machineId);
         publishUserEvent({ type: "machine_event", machineId, event });
       },
       onHubEvent: (ev) => {
-        applyUserEvent(store, ev, () => window.location.reload());
+        applyUserEvent(store, userEvents, ev, () => window.location.reload());
       },
     });
     return () => conn.close();
-  }, [store, projectId, shown]);
+  }, [store, projectId, shown, userEvents]);
 
   // The store is told about a Project switch in the effect above, one commit after useProject()
   // reports it — and in that commit every descendant's effects run before this Provider's. So
@@ -2072,6 +2115,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [machineLabelsJson]);
 
   const value = useMemo<SessionsContextValue>(() => {
+    // Out of reach: no connection held, or asked this round and silent.
+    const unreachable = [...new Set([...state.offlineMachineIds, ...state.silentMachineIds])];
     return {
       sessions: listed.sessions,
       byAgent,
@@ -2086,8 +2131,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       hasMoreFor,
       activityWatermarkFor,
       loading: listed.loading,
-      machinesUnreachable: state.offlineMachineIds.length > 0,
-      offlineMachineIds: state.offlineMachineIds,
+      machinesUnreachable: unreachable.length > 0,
+      offlineMachineIds: unreachable,
+      disconnectedMachineIds: state.offlineMachineIds,
+      askingMachineIds: state.askingMachineIds,
+      listRound: state.listRound,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,

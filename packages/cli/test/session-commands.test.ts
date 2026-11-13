@@ -16,12 +16,12 @@
  * - Given no `-t` at all (a lone id, say), then it is a usage error naming the option, and
  *   no Session is renamed — not the id's, not the latest one.
  * - Given no Session at all, then it says so and exits 1.
- * - Given the retired top-level `ls`, `logs` or `input`, then each is an unknown command
+ * - Given the retired top-level `ls`, `logs` or `input`, then each is an unknown command (nothing of it reaches the server beyond the plugin lookup)
  *   and nothing reaches the server.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cli } from "../src/index.js";
-import { getMessages } from "../src/i18n.js";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 
@@ -146,13 +146,14 @@ describe("penguin session rename", () => {
 
 describe("penguin session (the group)", () => {
   it.each(["ls", "logs", "input"])(
-    "the retired top-level `%s` is an unknown command and reaches no server",
+    "the retired top-level `%s` is an unknown command and no command of it reaches the server",
     async (name) => {
       server.addSession({});
       expect(await cli([name])).toBe(1);
       expect(err()).toContain(t.usage.unknownCommand(name));
       expect(out()).toBe("");
-      expect(server.requests).toHaveLength(0);
+      // The plugin-command lookup (GET /api/cli/commands) is the only request; nothing runs.
+      expect(server.requests.filter((r) => r.path !== "/api/cli/commands")).toHaveLength(0);
     },
   );
 });

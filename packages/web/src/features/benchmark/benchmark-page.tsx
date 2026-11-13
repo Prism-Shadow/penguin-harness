@@ -37,10 +37,10 @@ import {
   Skeleton,
   SkeletonCard,
   Sparkline,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { cardBodyClick } from "../../lib/card-open";
@@ -53,8 +53,7 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AiCreateModal, pickDefaultAgent } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
 import {
   benchmarkDescription,
   latestWithDelta,
@@ -67,6 +66,7 @@ import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
@@ -154,6 +154,7 @@ function TestedAgents({
   agentIds: readonly string[];
   nameOf: (agentId: string) => string;
 }) {
+  const avatarSrc = useAgentAvatarSrc();
   if (agentIds.length === 0) return null;
   return (
     <div
@@ -163,7 +164,11 @@ function TestedAgents({
       data-tooltip-extra
     >
       <AvatarStack
-        items={agentIds.map((agentId) => ({ id: agentId, name: nameOf(agentId) }))}
+        items={agentIds.map((agentId) => ({
+          id: agentId,
+          name: nameOf(agentId),
+          src: avatarSrc(agentId),
+        }))}
         max={AVATARS_SHOWN}
         size={ICON_SIZE.rowLead}
       />
@@ -234,11 +239,13 @@ export function BenchmarkCard({
         disabled={masked}
         className="min-w-[14rem] flex-1 text-left"
       >
+        {/* The title takes the row first; the id (flex-basis 0) gets only what is left and is cut
+            short there, so a long id never truncates the title. */}
         <span className="flex items-center gap-2">
           <span className="min-w-0 truncate text-base font-bold">
             {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
           </span>
-          <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+          <span className="hidden min-w-0 flex-1 truncate font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
             {benchmark.id}
           </span>
         </span>
@@ -276,31 +283,39 @@ export function BenchmarkCard({
       )}
       {/* At least a score's width, and as wide as its label beyond that: the label is a phrase
           ("first evaluation", "Not evaluated yet") that runs longer than a score in English,
-          and cut short or broken over lines it stops reading as one. */}
-      <div className="min-w-16 shrink-0 text-right">
-        {latest ? (
-          <>
+          and cut short or broken over lines it stops reading as one. The figures are the card's
+          ledger (`ui-ledger`): one tile, the Score over the line saying how it moved. */}
+      <div className="ui-ledger min-w-16 shrink-0 text-right">
+        <div data-slot="tile">
+          {latest ? (
+            <>
+              <span
+                data-slot="figure"
+                className="block font-mono text-sm font-semibold tabular-nums"
+                data-tooltip={S.benchmark.latestScoreLabel}
+              >
+                {formatScore(latest.score)}
+              </span>
+              <span
+                data-slot="label"
+                className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
+              >
+                {latest.delta === null
+                  ? S.benchmark.firstEvaluation
+                  : latest.delta === 0
+                    ? "0"
+                    : signedDelta(formatScore(latest.delta))}
+              </span>
+            </>
+          ) : (
             <span
-              className="block font-mono text-sm font-semibold tabular-nums"
-              data-tooltip={S.benchmark.latestScoreLabel}
+              data-slot="label"
+              className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500"
             >
-              {formatScore(latest.score)}
+              {S.benchmark.notEvaluated}
             </span>
-            <span
-              className={`block whitespace-nowrap text-xs tabular-nums ${deltaTone(latest.delta)}`}
-            >
-              {latest.delta === null
-                ? S.benchmark.firstEvaluation
-                : latest.delta === 0
-                  ? "0"
-                  : signedDelta(formatScore(latest.delta))}
-            </span>
-          </>
-        ) : (
-          <span className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
-            {S.benchmark.notEvaluated}
-          </span>
-        )}
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a
@@ -318,7 +333,7 @@ export function BenchmarkCard({
             title={S.benchmark.deleteBenchmark}
             aria-label={S.benchmark.deleteBenchmark}
             onClick={onDelete}
-            className={masked ? "relative z-10" : undefined}
+            className={masked ? "relative z-raised" : undefined}
           >
             <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
           </Button>
@@ -377,6 +392,7 @@ export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const navigate = useNavigate();
   const { currentProject, currentAgent, agents } = useProject();
+  const avatarSrc = useAgentAvatarSrc();
   const { machineIds, machineLabels } = useSessions();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
@@ -470,7 +486,7 @@ export function BenchmarkPage() {
       }
       setDeleting(null);
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setDeleteBusy(false);
     }
@@ -561,9 +577,9 @@ export function BenchmarkPage() {
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <AgentAvatar
               id={filterAgentId}
-              name={nameOf(filterAgentId)}
               size={ICON_SIZE.rowLead}
               className="shrink-0 rounded"
+              src={avatarSrc(filterAgentId)}
             />
             <span
               className="min-w-0 truncate"

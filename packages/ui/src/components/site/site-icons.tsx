@@ -166,3 +166,14 @@ export function TerminalIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export type SiteGlyphName = keyof typeof ICONS;
+
+/** Any drawing of the shared registry, in the same stroke as the icons above. */
+export function SiteGlyph({ name, ...props }: IconProps & { name: SiteGlyphName }) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS[name]} />
+    </Icon>
+  );
+}

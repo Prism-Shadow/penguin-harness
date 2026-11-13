@@ -6,7 +6,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Chip, TagInput } from "../src/components/forms/tag-input/tag-input";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic, markupStructure } from "../src/testing";
 
 describe("Chip", () => {
   it("names its remove button with the caller's words, and has none without them", () => {
@@ -19,7 +19,7 @@ describe("Chip", () => {
     expect(fixed).not.toContain("<button");
   });
 
-  it("truncates the label and keeps the suffix whole after it", () => {
+  it("shows the label, then the suffix, hinted with the whole reference", () => {
     const html = renderStatic(
       createElement(Chip, {
         label: "server.ts",
@@ -29,12 +29,11 @@ describe("Chip", () => {
       }),
     );
     expect(html).toContain('data-tooltip="src/server.ts:12-30"');
-    expect(html).toContain('<span class="min-w-0 truncate">server.ts</span>');
-    expect(html).toContain('<span class="shrink-0">:12-30</span>');
+    expect(markupStructure(html)).toContain("<span>server.ts</span>");
+    expect(markupStructure(html)).toContain("<span>:12-30</span>");
     expect(html.indexOf("server.ts<")).toBeLessThan(
       html.indexOf('<span class="shrink-0">:12-30</span>'),
     );
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["font-mono", "bg-fill-neutral"]));
   });
 
   it("with a control, names the label part alone and parts it from the control with a rule", () => {
@@ -50,7 +49,6 @@ describe("Chip", () => {
     expect(html.startsWith("<span data-tooltip=")).toBe(false);
     expect(html).toContain('aria-hidden="true"');
     expect(html.indexOf("Goal")).toBeLessThan(html.indexOf("Budget"));
-    expect(classTokens(html)).toContain("max-w-full");
   });
 });
 

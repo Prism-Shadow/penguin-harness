@@ -144,7 +144,8 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
-│   └── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   ├── rubric/                 # private scoring rubric, isolated from the Target Agent
+│   └── task_config.toml        # 任务元信息和可选资源预算
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
@@ -173,15 +174,20 @@ kind = "agent"
 | --- | --- |
 | `id` | 目录名。`id` 与所在目录不符的清单不会被读取 |
 | `title`、`description` | 标题（缺省时以目录名代替）和可选的描述；由服务端写入时分别不超过 200 和 2,000 个字符 |
+| `title_zh` | 可选的中文标题，导入和保存时保留 |
 | `description_zh` | 可选：中文描述，中文界面下代替 `description` 显示，与插件的 `description_zh` 一样；长度限制相同 |
-| `version` | 日期版本 `"YYYY.MM.DD.N"` |
+| `version` | Benchmark 包使用 `"x.y.z"`，也接受原有日期版本 `"YYYY.MM.DD.N"` |
+| `last_update` | 包的更新时间，使用 ISO 8601 格式 |
+| `[author]` | 包作者：`name`，以及选填的 `email` 和 `homepage` |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
 | `runs` | 每题运行次数，正整数，缺省为 1；由服务端写入时不超过 1,000 |
 | `[origin]` | 这份副本的来源，记在 `kind` 里：`builtin`（随 Project 预置）、`manual`（手动创建表单）、`agent`（由 `benchmark-design` 写入）、`git`（Agent 从仓库文件夹导入：带 `url`、解析到的 40 位提交 `ref`、`path` 与 `imported_at`）或 `zip`（上传的包：带 `imported_at`） |
 
 `id`、`version` 与 `[origin]` 是本版本新增的键，读取时都可以省略。早先版本写下的清单一个都没有，照原样读取：以目录名为 id，没有版本，也没有来源。没有任何东西改写它，也不需要手动处理。`id`、`version` 或 `[origin]` 出现了却不合规，清单就读不了（见 [Benchmark 状态](#benchmark-状态)）。早先版本读到本版本写下的清单时，会忽略它不认识的键。
 
-凡是 Agent 可能在本地改动的东西都带日期版本，Skill 与 Benchmark 都是如此。新的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+Benchmark 包使用 `x.y.z` 版本，导入时保留原值。本地创建的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
+
+[Community RFC-0001](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/rfcs/RFC-0001-benchmark.zh.md) 规定了仓库提交所需的元信息。已有 Project 的清单缺少新字段时仍可读取。
 
 Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
 
@@ -202,7 +208,7 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 `scoreboard.yaml` 里的每条评估记录都带时间戳，并包含：
 
 - `agent_id`：这次评估测试的 Agent。它与 `model_id`、`thinking_level` 一起组成这条记录的**标签**。趋势图以时间为横轴、分数为纵轴，每个标签画一条线，只有同一标签下的分数才可比。Agent State 的 `version` 不属于标签：同一个 Agent 在同一 Runtime 下的历次版本，正是这张图要展示的趋势，所以它们共用一条线，每个点的悬停提示里写着对应的版本。评估记录还不带 Agent 的时期写下的记录，读作未标注，归入图表的灰色系列。
-- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估同样沿用其评估会话的模型对；优化则沿用 Reference 的 Runtime。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
+- 评估 Runtime：`provider`、`model_id` 和 `thinking_level`。对于基线，用户指定的 `(provider, model_id)` 模型对优先，否则沿用 Builder Session 的模型对；评估中心**评估**标签页发起的评估用**被测智能体使用的模型**选定的模型对，由提示词带上；优化则沿用 Reference 的 Runtime，从**优化**标签页发起时提示词点名被测模型，Reference 取这个模型对上的评估。`thinking_level` 从 Target Agent 的配置读取，不依赖 Trace 元数据。
 - `summary_title` 和 `summary`：这一轮的结论和下一轮的假设。
 - 由模型写入的分数、成本和耗时平均值。题目级的值是各次运行的平均，评估级的值是各道题目的平均。单次运行的成本保留记录时的精度。成本平均值忽略 `null`，只有所有参与计算的成本都未知时才为 `null`。分数保留两位小数，成本平均值保留六位小数，`duration_ms` 为整数。
 - 每道题目的逐次运行明细：每次运行记录 `score`、`cost`、`duration_ms` 和 `session_id`。
@@ -221,9 +227,9 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 
 Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的 `<agent>/snapshots/v<version>.tar.gz` 存在。已有快照就直接复用；没有就把 `agent_state/` 打包成一个，打包时排除 Vault（`.vault.toml`），密钥永远不会进入快照。它从不覆盖同一版本已有的快照；如果创建不了快照，就在改动任何东西之前停下。落选的 Candidate 在同一轮内回滚：Optimizer 恢复原来的文件和版本号，并删除 Candidate 新建的文件。
 
-在 Web App 中，Agent 的设置页向所有成员提供**导出快照**，向 Project owner 提供**导入快照**。导入会整体替换 Agent State，版本号取包内的 `version`，并保留当前的 Vault；导入之前会先为当前版本打一个快照。导入的版本不比当前版本新时，需要先确认。智能体页面的创建对话框也可以直接用导出的快照包新建 Agent（**从快照初始化**）：新 Agent 以包内的状态和版本起步，无需确认。
+用包覆盖 Agent（见[导出和导入 Agent](/agents#导出和导入-agent)）只有 Project owner 能做。它替换 Agent State 中包所带的部分（包里没有的部件沿用现有内容），版本号取包内的 `version`，并保留当前的 Vault。导入之前，当前 State 会重新打包成一个单独的备份 `<agent>/snapshots/import-backup-v<version>-<time>-<random>.tar.gz`，从不覆盖已有文件，也不属于 `v<version>.tar.gz` 快照：同一版本的旧快照既不会被沿用，也不会被覆盖。工作台的版本历史位于 Agent State 之外，导入不会改动它。以新 id 导入时新建 Agent，以包内的状态和版本起步，不写备份。
 
-只有 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内的包才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
+zip 包不能含任何链接。`.tar.gz` 包只有在 `agent_state/` 是真实目录、且其中所有符号链接都解析在 `agent_state/` 之内时才会被接受；链接指向 `agent_state/` 之外或指向不存在目标的包，以及 `system_config.yaml` 无法读取的包，都会被拒绝。导入时若现行 Vault 无法读取，则在触碰 State 之前停止。替换失败且无法恢复原 State 时，原 State 与 Vault 保留在该 Agent 目录下的导入暂存目录中，服务端日志会给出其路径。
 
 ## 可审计性
 

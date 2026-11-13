@@ -55,6 +55,15 @@ entry, a PR body.
   notice: one sentence that says what to do beats an inventory (the full list belongs in a log).
 - zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
   "Agent"); prose hygiene for anything published is in `authoring.md`.
+- From the owner's checklist (2026-11-02), held by the de-slop guard in the package, the Web App
+  and the landing (`packages/landing/test/deslop.test.ts`): no text below 12px (rule 23; the
+  chart marks' 9/11 px labels are allowlisted until the charts are re-laid out); items in a line
+  stand apart by space or the sentence's own punctuation, never a middle dot (rule 24); no
+  uppercase or letter-spaced label, and no eyebrow over a section title — a public site's group
+  label is sentence case, small, semibold and muted; no coloured bar down a box's left edge, at
+  any width (rule 8). On the landing, sections hold still while the page scrolls, a demo's
+  caption states a fact (what it cost), not what the video shows, and a small chart is laid out
+  at the width it is shown at so its labels keep the page's sizes.
 
 ## How to check a change
 

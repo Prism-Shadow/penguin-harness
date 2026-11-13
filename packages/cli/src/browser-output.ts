@@ -24,9 +24,9 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
-} from "@prismshadow/penguin-server/api";
-import type { Messages } from "./i18n.js";
-import { renderTable } from "./table.js";
+  Messages,
+} from "@prismshadow/penguin-server/cli";
+import { renderTable } from "@prismshadow/penguin-server/cli";
 
 /** `return:` shows at most this many characters; `--save` keeps everything. */
 export const RETURN_LIMIT = 8000;

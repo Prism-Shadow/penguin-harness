@@ -87,7 +87,7 @@ export function AmspRecords() {
         </label>
 
         <nav aria-label={R.choose} className="hidden md:block">
-          <p className="mb-3 flex gap-3 font-mono text-[11px]">
+          <p className="mb-3 flex gap-3 font-mono text-xs">
             <span className={TONES.model.soft}>model_msg</span>
             <span className={TONES.event.soft}>event_msg</span>
           </p>
@@ -108,10 +108,10 @@ export function AmspRecords() {
                         aria-controls={detailId}
                         aria-current={active || undefined}
                         onClick={() => setChosen(choice)}
-                        className={`-ml-2 w-full rounded-md border-l-2 px-2 py-px text-left font-mono text-[13px] leading-5 transition-opacity ${text} ${
+                        className={`-ml-2 w-full rounded-md px-2 py-px text-left font-mono text-xs leading-5 transition-opacity ${text} ${
                           active
-                            ? `border-current font-semibold ${tone.ground || "bg-gray-100 dark:bg-gray-800"}`
-                            : "border-transparent opacity-80 hover:opacity-100"
+                            ? `font-semibold ${tone.ground || "bg-gray-100 dark:bg-gray-800"}`
+                            : "opacity-80 hover:opacity-100"
                         }`}
                       >
                         {labelOf(choice)}
@@ -148,11 +148,13 @@ function RecordDetail({ record }: { record: RecordDoc }) {
     <article>
       <h3 className="font-mono text-xl font-semibold tracking-tight">{record.id}</h3>
       {entry && tone && (
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           <span className={`rounded-sm px-1.5 font-mono leading-5 ${tone.ground} ${tone.ink}`}>
             type: {entry.envelope}
           </span>
-          {facts.join(" · ")}
+          {facts.map((fact) => (
+            <span key={fact}>{fact}</span>
+          ))}
         </p>
       )}
       <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{words.summary}</p>
@@ -215,12 +217,12 @@ function FieldTable({ record }: { record: RecordDoc }) {
           {rows.map(({ field, meaning, example }) => (
             <tr key={field.path}>
               <td
-                className={`${TD} font-mono text-[13px] break-words text-gray-900 dark:text-gray-100`}
+                className={`${TD} font-mono text-xs font-medium break-words text-gray-900 dark:text-gray-100`}
               >
                 {field.path}
               </td>
               <td
-                className={`${TD} font-mono text-[12px] break-words text-gray-600 dark:text-gray-300`}
+                className={`${TD} font-mono text-xs break-words text-gray-600 dark:text-gray-300`}
               >
                 {field.type}
               </td>
@@ -229,7 +231,7 @@ function FieldTable({ record }: { record: RecordDoc }) {
               </td>
               <td className={`${TD} text-gray-600 dark:text-gray-300`}>{meaning}</td>
               <td
-                className={`${TD} pr-0 font-mono text-[12px] break-words text-gray-600 dark:text-gray-300`}
+                className={`${TD} pr-0 font-mono text-xs break-words text-gray-600 dark:text-gray-300`}
               >
                 {example === null ? "—" : shorten(example)}
               </td>
@@ -242,17 +244,17 @@ function FieldTable({ record }: { record: RecordDoc }) {
         {rows.map(({ field, meaning, example }) => (
           <li key={field.path} className="py-2.5 text-sm leading-6">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-              <span className="font-mono text-[13px] font-medium break-all">{field.path}</span>
+              <span className="font-mono text-xs font-medium break-all">{field.path}</span>
               <span className="text-xs">
                 <Required required={field.required} />
               </span>
             </div>
-            <p className="font-mono text-[12px] break-words text-gray-500 dark:text-gray-400">
+            <p className="font-mono text-xs break-words text-gray-500 dark:text-gray-400">
               {field.type}
             </p>
             <p className="mt-0.5 text-gray-600 dark:text-gray-300">{meaning}</p>
             {example !== null && (
-              <p className="mt-0.5 font-mono text-[12px] break-all text-gray-500 dark:text-gray-400">
+              <p className="mt-0.5 font-mono text-xs break-all text-gray-500 dark:text-gray-400">
                 {shorten(example)}
               </p>
             )}

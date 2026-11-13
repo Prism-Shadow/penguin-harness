@@ -7,8 +7,8 @@
  * A zone is an IANA name or `"local"`, the reader's own. Whether a clock reads 12 or 24 hours is
  * the block's call, or with `"auto"` the locale's: en-US reads 12, zh-CN 24.
  */
-import { localeOf, parseA2uiInstant } from "@prismshadow/penguin-core/a2ui";
-import type { A2uiLang } from "@prismshadow/penguin-core/a2ui";
+import { localeOf, parseA2uiInstant } from "@prismshadow/a2ui";
+import type { A2uiLang } from "@prismshadow/a2ui";
 
 export type HourCycle = "12" | "24" | "auto";
 

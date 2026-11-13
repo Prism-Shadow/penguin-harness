@@ -12,6 +12,9 @@
  *   holds receives the platform's price and promotion; nothing of the account or the key itself
  *   is answered back. In a group where no model uses the key yet (every one keyed on its own, and
  *   nothing new delivered), the key still lands and the flow completes with a count of 0.
+ * - The group's first key offers its DeepSeek V4.1 Flash as the default
+ *   (connect-default-offer.test.ts has the rule) on the completed flow, and leaves the default as
+ *   it was; a delivery that brings back the row the user deleted offers nothing.
  * - Given an existing model, a later sync refreshes its list price and promotion, including a
  *   promotion-only change or an ended promotion, and reports that update. An unchanged sync
  *   is a no-op.
@@ -46,6 +49,11 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const json = (status: number, body: unknown): Response => jsonResponse(body, status);
+
+/** Penguin Go's DeepSeek V4.1 Flash, which the group's first key offers as the default. */
+const PENGUIN_GO_FLASH = { provider: "penguin-go", modelId: "deepseek-flash" };
+/** A new Project's default model. */
+const DEEPSEEK_FLASH = { provider: "deepseek", modelId: "deepseek-flash" };
 
 const deliveryBody = {
   status: "claimed",
@@ -329,11 +337,17 @@ describe("Penguin Go key authorization routes", () => {
     const done = (await (
       await owner.get(`${base()}/${started.flowId}/status`)
     ).json()) as PlatformAuthFlowStatusResponse;
-    // Every model of the group uses the key: the presets and the delivered ones alike.
-    expect(done).toEqual({ status: "completed", applied: deliveredCount });
+    // Every model of the group uses the key: the presets and the delivered ones alike. The
+    // group's first key offers its DeepSeek V4.1 Flash as the default, and moves nothing.
+    expect(done).toEqual({
+      status: "completed",
+      applied: deliveredCount,
+      defaultOffer: { model: PENGUIN_GO_FLASH, current: DEEPSEEK_FLASH },
+    });
     expect(JSON.stringify(done)).not.toContain("sk-penguin");
 
     const after = await models();
+    expect(after.defaultModel).toEqual(DEEPSEEK_FLASH);
     const penguinGoModels = after.models.filter((model) => model.provider === "penguin-go");
     expect(penguinGoModels).toHaveLength(deliveredCount);
     expect(after.providers["penguin-go"]?.apiKeyMasked).toBe("sk-p…0001");
@@ -396,7 +410,12 @@ describe("Penguin Go key authorization routes", () => {
       held.some((h) => h.modelId === model.modelId),
     );
 
-    expect(await authorize()).toEqual({ status: "completed", applied: 0 });
+    // The table PUT above dropped the default's row, so the offer names no current default.
+    expect(await authorize()).toEqual({
+      status: "completed",
+      applied: 0,
+      defaultOffer: { model: PENGUIN_GO_FLASH },
+    });
     const after = await models();
     expect(after.providers["penguin-go"]?.apiKeyMasked).toBe("sk-p…0001");
     expect(
@@ -404,6 +423,35 @@ describe("Penguin Go key authorization routes", () => {
         .filter((model) => model.provider === "penguin-go")
         .map((model) => model.effective.apiKeySource),
     ).toEqual(own.map(() => "model"));
+  });
+
+  it("a delivery that brings back the DeepSeek V4.1 Flash the user deleted offers no default", async () => {
+    const kept = (await models()).models.filter(
+      (model) => !(model.provider === "penguin-go" && model.modelId === PENGUIN_GO_FLASH.modelId),
+    );
+    expect(
+      (
+        await owner.put(`/api/projects/${projectId}/models`, {
+          models: kept.map(({ provider, modelId }) => ({ provider, modelId })),
+        })
+      ).status,
+    ).toBe(200);
+    deliveredModels = [
+      ...deliveryBody.connection.models,
+      { ...deliveryBody.connection.models[1]!, modelId: PENGUIN_GO_FLASH.modelId },
+    ];
+
+    const done = await authorize();
+
+    expect(done.status).toBe("completed");
+    expect(done.defaultOffer).toBeUndefined();
+    const after = await models();
+    expect(after.defaultModel).toEqual(DEEPSEEK_FLASH);
+    expect(
+      after.models.some(
+        (model) => model.provider === "penguin-go" && model.modelId === PENGUIN_GO_FLASH.modelId,
+      ),
+    ).toBe(true);
   });
 
   it("refreshes an existing model's price and promotion and adds newly listed models", async () => {

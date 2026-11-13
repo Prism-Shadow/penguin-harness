@@ -254,6 +254,10 @@ export const OCTICONS: Readonly<Record<GlyphKey, string>> = {
     "M2.75 1h10.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25V2.75C1 1.784 1.784 1 2.75 1ZM2.5 2.75v10.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25H2.75a.25.25 0 0 0-.25.25Z", // checkbox's frame, without its check
   rectangleCheck:
     "M2.75 1h10.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25V2.75C1 1.784 1.784 1 2.75 1ZM2.5 2.75v10.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25H2.75a.25.25 0 0 0-.25.25Zm9.28 3.53-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l1.47 1.47 3.97-3.97a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042Z", // checkbox
+  square:
+    "M3.75 3h8.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-8.5a.75.75 0 0 1-.75-.75v-8.5A.75.75 0 0 1 3.75 3ZM4.5 4.5v7h7v-7Z", // checkbox's frame at the cross's size, without its check (drawn from it)
+  squareStack:
+    "M3.75 6h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-.75.75h-5.5a.75.75 0 0 1-.75-.75v-5.5A.75.75 0 0 1 3.75 6ZM4.5 7.5v4h4v-4ZM6.75 3h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-.75.75H10V8.5h1.5v-4h-4V6H6V3.75A.75.75 0 0 1 6.75 3Z", // two checkbox frames, the one behind cut where the front one hides it (drawn from it)
   // Original anvil drawing on the 16px grid.
   anvil:
     "M5 2h9v4l-3 2v2l2 3v1H4v-1l2-3V8H5C2.5 8 1 6.5 1 4h4V2Zm1.5 1.5V5H3c.4.9 1.2 1.5 2 1.5h2.5v4L6.3 12.5h4.4l-1.2-2V7.25l3-2V3.5Z",

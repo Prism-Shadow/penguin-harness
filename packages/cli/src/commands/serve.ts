@@ -35,10 +35,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages, WebProbeFailureKind } from "../i18n.js";
-import { registerResetPasswordCommand } from "./reset-password.js";
-import { registerStatusCommand } from "./server-status.js";
-import { registerStopCommand } from "./server-stop.js";
+import type { Messages, WebProbeFailureKind } from "@prismshadow/penguin-server/cli";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -345,10 +342,14 @@ function openBrowser(url: string): void {
   }
 }
 
-export function registerServeCommands(program: Command, t: Messages): void {
-  const server = program
-    .command("server")
-    .description(t.serve.serverDesc)
+/**
+ * Fills in `penguin server`, on the node the host located by the command's key. Bare
+ * `penguin server` starts the service (commander runs the action when no subcommand is
+ * named); `status`, `stop` and `reset-admin-password` are commands of their own whose keys
+ * sit under this one, and only dispatch on an exact name match.
+ */
+export function registerServerCommand(server: Command, t: Messages): void {
+  server
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .action(async (opts: { port?: string; host?: string }) => {
@@ -360,15 +361,11 @@ export function registerServeCommands(program: Command, t: Messages): void {
       }
       await startServer(opts, t);
     });
-  // Bare `penguin server` still starts the service (commander runs the action when no
-  // subcommand is named); the subcommand only dispatches on an exact name match.
-  registerResetPasswordCommand(server, t);
-  registerStatusCommand(server, t);
-  registerStopCommand(server, t);
+}
 
-  program
-    .command("web")
-    .description(t.serve.webDesc)
+/** Fills in `penguin web`, on the node the host located by the command's key. */
+export function registerWebCommand(web: Command, t: Messages): void {
+  web
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .option("--no-open", t.serve.noOpen)

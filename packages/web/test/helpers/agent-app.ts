@@ -6,8 +6,21 @@
  * Agent of that id — {@link OTHER_PROJECT_ID}), with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
- * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
- * read back what was written with {@link AgentServer.writes}.
+ * Project's models. Its workbenches are the ones a suite gives it: they reload, restore, export
+ * as a zip download, switch on and off (each, and all at once) and are removed, a zip upload
+ * installs the one the suite names, and the App Center switch sets their `appCenter.show`. The
+ * Project's App Center lists the ones shown, the way the server derives a shortcut (titles from
+ * the declaration, else the first tab, else the name; broken when the files do not load); a suite
+ * can add or replace one mid-test ({@link AgentServer.putWorkbench}). A test can refuse the next
+ * write with
+ * {@link AgentServer.refuseNext}, or read back what was written with {@link AgentServer.writes}.
+ *
+ * What the Agent carries besides is the suite's too (`parts`): Skills, hook packages, MCP server
+ * entries and the install receipts naming each workbench's plugin. Uninstalling a plugin takes
+ * away what the server would — the Skills its library entry contributes, the hook package of its
+ * name, the MCP entries and workbenches recording it — and reports any part the suite names in
+ * `uninstallFailures` as not removed. A server `older` than the workbench switches lists no
+ * `enabled` and has neither those routes nor the plugin uninstall.
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
@@ -23,11 +36,26 @@
  * made slow — every answer held until released ({@link AgentServer.hold} with its id) — or have
  * one read fail as an unreachable server does ({@link AgentServer.failNext}); one request, of
  * any server, can be held on its own ({@link AgentServer.holdNext}), and what was answered so far
- * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too.
+ * reads back through {@link AgentServer.requests}. This server's own Agents can be deleted too,
+ * and an Agent zip export downloads; an import (the fake reads no zip) creates the Agent its
+ * query names, refuses a taken id with 409 `agent_exists` unless it says `overwrite`, and refuses
+ * that to a member ({@link agentServer}'s `role`).
  *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
- * answers them masked, and the state switch turns one on or off. This server answers which
+ * answers them masked, and the state switch turns one on or off. Each keeps its Agents' own
+ * pictures too: a PUT of `…/agents/:id/avatar` stores or clears one on the server it reached,
+ * and that server's Agent list then carries its `avatarRev`. This server answers which
  * servers hold a bot (`accountHolders`), the way it would after asking its machines.
+ *
+ * This server can hold organizations too ({@link FakeOrganization}): their employees are Agents
+ * of the Project, listed with their employments the way the Agent list marks them. An
+ * organization's settings and chart read; a creation adds one with its CEO's Agent; a hire adds
+ * an employee (a new Agent with it, when it names one) and a leave removes one; and a delete
+ * takes the organization away and, with `deleteAgents=1&agentIds=…`, every listed employee's
+ * Agent that is not built in and that no other organization employs, answering the report the
+ * real route answers (the flag without the list is a 400). An organization can have an
+ * unreadable chart (only its CEO is known, and the Agent list names it), and its delete's answer
+ * can be lost after the delete went through.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
@@ -38,19 +66,33 @@
  * either, which the Memory tab reads for its layout breakpoint: every query answers "no match".
  */
 import { vi } from "vitest";
-import { createElement as h } from "react";
-import type { ReactElement } from "react";
+import { createElement as h, type ReactElement } from "react";
+
 import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  AgentMcpServerItem,
   AgentSummary,
+  AppCenterLayout,
+  AppCenterResponse,
+  AppCenterShortcut,
+  HookItem,
+  PluginUninstallResponse,
+  PluginUpdateRef,
+  SkillMetadataItem,
+  Employment,
+  OrgHireRequest,
+  OrganizationCreateRequest,
+  OrganizationDeleteResponse,
+  OrganizationSettings,
   ChatDefaultsDto,
   MachineInfo,
   MessagingAccountHoldersResponse,
   MessagingChannel,
   MessagingChannelState,
   PluginItem,
+  AgentApiKeyInfo,
   AgentApiSettings,
   ModelsResponse,
   DirListResponse,
@@ -74,8 +116,7 @@ import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
 import { ADMIN_ME } from "./admin-settings";
 import { mount } from "./dom";
 import { SignedIn } from "./signed-in";
-import { apiError, json, stubFetch } from "./fetch";
-import type { FakeFetch, FetchRequest } from "./fetch";
+import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./fetch";
 
 export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";
@@ -175,6 +216,24 @@ export interface FakeMachine {
   sessions?: SessionInfo[];
 }
 
+/** An organization of the Project, as far as these suites reach it. */
+export interface FakeOrganization {
+  orgId: string;
+  name: string;
+  /**
+   * Its employees, the CEO first; each is (or becomes) one of this server's Agents. A `busy`
+   * one's folder cannot be moved: deleting it with the organization fails.
+   */
+  employees: Array<{ agentId: string; title: string; busy?: boolean }>;
+  /** Its `org_chart.yaml` cannot be read: only its CEO (the first employee) is known to work there. */
+  chartUnreadable?: boolean;
+  /** Its delete goes through, but the answer is lost on the way (a gateway timeout). */
+  answerLost?: boolean;
+}
+
+/** The Agents the server provisions with every Project and never deletes. */
+const BUILTIN_AGENTS = new Set(["default_agent", "penguin_support"]);
+
 export interface AgentServer {
   fetch: FakeFetch;
   /** The ids of a machine's own Agents now. */
@@ -219,8 +278,18 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
   setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** Breaks an organization's chart (or mends it): from then on only its CEO is known to work there. */
+  setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
   messagingOn(machineId: string | null, sessionId: string): MessagingChannelState[];
+  /** The picture an Agent of that server (null: this one) has now, as the data URL written; null for none. */
+  avatarOf(machineId: string | null, agentId: string): string | null;
+  /** Adds a workbench to the Agent, or replaces the one with its id (an edit on disk, say). */
+  putWorkbench(workbench: WorkbenchInfo): void;
+  /** Whether a workbench's files are being loaded now: the App Center lists it as building. */
+  setBuilding(workbenchId: string, building: boolean): void;
+  /** The viewer's App Center arrangement as the server holds it now (null: the default order). */
+  appCenterLayout(): AppCenterLayout | null;
 }
 
 export function agentServer(
@@ -231,6 +300,16 @@ export function agentServer(
     chatDefaults?: ChatDefaultsDto;
     workbenches?: WorkbenchInfo[];
     workbenchVersions?: WorkbenchVersion[];
+    /**
+     * What a zip upload to the workbench archive route installs (the fake reads no zip): a taken
+     * id answers 409 `workbench_exists` unless the upload says `overwrite`. Absent, an upload is
+     * refused with 400.
+     */
+    importedWorkbench?: WorkbenchInfo;
+    /** What a workbench's zip download answers instead of the archive. */
+    archiveRefusal?: { status: number; code: string };
+    /** The viewer's stored App Center arrangement (by default none). */
+    appCenterLayout?: AppCenterLayout;
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
@@ -242,17 +321,43 @@ export function agentServer(
     messaging?: Array<{ machineId?: string; sessionId: string; bindings: MessagingChannelState[] }>;
     /** What this server answers about a bot's holders (by default: nobody, every machine asked). */
     accountHolders?: MessagingAccountHoldersResponse;
+    /** More of this server's Agents, after the configured one, each with what its summary says differently. */
+    moreAgents?: Array<Partial<AgentSummary> & { agentId: string }>;
+    /** What the Agent carries beyond its library installs (by default nothing). */
+    parts?: {
+      skills?: SkillMetadataItem[];
+      hooks?: HookItem[];
+      mcpServers?: AgentMcpServerItem[];
+      /** Each workbench's install receipt: the plugin that installed it. */
+      receipts?: Array<{ name: string; plugin: string; version: string }>;
+    };
+    /** Parts a plugin uninstall leaves in place and reports as failed. */
+    uninstallFailures?: NonNullable<PluginUninstallResponse["failed"]>;
+    /** The library plugins the Agent's list says it is behind on. */
+    pluginUpdates?: PluginUpdateRef[];
+    /** A server from before the workbench switches and the plugin uninstall. */
+    older?: boolean;
+    /** The signed-in user's role in the Project (by default its owner). */
+    role?: "owner" | "member";
+    /** The Skills this server's Agent already has installed (by default none). */
+    skills?: string[];
+    /** The keys the Agent's API holds; a DELETE of one removes it. */
+    apiKeys?: AgentApiKeyInfo[];
+    /** This server's organizations (by default none); their employees join its Agents. */
+    organizations?: FakeOrganization[];
   } = {},
 ): AgentServer {
-  /** Installed Skill names by `<machine or "">/<agent>`. */
-  const installs = new Map<string, string[]>();
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  /** Installed Skill names by `<machine or "">/<agent>`. */
+  const installs = new Map<string, string[]>(
+    options.skills ? [[installKey(null, AGENT_ID), options.skills]] : [],
+  );
   const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
     open: false,
     approvalMode: "read-only",
-    keys: [],
+    keys: [...(options.apiKeys ?? [])],
     model: null,
     thinkingLevel: null,
     maxConcurrentRuns: 4,
@@ -260,6 +365,19 @@ export function agentServer(
   };
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
+  const building = new Set<string>();
+  let appCenterLayout: AppCenterLayout | null = options.appCenterLayout ?? null;
+  let partSkills = [...(options.parts?.skills ?? [])];
+  let partHooks = [...(options.parts?.hooks ?? [])];
+  let partMcp = [...(options.parts?.mcpServers ?? [])];
+  let receipts = [...(options.parts?.receipts ?? [])];
+  let pluginUpdates = [...(options.pluginUpdates ?? [])];
+  /** The workbenches switched off, and the Agent-wide switch. */
+  const switchedOff = new Set<string>();
+  let allOn = true;
+  /** A workbench as the list describes it: with its switch, unless the server predates them. */
+  const listed = (w: WorkbenchInfo): WorkbenchInfo =>
+    options.older ? w : { ...w, enabled: !switchedOff.has(w.id) };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -287,6 +405,14 @@ export function agentServer(
       entry.bindings,
     ]),
   );
+  /** Agents' own pictures by `<machine or "">/<agent>`: the data URL written and its revision. */
+  const avatarKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  const avatars = new Map<string, { dataUrl: string; rev: string }>();
+  /** The `avatarRev` an Agent's list entry carries on that server, when it has a picture. */
+  const avatarFields = (machineId: string | null, agentId: string) => {
+    const avatar = avatars.get(avatarKey(machineId, agentId));
+    return avatar === undefined ? {} : { avatarRev: avatar.rev };
+  };
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   /** Per held machine, the answers waiting for its release. */
@@ -297,8 +423,33 @@ export function agentServer(
   let pages: Array<{ machine: string | null; path: RegExp }> = [];
   /** Requests to hold once each, oldest first, with the answers they wait for. */
   let oneHolds: Array<{ machine: string | null; path: RegExp; waiting: Array<() => void> }> = [];
-  /** This server's Agents: the one the suites configure, unless a test deleted it. */
-  let localAgentIds = [AGENT_ID];
+  let organizations = (options.organizations ?? []).map((o) => ({
+    ...o,
+    employees: [...o.employees],
+  }));
+  /**
+   * This server's Agents: the one the suites configure, unless a test deleted it, the further
+   * ones a suite names, and every employee.
+   */
+  let localAgentIds = [
+    ...new Set([
+      AGENT_ID,
+      ...(options.moreAgents ?? []).map((a) => a.agentId),
+      ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
+    ]),
+  ];
+  /** The organizations employing an Agent, as the Agent list carries them. */
+  const employmentsOf = (agentId: string): Employment[] =>
+    organizations.flatMap((o) =>
+      (o.chartUnreadable === true ? o.employees.slice(0, 1) : o.employees)
+        .filter((e) => e.agentId === agentId)
+        .map((e) => ({
+          orgId: o.orgId,
+          orgName: o.name,
+          title: e.title,
+          status: "active" as const,
+        })),
+    );
   const answered: Array<{ method: string; path: string; machine: string | null }> = [];
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
     ok: true,
@@ -330,7 +481,7 @@ export function agentServer(
     workbenchCount: workbenches.length,
     memoryCount: 0,
     apiEnabled: false,
-    pluginUpdates: [],
+    pluginUpdates: agentId === AGENT_ID ? pluginUpdates : [],
   });
 
   /** The machines list as this server reports it: itself first, then each machine. */
@@ -387,6 +538,7 @@ export function agentServer(
       return json({
         agents: machine.agents.map((id, i) => ({
           ...summaryOf(id),
+          ...avatarFields(machine.machineId, id),
           name: id,
           createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
         })),
@@ -458,27 +610,30 @@ export function agentServer(
           .filter((p) => names.includes(p.name))
           .flatMap((p) => p.skills.map((skill) => skill.name));
         installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
+        pluginUpdates = pluginUpdates.filter((u) => !names.includes(u.name));
       }
       const version = (name: string) =>
         libraryOf(request.machine)
           .flatMap((p) => p.skills)
           .find((skill) => skill.name === name)?.version ?? "";
+      const installed = (installs.get(key) ?? []).filter(
+        (name) => !partSkills.some((skill) => skill.name === name),
+      );
       return json({
-        skills: (installs.get(key) ?? []).map((name) => ({
-          name,
-          description: "",
-          version: version(name),
-        })),
-        hooks: [],
-        mcpServers: [],
-        workbenches: [],
+        skills: [
+          ...partSkills,
+          ...installed.map((name) => ({ name, description: "", version: version(name) })),
+        ],
+        hooks: partHooks,
+        mcpServers: partMcp,
+        workbenches: receipts,
       });
     }
     if (path === "/api/projects") {
       const project = (projectId: string, name: string) => ({
         projectId,
         name,
-        role: "owner",
+        role: options.role ?? "owner",
         ownerUserId: "admin",
         createdAt: "2026-01-01T00:00:00Z",
       });
@@ -493,11 +648,24 @@ export function agentServer(
       return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
+      const unreadableCharts = organizations
+        .filter((o) => o.chartUnreadable === true)
+        .map((o) => ({ orgId: o.orgId, orgName: o.name }));
       return json({
-        agents: localAgentIds.map((id) => ({
-          ...summaryOf(id),
-          name: id === AGENT_ID ? stored.config.name : id,
-        })),
+        agents: localAgentIds.map((id) => {
+          const employments = employmentsOf(id);
+          return {
+            ...summaryOf(id),
+            ...avatarFields(null, id),
+            name: id === AGENT_ID ? stored.config.name : id,
+            ...(id === AGENT_ID && stored.config.author !== undefined
+              ? { author: stored.config.author }
+              : {}),
+            ...(employments.length > 0 ? { employments } : {}),
+            ...options.moreAgents?.find((a) => a.agentId === id),
+          };
+        }),
+        ...(unreadableCharts.length > 0 ? { unreadableCharts } : {}),
       });
     }
     if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
@@ -509,6 +677,20 @@ export function agentServer(
     }
     if (path === `/api/projects/${PROJECT_ID}/messaging/account-holders` && method === "GET") {
       return json(options.accountHolders ?? { holders: [], unreachable: [] });
+    }
+    const avatarPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/avatar$/.exec(path);
+    if (avatarPath !== null && method === "PUT") {
+      const refusedWrite = refused();
+      if (refusedWrite !== null) return refusedWrite;
+      const key = avatarKey(request.machine, decodeURIComponent(avatarPath[1]!));
+      const { avatar } = request.body as { avatar: string | null };
+      if (avatar === null) {
+        avatars.delete(key);
+        return json({});
+      }
+      const rev = `rev${avatars.size + 1}`;
+      avatars.set(key, { dataUrl: avatar, rev });
+      return json({ avatarRev: rev });
     }
     const messagingPath = /^\/api\/sessions\/([^/]+)\/messaging(?:\/([^/]+)\/state)?$/.exec(path);
     if (messagingPath !== null) {
@@ -542,25 +724,268 @@ export function agentServer(
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
     }
+    if (
+      path === `/api/projects/${PROJECT_ID}/organizations` &&
+      method === "POST" &&
+      request.machine === null
+    ) {
+      // A creation makes the CEO's Agent, an employee from the start.
+      const { orgId, name } = request.body as OrganizationCreateRequest;
+      const ceo = `${orgId}_ceo`;
+      organizations = [
+        ...organizations,
+        { orgId, name: name ?? orgId, employees: [{ agentId: ceo, title: "CEO" }] },
+      ];
+      if (!localAgentIds.includes(ceo)) localAgentIds = [...localAgentIds, ceo];
+      return json({ projectId: PROJECT_ID, orgId, name: name ?? orgId }, 201);
+    }
+    const orgPath =
+      /^\/api\/projects\/[^/]+\/organizations\/([^/]+)(?:\/(chart|employees)(?:\/([^/]+))?)?$/.exec(
+        path,
+      );
+    const org =
+      orgPath === null || request.machine !== null
+        ? undefined
+        : organizations.find((o) => o.orgId === decodeURIComponent(orgPath[1]!));
+    if (orgPath !== null && request.machine === null) {
+      if (org === undefined) return apiError(404, "org_not_found");
+      const [, , part, employeeId] = orgPath;
+      if (part === undefined && method === "GET") {
+        const settings: OrganizationSettings = {
+          name: org.name,
+          mission: "Run the company",
+          status: "active",
+          timezone: "UTC",
+          approvalMode: "allow-all",
+          mentionChainLimit: 3,
+          budgetWarnRatio: 0.8,
+          budgetPauseRatio: 1,
+          createdBy: "admin",
+        };
+        return json({ settings });
+      }
+      if (part === undefined && method === "DELETE") {
+        const deleteAgents = request.query.get("deleteAgents") === "1";
+        const listed = request.query.get("agentIds");
+        if (deleteAgents && listed === null) return apiError(400, "bad_request");
+        organizations = organizations.filter((o) => o !== org);
+        const report: OrganizationDeleteResponse = {
+          orgId: org.orgId,
+          deletedAgents: [],
+          keptAgents: [],
+          failedAgents: [],
+        };
+        if (deleteAgents) {
+          const confirmed = new Set(listed === "" ? [] : (listed ?? "").split(","));
+          const unreadable = organizations
+            .filter((o) => o.chartUnreadable === true)
+            .map((o) => ({ orgId: o.orgId, orgName: o.name }));
+          for (const { agentId, busy } of org.employees) {
+            if (BUILTIN_AGENTS.has(agentId)) {
+              report.keptAgents.push({ agentId, reason: "builtin" });
+            } else if (employmentsOf(agentId).length > 0) {
+              report.keptAgents.push({ agentId, reason: "employed_elsewhere" });
+            } else if (unreadable.length > 0) {
+              report.keptAgents.push({ agentId, reason: "employment_unknown" });
+              report.unreadableCharts = unreadable;
+            } else if (!confirmed.has(agentId)) {
+              report.keptAgents.push({ agentId, reason: "not_confirmed" });
+            } else if (busy === true) {
+              report.failedAgents.push({
+                agentId,
+                code: "agent_folder_busy",
+                message:
+                  "The agent's folder could not be moved aside (EBUSY). Nothing was deleted.",
+              });
+            } else {
+              localAgentIds = localAgentIds.filter((id) => id !== agentId);
+              const deletion = { deletionId: `${agentId}-0`, agentId, total: 0, removed: 0 };
+              report.deletedAgents.push({ agentId, deletion: { ...deletion, phase: "done" } });
+            }
+          }
+        }
+        return org.answerLost === true ? apiError(504, "gateway_timeout") : json(report);
+      }
+      const employeeItem = (e: { agentId: string; title: string }, i: number) => ({
+        agentId: e.agentId,
+        name: e.agentId,
+        title: e.title,
+        reportsTo: i === 0 ? null : org.employees[0]!.agentId,
+        workspace: i === 0 ? "ceo" : e.agentId,
+        state: "idle",
+        spend: { own: 0, cumulative: 0 },
+      });
+      if (part === "chart" && method === "GET") {
+        return json({
+          ceoAgentId: org.employees[0]!.agentId,
+          employees: org.employees.map(employeeItem),
+        });
+      }
+      if (part === "employees" && employeeId === undefined && method === "POST") {
+        const body = request.body as OrgHireRequest;
+        const agentId = body.newAgent?.agentId ?? body.agentId ?? "";
+        if (!localAgentIds.includes(agentId)) localAgentIds = [...localAgentIds, agentId];
+        org.employees.push({ agentId, title: body.title });
+        return json(employeeItem({ agentId, title: body.title }, org.employees.length - 1), 201);
+      }
+      if (part === "employees" && employeeId !== undefined && method === "DELETE") {
+        // A leave: the Agent stays, no longer this organization's employee.
+        const agentId = decodeURIComponent(employeeId);
+        org.employees = org.employees.filter((e) => e.agentId !== agentId);
+        return new Response(null, { status: 204 });
+      }
+    }
     const localAgent = /^\/api\/projects\/[^/]+\/agents\/([^/]+)$/.exec(path);
     if (localAgent !== null && method === "DELETE" && request.machine === null) {
       const agentId = decodeURIComponent(localAgent[1]!);
       localAgentIds = localAgentIds.filter((id) => id !== agentId);
       return new Response(null, { status: 204 });
     }
-    if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
+    if (path === `/api/projects/${PROJECT_ID}/agents/import` && method === "POST") {
+      const id = request.query.get("agentId") ?? "";
+      const overwrite = request.query.get("overwrite") === "1";
+      if (overwrite && options.role === "member") return apiError(403, "forbidden");
+      if (!overwrite && localAgentIds.includes(id)) {
+        const error = { code: "agent_exists", message: id, details: { agentId: id } };
+        return json({ error }, 409);
+      }
+      if (!localAgentIds.includes(id)) localAgentIds = [...localAgentIds, id];
+      const mode = overwrite ? "overwritten" : "created";
+      return json(
+        { agent: summaryOf(id), mode, version: 1, sessions: { imported: 2, skipped: ["s1"] } },
+        201,
+      );
+    }
+    if (path === `${AGENT_PATH}/archive` && method === "GET") {
+      return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+        headers: { "content-disposition": `attachment; filename*=UTF-8''${AGENT_ID}-20261109.zip` },
+      });
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center` && method === "GET") {
+      const shortcuts: AppCenterShortcut[] = workbenches
+        // A workbench switched off, or every one while the Agent-wide switch is off, has no tile.
+        .filter((w) => w.appCenter?.show === true && allOn && !switchedOff.has(w.id))
+        .map((w) => {
+          const first = w.tabs[0];
+          const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
+          return {
+            agentId: AGENT_ID,
+            agentName: stored.config.name ?? AGENT_ID,
+            workbenchId: w.id,
+            title: w.appCenter?.title ?? first?.title ?? w.name,
+            ...(titleZh !== undefined ? { titleZh } : {}),
+            path: `/app/${PROJECT_ID}/${AGENT_ID}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
+            ...(w.appCenter?.tab !== undefined ? { tab: w.appCenter.tab } : {}),
+            ...(building.has(w.id)
+              ? { build: "building" as const }
+              : w.error !== null
+                ? { build: "failed" as const, error: w.error }
+                : { build: "ready" as const }),
+          };
+        });
+      return json({ shortcuts, layout: appCenterLayout } satisfies AppCenterResponse);
+    }
+    if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
+      appCenterLayout = (request.body as { layout: AppCenterLayout | null }).layout;
+      return json({ layout: appCenterLayout });
+    }
+    const pluginPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins\/([^/]+)$/.exec(path);
+    if (pluginPath !== null && method === "DELETE" && !options.older) {
+      const key = installKey(request.machine, decodeURIComponent(pluginPath[1]!));
+      const name = decodeURIComponent(pluginPath[2]!);
+      const failures = (options.uninstallFailures ?? []).filter((f) =>
+        [...partSkills.map((s) => s.name), ...partHooks.map((h) => h.name)].includes(f.name),
+      );
+      const kept = (n: string) => failures.some((f) => f.name === n);
+      const own = new Set(
+        libraryOf(request.machine)
+          .find((p) => p.name === name)
+          ?.skills.map((skill) => skill.name) ?? [],
+      );
+      const removed: PluginUninstallResponse["removed"] = {
+        workbenches: receipts.filter((r) => r.plugin === name).map((r) => r.name),
+        mcpServers: partMcp.filter((m) => m.plugin === name).map((m) => m.name),
+        hooks: partHooks.filter((h) => h.name === name && !kept(h.name)).map((h) => h.name),
+        skills: [
+          ...new Set([...partSkills.map((s) => s.name), ...(installs.get(key) ?? [])]),
+        ].filter((n) => own.has(n) && !kept(n)),
+      };
+      const count = Object.values(removed).reduce((n, list) => n + list.length, 0);
+      if (count + failures.length === 0) return apiError(404, "plugin_not_installed");
+      workbenches = workbenches.filter((w) => !removed.workbenches.includes(w.id));
+      receipts = receipts.filter((r) => r.plugin !== name);
+      partMcp = partMcp.filter((m) => m.plugin !== name);
+      partHooks = partHooks.filter((h) => !removed.hooks.includes(h.name));
+      partSkills = partSkills.filter((s) => !removed.skills.includes(s.name));
+      installs.set(
+        key,
+        (installs.get(key) ?? []).filter((n) => !removed.skills.includes(n)),
+      );
+      return json({ removed, ...(failures.length > 0 ? { failed: failures } : {}) });
+    }
+    if (path === `${AGENT_PATH}/workbenches/enabled` && method === "PUT" && !options.older) {
+      allOn = (request.body as { enabled: boolean }).enabled;
+      return json({ workbenches: workbenches.map(listed), enabled: allOn });
+    }
+    if (path === `${AGENT_PATH}/workbenches`) {
+      return json(
+        options.older ? { workbenches } : { workbenches: workbenches.map(listed), enabled: allOn },
+      );
+    }
+    if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
+      const incoming = options.importedWorkbench;
+      if (incoming === undefined) return apiError(400, "bad_request", "Not a workbench archive");
+      const { overwrite } = request.body as { overwrite?: boolean };
+      if (overwrite !== true && workbenches.some((item) => item.id === incoming.id)) {
+        return json(
+          {
+            error: {
+              code: "workbench_exists",
+              message: `Workbench already exists: ${incoming.id}`,
+              details: { workbenchId: incoming.id },
+            },
+          },
+          409,
+        );
+      }
+      workbenches = [...workbenches.filter((item) => item.id !== incoming.id), incoming];
+      return json({ workbench: incoming }, 201);
+    }
     if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
       const [id, action] = path.slice(`${AGENT_PATH}/workbenches/`.length).split("/");
       const workbench = workbenches.find((item) => item.id === id);
       if (!workbench) return apiError(404, "workbench_not_found");
       if (method === "DELETE") {
         workbenches = workbenches.filter((item) => item.id !== id);
+        receipts = receipts.filter((r) => r.name !== id);
         return new Response(null, { status: 204 });
       }
+      if (action === "archive") {
+        const refusal = options.archiveRefusal;
+        if (refusal !== undefined) return apiError(refusal.status, refusal.code);
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+          headers: {
+            "content-type": "application/zip",
+            "content-disposition": `attachment; filename*=UTF-8''${id}-v${workbench.version}.zip`,
+          },
+        });
+      }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
+      if (action === "app-center" && method === "PATCH") {
+        const { show } = request.body as { show: boolean };
+        const index = workbenches.indexOf(workbench);
+        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        workbenches = workbenches.map((item, i) => (i === index ? next : item));
+        return json({ workbench: listed(next) });
+      }
+      if (action === "enabled" && method === "PUT" && !options.older) {
+        if ((request.body as { enabled: boolean }).enabled) switchedOff.delete(workbench.id);
+        else switchedOff.add(workbench.id);
+        return json({ workbench: listed(workbench) });
+      }
       if (action === "rollback")
         workbench.revision = (request.body as { revision: string }).revision;
-      return json({ workbench });
+      return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
       const body = request.body as { agentId: string; name?: string };
@@ -624,8 +1049,8 @@ export function agentServer(
       );
       return new Response(null, { status: 204 });
     }
-    if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
-    if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
+    if (path === `${AGENT_PATH}/skills`) return json({ skills: partSkills });
+    if (path === `${AGENT_PATH}/hooks`) return json({ hooks: partHooks });
     if (path === `${AGENT_PATH}/memory`) {
       return json({
         enabled: stored.config.memory.enabled,
@@ -636,6 +1061,13 @@ export function agentServer(
     }
     if (path === `/api/projects/${PROJECT_ID}/dirs` && options.directory)
       return json(options.directory);
+    if (path.startsWith(`${AGENT_PATH}/api/keys/`) && method === "DELETE") {
+      const keyId = decodeURIComponent(path.slice(`${AGENT_PATH}/api/keys/`.length));
+      apiSettings = { ...apiSettings, keys: apiSettings.keys.filter((k) => k.keyId !== keyId) };
+      return new Response(null, { status: 204 });
+    }
+    // An Agent State package lands whole; its version is the package's own.
+    if (path === `${AGENT_PATH}/import` && method === "POST") return json({ version: 2 });
     if (path === `${AGENT_PATH}/api`) {
       if (method === "PUT")
         apiSettings = { ...apiSettings, ...(request.body as Partial<AgentApiSettings>) };
@@ -754,7 +1186,20 @@ export function agentServer(
       const machine = machines.find((m) => m.machineId === machineId);
       if (machine !== undefined) machine.reconnecting = reconnecting;
     },
+    setChartUnreadable: (orgId, unreadable) => {
+      const org = organizations.find((o) => o.orgId === orgId);
+      if (org !== undefined) org.chartUnreadable = unreadable;
+    },
     messagingOn: (machineId, sessionId) => messaging.get(messagingKey(machineId, sessionId)) ?? [],
+    avatarOf: (machineId, agentId) => avatars.get(avatarKey(machineId, agentId))?.dataUrl ?? null,
+    putWorkbench: (workbench) => {
+      workbenches = [...workbenches.filter((item) => item.id !== workbench.id), workbench];
+    },
+    setBuilding: (workbenchId, on) => {
+      if (on) building.add(workbenchId);
+      else building.delete(workbenchId);
+    },
+    appCenterLayout: () => appCenterLayout,
   };
 }
 
@@ -789,7 +1234,16 @@ const unmatchedQuery = (media: string) => ({
 
 export async function mountAgentApp(
   element: ReactElement,
-  { route = "/agents/:agentId", at }: { route?: string; at: string },
+  {
+    route = "/agents/:agentId",
+    at,
+    extra = [],
+  }: {
+    route?: string;
+    at: string;
+    /** More pages beside the one under test, at their own routes (where it navigates to). */
+    extra?: Array<{ path: string; element: ReactElement }>;
+  },
 ) {
   const router = createMemoryRouter(
     [
@@ -819,6 +1273,7 @@ export async function mountAgentApp(
             : [{ path: "/agents/:agentId", element: h("p", null, "Agent settings") }]),
           // After the page's own route, so a page mounted at a conversation's path still wins.
           { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
+          ...extra,
         ],
       },
     ],

@@ -6,15 +6,21 @@
  * exactly what is stored (lib/avatar-image.ts draws that same rectangle), so there is no
  * preview beside it to disagree with.
  *
- * One dialog for every avatar the product has — a person's own and an employee's — since both
- * are stored by the same rule. It owns nothing but the choice: the caller decodes the file,
- * and gets the crop back to encode and send.
+ * One dialog for every avatar the product has — a person's own, an employee's and an Agent's
+ * own — since all are stored by the same rule. It owns nothing but the choice: the picker
+ * (avatar-picker.tsx) decodes the file, and gets the crop back to encode and send.
  */
-import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
+
 import { Button, Modal } from "@prismshadow/penguin-ui";
-import { AVATAR_MAX_ZOOM, clampCrop, initialCrop } from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+import { AVATAR_MAX_ZOOM, clampCrop, initialCrop, type AvatarCrop } from "../../lib/avatar-image";
+
 import { S } from "../../lib/strings";
 
 /** Edge of the frame on screen, in CSS pixels. */

@@ -52,6 +52,10 @@ files:
   # that must ship, named for the same reason dist/node_modules is above.
   - plugins/**/*
   - package.json
+  # A `from:` entry is a file set of its own, and electron-builder adds its default exclusions
+  # (`!**/node_modules/**`, every `*.d.ts`) only to the set rooted at the app directory. That is
+  # what ships workbench-runtime/types/ — the declarations TSX workbench pages are checked
+  # against, laid out under a node_modules root — so keep this an entry, never a pattern.
   - from: ../web/dist
     to: web-dist
 # The compiler's default library files (scripts/build-assets.mjs stages them beside its entry,

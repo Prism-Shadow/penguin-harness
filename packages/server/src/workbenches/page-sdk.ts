@@ -73,7 +73,8 @@ export async function abortSession(sessionId) {
 }
 `;
 
-const etagOf = (bytes: Uint8Array): string =>
+/** A strong validator of `bytes` (also the page runtime's, ./ui-runtime.ts). */
+export const etagOf = (bytes: Uint8Array): string =>
   `"${createHash("sha256").update(bytes).digest("base64url").slice(0, 27)}"`;
 
 const fileOf = (text: string): PageSdkFile => {

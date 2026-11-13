@@ -57,7 +57,8 @@ export type KeyScope = "install" | "browser";
 
 /**
  * One classification rule. `kind: "exact"` matches the key itself; `kind: "family"` matches
- * a key prefix that ends in `.` and covers every id-suffixed key under it.
+ * a key prefix that ends in `.` and covers every id-suffixed key under it. Both are in the
+ * `penguin.` namespace, and the types hold that, and a family's trailing `.`, for every rule.
  *
  * Plain prefix matching would be wrong twice over, which is why the distinction exists:
  * `penguin.sidebarCollapsed` (a preference) is a prefix of
@@ -65,9 +66,17 @@ export type KeyScope = "install" | "browser";
  * covers both `penguin.terminal.theme` (a preference) and `penguin.terminal.page.id`
  * (a terminal id).
  */
-export interface KeyRule {
-  kind: "exact" | "family";
-  key: string;
+export type KeyRule =
+  | (KeyRuleScope & { kind: "exact"; key: `${KeyNamespace}.${string}` })
+  | (KeyRuleScope & { kind: "family"; key: `${KeyNamespace}.${string}.` });
+
+/**
+ * The namespace every key is in. Named apart from the dot so the source holds no quoted
+ * `penguin.` of its own, which install-scope.test.ts's key scan would read as a stored key.
+ */
+type KeyNamespace = "penguin";
+
+interface KeyRuleScope {
   scope: KeyScope;
   /** Why this scope — one line, kept next to the rule so the two cannot drift apart. */
   why: string;
@@ -83,10 +92,10 @@ export interface KeyRule {
  * fails on any this table does not cover.
  *
  * Two `penguin.*` strings in the source are NOT here on purpose:
- *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
+ *   - `penguin.chatRouteApplied.<field>` (features/chat/body/draft-view.tsx) is `sessionStorage`,
  *     not `localStorage`: it is scoped to one tab's history and dies with the tab, so it
  *     cannot outlive a data root.
- *   - `penguin.ooo` (the shared UI package's remark-autolink-boundary.ts) is the product's
+ *   - `penguin.ooo` (the shared UI package's site comments, among others) is the product's
  *     domain inside an example URL in a doc comment. It is not a storage key.
  */
 export const KEY_RULES: readonly KeyRule[] = [
@@ -120,6 +129,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.themeId",
     scope: "browser",
     why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.themePacks",
+    scope: "install",
+    why: "The server's imported theme packs as this browser last read them (the boot script links one); they live in the data root, so another root's list is stale.",
   },
   {
     kind: "exact",
@@ -242,6 +257,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
   },
   {
+    kind: "family",
+    key: "penguin.sidebarModeNavPinned.",
+    scope: "browser",
+    why: "Which of a sidebar mode's nav entries (company mode's) stay out of the fold, one key per mode; names nothing on the server.",
+  },
+  {
     kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
@@ -270,6 +291,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.pluginsGroupsFolded",
     scope: "browser",
     why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupBy",
+    scope: "browser",
+    why: "How the Agents page groups its list (by author or not at all) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.agentsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Agents page's author sections are folded, by author value (user, agent, company); those values ship with the build and name nothing on the server.",
   },
   {
     kind: "exact",

@@ -22,10 +22,12 @@
  *   own Hire hires.
  * - An employee's name is written by its Save alone, once it differs from the stored one, and
  *   Esc asks before a typed name is dropped.
+ * - Restore default on an employee's picture asks first, since it deletes the picture: cancelled,
+ *   nothing is written and the dialog stays; confirmed, the picture is removed.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement as h, Fragment } from "react";
-import type { ReactElement } from "react";
+import { createElement as h, Fragment, type ReactElement } from "react";
+
 import { MemoryRouter } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import type { OrgEmployeeItem, OrganizationSettings } from "@prismshadow/penguin-server/api";
@@ -44,15 +46,15 @@ import { CalendarEventDialog } from "../src/features/company/calendar-page";
 import { CreateTicketDialog } from "../src/features/company/tickets-page";
 import { ThemeProvider } from "../src/state/theme";
 import { AuthProvider } from "../src/state/auth";
-import { CompanyProvider } from "../src/state/company";
+import { CompanyProvider } from "../src/features/company/company-state";
 import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
 import { SessionsProvider } from "../src/state/sessions";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { buttonIn, topDialog } from "./helpers/agent-app";
 import { PROJECT } from "./helpers/project-settings";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
+import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
+
 import {
   button,
   click,
@@ -501,6 +503,9 @@ function companyServer(): FakeFetch {
     if (req.path === `${ORG}/employees/writer` && req.method === "PATCH") {
       return json({ ...EMPLOYEE, ...(req.body as object) });
     }
+    if (req.path === `${ORG}/employees/writer/avatar` && req.method === "PUT") {
+      return json(EMPLOYEE);
+    }
     return apiError(404, "not_found");
   });
 }
@@ -671,5 +676,39 @@ describe("an employee's name and picture", () => {
     ]);
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(promptOpen()).toBe(false);
+  });
+
+  it("asks before Restore default removes the picture, and writes nothing when cancelled", async () => {
+    const network = companyServer();
+    const onChanged = vi.fn();
+    await mountInCompany(
+      h(EmployeeProfileDialog, {
+        open: true,
+        projectId: "p1",
+        orgId: "acme",
+        employee: { ...EMPLOYEE, avatarRev: "e1" },
+        onClose: vi.fn(),
+        onChanged,
+      }),
+    );
+    const restore = () => button(en.profile.restoreDefaultOf(en.profile.avatar));
+    const avatarWrites = () =>
+      network.requests
+        .filter((r) => r.method === "PUT" && r.path === `${ORG}/employees/writer/avatar`)
+        .map((r) => r.body);
+    const openDialogs = () => document.querySelectorAll('[role="dialog"]').length;
+
+    await click(restore());
+    expect(openDialogs()).toBe(2);
+    expect(topDialog().textContent).toContain(en.profile.avatarResetConfirm);
+    await click(buttonIn(topDialog(), en.common.cancel));
+    expect(openDialogs()).toBe(1);
+    expect(avatarWrites()).toEqual([]);
+
+    await click(restore());
+    await click(buttonIn(topDialog(), en.profile.restoreDefault));
+    await waitFor(() => onChanged.mock.calls.length === 1);
+    expect(avatarWrites()).toEqual([{ avatar: null }]);
+    expect(openDialogs()).toBe(1);
   });
 });

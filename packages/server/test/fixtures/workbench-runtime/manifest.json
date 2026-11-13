@@ -1,0 +1,12 @@
+{
+  "version": "0.0.0-fixture",
+  "imports": {
+    "@prismshadow/penguin-ui": "penguin-ui.js",
+    "react": "react.js",
+    "react/jsx-runtime": "react-jsx-runtime.js",
+    "react-dom": "react-dom.js",
+    "react-dom/client": "react-dom-client.js"
+  },
+  "stylesheet": "penguin-ui.css",
+  "types": "types"
+}

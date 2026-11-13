@@ -3,7 +3,8 @@
  *
  * The compiler decides whether the interfaces a package was written against still fit this
  * platform (./iface-check.ts) — for plugins and for workbenches alike — and type-checks and
- * transpiles a workbench's source (../workbenches/compile.ts). It is a dependency of this
+ * transpiles a workbench's source and its TSX pages (../workbenches/compile.ts,
+ * compile-ui.ts). It is a dependency of this
  * package, but the platform also runs as a single pushed bundle that sits outside any
  * `node_modules`, on machines whose program may predate that dependency — so the specifier
  * is kept out of the bundler's sight and resolved at run time, in three places: in the
@@ -28,10 +29,15 @@ export class TypeScriptUnavailable extends Error {}
 
 /**
  * The default library files a program here is checked against, which the compiler reads from
- * its entry's own directory: the interface check names `lib.es2022.d.ts`, and a workbench's
- * target (ES2022) brings `lib.es2022.full.d.ts`.
+ * its entry's own directory: the interface check names `lib.es2022.d.ts`, a workbench's
+ * target (ES2022) brings `lib.es2022.full.d.ts`, and its TSX pages name the DOM's two.
  */
-export const DEFAULT_LIBRARIES = ["lib.es2022.d.ts", "lib.es2022.full.d.ts"] as const;
+export const DEFAULT_LIBRARIES = [
+  "lib.es2022.d.ts",
+  "lib.es2022.full.d.ts",
+  "lib.dom.d.ts",
+  "lib.dom.iterable.d.ts",
+] as const;
 
 let loading: Promise<TypeScript> | null = null;
 

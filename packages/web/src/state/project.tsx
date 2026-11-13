@@ -13,8 +13,8 @@
  * for, an answer is applied only while that Project is still current (a late list of the
  * Project just left is dropped), and the context publishes only the current Project's list.
  */
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
@@ -253,4 +253,13 @@ export function useProject(): ProjectContextValue {
   const ctx = useContext(ProjectContext);
   if (!ctx) throw new Error("useProject must be used within a ProjectProvider");
   return ctx;
+}
+
+/**
+ * The Project state when there is one, null outside a ProjectProvider: for a reader that only
+ * decorates what a component already shows (an Agent's picture) and has nothing to say without
+ * a Project, where `useProject` would refuse.
+ */
+export function useProjectIfAny(): ProjectContextValue | null {
+  return useContext(ProjectContext);
 }

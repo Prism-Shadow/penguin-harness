@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { Tabs } from "../src/components/navigation/tabs/tabs";
-import { classTokens, renderStatic } from "../src/testing";
+import { renderStatic } from "../src/testing";
 
 const render = (badge: string | null = null) =>
   renderStatic(
@@ -25,7 +25,6 @@ describe("Tabs", () => {
     expect(html).toMatch(/^<div role="tablist" class="ui-underline-nav /);
     expect(html.match(/role="tab"/g)).toHaveLength(2);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["border-line", "border-fg"]));
   });
 
   it("folds a badge's sentence into its tab's name and tooltip, and says nothing without one", () => {

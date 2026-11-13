@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agentDir } from "@prismshadow/penguin-core";
+import { agentStateDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import { readAmsp } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
@@ -136,7 +136,7 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
   const lines: string[] = [];
 
   const writeWorkbench = async (id: string, source: string) => {
-    const dir = path.join(agentDir(t.root, P, A), "workbenches", id);
+    const dir = path.join(agentStateDir(t.root, P, A), "workbenches", id);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), PACKAGE);
     await fs.writeFile(path.join(dir, "index.ts"), source);

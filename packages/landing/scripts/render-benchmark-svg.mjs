@@ -8,9 +8,9 @@
  *
  * That last one is a two-step flow: blog images are not committed to this repo, so the file
  * lands in the gitignored staging dir packages/landing/.blog-assets/ and is then uploaded to
- * the `blog-assets/` directory of the sibling `Prism-Shadow/penguin-harness-community` repo,
+ * the `assets/blog-assets/` directory of the sibling `Prism-Shadow/penguin-harness-community` repo,
  * which is what the posts load from (the renderer resolves /blog-assets/<name> there — see
- * packages/landing/src/lib/links.ts).
+ * packages/landing/src/lib/community-assets.ts).
  *
  * Two panels per suite (accuracy, cost), horizontal bars scaled linearly from zero — the
  * cost spread is ~70x, so the PenguinHarness bar is by far the shortest. That is the

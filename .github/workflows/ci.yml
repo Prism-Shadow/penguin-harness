@@ -47,7 +47,6 @@ jobs:
       typecheck: ${{ steps.plan.outputs.typecheck }}
       typecheck_build: ${{ steps.plan.outputs.typecheck_build }}
       typecheck_command: ${{ steps.plan.outputs.typecheck_command }}
-      readme: ${{ steps.plan.outputs.readme }}
       plugins: ${{ steps.plan.outputs.plugins }}
       packaging: ${{ steps.plan.outputs.packaging }}
       installer: ${{ steps.plan.outputs.installer }}
@@ -106,29 +105,25 @@ jobs:
       - name: Lint workflows (actionlint)
         run: |
           ver=1.7.12
-          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
-            | tar xz actionlint
+          actionlint_archive="${RUNNER_TEMP}/actionlint_${ver}_linux_amd64.tar.gz"
+          if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
+            -o "$actionlint_archive"; then
+            # The API serves the same v1.7.12 asset when the release URL is unavailable.
+            curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
+              -H 'Accept: application/octet-stream' \
+              https://api.github.com/repos/rhysd/actionlint/releases/assets/384924896 \
+              -o "$actionlint_archive"
+          fi
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $actionlint_archive" | sha256sum --check -
+          tar xzf "$actionlint_archive" actionlint
           # -shellcheck= turns off the bundled shellcheck pass: what is wanted here is the
           # workflow-expression and schema check, and shellcheck's info-level findings in
           # workflows this change does not touch are a separate conversation.
           ./actionlint -shellcheck=
 
-  # README tables are test inputs, not changes to core or its downstream packages.
-  readme:
-    needs: plan
-    if: needs.plan.outputs.readme == 'true'
-    name: README catalog
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref || '' }}
-      - uses: ./.github/actions/setup
-      - name: README plugin tables match the shipped library
-        run: pnpm --filter @prismshadow/penguin-core exec vitest run test/readme-catalog.test.ts
-
   # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
-  # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
+  # `version`, or the `version` of the hooks contribution in src/index.ts: installed copies
   # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
   plugin-versions:
@@ -180,21 +175,31 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in amsp core server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp a2ui chat-markdown core ui server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
+          # The harness image the npm channel carries (carried-image.ts), packed the
+          # way the release's npm job packs it into the server package's dist/.
+          node scripts/pack-carried-store.mjs packages/server/dist/hmr
+          test -s packages/server/dist/hmr/harness.json
       - name: Pack the publishable packages
         run: |
-          for p in amsp core server cli; do
+          for p in amsp a2ui chat-markdown core server cli; do
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done
+      # The UI package is packed with pnpm, the only packer that applies its publishConfig (its
+      # exports point at src/ in the repository, at dist/ in the tarball). The check installs that
+      # tarball into a project and compiles and renders against it, and checks the Workbench
+      # runtime the Web UI build copied in.
+      - name: The UI package's tarball and Workbench runtime
+        run: node scripts/check-ui-package.mjs
       # A tarball that lost web-dist/ serves no Web UI from an npm install, and the failure is a
       # blank page at runtime rather than anything the pack step reports.
-      - name: The server tarball carries the Web UI and the license
+      - name: The server tarball carries the Web UI, the harness image and the license
         run: |
           listing="$(cd packages/server && npm pack --dry-run 2>&1)"
-          for want in web-dist/ LICENSE; do
+          for want in web-dist/ LICENSE dist/hmr/harness.json dist/hmr/store/; do
             echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
           done
           echo "server tarball carries web-dist/ and LICENSE"
@@ -216,9 +221,9 @@ jobs:
         run: ${{ needs.plan.outputs.typecheck_command }}
 
   # Linux runs every affected package. New packages enter the rest shard automatically. The web
-  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and each
-  # uploads the coverage of its half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from
-  # silently skipping.
+  # suite runs in two jobs (web-1, web-2), each half of the web's, ui's and cli's files, and the
+  # server suite in two (server-1, server-2), dealt by weight; each job uploads the coverage of its
+  # half. PENGUIN_MUST_RUN keeps host-dependent sandbox suites from silently skipping.
   test:
     needs: plan
     if: needs.plan.outputs.tests == 'true'
@@ -238,6 +243,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+          # The gallery's layout checks below need Chromium: it downloads while the build runs.
+          alongside: ${{ matrix.gallery && 'pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium' || '' }}
       # Ubuntu 23.10 and later let only AppArmor-profiled programs create an unprivileged
       # user namespace, and some tests here need one. Changing it takes root and changes the
       # whole machine, so it is a host prerequisite the job sets, not something a test can.
@@ -264,12 +271,13 @@ jobs:
           retention-days: 7
       # Layout the component library only shows in a real engine, measured in the gallery: list
       # rows keep their actions inside the card, attachment tiles keep their image's shape. Run by
-      # the job that tests the gallery (the plan's `gallery`), against its own dev server.
-      - name: Install Chromium (gallery layout checks)
-        if: matrix.gallery
-        run: pnpm --filter @prismshadow/penguin-ui-gallery exec playwright install --with-deps chromium
+      # the job that tests the gallery (the plan's `gallery`), against the gallery its build step
+      # built (GALLERY_SERVE=build: a third of the dev server's time), in the Chromium the setup
+      # step installed alongside the build.
       - name: Component layout checks (ui-gallery)
         if: matrix.gallery
+        env:
+          GALLERY_SERVE: build
         run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
       - name: Gallery layout failure diagnostics
         if: failure() && matrix.gallery
@@ -465,8 +473,9 @@ jobs:
         with:
           # The web package is not a dependency of the desktop package (the app carries its
           # build by an electron-builder file mapping, not an import), so `desktop...` alone
-          # leaves it unbuilt — and the mapping then silently packs nothing.
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-web"
+          # leaves it unbuilt — and the mapping then silently packs nothing. The web's build
+          # copies in the UI package's Workbench runtime, so that package builds first.
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-ui,@prismshadow/penguin-web"
 
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs
@@ -570,7 +579,6 @@ jobs:
       [
         plan,
         style,
-        readme,
         browser-smoke,
         plugin-versions,
         npm-packaging,

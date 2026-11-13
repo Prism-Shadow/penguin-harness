@@ -161,6 +161,7 @@ interface MessagesResponse {
   page?: {
     before?: string; // pass back as `before`; absent at the beginning
     earlierTurns: number;
+    units: number; // 窗口按切分时的口径所含的 Task 数
     prior: Record<string, number>;
     contextModel?: { provider: string; modelId: string };
     agentState?: string;

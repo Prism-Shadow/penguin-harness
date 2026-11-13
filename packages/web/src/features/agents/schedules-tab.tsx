@@ -37,10 +37,10 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-  toastError,
   toastSuccess,
+  type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -48,12 +48,10 @@ import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { ScheduleFormModal } from "../schedules/schedule-form-modal";
-import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
-import { toggleBody } from "../schedules/schedule-upsert";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -141,7 +139,7 @@ export function SchedulesTab({
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
     }
@@ -156,7 +154,7 @@ export function SchedulesTab({
       if (form?.editing?.name === deleting) setForm(null);
       changed();
     } catch (e) {
-      toastError(apiErrorText(e));
+      toastApiError(e);
     } finally {
       setBusy(false);
       setDeleting(null);

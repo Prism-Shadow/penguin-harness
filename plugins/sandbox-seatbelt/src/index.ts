@@ -262,6 +262,21 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
  */
 @Component({
   contributes: {
+    // How the Plugins page shows this backend (read from ifaces.json, never by booting it).
+    "PluginLibraryModule.cards": [
+      {
+        id: "sandbox-seatbelt.card",
+        title: "macOS Sandbox",
+        titleZh: "macOS 沙箱",
+        descriptionZh:
+          "PenguinHarness 的 macOS Seatbelt 沙箱后端：限制文件写入，并提供网络隔离与路径屏蔽。",
+        shortDescription: "macOS: confine file writes, cut the network, mask paths.",
+        shortDescriptionZh: "macOS：限制文件写入、断开网络、屏蔽路径。",
+        category: "sandbox",
+        icon: "icon.svg",
+        preinstall: false,
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-seatbelt.provider",

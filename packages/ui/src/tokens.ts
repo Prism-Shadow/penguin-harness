@@ -2,19 +2,22 @@
  * The token contract: every CSS custom property a theme must define, grouped the way the
  * gallery's Foundations pages present them.
  *
- * One name set for every theme. Each of `themes/github.css`, `themes/modern.css` and
- * `themes/geek.css` gives **every** name below a value in **both** modes (light and dark): its
- * base rule declares all of them with the light values, and its dark rule declares only the names
- * whose value dark changes — a group that does not vary by mode (shape, families, type scale,
- * density, motion, streaming, the icons' stroke) lives once, in the base rule. The contract test
- * parses the three files and diffs each mode (the base rule plus that mode's own) against
+ * One name set for every theme. The base pack, Frost (`themes/modern/tokens.css`), gives **every**
+ * name below a value in **both** modes (light and dark) on the bare root, so every `<html>` has
+ * one; so does each built-in pack on its own root (`themes/<id>/tokens.css`): its base rule
+ * declares all of them with the light values, and its dark rule declares only the names whose
+ * value dark changes — a group that does not vary by mode (shape, families, type scale, density,
+ * motion, streaming, the icons' stroke) lives once, in the base rule. A pack built on Frost
+ * (`base: "modern"`) may declare only what it changes; the rest is Frost's. The contract test
+ * parses every pack folder and diffs each mode (the base rule plus that mode's own) against
  * {@link TOKEN_NAMES}. Components
  * read these names only — through the semantic Tailwind utilities `theme.css` bridges
  * (`bg-surface`, `text-fg-muted`, `border-line`, …) or through `var(--ui-*)` directly — and never
  * branch on which theme is active.
  *
- * Adding, renaming or removing a name is a contract change: every theme file changes in the
- * same commit, and so does the bridge in `theme.css` when the name has a utility alias.
+ * Adding, renaming or removing a name is a contract change: every complete pack changes in the
+ * same commit, and so does the bridge in `theme.css` when the name has a utility alias. Removing
+ * or renaming one also moves {@link THEME_API}, the version a pack is written against.
  *
  * Nothing about size is shared between themes any more. Each theme sets its own space unit
  * (`--ui-space-unit`, which `theme.css` bridges to Tailwind's `--spacing`, so every `h-8`, `px-2`,
@@ -49,25 +52,22 @@
  * fades it in word by word under a soft veil, Console types it out behind a block cursor.
  */
 
-/**
- * Stable, lowercase theme ids, in the order every list offers them — Settings, the gallery:
- * Frost, Console, Primer (user decision, 2026-10-02). Display names are UI copy, not ids.
+import { THEME_IDS, builtinPack } from "./themes";
+import type { ThemeId } from "./themes";
+
+/*
+ * The theme ids and the pack registry live in `themes/index.ts`, beside the manifests; the
+ * contract re-exports them so a consumer reads one module.
  */
-export const THEME_IDS = ["modern", "geek", "github"] as const;
-export type ThemeId = (typeof THEME_IDS)[number];
+export { BUILTIN_PACKS, THEME_API, THEME_IDS, builtinPack, isThemeId } from "./themes";
+export type { ThemeBase, ThemeId, ThemePackManifest, ThemePackSwatch } from "./themes";
 
 /**
- * The theme the stylesheet paints for an absent or unknown `data-theme`: its file matches a bare
- * root and needs no attribute selector. A stylesheet fact only — the product's default is
- * {@link INITIAL_THEME_ID}.
- */
-export const DEFAULT_THEME_ID: ThemeId = "github";
-
-/**
- * The theme a browser starts in when it stores no choice, or an unknown one: Frost (user
- * decision, 2026-10-02; Primer before). It is written to the root like any chosen theme — the
- * stylesheet's fallback stays {@link DEFAULT_THEME_ID} — so the boot script, the provider and
- * the gallery read this one and nothing else names a default.
+ * Frost: the base pack — the one whose values a bare root paints and whose recipes every pack
+ * built on it draws — and the theme a browser starts in when it stores no choice, or an unknown
+ * one (user decision, 2026-10-02; Primer before). It is written to the root like any chosen theme
+ * (`data-theme` is always present), so the boot script, the provider and the gallery read this
+ * one and nothing else names a default.
  */
 export const INITIAL_THEME_ID: ThemeId = "modern";
 
@@ -77,10 +77,10 @@ export type ThemeModeName = (typeof THEME_MODES)[number];
 
 /**
  * One accent preset a theme lists: its id (the `data-accent` value, lowercase, the same in both
- * languages) and its swatch — the `--ui-accent` its light rule sets, spelled exactly as the theme
- * file spells it, so a picker can paint the swatch without a stylesheet probe. A theme's dark rule
- * may lift the preset (a dark theme wants a lighter fill with dark ink); the swatch is the light
- * one, and a test holds it equal to the CSS.
+ * languages) and its swatch — the `--ui-accent` its light rule sets, spelled exactly as the pack's
+ * `accents.css` spells it, so a picker can paint the swatch without a stylesheet probe. A theme's
+ * dark rule may lift the preset (a dark theme wants a lighter fill with dark ink); the swatch is
+ * the light one, and a test holds it equal to the CSS.
  */
 export interface AccentPresetSpec {
   readonly id: string;
@@ -88,9 +88,10 @@ export interface AccentPresetSpec {
 }
 
 /**
- * The user's accent presets, per theme (user decision, 2026-09-19). Each theme declares its own
- * list and values in its own file, in `@layer ui-accent`, on `:root[data-accent="<id>"]` scoped to
- * that theme. A preset sets `--ui-accent` — and `--ui-accent-fg` where its label's ink differs
+ * The user's accent presets, per theme (user decision, 2026-09-19), as each pack's manifest lists
+ * them (`accent.presets`). Each theme declares its values in its own `accents.css`, served in
+ * `@layer ui-accent`, on `:root[data-accent="<id>"]` scoped to that theme. A preset sets
+ * `--ui-accent` — and `--ui-accent-fg` where its label's ink differs
  * from the theme's — and nothing outside the accent group: Frost and Console derive the hover
  * and active fills and the muted and line washes from `--ui-accent` in their base rules, so a
  * preset is one value per mode and carries no second copy of the family. Primer's five keep all
@@ -106,61 +107,45 @@ export interface AccentPresetSpec {
  * are the orange it shipped with and five terminal hues — its own accent went black and white
  * (2026-09-30), so the orange became a preset.
  */
-export const ACCENT_PRESETS = {
-  github: [
-    { id: "blue", swatch: "#2563eb" },
-    { id: "green", swatch: "#15803d" },
-    { id: "violet", swatch: "#7c3aed" },
-    { id: "rose", swatch: "#be123c" },
-    { id: "amber", swatch: "#b45309" },
-  ],
-  modern: [
-    { id: "forest", swatch: "#006838" },
-    { id: "ocean", swatch: "#3b6ea8" },
-    { id: "clay", swatch: "#b8552f" },
-    { id: "plum", swatch: "#7a4d8f" },
-    { id: "honey", swatch: "#96660f" },
-    { id: "slate", swatch: "#5c6470" },
-  ],
-  geek: [
-    { id: "orange", swatch: "#e32a01" },
-    { id: "phosphor", swatch: "#1f7a1f" },
-    { id: "cyan", swatch: "#0e7490" },
-    { id: "magenta", swatch: "#b0177e" },
-    { id: "gold", swatch: "#8a6d00" },
-    { id: "cobalt", swatch: "#003ee9" },
-  ],
-} as const satisfies Readonly<Record<ThemeId, readonly AccentPresetSpec[]>>;
+export const ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPresetSpec[]>> =
+  /* @__PURE__ */ (() => byTheme((id) => builtinPack(id).accent.presets))();
 
-/** Every preset id any theme lists. */
-export type AccentPreset = (typeof ACCENT_PRESETS)[ThemeId][number]["id"];
+/**
+ * A preset id. Ids come from the manifests, so the type is a string; what a stored value may be is
+ * {@link ACCENT_PRESET_IDS}.
+ */
+export type AccentPreset = string;
+
+/*
+ * The values below are computed when the module loads. Each computation is marked pure so a
+ * bundle that never reads it drops it: a public site imports this module through the boot
+ * script's storage keys and would otherwise carry every preset and token name.
+ */
+
+/** A table over the built-in packs, one entry per id. */
+function byTheme<T>(entry: (id: ThemeId) => T): Readonly<Record<ThemeId, T>> {
+  return Object.fromEntries(THEME_IDS.map((id) => [id, entry(id)])) as Record<ThemeId, T>;
+}
 
 /** The preset ids each theme lists, in the theme's own order — what a picker offers. */
-export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> = {
-  github: ACCENT_PRESETS.github.map((preset) => preset.id),
-  modern: ACCENT_PRESETS.modern.map((preset) => preset.id),
-  geek: ACCENT_PRESETS.geek.map((preset) => preset.id),
-};
+export const THEME_ACCENT_PRESETS: Readonly<Record<ThemeId, readonly AccentPreset[]>> =
+  /* @__PURE__ */ (() => byTheme((id) => ACCENT_PRESETS[id].map((preset) => preset.id)))();
 
 /** Every id once, across the themes — what a stored value is validated against. */
-export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
+export const ACCENT_PRESET_IDS: readonly AccentPreset[] = /* @__PURE__ */ (() => [
   ...new Set(THEME_IDS.flatMap((id) => THEME_ACCENT_PRESETS[id])),
-];
+])();
 
 /**
  * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
- * mode, spelled as the theme file spells it, so a picker can paint the "theme's own" swatch
+ * mode, as the manifest spells it (`accent.own`), so a picker can paint the "theme's own" swatch
  * without a stylesheet probe (a test holds each value equal to the CSS). All three are
  * monochrome (user decision, 2026-10-02): the theme's ink in light, a near-white in dark, so that
  * swatch shows black or white rather than a hue. Primer's are Tailwind's stock gray-900 /
  * gray-100, as v0.2.13 drew them.
  */
-export const THEME_OWN_ACCENTS: OwnAccents = {
-  github: { light: "#111827", dark: "#f3f4f6" },
-  modern: { light: "#232527", dark: "#f5f5f6" },
-  geek: { light: "#1d1d1f", dark: "#f4f2f2" },
-};
-type OwnAccents = Readonly<Record<ThemeId, Readonly<Record<ThemeModeName, string>>>>;
+export const THEME_OWN_ACCENTS: Readonly<Record<ThemeId, Readonly<Record<ThemeModeName, string>>>> =
+  /* @__PURE__ */ (() => byTheme((id) => builtinPack(id).accent.own))();
 
 /**
  * What a stored choice paints under a theme: the preset when the theme lists it, otherwise
@@ -616,7 +601,7 @@ export type TokenGroupId = TokenGroup["id"];
 export type TokenName = TokenGroup["names"][number];
 
 /** Every contract name, flattened in group order. The contract test diffs the theme files against this. */
-export const TOKEN_NAMES: readonly TokenName[] = TOKEN_GROUPS.flatMap(
+export const TOKEN_NAMES: readonly TokenName[] = /* @__PURE__ */ TOKEN_GROUPS.flatMap(
   (group): readonly TokenName[] => group.names,
 );
 

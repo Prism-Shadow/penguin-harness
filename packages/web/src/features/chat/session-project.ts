@@ -93,12 +93,15 @@ export function heldRouteSession(
  *   route naming no Session means, what deleting the conversation on screen means (the row is
  *   gone on purpose), and what a Session of another Project means (a Project switch leaves the
  *   old route behind).
+ * - `refused`: the machine holding the Session will not show it to this server (403
+ *   `session_forbidden`). It exists, so the page says so in place instead of calling it gone or
+ *   opening another conversation.
  * - `notFound`: the server said the Session does not exist — a stale link, a desk whose Agent
  *   was deleted, a conversation deleted in another tab. The page says so in place. Opening the
  *   latest conversation instead put the reader in an unrelated one under the dead link's
  *   pretence, which is exactly what a click on a deleted employee's desk used to do.
  */
-export type RouteSessionOutcome = "show" | "wait" | "redirect" | "notFound";
+export type RouteSessionOutcome = "show" | "wait" | "redirect" | "notFound" | "refused";
 
 export function routeSessionOutcome(state: {
   /** A row for the route is on screen (listed, looked up, or held through a refetch). */
@@ -110,9 +113,14 @@ export function routeSessionOutcome(state: {
   deletedHere: boolean;
   /** The direct lookup answered 404: no such Session, or none this user may see. */
   missing: boolean;
+  /** The machine holding the Session will not show it to this server: said in place. */
+  refused?: boolean;
 }): RouteSessionOutcome {
   if (state.shown) return "show";
   if (state.pending) return "wait";
+  if (state.refused === true && state.routeSessionId !== null && !state.deletedHere) {
+    return "refused";
+  }
   if (state.routeSessionId === null || state.deletedHere || !state.missing) return "redirect";
   return "notFound";
 }

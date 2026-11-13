@@ -15,7 +15,10 @@ import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { originRule } from "./public-origin.js";
 import { attributedProjectId } from "./attribution.js";
+import { jsonCompression } from "./json-compression.js";
+import { jsonValidators } from "./json-validators.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -133,13 +136,24 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
+    // Every JSON answer under the API — this server's own and those it relays from a machine —
+    // carries a validator and answers a caller who holds it with a 304 (json-validators.ts), and
+    // is compressed for a caller that asks (json-compression.ts). Inside the request line, so it
+    // logs the 304; compression outside the validator, so it encodes what the validator kept.
+    for (const scope of ["/api/*", "/server/*"]) {
+      app.use(scope, jsonCompression());
+      app.use(scope, jsonValidators());
+    }
     // The same header the host layer puts ahead of its copies of these two checks (src/app.ts):
     // their refusals answer before the Agent API's group runs, and a browser caller must read the
     // code, not a CORS failure.
     app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
-      const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());
+      // An Agent package is uploaded raw, under the package cap rather than the attachment budget.
+      const size = isAgentImport(c.req.method, c.req.path)
+        ? MAX_PACKAGE_BYTES
+        : bodyLimitBytes(this.settings.getAttachmentLimitsMb());
       if (capped === null || capped.size !== size) {
         capped = {
           size,

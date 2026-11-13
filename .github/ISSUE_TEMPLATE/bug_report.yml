@@ -1,80 +1,67 @@
-name: Bug report
-description: Something in PenguinHarness does not do what it says it does.
+name: "Bug report / 缺陷报告"
+description: "Something in PenguinHarness does not do what it says it does. / PenguinHarness 的某项功能没有按说明工作。"
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Please search the open issues first, and check whether the newest release already fixes it — PenguinHarness has no maintenance branches, so a fix only ever arrives in a later version.
+        Please search the [open issues](https://github.com/Prism-Shadow/penguin-harness/issues) first, and check whether the [newest release](https://github.com/Prism-Shadow/penguin-harness/releases) already fixes it.
+        请先搜索[已有的 issue](https://github.com/Prism-Shadow/penguin-harness/issues)，并确认[最新版本](https://github.com/Prism-Shadow/penguin-harness/releases)是否已经修复。
 
-        **Never paste credentials.** A data root holds provider API keys, messaging bot tokens and Vault entries in readable form, so `system_config.yaml`, `.env`, a Trace and a full log are all likely to carry a secret. Quote the few lines that matter. If the bug *is* a leak or another security problem, do not file it here — follow the [security policy](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.md).
+        **Never paste credentials**: API keys, bot tokens, `system_config.yaml`, `.env`, or a whole Trace or log. Quote only the lines that matter. A security problem goes to the [security policy](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.md), not here.
+        **不要粘贴任何凭据**：API Key、机器人 Token、`system_config.yaml`、`.env`，以及完整的 Trace 或日志，只引用相关的几行。安全问题请按[安全策略](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.md)私下报告，不要发在这里。
 
   - type: textarea
     id: summary
     attributes:
-      label: What happened
-      description: What you did, what you expected, and what happened instead.
+      label: What happened / 问题描述
+      description: |
+        What you did, what you expected, and what happened instead.
+        你做了什么，期望得到什么，实际发生了什么。
     validations:
       required: true
 
   - type: textarea
-    id: steps
+    id: system-info
     attributes:
-      label: Steps to reproduce
-      description: The shortest sequence that shows the problem. A prompt, a command, or a few clicks is enough — say which Agent, model and approval mode were in play if they matter.
+      label: System info / 系统信息
+      description: |
+        The version, how PenguinHarness is installed (desktop app, CLI, server or source checkout), and the OS. The version is in the output of `penguin version`, or in Settings.
+        版本、安装方式（桌面端、CLI、服务端或源码）与操作系统。版本可从 `penguin version` 的输出或设置页查到。
       placeholder: |
-        1. …
-        2. …
-        3. …
+        Version: v0.2.18
+        Installed as: Desktop app
+        OS: macOS 15.4 (arm64)
     validations:
       required: true
 
-  - type: input
-    id: version
+  - type: textarea
+    id: reproduction
     attributes:
-      label: Version
-      description: Output of `penguin version`, or the version the app shows in Settings.
-      placeholder: v0.2.7, or v0.2.7-14-g9e8f7d6-dirty for a source build
+      label: Steps to reproduce / 复现步骤
+      description: |
+        The shortest sequence that shows the problem. Saying whether it also happens on a fresh data root (`PENGUIN_HOME=/tmp/penguin-check penguin ...`) helps tell a code defect from state an earlier version left behind.
+        能复现问题的最短步骤。说明在全新的数据根目录（`PENGUIN_HOME=/tmp/penguin-check penguin ...`）上是否同样出现，有助于区分代码缺陷与旧版本遗留的状态。
     validations:
-      required: true
-
-  - type: dropdown
-    id: install
-    attributes:
-      label: How it is installed
-      options:
-        - Desktop app
-        - CLI (penguin, from npm or an installer bundle)
-        - Server (penguin server / penguin web)
-        - From a source checkout (pnpm dev)
-    validations:
-      required: true
-
-  - type: input
-    id: os
-    attributes:
-      label: Operating system
-      placeholder: macOS 15.4 (Apple silicon) / Windows 11 / Ubuntu 24.04
-    validations:
-      required: true
-
-  - type: dropdown
-    id: fresh-root
-    attributes:
-      label: Does it reproduce on a fresh data root?
-      description: Run it once against an empty root — `PENGUIN_HOME=/tmp/penguin-check penguin ...`, or `--root` where the subcommand takes it. That separates a defect in the code from state an earlier version left behind, and it is the single most useful thing a report can say.
-      options:
-        - Yes — an empty data root still shows it
-        - No — only my existing data root shows it
-        - Not tested
-    validations:
-      required: true
+      required: false
 
   - type: textarea
     id: output
     attributes:
-      label: Relevant output
-      description: Error messages, the failing part of a log, or a screenshot. Redact keys and tokens before pasting.
+      label: Error output / 报错信息
+      description: |
+        Error messages, or the failing part of a log. Take out keys and tokens first.
+        报错信息，或日志中出错的部分。粘贴前请去掉密钥与 Token。
       render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: others
+    attributes:
+      label: Others / 其他
+      description: |
+        Anything else that helps: a screenshot, the Agent, model or approval mode in play.
+        其他有助于定位的信息：截图，以及所用的 Agent、模型或审批模式。
     validations:
       required: false
