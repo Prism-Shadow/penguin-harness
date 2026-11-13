@@ -38,14 +38,14 @@ import {
   MessagingTaskRunner,
   MessagingModule,
   QQScan,
-} from "./runtime/messaging/bridge.js";
-import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
-import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
-import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
-import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
-import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
-import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
-import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
+} from "@penguinharness/plugin-messaging/server";
+import { MessagingAccountsModule } from "@penguinharness/plugin-messaging/server/messaging/accounts-module.js";
+import { FeishuSdkProvider } from "@penguinharness/plugin-messaging/server/messaging/feishu-connector.js";
+import { TelegramTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/telegram-connector.js";
+import { QQTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/qq-connector.js";
+import { QQScanTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/qq-scan.js";
+import { WeChatTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/wechat-connector.js";
+import { WeChatScanTransportProvider } from "@penguinharness/plugin-messaging/server/messaging/wechat-scan.js";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "@penguinharness/plugin-plugins/server";
 import { PluginCliCommandsProvider } from "@penguinharness/plugin-plugins/server";

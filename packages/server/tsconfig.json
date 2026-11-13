@@ -2,14 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@penguinharness/plugin-company/server": [
-        "../../plugins/company/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-terminal/server": [
-        "../../plugins/terminal/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-terminal/server/*": [
-        "../../plugins/terminal/src/server/*"
+      "@penguinharness/plugin-agents/server": [
+        "../../plugins/agents/src/server/index.ts"
       ],
       "@penguinharness/plugin-browser/server": [
         "../../plugins/browser/src/server/index.ts"
@@ -17,35 +11,20 @@
       "@penguinharness/plugin-browser/server/*": [
         "../../plugins/browser/src/server/*"
       ],
-      "@penguinharness/plugin-usage/server": [
-        "../../plugins/usage/src/server/index.ts"
+      "@penguinharness/plugin-company/server": [
+        "../../plugins/company/src/server/index.ts"
       ],
-      "@penguinharness/plugin-schedules/server": [
-        "../../plugins/schedules/src/server/index.ts"
+      "@penguinharness/plugin-db/server": [
+        "../../plugins/db/src/index.ts"
       ],
       "@penguinharness/plugin-machines/server": [
         "../../plugins/machines/src/server/index.ts"
       ],
-      "@penguinharness/plugin-agents/server": [
-        "../../plugins/agents/src/server/index.ts"
+      "@penguinharness/plugin-messaging/server": [
+        "../../plugins/messaging/src/server/index.ts"
       ],
-      "@penguinharness/plugin-settings/server": [
-        "../../plugins/settings/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-projects/server": [
-        "../../plugins/projects/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-workbenches/server": [
-        "../../plugins/workbenches/src/server/index.ts"
-      ],
-      "@prismshadow/penguin-server/internal": [
-        "./src/internal.ts"
-      ],
-      "@prismshadow/penguin-server/ifaces.json": [
-        "./src/ifaces.json"
-      ],
-      "@prismshadow/penguin-server/api": [
-        "./src/api/types.ts"
+      "@penguinharness/plugin-messaging/server/messaging/*": [
+        "../../plugins/messaging/src/server/messaging/*"
       ],
       "@penguinharness/plugin-models/server": [
         "../../plugins/models/src/server/index.ts"
@@ -53,20 +32,44 @@
       "@penguinharness/plugin-plugins/server": [
         "../../plugins/plugins/src/server/index.ts"
       ],
-      "@penguinharness/plugin-messaging/server": [
-        "../../plugins/messaging/src/server/index.ts"
-      ],
-      "@penguinharness/plugin-sessions/server": [
-        "../../plugins/sessions/src/server/index.ts"
-      ],
-      "@prismshadow/penguin-server/db/repos/organizations": [
-        "./src/db/repos/organizations.ts"
+      "@penguinharness/plugin-projects/server": [
+        "../../plugins/projects/src/server/index.ts"
       ],
       "@penguinharness/plugin-sandbox/server": [
         "../../plugins/sandbox/src/server/index.ts"
       ],
-      "@penguinharness/plugin-db/server": [
-        "../../plugins/db/src/index.ts"
+      "@penguinharness/plugin-schedules/server": [
+        "../../plugins/schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../../plugins/sessions/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-settings/server": [
+        "../../plugins/settings/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server": [
+        "../../plugins/terminal/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server/*": [
+        "../../plugins/terminal/src/server/*"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../../plugins/usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/api": [
+        "./src/api/types.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "./src/db/repos/organizations.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "./src/ifaces.json"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "./src/internal.ts"
       ]
     }
   },
