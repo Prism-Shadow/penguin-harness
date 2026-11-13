@@ -16,7 +16,7 @@ for (const [width, lang, label] of [
     const top = page.getByRole("button", { name: label, exact: true });
     await expect(top).toHaveCount(0);
     await page
-      .getByRole("link", { name: lang === "zh" ? "在画廊中打开" : "Open in the gallery" })
+      .getByRole("link", { name: lang === "zh" ? "在主题包中打开" : "Open in Theme Packs" })
       .scrollIntoViewIfNeeded();
     await expect(page.locator("iframe")).toHaveCount(1);
     await expect(page.locator(".neon-blob")).toHaveCount(0);
