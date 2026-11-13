@@ -78,7 +78,7 @@ import { ModelProviderAuthTokensRepo } from "@penguinharness/plugin-projects/ser
 import { MembersRepo } from "@penguinharness/plugin-projects/server";
 import { AgentsRepo } from "@penguinharness/plugin-agents/server";
 import { UsageRepo } from "@penguinharness/plugin-usage/server";
-import { SchedulesRepo } from "@penguinharness/plugin-schedules/server";
+import { SchedulesRepo } from "@penguinharness/plugin-sessions/server";
 import { TraceIndexRepo } from "@penguinharness/plugin-usage/server";
 import { MessagingBindingsRepo } from "@penguinharness/plugin-messaging/server";
 import { MessagingConversationsRepo } from "@penguinharness/plugin-messaging/server";
