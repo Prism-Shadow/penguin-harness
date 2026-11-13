@@ -20,8 +20,28 @@ export type FixtureId =
 /** What accepting a ticket sets going: work, a patrol schedule, or a dedicated role. */
 export type TicketKind = "task" | "schedule" | "role";
 
-/** Whose byline a ticket carries. */
+/** Whose byline a ticket carries: one of the company's employees. */
 export type Byline = "lead" | "engineer" | "verifier";
+
+/**
+ * An employee, apart from its words: its Agent id, who it reports to, and its monthly budget in
+ * US dollars. The id picks the avatar's colour; these three fall a third of the wheel apart, so
+ * no two employees share a colour.
+ * Its name, title and duties are the dictionaries' `people`. The lead is the one that stays up;
+ * the others work only in the sessions of the tickets they own.
+ */
+export interface Employee {
+  agentId: string;
+  reportsTo: Byline | null;
+  budget: number;
+}
+
+/** The company's employees, the lead first. Their budgets add up to the company's. */
+export const EMPLOYEES: Record<Byline, Employee> = {
+  lead: { agentId: "harness-lead", reportsTo: null, budget: 40 },
+  engineer: { agentId: "org-engineer", reportsTo: "lead", budget: 40 },
+  verifier: { agentId: "org-verifier", reportsTo: "lead", budget: 20 },
+};
 
 /**
  * One step a work session takes: it notes progress, stops on its one question, or delivers.

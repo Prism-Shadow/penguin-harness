@@ -116,7 +116,7 @@ export interface CompanyState {
   /** Every work session, oldest first. */
   sessions: WorkSession[];
   schedules: Schedule[];
-  /** The bylines besides the lead's. */
+  /** The employees besides the lead, in the order they joined. */
   roles: Byline[];
   chat: ChatLine[];
   /** What a patrol can still find, in the order it finds it. */
@@ -186,7 +186,8 @@ export function freshState(): CompanyState {
     tickets: [],
     sessions: [],
     schedules: [],
-    roles: [],
+    // A company starts with the lead and one engineer; anyone else joins by an accepted proposal.
+    roles: ["engineer"],
     chat: [],
     pool: ["flaky", "lint"],
     said: 0,

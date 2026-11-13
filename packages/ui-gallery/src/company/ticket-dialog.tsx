@@ -30,6 +30,7 @@ import {
 } from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
 import type { SessionStatus, Ticket, WorkSession } from "./model";
+import { PersonName, whoOf } from "./people";
 import { waitOf } from "./spec";
 import type { Wait } from "./spec";
 import { acceptanceOf, gistOf, optionsOf, progressOf, questionOf, resultOf, titleOf } from "./text";
@@ -100,7 +101,7 @@ export function TicketDialog({
               {W.ticket.source} {W.sources[ticket.source]}
             </span>
             <span>
-              {T.owner} {W.bylines[ticket.owner]}
+              {T.owner} <PersonName byline={ticket.owner} />
             </span>
             <span className="ml-auto tabular-nums">
               {T.cost} <span className="font-medium text-fg">{money(cost)}</span>
@@ -180,7 +181,7 @@ export function TicketDialog({
                     >
                       {W.ticket.sessionRow(
                         session.n,
-                        W.bylines[ticket.owner],
+                        whoOf(ticket.owner, W),
                         session.messages.length,
                       )}
                     </TitleButton>

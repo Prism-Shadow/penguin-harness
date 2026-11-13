@@ -6,7 +6,8 @@
  *   and the inbox lists it in exactly one view: the reader's triage first, then what waits, what
  *   an agent has, and what is settled.
  * - Given the first sentence, the lead answers with proposals only: nothing has a session, no
- *   schedule runs and no role has joined until each is accepted; an empty sentence starts nothing.
+ *   schedule runs, and the team is the lead and one engineer until a proposed role is accepted;
+ *   an empty sentence starts nothing.
  * - Given a proposal, accepting a task starts its work, accepting a schedule switches it on, and
  *   accepting a role adds its byline; rejecting it starts nothing and keeps it on record.
  * - Given time passing, a ticket turns unread only on the step that leaves it waiting on the
@@ -127,7 +128,7 @@ describe("setting a company up", () => {
     );
     expect(state.sessions).toEqual([]);
     expect(state.schedules).toEqual([]);
-    expect(state.roles).toEqual([]);
+    expect(state.roles).toEqual(["engineer"]);
     expect(letTimePass(state).events).toEqual([]);
   });
 
@@ -141,7 +142,7 @@ describe("setting a company up", () => {
     expect(sessionCount(state, "patrol")).toBe(0);
     expect(state.schedules).toEqual([{ id: "patrol", auto: false }]);
     state = acceptTicket(state, "verifier");
-    expect(state.roles).toEqual(["verifier"]);
+    expect(state.roles).toEqual(["engineer", "verifier"]);
   });
 
   it("keeps a rejected proposal on record with nothing started", () => {

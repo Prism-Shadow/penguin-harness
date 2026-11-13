@@ -12,14 +12,32 @@ export const en: Words = {
     lead: "Lead",
     more: "More pages",
     less: "Fold",
+    team: "Team",
     sessions: "Work sessions",
     sessionsEmpty: "No work session is running",
     sessionOf: (n: number) => `Session ${n}`,
     you: "You",
     openMenu: "Open navigation",
   },
-  bylines: { lead: "Lead", engineer: "Mara Lind", verifier: "Theo Park" },
-  titles: { lead: "Lead", engineer: "Engineer", verifier: "Verifier" },
+  who: (name: string, title: string) => `${name} (${title})`,
+  people: {
+    lead: {
+      name: "Iris Vale",
+      title: "Lead",
+      duties:
+        "Takes what you say, files it as tickets and assigns them; proposes schedules and hires. Writes no code.",
+    },
+    engineer: {
+      name: "Mara Lind",
+      title: "Engineer",
+      duties: "Writes code and fixes defects; delivers pull requests with tests.",
+    },
+    verifier: {
+      name: "Theo Park",
+      title: "Verification engineer",
+      duties: "Runs every delivery before it reaches your review; also reproduces problems.",
+    },
+  },
   sources: { person: "You asked", patrol: "Daily patrol", lead: "Lead's proposal" },
   waits: { accept: "To accept", answer: "To answer", review: "To review" },
   views: {
@@ -104,6 +122,21 @@ export const en: Words = {
       "Get new users through first-time setup",
     ],
     examplesLabel: "Examples",
+  },
+  team: {
+    title: "Team",
+    info: "Employees are standing roles: a name, a title, duties and a budget. Only the lead stays up; the others work only in the sessions of the tickets they own.",
+    hire: "Hire",
+    hireHint:
+      "To hire, or to change duties or a budget, tell the lead; it files a ticket for you to decide.",
+    reportsTo: (name: string) => `Reports to ${name}`,
+    standing: "Stays up",
+    spend: (spent: string, budget: string) => `${spent} of ${budget} this month`,
+    working: "Working on",
+    idle: "No ticket in progress",
+    done: (n: number) => `${n} done`,
+    pending: "Proposed",
+    pendingNote: "The proposal is in your inbox; it joins once you accept.",
   },
   session: {
     info: "This is the agent's conversation while it works on the ticket. The ticket keeps only what it writes back; come here to watch the work or to tell it something directly.",

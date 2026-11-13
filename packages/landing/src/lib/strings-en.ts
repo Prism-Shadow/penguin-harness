@@ -1008,7 +1008,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         {
           topic: "The sidebar",
           now: "Six pages, the channel list, and a desk per employee.",
-          spec: "Inbox, Lead, Tickets; the other four pages fold away, and below them the work sessions that are not over, each opening the conversation itself.",
+          spec: "Inbox, Lead, Tickets, Team; Calendar, Handbook and Finance fold away, and below them the work sessions that are not over, each opening the conversation itself.",
+        },
+        {
+          topic: "Employees",
+          now: "Every employee has a standing desk session; employees work together in channels; the org chart is a page of its own.",
+          spec: "Employees are standing roles with a name, a title, duties and a budget, and every byline shows the title. Only the lead stays up; the others work only in the sessions of the tickets they own, and work together through sub-tickets. A team page replaces the org chart and shows what each one is doing and has spent.",
         },
         {
           topic: "Setting up",

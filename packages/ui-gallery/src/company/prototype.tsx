@@ -4,8 +4,9 @@
  * (model.ts). It is the spec's main exhibit: what the mode shows first, where a decision is
  * taken, and what never reaches the reader.
  *
- * What it changes in the shipped sidebar: the inbox, the lead and the board are the pinned rows;
- * the four pages the spec leaves alone sit in the nav's fold, which starts folded; the channel
+ * What it changes in the shipped sidebar: the inbox, the lead, the board and the team (in the org
+ * chart's place, team-page.tsx) are the pinned rows; the three pages the spec leaves alone sit in
+ * the nav's fold, which starts folded; the channel
  * list and the desks give way to one list of the work sessions that are not over, each opening
  * the conversation itself (session-page.tsx), with a link back to its ticket.
  *
@@ -15,7 +16,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
-  AgentAvatar,
   AppShell,
   Button,
   Drawer,
@@ -58,15 +58,17 @@ import {
 } from "./model";
 import type { CompanyState } from "./model";
 import { BoardPage, InboxPage, KeptPage, LeadPage, SetupPage } from "./pages";
+import { PersonAvatar, whoOf } from "./people";
 import { SessionPage } from "./session-page";
+import { TeamPage } from "./team-page";
 import { titleOf } from "./text";
 import { TicketDialog } from "./ticket-dialog";
 import type { TicketActions } from "./ticket-dialog";
 import { useWords } from "./use-words";
 
 /** The pages the spec leaves as they are, in the shipped nav's order. */
-const KEPT = ["calendar", "handbook", "chart", "finance"] as const;
-type Page = "inbox" | "lead" | "tickets" | "session" | (typeof KEPT)[number];
+const KEPT = ["calendar", "handbook", "finance"] as const;
+type Page = "inbox" | "lead" | "tickets" | "team" | "session" | (typeof KEPT)[number];
 
 export function CompanyPrototype({ start }: { start: CompanyStart }) {
   const W = useWords();
@@ -143,7 +145,7 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
           />
           <NavRow
             label={W.nav.lead}
-            glyph={<AgentAvatar id="lead" size={ICON_SIZE.navRow} />}
+            glyph={<PersonAvatar byline="lead" size={ICON_SIZE.navRow} />}
             active={page === "lead"}
             disabled={!running}
             onClick={() => go("lead")}
@@ -154,6 +156,13 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
             active={page === "tickets"}
             disabled={!running}
             onClick={() => go("tickets")}
+          />
+          <NavRow
+            label={W.nav.team}
+            glyph={ICONS[COMPANY_NAV_ICONS.chart]}
+            active={page === "team"}
+            disabled={!running}
+            onClick={() => go("team")}
           />
         </SidebarNavArea>
       }
@@ -199,8 +208,10 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
                     key={session.id}
                     density="sm"
                     label={titleOf(ticket, W)}
-                    glyph={<AgentAvatar id={ticket.owner} size={ICON_SIZE.rowLead} />}
+                    glyph={<PersonAvatar byline={ticket.owner} size={ICON_SIZE.rowLead} />}
                     active={page === "session" && sessionId === session.id}
+                    tooltip={whoOf(ticket.owner, W)}
+                    tooltipExtra
                     onClick={() => openSession(session.id)}
                     {...(status === "answer" || status === "review"
                       ? { badge: <Pill tone="attention">{W.waits[status]}</Pill> }
@@ -239,6 +250,8 @@ export function CompanyPrototype({ start }: { start: CompanyStart }) {
     );
   } else if (page === "tickets") {
     body = <BoardPage state={state} onOpen={openTicket} />;
+  } else if (page === "team") {
+    body = <TeamPage state={state} onHire={() => go("lead")} onOpenSession={openSession} />;
   } else if (page === "session") {
     const ticket = shown === undefined ? undefined : ticketOfSession(shown.ticket);
     body =

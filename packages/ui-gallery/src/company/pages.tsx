@@ -13,7 +13,6 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
-  AgentAvatar,
   Button,
   EmptyState,
   GlyphIcon,
@@ -41,6 +40,7 @@ import { inboxCounts, spendOf, ticketsIn } from "./model";
 import type { ChatLine, CompanyState, Ticket } from "./model";
 import { INBOX_VIEWS, TICKET_STATUSES, waitOf } from "./spec";
 import type { InboxView, TicketStatus } from "./spec";
+import { PersonAvatar, PersonName } from "./people";
 import { gistOf, lineOf, titleOf } from "./text";
 import { money } from "./ticket-dialog";
 import { useWords } from "./use-words";
@@ -222,8 +222,10 @@ export function LeadPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
-        <AgentAvatar id="lead" size={18} />
-        <h1 className="shrink-0 text-sm font-semibold">{W.lead.title}</h1>
+        <PersonAvatar byline="lead" size={18} />
+        <h1 className="shrink-0 text-sm font-semibold">
+          <PersonName byline="lead" />
+        </h1>
         <span className={`min-w-0 truncate text-xs ${QUIET}`}>{W.lead.info}</span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -316,8 +318,8 @@ export function BoardPage({
                       </span>
                     </span>
                     <span className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${QUIET}`}>
-                      <AgentAvatar id={ticket.owner} size={ICON_SIZE.rowLead} />
-                      {W.bylines[ticket.owner]}
+                      <PersonAvatar byline={ticket.owner} size={ICON_SIZE.rowLead} />
+                      <PersonName byline={ticket.owner} />
                       {waitOf(ticket) !== null && (
                         <span className="ml-auto">
                           <Standing ticket={ticket} />

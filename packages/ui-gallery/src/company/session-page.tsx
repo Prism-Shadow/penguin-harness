@@ -10,11 +10,12 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { AgentAvatar, Button, MessageBubble, Textarea } from "@prismshadow/penguin-ui";
+import { Button, MessageBubble, Textarea } from "@prismshadow/penguin-ui";
 import { TitleButton } from "../../../web/src/features/company/shared";
 import { FIXTURES } from "./fixtures";
 import type { SessionMessage, SessionStatus, Ticket, WorkSession } from "./model";
 import { acceptanceOf, gistOf, optionsOf, progressOf, questionOf, resultOf, titleOf } from "./text";
+import { PersonAvatar, PersonName } from "./people";
 import { NeedsYou, SessionStatusPill } from "./ticket-dialog";
 import type { TicketActions } from "./ticket-dialog";
 import { useWords } from "./use-words";
@@ -54,9 +55,9 @@ export function SessionPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-4 py-3">
-        <AgentAvatar id={ticket.owner} size={18} />
+        <PersonAvatar byline={ticket.owner} size={18} />
         <h1 className="shrink-0 text-sm font-semibold">
-          {W.bylines[ticket.owner]} · {W.nav.sessionOf(session.n)}
+          <PersonName byline={ticket.owner} /> · {W.nav.sessionOf(session.n)}
         </h1>
         <SessionStatusPill status={status} />
         <span className={`flex min-w-0 items-center gap-1.5 text-xs ${QUIET}`}>
