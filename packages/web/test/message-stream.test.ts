@@ -14,6 +14,9 @@
  *   it is one notice line with its presses after it — Retry now and Stop retrying while it waits,
  *   Retry on the last line, and Details on every one — and no "?" anywhere; the provider's own
  *   words are not on the line.
+ * - Given a retry ladder that has not given up, it sits inside the Running work group rather than
+ *   splitting thinking and tool steps into separate groups, and folds away with the group once the
+ *   turn finishes; a ladder that gave up sits outside the settled group as the turn's last line.
  * - Given Details pressed, the page is handed the failure: the provider's words, the attempts so
  *   far and the model the request went to.
  *
@@ -183,13 +186,14 @@ describe("MessageStream error banner", () => {
     gaveUp: false,
     ...over,
   });
-  const failures = (items: ChatItem[]) =>
+  const failures = (items: ChatItem[], taskRunning = true) =>
     renderToStaticMarkup(
       createElement(MessageStream, {
         items,
         version: 1,
         ctx: {
           ...ctx,
+          taskRunning,
           onRetry: async () => {},
           onRetryNow: () => {},
           onGiveUp: () => {},
@@ -198,30 +202,76 @@ describe("MessageStream error banner", () => {
         onAddExcerpt: () => {},
       }),
     );
+  const groupHeaders = (html: string) => html.match(/data-group-header\b/g)?.length ?? 0;
 
-  it.each<[string, ChatItem, string[]]>([
+  it.each<[string, ChatItem, boolean, string[]]>([
     [
       "a ladder waiting for its next attempt",
       ladder({ plannedDelayMs: 30_000, arrivedAtMs: Date.now() }),
-      [t.retryNow, t.stop, S.chat.failureReport.open],
+      true,
+      [S.chat.workRunning, t.retryNow, t.stop, S.chat.failureReport.open],
     ],
-    ["a ladder sending its next attempt", ladder({}), [S.chat.failureReport.open]],
-    ["a ladder whose attempt went out", ladder({ retrying: true }), [S.chat.failureReport.open]],
-    ["a ladder that gave up", gaveUp, [S.chat.retryRun, S.chat.failureReport.open]],
+    [
+      "a ladder sending its next attempt",
+      ladder({}),
+      true,
+      [S.chat.workRunning, S.chat.failureReport.open],
+    ],
+    [
+      "a ladder whose attempt went out",
+      ladder({ retrying: true }),
+      true,
+      [S.chat.workRunning, S.chat.failureReport.open],
+    ],
+    ["a ladder that gave up", gaveUp, false, [S.chat.retryRun, S.chat.failureReport.open]],
     [
       "a fatal error",
       { kind: "llm_error", id: 1, errorCode: "auth", errorMessage: "401 invalid x-api-key" },
+      false,
       [S.chat.retryRun, S.chat.failureReport.open],
     ],
   ])(
     "%s is one notice line with its presses and Details, no ?, and no provider words",
-    (_, item, presses) => {
-      const html = failures([item]);
+    (_, item, taskRunning, presses) => {
+      const html = failures([item], taskRunning);
       expect(pressNames(html)).toEqual(presses);
       expect(html).not.toContain("upstream overloaded");
       expect(html).not.toContain("invalid x-api-key");
     },
   );
+
+  it("keeps an in-turn retry inside the single Running group instead of splitting it, and folds it away when done", () => {
+    const step1: ChatItem = {
+      kind: "thinking",
+      id: 10,
+      thinking: "First thought",
+      streaming: false,
+    };
+    const retried = ladder({ id: 11, retrying: true });
+    const step2: ChatItem = {
+      kind: "thinking",
+      id: 12,
+      thinking: "Second thought",
+      streaming: false,
+    };
+    const runningHtml = failures([step1, retried, step2], true);
+    expect(groupHeaders(runningHtml)).toBe(1);
+    expect(runningHtml).toContain(t.retried(t.sent(3, 10), "网络或服务暂时不可用，HTTP 503"));
+
+    const settledHtml = failures([step1, retried, step2, reply], false);
+    expect(groupHeaders(settledHtml)).toBe(1);
+    expect(pressNames(settledHtml)).toEqual([S.chat.workDone]);
+    expect(settledHtml).not.toContain(t.sent(3, 10));
+
+    // A ladder that gave up stays outside the settled group as the turn's last line.
+    const endedHtml = failures([step1, gaveUp], false);
+    expect(groupHeaders(endedHtml)).toBe(1);
+    expect(pressNames(endedHtml)).toEqual([
+      S.chat.workDone,
+      S.chat.retryRun,
+      S.chat.failureReport.open,
+    ]);
+  });
 
   it("Details hands the page the failure: the provider's words, the attempts and the model", async () => {
     const onShowFailure = vi.fn();
