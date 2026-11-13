@@ -22,6 +22,7 @@
     "@penguinharness/plugin-settings": "workspace:*",
     "@penguinharness/plugin-terminal": "workspace:*",
     "@penguinharness/plugin-usage": "workspace:*",
+    "@penguinharness/plugin-workbenches": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
