@@ -7213,6 +7213,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/dgm-rsi-toolkit': file:plugins/dgm-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7261,6 +7262,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/dgm-rsi-toolkit': file:plugins/dgm-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7369,6 +7371,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/dgm-rsi-toolkit': file:plugins/dgm-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7428,6 +7431,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/dgm-rsi-toolkit': file:plugins/dgm-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
@@ -7487,6 +7491,7 @@ snapshots:
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/dgm-rsi-toolkit': file:plugins/dgm-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
