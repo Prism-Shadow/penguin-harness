@@ -1,7 +1,7 @@
 /**
  * What the server enforces, as numbered ruled rows (the gallery's company/spec.ts `INVARIANTS`): the rule in
- * one sentence, what it means for a caller, the answer a refused write gets, and whether the
- * shipped company mode already enforces it. Everything else a company does is guidance in Skills
+ * one sentence, the answer a refused write gets, and whether the shipped company mode already
+ * enforces it. Everything else a company does is guidance in Skills
  * and the handbook, which an agent may not follow; these are the lines an implementation is tested
  * against.
  */
@@ -15,16 +15,15 @@ export function CompanyInvariants() {
     <Section id="invariants" title={I.title} subtitle={I.subtitle}>
       <ol className="mx-auto max-w-3xl divide-y divide-gray-200 border-y border-gray-200 dark:divide-gray-800 dark:border-gray-800">
         {INVARIANTS.map((invariant, i) => {
-          const words = I.items[invariant.id];
+          const rule = I.items[invariant.id];
           return (
             <li
               key={invariant.id}
-              className="grid grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-3 py-4 text-sm leading-6"
+              className="grid grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-3 py-3 text-sm leading-6"
             >
               <span className="text-gray-500 tabular-nums dark:text-gray-400">{i + 1}</span>
               <div className="min-w-0">
-                <p className="font-semibold text-gray-900 dark:text-gray-100">{words.rule}</p>
-                <p className="mt-1 text-gray-600 dark:text-gray-300">{words.text}</p>
+                <p className="text-gray-900 dark:text-gray-100">{rule}</p>
                 {invariant.refusal !== null && (
                   <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
                     {I.refusal}

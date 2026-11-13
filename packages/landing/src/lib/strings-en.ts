@@ -970,7 +970,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     draft: "Draft spec",
     headline: "Read tickets, not transcripts",
     subline:
-      "You tell the lead agent what you want. It files the work as a ticket and hands it to the ticket's own work session. A ticket comes to you at three moments only: to accept, to answer, to review. To watch the work, or to say something directly, open that session.",
+      "You talk to the lead agent only. It files work as tickets and hands each to a work session; a ticket comes to you only to be accepted, answered or reviewed.",
     specNote:
       "This page specifies the next company mode, and the implementation follows it. For what ships today, see ",
     currentDocs: "the company mode docs",
@@ -985,143 +985,99 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     },
 
     changes: {
-      title: "What changes against the shipped version",
+      title: "What changes from the shipped version",
       subtitle:
-        "The shell, the board, the ticket file and the schedule stay. What changes is what you see first, where you decide, what comes to you, and which pages the company keeps.",
+        "The shell, the board, the ticket file and schedules stay. What changes is what you see, where you decide, and what comes to you.",
       head: { topic: "Matter", now: "Today", spec: "This spec" },
       items: [
         {
-          topic: "What an organization opens on",
-          now: "The overview: four tiles for employees, the board, today's schedule and spend, with the inbox third.",
-          spec: "The inbox. The tiles become one line, and what waits on you comes first.",
+          topic: "Home",
+          now: "Overview: four figures, the inbox third",
+          spec: "The inbox, with what waits on you first",
         },
         {
-          topic: "Where you decide",
-          now: "A ticket shows a “blocked reason”; the answer is said in a channel.",
-          spec: "On the ticket: accept, pick an option, accept the result or send it back. The answer stays on the ticket, under Decisions.",
+          topic: "Deciding",
+          now: "A ticket shows only why it is blocked; you answer in a channel",
+          spec: "Accept, answer or review on the ticket; the answer stays on it",
         },
         {
           topic: "Who you talk to",
-          now: "The all-hands channel, a channel per line of work, and every employee's desk.",
-          spec: "Something new goes to the lead, which files it as a ticket. To discuss one ticket, talk in its work session; what you say there is written on the ticket too.",
-        },
-        {
-          topic: "The sidebar",
-          now: "Six pages, the channel list, and a desk per employee.",
-          spec: "Inbox, Lead, Tickets, Team and Handbook, with nothing folded away. Below them are the work sessions that are not over, each opening the conversation itself.",
-        },
-        {
-          topic: "Employees",
-          now: "Every employee has a standing desk session; employees work together in channels; the org chart is a page of its own.",
-          spec: "Employees are standing roles with a name, a title, duties and a budget, and every byline shows the title. Only the lead stays up; the others work only in the sessions of the tickets they own, and work together through sub-tickets. A team page replaces the org chart and shows what each one is doing and has spent.",
-        },
-        {
-          topic: "Getting better",
-          now: "The CEO records the board's decisions, employees choose what to write in the handbook, and HR reviews employees weekly, all of it in prompts the server does not check. Employees have no continual learning, and what they would learn is overwritten when their plugins update.",
-          spec: "Two loops. Every ticket: answers become decisions and send-backs lessons, and employees note what was sent back or corrected in their own skill. Every N closed tickets: the lead runs a retrospective on first-pass reviews, send-backs, questions and cost, and every change it wants goes to you as a proposal.",
-        },
-        {
-          topic: "Calendar",
-          now: "Month, week and day views. Each employee has one recurring event that wakes its desk session to plan work.",
-          spec: "Removed. With no desks there is no rota to keep; the schedules that remain only file tickets, and are listed under the inbox.",
-        },
-        {
-          topic: "Finance",
-          now: "A page of its own: figures, a spend tree, a ticket cost ledger, warnings and pauses; a budget crossing its line posts a system message in the all-hands channel.",
-          spec: "The page is removed. Total spend is at the top of the inbox, each employee's spend and budget on the team page, a ticket's cost on the ticket. When a budget crosses its warning line, the lead files a ticket for you to answer: raise the budget, or pause at the line.",
-        },
-        {
-          topic: "Handbook",
-          now: "The files in the organization's directory, viewed and edited in a file browser.",
-          spec: "Sorted by purpose into decisions, lessons, skills, documents and retrospectives. Your answers are recorded as decisions and your send-backs as lessons; when lessons of one kind pile up, the lead proposes a skill, installed in the employee's own skills once you accept. Every file links the ticket it came from, and a ticket lists the files it added.",
-        },
-        {
-          topic: "Setting up",
-          now: "You write a mission, the CEO posts a proposal in the all-hands channel, and you reply there.",
-          spec: "You say one sentence, the lead answers with proposed tickets, and you accept or reject each.",
+          now: "The all-hands channel, a channel per stream, and every employee's desk",
+          spec: "Something new goes to the lead; a ticket's details go to its work session",
         },
         {
           topic: "What comes to you",
-          now: "A mention in a channel, a blocked ticket and a closed ticket all land in the inbox.",
-          spec: "Three things only: a ticket to accept, to answer, to review. Progress does not come to you.",
+          now: "Mentions, blocked tickets and closed tickets all reach the inbox",
+          spec: "Three things only: to accept, to answer, to review",
         },
         {
-          topic: "Work a schedule finds",
-          now: "The schedule fires and an employee starts work.",
-          spec: "A new schedule only proposes. Its tickets start on their own once you switch that on.",
+          topic: "Sidebar",
+          now: "Six pages, the channels, and a desk per employee",
+          spec: "Inbox, Lead, Tickets, Team and Handbook, plus the running work sessions",
+        },
+        {
+          topic: "Employees",
+          now: "Each has a standing desk and works through channels",
+          spec: "A name and a title; only the lead stays up, the others open sessions per ticket",
+        },
+        {
+          topic: "Setup",
+          now: "The CEO posts a proposal in the all-hands channel",
+          spec: "Say one sentence, then decide the lead's proposed tickets one by one",
+        },
+        {
+          topic: "Calendar and finance",
+          now: "A page each",
+          spec: "Removed. Schedules sit on the inbox, spend on the team page and tickets, and a budget alert is a ticket",
         },
       ],
     },
 
     evolution: {
-      title: "How the company gets better",
+      title: "Self-improvement from your reviews",
       subtitle:
-        "No scores and no test runs. You judge what is right: every review, send-back and answer is what the company learns from. Expect it to spend a lot at first, then less and less, with fewer mistakes.",
+        "No Benchmark and no scores. Every review, send-back and answer you give is what the company learns from.",
       loops: [
         {
           title: "Every ticket",
-          when: "Automatic, with no approval needed",
+          when: "Automatic, no approval",
           items: [
-            "You answer a question, and the lead records it as a decision. When the question comes up again, employees follow the decision.",
-            "You send a delivery back, and the lead records your note as a lesson: what was missed and how to avoid it.",
-            "The employee whose work was sent back, or whom you corrected in its session, notes it in its own notes skill. No approval; the team page shows what it learned.",
+            "Your answers become decisions, so you are not asked again.",
+            "Your send-backs become lessons.",
+            "An employee sent back or corrected notes the point in its own Skill.",
           ],
         },
         {
           title: "Every N closed tickets",
-          when: "N is 10 by default. The lead runs a retrospective, and every change goes to you",
+          when: "N is 10 by default; the lead runs a retrospective",
           items: [
-            "It counts the batch: how many passed review the first time, how often work was sent back, how often you were asked, what a finished ticket cost; and compares with the last retrospective.",
-            "For the changes accepted last time, it says what followed: since a skill was installed, how many tickets that employee closed and how many were sent back.",
-            "It files the changes as proposals: distill or revise a skill, change a duty, narrow a patrol, remove what is out of date. One change per employee per retrospective, so the next one can tell which change did what.",
-            "Once you accept, the server snapshots the employees it touches, then writes the change. If things get worse, the lead proposes undoing it.",
+            "It counts first-pass reviews, send-backs, questions and cost, against last time.",
+            "It says what followed the changes accepted last time.",
+            "It files what to change as tickets; once you accept, it snapshots first.",
           ],
         },
       ],
       curves: {
-        title: "Four curves",
-        subtitle: "All counted from the ticket files; no model scores anything.",
-        head: { expect: "What you expect", read: "What to read", trend: "Where it should go" },
-        items: [
-          {
-            expect: "Hardly any mistakes or rework",
-            read: "The share accepted at first review; the number of send-backs",
-            trend: "The share rises, send-backs fall",
-          },
-          {
-            expect: "Not being asked the same thing",
-            read: "Questions per ticket; how many the handbook already answers",
-            trend: "Falling, with repeats near zero",
-          },
-          {
-            expect: "Work in the style already set",
-            read: "Send-back notes that repeat an existing lesson or skill",
-            trend: "Falling: the same mistake is not made twice",
-          },
-          {
-            expect: "Fewer tokens later on",
-            read: "Tokens and money per finished ticket",
-            trend: "High at first, then down",
-          },
-        ],
-        note: "Tickets differ in size, so cost is compared within a kind of ticket, or by the median. A retrospective says “2 of 10 sent back”, not a bare percentage. Whether to undo a change is your call, not the numbers'.",
-      },
-      shrink: {
-        title: "Keeping the handbook short",
+        title: "Four numbers",
         subtitle:
-          "Every employee reads the handbook before it starts. A handbook that only grows eats the tokens the company saved.",
+          "All counted from the ticket files. It spends a lot at first, then should get cheaper and make fewer mistakes.",
+        head: { metric: "Measure", trend: "Expected trend" },
         items: [
-          "A lesson distilled into a skill leaves the index, marked as merged. Employees read the skill, which takes one line in their skill list until it is needed.",
-          "A decision a later answer overturns is deleted.",
-          "The index has a cap; a retrospective merges entries when it is reached.",
+          { metric: "Share accepted at first review", trend: "Up" },
+          { metric: "Questions per ticket", trend: "Down, with repeats near zero" },
+          { metric: "Send-backs that repeat a known lesson", trend: "Down" },
+          { metric: "Tokens and cost per finished ticket", trend: "High, then down" },
         ],
+        note: "A retrospective says “2 of 10 sent back”, not only a percentage. Undoing a change is your call.",
+        shrink:
+          "The handbook shrinks too: a lesson merged into a Skill leaves the index, and an overturned decision is deleted. Otherwise a longer handbook eats the tokens saved.",
       },
     },
 
     ticket: {
       title: "The ticket file, field by field",
       subtitle:
-        "A ticket is a Markdown file in the Project directory, and the directory it sits in is its status. The shipped format stays as it is; the last column marks the fields this spec adds.",
+        "A ticket is a Markdown file in the Project; the directory it sits in is its status. The last column marks the new fields.",
       example: "Example: while its question is open",
       exampleFile: `---
 title: Add CSV to the export
@@ -1174,92 +1130,57 @@ The export page offers CSV as well as JSON.
       writers: { person: "a person", agent: "an agent", server: "the server" },
       join: ", ",
       waitTitle: "“Waiting on you” is not a status",
-      waitText: "It is read from three states a ticket already has, so no sixth status is needed:",
+      waitText: "It is read from three existing states, so no sixth status is needed:",
       waits: { accept: "Awaiting accept", answer: "Awaiting answer", review: "Awaiting review" },
       fields: {
         title: "One line, the one the inbox shows.",
         status: "How far the work is. The directory the file sits in matches it.",
-        owner: "The one responsible principal. Its work sessions do this ticket's work.",
-        source:
-          "Where the ticket came from: something a person said, a schedule entry, or another ticket's work session.",
+        owner: "The one responsible principal.",
+        source: "Where it came from: a person, a schedule, or another ticket.",
         parent: "The parent ticket. Cost rolls up along it.",
         notify: "Who is told when the ticket closes.",
         priority: "Its priority.",
         due: "Its due date.",
         blocked: "Why it is blocked, in a sentence.",
-        blocked_by:
-          "Who can unblock it: another ticket, or a principal. When that is a person, the ticket waits on them.",
-        ask: "The one open question: the question, its options and the recommended one. The server removes it once it is answered.",
+        blocked_by: "Who can unblock it. When that is a person, the ticket waits on them.",
+        ask: "The open question, its options and the recommended one; removed once answered.",
         deliverables: "Paths or links to what was delivered, a pull request for one.",
-        sessions: "The sessions that worked on it, in the order they were attached.",
-        history: "The operation log, oldest first. An answer is recorded as answered.",
+        sessions: "The sessions that worked on it.",
+        history: "The operation log, oldest first.",
         "## Goal": "What is to be achieved.",
         "## Acceptance criteria": "What counts as done.",
-        "## Progress": "Progress, one plain sentence a line.",
-        "## Decisions": "The questions already answered, each with its answer, one a line.",
+        "## Progress": "Progress, one sentence a line.",
+        "## Decisions": "Questions answered, with their answers.",
         "## Result": "The result, and where it is.",
-        unread: "Set when the ticket starts waiting on you; cleared when you open it or act on it.",
-        snoozed_until: "Later: the ticket stays out of your inbox until this time.",
-        archived: "Archived. It leaves your inbox only; the ticket itself does not change.",
+        unread: "Set when it starts waiting on you, cleared when you open it.",
+        snoozed_until: "It stays out of your inbox until then.",
+        archived: "Out of your inbox; the ticket itself is unchanged.",
       },
     },
 
     invariants: {
       title: "What the server enforces",
       subtitle:
-        "What Skills and the handbook say is guidance, and an agent may not follow it. The server checks the rules below and refuses a write that breaks one.",
+        "Skills and the handbook are guidance, and an agent may not follow them. The server checks these.",
       refusal: "Refused with ",
       shipped: "shipped",
       added: "new",
       items: {
-        owner_starts: {
-          rule: "Only a ticket's owner or a person starts a session on it.",
-          text: "For another agent to take the work, reassign the ticket first.",
-        },
-        budget_pauses: {
-          rule: "A spent budget pauses the schedule.",
-          text: "At 100% no patrol fires until next month or a higher budget. What you say still gets through.",
-        },
-        files_are_truth: {
-          rule: "Files are the only source of truth.",
-          text: "The database holds caches it can rebuild from the files, plus each person's read state and triage. Edit a ticket file by hand and the next pass takes it.",
-        },
-        one_front: {
-          rule: "A work session does not reach out to a person.",
-          text: "What it needs from people goes on the ticket only: the ask, the Result and the deliverables, which is what the inbox reads. When you open a session and talk to it, it answers you there.",
-        },
-        three_points: {
-          rule: "Only three events mark a ticket unread.",
-          text: "The ticket is proposed, asks its question, or enters review. Progress notes, and sessions starting or ending, leave the unread count alone.",
-        },
-        one_ask: {
-          rule: "A ticket has one open question at a time.",
-          text: "Writing ask blocks the ticket on the person asked and ends that session's turn.",
-        },
-        answer_recorded: {
-          rule: "The answer is on disk before work resumes.",
-          text: "It goes into the ticket's Decisions and history first, then into the work session that asked, as your message; that session carries on in the same context.",
-        },
-        observe_first: {
-          rule: "A schedule's ticket gets no session before it is accepted.",
-          text: "A new schedule entry only proposes. Once you switch it to automatic, its tickets start work directly.",
-        },
-        triage_apart: {
-          rule: "Triage never changes the work, and a waiting ticket cannot be set aside or archived.",
-          text: "Read, later and archive are kept per person. To get a ticket that waits on you out of your inbox, answer it or reject it.",
-        },
-        own_skill_kept: {
-          rule: "What an employee learns on its own is never overwritten.",
-          text: "When an employee is hired, the server gives it a skill of its own, notes. It belongs to no plugin, so a plugin update leaves it alone. When its work is sent back or you correct it, the employee notes the point there.",
-        },
-        retro_by_count: {
-          rule: "A retrospective comes due by the count of closed tickets.",
-          text: "Once N tickets (10 by default) have closed, done or rejected, since the last one, the server has the lead run a retrospective; it does not rely on the lead remembering.",
-        },
-        snapshot_first: {
-          rule: "A change is snapshotted before it is made.",
-          text: "A change a retrospective proposes is made by the server once you accept it: it snapshots the employees it touches first, then writes the change, so it can always be undone.",
-        },
+        owner_starts: "Only a ticket's owner or a person starts its sessions.",
+        budget_pauses: "A spent budget pauses schedules; what you say still gets through.",
+        files_are_truth:
+          "The files are the source of truth; the database keeps rebuildable caches and each person's triage.",
+        one_front: "A work session reaches people only through its ticket's question and delivery.",
+        three_points: "Only a proposal, a question or a delivery makes a ticket unread.",
+        one_ask: "A ticket has at most one open question.",
+        answer_recorded:
+          "An answer is written to the ticket before it goes to the session that asked.",
+        observe_first: "A schedule's ticket opens no session until it is accepted.",
+        triage_apart:
+          "Later and archive never change the work; a waiting ticket cannot be set aside.",
+        own_skill_kept: "An employee's own Skill survives plugin updates.",
+        retro_by_count: "A retrospective comes due by the count of closed tickets.",
+        snapshot_first: "A change is snapshotted before it is made.",
       },
     },
   },
