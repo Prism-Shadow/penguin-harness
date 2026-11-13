@@ -354,7 +354,7 @@ export abstract class Workbenches {
     workbenchId: string,
     revision: string,
   ): Promise<WorkbenchInfo>;
-  /** Deletes the folder and its recorded versions; the instance goes with them. */
+  /**
    * Deletes the folder, state and switch included, and records the removal; its earlier
    * versions are no longer listed. The instance goes with it.
    */

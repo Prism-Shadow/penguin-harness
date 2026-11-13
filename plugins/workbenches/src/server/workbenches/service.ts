@@ -52,7 +52,7 @@ import type {
   WorkbenchVersion,
   Workbenches,
 } from "../mechanism.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "@prismshadow/penguin-server/internal";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 
   agentShortcuts,
   appCenterIconRef,

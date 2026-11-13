@@ -32,7 +32,8 @@ import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { cacheable } from "@prismshadow/penguin-web/internal";
 
-import { PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog, VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError, connectDefaultOffer } from "@prismshadow/penguin-server/internal";
+import { Paths, PlatformCatalogPricing, PlatformModelApplyResult, PlatformModelCatalog, VISION_PROBE_IMAGE, VISION_PROBE_MAX_TOKENS, VISION_PROBE_PROMPT, VISION_PROBE_TIMEOUT_MS, classifyVisionProbe, classifyVisionProbeError, connectDefaultOffer } from "@prismshadow/penguin-server/internal";
+import type {
   GroupKeyApplied,
   ModelPromotion,
   ModelProviderAuthToken,

@@ -23,6 +23,7 @@ import { BUILTIN_AGENT_IDS, McpServerNameTakenError, agentDir, agentsDir, agents
 import { resolveDirectorySkills } from "@prismshadow/penguin-server/internal";
 import { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "@prismshadow/penguin-server/internal";
 import { AgentIndex } from "@prismshadow/penguin-server/internal";
+import { Paths, PluginLibrary } from "@prismshadow/penguin-server/internal";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).

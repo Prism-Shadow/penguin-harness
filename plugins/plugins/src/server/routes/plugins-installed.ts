@@ -88,7 +88,7 @@ import {
 import { parsePluginSource, type PluginSource } from "@prismshadow/penguin-server/internal";
 import { parsePluginArchive } from "@prismshadow/penguin-server/internal";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "@prismshadow/penguin-server/internal";
-import type { PluginSkills } from "@prismshadow/penguin-server/internal";
+import type { PluginSkills } from "../index.js";
 import { toSkillItem } from "@prismshadow/penguin-server/internal";
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";

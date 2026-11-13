@@ -80,10 +80,14 @@ export function resolveExecTarget(
 /** Fills in `penguin exec`, on the node the host located by the command's key. */
 export function registerExecCommand(exec: Command, t: Messages): void {
   // The id's own options belong to the plugin command: no `--help` of ours, no option
-  // parsing — everything after the id is handed to the server as it was typed.
+  // parsing — everything after the id is handed to the server as it was typed. The
+  // pass-through needs `enablePositionalOptions` on the root (see the host), without which
+  // the root's `--version` would still be read out of the id's arguments, and a bare `--`
+  // would still be stripped before it reaches the id's rest.
   exec
     .helpOption(false)
     .allowUnknownOption()
+    .passThroughOptions()
     .argument("[args...]", t.exec.argsArg)
     .action(async (args: string[]) => {
       // Bare, or leading with an option (`penguin exec --help`): this command's own help.
@@ -191,22 +195,4 @@ export class ExecCommand {
       },
     };
   }
- * answers `penguin a b c ARGS` with). A bare id is two segments or more, and it resolves
- * exactly: no prefix, suffix or short-form matching. When two plugins contribute the same
- * id, the full npm package names it — `<package>:<id>`, scope included; nothing shorter
- * does, and the prefixed form may name a single-segment key of its package. `ls`
-import type { Language, Messages } from "../i18n.js";
-import { renderTable } from "../table.js";
-  serverPluginCommands,
-  writeRun,
-  type PluginCommandSource,
-  exec: Command,
-  t: Messages,
-  // The host's own source; the tests hand a stand-in (see plugin-cli-commands.ts).
-  source: PluginCommandSource = serverPluginCommands({ autoStart: true }, t),
-  // parsing — everything after the id is handed to the server as it was typed. The
-  // pass-through needs `enablePositionalOptions` on the root (see the host), without which
-  // the root's `--version` would still be read out of the id's arguments, and a bare `--`
-  // would still be stripped before it reaches the id's rest.
-    .passThroughOptions()
 }
