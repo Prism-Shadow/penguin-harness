@@ -28,12 +28,14 @@ Build the upstream Skill once per machine, outside the user's project and outsid
 
 ```bash
 SRC="${XDG_CACHE_HOME:-$HOME/.cache}/penguin-infrarsi/512f8ea7"
-[ -d "$SRC/.git" ] || git clone https://github.com/TokenRhythm/InfraRSI.git "$SRC"
+if [ ! -d "$SRC/.git" ]; then
+  rm -rf "$SRC" && git clone https://github.com/TokenRhythm/InfraRSI.git "$SRC"
+fi
 git -C "$SRC" checkout --detach 512f8ea784054f4ca3331d03cc6589267a4cbdf5
 <python> -I "$SRC/agent_skill/build_skill.py" --out "$SRC/dist"
 ```
 
-`<python>` is the training environment's interpreter. The built Skill is `SKILL_DIR="$SRC/dist/infrarsi-optimize"`; check that `$SKILL_DIR/scripts/engine/VERSION.json` names the pinned commit without `+changes`. Do not run `install_skill.py`: it writes Claude Code and Codex directories this Session does not use. Do not edit anything under `$SRC`.
+Run these lines as they are, in one command; do not create `$SRC` or `dist` beforehand. `<python>` is the training environment's interpreter. The built Skill is `SKILL_DIR="$SRC/dist/infrarsi-optimize"`; check that `$SKILL_DIR/scripts/engine/VERSION.json` names the pinned commit without `+changes`. Do not run `install_skill.py`: it writes Claude Code and Codex directories this Session does not use. Do not edit anything under `$SRC`.
 
 The upstream repository carries no license file. This toolkit does not redistribute its code or text; the user's machine fetches them from upstream. Say so in the report.
 
