@@ -7837,6 +7837,29 @@ export interface ProviderConnectionResponse extends ModelsResponse {
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
 
+/** A theme mode, as a manifest names it. */
+export type ThemePackMode = "light" | "dark";
+
+/**
+ * What a pack builds on: `modern`, Frost's token values and its hook recipes (the root carries
+ * `data-theme-base="modern"`); `foundation`, Frost's values only, as the fallback for a name the
+ * pack leaves out.
+ */
+export type ThemePackBase = "modern" | "foundation";
+
+/** The three colours a picker draws for a pack in one mode, as hex. */
+export interface ThemePackSwatch {
+  canvas: string;
+  ink: string;
+  accent: string;
+}
+
+/** One accent preset a pack offers: the `data-accent` id its `accents.css` declares, and its dot. */
+export interface ThemePackAccentPreset {
+  id: string;
+  swatch: string;
+}
+
 export interface ThemePackDto {
   /** `^[a-z][a-z0-9-]{1,31}$`, never a built-in pack's id. */
   id: string;
