@@ -19,7 +19,6 @@ export * from "./http/validate.js";
 export type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 export type { WorkbenchRequest, WorkbenchResponse, WorkbenchInput, WorkbenchResult, WorkbenchMain, WorkbenchHost, WorkbenchTabRenderer, WorkbenchTab, WorkbenchInfo, WorkbenchVersion } from "@penguinharness/plugin-workbenches/server";
 export * from "./runtime/channel.js";
-export * from "./runtime/agent-state.js";
 export * from "./runtime/stream-error-watcher.js";
 export * from "./runtime/usage-recorder.js";
 export * from "./runtime/error-recorder.js";
