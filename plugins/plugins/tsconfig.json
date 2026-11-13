@@ -7,6 +7,9 @@
     ],
     "resolveJsonModule": true,
     "paths": {
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
       "@penguinharness/plugin-sessions/server": [
         "../sessions/src/server/index.ts"
       ],

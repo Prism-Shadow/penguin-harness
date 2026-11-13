@@ -13,6 +13,9 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "paths": {
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
       "@penguinharness/plugin-company/server": [
         "../company/src/server/index.ts"
       ],
