@@ -471,11 +471,13 @@ class PenguinServer {
    * left showing rather than something scrolled past. Minting here rather than at seed
    * time is what keeps "exists" and "was printed" the same thing for a setup session: the
    * modes that decline to print never ask for one. The URL needs the port the OS actually
-   * handed out, which PORT=0 only settles once the listener is up.
+   * handed out, which PORT=0 only settles once the listener is up — unless `pnpm dev` named
+   * the port the App is served on (`devAppPort`).
    */
   async printFirstLoginNotice(): Promise<void> {
     if (!this.pendingFirstLoginNotice) return;
-    const port = await this.bound;
+    const bound = await this.bound;
+    const port = this.config.devAppPort ?? bound;
     const link = this.auth().mintFirstLogin();
     if (link === null) return;
     const token = encodeURIComponent(link);
