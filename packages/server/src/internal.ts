@@ -155,6 +155,7 @@ export * from "./services/plugin-library.js";
 export type { PluginLibrary } from "./plugin/library-module.js";
 export * from "./services/preview-token.js";
 export * from "./services/cli-shim.js";
+export { connectDefaultOffer } from "./services/connect-default-offer.js";
 export * from "./http/routes/vault.js";
 export * from "./http/routes/platform-auth.js";
 export * from "./http/routes/command-policy.js";

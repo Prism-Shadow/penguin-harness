@@ -6,6 +6,9 @@
       "ES2023"
     ],
     "paths": {
+      "@prismshadow/penguin-server/model-catalog": [
+        "../../packages/server/src/model-catalog/index.ts"
+      ],
       "@penguinharness/plugin-company/server": [
         "../company/src/server/index.ts"
       ],

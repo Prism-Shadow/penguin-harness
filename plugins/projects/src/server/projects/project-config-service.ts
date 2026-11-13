@@ -58,9 +58,9 @@ import {
   resolveEntryCredential,
   userText,
 } from "@prismshadow/penguin-core";
-import { MODELSCOPE_PROVIDER_ID, PENGUIN_GO_PROVIDER_ID, catalogEntryFor, fixedClientType, fixedClientTypeRefuses, providerInfo, retainedCatalogPricing, unaddableModel, unroutableVendorModel, vendorClientType } from "../model-catalog/catalog.js";
-import { clientEnvKey, modelEnvPreviewKey } from "../model-catalog/env-keys.js";
-import { catalogGroupConnection, presetModelEntries, presetPromotions } from "../model-catalog/seed.js";
+import { MODELSCOPE_PROVIDER_ID, PENGUIN_GO_PROVIDER_ID, catalogEntryFor, fixedClientType, fixedClientTypeRefuses, providerInfo, retainedCatalogPricing, unaddableModel, unroutableVendorModel, vendorClientType } from "@prismshadow/penguin-server/model-catalog";
+import { clientEnvKey, modelEnvPreviewKey } from "@prismshadow/penguin-server/model-catalog";
+import { catalogGroupConnection, presetModelEntries, presetPromotions } from "@prismshadow/penguin-server/model-catalog";
 import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   PluginTables,
@@ -81,7 +81,7 @@ import type { DefaultModelOffer, ProviderConnectionResponse } from "../api/types
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { cacheable } from "@prismshadow/penguin-server/internal";
-import { connectDefaultOffer } from "./connect-default-offer.js";
+import { connectDefaultOffer } from "@prismshadow/penguin-server/internal";
 import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,

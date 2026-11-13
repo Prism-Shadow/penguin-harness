@@ -74,7 +74,8 @@
     "./db/repos/organizations": {
       "types": "./dist/db/repos/organizations.d.ts",
       "import": "./dist/db/repos/organizations.js"
-    }
+    },
+    "./model-catalog": "./src/model-catalog/index.ts"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
