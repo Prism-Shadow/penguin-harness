@@ -23,7 +23,7 @@
  * lookup is made again — until the set of silent machines changes or the Session resolves.
  */
 import { useEffect, useRef, useState } from "react";
-import { ApiError } from "../../api/client";
+import { ApiError } from "@prismshadow/penguin-web/internal";
 import { RouteProbe } from "./route-probe";
 import {
   MACHINE_NO_ANSWER,

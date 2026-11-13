@@ -58,7 +58,7 @@ import {
 
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that

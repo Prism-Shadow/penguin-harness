@@ -102,7 +102,7 @@ import {
   type InboxTarget,
   type TimelineMark,
 } from "./overview-summary";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** How many of today's instances the timeline shows before pointing at the calendar. */
 const TIMELINE_ROWS = 6;

@@ -39,14 +39,14 @@ import {
   useCountdown,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { transferAmount } from "../../lib/history/transfer-amount";
-import { machineForSession } from "../../lib/session-machines";
-import { S } from "../../lib/strings";
-import { useMachines } from "../../state/machines";
-import { retryStatus } from "../machines/machine-card";
+import * as api from "@prismshadow/penguin-web/internal";
+import { transferAmount } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
+import { retryStatus } from "@penguinharness/plugin-machines/web";
 import { machineAway } from "./machine-away";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** How long a read may take before its progress replaces the skeleton. */
 const SKELETON_MS = 1_000;

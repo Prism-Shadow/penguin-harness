@@ -18,10 +18,10 @@ import type {
   MessagingBindingInfo,
   MessagingUnreachableMachine,
 } from "@prismshadow/penguin-server/api";
-import type { MachineLink } from "../../lib/machine-link";
-import { formatDateTime } from "../../lib/format";
-import { machineForSession } from "../../lib/session-machines";
-import { S } from "../../lib/strings";
+import type { MachineLink } from "@prismshadow/penguin-web/internal";
+import { formatDateTime } from "@prismshadow/penguin-web/internal";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** The server a Session's binding lives on: a machine, or this server (null). */
 export function bindingLocation(sessionId: string): { machineId: string | null } {

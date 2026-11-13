@@ -5,7 +5,7 @@
  * `penguin.steerMode` for the composer's first render (lib/account-sync); configurable from the
  * composer's "+" menu in draft state and active sessions alike.
  */
-import { writeCached } from "../../lib/account-sync/cache";
+import { writeCached } from "@prismshadow/penguin-web/internal";
 
 export type SteerMode = "steer" | "followup" | "interrupt";
 

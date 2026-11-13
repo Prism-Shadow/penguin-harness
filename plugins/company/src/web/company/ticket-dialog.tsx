@@ -98,7 +98,7 @@ import { dayKey } from "./calendar-geom";
 import { orgKey } from "./company-nav.js";
 import { deskRows } from "./org-sessions";
 import { chatPath, openTempSession } from "./temp-session";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 

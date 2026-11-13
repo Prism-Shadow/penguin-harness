@@ -31,7 +31,7 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the

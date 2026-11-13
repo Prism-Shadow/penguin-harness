@@ -23,7 +23,7 @@ import type {
   TryState,
   TryView,
 } from "./api-try-log";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 export interface ApiTryViewProps {
   input: string;

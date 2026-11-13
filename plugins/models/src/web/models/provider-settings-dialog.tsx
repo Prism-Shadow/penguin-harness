@@ -16,7 +16,7 @@ import {
 } from "./protocol-types";
 
 import type { RowState } from "./models-page";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
 type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;

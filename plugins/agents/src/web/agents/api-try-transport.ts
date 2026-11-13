@@ -13,7 +13,7 @@
  */
 import { AmspHttpError, deliver, readAmsp } from "@prismshadow/amsp";
 import type { StreamEnd, StreamRequest, Transport, TransportResponse } from "@prismshadow/amsp";
-import { ApiError, apiFetchStream } from "../../api/client";
+import { ApiError, apiFetchStream } from "@prismshadow/penguin-web/internal";
 
 /** The Web App's path for an AMSP path. */
 export function tryPath(amspPath: string): string {

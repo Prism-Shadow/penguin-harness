@@ -77,7 +77,7 @@ import {
   orgDraftKey,
   saveOrgDraft,
 } from "./org-draft";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 

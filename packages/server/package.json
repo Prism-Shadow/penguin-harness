@@ -22,6 +22,10 @@
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
     },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
+    },
     "./internal": {
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"

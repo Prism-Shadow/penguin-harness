@@ -1,27 +1,27 @@
-export { sameModelRef } from "../../lib/model-grouping";
+export { sameModelRef } from "@prismshadow/penguin-web/internal";
 
-export { hasConfiguredKey } from "../../lib/model-grouping";
+export { hasConfiguredKey } from "@prismshadow/penguin-web/internal";
 
-export { promotedPricing } from "../../lib/model-grouping";
+export { promotedPricing } from "@prismshadow/penguin-web/internal";
 
-export { discountedPrice } from "../../lib/model-grouping";
+export { discountedPrice } from "@prismshadow/penguin-web/internal";
 
-export { groupModelRows } from "../../lib/model-grouping";
+export { groupModelRows } from "@prismshadow/penguin-web/internal";
 
-export { isFreeModel } from "../../lib/model-grouping";
+export { isFreeModel } from "@prismshadow/penguin-web/internal";
 
-export { visibleChatModels } from "../../lib/model-grouping";
+export { visibleChatModels } from "@prismshadow/penguin-web/internal";
 
-export type { ModelCredentialRowLike } from "../../lib/model-grouping";
+export type { ModelCredentialRowLike } from "@prismshadow/penguin-web/internal";
 
-export type { ModelRefValue } from "../../lib/model-grouping";
+export type { ModelRefValue } from "@prismshadow/penguin-web/internal";
 
-export type { ModelRowLike } from "../../lib/model-grouping";
+export type { ModelRowLike } from "@prismshadow/penguin-web/internal";
 
-export { modelTags } from "../../lib/model-tags";
+export { modelTags } from "@prismshadow/penguin-web/internal";
 
-export type { ModelTag } from "../../lib/model-tags";
+export type { ModelTag } from "@prismshadow/penguin-web/internal";
 
-export { loadModelGroupOrder } from "../../lib/model-group-order";
+export { loadModelGroupOrder } from "@prismshadow/penguin-web/internal";
 
-export { turnPricing } from "../../lib/model-grouping";
+export { turnPricing } from "@prismshadow/penguin-web/internal";

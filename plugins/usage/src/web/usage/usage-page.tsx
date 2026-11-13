@@ -46,7 +46,7 @@ import { useUpdateBadges } from "@prismshadow/penguin-web/internal";
 import { dismissTodo } from "@prismshadow/penguin-web/internal";
 import { refreshProjectTodos } from "@prismshadow/penguin-web/internal";
 import { formatMoney, humanizeTokens } from "@prismshadow/penguin-web/internal";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { useProject } from "@prismshadow/penguin-web/internal";
 import { useTheme } from "@prismshadow/penguin-web/internal";
 import { TrendChart } from "./trend-chart";

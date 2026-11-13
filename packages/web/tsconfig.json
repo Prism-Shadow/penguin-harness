@@ -15,6 +15,9 @@
       "@prismshadow/penguin-server/api": [
         "../server/src/api/types.ts"
       ],
+      "@prismshadow/penguin-server/model-catalog": [
+        "../server/src/model-catalog/catalog.ts"
+      ],
       "@penguinharness/plugin-company/web": [
         "../../plugins/company/src/web/index.ts"
       ],
@@ -74,6 +77,72 @@
       ],
       "@penguinharness/plugin-sessions/web/*": [
         "../../plugins/sessions/src/web/*"
+      ],
+      "@penguinharness/plugin-company/server": [
+        "../../plugins/company/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server": [
+        "../../plugins/terminal/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-terminal/server/*": [
+        "../../plugins/terminal/src/server/*"
+      ],
+      "@penguinharness/plugin-browser/server": [
+        "../../plugins/browser/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-browser/server/*": [
+        "../../plugins/browser/src/server/*"
+      ],
+      "@penguinharness/plugin-usage/server": [
+        "../../plugins/usage/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-schedules/server": [
+        "../../plugins/schedules/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server": [
+        "../../plugins/machines/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-machines/server/*": [
+        "../../plugins/machines/src/server/*"
+      ],
+      "@prismshadow/penguin-server/machines/*": [
+        "../server/src/machines/*"
+      ],
+      "@prismshadow/penguin-server/http/routes/messaging-accounts.js": [
+        "../server/src/http/routes/messaging-accounts.ts"
+      ],
+      "@penguinharness/plugin-agents/server": [
+        "../../plugins/agents/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-settings/server": [
+        "../../plugins/settings/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-projects/server": [
+        "../../plugins/projects/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-workbenches/server": [
+        "../../plugins/workbenches/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/internal": [
+        "../server/src/internal.ts"
+      ],
+      "@prismshadow/penguin-server/ifaces.json": [
+        "../server/src/ifaces.json"
+      ],
+      "@penguinharness/plugin-messaging/server": [
+        "../../plugins/messaging/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-sessions/server": [
+        "../../plugins/sessions/src/server/index.ts"
+      ],
+      "@prismshadow/penguin-server/db/repos/organizations": [
+        "../server/src/db/repos/organizations.ts"
+      ],
+      "@penguinharness/plugin-sandbox/server": [
+        "../../plugins/sandbox/src/server/index.ts"
+      ],
+      "@penguinharness/plugin-db/server": [
+        "../../plugins/db/src/index.ts"
       ]
     }
   },

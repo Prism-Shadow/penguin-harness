@@ -100,7 +100,7 @@ import {
 } from "./channel-stream";
 
 import { parsePrincipal } from "./principals";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {

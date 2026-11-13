@@ -9,7 +9,7 @@
  * with the group's count, and the pager can count pages from it.
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { SIDEBAR_PAGE_SIZE } from "../../lib/session-grouping";
+import { SIDEBAR_PAGE_SIZE } from "@prismshadow/penguin-web/internal";
 
 /** Rows a group shows per page. */
 export const ARCHIVE_ROW_PAGE = SIDEBAR_PAGE_SIZE;

@@ -49,7 +49,7 @@ import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands, type InviteCandidate } from "./channel-list";
 
 import { parsePrincipal } from "./principals";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Opening a desk session (the open door): the member popover's employee rows, and the org chart's node menu. */
 export const DESK_ICON = ICONS.doorOpen;

@@ -11,7 +11,7 @@ import { useAiBridge } from "@prismshadow/penguin-web/internal";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
 export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");

@@ -18,7 +18,7 @@ import { setCloseGuard, tabKey } from "@prismshadow/penguin-web/internal";
 import { PAPERCLIP_ICON } from "@prismshadow/penguin-web/internal";
 
 import { WorkspaceTreeView } from "./workspace-tree-view";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to

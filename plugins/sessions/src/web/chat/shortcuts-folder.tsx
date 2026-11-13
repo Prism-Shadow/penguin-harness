@@ -22,7 +22,7 @@ import {
   type ShortcutDraft,
   type UserShortcut,
 } from "./user-shortcuts";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * Folder id for the user's shortcuts. Not a member of EXAMPLE_FOLDERS: that registry is the

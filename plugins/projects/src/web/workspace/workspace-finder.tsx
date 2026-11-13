@@ -58,7 +58,7 @@ import type {
   NewFolderProblem,
   Place,
 } from "./workspace-finder-model";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /**
  * The registry has one storage drawing, the drive, so a fixed disk, a volume and a Linux root

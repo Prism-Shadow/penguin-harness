@@ -1,4 +1,4 @@
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "@prismshadow/penguin-web/internal";
 import { panelLabel, type DockPanelBodyProps, type PanelId } from "@prismshadow/penguin-web/internal";

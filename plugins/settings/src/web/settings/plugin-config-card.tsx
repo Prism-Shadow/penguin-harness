@@ -20,7 +20,7 @@ import {
 
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** A card's draft: each member entry's typed fields, and the secrets the next Save clears. */
 export interface CardDraft {

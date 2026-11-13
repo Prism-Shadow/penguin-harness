@@ -1,4 +1,4 @@
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession } from "@prismshadow/penguin-web/internal";
 /**
  * The scheduled-tasks panel (`DockModule.panels`, kind `schedules`): the open conversation's
  * scheduled tasks, started over per conversation (keyed by Session). Its draft placeholder says

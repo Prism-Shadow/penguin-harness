@@ -10,8 +10,8 @@
  */
 import { useNavigate } from "react-router";
 import { Notice } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { useMachines } from "../../state/machines";
+import { S } from "@prismshadow/penguin-web/internal";
+import { useMachines } from "@prismshadow/penguin-web/internal";
 import { machineRestartNeeded } from "./machine-away";
 
 export function MachineRestartNotice({ machineId }: { machineId: string }) {

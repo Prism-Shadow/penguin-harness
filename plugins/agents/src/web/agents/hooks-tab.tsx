@@ -12,7 +12,7 @@ import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { UPLOAD_LABEL_CLASS } from "./skills-tab";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
 interface PendingOverwrite {

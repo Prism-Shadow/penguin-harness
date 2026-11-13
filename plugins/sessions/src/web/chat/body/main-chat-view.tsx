@@ -7,7 +7,7 @@ import { ChatInput } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
 import { sessionThinkingLevel } from "@prismshadow/penguin-web/internal";
 import { advanceCostStat } from "../header-stats";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import { headerStats } from "../session/main-chat-helpers";
 import type { useChatController } from "../session/use-chat-controller";
 import { agentPagePath } from "../session/main-chat-dock";

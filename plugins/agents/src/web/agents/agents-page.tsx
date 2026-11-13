@@ -22,7 +22,7 @@ import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import { followAgentDeletion } from "./agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
 const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);

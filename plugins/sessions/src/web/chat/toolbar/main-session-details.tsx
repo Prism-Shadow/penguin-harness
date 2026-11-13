@@ -17,7 +17,7 @@ import { Truncated } from "@prismshadow/penguin-web/internal";
 import { CostPartsRows, StatHint } from "@prismshadow/penguin-web/internal";
 import { OutlineMenuButton } from "../conversation-outline";
 import { nameOnMachine } from "@prismshadow/penguin-web/internal";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { DockToggles } from "../dock-toggles";
 import { toneInk } from "@prismshadow/penguin-web/internal";
 import { STAT_ICONS } from "@prismshadow/penguin-web/internal";

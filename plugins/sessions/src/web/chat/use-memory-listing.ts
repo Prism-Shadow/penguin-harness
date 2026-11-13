@@ -3,7 +3,7 @@ import { apiErrorText } from "@prismshadow/penguin-web/internal";
 import type { MemoryChangeRow } from "@prismshadow/penguin-web/internal";
 
 import type { ScopeFiles } from "./memory-nav";
-import { scopeKey } from "../../lib/project-scope";
+import { scopeKey } from "@prismshadow/penguin-web/internal";
 
 export function useMemoryListing(
   projectId: string | null,

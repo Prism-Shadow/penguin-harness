@@ -89,7 +89,7 @@ import {
   HireDialog,
   type EmployeeEdit,
 } from "./employee-dialogs";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {

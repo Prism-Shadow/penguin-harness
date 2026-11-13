@@ -7,7 +7,7 @@ import { AiCreateModal, AiCreateButtons } from "@prismshadow/penguin-web/interna
 
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "@penguinharness/plugin-schedules/web";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {

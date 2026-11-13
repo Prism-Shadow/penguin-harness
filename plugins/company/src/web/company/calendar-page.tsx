@@ -82,7 +82,7 @@ import {
 } from "./calendar-geom";
 
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",

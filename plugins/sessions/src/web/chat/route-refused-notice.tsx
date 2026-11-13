@@ -5,7 +5,7 @@
  * the answer named it.
  */
 import { EmptyState } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "@prismshadow/penguin-web/internal";
 
 export function RouteRefusedNotice({
   machineId,

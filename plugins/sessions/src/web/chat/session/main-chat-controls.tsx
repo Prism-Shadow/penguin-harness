@@ -16,7 +16,7 @@ import {
 } from "@prismshadow/penguin-web/internal";
 
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "../model-switch";
-import { sameModelRef } from "../../models";
+import { sameModelRef } from "@penguinharness/plugin-models/web";
 import type { useMainChatComposer } from "./main-chat-composer";
 
 /** Exact consecutive main ChatPage statements 148..158; called once, in original order. */

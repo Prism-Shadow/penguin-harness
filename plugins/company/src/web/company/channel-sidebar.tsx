@@ -44,7 +44,7 @@ import { Truncated } from "@prismshadow/penguin-web/internal";
 import { orgChannelPath } from "@prismshadow/penguin-web/internal";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 /** A channel (the hash sign): the mark every channel but the all-hands one wears. */
 export const CHANNEL_ICON = ICONS.hash;

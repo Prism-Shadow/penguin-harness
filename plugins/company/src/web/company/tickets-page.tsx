@@ -91,7 +91,7 @@ import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 

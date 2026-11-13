@@ -8,7 +8,7 @@ import { APPROVAL_MODES } from "@prismshadow/penguin-web/internal";
 
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
 

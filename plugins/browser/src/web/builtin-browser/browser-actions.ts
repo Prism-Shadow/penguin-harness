@@ -11,7 +11,7 @@ import { S } from "@prismshadow/penguin-web/internal";
 import { openPanel } from "@prismshadow/penguin-web/internal";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError } from "@prismshadow/penguin-web/internal";
 
 const opening = new Map<Promise<unknown>, string>();
 

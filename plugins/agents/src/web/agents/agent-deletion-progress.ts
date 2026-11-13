@@ -15,9 +15,9 @@
 import type { AgentDeletionInfo } from "@prismshadow/penguin-server/api";
 import { startProgress } from "@prismshadow/penguin-ui";
 import type { ProgressHandle, ProgressPatch } from "@prismshadow/penguin-ui";
-import { ApiError } from "../../api/client";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import { ApiError } from "@prismshadow/penguin-web/internal";
+import * as api from "@prismshadow/penguin-web/internal";
+import { S } from "@prismshadow/penguin-web/internal";
 
 /** How often the removal is read, ms. */
 export const DELETION_POLL_MS = 500;

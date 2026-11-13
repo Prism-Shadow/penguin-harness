@@ -13,7 +13,7 @@
  */
 import { useEffect, useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
+import * as api from "@prismshadow/penguin-web/internal";
 
 export function useAgentSkills(
   projectId: string | null,
