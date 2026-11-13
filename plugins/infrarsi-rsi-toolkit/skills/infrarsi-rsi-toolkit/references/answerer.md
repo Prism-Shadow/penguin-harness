@@ -1,6 +1,6 @@
 # Answerer rules
 
-Append this text, unchanged, to every answering subagent's prompt.
+The `infrarsi_answerer` Agent's `AGENTS.md` is this block, unchanged. When an answerer has to run under your own identity, append the block to its prompt instead.
 
 ```text
 You answer one request of the InfraRSI search engine, and nothing else.

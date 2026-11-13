@@ -53,13 +53,24 @@ Make these substitutions for PenguinHarness:
 | Give your shell tool a timeout above 9 minutes | `exec_command` waits at most two minutes: call `infrarsi agent next --wait 100`. Start `infrarsi doctor` and other commands that last longer with `run_in_background` |
 | Agree the contract and the apply step with the user | Ask in the conversation. A quick-start prompt agrees to neither; it never loosens the contract or applies a change |
 
+### The answerer identity
+
+Upstream's answerer may only read and write files. Before `infrarsi agent start`, give it the same limits here with a separate Agent in this Project, created once and reused:
+
+1. `penguin agent create --agent-id infrarsi_answerer --name "InfraRSI answerer" --json`, unless that Agent already exists.
+2. In its `agent_state/system_config.yaml`, keep only the `read_file` and `write_file` entries under `tools.builtin`.
+3. Replace its `AGENTS.md` with the rules block in [answerer.md](references/answerer.md).
+
+Check the three steps before the first request. If the Agent cannot be created, use your own identity instead and append the rules block to every answering prompt; say so in the report.
+
 ### Answer each request with a fresh subagent
 
 When `infrarsi agent next` returns `"state": "request"`:
 
-1. Start a **new** `run_subagent` session. Omit `agent_id`, `provider`, `model_id` and `thinking_level`, so the answerer runs on this Session's model: the engine weighs answers by the model named in `--model`. Never send a request to a cheaper model, and never continue an earlier answerer with `input_subagent`.
-2. Its prompt is the line `Caller agent: <your agent id>`, then the prompt in the *The prompt* section of `$SKILL_DIR/references/answering.md` with the request's id, directory and answer file filled in, then the rules in [answerer.md](references/answerer.md). Add nothing else: no advice, numbers, file contents or view of the job.
-3. Hand the answer in with `infrarsi agent answer <id> --by <model id>`, adding `--tokens N` when the `run_subagent` result reports the tokens used. Follow the answering reference's table for refused answers: a refused answer gets another new subagent with the feedback line it gives.
+1. Start a **new** `run_subagent` session with `agent_id: infrarsi_answerer` and `yield_time_ms: 590000`. Omit `provider`, `model_id` and `thinking_level`, so the answerer runs on this Session's model: the engine weighs answers by the model named in `--model`. Never send a request to a cheaper model.
+2. Its prompt is the line `Caller agent: <your agent id>`, then the prompt in the *The prompt* section of `$SKILL_DIR/references/answering.md` with the request's id, directory and answer file filled in. Add nothing else: no advice, numbers, file contents or view of the job.
+3. If `run_subagent` returns before the answerer is done, wait with `input_subagent` and an empty prompt. Never send an answerer a prompt: a message to a running or finished answerer adds to its question.
+4. Hand the answer in with `infrarsi agent answer <id> --by <model id>`, adding `--tokens N` when the `run_subagent` result reports the tokens used. Follow the answering reference's table for refused answers: a refused answer gets another new subagent with the feedback line it gives.
 
 If `run_subagent` is not in your tool list, you are a subagent yourself: do not answer the request. Run `infrarsi agent stop` and report that this Session cannot start an independent answerer.
 
