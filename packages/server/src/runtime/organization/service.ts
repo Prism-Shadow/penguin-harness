@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 /**
  * The organization service: what the routes (and through them the CLI and the Web App)
@@ -51,6 +52,7 @@ import type {
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
+import { projectDir } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
@@ -100,6 +102,8 @@ import {
   isTicketColumn,
   normalizeWorkspaceSpec,
 } from "../../organization/paths.js";
+import { locateCitedFile } from "../../organization/cited-file.js";
+import type { CitedFileLocation } from "../../organization/cited-file.js";
 import {
   agentPrincipal,
   parsePrincipal,
@@ -1230,6 +1234,24 @@ export class OrganizationService {
     if (content === null)
       throw new HttpError(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
     return { path: rel, content };
+  }
+
+  /**
+   * A file cited in the organization's messages, as the root it lies under and its path there —
+   * see organization/cited-file.ts for what may be opened. The roots are read from the chart on
+   * every call, so a workspace re-pointed elsewhere stops serving the old one at once.
+   */
+  async citedFile(projectId: string, orgId: string, cited: string): Promise<CitedFileLocation> {
+    const org = await this.requireOrg(projectId, orgId);
+    const shared = sharedWorkspace(org);
+    const employees = org.chart.employees.map((e) =>
+      this.deps.store.workspaceTarget(shared, e.workspace),
+    );
+    return await locateCitedFile(cited, {
+      appDataDir: projectDir(this.deps.root, projectId),
+      home: os.homedir(),
+      roots: [handbookDir(org.dir), shared, ...employees.filter((w) => w !== null)],
+    });
   }
 
   async writeHandbookFile(
@@ -2849,6 +2871,7 @@ export abstract class OrgService extends Interface<
     | "leave"
     | "suggestId"
     | "chart"
+    | "citedFile"
     | "hire"
     | "employeeAvatar"
     | "setEmployeeAvatar"

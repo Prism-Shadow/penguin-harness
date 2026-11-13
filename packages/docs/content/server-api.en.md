@@ -755,6 +755,7 @@ All paths below are under `/api/projects/:projectId/organizations`. While the se
 | GET / PUT | `/:orgId/handbook` | The handbook index (`handbook/README.md`) |
 | GET | `/:orgId/handbook/files` | The knowledge-base files, the index first |
 | GET / PUT / DELETE | `/:orgId/handbook/files/<path>` | One document by relative path; the index cannot be deleted |
+| GET | `/:orgId/file?path=<cited path>` | A file cited in the organization's messages, read-only: under the handbook, the shared workspace or an employee's workspace, never a Project config or an Agent vault |
 | GET / POST | `/:orgId/calendar` | Every employee's events with their run state / creates an event |
 | GET / PUT / DELETE | `/:orgId/calendar/:agentId/:name` | One event |
 | GET / POST | `/:orgId/tickets` | The board by column, plus files that could not be parsed / creates a ticket |
