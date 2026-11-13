@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 import type { BuiltinCommand } from "../src/cli-commands.js";
+import { bootCompanyCommands } from "@prismshadow/penguin-server/cli";
 import { cli } from "../src/index.js";
 
 /** The commands in the order they are declared, which is the order help lists them in. */
@@ -29,7 +30,6 @@ const KEYS = [
   "plugin",
   "cost",
   "schedule",
-  "org",
   "browser",
   "server",
   "server.reset-admin-password",
@@ -105,7 +105,12 @@ describe("CliCommandsModule", () => {
 describe("help lists the collected commands", () => {
   it("penguin --help lists the top-level commands in order, each with its summary, in each language", async () => {
     const commands = await bootBuiltinCommands();
-    const topLevel = commands.filter((c) => !c.key.includes("."));
+    // Help lists the CLI's own commands first, then the commands the server contributes
+    // through the company module (`org` among them).
+    const topLevel = [
+      ...commands.filter((c) => !c.key.includes(".")),
+      ...(await bootCompanyCommands()).filter((c) => !c.key.includes(".")),
+    ];
     for (const language of ["en", "zh"] as const) {
       process.env.PENGUIN_LANG = language;
       const { code, out } = await run(["--help"]);

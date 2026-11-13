@@ -72,19 +72,13 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
-  Messages,
-} from "@prismshadow/penguin-server/cli";
-import {
-  resolveAgentId,
-  resolveConnection,
-  resolveProjectId,
-  resolveSessionRef,
-  ServerClient,
-  renderTable,
-} from "@prismshadow/penguin-server/cli";
-
+} from "../../api/types.js";
+import { resolveAgentId, resolveProjectId, resolveSessionRef, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
 import { getSessionInfo } from "../server-session.js";
 import { dim } from "../render.js";
+import { renderTable } from "../table.js";
+import type { Messages } from "../i18n.js";
 
 const enc = encodeURIComponent;
 

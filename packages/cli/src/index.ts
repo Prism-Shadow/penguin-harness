@@ -16,9 +16,9 @@ import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
 import type { CliCommandProgram } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "./cli-commands.js";
+import { bootCompanyCommands, getMessages, resolveLanguage } from "@prismshadow/penguin-server/cli";
 import { dispatchPluginCommand, serverPluginCommands } from "./plugin-cli-commands.js";
 import { reportCommanderError } from "./usage-error.js";
-import { getMessages, resolveLanguage } from "@prismshadow/penguin-server/cli";
 
 /** The node for a dotted key under `program`, found or built one segment at a time. */
 function commandAt(program: Command, key: string): Command {
@@ -53,7 +53,7 @@ export async function cli(argv: string[]): Promise<number> {
     .configureOutput({ outputError: () => {} })
     .enablePositionalOptions();
 
-  for (const command of await bootBuiltinCommands()) {
+  for (const command of [...(await bootBuiltinCommands()), ...(await bootCompanyCommands())]) {
     const node = commandAt(program, command.key).description(command.summary[language]);
     // CliCommandProgram is opaque in the contract; the host knows what it built. The locale
     // is resolved once, here, and every register consumes the bundle — no command resolves
