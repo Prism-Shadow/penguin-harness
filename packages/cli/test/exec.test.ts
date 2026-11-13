@@ -13,9 +13,17 @@
  *     POSIX way, an embedded quote included — the ambiguity report's exec lines and any
  *     re-typed invocation both paste into a shell as one command.
  */
-import { describe, expect, it } from "vitest";
-import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
-import { resolveExecTarget } from "../src/commands/exec.js";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { MockInstance } from "vitest";
+import { Command } from "commander";
+import os from "node:os";
+import path from "node:path";
+import type {
+  PluginCliCommandInfo,
+  PluginCliCommandRunRequest,
+} from "@prismshadow/penguin-server/api";
+import { registerExecCommand, resolveExecTarget } from "../src/commands/exec.js";
+import { getMessages, type Messages } from "@prismshadow/penguin-server/cli";
 import { shellQuote } from "../src/plugin-cli-commands.js";
 
 const cmd = (pkg: string, key: string): PluginCliCommandInfo => ({
@@ -98,5 +106,98 @@ describe("shellQuote (one word of a copyable command line, POSIX)", () => {
     expect(shellQuote("it's")).toBe("'it'\\''s'");
     expect(shellQuote("$(rm -rf /)")).toBe("'$(rm -rf /)'");
     expect(shellQuote("")).toBe("''");
+  });
+});
+
+describe("registerExecCommand (through the real commander tree, via stubbed fetch)", () => {
+  const t: Messages = getMessages("en");
+  const listing = [
+    cmd("@acme/one", "one.deploy"),
+    { package: "@acme/one", key: "one.up", summary: { en: "One's up", zh: "One 的启动" } },
+    { package: "@acme/two", key: "two.up", summary: { en: "Two's up", zh: "Two 的启动" } },
+  ];
+
+  let originalEnv: NodeJS.ProcessEnv;
+  let stdoutSpy: MockInstance<typeof process.stdout.write>;
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
+  const recorded: PluginCliCommandRunRequest[] = [];
+
+  beforeEach(async () => {
+    // The command builds its own source (serverPluginCommands), so point the connection at
+    // the URL the stubbed fetch answers and keep the data root away from the tester's own.
+    originalEnv = process.env;
+    process.env = {
+      ...originalEnv,
+      PENGUIN_API_URL: "http://127.0.0.1:7399",
+      PENGUIN_HOME: await import("fs/promises").then((fs) =>
+        fs.mkdtemp(path.join(os.tmpdir(), "penguin-test-")),
+      ),
+    };
+    delete process.env.PENGUIN_API_TOKEN;
+    delete process.env.PENGUIN_SESSION_ID;
+    recorded.length = 0;
+    stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, opts?: RequestInit) => {
+        if (url.endsWith("/api/cli/commands")) {
+          return new Response(JSON.stringify({ commands: listing }), { status: 200 });
+        }
+        if (url.endsWith("/run")) {
+          recorded.push(JSON.parse(opts?.body as string));
+          return new Response(JSON.stringify({ exitCode: 0, stdout: "ok\n", stderr: "" }), {
+            status: 200,
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  const makeProgram = (): Command => {
+    const program = new Command();
+    program.name("penguin").version("1.0.0", "-v, --version").enablePositionalOptions();
+    registerExecCommand(program.command("exec"), t);
+    return program;
+  };
+
+  const run = async (...argv: string[]) => {
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+    await makeProgram().parseAsync(argv, { from: "user" });
+    return {
+      out: stdoutSpy.mock.calls.map((c) => c[0]).join(""),
+      err: stderrSpy.mock.calls.map((c) => c[0]).join(""),
+    };
+  };
+
+  it("hands the id's arguments to the run request whole — options, the host's version flag and `--` included", async () => {
+    const { out } = await run("exec", "one.deploy", "--prod", "-v", "--", "--help");
+    expect(recorded).toEqual([
+      {
+        package: "@acme/one",
+        args: ["one", "deploy", "--prod", "-v", "--", "--help"],
+        language: "en",
+        prog: "penguin exec one.deploy",
+      },
+    ]);
+    expect(out).toBe("ok\n");
+  });
+
+  it("the prefixed form names the package and its id, and prog carries the colon", async () => {
+    await run("exec", "@acme/one:one.deploy", "--x");
+    expect(recorded[0]).toMatchObject({
+      package: "@acme/one",
+      args: ["one", "deploy", "--x"],
+      prog: "penguin exec @acme/one:one.deploy",
+    });
   });
 });

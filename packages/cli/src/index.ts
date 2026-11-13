@@ -50,7 +50,8 @@ export async function cli(argv: string[]): Promise<number> {
     // and report the failure localized from the catch below (see usage-error.ts). Both
     // settings must be in place before the subcommands are created — that is when they
     // are copied down (commander's copyInheritedSettings).
-    .configureOutput({ outputError: () => {} });
+    .configureOutput({ outputError: () => {} })
+    .enablePositionalOptions();
 
   for (const command of await bootBuiltinCommands()) {
     const node = commandAt(program, command.key).description(command.summary[language]);

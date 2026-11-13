@@ -78,10 +78,14 @@ export function resolveExecTarget(
 /** Fills in `penguin exec`, on the node the host located by the command's key. */
 export function registerExecCommand(exec: Command, t: Messages): void {
   // The id's own options belong to the plugin command: no `--help` of ours, no option
-  // parsing — everything after the id is handed to the server as it was typed.
+  // parsing — everything after the id is handed to the server as it was typed. The
+  // pass-through needs `enablePositionalOptions` on the root (see the host), without which
+  // the root's `--version` would still be read out of the id's arguments, and a bare `--`
+  // would still be stripped before it reaches the id's rest.
   exec
     .helpOption(false)
     .allowUnknownOption()
+    .passThroughOptions()
     .argument("[args...]", t.exec.argsArg)
     .action(async (args: string[]) => {
       // Bare, or leading with an option (`penguin exec --help`): this command's own help.

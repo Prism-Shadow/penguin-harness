@@ -150,6 +150,12 @@ describe("reportAmbiguous", () => {
     const text = stderrSpy.mock.calls.map((c) => c[0]).join("");
     expect(text).toContain("penguin exec @a/one:greet.all --loud 'two words'");
   });
+
+  it("pastes nothing after the id when the argv names the key exactly", () => {
+    reportAmbiguous(["greet"], [{ package: "@a/x", key: "greet", summary: { en: "", zh: "" } }], t);
+    const text = stderrSpy.mock.calls.map((c) => c[0]).join("");
+    expect(text).toContain("penguin exec @a/x:greet\n");
+  });
 });
 
 describe("dispatchPluginCommand (unit)", () => {

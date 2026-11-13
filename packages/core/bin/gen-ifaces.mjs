@@ -153,6 +153,14 @@ let moduleNameBySymbol = new Map();
 const pendingChildren = [];
 /** Every project's @Module / @Component classes, keyed by class symbol; read after the loop. */
 const moduleClasses = new Map(); // class symbol → { node, meta, file }
+// Named nodes and manifest owners, across ALL projects: the naming and manifest loops run
+// once per project over the shared `moduleClasses`, and a class each program re-declares
+// gets a fresh map entry per project (the symbol differs). The identity that survives the
+// re-scan is the declaration's file and class name — the same pair is the same class seen
+// again (skip silently), a different pair under one class name is a real collision (refuse;
+// scan order must not decide which implementation the table keeps).
+const namedNodes = new Set(); // `${file}\0${className}`
+const manifestOwner = new Map(); // manifest name → `${file}\${className}`
 
 for (const project of projects) {
   const configPath = path.resolve(project);
@@ -438,10 +446,17 @@ for (const project of projects) {
   const componentKeyBySymbol = new Map();
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     // A node is named by its class: `export class AuthService` is the node `AuthService`.
-    // Classes already named by an earlier project's pass are skipped: the map is shared
-    // across projects, and naming a node twice would read as a hand-written `name`.
-    if ("name" in meta) continue;
+    const declId = `${file}\0${className}`;
+    if ("name" in meta) {
+      if (!namedNodes.has(declId)) {
+        errors.push(
+          `${file}: @${kind === "module" ? "Module" : "Component"} meta names the node — a node is named by its class ('${className}')`,
+        );
+      }
+      continue;
+    }
     meta.name = className;
+    namedNodes.add(declId);
     moduleNameBySymbol.set(sym, meta.name);
     moduleNameByClassName.set(className, meta.name);
     // `export default class X` names its symbol "default"; the class keeps its own name.
@@ -1240,8 +1255,21 @@ for (const project of projects) {
       pendingChildren.push({ m, sym: child?.$id, file, name: child?.$name, ordinal });
     }
     // A class named by an earlier project has its manifest built: the map is shared across
-    // projects, and building it twice would read as a module defined twice.
-    if (manifests[meta.name]) continue;
+    // projects, and building it twice would read as a module defined twice. Keyed by the
+    // declaration's file + class name (symbols and nodes differ across programs): the same
+    // class re-visited by the next project's pass re-enters here and is skipped silently;
+    // a DIFFERENT declaration claiming the same class name is a real collision and is
+    // refused — scan order must not decide which implementation the table keeps.
+    const ownerDeclId = manifestOwner.get(meta.name);
+    if (ownerDeclId !== undefined) {
+      if (ownerDeclId !== `${file}\0${className}`) {
+        errors.push(
+          `${file}: module '${meta.name}' is defined twice — the name is already taken by another declaration`,
+        );
+      }
+      continue;
+    }
+    manifestOwner.set(meta.name, `${file}\0${className}`);
     manifests[m.name] = m;
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
