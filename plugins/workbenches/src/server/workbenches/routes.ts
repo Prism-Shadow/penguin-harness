@@ -44,19 +44,19 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { agentDir } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { type AppCenterLayoutResponse, type AppCenterResponse, type WorkbenchAppCenterResponse, type WorkbenchArchiveInstallResponse, type WorkbenchesResponse } from "../api/types.js";
-import type { type AppEnv } from "@prismshadow/penguin-server/internal";
-import type { type Paths } from "@prismshadow/penguin-server/internal";
+import type { AppCenterLayoutResponse, AppCenterResponse, WorkbenchAppCenterResponse, WorkbenchArchiveInstallResponse, WorkbenchesResponse } from "../api/types.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { Paths } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "@prismshadow/penguin-server/internal";
-import type { type AgentConfig } from "@prismshadow/penguin-server/internal";
-import type { type Access, type Projects } from "@prismshadow/penguin-server/internal";
-import type { type UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { Access, Projects } from "@prismshadow/penguin-server/internal";
+import type { UiPrefsStore } from "@prismshadow/penguin-server/internal";
 import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-server/internal";
-import type { type WorkbenchRequest, type WorkbenchResponse } from "@prismshadow/penguin-server/api";
-import type { type Workbenches } from "../mechanisms/workbenches.js";
+import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-server/api";
+import type { Workbenches } from "../mechanism.js";
 import {
   parseAppCenterLayout,
   readAppCenterLayout,

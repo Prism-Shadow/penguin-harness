@@ -20,16 +20,16 @@ import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { createHash } from "node:crypto";
 import { AVATAR_MAX_CHARS, BACKGROUND_IMAGE_MAX_CHARS } from "../../api/types.js";
-import type { type BackgroundImagePutResponse, type BackgroundImageResponse, type DraftsResponse } from "../../api/types.js";
-import type { type MeResponse, type PrefsResponse, type UiPrefs, type UpdateProfileRequest, type UpdateProfileResponse } from "@prismshadow/penguin-server/api";
+import type { BackgroundImagePutResponse, BackgroundImageResponse, DraftsResponse } from "../../api/types.js";
+import type { MeResponse, PrefsResponse, UiPrefs, UpdateProfileRequest, UpdateProfileResponse } from "@prismshadow/penguin-server/api";
 import { toUserInfo } from "@prismshadow/penguin-server/internal";
 import { cookieOptions } from "@prismshadow/penguin-server/internal";
 import { sessionCookieName } from "../../auth/middleware.js";
-import type { type AppEnv } from "@prismshadow/penguin-server/internal";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
 import { badRequest, readJson, requireString } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
-import type { type ServerConfig } from "@prismshadow/penguin-server/internal";
-import type { type DesktopService } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import type { DesktopService } from "@prismshadow/penguin-server/internal";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MeRouteDeps {
@@ -52,9 +52,9 @@ import { INLINE_IMAGE_MAX_MB, MAX_ATTACHMENT_COUNT, MAX_ATTACHMENT_MB, MIN_ATTAC
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Desktop } from "@prismshadow/penguin-server/internal";
-import type { type Auth, type Users } from "@prismshadow/penguin-server/internal";
-import type { type Settings, type UiPrefsStore } from "@prismshadow/penguin-server/internal";
-import type { type BackgroundImageStore, type UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { Auth, Users } from "@prismshadow/penguin-server/internal";
+import type { Settings, UiPrefsStore } from "@prismshadow/penguin-server/internal";
+import type { BackgroundImageStore, UserDraftsStore } from "@prismshadow/penguin-server/internal";
 import type { Projects } from "@prismshadow/penguin-server/internal";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */

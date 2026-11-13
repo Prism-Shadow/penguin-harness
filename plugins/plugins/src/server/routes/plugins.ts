@@ -55,26 +55,26 @@ import {
   uninstallMcpServer,
 } from "@prismshadow/penguin-core";
 import type { IconImage, NpmPackage } from "@prismshadow/penguin-core";
-import type { type AgentMcpServersResponse, type AgentPluginsInstallResponse, type PluginFilesResponse, type PluginIndexEntry, type PluginIndexResponse, type PluginLibraryResponse, type PluginReadmeResponse } from "@prismshadow/penguin-server/api";
-import type { type PluginUninstallResponse } from "../../api/types.js";
-import type { type AppEnv } from "@prismshadow/penguin-server/internal";
-import type { type ServerConfig } from "@prismshadow/penguin-server/internal";
-import type { type Config, type Hmr } from "@prismshadow/penguin-server/internal";
-import type { type AgentConfig } from "@prismshadow/penguin-server/internal";
-import type { type Access } from "@prismshadow/penguin-server/internal";
-import type { type Workbenches } from "../../mechanisms/workbenches.js";
-import type { type Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
+import type { AgentMcpServersResponse, AgentPluginsInstallResponse, PluginFilesResponse, PluginIndexEntry, PluginIndexResponse, PluginLibraryResponse, PluginReadmeResponse } from "@prismshadow/penguin-server/api";
+import type { PluginUninstallResponse } from "../../api/types.js";
+import type { AppEnv } from "@prismshadow/penguin-server/internal";
+import type { ServerConfig } from "@prismshadow/penguin-server/internal";
+import type { Config, Hmr } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig } from "@prismshadow/penguin-server/internal";
+import type { Access } from "@prismshadow/penguin-server/internal";
+import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
+import type { Sessions as ManagerIface } from "@prismshadow/penguin-server/internal";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "@penguinharness/plugin-agents/server";
 import { BUILTIN_REGISTRY_SOURCE, builtinPluginRegistry, cachedRegistry, httpPluginRegistry, localPluginDisplay, mergeIndexes, withoutIcon, NIGHTLY_INDEX_URL } from "../../plugin/registry.js";
-import type { type CachedRegistry, type IndexDocumentEntry, type IndexSnapshot, type PluginRegistry } from "../../plugin/registry.js";
+import type { CachedRegistry, IndexDocumentEntry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
-import type { type PluginBase } from "../../plugin/loader.js";
+import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
 import { pluginArchiveResponse, unscopedName, zipPluginPackage } from "../../services/plugin-archive.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
-import type { type PluginLibrary } from "../../plugin/library-module.js";
+import type { PluginLibrary } from "@prismshadow/penguin-server/internal";
 import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
 
 /** What these route groups reach — bound by their component below. */

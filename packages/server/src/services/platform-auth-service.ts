@@ -14,8 +14,8 @@ import { PENGUIN_GO_PROVIDER_ID } from "../model-catalog/catalog.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { normalizePenguinGoOrigin } from "@prismshadow/penguin-server/internal";
 import { Config } from "@prismshadow/penguin-server/internal";
-import type { type ProjectConfigStore } from "@prismshadow/penguin-server/internal";
-import type { type DefaultModelOffer, type PlatformAuthFlowStatusResponse } from "../api/types.js";
+import type { ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { DefaultModelOffer, PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
   type PlatformCatalogPricing,

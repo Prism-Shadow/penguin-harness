@@ -76,8 +76,8 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type { type ChatDefaultsDto, type CommandPolicyDto, type CommandPolicyRuleDto, type EndpointModelListRequest, type EndpointModelListResponse, type ModelEffectiveConnection, type ModelInfo, type ModelPricingDto, type ModelProtocolDetectRequest, type ModelProtocolDetectResponse, type ModelRefDto, type ModelsResponse, type ModelsUpdateRequest, type ModelTestRequest, type ModelTestResponse, type ModelVisionDetectRequest, type ModelVisionDetectResponse, type PresetSyncMode, type PresetSyncResponse, type ProviderConnectionDto, type ProviderConnectionUpdate } from "@prismshadow/penguin-server/api";
-import type { type DefaultModelOffer, type ProviderConnectionResponse } from "../api/types.js";
+import type { ChatDefaultsDto, CommandPolicyDto, CommandPolicyRuleDto, EndpointModelListRequest, EndpointModelListResponse, ModelEffectiveConnection, ModelInfo, ModelPricingDto, ModelProtocolDetectRequest, ModelProtocolDetectResponse, ModelRefDto, ModelsResponse, ModelsUpdateRequest, ModelTestRequest, ModelTestResponse, ModelVisionDetectRequest, ModelVisionDetectResponse, PresetSyncMode, PresetSyncResponse, ProviderConnectionDto, ProviderConnectionUpdate } from "@prismshadow/penguin-server/api";
+import type { DefaultModelOffer, ProviderConnectionResponse } from "../api/types.js";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { cacheable } from "@prismshadow/penguin-server/internal";
@@ -100,9 +100,9 @@ import {
 } from "./vision-detect.js";
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { type Config, type Paths } from "@prismshadow/penguin-server/internal";
-import type { type GroupKeyApplied } from "../mechanisms/projects.js";
-import type { type ModelPromotion, type ModelProviderAuthToken, type ModelProviderAuthTokens, type ModelPromotions, type ProjectConfigStore } from "@prismshadow/penguin-server/internal";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { GroupKeyApplied } from "../mechanisms/projects.js";
+import type { ModelPromotion, ModelProviderAuthToken, ModelProviderAuthTokens, ModelPromotions, ProjectConfigStore } from "@prismshadow/penguin-server/internal";
 
 export type RawTable = Record<string, unknown>;
 

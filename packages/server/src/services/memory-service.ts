@@ -46,13 +46,13 @@ import {
   parseMemoryFrontmatter,
   readWorkspaceMarker,
 } from "@prismshadow/penguin-core";
-import type { type MemoryFileInfo, type MemoryFileResponse, type MemoryFilesResponse, type MemoryImportMode, type MemoryImportResponse, type MemoryOverviewResponse, type MemoryScopeInfo } from "@prismshadow/penguin-server/api";
-import type { type MemoryFolderFile } from "../api/types.js";
+import type { MemoryFileInfo, MemoryFileResponse, MemoryFilesResponse, MemoryImportMode, MemoryImportResponse, MemoryOverviewResponse, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
+import type { MemoryFolderFile } from "../api/types.js";
 import { HttpError } from "@prismshadow/penguin-server/internal";
 import { badRequest } from "@prismshadow/penguin-server/internal";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { type Config, type Paths } from "@prismshadow/penguin-server/internal";
-import type { type AgentConfig, type Memory } from "@prismshadow/penguin-server/internal";
+import type { Config, Paths } from "@prismshadow/penguin-server/internal";
+import type { AgentConfig, Memory } from "@prismshadow/penguin-server/internal";
 import {
   type ImportedMemory,
   type MemoryImportSet,
