@@ -54,7 +54,6 @@ import type { Config, Paths } from "@prismshadow/penguin-server/internal";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "@prismshadow/penguin-server/internal";
 import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 import type { Config, Paths } from "@prismshadow/penguin-server/internal";
-import type { AgentConfig, AgentLifecycle, Snapshots } from "./mechanism.js";
 import type { AgentIndex } from "@penguinharness/plugin-projects/server";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 

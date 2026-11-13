@@ -11,7 +11,7 @@ import {
   messagingAccountsRoutes,
 } from "@prismshadow/penguin-server/internal";
 import type { Machines } from "@penguinharness/plugin-machines/server";
-import type { MessagingBindings } from "./mechanism.js";
+import type { MessagingBindings } from "../mechanism.js";
 import type { Access } from "@penguinharness/plugin-projects/server";
 import type { SessionIndex } from "@penguinharness/plugin-sessions/server";
 
