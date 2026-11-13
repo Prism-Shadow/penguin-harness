@@ -3,6 +3,7 @@ export * from "./runtime/session-manager.js";
 export * from "./mechanism.js";
 export * from "./repos/sessions.js";
 export * from "./repos/schedules.js";
+export * from "./runtime/agent-state.js";
 export * from "./runtime/session-sources.js";
 export * from "./runtime/session-drivers.js";
 export * from "./runtime/approvals.js";

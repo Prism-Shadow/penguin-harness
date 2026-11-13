@@ -140,7 +140,7 @@ import {
   DesktopUpdateRoutes,
 } from "./http/routes/desktop.js";
 import { CommandRoutes } from "./http/routes/command.js";
-import { InstallRoutes } from "./http/routes/install.js";
+import { InstallRoutes } from "@penguinharness/plugin-projects/server";
 import { HandshakeRoutes } from "./http/routes/handshake.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
@@ -176,7 +176,7 @@ import {
 import { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import { WorkbenchService } from "@penguinharness/plugin-workbenches/server";
 import { WorkbenchRoutes } from "@penguinharness/plugin-workbenches/server";
-import { ThemeRoutes } from "@penguinharness/plugin-settings/server";
+import { ThemeRoutes } from "./http/routes/themes.js";
 import {
   ErrorLog,
   Errors,

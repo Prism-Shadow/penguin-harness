@@ -17,4 +17,5 @@ export {
   SESSION_SHAPE_ID,
 } from "./transport/index.js";
 export type { HeldSession } from "./transport/index.js";
+export * from "./session-forward.js";
 export * from "./layout.js";
