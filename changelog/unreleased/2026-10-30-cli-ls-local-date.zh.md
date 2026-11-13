@@ -11,4 +11,4 @@
 
 ## 细节
 
-- `packages/cli/src/table.ts` 里的 `relativeTime` 改用本地的年、月、日拼出日期，不再截取时间戳的 UTC 日期部分。`now`、`5m`、`3h`、`2d` 这些短格式不变。
+- `packages/server/src/cli/table.ts` 里的 `relativeTime` 改用本地的年、月、日拼出日期，不再截取时间戳的 UTC 日期部分。`now`、`5m`、`3h`、`2d` 这些短格式不变。

@@ -4,7 +4,7 @@
  * runner a local-vs-UTC slip would be invisible.
  */
 import { describe, expect, it } from "vitest";
-import { relativeTime } from "../src/table.js";
+import { relativeTime } from "../../src/cli/table.js";
 
 /** Run `fn` with `process.env.TZ` set to `tz`; Node re-reads it on every Date call. */
 function withTimeZone(tz: string, fn: () => void): void {
