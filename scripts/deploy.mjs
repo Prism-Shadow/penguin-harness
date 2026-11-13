@@ -274,7 +274,7 @@ async function compileEntry(entry, outfile) {
     // The CLI's generated table also names the server's command classes (its children come
     // in through the server's `cli` subpath), so the CLI scan covers the server project too —
     // the same projects the CLI's own `gen:ifaces` build line scans.
-    const projects = pkg === "cli" ? ["server", "cli"] : [pkg];
+    const projects = pkg === "cli" ? ["cli", "server"] : [pkg];
     const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
     for (const p of projects)
       args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
