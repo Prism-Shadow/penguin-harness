@@ -1,7 +1,8 @@
 /**
  * Organization file formats (src/organization): every intent and fact file round-trips
  * through its serializer and parser, hand-edit tolerance is the same set of rules the API
- * writes under, and the timezone arithmetic behind budget periods and message days is exact.
+ * writes under, and the timezone arithmetic behind budget periods and message days is exact,
+ * a window being cut into fixed-offset pieces exactly at a DST change and nowhere else.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -42,6 +43,7 @@ import {
   zonedDate,
   zonedMonthRange,
   zonedOffsetMinutes,
+  zonedOffsetSpans,
   zonedPeriodRange,
 } from "../src/organization/zoned.js";
 
@@ -498,5 +500,24 @@ describe("zoned time", () => {
     expect(new Date(r.toMs).toISOString()).toBe("2026-09-30T16:00:00.000Z");
     expect(zonedPeriodRange("UTC", "2026-12")?.toMs).toBe(Date.UTC(2027, 0, 1));
     expect(zonedPeriodRange("UTC", "2026-13")).toBeNull();
+  });
+
+  it("cuts a window into fixed-offset spans exactly at a DST change, and nowhere else", () => {
+    const iso = (s: { fromMs: number; toMs: number; offsetMinutes: number }) => ({
+      from: new Date(s.fromMs).toISOString(),
+      to: new Date(s.toMs).toISOString(),
+      offset: s.offsetMinutes,
+    });
+    const from = Date.parse("2026-10-25T00:00:00Z");
+    const to = Date.parse("2026-11-08T00:00:00Z");
+    // New York falls back at 02:00 EDT on 2026-11-01, i.e. 06:00 UTC.
+    expect(zonedOffsetSpans("America/New_York", from, to).map(iso)).toEqual([
+      { from: "2026-10-25T00:00:00.000Z", to: "2026-11-01T06:00:00.000Z", offset: -240 },
+      { from: "2026-11-01T06:00:00.000Z", to: "2026-11-08T00:00:00.000Z", offset: -300 },
+    ]);
+    expect(zonedOffsetSpans("Asia/Kolkata", from, to).map(iso)).toEqual([
+      { from: "2026-10-25T00:00:00.000Z", to: "2026-11-08T00:00:00.000Z", offset: 330 },
+    ]);
+    expect(zonedOffsetSpans("UTC", from, from)).toEqual([]);
   });
 });

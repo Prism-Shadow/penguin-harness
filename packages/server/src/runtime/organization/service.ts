@@ -2593,6 +2593,7 @@ export class OrganizationService {
       spend.sessionIds,
       new Date(spend.range.fromMs).toISOString(),
       new Date(spend.range.toMs - 1).toISOString(),
+      org.config.timezone,
     );
     return {
       period: spend.period,

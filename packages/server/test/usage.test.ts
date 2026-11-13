@@ -20,6 +20,9 @@
  *   narrowed by Agent and range.
  * - Success counts completed requests over every non-aborted one: a user's Stop is not a model
  *   failure.
+ * - An organization's daily cost falls on the days of its own timezone, read from each
+ *   request's instant rather than the server-local date, and a DST change inside the month
+ *   moves the day boundary with it.
  * - Model totals sum every record a model ever wrote, per paired reference, per Project.
  * - Series are zero-filled buckets by minute, hour (local clock), day, ISO week or month, with
  *   per-Agent and per-model series aligned to them; a minute series needs a timestamp window,
@@ -466,6 +469,42 @@ describe("usage-service (cost computed on the fly)", () => {
     const byAgent = await svc.query("p1", { ...range, agentId: "a1" });
     expect(byAgent.byModelSeries.map((s) => s.modelId)).toEqual(["m1"]);
     expect(byAgent.series[0]!.requests).toBe(1);
+  });
+
+  it("the finance trend's days are the organization's, whatever day the server's date column recorded", async () => {
+    // Recorded on a UTC host, so `date` is the UTC day. Shanghai's September runs from 16:00Z
+    // on 31 August to 16:00Z on 30 September.
+    insert("2026-08-31", { ts: "2026-08-31T16:30:00.000Z" }); // 00:30 on 1 September
+    insert("2026-09-30", { ts: "2026-09-30T15:30:00.000Z" }); // 23:30 on 30 September
+    insert("2026-09-30", { ts: "2026-09-30T16:30:00.000Z" }); // 1 October: outside the month
+    const daily = await service(new Date("2026-10-01T00:00:00Z")).dailyCostForSessions(
+      "p1",
+      ["s1"],
+      "2026-08-31T16:00:00.000Z",
+      "2026-09-30T15:59:59.999Z",
+      "Asia/Shanghai",
+    );
+    expect(daily.map((d) => d.date)).toEqual(["2026-09-01", "2026-09-30"]);
+    expect(daily[0]!.cost).toBeCloseTo(ROW_COST, 12);
+    expect(daily[1]!.cost).toBeCloseTo(ROW_COST, 12);
+  });
+
+  it("a DST change inside the month moves the finance trend's day boundary with it", async () => {
+    // New York's November: EDT (UTC-4) until 06:00Z on the 1st, EST (UTC-5) after it. The
+    // month's opening offset alone would put both 23:30 EST requests on the following day.
+    insert("2026-11-01", { ts: "2026-11-01T04:30:00.000Z" }); // 00:30 EDT on the 1st
+    insert("2026-11-02", { ts: "2026-11-02T04:30:00.000Z" }); // 23:30 EST on the 1st
+    insert("2026-12-01", { ts: "2026-12-01T04:30:00.000Z" }); // 23:30 EST on the 30th
+    const daily = await service(new Date("2026-12-01T12:00:00Z")).dailyCostForSessions(
+      "p1",
+      ["s1"],
+      "2026-11-01T04:00:00.000Z",
+      "2026-12-01T04:59:59.999Z",
+      "America/New_York",
+    );
+    expect(daily.map((d) => d.date)).toEqual(["2026-11-01", "2026-11-30"]);
+    expect(daily[0]!.cost).toBeCloseTo(ROW_COST * 2, 12);
+    expect(daily[1]!.cost).toBeCloseTo(ROW_COST, 12);
   });
 });
 
