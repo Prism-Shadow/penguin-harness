@@ -94,6 +94,7 @@ export function readPlugins(pluginsDir) {
     const file = join(dir, "package.json");
     if (!existsSync(file)) continue;
     const pkg = JSON.parse(readText(file));
+    if (pkg.penguin?.parked === true) continue;
     const packageName = requireText(pkg, "name", file);
     const id = packageName.replace(/^@[^/]+\//, "");
     if (!ID.test(id)) fail(file, `plugin id "${id}" may hold only letters, digits and "-"`);
