@@ -1235,8 +1235,9 @@ for (const project of projects) {
     for (const child of meta.children ?? []) {
       // Resolve after every project is read: a child may be a module class this package
       // imports from another one (its symbol belongs to the importing project's program).
+      const ordinal = m.children.length;
       m.children.push(child?.$id ?? "?");
-      pendingChildren.push({ m, sym: child?.$id, file, name: child?.$name });
+      pendingChildren.push({ m, sym: child?.$id, file, name: child?.$name, ordinal });
     }
     // A class named by an earlier project has its manifest built: the map is shared across
     // projects, and building it twice would read as a module defined twice.
@@ -1262,7 +1263,7 @@ for (const project of projects) {
 }
 
 // Resolve the deferred children now that every project's module classes are registered.
-for (const { m, sym, file, name } of pendingChildren) {
+for (const { m, sym, file, name, ordinal } of pendingChildren) {
   const childName =
     (sym && moduleNameBySymbol.get(sym)) ??
     (name && moduleNameByClassName.get(name)) ??
@@ -1272,9 +1273,11 @@ for (const { m, sym, file, name } of pendingChildren) {
     errors.push(`${file}: children: an entry is not a @Module or @Component class`);
     continue;
   }
-  const i = m.children.indexOf(sym);
-  if (i === -1) m.children.push(childName);
-  else m.children[i] = childName;
+  // The placeholder sits at the entry's own ordinal — symbol identity is not a reliable
+  // key here (a class this package imports from another one resolves through the importing
+  // project's declaration file, a different symbol object), so indexOf can miss and a
+  // push would order the child wrongly. Replace in place, in the source's order.
+  m.children[ordinal] = childName;
 }
 
 // Wire every requirement that names no module to the module that will provide it —
