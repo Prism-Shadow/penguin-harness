@@ -223,7 +223,10 @@ function stepsMarkdown(spec: A2uiSteps, lang: A2uiLang): string[] {
     parts.push(step.text);
     if (step.note) parts.push(`**${t.stepNote}** ${step.note}`);
     if (step.code !== undefined) {
-      parts.push(["```" + (step.lang ?? ""), ...step.code.split("\n"), "```"].join("\n"));
+      // Keep Markdown examples inside the code block, even when they contain fences.
+      const runs = step.code.match(/`+/g) ?? [];
+      const fence = "`".repeat(Math.max(3, ...runs.map((run) => run.length + 1)));
+      parts.push([fence + (step.lang ?? ""), ...step.code.split("\n"), fence].join("\n"));
     }
     parts.forEach((part, j) => {
       const partLines = part.split("\n");
