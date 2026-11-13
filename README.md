@@ -49,7 +49,7 @@
 
 PenguinHarness is an open-source framework for agent self-evolution (recursive self-improvement, RSI). The model stays fixed; the harness evolves: prompts, Skills, tools and hooks. It runs on your computer or server as a desktop app, a Web App, a CLI and an SDK.
 
-- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE, AWM, SkillAdam, SkillOpt, OpenSkill and TRACE ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
+- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE, AWM, SkillAdam, SkillOpt, OpenSkill, TRACE and DGM ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
 - **One sentence builds an agent app.** Describe what you need, and an agent writes the app, its page and its run instructions.
 - **Cheap to run.** A deliberately small toolset, tuned for open models: on our data-analysis suite, the best accuracy at 1/70 of Claude Code's cost.
 
@@ -68,6 +68,7 @@ Pick an algorithm, pick a Benchmark, and an agent improves another agent round b
 | `skillopt-rsi-toolkit` | [SkillOpt](https://arxiv.org/abs/2605.23904): bounded Skill edits, score-based selection and cross-epoch reflection |
 | `openskill-rsi-toolkit` | [OpenSkill](https://arxiv.org/abs/2606.06741): external research and independent virtual tests before frozen-State evaluation |
 | `trace-rsi-toolkit` | [TRACE](https://arxiv.org/abs/2608.22793): skill-bank evolution from contrasting trajectories, with consistency measurement |
+| `dgm-rsi-toolkit` | [DGM](https://arxiv.org/abs/2505.22954): open-ended archive search over coding-agent variants, with parent selection and self-modification |
 
 Every new Project includes seventeen Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and a Train/Test pair for each of GDPEVO Essential's six scenarios. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
 
