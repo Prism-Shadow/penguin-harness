@@ -381,3 +381,4 @@ export class MeRoutes {
     });
   }
 }
+import type { UserDraftsStore, BackgroundImageStore } from "@prismshadow/penguin-server/internal";

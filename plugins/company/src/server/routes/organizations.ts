@@ -53,6 +53,7 @@ import type { UserDraftsStore, Schedules, readJson, SessionIndex, requireString,
 import type { Workbenches } from "@penguinharness/plugin-workbenches/server";
 import type { Agents } from "@penguinharness/plugin-agents/server";
 import {
+import type { Sessions } from "@prismshadow/penguin-server/internal";
   badRequest,
   optionalBoolean,
   optionalEnum,

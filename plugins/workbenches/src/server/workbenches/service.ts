@@ -54,7 +54,7 @@ import type { type AgentIndex, type Members, type Projects } from "@prismshadow/
 import type { type Traces } from "@prismshadow/penguin-server/internal";
 import { workbenchResult } from "./result.js";
 import type { type SessionIndex } from "@prismshadow/penguin-server/internal";
-import type { type AppCenterShortcut, type WorkbenchInput, type WorkbenchRecord, type WorkbenchUiFile, type WorkbenchUiRuntime, type WorkbenchUiRuntimeFile, type Workbenches } from "../mechanisms/workbenches.js";
+import type { type AppCenterShortcut, type WorkbenchInput, type WorkbenchRecord, type WorkbenchUiFile, type WorkbenchUiRuntime, type WorkbenchUiRuntimeFile, type Workbenches } from "../mechanism.js";
 import type { type WorkbenchInfo, type WorkbenchRequest, type WorkbenchResponse, type WorkbenchTab, type WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "@penguinharness/plugin-schedules/server";
 import {
