@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/reflexion-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "The Reflexion RSI Toolkit: verbal reinforcement learning (Shinn et al., 2023, https://arxiv.org/abs/2303.11366) — after every measured trial a Reflector distills the score matrix and the failed cases' public statements into one written reflection, the Target carries the reflection buffer into its next trial, and the best-scoring State is kept. Self-contained: it creates the Target's reflection slot, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/reflexion-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
