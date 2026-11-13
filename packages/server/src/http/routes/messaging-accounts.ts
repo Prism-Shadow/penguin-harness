@@ -31,8 +31,8 @@ import {
   enabledAccounts,
   findAccountHolders,
   holdsAccount,
-} from "../../runtime/messaging/account-holders.js";
-import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
+} from "@penguinharness/plugin-messaging/server";
+import { isMessagingChannel } from "@penguinharness/plugin-messaging/server";
 import { HttpError } from "../errors.js";
 import { badRequest, requireValidId } from "../validate.js";
 
