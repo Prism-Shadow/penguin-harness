@@ -195,6 +195,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -368,6 +371,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -558,6 +564,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -690,6 +699,9 @@ importers:
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -1238,6 +1250,18 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/humanizer:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/infrarsi-rsi-toolkit:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -2397,6 +2421,9 @@ packages:
 
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
+
+  '@penguinharness/infrarsi-rsi-toolkit@file:plugins/infrarsi-rsi-toolkit':
+    resolution: {directory: plugins/infrarsi-rsi-toolkit, type: directory}
 
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
@@ -7090,6 +7117,8 @@ snapshots:
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
+  '@penguinharness/infrarsi-rsi-toolkit@file:plugins/infrarsi-rsi-toolkit': {}
+
   '@penguinharness/model-development@file:plugins/model-development': {}
 
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit': {}
@@ -7215,6 +7244,7 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit': file:plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
@@ -7263,6 +7293,7 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit': file:plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
@@ -7371,6 +7402,7 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit': file:plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
@@ -7430,6 +7462,7 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit': file:plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
@@ -7489,6 +7522,7 @@ snapshots:
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/infrarsi-rsi-toolkit': file:plugins/infrarsi-rsi-toolkit
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
