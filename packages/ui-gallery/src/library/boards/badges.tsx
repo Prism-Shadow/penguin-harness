@@ -1,8 +1,8 @@
 /**
  * 徽标与状态: the label pill (`Pill`) in every tone and as a row of a card's labels beside the
  * update pill, Badge in every tone and weight, the count, the state dot, StatusIcon in every run
- * state, the session activity marks, the update dot and pill, and the two readings — the stat
- * tile and the stat chip.
+ * state, the status mark in every tone and receding beside a pill of the same tone, the session
+ * activity marks, the update dot and pill, and the two readings — the stat tile and the stat chip.
  */
 import {
   ActivityIcon,
@@ -15,19 +15,29 @@ import {
   ICON_SIZE,
   ScheduleMark,
   StatChip,
+  StatusMark,
   StatTile,
   StatusIcon,
   TONES,
   UpdateDot,
   UpdatePill,
 } from "@prismshadow/penguin-ui";
-import type { ActivityIconState, BadgeVariant, RunState } from "@prismshadow/penguin-ui";
+import type { ActivityIconState, BadgeVariant, RunState, ToneName } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
 const BADGE_VARIANTS: readonly BadgeVariant[] = ["soft", "outline", "solid"];
 const RUN_STATES: readonly RunState[] = ["running", "waiting", "done", "failed", "stopped"];
 const ACTIVITIES: readonly ActivityIconState[] = ["running", "compacting", "completedUnread"];
+/** Each tone's status mark draws the glyph its sample status would. */
+const STATUS_GLYPHS: Readonly<Record<ToneName, string>> = {
+  success: ICONS.checkCircle,
+  attention: ICONS.rotateCw,
+  danger: ICONS.alertCircle,
+  done: ICONS.checkCircle,
+  neutral: ICONS.pause,
+  info: ICONS.server,
+};
 
 export function BadgesBoard() {
   const { S } = useGallery();
@@ -95,6 +105,30 @@ export function BadgesBoard() {
               <span className="lib-caption">{t.states[state]}</span>
             </span>
           ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.statusMarks} aside={t.statusMarksHint}>
+        <div className="lib-stack lib-stack-wide">
+          {TONES.map((tone) => (
+            <div key={tone} className="lib-row text-xs text-fg-muted">
+              <StatusMark
+                glyph={STATUS_GLYPHS[tone]}
+                tone={tone}
+                label={t.statusMarkSamples[tone]}
+                hint={t.statusMarkHint(t.statusMarkSamples[tone])}
+              />
+              <Pill tone={tone}>{t.statusMarkSamples[tone]}</Pill>
+            </div>
+          ))}
+          <div className="lib-row text-xs text-fg-muted">
+            <StatusMark
+              glyph={ICONS.download}
+              label={t.statusMarkReceding}
+              hint={t.statusMarkHint(t.statusMarkReceding)}
+            />
+            <Pill>{t.statusMarkReceding}</Pill>
+          </div>
+          <span className="lib-caption">{t.statusMarkPill}</span>
         </div>
       </BoardGroup>
       <BoardGroup title={t.activity}>

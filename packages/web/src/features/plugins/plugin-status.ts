@@ -91,16 +91,25 @@ export function pluginPresent(plugin: PluginParts, installs: AgentInstalls | und
   );
 }
 
+/**
+ * Whether a library plugin can go on an Agent at all: it ships a Skill, a hook package, an MCP
+ * server or a workbench. A package of server modules alone ships nothing an Agent carries.
+ */
+export function agentInstallable(plugin: PluginParts): boolean {
+  return (
+    (plugin.workbenches?.length ?? 0) +
+      plugin.skills.length +
+      (plugin.hooks.length > 0 ? 1 : 0) +
+      plugin.mcpServers.length >
+    0
+  );
+}
+
 /** Whether an Agent carries every Skill, hook package, MCP server and workbench in the plugin. A plugin that ships nothing is on no Agent. */
 export function pluginComplete(plugin: PluginParts, installs: AgentInstalls | undefined): boolean {
   if (installs === undefined) return false;
-  const parts =
-    (plugin.workbenches?.length ?? 0) +
-    plugin.skills.length +
-    (plugin.hooks.length > 0 ? 1 : 0) +
-    plugin.mcpServers.length;
   return (
-    parts > 0 &&
+    agentInstallable(plugin) &&
     (plugin.workbenches ?? []).every(
       (w) => installs.workbenches?.get(w.name)?.plugin === plugin.name,
     ) &&

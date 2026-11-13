@@ -11,6 +11,9 @@
  *   module does), in the Markdown reader with its outline and its find. The README is read from
  *   the package on this server, never fetched from npm: a package this server does not have says
  *   so instead.
+ * - Then whatever section the caller adds of its own (`afterAbout`: an Agent's settings say what
+ *   of the plugin is on that Agent).
+ * - **Workbenches**, for a plugin that ships any: one row each.
  * - **MCP servers**, for a plugin that carries any (plugin-mcp.tsx): one row per server — its
  *   name, transport and target, and marks for the vault keys it needs, the sign-in it needs and,
  *   for a stdio server, the command it runs on this server.
@@ -20,17 +23,24 @@
  *   files arrive in one request (GET /api/plugins/:plugin/files), so nothing is fetched per
  *   directory. A plugin of MCP servers alone has no files to browse, and no such section.
  *
- * A plugin that is both shows About, then Files. The footer holds the card's own actions.
+ * A plugin that is both shows About, then Files. The footer holds the card's own actions. The
+ * README and the files are read from the server the caller names (`machineId`): an Agent on a
+ * machine reads its plugin from that machine's library.
+ *
+ * The header's status mark is the caller's (the Plugins page's status, or an Agent's own): the
+ * dialog only places it on the facts line.
  */
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   Badge,
   CopyButton,
+  FactList,
+  FactRow,
   FileBrowser,
-  GlyphIcon,
+  GlyphAction,
   ICONS,
-  ICON_SIZE,
   MarkdownReader,
+  MetaLine,
   Modal,
   ReaderFindBar,
   ReaderTools,
@@ -54,10 +64,8 @@ import { SkillTile } from "../skills";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { PluginMcpSection } from "./plugin-mcp";
 import type { ModulePart, PluginRow } from "./plugin-groups";
-import type { PluginStatus } from "./plugin-status";
 import {
   PluginTag,
-  StatusMark,
   rowBuiltin,
   rowDetails,
   rowInstalledOnServer,
@@ -238,9 +246,8 @@ export function rowHasFiles(row: PluginRow): boolean {
 
 /** What the header says beside the icon, besides what the dialog's title already names. */
 export interface PluginDetailHead {
-  status: PluginStatus;
-  /** The status's hover sentence. */
-  statusHint: string;
+  /** The status mark, drawn by the caller (PluginStatusMark on the market, the Agent's own on its settings page). */
+  status: ReactNode;
   categoryTitle: string;
   /** How many Agents use its Skills and hooks; null for a server module alone. */
   usedBy: number | null;
@@ -257,12 +264,15 @@ export function PluginDetailSections({
   readme,
   files,
   locale,
+  afterAbout,
 }: {
   row: PluginRow;
   head: PluginDetailHead;
   readme: ReadmeState;
   files: ReactNode;
   locale: "zh" | "en";
+  /** A section of the caller's own, between About and what the package ships. */
+  afterAbout?: ReactNode;
 }) {
   const version = rowVersion(row);
   // The README's reader: its outline and find buttons sit in the section's title row.
@@ -289,7 +299,7 @@ export function PluginDetailSections({
           )}
           <MetaLine>
             {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}
-            <StatusMark status={head.status} hint={head.statusHint} />
+            {head.status}
             {head.usedBy !== null && (
               <span className="min-w-0 truncate">{S.plugins.usedByAgents(head.usedBy)}</span>
             )}
@@ -365,13 +375,15 @@ export function PluginDetailSections({
         )}
       </RuledSection>
 
+      {afterAbout}
+
       {(row.library?.workbenches?.length ?? 0) > 0 && (
         <RuledSection title={S.plugins.detailWorkbenches} level={3} className="mt-5">
-          <ul className="text-sm">
+          <FactList>
             {row.library!.workbenches!.map((w) => (
-              <li key={w.name}>{w.name}</li>
+              <FactRow key={w.name} glyph={ICONS.anvil} name={w.name} mono />
             ))}
-          </ul>
+          </FactList>
         </RuledSection>
       )}
       {row.library !== undefined && row.library.mcpServers.length > 0 && (
@@ -403,31 +415,6 @@ function ReadmeReader({ text, reader }: { text: string; reader: MarkdownReaderSt
 }
 
 /**
- * Items of a metadata line, a middle dot between each, held on one line: a wrapped line would
- * strand a dot at its edge. The items are the line's flex children, so an item that may run long
- * (the agent count) brings its own `min-w-0 truncate`, and the rest keep `shrink-0`.
- */
-export function MetaLine({ children }: { children: ReactNode }) {
-  const items = (Array.isArray(children) ? children : [children]).filter(
-    (child) => child !== null && child !== undefined && child !== false,
-  );
-  return (
-    <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden whitespace-nowrap text-xs text-fg-muted">
-      {items.map((item, index) => (
-        <Fragment key={index}>
-          {index > 0 && (
-            <span aria-hidden className="shrink-0">
-              ·
-            </span>
-          )}
-          {item}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-/**
  * A description as the package wrote it, with each web address in it a link that opens in a new
  * tab — an algorithm toolkit names its paper that way. The rest stays plain text: a description
  * is not Markdown.
@@ -454,31 +441,11 @@ function LinkedText({ text }: { text: string }) {
   );
 }
 
-/** A details-line link: the glyph alone, flat — no box at rest or on hover, the ink deepens instead. */
-const DETAIL_LINK_CLASS =
-  "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:text-fg";
-
-/** One of the package's links, opened in a new tab that keeps no handle on this one. */
-function DetailLink({ href, glyph, label }: { href: string; glyph: string; label: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={label}
-      data-tooltip={label}
-      data-tooltip-content="text"
-      className={DETAIL_LINK_CLASS}
-    >
-      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-    </a>
-  );
-}
-
 /**
  * What the package says of itself, under the header's tags: author · license, then a link each
- * to its homepage and its repository; nothing at all when it carries none of them. The links sit
- * beside the meta line rather than in it, whose overflow clip would cut their focus ring.
+ * to its homepage and its repository (flat glyph links, opening in a new tab that keeps no handle
+ * on this one); nothing at all when it carries none of them. The links sit beside the meta line
+ * rather than in it, whose overflow clip would cut their focus ring.
  */
 function PackageDetailsLine({ details }: { details: PluginDetails }) {
   const { author, license, homepage, repository } = details;
@@ -499,10 +466,10 @@ function PackageDetailsLine({ details }: { details: PluginDetails }) {
         </span>
       )}
       {homepage !== undefined && (
-        <DetailLink href={homepage} glyph={ICONS.globe} label={S.plugins.detailHomepage} />
+        <GlyphAction href={homepage} glyph={ICONS.globe} label={S.plugins.detailHomepage} />
       )}
       {repository !== undefined && (
-        <DetailLink href={repository} glyph={ICONS.gitBranch} label={S.plugins.detailRepository} />
+        <GlyphAction href={repository} glyph={ICONS.gitBranch} label={S.plugins.detailRepository} />
       )}
     </div>
   );
@@ -511,9 +478,9 @@ function PackageDetailsLine({ details }: { details: PluginDetails }) {
 /**
  * The README the About section shows: a server module's from the registry route (read from the
  * package on this server, so one not here says so without asking), a library plugin's from the
- * library route, where a 404 means it ships none.
+ * library route of the server `machineId` names (null: this one), where a 404 means it ships none.
  */
-function usePluginReadme(row: PluginRow): ReadmeState {
+function usePluginReadme(row: PluginRow, machineId: string | null): ReadmeState {
   const part = row.module;
   const here = part === undefined || moduleOnThisServer(part);
   const [state, setState] = useState<ReadmeState>(
@@ -534,7 +501,7 @@ function usePluginReadme(row: PluginRow): ReadmeState {
       specifier !== undefined
         ? getPluginReadme(specifier).then((res) => res.readme)
         : name !== undefined
-          ? getLibraryPluginReadme(name).then(
+          ? getLibraryPluginReadme(name, machineId).then(
               (res) => res.readme,
               (e: unknown) => {
                 if (e instanceof ApiError && e.status === 404) return null;
@@ -554,7 +521,7 @@ function usePluginReadme(row: PluginRow): ReadmeState {
     return () => {
       cancelled = true;
     };
-  }, [here, specifier, name]);
+  }, [here, specifier, name, machineId]);
   return state;
 }
 
@@ -563,15 +530,21 @@ export function PluginDetailModal({
   head,
   footer,
   onClose,
+  machineId = null,
+  afterAbout,
 }: {
   row: PluginRow;
   head: PluginDetailHead;
   /** The card's own actions, as footer buttons; null leaves the dialog without a footer. */
   footer: ReactNode;
   onClose: () => void;
+  /** The server whose library the README and the files are read from; null (default) for this server. */
+  machineId?: string | null;
+  /** A section of the caller's own, between About and what the package ships. */
+  afterAbout?: ReactNode;
 }) {
   const { locale } = useLocale();
-  const readme = usePluginReadme(row);
+  const readme = usePluginReadme(row, machineId);
   return (
     <Modal
       open
@@ -586,21 +559,23 @@ export function PluginDetailModal({
         readme={readme}
         files={
           row.library !== undefined && rowHasFiles(row) ? (
-            <PluginFiles plugin={row.library} />
+            <PluginFiles plugin={row.library} machineId={machineId} />
           ) : null
         }
         locale={locale}
+        afterAbout={afterAbout}
       />
     </Modal>
   );
 }
 
 /**
- * The browser over what a library plugin installs: tree left, preview right (stacked on narrow
- * screens) — the same one the Benchmark case dialog draws. SKILL.md shows its body, with the
- * frontmatter the header already states dropped.
+ * The browser over what a library plugin installs, read from the library of the server
+ * `machineId` names: tree left, preview right (stacked on narrow screens) — the same one the
+ * Benchmark case dialog draws. SKILL.md shows its body, with the frontmatter the header already
+ * states dropped.
  */
-function PluginFiles({ plugin }: { plugin: PluginItem }) {
+function PluginFiles({ plugin, machineId }: { plugin: PluginItem; machineId: string | null }) {
   const [files, setFiles] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Collapsed directories: every one starts open, so the whole plugin is in view at once. */
@@ -611,7 +586,7 @@ function PluginFiles({ plugin }: { plugin: PluginItem }) {
 
   useEffect(() => {
     let cancelled = false;
-    getPluginFiles(plugin.name)
+    getPluginFiles(plugin.name, machineId)
       .then((res) => {
         if (cancelled) return;
         setFiles(res.files);
@@ -622,7 +597,7 @@ function PluginFiles({ plugin }: { plugin: PluginItem }) {
     return () => {
       cancelled = true;
     };
-  }, [plugin.name]);
+  }, [plugin.name, machineId]);
 
   const groups =
     files === null

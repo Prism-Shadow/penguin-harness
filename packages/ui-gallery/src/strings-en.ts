@@ -472,7 +472,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
+          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions and keyboard hints.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -504,11 +504,15 @@ export const en: GalleryStrings = {
         description:
           "Hints on hover and focus: the data-tooltip attribute and the Tooltip component.",
       },
-      tabs: { title: "Tabs", description: "The underline tab switcher, with an update badge." },
+      tabs: {
+        title: "Tabs",
+        description:
+          "The underline tab switcher, with an update badge; and the sub-page switch under a tab.",
+      },
       badges: {
         title: "Badges and status",
         description:
-          "Badges and counts, state dots, run-state icons, session activity marks, the update dot, and the stat tile and chip.",
+          "Badges and counts, state dots, run-state icons, status marks, session activity marks, the update dot, and the stat tile and chip.",
       },
       empty: {
         title: "Empty states",
@@ -555,7 +559,8 @@ export const en: GalleryStrings = {
       },
       data: {
         title: "Data",
-        description: "Tables, list rows, label/value pairs and the log view.",
+        description:
+          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs and the log view.",
       },
       machines: {
         title: "Machines",
@@ -623,6 +628,14 @@ export const en: GalleryStrings = {
       inlineLink: "release notes",
       inlineAfter: " for what changed.",
       external: "All releases",
+      glyphActions: "Inline glyph actions",
+      glyphActionsHint:
+        "The glyph alone, with no box: its ink deepens on hover. The label is the accessible name and the tooltip; with an address it is a link that opens in a new tab, otherwise a button.",
+      glyphAuthor: "Prism Shadow",
+      glyphHomepage: "Homepage",
+      glyphRepository: "Repository",
+      glyphSkill: "data-analysis",
+      glyphFromPlugin: "Installed by the Data analysis plugin",
       keys: "Keyboard hints",
       shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
     },
@@ -899,6 +912,17 @@ export const en: GalleryStrings = {
       items: ["Overview", "Trace", "Files", "Settings"],
       badgeText: "3 skills can be updated",
       body: (tab) => `The “${tab}” tab's content.`,
+      subPages: "Sub-page switch",
+      subPagesHint:
+        "The second tier under a tab: a segmented switch between sub-pages, the current sub-page's controls at the row's end. They stay put while loading, empty or populated, and wrap under the switch on a narrow screen.",
+      subPagesLabel: "Plugin sub-pages",
+      subPageItems: ["Plugins", "Skills", "Hooks", "Workbenches"],
+      subPageBody: (page) => `The “${page}” sub-page's content.`,
+      subPageImport: "Import skill",
+      subPageSearch: "Search plugins",
+      subPageMarket: "Open the Plugins page",
+      withButton: "With a button",
+      withSearch: "With a search box and a button",
     },
     badges: {
       pills: "Label pills",
@@ -941,6 +965,20 @@ export const en: GalleryStrings = {
       dotAnchor: "Plugins",
       pill: "Update pill",
       pillText: "3 updates",
+      statusMarks: "Status marks",
+      statusMarksHint:
+        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes.",
+      statusMarkSamples: {
+        success: "Installed",
+        attention: "Update",
+        danger: "Failed to load",
+        done: "Done",
+        neutral: "Disabled",
+        info: "Other machines only",
+      },
+      statusMarkHint: (word) => `On hover: what “${word}” means for this plugin.`,
+      statusMarkReceding: "Available",
+      statusMarkPill: "For comparison: the label pill in the same tone",
       statTile: "Stat tiles",
       spend: "Spend this month",
       spendDetail: "Organization budget $40",
@@ -1854,6 +1892,7 @@ export const en: GalleryStrings = {
         "The local proxy listens on 127.0.0.1:9090, but ~/.bashrc returns early in a non-interactive shell, so exec_command never sees http_proxy and the rest of the proxy variables; export the proxy in the command itself or pass --noproxy '*' for local addresses, or curl answers 502 for a local port.",
         'Inside the PenguinHarness v0.2.15 server process every Gemini model call fails with "Failed to parse URL from [object Request]": the bundled fetch and Request disagree. Upgrading to 0.2.16 fixes it.',
         "Verify patent numbers and papers with a tool before citing them.",
+        "A plugin wrote this memory: after every Task the continual-learning hook turns what the conversation showed is worth keeping into one entry, and the puzzle mark after its title says where it came from; a click opens that plugin's detail.",
       ],
       viewMemory: (name: string) => `View ${name}`,
       editMemory: (name: string) => `Edit ${name}`,
@@ -1868,6 +1907,81 @@ export const en: GalleryStrings = {
       log: "Log",
       logHint: "A job still running: its latest line in the body ink.",
       logLabel: "Update output",
+      cards: "Entity cards",
+      cardsHint:
+        "The card's body is one button that opens the detail, with the controls outside it; once the card is wide enough the controls show their words, before that only their glyphs, the word as the tooltip. Below, the same cards in a 360 px column.",
+      cardSection: "Office productivity",
+      cardCount: (n) => `${n} plugins`,
+      cardNarrow: "A 360 px column",
+      cardSamples: [
+        {
+          title: "Data analysis",
+          description: "Reads tables and databases, draws charts and writes up the findings.",
+          status: "Installed",
+          statusHint: "2 agents in this project have it.",
+          usedBy: "used by 2 agents",
+        },
+        {
+          title: "Meeting notes",
+          description: "Turns a meeting recording into notes and to-dos.",
+          status: "Update",
+          statusHint: "1 agent's copy is behind the library.",
+          usedBy: "used by 1 agent",
+        },
+        {
+          title: "Slides",
+          description: "Builds a slide deck from an outline.",
+          status: "Available",
+          statusHint: "No agent has it yet.",
+          usedBy: "",
+        },
+        {
+          title:
+            "A plugin whose display name is longer than any card can hold, so it truncates and shows whole on hover",
+          description:
+            "Its one-line description runs long too: it reads the whole repository, reviews each changed file against the team's conventions, and writes its findings as comments ready to paste into the pull request.",
+          status: "Installed",
+          statusHint: "1 agent in this project has it.",
+          usedBy: "used by 1 agent",
+        },
+      ],
+      cardTag: "Office productivity",
+      cardBuiltin: "Built in",
+      cardInstall: "Install",
+      cardUpdate: "Update",
+      cardManage: "Manage installs",
+      cardUninstall: "Uninstall",
+      cardActionName: (verb, title) => `${verb} ${title}`,
+      metaLine: "Facts line",
+      metaLineHint:
+        "A thing's facts on one line, a middle dot between each; when they do not fit the last one truncates, the rest keep their width, and the line never wraps.",
+      metaLineUsedBy: "used by 12 agents, 3 of them on other machines as last seen",
+      factRows: "Fact rows in a detail",
+      factRowsHint:
+        "One thing a row: a glyph, the name, a few quiet facts and the marks at the end; the last fact takes the remaining width and truncates, the marks keep theirs. A missing part is in muted ink throughout.",
+      factListLabel: "On this agent",
+      factKeys: "Waiting for NOTES_TOKEN in the vault",
+      factSignIn: "Needs a sign-in",
+      factMissing: "Missing",
+      factMissingHint:
+        "The library ships this part and the agent does not have it. Update puts it back.",
+      trailRows: "Marks after the title",
+      trailRowsHint:
+        "Marks and chips follow the title on its line and keep their width; when the row is too narrow they wrap under it. A part a plugin installed carries the puzzle mark: hover names the plugin, a click opens it.",
+      trailListLabel: "Hook packages",
+      trailFromPlugin: (plugin) => `Installed by the ${plugin} plugin`,
+      trailDescriptions: [
+        "After every Task, writes down what this conversation taught that is worth keeping.",
+        "Reminds the model of the current goal before every reply.",
+        "A hook package of your own, from no plugin.",
+      ],
+      trailExport: (name) => `Export ${name}`,
+      trailUninstall: (name) => `Uninstall ${name}`,
+      listStates: "A list's loading and empty states",
+      listLoading: "On the first read",
+      listEmpty: "With nothing in it",
+      listEmptyText: "This agent has no hook packages yet.",
+      memoryFromPlugin: "Written by the Continual learning plugin",
     },
     machines: {
       pills: "Status pills",
